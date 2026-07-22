@@ -8,11 +8,17 @@ authors = [{ name = "Mingyang Bao", email = "edcgghedcgg@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
     # Tier 1 core deps only -- structured logging, platform-standard path resolution,
-    # and TOML read/write. No motronics, no EM/solver deps: a consumer that wants only
-    # logging installs nothing heavier than this.
+    # TOML read/write, and the generic pint<->pydantic quantity machinery. No motronics,
+    # no EM/solver vocabulary: a consumer that wants only logging installs nothing
+    # heavier than this. pint is a hard dep of tier 1 (lab_commons.units); tier 2
+    # (lab_commons.em) needs no additional dependency, so it ships in the wheel --
+    # "optional" for em means optional IMPORT, not optional install.
     "structlog",
     "platformdirs",
     "rtoml",
+    "pint>=0.25.2",
+    "pydantic>=2",
+    "numpy",
 ]
 
 [project.urls]

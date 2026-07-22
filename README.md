@@ -12,11 +12,12 @@ no concept from any single project's domain. Test: could a lab doing something
 unrelated (chemistry, finance) use it unchanged? If a symbol names a *specific* solver,
 a winding, an optimizer, or a vendor tool, it does not belong here.
 
-**Tier 2 — shared-domain modules (future, optional import).** Vocabulary that is not
-project-specific but IS common across this family of EM/motor labs (e.g. EM quantity
-types/constants). A separate, clearly-named, opt-in module/extra — importing tier 1
-never drags tier 2 along. Not yet populated; see the source repo's
-`plan-lab-commons-standalone.md` for the full plan.
+**Tier 2 — shared-domain modules (optional import).** Vocabulary that is not
+project-specific but IS common across this family of EM/motor labs — `lab_commons.em`,
+the EM quantity types/constants. A separate, clearly-named, opt-in module — importing
+tier 1 never drags tier 2 along; `lab_commons.em` needs no extra dependency to install
+(pint is already a tier-1 dep), the "optional" is about IMPORT, not install. See the
+source repo's `plan-lab-commons-standalone.md` for the full plan.
 
 ## What's here (v1)
 
@@ -37,6 +38,15 @@ never drags tier 2 along. Not yet populated; see the source repo's
   (`ParameterException`, `QuantityException`, `deprecated`, `not_implemented`).
   Project-specific exceptions (a vendor-solver name, an error-code catalog) stay in
   each consumer's own tree.
+- `lab_commons.units` (**tier 1**) — the generic pint <-> pydantic `Annotated` machinery:
+  `ureg` / `Q_`, `PydanticQuantity`, `get_quantity_type()`, `BaseModel_with_q`. No EM
+  vocabulary; importing this module never imports `lab_commons.em`.
+- `lab_commons.em` (**tier 2, opt-in**) — the family-shared EM/physical quantity
+  vocabulary built on `lab_commons.units`: every `*Type = NewType(...)` (`LengthType`,
+  `TorqueType`, `AngleSpeedType`, ...) and every `Q_*` constant (`Q_0mm`, `Q_360deg`,
+  `Q_0Nm`, ...), plus `Cartesian2DPoint`/`Polar2DPoint`, `Q_list2array`,
+  `array2list_2Dpoint`, `is_equal_2DPoint`, and `CONSTANTS` (`vacuum_permeability`).
+  Import explicitly: `from lab_commons.em import TorqueType`.
 
 ## Consumers
 
