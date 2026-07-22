@@ -31,6 +31,12 @@ never drags tier 2 along. Not yet populated; see the source repo's
   field-KEY pattern (license keys / tokens / fingerprints / secrets / passwords are
   hashed, never logged in the clear), and a two-phase `bootstrap()` -> `bind_run_dir()`
   transport (console-only before the run directory is known, then a JSONL file sink).
+- `lab_commons.file_io` — TOML read/write (`read_toml`, `save_toml`), plus filesystem
+  presence helpers (`check_path`, `list_files_in_dir`).
+- `lab_commons.exceptions` — the generic subset of exception classes/decorators
+  (`ParameterException`, `QuantityException`, `deprecated`, `not_implemented`).
+  Project-specific exceptions (a vendor-solver name, an error-code catalog) stay in
+  each consumer's own tree.
 
 ## Consumers
 

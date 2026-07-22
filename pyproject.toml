@@ -7,11 +7,12 @@ license = { text = "MIT" }
 authors = [{ name = "Mingyang Bao", email = "edcgghedcgg@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
-    # Tier 1 core deps only -- structured logging + platform-standard path resolution.
-    # No motronics, no EM/solver deps: a consumer that wants only logging installs
-    # nothing heavier than this.
+    # Tier 1 core deps only -- structured logging, platform-standard path resolution,
+    # and TOML read/write. No motronics, no EM/solver deps: a consumer that wants only
+    # logging installs nothing heavier than this.
     "structlog",
     "platformdirs",
+    "rtoml",
 ]
 
 [project.urls]
