@@ -48,6 +48,23 @@ source repo's `plan-lab-commons-standalone.md` for the full plan.
   `array2list_2Dpoint`, `is_equal_2DPoint`, and `CONSTANTS` (`vacuum_permeability`).
   Import explicitly: `from lab_commons.em import TorqueType`.
 
+- `lab_commons.proc` (**tier 1**) — what a BOX is doing: `system_memory()` (the one home for
+  `GlobalMemoryStatusEx` / `/proc/meminfo`), `working_set_bytes(pid)`, `pid_alive(pid)`,
+  `process_tree(pid)` and `kill_process_tree(pid)`. stdlib `ctypes` only, never `psutil` — an
+  optional dependency makes a ceiling that silently stops being enforced on some machines, which
+  is worse than no ceiling because it is believed. Unreadable is always distinct from zero.
+- `lab_commons.resources` (**tier 1**) — the box-resource broker built on it: resource
+  DIMENSIONS as data (`seats`/`memory`/`cpu`/`wallclock`, with `disk`/`gpu` carrying the shape and
+  no values), a `CapacityRegistry` that models a per-box MEASUREMENT and an everywhere-identical
+  STRUCTURAL constant as different kinds, cross-process reservation by record file, and a CEILING
+  on the running job. A job DECLARES its cost rather than requesting a slot. An UNMEASURED box is
+  neither refused nor permissively guessed: it gets the conservative value (serialise, minimum
+  width, a floor that is a share of TOTAL) and the fact travels in the RETURN VALUE —
+  `Grant.basis` / `Grant.conservative` / `Grant.is_fully_measured` — never in a log warning.
+  The reservation tracks the JOB, not the Python client, so a vendor process outliving its driver
+  still holds its seat. It never evicts another party's run: the only route to a ceiling is
+  through the grant that admitted the job.
+
 ## Consumers
 
 - **motronics-studio** — the origin of this code; re-points `core/utils/{config,logger}.py`
