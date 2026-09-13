@@ -54,13 +54,18 @@ source repo's `plan-lab-commons-standalone.md` for the full plan.
   optional dependency makes a ceiling that silently stops being enforced on some machines, which
   is worse than no ceiling because it is believed. Unreadable is always distinct from zero.
 - `lab_commons.resources` (**tier 1**) — the box-resource broker built on it: resource
-  DIMENSIONS as data (`seats`/`memory`/`cpu`/`wallclock`, with `disk`/`gpu` carrying the shape and
-  no values), a `CapacityRegistry` that models a per-box MEASUREMENT and an everywhere-identical
+  DIMENSIONS as data (`seats`/`memory`/`cpu` enforced; `wallclock`/`disk`/`gpu` carrying the shape
+  with nothing able to check them), a `CapacityRegistry` that models a per-box MEASUREMENT and an
+  everywhere-identical
   STRUCTURAL constant as different kinds, cross-process reservation by record file, and a CEILING
   on the running job. A job DECLARES its cost rather than requesting a slot. An UNMEASURED box is
   neither refused nor permissively guessed: it gets the conservative value (serialise, minimum
   width, a floor that is a share of TOTAL) and the fact travels in the RETURN VALUE —
   `Grant.basis` / `Grant.conservative` / `Grant.is_fully_measured` — never in a log warning.
+  A ceiling held at the conservative value and a ceiling nobody applied are DIFFERENT facts:
+  `Grant.unbounded` is the second, so a demand on `disk` is never mistaken for a bound this
+  package applied — and declaring a value for it does not change that, because a number nobody
+  can read is not a ceiling.
   The reservation tracks the JOB, not the Python client, so a vendor process outliving its driver
   still holds its seat. It never evicts another party's run: the only route to a ceiling is
   through the grant that admitted the job.
