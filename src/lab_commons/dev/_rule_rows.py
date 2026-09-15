@@ -304,4 +304,18 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         '`rel=` without the `abs=` floor it is combined with.',
         ('tests/architecture/ratchets/test_approx_rel_requires_abs.py',),
     ),
+    (
+        'UNITS-GO-THROUGH-PINT',
+        'A unit is never spelled into a NAME; it lives in the VALUE, as a pint Quantity. The two halves are '
+        'one rule rather than two, because the naming ban is what makes the conversion boundary '
+        'non-optional: once a name cannot carry a unit, the value must, so `--slot-pitch-mm=12.5` typed as '
+        'a bare float has nowhere left to keep its unit but pint. Renaming such a flag without typing it '
+        'DELETES the unit instead of moving it, which is worse than leaving it, so a name whose value IS '
+        'already a Quantity is not a violation -- there the unit is in the value and the name merely '
+        'repeats it.',
+        (
+            'tests/test_dev_units.py',
+            'tests/test_no_name_carries_a_unit.py',
+        ),
+    ),
 )

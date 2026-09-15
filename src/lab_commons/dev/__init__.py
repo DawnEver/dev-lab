@@ -35,6 +35,10 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   prose cannot enter the registry; at adoption, so a repo cannot claim a rule it does not enforce;
   and at check time, so a deleted mechanism reds. ``Adoption`` is what makes the registry SHARED
   rather than merely central: a rule's statement is universal, its mechanism lives in one tree.
+* :mod:`lab_commons.dev.units` — the naming half of the units rule: a scan that refuses an
+  identifier whose trailing segment spells a unit, because the unit belongs in the VALUE (see
+  :func:`lab_commons.units.quantity_parser`). It reports the token set it searched for, so finding
+  nothing is distinguishable from searching for nothing.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
@@ -42,6 +46,7 @@ a ``RepoProfile`` and are the next layer. :mod:`lab_commons.dev.rules` is NOT th
 whether a named mechanism is still LIVE, and the five are the mechanisms an adopter would name.
 """
 
+from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
 from lab_commons.dev.boxlock import BOX_POOL, BoxLock
 from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
@@ -60,14 +65,25 @@ from lab_commons.dev.rules import (
     unadopted,
     waived,
 )
+from lab_commons.dev.units import (
+    SCANNED_SUFFIXES,
+    Scan,
+    Violation,
+    assert_registry_sane,
+    scan_files,
+    trailing_token,
+)
 from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
 
 __all__ = [
     'ABSENT',
     'BOX_POOL',
     'DEFAULT_IGNORES',
+    'EXCLUDED_TOKENS',
     'MARKER',
     'RULES',
+    'SCANNED_SUFFIXES',
+    'UNIT_TOKENS',
     'UNREADABLE',
     'Adoption',
     'BoxLock',
@@ -80,12 +96,15 @@ __all__ = [
     'RepoProfile',
     'Result',
     'Rule',
+    'Scan',
     'Selector',
     'UnenforceableRule',
     'UnverifiableLog',
     'Verdict',
+    'Violation',
     'assert_adopted',
     'assert_enforceable',
+    'assert_registry_sane',
     'content_address',
     'env_key',
     'env_manifest',
@@ -93,7 +112,9 @@ __all__ = [
     'guard',
     'interpreter_identity',
     'lint',
+    'scan_files',
     'tracked_files',
+    'trailing_token',
     'unadopted',
     'verify_log',
     'waived',

@@ -68,6 +68,7 @@ _IDS = frozenset(
         'SHARED-CHECKOUT',
         'TOLERANCE-CARRIES-A-UNIT',
         'UNSUPPORTED-RAISES',
+        'UNITS-GO-THROUGH-PINT',
         'VERDICT-BAR-IS-THE-INCREMENT',
         'XFAIL-NOT-SKIP',
     }
