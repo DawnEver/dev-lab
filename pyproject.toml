@@ -39,6 +39,12 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 packages = ["src/lab_commons"]
 
 [project.optional-dependencies]
+# THE GATE FOR ``lab_commons.dev``. That subpackage is opt-in exactly as ``lab_commons.em`` is --
+# the top level does not import it, and `tests/test_dev_gate.py` pins that against a fresh
+# interpreter -- and the extra below is what a consumer installs to opt in. It names the tools the
+# dev layer DRIVES (pytest and ruff, as executables rather than as imports); the layer itself needs
+# no new dependency, which the same test proves by reading its import statements. A consumer that
+# wants only logging installs nothing heavier than the tier-1 list above.
 dev = [
     "pytest",
     "pytest-mock",
