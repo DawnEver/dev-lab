@@ -29,11 +29,15 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
 * :mod:`lab_commons.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
   own file, so a profile carries an ``anchor`` for the checkout it describes.
+* :mod:`lab_commons.dev.rules` — the shared registry: one row per UNIVERSAL rule, carrying its
+  stable ID, its statement in the words the shared source owns, and the mechanism that refuses a
+  violation. A rule with no resolvable mechanism is a REFUSAL in two places -- at construction, so
+  prose cannot enter the registry, and at check time, so a deleted mechanism reds.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
-a ``RepoProfile`` and are the next layer; this one is the verdict, because nothing else in the
-shared kit is VERIFIABLE until a run can be told from a run that proved nothing.
+a ``RepoProfile`` and are the next layer. :mod:`lab_commons.dev.rules` is NOT that layer: it resolves
+whether a named mechanism is still LIVE, and the five are the mechanisms an adopter would name.
 """
 
 from lab_commons.dev.boxlock import BOX_POOL, BoxLock
@@ -41,6 +45,7 @@ from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, fi
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
 from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.profile import NotACheckout, RepoProfile
+from lab_commons.dev.rules import RULES, Rule, UnenforceableRule, assert_enforceable, guard, lint, tracked_files
 from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
 
 __all__ = [
@@ -48,6 +53,7 @@ __all__ = [
     'BOX_POOL',
     'DEFAULT_IGNORES',
     'MARKER',
+    'RULES',
     'UNREADABLE',
     'BoxLock',
     'Citation',
@@ -58,13 +64,19 @@ __all__ = [
     'Proof',
     'RepoProfile',
     'Result',
+    'Rule',
     'Selector',
+    'UnenforceableRule',
     'UnverifiableLog',
     'Verdict',
+    'assert_enforceable',
     'content_address',
     'env_key',
     'env_manifest',
     'file_digest',
+    'guard',
     'interpreter_identity',
+    'lint',
+    'tracked_files',
     'verify_log',
 ]
