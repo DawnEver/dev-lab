@@ -27,7 +27,7 @@ from _arch_corpus import assert_floor, parse, rel, suite_modules
 
 #: The corpus enumerators. A module calling one of these is scanning the tree and owes both
 #: properties; a module that merely imports `ROOT` is reading one file and owes neither.
-ENUMERATORS = ('source_modules', 'suite_modules', 'rules_pages')
+ENUMERATORS = ('source_modules', 'suite_modules', 'rules_pages', 'memory_entries')
 
 #: This guard's own floor: the number of scanning guards it must find before an empty problem list
 #: means anything. MEASURED 2026-09-15 (6 scanning guards).

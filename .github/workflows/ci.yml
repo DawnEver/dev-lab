@@ -1,0 +1,36 @@
+name: CI
+
+# The thin caller. Everything of substance is in `python-verify.yml` beside this file -- the same
+# reusable workflow DawnEver/optimi-lab calls -- and the checks it runs are `make verify` in this
+# repo's Makefile. Three files, one definition each, no copy.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    # A reusable workflow cannot widen the permissions it is given, and the failure-reporting job
+    # inside it files a tracking issue. Without `issues: write` granted HERE it would silently
+    # have no permission to file -- a feedback mechanism that reads as working while doing
+    # nothing, which is worse than none.
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/python-verify.yml
+    with:
+      # `requires-python = ">=3.12"` and ruff targets py312, so both ends of the supported range
+      # run: a 3.13-only regression cannot hide behind a 3.12-only job, or the reverse.
+      python-versions: '["3.12", "3.13"]'
+      # `dev` is the extra that gates `lab_commons.dev` -- pytest and ruff as executables.
+      extras: 'dev'
+      # `lab_commons.dev.rules` authors the family's development rules. An adoption test nobody
+      # runs is exactly the declaration-nothing-enforces defect the registry exists to refuse, so
+      # it gets its own labelled step.
+      guard-targets: 'adoption'

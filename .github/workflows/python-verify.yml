@@ -1,0 +1,164 @@
+name: Python verify (reusable)
+
+# ============================================================================================
+# THIS FILE IS LOAD-BEARING FOR MORE THAN THIS REPOSITORY.
+#
+# lab-commons is the shared development system for the motronics / optimi-lab / wdg-lab family,
+# so it is the natural host for the family's ONE CI definition. This workflow is called by:
+#
+#   * lab-commons itself   -> .github/workflows/ci.yml
+#   * DawnEver/optimi-lab  -> .github/workflows/ci.yml
+#
+# Editing it changes CI in every caller. That is the point: a second copy of these steps is a
+# second thing to keep in step, and it does not stay in step.
+#
+# WHAT IT DELIBERATELY DOES NOT DO: it does not spell out the checks. It shells out to the
+# caller repo's `make verify`, which is the SINGLE entry point a human also runs before pushing.
+# A gate added as an inline `- run:` here would be a gate no local run can reach.
+# ============================================================================================
+
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        description: 'JSON array of Python versions to run the matrix over.'
+        required: false
+        default: '["3.12", "3.13"]'
+        type: string
+      extras:
+        description: 'Space-separated optional-dependency extras to sync (each becomes --extra X).'
+        required: false
+        default: 'dev'
+        type: string
+      guard-targets:
+        description: >
+          Space-separated `make` targets run as their OWN named steps after `verify`, so that a
+          named architectural guard is legible from the job list instead of buried in a pytest
+          summary. Each is already inside `verify`; re-running one is cheap and the point is the
+          label. Every target must exist in the caller's Makefile.
+        required: false
+        default: ''
+        type: string
+      report-failures:
+        description: >
+          File / update / close a tracking issue in the CALLING repository. Requires the caller
+          to grant `issues: write` -- a reusable workflow can never widen the permissions it was
+          given, so if the caller forgets, this silently cannot file and the mechanism reads as
+          working while doing nothing. Leave it on and grant the permission.
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both repos derive their version from git (hatch-vcs here, setuptools-scm in
+          # optimi-lab). A shallow clone has no tags, so the BUILD fails before a test runs.
+          fetch-depth: 0
+
+      # Third-party actions ARE pinned, by major version. The floating-first-party argument below
+      # does not extend to code this family does not own.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync the environment
+        # Nothing is pinned. House policy is that first-party requirements FLOAT
+        # (`lab-commons @ git+https://...` carries no ref on purpose): a repo held at a sha stops
+        # being told when a shared rule moved. A resolution failure here is NEWS, not noise.
+        run: |
+          extra_flags=""
+          for extra in ${{ inputs.extras }}; do
+            extra_flags="$extra_flags --extra $extra"
+          done
+          uv sync --python ${{ matrix.python-version }} $extra_flags
+
+      - name: make verify
+        # THE WHOLE GATE, in one call. `uv run` puts the synced .venv on PATH, so the Makefile's
+        # `python -m ruff` / `python -m pytest` resolve to the environment just built.
+        run: uv run make verify
+
+      - name: Named guards
+        if: inputs.guard-targets != ''
+        run: |
+          for target in ${{ inputs.guard-targets }}; do
+            echo "::group::make $target"
+            uv run make "$target"
+            echo "::endgroup::"
+          done
+
+  report:
+    # A RED CI THAT NOTIFIES NOBODY IS A RED CI NOBODY SEES. This job closes that gap with no new
+    # secret: the built-in GITHUB_TOKEN, and one tracking issue that is created, UPDATED, and then
+    # CLOSED again. Create-every-time would give a flapping build fifty issues; a notification
+    # that never clears is one people learn to ignore.
+    needs: verify
+    if: ${{ always() && inputs.report-failures && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      # A reusable workflow cannot widen what the caller granted. The caller's job must declare
+      # `permissions: { contents: read, issues: write }`; restating it here documents the need and
+      # keeps this job from inheriting anything broader.
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            // `github.repository` and GITHUB_TOKEN resolve to the CALLER's repository: a reusable
+            // workflow runs in the caller's context, so optimi-lab's red opens an issue in
+            // optimi-lab, not here.
+            const {owner, repo} = context.repo;
+            const branch = context.ref.replace('refs/heads/', '');
+            const title = `CI failing on ${branch}`;
+            const label = 'ci-failure';
+            const runUrl =
+              `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const failed = '${{ needs.verify.result }}' !== 'success';
+
+            // The STABLE KEY is the exact title. Matching on it is what makes this
+            // create-or-update rather than create-every-time.
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: label, per_page: 100,
+            });
+            const existing = open.find((issue) => issue.title === title);
+
+            const body = [
+              `\`${{ needs.verify.result }}\` on \`${branch}\`.`,
+              '',
+              `* run: ${runUrl}`,
+              `* commit: \`${context.sha}\``,
+              `* failing job: \`verify\` (see the run for which matrix leg)`,
+              '',
+              'This issue is opened, updated and CLOSED by CI itself. Closing it by hand does not',
+              'fix anything; the next green run on this branch closes it.',
+            ].join('\n');
+
+            if (failed) {
+              if (existing) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: existing.number, body,
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner, repo, title, body, labels: [label],
+                });
+              }
+            } else if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Green again on \`${context.sha}\`. ${runUrl}`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: 'closed',
+              });
+            }

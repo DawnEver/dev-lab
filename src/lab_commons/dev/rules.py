@@ -252,7 +252,7 @@ class Adoption:
             if not mechs:
                 msg = (
                     f'{self.app_name} lists {name!r} with no mechanism. Declaring a rule enforced with '
-                    f'nothing refusing it is prose wearing a guarantee\'s clothes; declare it ABSENT instead.'
+                    f"nothing refusing it is prose wearing a guarantee's clothes; declare it ABSENT instead."
                 )
                 raise UnenforceableRule(msg)
 

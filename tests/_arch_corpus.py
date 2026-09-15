@@ -31,6 +31,13 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 SOURCE_FLOOR: Final = 18
 TEST_FLOOR: Final = 18
 
+#: The memory tree's floor, and it is ONE on purpose. The other two floors sit under a measured
+#: count; this one sits at the smallest number that still refuses the failure it exists for -- a
+#: `.claude/memory/` that is empty or absent, where a shape guard passes because it read nothing.
+#: The tree holds 1 entry (MEASURED 2026-09-15, the day it was created), so a floor above 1 would be
+#: a pin on growth rather than a refusal of an unread tree.
+MEMORY_FLOOR: Final = 1
+
 
 class VacuousScan(AssertionError):
     """A scan reached fewer files than the floor, so finding nothing proves nothing."""
@@ -69,6 +76,18 @@ def suite_modules() -> tuple[Path, ...]:
 def rules_pages() -> tuple[Path, ...]:
     """Every tracked markdown page under ``.claude/rules/`` -- this repo's always-loaded prose."""
     return _existing(tuple(n for n in _tracked() if n.startswith('.claude/rules/') and n.endswith('.md')))
+
+
+def memory_entries() -> tuple[Path, ...]:
+    """Every tracked markdown entry under ``.claude/memory/`` -- this repo's durable findings.
+
+    TRACKED rather than present, and here the distinction has teeth: the memory system writes
+    device-local bookkeeping (a `_meta.json` per directory, a `__pycache__`) beside the records, and
+    none of it reaches another checkout or a reader. Taking the corpus from git drops that debris
+    without an exemption list, while a real fork -- an entry written outside a dated directory and
+    committed -- is exactly what stays in scope.
+    """
+    return _existing(tuple(n for n in _tracked() if n.startswith('.claude/memory/') and n.endswith('.md')))
 
 
 def rel(path: Path) -> str:
