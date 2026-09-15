@@ -62,4 +62,8 @@ target-version = "py312"
 quote-style = "single"
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "PLW0603", "ARG001", "TRY301"]
+# PLC0415 is the mechanism this repo supplies for the shared NO-LAZY-IMPORT rule: an import
+# graph a cost model reads must be exact, and a deferred import makes it a guess. The five
+# surviving deferrals -- three in src/, two in tests/ -- each carry a `# noqa: PLC0415`
+# naming the reason that one is unavoidable.
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "PLC0415", "PLW0603", "ARG001", "TRY301"]

@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from lab_commons.dev import units
 from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
 from lab_commons.dev.units import (
     SCANNED_SUFFIXES,
@@ -615,8 +616,6 @@ def test_a_bad_registry_row_is_refused_at_the_seam() -> None:
 
 def test_the_module_declares_its_public_surface() -> None:
     """One name per idea, and the caller exporting it needs to know which names those are."""
-    from lab_commons.dev import units
-
     assert set(units.__all__) == {
         'SCANNED_SUFFIXES',
         'Scan',
