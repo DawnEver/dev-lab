@@ -5,15 +5,16 @@ already ships cross-process admission, a refusal that names its holders, and a r
 (``resources.Broker/Grant/Exhausted``), written for exactly this box and already consumed by a
 consumer that outlives its driver. A second lock -- a byte-range lock, a pid file, a heartbeat --
 would be a second definition of the same thing, and the two would drift on the first fix applied to
-one of them. So this module is a POLICY: it names the pool, declares the one seat, and drives the
-broker that exists.
+one of them. So this module is a POLICY: it names the dimension, declares the one seat, and drives
+the broker that exists.
 
-WHAT A POOL NAME IS, AND WHY IT IS A CONSTANT HERE. The broker rations PER POOL, and a pool is just
-a string -- so "box-wide" is not a property the broker can enforce, it is a property of every
-caller passing the SAME string. That is a real limit and it is stated rather than papered over:
-:data:`BOX_POOL` is the one name the family agrees on, and a consumer that passes its own name has
-silently opted out of contending with the others. See the module docstring of
-:mod:`lab_commons.resources` for what a per-box mechanism can and cannot decide.
+WHAT MAKES IT BOX-WIDE IS THE DIMENSION, NOT THE POOL NAME. The broker rations per pool, and a pool
+is just a string, so "box-wide" used to be a property of every caller passing the SAME string: a
+consumer that passed its own name silently opted out of contending, and nothing in the broker could
+tell it so. That is now a property of the MECHANISM -- :data:`lab_commons.resources.BOX_SEATS` is a
+``Scope.BOX`` dimension, whose record files are one set per box rather than one set per pool, so two
+repos that never agree on a pool name still meet on the same seat. :data:`BOX_POOL` remains what
+this lock's records are NAMED by (records need a pool), and it is no longer what excludes anybody.
 
 WHY ``seats=1`` AND NOT A CPU DEMAND. A CPU-saturating run wants the box's whole width, and an
 unmeasured box's cpu ceiling is one, so DEMANDING cores would refuse the very runs this lock exists
@@ -31,6 +32,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.resources import (
+    BOX_SEATS,
     DEFAULT_POLL_S,
     SEATS,
     Broker,
@@ -42,9 +44,9 @@ from lab_commons.resources import (
 
 __all__ = ['BOX_POOL', 'BoxLock']
 
-#: The one pool every repo in this family contends through. A CONSTANT rather than a default
-#: argument, because a default is a value a caller can quietly replace and this string IS the
-#: mechanism -- two spellings of it are two locks that never meet.
+#: The name this lock's records carry. NOT the exclusion -- see the module docstring: what excludes
+#: is the box-scoped seat below. Kept as a named constant because a record still has to say which
+#: pool wrote it, and a caller that wants to read this lock's records has to know where they are.
 BOX_POOL: Final = 'lab-commons-box'
 
 #: The rule, as data the broker MUST read. A STRUCTURAL capacity is a property of the tool rather
@@ -55,9 +57,23 @@ _ONE_SEAT: Final = Capacity.structural(
     SEATS.name,
     1,
     note=(
-        'the box-wide exclusion: one CPU-saturating run at a time, on every box, for every repo '
-        'that names BOX_POOL. Serialising an unmeasured box is the direction that cannot crash it, '
-        'and a measurement of four seats cannot lift a structural constant.'
+        'the exclusion within this pool: one CPU-saturating run at a time, for every repo that '
+        'names BOX_POOL. Serialising an unmeasured box is the direction that cannot crash it, and '
+        'a measurement of four seats cannot lift a structural constant.'
+    ),
+)
+
+#: THE BOX-WIDE HALF OF THE SAME RULE, and the half that does not depend on anyone's spelling.
+#: ``BOX_SEATS`` is ``Scope.BOX``, so this declaration binds every pool on the box: a run that
+#: demanded it under a pool name of its own meets this lock on the same record file. Structural for
+#: the same reason as :data:`_ONE_SEAT` -- nothing about a measurement of THIS machine can make a
+#: box run two CPU-saturating jobs at once sanely.
+_ONE_BOX_SEAT: Final = Capacity.structural(
+    BOX_SEATS.name,
+    1,
+    note=(
+        'the box-wide exclusion: one CPU-saturating run at a time on this box, for every pool that '
+        'demands this dimension. It is the seat a consumer cannot opt out of by naming its own pool.'
     ),
 )
 
@@ -88,18 +104,19 @@ class BoxLock:
 
     @staticmethod
     def _broker(broker: Broker | None) -> Broker:
-        """The broker to drive, WITH the box-wide seat declared on it.
+        """The broker to drive, WITH both seats declared on it.
 
-        An injected broker is given :data:`_ONE_SEAT` as well, rather than replacing it. The
+        An injected broker is given the two declarations as well, rather than replacing them. The
         alternative -- honouring the caller's registry wholesale -- is a hole with a friendly name:
         a consumer with a measured four-seat registry would inject it and silently lose the
-        box-wide exclusion, which is the one thing this class exists to state. Declaring it here is
-        idempotent in EFFECT, because several declarations for one pool compose by taking the
-        smallest, so a second call cannot tighten or loosen anything.
+        box-wide exclusion, which is the one thing this class exists to state. Declaring them here
+        is idempotent in EFFECT, because several declarations for one dimension compose by taking
+        the smallest, so a second call cannot tighten or loosen anything.
         """
         if broker is None:
-            return Broker(CapacityRegistry([(BOX_POOL, _ONE_SEAT)]))
+            return Broker(CapacityRegistry([(BOX_POOL, _ONE_SEAT), (BOX_POOL, _ONE_BOX_SEAT)]))
         broker.registry.declare(BOX_POOL, _ONE_SEAT)
+        broker.registry.declare(BOX_POOL, _ONE_BOX_SEAT)
         return broker
 
     @contextmanager
@@ -116,11 +133,11 @@ class BoxLock:
                 decided at the first check rather than after a queue.
 
         """
-        # THE SEAT IS NOT A CALLER OPTION, so it is applied AFTER the caller's demands and a
-        # `seats=` key in `demands` cannot widen it. What a caller may add is what else its run
+        # NEITHER SEAT IS A CALLER OPTION, so they are applied AFTER the caller's demands and a
+        # `seats=` key in `demands` cannot widen them. What a caller may add is what else its run
         # costs; what it may not add is a second seat, which would be this class contradicting its
         # own name.
-        demands = {**self.demands, SEATS.name: 1}
+        demands = {**self.demands, SEATS.name: 1, BOX_SEATS.name: 1}
         with self._broker(self.broker).admit(
             BOX_POOL,
             demands,
@@ -137,7 +154,8 @@ class BoxLock:
         ASKING IS NOT TAKING, which this family has already paid for once: a reader that probed
         takeability by acquiring and releasing the lock became a WRITER of the state it reported,
         and two agents reading it refused each other over a phantom holder. ``Broker.holders`` only
-        reads records, and this method adds no write of its own.
+        reads records, and this method adds no write of its own. It reports the box-scoped seat
+        whatever pool its holder named, so a second repo's run is named here rather than invisible.
         """
         return tuple(BoxLock._broker(broker).holders(BOX_POOL))
 
