@@ -22,15 +22,19 @@ import pytest
 from lab_commons.dev.profile import RepoProfile
 from lab_commons.dev.rules import (
     RULES,
+    Adoption,
     LintRule,
     Rule,
     TestPath,
     UnenforceableRule,
+    assert_adopted,
     assert_enforceable,
     guard,
     lint,
     tracked_files,
+    unadopted,
     unresolved,
+    waived,
 )
 
 #: THE PIN, and it is the NAMED SET rather than a count. A count is blind to WHICH row moved, so a
@@ -203,3 +207,91 @@ def test_the_declared_checkout_is_the_one_that_was_read(tmp_path: Path) -> None:
     absent = RepoProfile(app_name='scratch', package='scratch', root=tmp_path / 'nowhere')
     with pytest.raises(Exception, match='not a directory'):
         assert_enforceable(absent, (Rule(id='ANY', statement='x', mechanisms=(guard('tests/a.py'),)),))
+
+
+# ---------------------------------------------------------------------------------------------
+# The ADOPTION layer: the half a shared registry cannot hold.
+#
+# This section exists because of a measured defect in the first version of this module. A row then
+# carried ONE mechanism tuple that every adopter was graded against, and all 70 mechanisms named
+# motronics paths -- so lab-commons, the repo that AUTHORED the registry, refused its own registry
+# with 70 failures. A rule's statement is universal; its mechanism is a file in one tree.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_repo_that_neither_enforces_nor_declares_a_rule_is_told_which_rule() -> None:
+    """THE REFUSAL THE SHARED REGISTRY WAS MISSING. Silence about a cited rule is the defect."""
+    rules = (
+        Rule(id='ONE', statement='x', mechanisms=(guard('tests/a.py'),)),
+        Rule(id='TWO', statement='y', mechanisms=(guard('tests/b.py'),)),
+    )
+    adoption = Adoption(app_name='scratch', mechanisms={'ONE': (guard('tests/a.py'),)})
+    assert unadopted(rules, adoption) == ('TWO',)
+
+    # Both halves of the pair are legitimate, and they are DIFFERENT facts: one is a decision on
+    # record, the other is a rule nobody has looked at yet.
+    declared = Adoption(
+        app_name='scratch',
+        mechanisms={'ONE': (guard('tests/a.py'),)},
+        declared_absent=frozenset({'TWO'}),
+    )
+    assert unadopted(rules, declared) == (), 'a declared-absent rule is on record, not a red'
+    assert waived(rules, declared) == ('TWO',)
+
+
+def test_a_rule_cannot_be_both_enforced_and_declared_absent() -> None:
+    """The stale half, refused at construction -- it is what would let a waiver read as enforced."""
+    with pytest.raises(ValueError, match='both enforces and declares absent'):
+        Adoption(
+            app_name='scratch',
+            mechanisms={'ONE': (guard('tests/a.py'),)},
+            declared_absent=frozenset({'ONE'}),
+        )
+
+
+def test_an_adopted_rule_with_no_mechanism_is_refused_at_adoption() -> None:
+    """The Rule refusal, one repo further out: claiming a rule enforced with nothing refusing it."""
+    with pytest.raises(UnenforceableRule, match='ABSENT instead'):
+        Adoption(app_name='scratch', mechanisms={'ONE': ()})
+
+
+def test_an_id_the_registry_does_not_define_is_refused(tmp_path: Path) -> None:
+    """A typo adopts nothing and says so nowhere, which is how a rule quietly stops being checked."""
+    with pytest.raises(ValueError, match='not a rule ID'):
+        Adoption(app_name='scratch', mechanisms={'one': (guard('tests/a.py'),)})
+
+    rule = Rule(id='ONE', statement='x', mechanisms=(guard('tests/a.py'),))
+    stranger = Adoption(app_name='scratch', declared_absent=frozenset({'NOPE'}))
+    with pytest.raises(UnenforceableRule, match='does not define'):
+        assert_adopted(_scratch_checkout(tmp_path, 'PLC'), stranger, (rule,))
+
+
+def test_the_adoption_path_runs_over_a_real_tree_in_both_directions(tmp_path: Path) -> None:
+    """THE CONTROL THAT MATTERS, at the level a real adopter uses.
+
+    Everything else in this section works on sets this file hands it. This one drives
+    :func:`assert_adopted` end to end -- git tracking, the lint config on disk, a second repo's
+    mechanisms replacing the authoring repo's -- so the claim "a second adopter can supply the
+    mechanism for its own tree" is a measurement rather than a promise.
+    """
+    profile = _scratch_checkout(tmp_path, 'PLC')
+    # A SHARED row: its mechanisms are the AUTHORING repo's paths, none of which exist here.
+    shared = (Rule(id='SHARED', statement='x', mechanisms=(guard('motronics/only/test.py'),)),)
+
+    with pytest.raises(UnenforceableRule, match='neither enforces nor declares absent'):
+        assert_adopted(profile, Adoption(app_name='scratch'), shared)
+
+    # Declaring it absent is on record and passes -- and the authoring repo's path is NEVER consulted.
+    assert_adopted(profile, Adoption(app_name='scratch', declared_absent=frozenset({'SHARED'})), shared)
+
+    # Supplying THIS repo's mechanism is what makes it enforced, and then it must genuinely be live.
+    (tmp_path / 'tests' / 'test_the_guard.py').write_text('# the guard\n', encoding='utf-8')
+    subprocess.run(['git', '-C', str(tmp_path), 'add', '-A'], check=True, capture_output=True)
+    live = Adoption(app_name='scratch', mechanisms={'SHARED': (guard('tests/test_the_guard.py'),)})
+    assert_adopted(profile, live, shared)
+
+    # And deleting that mechanism from the real tree brings the red back, naming the rule.
+    (tmp_path / 'tests' / 'test_the_guard.py').unlink()
+    subprocess.run(['git', '-C', str(tmp_path), 'add', '-A'], check=True, capture_output=True)
+    with pytest.raises(UnenforceableRule, match='SHARED'):
+        assert_adopted(profile, live, shared)

@@ -31,8 +31,10 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   own file, so a profile carries an ``anchor`` for the checkout it describes.
 * :mod:`lab_commons.dev.rules` — the shared registry: one row per UNIVERSAL rule, carrying its
   stable ID, its statement in the words the shared source owns, and the mechanism that refuses a
-  violation. A rule with no resolvable mechanism is a REFUSAL in two places -- at construction, so
-  prose cannot enter the registry, and at check time, so a deleted mechanism reds.
+  violation. A rule with no resolvable mechanism is a REFUSAL in three places -- at construction, so
+  prose cannot enter the registry; at adoption, so a repo cannot claim a rule it does not enforce;
+  and at check time, so a deleted mechanism reds. ``Adoption`` is what makes the registry SHARED
+  rather than merely central: a rule's statement is universal, its mechanism lives in one tree.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
@@ -45,7 +47,19 @@ from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, fi
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
 from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.profile import NotACheckout, RepoProfile
-from lab_commons.dev.rules import RULES, Rule, UnenforceableRule, assert_enforceable, guard, lint, tracked_files
+from lab_commons.dev.rules import (
+    RULES,
+    Adoption,
+    Rule,
+    UnenforceableRule,
+    assert_adopted,
+    assert_enforceable,
+    guard,
+    lint,
+    tracked_files,
+    unadopted,
+    waived,
+)
 from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
 
 __all__ = [
@@ -55,6 +69,7 @@ __all__ = [
     'MARKER',
     'RULES',
     'UNREADABLE',
+    'Adoption',
     'BoxLock',
     'Citation',
     'IncompleteRun',
@@ -69,6 +84,7 @@ __all__ = [
     'UnenforceableRule',
     'UnverifiableLog',
     'Verdict',
+    'assert_adopted',
     'assert_enforceable',
     'content_address',
     'env_key',
@@ -78,5 +94,7 @@ __all__ = [
     'interpreter_identity',
     'lint',
     'tracked_files',
+    'unadopted',
     'verify_log',
+    'waived',
 ]

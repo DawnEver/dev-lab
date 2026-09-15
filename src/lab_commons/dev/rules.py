@@ -14,23 +14,31 @@ every domain noun from the rule -- if it still constrains anything, it is univer
 is a LADDER: one vendor first, a second vendor second" leaves nothing behind and stays home. "A
 declaration that lies is the dominant defect" survives intact and belongs here.
 
-A RULE WITH NO RESOLVABLE MECHANISM IS A REFUSAL, IN TWO PLACES, and they are different refusals:
+A RULE WITH NO RESOLVABLE MECHANISM IS A REFUSAL, IN THREE PLACES, and they are different refusals:
 
 * :class:`Rule` refuses AT CONSTRUCTION to hold a row with no mechanism at all. A rule carried as a
   comment is prose masquerading as a guarantee, and no amount of careful writing fixes that -- the
   row cannot exist, so it cannot drift.
-* :func:`assert_enforceable` refuses AT CHECK TIME when a row's mechanism is not live in the tree
-  being checked: a test path that is not tracked, or a lint code that is not selected. Deleting the
-  mechanism reds, which is the whole point -- that check is what the prose never had.
+* :class:`Adoption` refuses AT ADOPTION TIME to list a rule as enforced with an empty mechanism
+  tuple, and refuses a rule that is both enforced and declared absent. Both are the same complaint as
+  the first, one repo further out.
+* :func:`assert_enforceable` and :func:`assert_adopted` refuse AT CHECK TIME when a mechanism is not
+  live in the tree being checked -- a test path that is not tracked, or a lint code that is not
+  selected -- and, for a shared rule, when a repo neither enforces it nor declares it absent.
+  Deleting the mechanism reds, which is the whole point -- that check is what the prose never had.
 
 THE MECHANISM IS A PATH OR A LINT CODE, exactly as the registry this is modelled on states:
 ``'tests/...py'`` for a test that refuses the hazard, or ``('ruff', 'PLC0415')`` for a lint rule that
 must be selected and not globally ignored. The data half writes them that way; :func:`_mechanism`
-turns them into the two types. Paths are REPO-RELATIVE and are resolved against the adopting repo's
-:class:`~lab_commons.dev.profile.RepoProfile`. A SECOND ADOPTER therefore inherits the statements and
-must supply the mechanism for its own tree; until it does, this module's refusal is the honest
-report, not a hole. That is deliberate: the alternative -- a shared rule that silently degrades to a
-comment in a repo that never built the mechanism -- is the exact defect named above.
+turns them into the two types. Paths are REPO-RELATIVE.
+
+THE TWO HALVES HAVE DIFFERENT OWNERS, and conflating them was this module's first defect. The
+STATEMENT is universal and lives here; the MECHANISM is a file in a tree, and a tree belongs to one
+repo. So a row's mechanisms are the EXISTENCE PROOF -- where the rule is enforced by whoever authored
+it, which is what makes "a rule with no mechanism cannot exist" true -- and each adopter supplies its
+own through :class:`Adoption`, checked by :func:`assert_adopted`. A shared row that silently degrades
+to a comment in a repo that never built the mechanism is the exact defect named above, and so is a
+shared row that grades every repo against one repo's paths.
 
 WHAT IS NOT HERE. The per-repo row (the dependency arrow, the case conventions, the launcher's
 flags), the domain row (which vendor arbitrates which quantity), and the incident evidence that
@@ -43,8 +51,8 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -54,15 +62,18 @@ from lab_commons.file_io import read_toml
 
 __all__ = [
     'RULES',
+    'Adoption',
     'LintRule',
     'Mechanism',
     'Rule',
     'TestPath',
     'UnenforceableRule',
+    'assert_adopted',
     'assert_enforceable',
     'guard',
     'lint',
     'tracked_files',
+    'unadopted',
     'unresolved',
 ]
 
@@ -190,6 +201,62 @@ class Rule:
             raise UnenforceableRule(msg)
 
 
+@dataclass(frozen=True, slots=True)
+class Adoption:
+    """ONE repo's mechanisms for the rules it cites -- the half a shared registry cannot hold.
+
+    A rule's STATEMENT is universal and is authored once, above. Its MECHANISM is a test file or a
+    lint code that lives in a tree, and a tree belongs to one repo: ``tests/architecture/...``
+    resolves in exactly one checkout on earth. So the two halves have different owners, and this is
+    the second one.
+
+    THE DEFECT THIS EXISTS TO CLOSE, MEASURED 2026-09-15 -- by the repo that AUTHORED the registry.
+    Before this class existed, a row carried one mechanism tuple that every adopter was checked
+    against, and all 70 mechanisms named motronics paths. Driven against its own tree, lab-commons
+    refused its own registry with **70 failures** -- the module docstring promised "a second adopter
+    inherits the statements and must supply the mechanism for its own tree", and there was no way to
+    supply one. A promise the code does not honour is exactly the defect the registry exists to
+    remove, so it was removed.
+
+    *declared_absent* is the honest migration state, and it is three-sided on purpose. A rule that is
+    neither enforced nor declared absent is a RED, because citing a rule and saying nothing about it
+    is how a citation becomes decoration. A rule that is BOTH is a RED, because the contradiction is
+    the thing that would let a stale entry sit there looking enforced. And a declared-absent rule is
+    not a red but is RENDERED by :func:`unadopted`, so the gap is visible instead of silent.
+
+    THAT THIRD SIDE NEEDS ITS OWN CEILING, and it does not live here: an escape hatch that no one
+    must justify is how a check reaches zero without anything being fixed. The adopting repo pins
+    this set as a NAMED SET in its own ratchet, which may only shrink -- the same instrument this
+    family already uses for suppressions, skips and module size.
+    """
+
+    app_name: str
+    mechanisms: Mapping[str, tuple[Mechanism, ...]] = field(default_factory=dict)
+    declared_absent: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if not self.app_name.strip():
+            msg = 'an adoption with no app_name cannot report WHICH repo is missing a mechanism.'
+            raise ValueError(msg)
+        both = sorted(set(self.mechanisms) & self.declared_absent)
+        if both:
+            msg = (
+                f'{self.app_name} both enforces and declares absent: {both}. One of the two is stale, and '
+                f'a row that reads as enforced while being waived is the failure this registry cannot see.'
+            )
+            raise ValueError(msg)
+        for name, mechs in self.mechanisms.items():
+            if not _ID.fullmatch(name):
+                msg = f'{self.app_name} adopts {name!r}, which is not a rule ID (UPPER-CASE slug).'
+                raise ValueError(msg)
+            if not mechs:
+                msg = (
+                    f'{self.app_name} lists {name!r} with no mechanism. Declaring a rule enforced with '
+                    f'nothing refusing it is prose wearing a guarantee\'s clothes; declare it ABSENT instead.'
+                )
+                raise UnenforceableRule(msg)
+
+
 def _mechanism(raw: str | tuple[str, str]) -> Mechanism:
     """One data-half mechanism as its type: a path string, or the ``('ruff', CODE)`` pair."""
     if isinstance(raw, str):
@@ -314,3 +381,82 @@ def assert_enforceable(profile: RepoProfile, rules: Sequence[Rule] = RULES) -> N
             'this registry exists to remove.'
         )
         raise UnenforceableRule(msg)
+
+
+def unadopted(rules: Sequence[Rule], adoption: Adoption) -> tuple[str, ...]:
+    """The rule IDs *adoption* neither enforces nor declares absent -- the citation that says nothing.
+
+    Returns IDs rather than a count because the set is what an adopting repo pins: a count is blind
+    to WHICH rule moved, and a repo that dropped one rule while picking up another would compare
+    equal, with the honest-looking repair being to edit the digit.
+    """
+    silent = set(rules_by_id(rules)) - set(adoption.mechanisms) - set(adoption.declared_absent)
+    return tuple(sorted(silent))
+
+
+def waived(rules: Sequence[Rule], adoption: Adoption) -> tuple[str, ...]:
+    """The rules *adoption* declares absent, sorted -- the visible gap, not a silent one.
+
+    Kept separate from :func:`unadopted` because they are different facts: one is a decision the repo
+    made and on record, the other is a rule nobody has looked at yet.
+    """
+    return tuple(sorted(set(rules_by_id(rules)) & set(adoption.declared_absent)))
+
+
+def rules_by_id(rules: Sequence[Rule]) -> dict[str, Rule]:
+    """The rules keyed by ID -- the lookup an adoption resolves against."""
+    return {rule.id: rule for rule in rules}
+
+
+def _rebound(rules: Sequence[Rule], adoption: Adoption) -> tuple[Rule, ...]:
+    """*rules* with each adopted row carrying THIS repo's mechanisms, and unadopted rows dropped.
+
+    Dropping rather than passing through is the point: a row left holding its authoring repo's
+    mechanisms is the motronics-path failure that made lab-commons refuse its own registry.
+    """
+    return tuple(
+        Rule(id=rule.id, statement=rule.statement, mechanisms=adoption.mechanisms[rule.id])
+        for rule in rules
+        if rule.id in adoption.mechanisms
+    )
+
+
+def assert_adopted(profile: RepoProfile, adoption: Adoption, rules: Sequence[Rule] = RULES) -> None:
+    """Raise unless *adoption* accounts for every rule and every mechanism it names is live.
+
+    THE SHARED-REGISTRY ENTRY POINT -- what an adopting repo calls from its own suite. Four refusals,
+    and each names the repo, because a refusal that does not say whose gap it is cannot be acted on:
+
+    * a rule neither enforced nor declared absent: cited by nothing, so it is prose here;
+    * a rule both enforced and declared absent: a stale half, which is how a row reads as enforced
+      while being waived (refused earlier, at :class:`Adoption` construction);
+    * an ID that is not a rule: a typo adopts nothing, silently;
+    * a mechanism that is not tracked, not selected, or globally ignored -- delegated to
+      :func:`assert_enforceable`, which already refuses those.
+
+    The authoring repo's own mechanisms are NOT consulted here. That is the whole correction: they
+    are the existence proof that a rule is enforceable at all, and they are a path in one checkout.
+
+    Raises:
+        UnenforceableRule: any of the above.
+
+    """
+    known = rules_by_id(rules)
+    strangers = sorted((set(adoption.mechanisms) | set(adoption.declared_absent)) - set(known))
+    if strangers:
+        msg = (
+            f'{adoption.app_name} adopts {strangers}, which the registry does not define. A typo in an ID '
+            f'adopts nothing and says so nowhere, which is how a rule quietly stops being checked.'
+        )
+        raise UnenforceableRule(msg)
+    silent = unadopted(rules, adoption)
+    if silent:
+        msg = (
+            f'{adoption.app_name} neither enforces nor declares absent {len(silent)} rule(s):\n  '
+            + '\n  '.join(silent)
+            + '\nName the mechanism that refuses each one, or list it in declared_absent so the gap is on '
+            'record. A cited rule with no answer to either is decoration, and it is what this registry '
+            'exists to remove.'
+        )
+        raise UnenforceableRule(msg)
+    assert_enforceable(profile, _rebound(rules, adoption))
