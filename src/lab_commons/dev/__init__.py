@@ -115,6 +115,15 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   ``src/`` -- so what ships is the table of contents, which is the half that rots when four repos
   hand-maintain it. Not re-exported below: ``PAGES`` and ``Page`` are exactly the kind of
   unqualified spelling that stops saying what it is once it is flattened into a namespace this wide.
+* :mod:`lab_commons.dev.shadow_build` -- measuring a rebuilt native extension WITHOUT installing it.
+  The venv is SHARED, so ``maturin develop`` mutates the interpreter another lane's verdict is
+  running in -- the :mod:`~lab_commons.dev.dep` hazard arriving through a build tool, which takes no
+  lock and asks nobody. So it BUILDS a wheel, UNPACKS it (a wheel is a zip) and SHADOWS the
+  installed copy via ``PYTHONPATH``, refusing any output path inside ``sys.prefix``; and it times
+  the two arms A/B/A/B, because a block design charges a shared box's drift to whichever arm ran
+  during it. It reports a KERNEL ratio and deliberately carries no end-to-end figure: the weight
+  that would produce one is a property of the consuming repo's cases. Not re-exported below --
+  ``build_wheel`` and ``interleaved`` say nothing about their subject once flattened.
 
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
