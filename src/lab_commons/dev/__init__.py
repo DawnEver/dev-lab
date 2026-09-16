@@ -24,6 +24,17 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
 * :mod:`lab_commons.dev.envkey` — a key over the resolved dependency set, the other half.
 * :mod:`lab_commons.dev.logref` — the log a verdict carries, and the reader that re-derives it.
 * :mod:`lab_commons.dev.verdict` — the algebra: ``(tree, env, selector, result, log)``.
+* :mod:`lab_commons.dev.reports` — what a verify step REPORTED, read out of the text it printed:
+  pure functions over a string and an exit code, including the two-sided skip ratchet a project
+  declares in its own ``[tool.lab_commons.verify] allowed_skips``.
+* :mod:`lab_commons.dev.verify` — the family's ONE entry point that PRODUCES one:
+  ``python -m lab_commons.dev.verify`` runs ruff, ruff format and pytest, tees them into a log
+  under ``.verify/``, and prints a stamped verdict. It is the portable half of motronics-studio's
+  1770-line gate runner -- the half that needs no case library, no solver and no vendor engine --
+  so the three repos that had no verdict-producing invocation at all now have the same one. It is
+  the ONE module here NOT re-exported below, and that is deliberate rather than an omission: it is
+  run as ``__main__``, and a package that imports its own entry point makes ``runpy`` warn that the
+  module was already in ``sys.modules`` before it executed. Import it by its own path.
 * :mod:`lab_commons.dev.boxlock` — one CPU-saturating run at a time, ON the broker that already
   ships in this package rather than beside it.
 * :mod:`lab_commons.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
@@ -52,6 +63,14 @@ from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, fi
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
 from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.profile import NotACheckout, RepoProfile
+from lab_commons.dev.reports import (
+    SKIP_CEILING,
+    MalformedAllowance,
+    StepReport,
+    declared_skips,
+    read_pytest,
+    read_ruff,
+)
 from lab_commons.dev.rules import (
     RULES,
     Adoption,
@@ -83,6 +102,7 @@ __all__ = [
     'MARKER',
     'RULES',
     'SCANNED_SUFFIXES',
+    'SKIP_CEILING',
     'UNIT_TOKENS',
     'UNREADABLE',
     'Adoption',
@@ -90,6 +110,7 @@ __all__ = [
     'Citation',
     'IncompleteRun',
     'LogRef',
+    'MalformedAllowance',
     'NotACheckout',
     'Outcome',
     'Proof',
@@ -98,6 +119,7 @@ __all__ = [
     'Rule',
     'Scan',
     'Selector',
+    'StepReport',
     'UnenforceableRule',
     'UnverifiableLog',
     'Verdict',
@@ -106,12 +128,15 @@ __all__ = [
     'assert_enforceable',
     'assert_registry_sane',
     'content_address',
+    'declared_skips',
     'env_key',
     'env_manifest',
     'file_digest',
     'guard',
     'interpreter_identity',
     'lint',
+    'read_pytest',
+    'read_ruff',
     'scan_files',
     'tracked_files',
     'trailing_token',

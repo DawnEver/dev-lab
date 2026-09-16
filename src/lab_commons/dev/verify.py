@@ -1,0 +1,255 @@
+"""The family's ONE verify entry point: ``python -m lab_commons.dev.verify``.
+
+WHY IT IS HERE AND NOT IN A REPO. Four repos share this library, and exactly one of them --
+motronics-studio -- has an entry point that produces a :class:`~lab_commons.dev.verdict.Verdict`
+(a 1770-line ``scripts/gate/runner.py`` that knows about cases, solvers and vendor engines, and
+is not portable to a repo that has none of those). The other three have NOTHING, so an agent
+working in one can only type a bare ``pytest`` line -- which the family's hooks deny, and they
+deny it for the reason this module exists: a bare invocation returns an exit code, and an exit
+code cannot say whether the run COVERED what it selected. This module is the portable remainder:
+three steps, a log, and a verdict built out of the algebra in :mod:`lab_commons.dev.verdict`.
+
+THE POLARITY IS INHERITED, NOT RE-DECIDED. A run starts INCONCLUSIVE and is PROMOTED only on
+proof. The measured case that motivates it is in that module's own docstring, and the parser that
+catches it lives in :mod:`lab_commons.dev.reports` -- which is where every judgement about what a
+step's output MEANS lives, so that this module can be about processes, logs and exit codes and
+nothing else.
+
+EVERY STEP RUNS, EVEN AFTER ONE FAILS, and that is a polarity decision rather than a convenience.
+``make verify`` chains ``lint fmt-check test`` and stops at the first red, so a lint error leaves
+the suite UNRUN -- and a caller reading that as "verify failed" has merged "the tests are red" with
+"nobody knows whether the tests are red". Here an unrun step would be SILENT in the proof and would
+drag the verdict to INCONCLUSIVE, so all three run and the verdict names the ones that failed.
+
+EXIT CODES, and the two non-zero ones are DIFFERENT ON PURPOSE:
+
+* ``0`` -- PASS. The proof held and nothing failed.
+* ``1`` -- FAIL. The proof held and the failures are NAMED. Fix the code.
+* ``2`` -- INCONCLUSIVE. The run cannot say. Re-run it, or fix what truncated it. A caller that
+  collapses 1 and 2 has rebuilt the bug the verdict algebra exists to end.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import IO, Final
+
+from lab_commons.dev.content import content_address
+from lab_commons.dev.envkey import env_key, env_manifest
+from lab_commons.dev.logref import LogRef, UnverifiableLog
+from lab_commons.dev.reports import MalformedAllowance, StepReport, declared_skips, read_pytest, read_ruff
+from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.log import emit
+
+__all__ = [
+    'EXIT_CODES',
+    'LOG_DIRECTORY',
+    'MEASURED_TARGETS',
+    'PYTEST_ARGS',
+    'RUFF_STEPS',
+    'build_verdict',
+    'main',
+    'project_root',
+    'run_verify',
+]
+
+#: What the tree address covers, for EVERY repo in the family. A fixed tuple rather than a
+#: per-repo list: :func:`~lab_commons.dev.content.content_address` records a target that is not
+#: there as ``absent``, so a repo without one of these addresses differently instead of needing a
+#: branch here -- and a repo that ACQUIRES one changes its address, which is correct.
+MEASURED_TARGETS: Final[tuple[str, ...]] = ('src', 'tests', 'pyproject.toml')
+
+#: Where the log lives. Under the project root rather than a platform cache dir, because the log
+#: IS the evidence a verdict cites and a reader who was handed the tree must be able to find it.
+LOG_DIRECTORY: Final = '.verify'
+
+#: The two lint steps, in order, as ``(name, module args)``. Both run through ``sys.executable -m``
+#: so the ruff that judges is the ruff installed in the interpreter that will run the suite -- a
+#: bare ``ruff`` on ``PATH`` can be a different version from the one the ``dev`` extra resolved,
+#: and a verdict carrying an env key must have been earned under that env.
+RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    ('ruff check .', ('ruff', 'check', '.')),
+    ('ruff format --check .', ('ruff', 'format', '--check', '.')),
+)
+
+#: What pytest is always given, before anything the caller forwards. ``-rs`` is not cosmetic: it is
+#: what makes pytest NAME the skips it would otherwise only count, and the two-sided skip ratchet in
+#: :mod:`lab_commons.dev.reports` cannot be checked against a number. A caller's own ``-r`` adds to
+#: the report set rather than replacing it, so forwarding one cannot silence the skips.
+PYTEST_ARGS: Final[tuple[str, ...]] = ('-rs',)
+
+#: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
+#: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
+EXIT_CODES: Final[dict[Outcome, int]] = {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}
+
+#: The line that separates the ruff half of the log from the pytest half. The pytest parser is fed
+#: what comes AFTER it and never the whole log, because ruff's own output can carry a ``FAILED``
+#: line or a count, and a parser handed both halves would attribute one step's words to the other.
+_PYTEST_BANNER: Final = '--- pytest ---\n'
+
+
+def project_root(start: Path | None = None) -> Path:
+    """The checkout this verify run is about, from ``git rev-parse --show-toplevel``.
+
+    ASKED OF GIT rather than walked up looking for a marker file. A marker walk finds the nearest
+    directory holding a ``pyproject.toml``, which inside a monorepo or a nested package is a
+    DIFFERENT tree from the one a reader would check -- and an address computed against the wrong
+    root is a verdict about a repo nobody ran.
+
+    Raises:
+        SystemExit: *start* is not inside a git checkout, or git is not installed. Refused rather
+            than guessed: every field of a verdict is anchored to this path, so a fallback root
+            would produce a well-formed verdict about the wrong tree.
+
+    """
+    try:
+        found = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            cwd=start or Path.cwd(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+        msg = (
+            f'verify could not find a git checkout at {start or Path.cwd()}: {detail or exc}. Every '
+            f'field of a verdict -- the tree address, the log, the paths the steps run over -- is '
+            f'anchored to the repository root, so there is nothing to verify until this resolves.'
+        )
+        raise SystemExit(msg) from exc
+    return Path(found.stdout.strip()).resolve()
+
+
+def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
+    """Run *command*, streaming its merged output to *handle* AND to this process's stdout.
+
+    STREAMED rather than captured and written afterwards, so a step that hangs still leaves in the
+    log what it had printed when somebody killed it. ``stderr`` is merged into ``stdout`` because a
+    reader reconstructing what happened needs the two INTERLEAVED -- a separated stderr puts every
+    ruff diagnostic after every line of pytest output, in an order that never occurred.
+    """
+    handle.write(f'$ {" ".join(command)}\n')
+    with subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        bufsize=1,
+    ) as process:
+        for line in process.stdout or ():
+            handle.write(line)
+            emit(line.rstrip('\n'))
+    handle.flush()
+    return process.returncode
+
+
+def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
+    """Fold the step reports into ONE verdict over the whole verify run.
+
+    THE SELECTOR IS THE STEPS, and it is built from the step NAMES rather than from what they
+    reported -- which is the only way ``silent`` can mean anything. A step that never launched
+    contributes its name to ``selected`` and nothing to ``reported``, so it shows up BY NAME in the
+    shortfall instead of quietly reducing the size of the run.
+
+    Promotion is not decided here and cannot be: this hands the proof and the observed failures to
+    :meth:`~lab_commons.dev.verdict.Result.settled`, which refuses PASS or FAIL over an incomplete
+    proof. The branch below reads that proof rather than second-guessing it, so the only path to a
+    settled result runs through the algebra's own guard.
+    """
+    selected = tuple(dict.fromkeys([report.name for report in reports] + [n for r in reports for n in r.reported]))
+    selector = Selector(spec=spec, node_ids=selected)
+    proof = Proof.of(
+        selector,
+        [name for report in reports for name in report.reported],
+        truncated=[reason for report in reports for reason in report.truncated],
+    )
+    if proof.complete:
+        result = Result.settled(proof=proof, failures=[name for report in reports for name in report.failures])
+    else:
+        result = Result.inconclusive(proof.refusal, proof=proof)
+    return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
+
+
+def run_verify(root: Path, pytest_args: tuple[str, ...] = ()) -> Verdict:
+    """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
+
+    The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
+    refused against a tree that has not yet spent twenty minutes being tested.
+
+    Raises:
+        MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
+        SystemExit: the log came out empty or unreadable, so no verdict may rest on it.
+            :class:`~lab_commons.dev.logref.LogRef` refuses an empty log, and this refuses with it
+            rather than stamping a verdict whose evidence says nothing -- the two are the same
+            decision, made once, where the log is written.
+
+    """
+    allowed = declared_skips(root)
+    directory = root / LOG_DIRECTORY
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
+    reports: list[StepReport] = []
+    with path.open('w', encoding='utf-8') as handle:
+        for name, arguments in RUFF_STEPS:
+            reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
+        handle.write(_PYTEST_BANNER)
+        code = _tee([sys.executable, '-m', 'pytest', *PYTEST_ARGS, *pytest_args], cwd=root, handle=handle)
+    whole = path.read_text(encoding='utf-8', errors='replace')
+    reports.append(read_pytest(whole.rpartition(_PYTEST_BANNER)[2], returncode=code, allowed_skips=allowed))
+    try:
+        log = LogRef.of(path)
+    except UnverifiableLog as exc:
+        raise SystemExit(f'verify wrote no usable log: {exc}') from exc
+    return build_verdict(
+        tuple(reports),
+        tree=content_address(root, MEASURED_TARGETS),
+        env=env_key(env_manifest()),
+        spec=' '.join(('verify', *pytest_args)),
+        log=log,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m lab_commons.dev.verify [-- pytest args]``. Returns the process exit code.
+
+    Output goes through :func:`lab_commons.log.emit` rather than ``print``: this family never
+    waives ruff's T201, and ``emit`` is the shared one-line idiom that exists for exactly this --
+    a CLI tool whose stdout IS the product. No module in ``lab_commons`` calls ``print``, and this
+    one does not become the first.
+
+    A :class:`~lab_commons.dev.reports.MalformedAllowance` is turned into a one-line refusal here
+    rather than allowed to reach the terminal as a traceback: the reader of that message is the
+    person who typed the declaration, and a stack trace tells them about this module instead. It
+    exits INCONCLUSIVE, because nothing was measured.
+    """
+    parser = argparse.ArgumentParser(
+        prog='python -m lab_commons.dev.verify',
+        description='Run ruff check, ruff format --check and pytest, and print a citable verdict.',
+        epilog='Exit codes: 0 pass, 1 fail (the failures are named), 2 inconclusive (the run cannot say).',
+    )
+    parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
+    parsed = parser.parse_args(argv)
+    try:
+        verdict = run_verify(project_root(), tuple(parsed.pytest_args))
+    except MalformedAllowance as exc:
+        emit(f'verify refuses to run: {exc}', err=True)
+        return EXIT_CODES[Outcome.INCONCLUSIVE]
+    verdict.stamp()
+    emit('')
+    emit(verdict.line())
+    emit(f'verify: {verdict.result.render()}')
+    for failure in verdict.result.failures:
+        emit(f'  failed: {failure}')
+    return EXIT_CODES[verdict.result.outcome]
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

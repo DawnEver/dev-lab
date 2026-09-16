@@ -7,3 +7,4 @@ dist/
 build/
 .venv/
 src/lab_commons/__version__.py
+.verify/
