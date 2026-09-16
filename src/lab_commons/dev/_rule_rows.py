@@ -318,4 +318,23 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'tests/test_no_name_carries_a_unit.py',
         ),
     ),
+    (
+        'NO-CJK-IN-TRACKED-SOURCE',
+        'No content git tracks may contain a CJK character (Chinese/Japanese/Korean script) -- only '
+        'English letters, digits and symbols, everywhere except `.claude/memory/`, `attic/` and '
+        '`archived/`. A population too large for one commit is a RATCHET, not a reason to loosen the '
+        'rule: an adopting repo declares the files it still carries CJK in as a NAMED SET that may only '
+        'shrink, and a declared file with no CJK left is an ORPHANED waiver, refused exactly like an '
+        'undeclared one.',
+        ('tests/test_dev_cjk.py',),
+    ),
+    (
+        'INJECTED-DOC-WIDTH-CEILING',
+        'A line-COUNT ratchet over always-loaded agent docs is blind to how long each line is, and a '
+        'rewrite can double a page width while lowering its line count and read as an improvement. Every '
+        'document injected into an agent -- `AGENTS.md`/`CLAUDE.md`, `.claude/rules/**` -- is also capped '
+        'per LINE at 120 columns, the same ceiling the family already uses for code, declared as the same '
+        'shrink-only named set the CJK ratchet uses.',
+        ('tests/test_dev_docwidth.py',),
+    ),
 )

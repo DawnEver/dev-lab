@@ -86,6 +86,8 @@ _ENFORCED = {
         guard('tests/test_arch_skips_are_a_named_set.py'),
         guard('tests/test_the_adoption_accounts_for_every_rule.py'),
     ),
+    'INJECTED-DOC-WIDTH-CEILING': (guard('tests/test_dev_docwidth.py'),),
+    'NO-CJK-IN-TRACKED-SOURCE': (guard('tests/test_dev_cjk.py'),),
     'NO-LAZY-IMPORT': (lint('PLC0415'),),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'PUBLIC-SURFACE-DECLARED': (guard('tests/test_arch_public_surface.py'),),

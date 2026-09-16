@@ -1,7 +1,7 @@
 """The unit-token registry, DATA half -- which name segments spell a unit, and which only look like they do.
 
-THE RULE THIS SERVES, in the user's words: "所有 单位必须经过 pint 禁止任何这种
---slot-pitch-mm|slot_pitch_mm|conductor-width-mm". Read from first principles, the defect it names is a
+THE RULE THIS SERVES, in the user's words: "all units must go through pint; forbid any spelling
+like this: --slot-pitch-mm|slot_pitch_mm|conductor-width-mm". Read from first principles, the defect it names is a
 BARE NUMBER WHOSE UNIT LIVES IN ITS NAME INSTEAD OF IN ITS VALUE: ``--slot-pitch-mm=12.5`` tells a
 reader the unit and hands pint nothing, so the value stays a unitless float and nothing can convert
 it. While a name MAY carry a unit, spelling the unit into the VALUE stays optional; once the name is

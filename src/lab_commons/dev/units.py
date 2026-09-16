@@ -2,11 +2,11 @@
 
 THE DEFECT, from first principles. ``--slot-pitch-mm=12.5`` tells a reader the unit and hands pint
 nothing: the value is a unitless float, so nothing downstream can convert it, and the unit is
-recoverable only by the reader's memory of the flag's name. The user's ruling -- "所有 单位必须经过
-pint 禁止任何这种 --slot-pitch-mm|slot_pitch_mm|conductor-width-mm" -- bans the SPELLING, and the ban
-is what makes pint non-optional: once a name may not carry a unit, the value is the only place left
-for one. This module is the naming half; :mod:`lab_commons.units` is the pint half. The token table is
-DATA, in :mod:`lab_commons.dev._unit_tokens`, for the same reason
+recoverable only by the reader's memory of the flag's name. The user's ruling -- "all units must go
+through pint; forbid any spelling like this: --slot-pitch-mm|slot_pitch_mm|conductor-width-mm" -- bans
+the SPELLING, and the ban is what makes pint non-optional: once a name may not carry a unit, the value
+is the only place left for one. This module is the naming half; :mod:`lab_commons.units` is the pint
+half. The token table is DATA, in :mod:`lab_commons.dev._unit_tokens`, for the same reason
 ``tests/architecture/docs/test_enforced_registry.py`` keeps its table out of its checks: a table edited
 through the module that reads it drifts away from what it describes.
 

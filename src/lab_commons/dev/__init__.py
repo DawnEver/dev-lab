@@ -55,6 +55,19 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   identifier whose trailing segment spells a unit, because the unit belongs in the VALUE (see
   :func:`lab_commons.units.quantity_parser`). It reports the token set it searched for, so finding
   nothing is distinguishable from searching for nothing.
+* :mod:`lab_commons.dev.cjk` — the family's ONE "no CJK in tracked source" guard (user directive,
+  2026-09-16): the scan, the five CJK ranges, the ``.claude/memory/``/``attic/``/``archived/``
+  exemptions and the floor are shared; each adopting repo supplies its own named-set declaration of
+  files still carrying CJK, exactly the shape the suppression ratchet already uses, so a population
+  too large for one commit can be migrated as a ratchet instead of a flat assertion. Re-exported
+  below under ``CJK``-prefixed names because :class:`~lab_commons.dev.units.Scan` and
+  :func:`~lab_commons.dev.units.scan_files` already own the unqualified spellings.
+* :mod:`lab_commons.dev.docwidth` — the family's ONE per-line WIDTH ceiling for every document
+  injected into an agent's context (user directive, 2026-09-16): a line-COUNT ratchet is blind to
+  how long each line is, so this caps columns too, at 120 -- the ceiling every repo already uses for
+  code. The injected-document corpus (``AGENTS.md``/``CLAUDE.md`` by basename, ``.claude/rules/**``,
+  ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
+  named-set declaration as :mod:`lab_commons.dev.cjk`.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
@@ -64,7 +77,30 @@ whether a named mechanism is still LIVE, and the five are the mechanisms an adop
 
 from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
 from lab_commons.dev.boxlock import BOX_POOL, BoxLock
+from lab_commons.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
+from lab_commons.dev.cjk import Occurrence as CJKOccurrence
+from lab_commons.dev.cjk import Scan as CJKScan
+from lab_commons.dev.cjk import VacuousScan as VacuousCJKScan
+from lab_commons.dev.cjk import assert_floor as assert_cjk_floor
+from lab_commons.dev.cjk import ratchet as cjk_ratchet
+from lab_commons.dev.cjk import scan_files as scan_cjk_files
 from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
+from lab_commons.dev.docwidth import (
+    INJECTED_BASENAMES,
+    INJECTED_EXEMPT_PREFIXES,
+    INJECTED_PREFIXES,
+    WIDTH_CEILING,
+    Overwidth,
+    VacuousWidthScan,
+    WidthScan,
+    assert_width_floor,
+    injected_docs,
+    is_injected_doc,
+    line_widths,
+    scan_widths,
+    width_ratchet,
+    width_remedy,
+)
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
 from lab_commons.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
@@ -104,17 +140,25 @@ from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selec
 __all__ = [
     'ABSENT',
     'BOX_POOL',
+    'CJK_RANGES',
     'DEFAULT_IGNORES',
     'DENY_RULES',
     'EXCLUDED_TOKENS',
+    'EXEMPT_PREFIXES',
+    'INJECTED_BASENAMES',
+    'INJECTED_EXEMPT_PREFIXES',
+    'INJECTED_PREFIXES',
     'MARKER',
     'RULES',
     'SCANNED_SUFFIXES',
     'SKIP_CEILING',
     'UNIT_TOKENS',
     'UNREADABLE',
+    'WIDTH_CEILING',
     'Adoption',
     'BoxLock',
+    'CJKOccurrence',
+    'CJKScan',
     'Citation',
     'DenyRule',
     'HookAdoption',
@@ -123,6 +167,7 @@ __all__ = [
     'MalformedAllowance',
     'NotACheckout',
     'Outcome',
+    'Overwidth',
     'Proof',
     'Remedy',
     'RepoProfile',
@@ -134,12 +179,18 @@ __all__ = [
     'UnenforceableRule',
     'UnremediedRule',
     'UnverifiableLog',
+    'VacuousCJKScan',
+    'VacuousWidthScan',
     'Verdict',
     'Violation',
+    'WidthScan',
     'assert_adopted',
+    'assert_cjk_floor',
     'assert_enforceable',
     'assert_registry_sane',
     'assert_shippable',
+    'assert_width_floor',
+    'cjk_ratchet',
     'content_address',
     'declared_skips',
     'denies',
@@ -149,16 +200,23 @@ __all__ = [
     'file_digest',
     'fires',
     'guard',
+    'injected_docs',
     'interpreter_identity',
+    'is_injected_doc',
+    'line_widths',
     'lint',
     'read_pytest',
     'read_ruff',
     'render',
+    'scan_cjk_files',
     'scan_files',
+    'scan_widths',
     'tracked_files',
     'trailing_token',
     'unadopted',
     'unremedied',
     'verify_log',
     'waived',
+    'width_ratchet',
+    'width_remedy',
 ]
