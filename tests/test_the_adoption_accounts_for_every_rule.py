@@ -99,6 +99,10 @@ _ENFORCED = {
     'REFUSAL-NAMES-THE-REMEDY': (
         guard('tests/test_dev_boxwait.py'),
         guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
+        # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates
+        # the process TREE rather than the direct child, and a refusal that must consult the WIDTH
+        # before it may name a tier as the remedy. The boxwait pair covered only the lock's refusal.
+        guard('tests/test_dev_bounded.py'),
     ),
     'PUBLIC-SURFACE-DECLARED': (guard('tests/test_arch_public_surface.py'),),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),

@@ -69,6 +69,58 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`lab_commons.dev.cjk`.
 
+* :mod:`lab_commons.dev.hook_install` — HOOKS-ARE-WIRED, and the half a ``.pre-commit-config.yaml``
+  cannot answer for itself: a configuration DECLARES hooks, ``pre-commit install`` is a separate act
+  on a separate machine, and nothing links the two. Measured 2026-09-16: ``wdg-lab`` and
+  ``optimi-lab`` each declared a full configuration and had ZERO hooks installed. It reports and
+  never repairs itself -- a hooks directory is shared by every worktree of a checkout -- and its
+  refusal names a remedy DERIVED from the configuration rather than restated beside it.
+* :mod:`lab_commons.dev.bounded` — REFUSAL-NAMES-THE-REMEDY, all three halves of it: a wall that
+  terminates the process TREE (``subprocess.run``'s timeout kills only the direct child and then
+  reaps unbounded, which is a hang detector that hangs), the WIDTH a refusal must consult before it
+  may call a run a tier boundary rather than a narrowed box, and the sentence itself -- three
+  states, three DIFFERENT remedies, two of which are wrong in the other's case.
+* :mod:`lab_commons.dev.checkout` — SHARED-CHECKOUT, which both siblings declared absent on the
+  grounds that the push obligation "is a fact about origin, not about any file in this checkout".
+  The premise is true and the conclusion was wrong: git answers "what is here that origin does not
+  have" exactly and without a network call. Measured against the REMOTE and never a local pointer,
+  and with ``git cherry`` rather than ancestry, because those are the two ways this audit has
+  actually been observed to lie.
+* :mod:`lab_commons.dev.githooks` -- the git hook SCRIPTS themselves, shipped as a package payload
+  and reached by NAME (``python -m lab_commons.dev.githooks bump-version``). Not re-exported below,
+  for the same reason ``verify`` is not: it is run rather than imported.
+* :mod:`lab_commons.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
+  subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
+  rather than failing the build or vanishing from it. Not re-exported below: its surface
+  (``Exe``, ``Module``, ``run``, ``build_all``) is generic enough that the unqualified spellings
+  belong to the module rather than to the package.
+* :mod:`lab_commons.dev.quantity_values` -- the VALUE half of the units rule, and the reason it is a
+  second module rather than a wider ``units``: a scan that refuses a unit-spelling NAME rewards the
+  LOSSY repair, because deleting the suffix silences it and records the unit nowhere. This proves
+  the unit reached the VALUE instead, and ``migration_conflicts`` refuses a key that sits in both
+  the unconverted-name waiver and the declared registry, so the waiver's exit leads somewhere.
+* :mod:`lab_commons.dev.boxwait` -- the adoption half of ``boxlock``: what a dev tier DOES when it
+  finds the box held. Three answers are wrong (start anyway, refuse instantly, block forever) and
+  this is the fourth -- queue on a DEADLINE, say who you are waiting for while you wait, and refuse
+  NAMING the holder when the deadline passes. Separate from ``verify`` because verify is one adopter
+  and not the only one.
+* :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
+  STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
+  mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
+  stored anchors. It reads ``sys.prefix`` of the invoking interpreter, which is what makes the
+  sibling-repo false positive structurally impossible rather than merely fixed.
+* :mod:`lab_commons.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
+  repo's ``docs-src/dev/``, with the pointer table a consuming repo RENDERS instead of copying. The
+  prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under
+  ``src/`` -- so what ships is the table of contents, which is the half that rots when four repos
+  hand-maintain it. Not re-exported below: ``PAGES`` and ``Page`` are exactly the kind of
+  unqualified spelling that stops saying what it is once it is flattened into a namespace this wide.
+
+THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
+short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
+flattening them into one namespace beside :data:`lab_commons.dev.content.ABSENT` would leave a
+reader guessing which of two unrelated answers they are holding. Import them by module.
+
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,
 suppression ratchet, module-size alarm, enforced-mechanism registry, duplication ratchet). They take
 a ``RepoProfile`` and are the next layer. :mod:`lab_commons.dev.rules` is NOT that layer: it resolves

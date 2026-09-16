@@ -224,9 +224,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'the only shared medium, pushing is the obligation rather than the last step of landing, and a '
         'verdict cannot be delegated to someone who cannot see the code.',
         (
-            'tests/architecture/repo/test_a_working_lane_is_visible_on_origin.py',
-            'tests/architecture/repo/test_one_session_owns_one_pushable_branch.py',
-            'tests/architecture/repo/test_a_fresh_worktree_is_importable.py',
+            # THE SHARED MECHANISM FIRST, and that ordering is the correction of 2026-09-16: the
+            # three rows this replaces named motronics paths, which resolve in exactly one checkout
+            # on earth, so the registry's own docstring already called it "a shared row that grades
+            # every repo against one repo's paths". `dev.checkout` asks git the question in any of
+            # them.
+            'src/lab_commons/dev/checkout.py',
+            'tests/test_dev_checkout.py',
         ),
     ),
     (
@@ -246,9 +250,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'split or parallelise, never raise it -- and kill a process TREE by its ROOT pid, since stopping a '
         'wrapper leaves its children running.',
         (
-            'scripts/gate/runner.py',
-            'tests/architecture/gate/test_every_repo_check_has_a_runner.py',
-            'tests/architecture/gate/test_the_reaper_never_calls_an_unreadable_box_clean.py',
+            # The bounded wait, the width the refusal must consult before it names a remedy, and
+            # the ONE tree killer -- all three shared, so the citation is true in every checkout.
+            'src/lab_commons/dev/bounded.py',
+            'src/lab_commons/proc.py',
+            'tests/test_dev_bounded.py',
         ),
     ),
     (
@@ -282,8 +288,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'absent from the directory the tool actually consults must FAIL LOUDLY rather than sit there '
         'reading as protection.',
         (
-            'scripts/repo/check_hooks_installed.py',
-            'tests/architecture/gate/test_the_declared_hooks_are_installed.py',
+            'src/lab_commons/dev/hook_install.py',
+            'tests/test_dev_hook_install.py',
         ),
     ),
     (
