@@ -32,6 +32,7 @@ EXIT CODES, and the two non-zero ones are DIFFERENT ON PURPOSE:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -146,11 +147,31 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
     """Run *command*, streaming its merged output to *handle* AND to this process's stdout.
 
     STREAMED rather than captured and written afterwards, so a step that hangs still leaves in the
-    log what it had printed when somebody killed it. ``stderr`` is merged into ``stdout`` because a
-    reader reconstructing what happened needs the two INTERLEAVED -- a separated stderr puts every
-    ruff diagnostic after every line of pytest output, in an order that never occurred.
+    log what it had printed when somebody killed it -- and so a step that is merely SLOW shows
+    progress while it runs, which is the property this function is measured against.
+
+    MEASURED 2026-09-16, on wdg-lab: a run sat 26+ minutes with nothing in its log but the two ruff
+    lines while pytest was genuinely working the whole time, and the log's mtime was frozen. Two
+    defects stacked to produce that, and both are fixed here rather than one:
+
+    * this function wrote each line to *handle* but called ``handle.flush()`` only once, AFTER the
+      loop -- so every line sat in Python's own buffered-file object until the subprocess exited,
+      whatever the file was opened with. Flushing *handle* (and the console stream, via ``emit``'s
+      own ``flush=True``) on every line is what makes the log's mtime move while the step runs.
+    * the CHILD's stdout is fully block-buffered whenever it is not a real terminal, which a pipe
+      never is -- pytest does not override this, so its own progress dots and ``-v`` lines sat in
+      ITS buffer regardless of how eagerly this function read from the pipe. ``PYTHONUNBUFFERED=1``
+      in the child's environment is the fix on the FAR side of the pipe; it is set on every process
+      this function launches, not only the CPython ones, so a native tool that respects it benefits
+      too and one that does not is unaffected.
+
+    ``stderr`` is merged into ``stdout`` because a reader reconstructing what happened needs the two
+    INTERLEAVED -- a separated stderr puts every ruff diagnostic after every line of pytest output,
+    in an order that never occurred.
     """
     handle.write(f'$ {" ".join(command)}\n')
+    handle.flush()
+    env = os.environ | {'PYTHONUNBUFFERED': '1'}
     with subprocess.Popen(
         command,
         cwd=cwd,
@@ -160,11 +181,12 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
         encoding='utf-8',
         errors='replace',
         bufsize=1,
+        env=env,
     ) as process:
         for line in process.stdout or ():
             handle.write(line)
-            emit(line.rstrip('\n'))
-    handle.flush()
+            handle.flush()
+            emit(line.rstrip('\n'), flush=True)
     return process.returncode
 
 

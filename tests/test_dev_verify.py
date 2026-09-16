@@ -20,6 +20,9 @@ against this checkout rather than against a double.
 
 from __future__ import annotations
 
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -35,6 +38,7 @@ from lab_commons.dev.reports import (
 )
 from lab_commons.dev.verdict import Outcome
 from lab_commons.dev.verify import EXIT_CODES, PYTEST_ARGS, build_verdict, project_root
+from lab_commons.dev.verify import _tee as tee_step
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -332,6 +336,57 @@ class TestTheRoot:
         """Refused rather than guessed: a fallback root is a well-formed verdict about another tree."""
         with pytest.raises(SystemExit, match='could not find a git checkout'):
             project_root(tmp_path)
+
+
+class TestTheTee:
+    def test_the_first_line_reaches_the_log_before_the_slow_step_exits(self, tmp_path: Path) -> None:
+        """THE CONTROL FOR THE STREAMING DEFECT, MEASURED 2026-09-16 on wdg-lab.
+
+        A run sat 26+ minutes with nothing in its log but the two ruff lines while pytest was
+        genuinely working the whole time -- the log's mtime was frozen, and settling whether the run
+        was alive needed sampling the process's CPU counter from outside, a diagnosis nobody should
+        need for their own ``verify``. ``.claude/rules/workflow.md`` states the property this test
+        pins: "Tell slow from dead by PROGRESS PER WORKER, never by whether the run as a whole is
+        still writing."
+
+        Asserting only the FINAL log content (the shape every other test in this file uses) passes
+        just as happily against the broken version -- both write everything eventually. So this test
+        watches the log WHILE the step is still running, from a second thread, and requires the
+        first line to appear before the second one is even printed. It plants a real subprocess
+        rather than a fixture, because the defect was in the plumbing (``_tee``'s own flushing and
+        the child's own stdout buffering), not in anything that could be modelled as a string.
+        """
+        script = tmp_path / 'slow_step.py'
+        script.write_text(
+            "import time\nprint('first line', flush=True)\ntime.sleep(1.2)\nprint('second line', flush=True)\n",
+            encoding='utf-8',
+        )
+        log = tmp_path / 'log.txt'
+        seen_first_before_second_printed = False
+
+        def watch() -> None:
+            nonlocal seen_first_before_second_printed
+            deadline = time.monotonic() + 1.1
+            while time.monotonic() < deadline:
+                if log.exists() and 'first line' in log.read_text(encoding='utf-8'):
+                    seen_first_before_second_printed = True
+                    return
+                time.sleep(0.02)
+
+        watcher = threading.Thread(target=watch)
+        with log.open('w', encoding='utf-8') as handle:
+            watcher.start()
+            code = tee_step([sys.executable, str(script)], cwd=tmp_path, handle=handle)
+        watcher.join()
+
+        assert code == 0
+        assert seen_first_before_second_printed, (
+            'the first line must be visible in the log WHILE the step is still running, not only '
+            'after it exits -- a reader watching a slow step must see it, not have to guess'
+        )
+        written = log.read_text(encoding='utf-8')
+        assert 'first line' in written
+        assert 'second line' in written
 
 
 class TestThePlantedControl:
