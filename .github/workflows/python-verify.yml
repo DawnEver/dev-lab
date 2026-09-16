@@ -125,8 +125,28 @@ jobs:
               `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const failed = '${{ needs.verify.result }}' !== 'success';
 
+            // THE LABEL MUST EXIST BEFORE IT IS APPLIED, and this is not defensive noise -- it
+            // is the one link in this chain that had never been exercised. MEASURED 2026-09-16:
+            // neither caller repository has a `ci-failure` label, because no build has gone red
+            // since this job was written, so the first red would have been the first time the
+            // `labels: [label]` below was ever evaluated. Whether the REST API auto-creates a
+            // missing label on issue creation is a detail to look up, not to assume, and the cost
+            // of assuming wrong is precisely the failure this job exists to prevent: a
+            // notification that never arrives while the mechanism reads as working. Created
+            // explicitly, tolerating the 422 that means somebody already made it.
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'b60205',
+                description: 'Opened, updated and closed by CI itself. See .github/workflows.',
+              });
+            } catch (error) {
+              if (error.status !== 422) throw error;   // 422 = already_exists, which is the goal
+            }
+
             // The STABLE KEY is the exact title. Matching on it is what makes this
-            // create-or-update rather than create-every-time.
+            // create-or-update rather than create-every-time. A label filter that matches nothing
+            // returns an empty list rather than a 404, so a first run finds no existing issue and
+            // creates one, which is the intended path.
             const open = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', labels: label, per_page: 100,
             });
