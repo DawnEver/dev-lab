@@ -32,6 +32,7 @@ EXIT CODES, and the two non-zero ones are DIFFERENT ON PURPOSE:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import subprocess
 import sys
@@ -39,12 +40,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
+from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.reports import MalformedAllowance, StepReport, declared_skips, read_pytest, read_ruff
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
 from lab_commons.log import emit
+from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
 __all__ = [
     'EXIT_CODES',
@@ -217,14 +220,31 @@ def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec:
     return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
 
 
-def run_verify(root: Path, pytest_args: tuple[str, ...] = ()) -> Verdict:
+def run_verify(
+    root: Path,
+    pytest_args: tuple[str, ...] = (),
+    *,
+    wait_s: float = WAIT_S,
+    poll_s: float = DEFAULT_POLL_S,
+) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
     The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
     refused against a tree that has not yet spent twenty minutes being tested.
 
+    THE BOX IS HELD ACROSS ALL THREE STEPS and not only pytest, because the measured harm was 194
+    CPU-minutes of a process TREE and ruff over a large tree is not free either.
+
+    IT IS TAKEN AFTER :func:`~lab_commons.dev.reports.declared_skips` AND NOT BEFORE, which is the
+    one place this departs from the plan it implements. That call is documented to run before any
+    step launches so an unparseable declaration is refused against a tree that has not yet spent
+    twenty minutes being tested; acquiring first would make the same refusal arrive up to thirty
+    minutes later, having queued for a box it was never going to use.
+
     Raises:
         MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
+        Exhausted: the box was held by another run for the whole of *wait_s*. Nothing was measured,
+            so there is no verdict to return; :func:`main` renders it as INCONCLUSIVE.
         SystemExit: the log came out empty or unreadable, so no verdict may rest on it.
             :class:`~lab_commons.dev.logref.LogRef` refuses an empty log, and this refuses with it
             rather than stamping a verdict whose evidence says nothing -- the two are the same
@@ -236,7 +256,8 @@ def run_verify(root: Path, pytest_args: tuple[str, ...] = ()) -> Verdict:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
-    with path.open('w', encoding='utf-8') as handle:
+    with contextlib.ExitStack() as box, path.open('w', encoding='utf-8') as handle:
+        hold_the_box(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
         handle.write(_PYTEST_BANNER)
@@ -268,18 +289,38 @@ def main(argv: list[str] | None = None) -> int:
     rather than allowed to reach the terminal as a traceback: the reader of that message is the
     person who typed the declaration, and a stack trace tells them about this module instead. It
     exits INCONCLUSIVE, because nothing was measured.
+
+    :class:`~lab_commons.resources.Exhausted` takes the same route, for the same reason and with the
+    same exit code: another run holds this box, nothing was measured, and INCONCLUSIVE is what a run
+    that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
+    sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
     """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',
         description='Run ruff check, ruff format --check and pytest, and print a citable verdict.',
         epilog='Exit codes: 0 pass, 1 fail (the failures are named), 2 inconclusive (the run cannot say).',
     )
+    parser.add_argument(
+        '--lock-wait-s',
+        type=float,
+        default=WAIT_S,
+        metavar='SECONDS',
+        help=f'ceiling on the wait for this box (default {WAIT_S:.0f}s); 0 checks once and refuses',
+    )
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     parsed = parser.parse_args(argv)
     try:
-        verdict = run_verify(project_root(), tuple(parsed.pytest_args))
+        verdict = run_verify(project_root(), tuple(parsed.pytest_args), wait_s=parsed.lock_wait_s)
     except MalformedAllowance as exc:
         emit(f'verify refuses to run: {exc}', err=True)
+        return EXIT_CODES[Outcome.INCONCLUSIVE]
+    except Exhausted as exc:
+        emit(
+            f'verify: inconclusive -- this box is held and nothing was measured. Held by: '
+            f'{holders_line(exc)}. Wait for it, or stop that holder, then re-run; '
+            f'--lock-wait-s raises or drops the {parsed.lock_wait_s:.0f}s ceiling on the wait.',
+            err=True,
+        )
         return EXIT_CODES[Outcome.INCONCLUSIVE]
     verdict.stamp()
     emit('')

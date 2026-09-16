@@ -23,7 +23,8 @@ from _arch_corpus import ROOT, SOURCE_FLOOR, assert_floor, parse, rel, source_mo
 #: This repo's band. A module past it is refactored, or pinned below with its measurement.
 BAND = 400
 
-#: The debt, MEASURED 2026-09-15: module -> the line count it may not exceed. Each entry is a
+#: The debt, MEASURED 2026-09-15 and re-measured 2026-09-16 when ``resources.py`` gave up its
+#: record-writing half to ``_records.py``: module -> the line count it may not exceed. Each entry is a
 #: refactor that has not happened, not a permission. ``resources.py`` is the standing one; it holds
 #: the broker, the registry and the record in one file and splitting it is its own change.
 DEBT: dict[str, int] = {
@@ -31,11 +32,11 @@ DEBT: dict[str, int] = {
     'src/lab_commons/dev/rules.py': 462,
     'src/lab_commons/dev/units.py': 539,
     'src/lab_commons/proc.py': 509,
-    'src/lab_commons/resources.py': 1564,
+    'src/lab_commons/resources.py': 1536,
 }
 
 #: The ceiling on the escape hatch: total pinned debt in lines. It may only go DOWN.
-DEBT_CEILING = 3482
+DEBT_CEILING = 3454
 
 
 def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:

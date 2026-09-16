@@ -356,4 +356,22 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'has that gap RENDERED, never silently skipped.',
         ('tests/test_dev_dep.py',),
     ),
+    (
+        'ONE-BOX-ONE-LOCK',
+        'A run that saturates the box TAKES the box, through the ONE rendezvous every repo on it can '
+        'reach -- not a lock named in one tree, which a sibling cannot find and therefore cannot obey. A '
+        'lock only one party takes is a tax on whoever obeys it: the party that takes none runs, the '
+        'party that takes one is starved by what it cannot see, and both report a clean verdict. So the '
+        'rendezvous is a PATH, not a mechanism: unifying the mechanism without unifying the path measures '
+        'nothing. When the box is held the run QUEUES on a ceiling, says who it is waiting for while it '
+        'waits, and on the deadline refuses INCONCLUSIVE naming that holder -- starting anyway is the '
+        'harm, refusing instantly is a re-run loop, and blocking forever renders a crash as a hang. A '
+        'recorded holder is identified by more than its pid, because an OS recycles a pid and a reused '
+        'number makes a dead holder immortal.',
+        (
+            'tests/test_two_repos_cannot_both_hold_the_box.py',
+            'tests/test_liveness.py',
+            'tests/test_dev_boxwait.py',
+        ),
+    ),
 )

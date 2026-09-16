@@ -90,7 +90,16 @@ _ENFORCED = {
     'INJECTED-DOC-WIDTH-CEILING': (guard('tests/test_dev_docwidth.py'),),
     'NO-CJK-IN-TRACKED-SOURCE': (guard('tests/test_dev_cjk.py'),),
     'NO-LAZY-IMPORT': (lint('PLC0415'),),
+    'ONE-BOX-ONE-LOCK': (
+        guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
+        guard('tests/test_dev_boxwait.py'),
+        guard('tests/test_liveness.py'),
+    ),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
+    'REFUSAL-NAMES-THE-REMEDY': (
+        guard('tests/test_dev_boxwait.py'),
+        guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
+    ),
     'PUBLIC-SURFACE-DECLARED': (guard('tests/test_arch_public_surface.py'),),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'RATCHET-TWO-SIDES': (
@@ -130,7 +139,6 @@ _ABSENT_REASONS = {
     'IMPLEMENT-EVERYTHING': 'no combination matrix and no accuracy tag: the subject is absent',
     'NETWORK-RETRY-THEN-REPORT': 'nothing here calls a network verb, so a retry wrapper would guard nothing',
     'PRODUCTION-ENTRY-POINT': 'a library with no CLI has no production entry point to reproduce through',
-    'REFUSAL-NAMES-THE-REMEDY': 'no runner and no wait to bound; the remedy half is unmechanised here',
     'RETIRED-NAMES-REGISTERED': 'no retired-spelling registry in this tree yet',
     'SHARED-CHECKOUT': 'the push obligation is a fact about origin, not about any file here',
     'UNSUPPORTED-RAISES': 'no capability registry: there is no unsupported combination to refuse',
@@ -138,10 +146,13 @@ _ABSENT_REASONS = {
 
 _ABSENT = frozenset(_ABSENT_REASONS)
 
-#: The ceiling on the absent set, MEASURED 2026-09-15 after the raise (it was 27). It may only go
-#: DOWN: closing a gap deletes a name above AND lowers this number, so the number cannot quietly
-#: track an absent set that grew.
-_ABSENT_CEILING = 10
+#: The ceiling on the absent set, MEASURED 2026-09-15 after the raise (it was 27) and lowered to 9
+#: on 2026-09-16 when REFUSAL-NAMES-THE-REMEDY was CLOSED rather than re-described: the reason it
+#: carried -- "no runner and no wait to bound" -- stopped being true the moment ``dev.boxwait`` gave
+#: this repo a bounded wait whose refusal names its holder. It may only go DOWN: closing a gap
+#: deletes a name above AND lowers this number, so the number cannot quietly track an absent set
+#: that grew.
+_ABSENT_CEILING = 9
 
 
 def _adoption() -> Adoption:

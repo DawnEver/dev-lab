@@ -78,11 +78,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'global _run_date',
     ): 'the per-run date is memoized the same way, so a run straddling midnight keeps one folder',
     (
-        'src/lab_commons/resources.py',
-        'PLC0415',
-        'from lab_commons.proc import pid_alive',
-    ): 'the liveness probe is pulled in only when a stale lock is examined, not on every resources import',
-    (
         'src/lab_commons/structured.py',
         'ARG001',
         'def redact_secrets_processor(logger, method_name, event_dict):',
