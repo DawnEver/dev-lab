@@ -13,6 +13,7 @@ strictest form the ratchet can take and this test is the proof it still runs gre
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from pathlib import Path
 from typing import Final
 
@@ -193,3 +194,90 @@ def test_lab_commons_declares_no_cjk_anywhere_it_tracks() -> None:
     scan = scan_files(corpus, root=_ROOT)
     problems = ratchet(scan.occurrences, _DECLARED)
     assert problems == (), 'the CJK ratchet moved:\n  ' + '\n  '.join(problems)
+
+
+def _walk_every_character(
+    text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES
+) -> tuple[tuple[int, int, str], ...]:
+    """The pre-prefilter implementation, kept as the CONTROL the fast path is judged against.
+
+    This is the per-character walk `find_cjk` used before the derived-class prefilter landed,
+    reproduced here rather than imported so the equivalence test compares two INDEPENDENT answers.
+    If it is ever edited to match a new `find_cjk`, the test below stops proving anything -- it is
+    the OLD behaviour on purpose.
+    """
+    found: list[tuple[int, int, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        found.extend((line_no, col, char) for col, char in enumerate(line, start=1) if is_cjk(char, ranges))
+    return tuple(found)
+
+
+def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_path: Path) -> None:
+    """THE EQUIVALENCE PROOF: every case the two implementations must agree about, planted at once.
+
+    The plant is a corpus of four files -- CJK at a known line and column, an EXEMPT file that still
+    carries CJK, an UNDECODABLE file, and a CLEAN file -- because the fast path's whole risk is that
+    it returns the empty tuple for something the walk would have reported.
+
+    THE FLOOR COMES FIRST: the control is asserted to FIND the plant, at the exact line and column,
+    before the two answers are compared. Without it, an equality between two empty tuples would read
+    as success and the prefilter could be skipping everything.
+    """
+    han, full_width_a = chr(0x4E2D), chr(0xFF21)
+    dirty = tmp_path / 'dirty.py'
+    dirty.write_text(f'clean first line\nx = 1  # {han}{full_width_a}\n', encoding='utf-8')
+    exempt = tmp_path / '.claude' / 'memory' / 'note.md'
+    exempt.parent.mkdir(parents=True)
+    exempt.write_text(f'{han} is allowed to live here\n', encoding='utf-8')
+    undecodable = tmp_path / 'blob.bin'
+    undecodable.write_bytes(b'\xff\xfe\x00\x01')
+    clean = tmp_path / 'clean.py'
+    clean.write_text('x = 1  # ascii only, an em dash -- and nothing else\n', encoding='utf-8')
+
+    # THE FLOOR: the control finds the plant, so the equality below is not two empty answers agreeing.
+    control = _walk_every_character(dirty.read_text(encoding='utf-8'))
+    assert control == ((2, 10, han), (2, 11, full_width_a)), control
+    assert _walk_every_character(exempt.read_text(encoding='utf-8')) == ((1, 1, han),)
+    assert _walk_every_character(clean.read_text(encoding='utf-8')) == ()
+
+    for planted in (dirty, exempt, clean):
+        text = planted.read_text(encoding='utf-8')
+        assert find_cjk(text) == _walk_every_character(text), planted.name
+
+    scan = scan_files((dirty, exempt, clean, undecodable), root=tmp_path)
+    assert scan.occurrences == (Occurrence('dirty.py', 2, 10, han), Occurrence('dirty.py', 2, 11, full_width_a))
+    assert scan.exempted == ('.claude/memory/note.md',)
+    assert scan.undecodable == ('blob.bin',)
+    assert scan.files_read == 2
+
+
+def test_the_prefilter_agrees_with_the_control_on_every_declared_range_and_line_boundary() -> None:
+    """The endpoints of every range, and the line boundaries `splitlines()` counts but `\n` does not.
+
+    A regex class is built from the SAME `CJK_RANGES`, so the endpoints are where a derived class and
+    a comparison would first disagree if either were off by one. The boundary characters matter
+    because the detailed pass still uses `splitlines()` to number lines: a form feed or `\u2028` ends
+    a line for it, and a prefilter that numbered lines any other way would shift every column after it.
+    """
+    for lo, hi in CJK_RANGES:
+        for point in (lo - 1, lo, lo + 1, hi - 1, hi, hi + 1):
+            text = f'a{chr(point)}b'
+            assert find_cjk(text) == _walk_every_character(text), hex(point)
+
+    han = chr(0x4E2D)
+    for boundary in ('\n', '\r\n', '\r', '\x0b', '\x0c', '\x1c', '\x85', chr(0x2028)):
+        text = f'first{boundary}second {han} here'
+        assert find_cjk(text) == _walk_every_character(text), repr(boundary)
+
+
+def test_a_custom_range_set_still_drives_the_derived_pattern() -> None:
+    """The prefilter is derived from the ARGUMENT, not from the module constant.
+
+    A caller passing narrower ranges must get the narrower answer -- if the fast path had been built
+    from `CJK_RANGES` unconditionally, this is the call that would silently over-report.
+    """
+    han, hiragana = chr(0x4E2D), chr(0x3042)
+    text = f'{han}{hiragana}'
+    narrow = ((0x4E00, 0x9FFF),)
+    assert find_cjk(text, narrow) == _walk_every_character(text, narrow) == ((1, 1, han),)
+    assert find_cjk(text, [(0x3040, 0x309F)]) == ((1, 2, hiragana),)
