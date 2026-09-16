@@ -137,8 +137,20 @@ def carries_a_unit(text: str) -> bool:
     return quantity is not None and str(quantity.units) != DIMENSIONLESS
 
 
-def _compatible(text: str, reference: str) -> bool:
-    """Whether *text*'s unit converts to *reference*. Assumes :func:`carries_a_unit` already passed."""
+def _converts_to(text: str, reference: str) -> bool:
+    """Whether *text*'s unit converts to *reference*. Assumes :func:`carries_a_unit` already passed.
+
+    NAMED FOR THE QUESTION IT ANSWERS, and it took two goes. It was first written ``_compatible``,
+    borrowing pint's ``is_compatible_with`` spelling, and ``test_arch_one_name_one_definition``
+    refused it: that guard matches its alias markers as SUBSTRINGS, and ``_compat`` is a substring
+    of ``_compatible``. The guard was RIGHT to be loud -- an alias is exactly what it must catch in
+    a package four repos import -- and this predicate was never an alias, so the fix is the name.
+
+    ``_has_dimension_of`` was the intermediate spelling and is the one name this module may not
+    use: its whole argument is that DIMENSIONALITY is the wrong question, because pint calls an
+    angle dimensionless and ``Q_('1.6').is_compatible_with('rad')`` is True. A helper called
+    "has dimension of" invites the next reader to re-derive the check this module exists to refute.
+    CONVERTIBILITY is what is actually asked, so that is what it is called."""
     quantity = parse_quantity(text)
     if quantity is None:
         return False
@@ -208,7 +220,7 @@ def scan_toml_values(
                 violations.append(QuantitySite(name, key, repr(value), 'bare-number'))
             elif not carries_a_unit(value):
                 violations.append(QuantitySite(name, key, repr(value), 'no-unit'))
-            elif not _compatible(value, reference):
+            elif not _converts_to(value, reference):
                 violations.append(QuantitySite(name, key, repr(value), 'wrong-unit'))
     return ValueScan(tuple(violations), files_read, frozenset(seen), tuple(unreadable))
 
