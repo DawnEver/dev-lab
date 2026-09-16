@@ -351,14 +351,32 @@ class TestTheTee:
 
         Asserting only the FINAL log content (the shape every other test in this file uses) passes
         just as happily against the broken version -- both write everything eventually. So this test
-        watches the log WHILE the step is still running, from a second thread, and requires the
-        first line to appear before the second one is even printed. It plants a real subprocess
-        rather than a fixture, because the defect was in the plumbing (``_tee``'s own flushing and
-        the child's own stdout buffering), not in anything that could be modelled as a string.
+        watches the log WHILE the step is still running, from a second thread. It plants a real
+        subprocess rather than a fixture, because the defect was in the plumbing (``_tee``'s own
+        flushing and the child's own stdout buffering), not in anything that could be modelled as a
+        string.
+
+        THE ASSERTION IS AN ORDERING, NOT A DEADLINE, and that is deliberate. It used to be a 1.1s
+        watch against a 1.2s sleep -- a 100ms wall-clock margin, on a box that routinely runs
+        several gates at once, and it flaked there once already. A margin that thin does not measure
+        streaming, it measures scheduler luck, and a flaky guard is a guard somebody disables. So
+        the child now BLOCKS on a sentinel file that the watcher writes only after it has SEEN the
+        first line in the log: the step cannot exit until that observation has happened, so no
+        timing holds the property up. The bound that remains is a generous liveness stop, not the
+        property -- against the buffered version the first line never lands while the child runs,
+        the watcher releases the child anyway so the test terminates instead of hanging, and the
+        flag it failed to set is what reds.
         """
         script = tmp_path / 'slow_step.py'
+        release = tmp_path / 'release'
         script.write_text(
-            "import time\nprint('first line', flush=True)\ntime.sleep(1.2)\nprint('second line', flush=True)\n",
+            'import pathlib, time\n'
+            "print('first line', flush=True)\n"
+            f'release = pathlib.Path({str(release)!r})\n'
+            'deadline = time.monotonic() + 10.0\n'
+            'while not release.exists() and time.monotonic() < deadline:\n'
+            '    time.sleep(0.02)\n'
+            "print('second line', flush=True)\n",
             encoding='utf-8',
         )
         log = tmp_path / 'log.txt'
@@ -366,12 +384,13 @@ class TestTheTee:
 
         def watch() -> None:
             nonlocal seen_first_before_second_printed
-            deadline = time.monotonic() + 1.1
+            deadline = time.monotonic() + 10.0
             while time.monotonic() < deadline:
                 if log.exists() and 'first line' in log.read_text(encoding='utf-8'):
                     seen_first_before_second_printed = True
-                    return
+                    break
                 time.sleep(0.02)
+            release.write_text('go', encoding='utf-8')
 
         watcher = threading.Thread(target=watch)
         with log.open('w', encoding='utf-8') as handle:
