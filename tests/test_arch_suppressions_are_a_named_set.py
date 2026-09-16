@@ -48,10 +48,21 @@ from _arch_corpus import ROOT, SOURCE_FLOOR, TEST_FLOOR, assert_floor, rel, sour
 Site = tuple[str, str, str]
 
 #: EVERY suppression this repo allows, each with the reason it is allowed to exist.
-#: MEASURED 2026-09-16: 8 sites across 5 modules under ``src/``, 5 across 3 modules under ``tests/``
+#: MEASURED 2026-09-16: 8 sites across 5 modules under ``src/``, 6 across 4 modules under ``tests/``
 #: (three source lines, two of which silence two rules each), and 0 per-file ignores in
 #: ``pyproject.toml``.
+#:
+#: THE ``src/`` COUNT ALREADY SAID 5 MODULES WHILE THE TABLE HELD 4, and that is worth a line here.
+#: ``3cce383`` added a marker in ``docsite.py`` and one in ``test_dev_githooks.py`` and declared
+#: neither, so this guard had been red since -- found on 2026-09-16 by a verify for an unrelated fix.
+#: The COUNT was right and the TABLE was wrong, the direction this file's own docstring warns about,
+#: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
+    (
+        'src/lab_commons/dev/docsite.py',
+        'arg-type',
+        'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
+    ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
     (
         'src/lab_commons/log.py',
         'PLW0603',
@@ -87,6 +98,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLW0603',
         'global _structlog_configured',
     ): 'one-shot process-wide structured-logging configuration, the same idempotence flag as log.py',
+    (
+        'tests/test_dev_githooks.py',
+        'PLC0415',
+        'import os',
+    ): 'one helper needs the AMBIENT environment; a module-level import reads a monkeypatched one',
     (
         'tests/test_em.py',
         'F401',
