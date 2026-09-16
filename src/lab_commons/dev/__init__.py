@@ -46,6 +46,11 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   prose cannot enter the registry; at adoption, so a repo cannot claim a rule it does not enforce;
   and at check time, so a deleted mechanism reds. ``Adoption`` is what makes the registry SHARED
   rather than merely central: a rule's statement is universal, its mechanism lives in one tree.
+* :mod:`lab_commons.dev.hooks` and :mod:`lab_commons.dev.hook_adoption` — the same split one level
+  down, for the machinery that REFUSES a command rather than a design: one row per universal denied
+  shape, each NAMING ITS REMEDY, and a per-repo adoption that supplies the exit. A rule whose remedy
+  does not exist in the adopting repo is not shipped to it at all -- a refusal with no exit gets
+  routed around rather than obeyed, which is the measured lesson these two modules encode.
 * :mod:`lab_commons.dev.units` — the naming half of the units rule: a scan that refuses an
   identifier whose trailing segment spells a unit, because the unit belongs in the VALUE (see
   :func:`lab_commons.units.quantity_parser`). It reports the token set it searched for, so finding
@@ -61,6 +66,8 @@ from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
 from lab_commons.dev.boxlock import BOX_POOL, BoxLock
 from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
+from lab_commons.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
+from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
 from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.profile import NotACheckout, RepoProfile
 from lab_commons.dev.reports import (
@@ -98,6 +105,7 @@ __all__ = [
     'ABSENT',
     'BOX_POOL',
     'DEFAULT_IGNORES',
+    'DENY_RULES',
     'EXCLUDED_TOKENS',
     'MARKER',
     'RULES',
@@ -108,12 +116,15 @@ __all__ = [
     'Adoption',
     'BoxLock',
     'Citation',
+    'DenyRule',
+    'HookAdoption',
     'IncompleteRun',
     'LogRef',
     'MalformedAllowance',
     'NotACheckout',
     'Outcome',
     'Proof',
+    'Remedy',
     'RepoProfile',
     'Result',
     'Rule',
@@ -121,26 +132,33 @@ __all__ = [
     'Selector',
     'StepReport',
     'UnenforceableRule',
+    'UnremediedRule',
     'UnverifiableLog',
     'Verdict',
     'Violation',
     'assert_adopted',
     'assert_enforceable',
     'assert_registry_sane',
+    'assert_shippable',
     'content_address',
     'declared_skips',
+    'denies',
+    'deny_rules',
     'env_key',
     'env_manifest',
     'file_digest',
+    'fires',
     'guard',
     'interpreter_identity',
     'lint',
     'read_pytest',
     'read_ruff',
+    'render',
     'scan_files',
     'tracked_files',
     'trailing_token',
     'unadopted',
+    'unremedied',
     'verify_log',
     'waived',
 ]

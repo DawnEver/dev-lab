@@ -108,10 +108,16 @@ _ENFORCED = {
 #: during a red suite, and a reason makes that repair a sentence somebody has to write.
 _ABSENT_REASONS = {
     'AGENT-GUARD': (
-        'MEASURED 2026-09-15 rather than deferred: of the 12 shared deny rules, the three the '
-        'statement names (a hand-written test invocation, a bare network git verb, a stash) have no '
-        'subject here -- no gate runner to redirect a test line to, no retry wrapper, no worktrees. '
-        'Porting would land 228 lines of hook guarding 4 rules the statement does not name'
+        'HALF-CLOSED 2026-09-16, and the remaining half is NAMED rather than deferred. The rule says '
+        'the refusal is IDENTICAL in every repo that adopts it, and the shared half of that now '
+        'exists here: `lab_commons.dev.hooks` holds the universal rows and this repo supplies its '
+        'own remedies, driven against this tree by '
+        'tests/test_the_deny_adoption_ships_only_remedied_rules.py. What is still absent is the '
+        'INSTALLATION -- no .claude/settings.json here points a PreToolUse matcher at an engine, so '
+        'a bare test line typed in this repo is still not refused. Rendering the rules a repo may '
+        'ship and WIRING them are two changes, and claiming the rule on the first would be the '
+        'declaration that lies. The 2026-09-15 reason (that the rules had no subject here) is now '
+        'false, and was replaced rather than left standing'
     ),
     'BAR-IS-A-CONSTANT': 'no acceptance bar: this library produces no measurement to judge',
     'HOOKS-ARE-WIRED': (

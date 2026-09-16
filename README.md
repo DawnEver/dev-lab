@@ -75,6 +75,47 @@ source repo's `plan-lab-commons-standalone.md` for the full plan.
   still holds its seat. It never evicts another party's run: the only route to a ceiling is
   through the grant that admitted the job.
 
+## Adopting the shared agent deny rules
+
+`lab_commons.dev.hooks` holds one row per UNIVERSAL denied command shape — a hand-written test
+line, a bare `git push`, a stash, a force push, a `--no-verify` push, a raw process kill, a
+worktree with no commit named. Each row states the hazard and **names its remedy**: a rule that
+seals a road with no exit gets routed around rather than obeyed, so a rule whose remedy does not
+exist in your repo is **not shipped to it at all**.
+
+The statement is shared; the remedy is yours. Supply one per rule ID, exactly as
+`lab_commons.dev.rules.Adoption` supplies a mechanism per rule ID:
+
+```python
+# <repo>/scripts/repo/write_deny_rules.py
+from pathlib import Path
+from lab_commons.dev.hooks import Remedy
+from lab_commons.dev.hook_adoption import HookAdoption, render
+
+VERIFY = Remedy(
+    kind='verdict-entry-point',
+    command='python -m lab_commons.dev.verify',
+    allow=r'\blab_commons\.dev\.verify\b',
+    path='src/lab_commons/dev/verify.py',  # resolved against YOUR tracked files
+)
+ADOPTION = HookAdoption(
+    app_name='wdg-lab',
+    remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
+    declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),  # no wrapper, no killer
+)
+Path('.claude/hooks/deny-rules.json').write_text(render(ADOPTION), encoding='utf-8')
+```
+
+Then commit that JSON, point a `PreToolUse` Bash matcher in `.claude/settings.json` at the deny
+engine with the file as `argv[2]`, and have your suite call
+`assert_shippable(ADOPTION, tracked_files(root))` plus a comparison of the committed file against
+`render(ADOPTION)`, so the two halves cannot drift.
+
+The ENGINE — the JavaScript that decides what a shell line will actually execute — is not shipped
+from here: a hook is executed from the repo tree by the agent harness, not imported from a wheel.
+motronics-studio's `.claude/hooks/deny-commands.js` is the reference implementation, and it reads
+exactly the field names `render` emits (`name`, `pattern`, `matches`, `allow`, `reason`).
+
 ## Consumers
 
 - **motronics-studio** — the origin of this code; re-points `core/utils/{config,logger}.py`
