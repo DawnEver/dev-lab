@@ -173,8 +173,15 @@ class TestTheSkipRatchet:
     """
 
     def test_pytest_is_always_asked_to_name_its_skips(self) -> None:
-        """``-rs`` is load-bearing: a count cannot say WHICH test went quiet."""
-        assert '-rs' in PYTEST_ARGS
+        """The skip letter is load-bearing: a count cannot say WHICH test went quiet.
+
+        Asserted as MEMBERSHIP of the report set rather than as the literal ``-rs``, which is what
+        this line used to read. That spelling pinned the whole set to skips-and-nothing-else, so it
+        agreed with a `verify` that never asked pytest to name a failure -- and it went green
+        throughout, because it was checking the flag against itself rather than against what the
+        parser downstream needs. The letters each have their own reason; see `PYTEST_ARGS`.
+        """
+        assert 's' in PYTEST_ARGS[0] and PYTEST_ARGS[0].startswith('-r')
 
     def test_a_declared_skip_lets_the_run_settle(self) -> None:
         assert read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR,)).truncated == ()
@@ -350,6 +357,37 @@ class TestThePlantedControl:
         assert read_pytest(SKIPPING, returncode=0, allowed_skips=()).truncated != (), 'undeclared must refuse'
         stale = read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR, 'tests/planted.py'))
         assert stale.truncated != (), 'a declaration nothing used must refuse'
+
+    def test_the_pytest_flags_ASK_FOR_the_names_every_check_compares(self) -> None:
+        """THE REGRESSION THIS FILE DID NOT CATCH, and the reason it did not.
+
+        Every fixture here hands :func:`read_pytest` a text that ALREADY contains its ``FAILED``
+        lines, so the parser was always tested against output no real invocation produced. The flag
+        that decides whether pytest emits those lines lives in `verify.py` and was never asserted --
+        so `PYTEST_ARGS` could ask for skips alone, and did, and every red run in every repo came
+        back INCONCLUSIVE ("nobody knows") instead of FAIL ("these tests failed"). MEASURED on
+        optimi-lab before the fix: `2 failed, 130 passed` read as `the summary names 2 failure(s)
+        and the output names 0 node id(s)`.
+
+        The lesson is narrow and worth keeping: a parser tested only on synthetic input asserts the
+        SHAPE it was handed, never that anything produces that shape. This closes the gap by pinning
+        the request rather than the response -- `f` and `E` and `s` are each here because a check
+        below compares NAMES, and a name pytest was not asked to print cannot be compared.
+        """
+        assert 'f' in PYTEST_ARGS[0], 'without -rf pytest names no FAILED line and every red run reads INCONCLUSIVE'
+        assert 'E' in PYTEST_ARGS[0], 'without -rE an errored test is counted and never named'
+        assert 's' in PYTEST_ARGS[0], 'without -rs the two-sided skip ratchet has only a number to check'
+        assert PYTEST_ARGS[0].startswith('-r'), 'these letters are only meaningful as a -r report set'
+
+    def test_a_failing_run_settles_as_FAIL_and_names_which_test(self) -> None:
+        """The property the flags buy, asserted end to end rather than trusted.
+
+        A red suite must reach FAIL -- a settled verdict a caller can act on -- and carry the node
+        id with it. If this ever returns INCONCLUSIVE again, the failures stopped being named.
+        """
+        report = read_pytest(FAILING, returncode=1)
+        assert report.truncated == (), f'a plainly-failing run must SETTLE, not truncate: {report.truncated}'
+        assert report.failures, 'a failing run that names no test is the defect the -r set exists to prevent'
 
     def test_a_planted_uncovered_step_cannot_be_promoted(self, log: Path) -> None:
         """The other half of the control, at the verdict level rather than the parser level."""

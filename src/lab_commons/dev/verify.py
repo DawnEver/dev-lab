@@ -76,11 +76,28 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ('ruff format --check .', ('ruff', 'format', '--check', '.')),
 )
 
-#: What pytest is always given, before anything the caller forwards. ``-rs`` is not cosmetic: it is
-#: what makes pytest NAME the skips it would otherwise only count, and the two-sided skip ratchet in
-#: :mod:`lab_commons.dev.reports` cannot be checked against a number. A caller's own ``-r`` adds to
-#: the report set rather than replacing it, so forwarding one cannot silence the skips.
-PYTEST_ARGS: Final[tuple[str, ...]] = ('-rs',)
+#: What pytest is always given, before anything the caller forwards. None of these three letters is
+#: cosmetic; each one makes pytest NAME something it would otherwise only COUNT, and every check in
+#: :mod:`lab_commons.dev.reports` compares names against names. A caller's own ``-r`` adds to the
+#: report set rather than replacing it, so forwarding one cannot silence any of them.
+#:
+#:   ``s``  skips, for the two-sided skip ratchet, which cannot be checked against a number.
+#:   ``f``  FAILURES. **Added 2026-09-16, and its absence was a real defect rather than a missing
+#:          nicety.** With ``-rs`` alone pytest prints no ``FAILED`` line at all, so
+#:          :func:`~lab_commons.dev.reports.read_pytest` saw a summary claiming N failures beside
+#:          ZERO named node ids, fired its own disagreement check, and reported INCONCLUSIVE. Every
+#:          red run in every repo would have come back "nobody knows" instead of "these tests
+#:          failed" -- which is precisely the merge this module's docstring says must never happen,
+#:          committed by the module that forbids it. MEASURED on optimi-lab: `2 failed, 130 passed`
+#:          read as `inconclusive ... the summary names 2 failure(s) and the output names 0 node
+#:          id(s)`.
+#:   ``E``  ERRORS, for the same reason one letter over: an errored test is not a failed one, and a
+#:          count of errors with no names attached is a shortfall nobody can act on.
+#:
+#: The disagreement check that caught this is kept exactly as it is. It was right -- the summary and
+#: the named set genuinely disagreed -- and it is what turned a silent mis-classification into a
+#: loud refusal. The bug was never the check; it was asking pytest for less than the check needs.
+PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs',)
 
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
