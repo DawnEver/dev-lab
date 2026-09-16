@@ -116,6 +116,22 @@ from here: a hook is executed from the repo tree by the agent harness, not impor
 motronics-studio's `.claude/hooks/deny-commands.js` is the reference implementation, and it reads
 exactly the field names `render` emits (`name`, `pattern`, `matches`, `allow`, `reason`).
 
+## The family's mechanism docs
+
+`docs-src/dev/` is the one copy of the development MECHANISM every repo in this family shares —
+how a verdict is produced, how lanes fan out, how a merge lands, what the box rations, how `main`
+is protected. `.claude/rules/**` in each repo stays HARD CONSTRAINTS ONLY; the mechanics are here.
+
+The test for what belongs here has the same shape as the noun test in `lab_commons.dev.rules`:
+**does the document's SUBJECT change when you change repos?** The box, git, the forge and the
+family's process are the family's; a repo's own domain stays home.
+
+A consuming repo POINTS at these pages and never copies one. `lab_commons.dev.devdocs` ships the
+table of contents as data, and `pointer_table(base)` renders the markdown table that repo puts in
+its own dev index, so a page added or renamed here does not leave four hand-typed tables that
+agree for a while. There is no rendered portal for this tree yet — the pages are read as markdown
+from a checkout or from the forge — and that is stated rather than implied.
+
 ## Consumers
 
 - **motronics-studio** — the origin of this code; re-points `core/utils/{config,logger}.py`
