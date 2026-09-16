@@ -343,4 +343,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'shrink-only named set the CJK ratchet uses.',
         ('tests/test_dev_docwidth.py',),
     ),
+    (
+        'ENV-MUTATION-THROUGH-THE-DOOR',
+        'No verdict may cite an environment it did not run in, so a dependency mutation goes through the '
+        'shared door and is decided by STATE -- which environment the invoking interpreter names, and '
+        'whether a verdict is in flight for THAT environment -- never by matching command TEXT. A '
+        'spelling blocklist is both too strict (a read-only query, a sibling environment it cannot touch) '
+        'and too loose (every spelling nobody enumerated), from the one cause that text is not a '
+        'measurement. Mutation DURING a run is PREVENTED by the exclusion, because the key is computed '
+        'when the run ENDS and structurally cannot catch it; mutation BETWEEN runs is DETECTED by the key '
+        'and remedied by RETIRING the verdict anchors. A repo that declares no exclusion or no anchors '
+        'has that gap RENDERED, never silently skipped.',
+        ('tests/test_dev_dep.py',),
+    ),
 )

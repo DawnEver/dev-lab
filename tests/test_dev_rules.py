@@ -47,6 +47,7 @@ _IDS = frozenset(
         'BAR-IS-A-CONSTANT',
         'DECLARATION-LIES',
         'DOCS-SPLIT',
+        'ENV-MUTATION-THROUGH-THE-DOOR',
         'ESCAPE-HATCH-CEILING',
         'FIX-THE-CAUSE',
         'FLOOR-ON-EVERY-SCAN',

@@ -70,6 +70,7 @@ _ENFORCED = {
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_the_adoption_accounts_for_every_rule.py'),
     ),
+    'ENV-MUTATION-THROUGH-THE-DOOR': (guard('tests/test_dev_dep.py'),),
     'FIX-THE-CAUSE': (guard('tests/test_arch_one_name_one_definition.py'),),
     'FLOOR-ON-EVERY-SCAN': (
         guard('tests/test_arch_every_scan_binds_a_floor.py'),
