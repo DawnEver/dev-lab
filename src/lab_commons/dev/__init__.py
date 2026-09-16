@@ -104,7 +104,7 @@ from lab_commons.dev.docwidth import (
 from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
 from lab_commons.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
-from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, verify_log
+from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
 from lab_commons.dev.profile import NotACheckout, RepoProfile
 from lab_commons.dev.quantity_values import (
     DIMENSIONLESS,
@@ -231,6 +231,7 @@ __all__ = [
     'scan_files',
     'scan_toml_values',
     'scan_widths',
+    'stamp_line',
     'tracked_files',
     'trailing_token',
     'unadopted',

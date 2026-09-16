@@ -26,17 +26,39 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-__all__ = ['MARKER', 'Citation', 'LogRef', 'UnverifiableLog', 'verify_log']
+__all__ = ['MARKER', 'Citation', 'LogRef', 'UnverifiableLog', 'stamp_line', 'verify_log']
 
 #: The one marker line a stamped verdict appends to its own log. Grepping for a token rather than
 #: parsing a whole log is deliberate: everything else in the log is prose from whatever ran, and a
 #: reader must not have to know its grammar to find the conclusion.
 MARKER: Final = 'VERDICT '
 
+#: THE READER OF THE GRAMMAR :func:`stamp_line` WRITES, built FROM :data:`MARKER` rather than
+#: beside it, and living in the same module as its producer. It used to spell ``^VERDICT `` as a
+#: regex literal while :meth:`lab_commons.dev.verdict.Verdict.line` pasted :data:`MARKER` into an
+#: f-string of its own -- two spellings of one grammar in two modules, neither obliged to follow
+#: the other when either moved. That is not hypothetical: motronics measured it on 2026-08-21,
+#: when a consumer still grepping the previous stamp matched NOTHING and reported "no verdict" for
+#: every commit, which is indistinguishable from a box where no gate had ever run. The READER
+#: MOVES NEXT TO THE WRITER, so the two cannot drift even in principle.
 _STAMPED: Final = re.compile(
-    r'^VERDICT result=(?P<result>\w+) tree=(?P<tree>\S+) env=(?P<env>\S+) '
+    '^' + re.escape(MARKER) + r'result=(?P<result>\w+) tree=(?P<tree>\S+) env=(?P<env>\S+) '
     r'log=(?P<digest>\S+)@(?P<lines>\d+) selector=(?P<spec>.*)$'
 )
+
+
+def stamp_line(*, result: str, tree: str, env: str, digest: str, lines: int, spec: str) -> str:
+    """The stamped line: the five fields, one per token, greppable and parseable.
+
+    THE WRITER, and it lives beside :data:`_STAMPED`, which is its inverse. Exported so that
+    :meth:`lab_commons.dev.verdict.Verdict.line` keeps no f-string of its own to hold in step --
+    a grammar whose producer is in one module and whose consumer is in another is exactly the
+    drift this pair exists to make impossible.
+
+    ``spec`` is LAST and takes the rest of the line, so a spec containing spaces (a node id list,
+    a path) round-trips without a quoting rule a reader would have to know.
+    """
+    return f'{MARKER}result={result} tree={tree} env={env} log={digest}@{lines} selector={spec}'
 
 
 class UnverifiableLog(RuntimeError):

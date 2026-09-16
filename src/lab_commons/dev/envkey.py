@@ -11,6 +11,14 @@ can describe two different environments; a manifest and a key cannot, because th
 place the environment is read. The same split, for the same reason, as the address in
 :mod:`lab_commons.dev.content`, which is handed its records rather than re-walking its targets.
 
+A GIT INSTALL'S COMMIT RIDES IN THE VERSION STRING, so nothing here reads ``direct_url.json``. pip
+derives ``<declared>+<sha>`` as the installed version of a VCS install, which means the manifest
+line below already distinguishes two checkouts of one declared version, and a second reader over
+the install metadata would be a second description of one fact -- free to disagree with the first,
+with nothing to say which won. This is the one property that kept motronics' own 59-line
+reimplementation of this module alive; it is written down here because a property nobody records
+is one the next reader adds a file to recover.
+
 THE UNREADABLE ROW IS KEPT, NEVER DROPPED. A distribution whose name or version cannot be read --
 a broken ``.dist-info``, an import hook that moved, a permission the reader did not have -- hashes
 identically to a package that is not installed if it is skipped, so a verdict earned WITHOUT it

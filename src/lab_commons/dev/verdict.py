@@ -35,7 +35,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
-from lab_commons.dev.logref import MARKER, LogRef
+from lab_commons.dev.logref import LogRef, stamp_line
 
 __all__ = ['IncompleteRun', 'Outcome', 'Proof', 'Result', 'Selector', 'Verdict']
 
@@ -299,14 +299,21 @@ class Verdict:
             raise ValueError(msg)
 
     def line(self) -> str:
-        """The stamped line: the five fields, one per token, greppable and parseable.
+        """The stamped line, FORMATTED BY :func:`lab_commons.dev.logref.stamp_line`.
 
-        ``selector`` is LAST and takes the rest of the line, so a spec containing spaces (a node id
-        list, a path) round-trips without a quoting rule a reader would have to know.
+        DELEGATED RATHER THAN SPELLED HERE, because the thing that reads this grammar back
+        (:func:`lab_commons.dev.logref.verify_log`) is not in this module: a writer holding its own
+        f-string beside a reader holding its own regex is two copies of one grammar, and the copy
+        is what goes stale. The reader moves next to the writer, so both live in ``logref`` and
+        this method owns no spelling at all.
         """
-        return (
-            f'{MARKER}result={self.result.outcome.value} tree={self.tree} env={self.env} '
-            f'log={self.log.digest}@{self.log.lines} selector={self.selector.spec}'
+        return stamp_line(
+            result=self.result.outcome.value,
+            tree=self.tree,
+            env=self.env,
+            digest=self.log.digest,
+            lines=self.log.lines,
+            spec=self.selector.spec,
         )
 
     def stamp(self) -> None:
