@@ -91,6 +91,14 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
     assert EXEMPT_PREFIXES == ('.claude/memory/', 'attic/', 'archived/')
 
 
+def test_exempted_matches_a_nested_directory_and_not_a_nested_lookalike() -> None:
+    assert exempted('src/motronics/hamilton/.claude/memory/x.md')
+    assert exempted('src/pkg/attic/old.py')
+    assert exempted('rust/.claude/memory/note.md')
+    assert not exempted('src/pkg/notattic/x.py')
+    assert not exempted('src/lab_commons/attic_style/x.py')
+
+
 def test_a_planted_violation_and_a_planted_clean_file_are_told_apart(tmp_path: Path) -> None:
     """THE PLANTED CONTROL, both directions, through the REAL scanner."""
     dirty = tmp_path / 'dirty.py'
@@ -109,6 +117,35 @@ def test_a_planted_violation_and_a_planted_clean_file_are_told_apart(tmp_path: P
     assert [o.path for o in scan.occurrences] == ['dirty.py', 'dirty.py']
     assert scan.exempted == ('.claude/memory/note.md',)
     assert scan.files_read == 2, 'the exempt file must not count towards files_read'
+
+
+def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_not(tmp_path: Path) -> None:
+    """MEASURED on motronics-studio: `.claude/memory/` and `attic/` are not only root directories.
+
+    A root-prefix-only match reported 47,521 CJK characters under `src/motronics/**` that were all
+    inside NESTED memory files (`src/motronics/hamilton/.claude/memory/x.md`). Both directions are
+    planted here: a nested memory file and a nested `attic/` file are exempt, while a nested file
+    that merely starts with the same letters (`notattic/`) is still caught.
+    """
+    nested_memory = tmp_path / 'src' / 'motronics' / 'hamilton' / '.claude' / 'memory' / 'note.md'
+    nested_memory.parent.mkdir(parents=True)
+    nested_memory.write_text(chr(0x4E2D) + chr(0x6587) + ' nested and exempt\n', encoding='utf-8')
+
+    nested_attic = tmp_path / 'src' / 'pkg' / 'attic' / 'old.py'
+    nested_attic.parent.mkdir(parents=True)
+    nested_attic.write_text('x = 1  # ' + chr(0x4E2D) + '\n', encoding='utf-8')
+
+    lookalike = tmp_path / 'src' / 'pkg' / 'notattic' / 'x.py'
+    lookalike.parent.mkdir(parents=True)
+    lookalike.write_text('x = 1  # ' + chr(0x6587) + '\n', encoding='utf-8')
+
+    scan = scan_files((nested_memory, nested_attic, lookalike), root=tmp_path)
+    assert scan.exempted == (
+        'src/motronics/hamilton/.claude/memory/note.md',
+        'src/pkg/attic/old.py',
+    )
+    assert [o.path for o in scan.occurrences] == ['src/pkg/notattic/x.py']
+    assert scan.files_read == 1, 'only the lookalike is real source; both exemptions must not be read'
 
 
 def test_a_binary_file_is_named_undecodable_not_silently_clean(tmp_path: Path) -> None:

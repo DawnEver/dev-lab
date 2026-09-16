@@ -63,6 +63,19 @@ def test_is_injected_doc_matches_the_measured_default_corpus() -> None:
     assert INJECTED_EXEMPT_PREFIXES == ('.claude/memory/',)
 
 
+def test_a_nested_rules_page_is_recognised_and_a_nested_lookalike_is_not() -> None:
+    """MEASURED on motronics-studio: `.claude/rules/` pages are SCOPED per module, not root-only.
+
+    `src/motronics/hamilton/.claude/rules/femm.md`, `scripts/.claude/rules/scripts.md` and every
+    `src/motronics/*/.claude/rules/MEMORY.md` are real injected pages a root-only prefix would miss
+    entirely -- the width ceiling would then cover nothing that repo actually injects.
+    """
+    assert is_injected_doc('src/motronics/hamilton/.claude/rules/femm.md')
+    assert is_injected_doc('scripts/.claude/rules/scripts.md')
+    assert not is_injected_doc('src/motronics/hamilton/.claude/memory/note.md')
+    assert not is_injected_doc('src/pkgnot.claude/rules/x.md'), 'the prefix must start a path segment'
+
+
 def test_the_exemption_is_checked_before_the_prefix_even_when_both_would_match() -> None:
     assert not is_injected_doc('.claude/memory/x.md', prefixes=('.claude/memory/',))
 

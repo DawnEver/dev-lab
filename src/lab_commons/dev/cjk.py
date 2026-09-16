@@ -98,6 +98,16 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 
 #: Where CJK is permitted without a declaration. DATA, not a literal scattered through the scan, so
 #: an adopting repo can read what it inherited rather than re-deriving it from behaviour.
+#:
+#: MATCHED AS A PATH SEGMENT, ANYWHERE IN THE PATH -- NOT ONLY AT THE ROOT, and this is measured
+#: rather than a stylistic choice: motronics-studio's memory tree is SCOPED per module
+#: (``src/motronics/hamilton/.claude/memory/``, ``src/motronics/core/.claude/memory/``,
+#: ``rust/.claude/memory/``) and its `attic/` holds one subtree per migrated repo
+#: (``attic/motor_solver/``). A root-prefix-only match on that tree reported 47,521 CJK characters
+#: under ``src/motronics/**`` when the real answer is zero -- every one of them was a nested memory
+#: file the prefix test could not see, which would have made ``NO-CJK-IN-TRACKED-SOURCE``
+#: unadoptable there: the declared set would have had to name thousands of memory files, burying any
+#: real violation among them. See :func:`exempted` for the match itself.
 EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('.claude/memory/', 'attic/', 'archived/')
 
 
@@ -154,8 +164,16 @@ def find_cjk(text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES) -> tup
 
 
 def exempted(name: str, prefixes: Collection[str] = EXEMPT_PREFIXES) -> bool:
-    """Whether *name* (a repo-relative POSIX path) sits under one of *prefixes*."""
-    return any(name.startswith(prefix) for prefix in prefixes)
+    """Whether *name* (a repo-relative POSIX path) sits under one of *prefixes* ANYWHERE in the path.
+
+    Each *prefix* is checked both at the ROOT (``name.startswith(prefix)``) and as a SEGMENT nested
+    deeper (``f'/{prefix}'`` appearing in *name*), because ``attic/`` and ``.claude/memory/`` are not
+    only repo-root directories in this family -- see :data:`EXEMPT_PREFIXES` for the measured tree
+    that made a root-only match wrong. The leading ``/`` in the nested check is what keeps
+    ``notattic/x`` from matching ``attic/``: the prefix must start a path SEGMENT, not merely appear
+    as a substring.
+    """
+    return any(name.startswith(prefix) or f'/{prefix}' in name for prefix in prefixes)
 
 
 def _named(path: Path, base: Path | None) -> str:

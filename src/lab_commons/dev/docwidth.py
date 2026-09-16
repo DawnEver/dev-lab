@@ -110,6 +110,21 @@ class WidthScan:
         return iter(self.overwidth)
 
 
+def _under(name: str, prefixes: Collection[str]) -> bool:
+    """Whether *name* sits under one of *prefixes* ANYWHERE in the path, not only at the root.
+
+    Checked both at the root (``name.startswith(prefix)``) and as a nested SEGMENT
+    (``f'/{prefix}'`` in *name*), for the same measured reason as
+    :func:`lab_commons.dev.cjk.exempted`: motronics-studio's ``.claude/rules/`` pages are SCOPED per
+    module (``src/motronics/hamilton/.claude/rules/femm.md``, ``scripts/.claude/rules/scripts.md``,
+    every ``src/motronics/*/.claude/rules/MEMORY.md``), and a root-only prefix would silently miss
+    every one of them -- the width ceiling would then cover nothing that repo actually injects. The
+    leading ``/`` is what keeps ``notrules/x`` from matching ``rules/``: the prefix must start a path
+    SEGMENT.
+    """
+    return any(name.startswith(prefix) or f'/{prefix}' in name for prefix in prefixes)
+
+
 def is_injected_doc(
     name: str,
     *,
@@ -120,13 +135,15 @@ def is_injected_doc(
     """Whether *name* (a repo-relative POSIX path) is a document this family injects into an agent.
 
     Exemption is checked FIRST, so ``.claude/rules/memory/x.md``-shaped paths cannot be reached by
-    widening the prefix set without a corresponding, deliberate narrowing of the exemption.
+    widening the prefix set without a corresponding, deliberate narrowing of the exemption. Both the
+    exemption and the prefix are matched as a path SEGMENT anywhere in *name* (:func:`_under`), never
+    only at the root -- see its docstring for the measured nested-page layout that requires this.
     """
-    if any(name.startswith(prefix) for prefix in exempt_prefixes):
+    if _under(name, exempt_prefixes):
         return False
     if Path(name).name in basenames:
         return True
-    return any(name.startswith(prefix) for prefix in prefixes)
+    return _under(name, prefixes)
 
 
 def injected_docs(
