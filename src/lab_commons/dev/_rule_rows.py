@@ -316,6 +316,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'tests/test_dev_units.py',
             'tests/test_no_name_carries_a_unit.py',
+            # THE VALUE HALF, added 2026-09-16. The clause above about renaming-without-typing was
+            # STATED here and enforced by nothing, so the name scan's cheapest green was the lossy
+            # repair it warns against. `lab_commons.dev.quantity_values` is the mechanism, and it is
+            # listed on THIS row rather than under a new ID because the row already argues the two
+            # halves are one rule.
+            'tests/test_dev_quantity_values.py',
         ),
     ),
     (
