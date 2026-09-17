@@ -135,6 +135,24 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   there is none -- the pairs that forbid it are named. Not re-exported below: ``interleave``,
   ``ratio`` and ``crossover`` say nothing about their subject once flattened.
 
+* :mod:`lab_commons.dev.testfacts` -- what a test FILE declares about itself, read from the AST and
+  never by collecting: collection IMPORTS, and a module that discovers a live engine at import scope
+  starts one, so a census that collects starts MATLAB to find out whether a test starts MATLAB. Marks,
+  ``timeout`` literals and ``test_``-prefixed functions are facts about PYTEST and are shared; which
+  marks name a vendor, which paths a tier claims and what its wall is arrive as PREDICATES the
+  consumer supplies. The partition is first-match-wins with a REQUIRED residual bucket, because the
+  population that matched nothing -- in a slow tier for no reason any code can read -- is the reading
+  the whole instrument exists for. Not re-exported below: ``collect`` and ``census`` say nothing about
+  their subject once flattened.
+* :mod:`lab_commons.dev.selfbuild` -- the one environment mutation that is NOT a dependency change:
+  installing a wheel this workspace built from the checkout you are standing in. It composes with
+  :mod:`~lab_commons.dev.dep` rather than repeating it -- that door decides WHEN an environment may
+  move, this one decides WHOSE wheel may go through it in :attr:`~lab_commons.dev.dep.Mode.PINNED`.
+  Without the ownership half, ``--no-index`` is a safety catch on a loaded gun: it stops an index
+  being read and says nothing at all about ``pip install ./somebody-elses.whl``. The set of
+  distributions a workspace builds is READ from the manifests the caller hands in, never spelled in a
+  guard, and an empty set refuses everything rather than comparing vacuously. Not re-exported below.
+
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
 flattening them into one namespace beside :data:`lab_commons.dev.content.ABSENT` would leave a
