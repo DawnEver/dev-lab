@@ -100,6 +100,7 @@ import ast
 import json
 import re
 import tomllib
+from collections import deque
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -393,12 +394,16 @@ def _locate(lines: Sequence[str], names: Iterable[str], pattern: str) -> Iterato
                 yield number, name, False
 
 
+_CALLABLES: Final = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+
+
 def _python_signatures(text: str) -> Iterator[_Signature]:
     """The names this module reads out of Python -- parameters, declared fields, and flag literals.
 
-    The two scopes are separated by SUBTRACTION rather than by a scope-aware walk: every assignment
-    inside a function is collected first and then skipped, which answers "is this a module/class
-    field" without a second visitor to keep in step with this one.
+    The two scopes are separated by a flag carried DOWN one descent: an assignment is local when some
+    ancestor is in :data:`_CALLABLES`, decorators and annotations included. That is the membership the
+    old shape built by SUBTRACTION, at a different VISIT COUNT: re-walking every enclosing callable to
+    build the set visited a nested function once per callable containing it, and then walked to yield.
 
     This is the one reader that can answer the carve-out, and it can because it reads an AST: an
     annotation and a right-hand side both survive the parse, and neither survives in the source text a
@@ -406,37 +411,32 @@ def _python_signatures(text: str) -> Iterator[_Signature]:
     comments, so ``GAP_MM = 1.0  # was Q_(1.0, 'mm')`` has a ``Constant`` for a value and no quantity
     anywhere in the tree.
     """
-    tree = ast.parse(text)
-    callables = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
-    local = {
-        id(inner)
-        for outer in ast.walk(tree)
-        if isinstance(outer, callables)
-        for inner in ast.walk(outer)
-        if isinstance(inner, (ast.Assign, ast.AnnAssign))
-    }
-    for node in ast.walk(tree):
+    pending: deque[tuple[ast.AST, bool]] = deque([(ast.parse(text), False)])
+    while pending:
+        node, local = pending.popleft()
+        below = local or isinstance(node, _CALLABLES)
+        for field in node._fields:  # the children ``ast.iter_child_nodes`` yields, without its frame
+            value = getattr(node, field, None)
+            children = value if type(value) is list else (value,)
+            pending.extend((item, below) for item in children if isinstance(item, ast.AST))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             arguments = node.args
             every = (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg)
             for argument in every:
                 if argument is not None:
                     yield argument.lineno, argument.arg, _exempt_annotation(argument.annotation)
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and id(node) not in local:
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and not local:
             exempt = _exempt_assignment(node)
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
+            for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
                 for leaf in ast.walk(target):
                     if isinstance(leaf, ast.Name):
-                        # One answer for the whole statement, applied to every target: a chained
-                        # assignment binds them all to the same value, so they cannot differ.
+                        # One answer per statement: a chained assignment binds every target to the
+                        # same value, so they cannot differ.
                         yield leaf.lineno, leaf.id, exempt
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             literal = _FLAG.fullmatch(node.value)
             if literal is not None:
-                # The ARGUMENT half is dropped from the record: a reader greps for the flag, and
-                # `--slot-pitch-mm` is the name the definition site writes. A flag is a spelling in a
-                # string rather than a binding, so there is nothing that could prove a quantity.
+                # The ARGUMENT half is dropped: a flag in a string is not a binding to prove.
                 yield node.lineno, literal.group(0).split('=', 1)[0], False
 
 

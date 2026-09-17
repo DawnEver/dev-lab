@@ -23,6 +23,7 @@ exemption is USED, so the day these literals move the exemption has to move with
 
 from __future__ import annotations
 
+import ast
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -626,3 +627,140 @@ def test_the_module_declares_its_public_surface() -> None:
     }
     for name in units.__all__:
         assert hasattr(units, name), f'{name} is exported and does not exist'
+
+
+def _subtract_enclosing_scopes(text: str) -> tuple[units._Signature, ...]:
+    """The pre-single-descent implementation, kept as the CONTROL the one-pass reader is judged against.
+
+    This is how :func:`~lab_commons.dev.units._python_signatures` decided module/class scope before
+    the single descent landed: a full ``ast.walk`` per ENCLOSING callable to collect the assignments
+    that are function-local, then a second full ``ast.walk`` to yield. It is reproduced here rather
+    than imported so the equivalence test below compares two INDEPENDENT answers. If it is ever
+    edited to match a new ``_python_signatures``, this test stops proving anything -- it is the OLD
+    behaviour on purpose, and its cost (a nested function re-walked once per callable containing it)
+    is the whole reason the new one exists.
+    """
+    tree = ast.parse(text)
+    callables = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+    local = {
+        id(inner)
+        for outer in ast.walk(tree)
+        if isinstance(outer, callables)
+        for inner in ast.walk(outer)
+        if isinstance(inner, (ast.Assign, ast.AnnAssign))
+    }
+    found: list[units._Signature] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            arguments = node.args
+            every = (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg)
+            found.extend(
+                (argument.lineno, argument.arg, units._exempt_annotation(argument.annotation))
+                for argument in every
+                if argument is not None
+            )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and id(node) not in local:
+            exempt = units._exempt_assignment(node)
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                found.extend((leaf.lineno, leaf.id, exempt) for leaf in ast.walk(target) if isinstance(leaf, ast.Name))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            literal = units._FLAG.fullmatch(node.value)
+            if literal is not None:
+                found.append((node.lineno, literal.group(0).split('=', 1)[0], False))
+    return tuple(found)
+
+
+#: Every scope shape the two readers must agree about, in ONE module: a nested callable three deep, a
+#: name shadowed in an inner scope, a comprehension, a lambda (with a unit-suffixed DEFAULT, which the
+#: old code reached through the lambda's own subtree), a class body inside a function, an async def,
+#: and -- the opposite direction -- a module constant and a class field that are NOT local and must
+#: still be reported. The exempt carve-out is planted in both scopes so a change of scope decision
+#: cannot hide behind it.
+_SCOPE_CORPUS = """\
+GAP_MM = 1.0
+
+
+class Stator:
+    slot_width_mm: float = 2.0
+    proven_mm = Q_(2.0, 'mm')
+
+    def method(self, tooth_mm: float) -> None:
+        inner_mm = 3.0
+
+        def nested(depth_mm: int) -> None:
+            deeper_mm = 4.0
+
+            def deepest(leaf_mm: int) -> None:
+                bottom_mm = 5.0
+                shadowed_mm = 6.0
+
+            shadowed_mm = 7.0
+
+        shadowed_mm = 8.0
+
+
+async def outer(edge_mm: float) -> None:
+    lengths_mm = [item_mm for item_mm in range(3)]
+    scale_mm = lambda span_mm=9.0: span_mm
+
+    class Local:
+        body_mm = 10.0
+
+        def deep(self, arg_mm: float) -> None:
+            local_mm = 11.0
+
+    chained_mm = also_mm = 12.0
+    typed_mm: float = Q_(13.0, 'mm')
+"""
+
+
+def test_the_single_descent_reports_exactly_what_the_enclosing_scope_walk_reported() -> None:
+    """THE EQUIVALENCE PROOF: every scope shape the two readers must agree about, planted at once.
+
+    The risk the single descent carries is entirely in WHICH assignments it calls function-local: a
+    flag carried down the tree instead of a set built by re-walking each enclosing callable. So the
+    plant is scope shapes, not names -- nesting three deep, the same name bound at three different
+    depths, a comprehension, a lambda default, a class body inside a function, an async def.
+
+    THE FLOOR COMES FIRST: the control is asserted to find the module constant and the class fields
+    and to find NONE of the function-local names, before the two answers are compared. Without it an
+    equality between two empty tuples would read as success and the descent could be skipping
+    everything.
+    """
+    control = _subtract_enclosing_scopes(_SCOPE_CORPUS)
+    names = [name for _, name, _ in control]
+
+    # THE FLOOR, both directions: what module/class scope declares is reported...
+    assert 'GAP_MM' in names
+    assert 'slot_width_mm' in names
+    assert 'proven_mm' in names
+    # ...and every assignment REACHABLE from a callable is not, at any depth or in any inner scope --
+    # a class body nested inside a function included, which is the one answer here that reads as a
+    # surprise and is the control's, not this test's: `body_mm` is inside `outer`.
+    for local_name in ('inner_mm', 'deeper_mm', 'bottom_mm', 'shadowed_mm', 'lengths_mm', 'local_mm', 'body_mm'):
+        assert local_name not in names, local_name
+    for local_name in ('chained_mm', 'also_mm', 'typed_mm', 'scale_mm'):
+        assert local_name not in names, local_name
+    # Parameters ARE reported at every depth, including a lambda's -- the two readers must agree there too.
+    for parameter in ('tooth_mm', 'depth_mm', 'leaf_mm', 'edge_mm', 'arg_mm'):
+        assert parameter in names, parameter
+    # The carve-out is exercised on both sides of the decision.
+    assert (6, 'proven_mm', True) in control
+    assert (5, 'slot_width_mm', False) in control
+
+    assert tuple(units._python_signatures(_SCOPE_CORPUS)) == control
+
+
+def test_the_single_descent_agrees_with_the_control_on_this_repository() -> None:
+    """The planted corpus is what the two must agree about; this is every shape nobody thought to plant.
+
+    A floor rather than a guess at the count: this repository tracks well over 40 Python files, and a
+    comparison over an empty list would agree with itself.
+    """
+    sources = sorted(Path(__file__).resolve().parents[1].glob('**/*.py'))
+    sources = [path for path in sources if '.venv' not in path.parts and '__pycache__' not in path.parts]
+    assert len(sources) >= 40, f'the corpus is too small to prove anything: {len(sources)}'
+    for path in sources:
+        text = path.read_text(encoding='utf-8')
+        assert tuple(units._python_signatures(text)) == _subtract_enclosing_scopes(text), path.name
