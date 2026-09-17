@@ -94,6 +94,7 @@ class BoxLock:
     broker: Broker | None = None
 
     def __post_init__(self) -> None:
+        """Refuse a request that does not say WHAT is being locked, at construction."""
         if not self.what.strip():
             msg = (
                 'a lock holder with no name produces a refusal that cannot be acted on. The reader '

@@ -215,14 +215,17 @@ class Bucket:
 
     @property
     def files(self) -> int:
+        """How many files the scan read -- the floor that keeps a vacuous scan from reading green."""
         return len(self.rows)
 
     @property
     def tests(self) -> int:
+        """How many tests the scan found across every file."""
         return sum(row.tests for row in self.rows)
 
     @property
     def names(self) -> tuple[str, ...]:
+        """The file names, in row order, so a caller can name what was read."""
         return tuple(row.name for row in self.rows)
 
     def by_directory(self) -> dict[str, int]:

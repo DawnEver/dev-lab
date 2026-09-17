@@ -1,5 +1,7 @@
-"""The VALUE half of `UNITS-GO-THROUGH-PINT`: a name that stopped spelling its unit must have
-handed that unit to its VALUE, and this is what proves it did.
+"""The VALUE half of `UNITS-GO-THROUGH-PINT`.
+
+A name that stopped spelling its unit must have handed that unit to its VALUE, and this is what
+proves it did.
 
 WHY A SECOND MODULE AND NOT A WIDER `units.py`. :mod:`lab_commons.dev.units` refuses a NAME that
 spells a unit (``slot_pitch_mm``). It is complete about what it does and blind to what happens
@@ -54,7 +56,9 @@ import tomllib
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Final
+
+from pint import Quantity
 
 from lab_commons.units import Q_, ureg
 
@@ -110,10 +114,11 @@ class ValueScan:
     unreadable: tuple[str, ...]
 
     def __iter__(self) -> Iterator[QuantitySite]:
+        """Iterate the violations, so the report can be read as its own rows."""
         return iter(self.violations)
 
 
-def parse_quantity(text: str) -> Any:
+def parse_quantity(text: str) -> Quantity | bool:
     """*text* as a pint quantity, or ``None`` when pint cannot read it.
 
     Every pint failure mode is folded into ``None`` on purpose: a caller asking "is this a quantity"
@@ -124,7 +129,7 @@ def parse_quantity(text: str) -> Any:
     try:
         return Q_(text)
     # Broad on purpose: pint raises from several unrelated hierarchies.
-    except Exception:
+    except Exception:  # noqa: BLE001 -- folding every pint failure into one answer is the point
         return None
 
 
@@ -150,18 +155,19 @@ def _converts_to(text: str, reference: str) -> bool:
     use: its whole argument is that DIMENSIONALITY is the wrong question, because pint calls an
     angle dimensionless and ``Q_('1.6').is_compatible_with('rad')`` is True. A helper called
     "has dimension of" invites the next reader to re-derive the check this module exists to refute.
-    CONVERTIBILITY is what is actually asked, so that is what it is called."""
+    CONVERTIBILITY is what is actually asked, so that is what it is called.
+    """
     quantity = parse_quantity(text)
     if quantity is None:
         return False
     try:
         return bool(quantity.is_compatible_with(ureg.Unit(reference)))
     # Broad on purpose: an undefined reference unit is a caller bug, reported here as a mismatch.
-    except Exception:
+    except Exception:  # noqa: BLE001 -- folding every pint failure into one answer is the point
         return False
 
 
-def _walk(node: Any) -> Iterator[tuple[str, Any]]:
+def _walk(node: object) -> Iterator[tuple[str, object]]:
     """Every ``(key, value)`` pair at every depth, THROUGH LISTS AS WELL AS TABLES.
 
     The list arm is the one that was measured missing; see the module docstring.
@@ -195,6 +201,7 @@ def scan_toml_values(
     Three gates, in order, each producing a distinct *reason*: the value must be a STRING
     (``bare-number`` otherwise -- a float has no room for a unit), the string must name a unit
     (``no-unit``), and that unit must convert to the declared reference (``wrong-unit``).
+
     """
     violations: list[QuantitySite] = []
     unreadable: list[str] = []

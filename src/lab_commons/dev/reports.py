@@ -202,7 +202,7 @@ def _summary_counts(text: str) -> dict[str, int] | None:
 
 
 def _skip_shortfall(counts: dict[str, int], text: str, allowed: tuple[str, ...]) -> tuple[str, ...]:
-    """The skip ratchet, BOTH directions, plus the ceiling and the naming floor.
+    r"""The skip ratchet, BOTH directions, plus the ceiling and the naming floor.
 
     Pure over its arguments so the planted controls drive THIS function rather than a re-implemented
     agreement with it. Every reason names the specific locations on its side of the ratchet: a count

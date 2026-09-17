@@ -107,6 +107,7 @@ class WidthScan:
     undecodable: tuple[str, ...]
 
     def __iter__(self) -> Iterator[Overwidth]:
+        """Iterate the overwidth lines, so the report can be read as its own rows."""
         return iter(self.overwidth)
 
 

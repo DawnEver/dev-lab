@@ -148,6 +148,7 @@ class Scan:
     undecodable: tuple[str, ...]
 
     def __iter__(self) -> Iterator[Occurrence]:
+        """Iterate the occurrences, so the report can be read as its own rows."""
         return iter(self.occurrences)
 
 
@@ -171,7 +172,7 @@ def _pattern(ranges: tuple[tuple[int, int], ...]) -> re.Pattern[str]:
 
 
 def find_cjk(text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES) -> tuple[tuple[int, int, str], ...]:
-    """Every ``(line, col, char)`` in *text* where a character falls in *ranges*. Both 1-based.
+    r"""Every ``(line, col, char)`` in *text* where a character falls in *ranges*. Both 1-based.
 
     THE PREFILTER SKIPS WORK, NEVER SOFTENS A VERDICT. Measured 2026-09-17 over motronics-studio
     (8489 tracked files, 93.9 M characters): the per-character walk cost 193.52 s and answering

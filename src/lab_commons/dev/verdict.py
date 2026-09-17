@@ -58,7 +58,7 @@ class Outcome(Enum):
     """
 
     INCONCLUSIVE = 'inconclusive'
-    PASS = 'pass'
+    PASS = 'pass'  # noqa: S105 -- a verdict name, not a credential
     FAIL = 'fail'
 
     @property
@@ -81,6 +81,7 @@ class Selector:
     node_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        """Refuse a selector with no spec, which no reader could re-issue."""
         if not self.spec.strip():
             msg = 'a selector with no spec does not say what was asked for, so no reader can re-issue it.'
             raise ValueError(msg)
@@ -190,6 +191,7 @@ class Result:
     reason: str = ''
 
     def __post_init__(self) -> None:
+        """Refuse an unsettled outcome that does not carry its own reason."""
         if not self.outcome.settled:
             self._check_inconclusive()
             return
@@ -290,6 +292,7 @@ class Verdict:
     log: LogRef
 
     def __post_init__(self) -> None:
+        """Refuse a citation missing the tree or the env it was earned on."""
         if not self.tree.strip() or not self.env.strip():
             msg = (
                 'a verdict must name the tree and the environment it was earned in. A different '

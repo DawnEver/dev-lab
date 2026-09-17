@@ -129,7 +129,7 @@ def project_root(start: Path | None = None) -> Path:
     """
     try:
         found = subprocess.run(
-            ['git', 'rev-parse', '--show-toplevel'],
+            ['git', 'rev-parse', '--show-toplevel'],  # noqa: S607 -- git is resolved through PATH on purpose
             cwd=start or Path.cwd(),
             capture_output=True,
             text=True,
@@ -267,7 +267,8 @@ def run_verify(
     try:
         log = LogRef.of(path)
     except UnverifiableLog as exc:
-        raise SystemExit(f'verify wrote no usable log: {exc}') from exc
+        msg = f'verify wrote no usable log: {exc}'
+        raise SystemExit(msg) from exc
     return build_verdict(
         tuple(reports),
         tree=content_address(root, MEASURED_TARGETS),

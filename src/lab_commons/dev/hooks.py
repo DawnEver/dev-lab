@@ -82,7 +82,7 @@ class UnremediedRule(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Remedy:
-    """ONE repo's exit for one shared rule: the command to type instead, and what it opens.
+    r"""ONE repo's exit for one shared rule: the command to type instead, and what it opens.
 
     *kind* must equal the rule's ``needs``, so a remedy cannot be attached to a rule it does not
     answer -- a retry wrapper offered as the exit from a bare test line reads as an exit and is not.
@@ -106,6 +106,7 @@ class Remedy:
     path: str | None = None
 
     def __post_init__(self) -> None:
+        """Refuse a remedy with no kind, which could not be matched to the rule it answers."""
         if not self.kind.strip():
             msg = 'a remedy with no kind cannot be matched to the rule it answers.'
             raise ValueError(msg)
@@ -145,6 +146,7 @@ class DenyRule:
     permits: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        """Refuse an id that is not an UPPER-CASE slug, at construction."""
         if not _ID.fullmatch(self.id):
             msg = f'deny rule id {self.id!r} must be an UPPER-CASE slug (A-Z, 0-9, "-"): it is a handle, not a title.'
             raise ValueError(msg)
@@ -203,7 +205,7 @@ class DenyRule:
         return f'{self.hazard} {self.remedy.replace(PLACEHOLDER, remedy.command)}'
 
     def rendered(self, remedy: Remedy | None = None) -> dict[str, str]:
-        """This rule as the engine's own row: ``name``, ``pattern``, ``matches``, ``allow``, ``reason``.
+        """The rule as the engine's own row: ``name``, ``pattern``, ``matches``, ``allow``, ``reason``.
 
         The two openings -- the rule's own and the remedy's -- are combined by ALTERNATION rather
         than by picking one. They are different claims (a spelling sanctioned everywhere, and this

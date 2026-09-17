@@ -157,10 +157,12 @@ class Attempt:
 
     @property
     def ok(self) -> bool:
+        """Whether this single attempt exited clean."""
         return self.returncode == 0
 
     @property
     def retryable(self) -> bool:
+        """Whether this attempt's diagnosis is one a retry could clear."""
         return is_retryable(self.diagnosis)
 
     def as_dict(self) -> dict[str, object]:
@@ -190,18 +192,22 @@ class Report:
 
     @property
     def ok(self) -> bool:
+        """Whether the LAST attempt exited clean -- a recovered run is still ok."""
         return bool(self.attempts) and self.attempts[-1].ok
 
     @property
     def attempt_count(self) -> int:
+        """How many attempts were actually made, which is the evidence for RECOVERED."""
         return len(self.attempts)
 
     @property
     def returncode(self) -> int:
+        """The exit code a shell caller sees: the last attempt's, or 0 when none ran."""
         return self.attempts[-1].returncode if self.attempts else 0
 
     @property
     def diagnosis(self) -> Diagnosis:
+        """The last attempt's diagnosis -- what the run FINALLY hit, not what it survived."""
         return self.attempts[-1].diagnosis if self.attempts else Diagnosis.SUCCEEDED
 
     @property
@@ -284,6 +290,14 @@ def run_network_verb(
     dressed as one.
 
     Args:
+        argv: the command to run, already split -- the verb and its arguments.
+        attempts: the CEILING on tries, not a target; one success ends the loop.
+        backoff_s: the first backoff, doubled per retry.
+        timeout: seconds allowed per ATTEMPT, or ``None`` for no bound.
+        cwd: the directory the command runs in.
+        env: the environment it runs in, before the no-prompt keys are applied.
+        no_prompt: close off the interactive credential prompt, so a missing credential is a
+            REPORTED refusal rather than a hang nobody can see.
         before_retry: an adopter's own veto, consulted after a retryable failure and BEFORE the
             backoff. Returning ``False`` stops the loop with :attr:`Diagnosis.STOPPED_BY_CALLER`.
             This is the seam motronics-studio's ``push_lock.py`` fits: "my own previous attempt's
@@ -353,14 +367,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = run_network_verb(
         command, attempts=args.attempts, backoff_s=args.backoff, timeout=args.timeout, cwd=args.cwd
     )
+    # T201 is waived four times below: this IS the module's command-line surface. The narrative
+    # goes to stderr and the machine-readable report to stdout, which is the split a shell caller
+    # branches on; a logger here would send a CLI's own output through a sink nobody asked for.
     for attempt in report.attempts:
         head = f'[netverb] attempt {attempt.index}/{report.allowed_attempts}: {attempt.diagnosis.value}'
-        print(head, file=sys.stderr)
+        print(head, file=sys.stderr)  # noqa: T201
         if attempt.output:
-            print(attempt.output, file=sys.stderr, end='' if attempt.output.endswith('\n') else '\n')
-    print(f'[netverb] {report.remedy}', file=sys.stderr)
+            print(attempt.output, file=sys.stderr, end='' if attempt.output.endswith('\n') else '\n')  # noqa: T201
+    print(f'[netverb] {report.remedy}', file=sys.stderr)  # noqa: T201
     if args.json:
-        print(json.dumps(report.as_dict(), indent=2))
+        print(json.dumps(report.as_dict(), indent=2))  # noqa: T201
     return report.returncode
 
 

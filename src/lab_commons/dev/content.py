@@ -84,7 +84,7 @@ def _ignored(relative: Path) -> bool:
 
 
 def _record(relative: Path, path: Path, algorithm: str) -> str:
-    """One line of the address: ``<relative path>\\0<size>\\0<digest>``.
+    r"""One line of the address: ``<relative path>\\0<size>\\0<digest>``.
 
     The NUL separators are what make the line unambiguous: paths and digests are both text, and a
     space-joined record would let a path containing a space address the same as two files. The

@@ -93,10 +93,12 @@ class Exe:
     name: str
 
     def present(self) -> bool:
+        """Whether the executable resolves on PATH, or exists as the absolute path given."""
         return shutil.which(self.name) is not None or Path(self.name).exists()
 
     @property
     def absent_kind(self) -> str:
+        """What its absence MEANS, so the reader is sent to install rather than to clone."""
         return 'not on PATH'
 
 
@@ -112,10 +114,12 @@ class Module:
     name: str
 
     def present(self) -> bool:
+        """Whether the module is importable in THIS interpreter."""
         return importlib.util.find_spec(self.name) is not None
 
     @property
     def absent_kind(self) -> str:
+        """What its absence MEANS: an install into this interpreter, not a PATH entry."""
         return 'not importable'
 
 
@@ -131,10 +135,12 @@ class Tree:
     name: str
 
     def present(self) -> bool:
+        """Whether the path exists at all -- a sibling checkout, a manifest."""
         return Path(self.name).exists()
 
     @property
     def absent_kind(self) -> str:
+        """What its absence MEANS: a tree that was never cloned or written."""
         return 'not present'
 
 
@@ -150,13 +156,16 @@ class Every:
 
     @property
     def name(self) -> str:
+        """The composite name: every part, joined, so the reader sees all of them."""
         return ' + '.join(part.name for part in self.parts)
 
     def present(self) -> bool:
+        """Whether EVERY part is present; one missing part makes the composite absent."""
         return all(part.present() for part in self.parts)
 
     @property
     def absent_kind(self) -> str:
+        """What is missing, PART BY PART, so the reader is not sent to check all of them."""
         missing = ', '.join(f'{part.name} ({part.absent_kind})' for part in self.parts if not part.present())
         return f'missing {missing}'
 
@@ -202,6 +211,7 @@ class BuildReport:
     skipped: dict[str, str] = field(default_factory=dict)
 
     def summary(self) -> str:
+        """The build outcome as text: what was built, then every skip with its reason."""
         parts = [f'built {len(self.built)}: {", ".join(self.built) or "-"}']
         parts.extend(f'SKIPPED {slug} -- {reason}' for slug, reason in self.skipped.items())
         return '\n'.join(parts)

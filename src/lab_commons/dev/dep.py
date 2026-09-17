@@ -172,7 +172,7 @@ class Port:
     name: str
     holders: Callable[[], Sequence[str]] | None = None
     anchor_paths: Callable[[], Sequence[Path]] | None = None
-    key: Callable[[], str] = field(default=lambda: current_env_key())
+    key: Callable[[], str] = field(default=lambda: current_env_key())  # noqa: PLW0108 -- defined below
 
     def lock_holders(self) -> tuple[str, ...] | None:
         """Live holders, or ``None`` when this repo declares no lock."""
@@ -188,7 +188,7 @@ class Port:
 
 
 def current_env_key() -> str:
-    """This interpreter's environment key, read fresh. The shared half of H2, free to every repo."""
+    """The environment key of THIS interpreter, read fresh. The shared half of H2, free to every repo."""
     return env_key(env_manifest())
 
 

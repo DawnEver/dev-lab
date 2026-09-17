@@ -230,10 +230,12 @@ class Comparison:
 
     @property
     def median_installed_s(self) -> float:
+        """The median of the installed arm -- a median, never a mean, so one stall cannot move it."""
         return statistics.median(self.installed_s)
 
     @property
     def median_shadow_s(self) -> float:
+        """The median of the shadow arm, on the same statistic as the installed one."""
         return statistics.median(self.shadow_s)
 
     @property

@@ -147,9 +147,11 @@ def _stamp_block(text: str) -> tuple[str, ...]:
 
 
 def _without_stamp(text: str) -> str:
-    """*text* with its provenance block removed -- how an UNSTAMPED copy is recognised as the same
-    engine. It is the difference between "somebody wrote their own engine here" and "this copy
-    predates the shipped payload", and those two need different remedies.
+    """*text* with its provenance block removed.
+
+    How an UNSTAMPED copy is recognised as the same engine. It is the difference between "somebody
+    wrote their own engine here" and "this copy predates the shipped payload", and those two need
+    different remedies.
     """
     block = _stamp_block(text)
     return ''.join(line for line in text.splitlines(keepends=True) if line not in block)

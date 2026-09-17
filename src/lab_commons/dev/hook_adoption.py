@@ -74,6 +74,7 @@ class HookAdoption:
     declared_absent: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
+        """Refuse an adoption that cannot name the repo it speaks for, at construction."""
         if not self.app_name.strip():
             msg = 'an adoption with no app_name cannot report WHICH repo is missing a remedy.'
             raise ValueError(msg)

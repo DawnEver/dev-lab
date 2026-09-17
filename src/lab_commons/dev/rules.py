@@ -117,6 +117,7 @@ class TestPath:
     path: str
 
     def __post_init__(self) -> None:
+        """Refuse an exit with no path, at construction."""
         text = self.path.strip()
         if not text:
             msg = 'a mechanism with no path names nothing, and a rule pointing at nothing is the defect.'
@@ -136,6 +137,7 @@ class LintRule:
     code: str
 
     def __post_init__(self) -> None:
+        """Refuse a lint mechanism with no code, which is indistinguishable from no mechanism."""
         if not self.code.strip():
             msg = 'a lint mechanism with no code is indistinguishable from no mechanism at all.'
             raise ValueError(msg)
@@ -181,6 +183,7 @@ class Rule:
     mechanisms: tuple[Mechanism, ...]
 
     def __post_init__(self) -> None:
+        """Refuse an id that is not an UPPER-CASE slug, at construction."""
         if not _ID.fullmatch(self.id):
             msg = (
                 f'rule id {self.id!r} must be an UPPER-CASE slug (A-Z, 0-9, "-"): it is a handle in every '
@@ -235,6 +238,7 @@ class Adoption:
     declared_absent: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
+        """Refuse an adoption that cannot name the repo it speaks for, at construction."""
         if not self.app_name.strip():
             msg = 'an adoption with no app_name cannot report WHICH repo is missing a mechanism.'
             raise ValueError(msg)

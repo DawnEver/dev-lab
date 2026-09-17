@@ -1,4 +1,4 @@
-"""``RepoProfile`` -- the parameterisation every dev-time mechanism takes.
+r"""``RepoProfile`` -- the parameterisation every dev-time mechanism takes.
 
 ADOPTION MUST BE A SUBSTITUTION, NOT A REWRITE, and that decides this module's whole shape. Every
 guard in the tree this kit is extracted from reaches its repo through a ``repo_root()`` that is a
@@ -99,6 +99,7 @@ class RepoProfile:
     pins: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Refuse an empty app_name, which keys both the home variable and the run directories."""
         if not self.app_name.strip():
             msg = 'app_name keys the home environment variable and the run directories, so it cannot be empty.'
             raise ValueError(msg)

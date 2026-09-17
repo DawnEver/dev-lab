@@ -198,6 +198,7 @@ class Scan:
     skipped: tuple[str, ...]
 
     def __iter__(self) -> Iterator[Violation]:
+        """Iterate the violations, so the report can be read as its own rows."""
         return iter(self.violations)
 
 
@@ -398,7 +399,7 @@ def _locate(lines: Sequence[str], names: Iterable[str], pattern: str) -> Iterato
 _CALLABLES: Final = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 
 
-def _python_signatures(text: str) -> Iterator[_Signature]:
+def _python_signatures(text: str) -> Iterator[_Signature]:  # noqa: C901 -- one branch per AST node kind this scan reads; splitting it hides that the set is exhaustive
     """The names this module reads out of Python -- parameters, declared fields, and flag literals.
 
     The two scopes are separated by a flag carried DOWN one descent: an assignment is local when some ancestor is in

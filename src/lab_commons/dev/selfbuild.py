@@ -64,7 +64,7 @@ class ForeignDistributionError(RuntimeError):
 
 
 class NothingBuiltError(ForeignDistributionError):
-    """This workspace declares no distribution at all, so no wheel can be sanctioned as its own.
+    """A workspace declaring no distribution at all, so no wheel can be sanctioned as its own.
 
     A subclass, because every caller that wants to refuse a foreign wheel wants to refuse this too --
     but the two are different facts, and a caller whose manifest glob has quietly stopped matching
@@ -192,7 +192,8 @@ def install_self_build(
 
     """
     if not wheel.is_file():
-        raise FileNotFoundError(f'no such wheel: {wheel}')
+        msg = f'no such wheel: {wheel}'
+        raise FileNotFoundError(msg)
     refuse_foreign_wheel(wheel, declared_distributions(manifests), workspace=workspace or port.name)
     return mutate(
         [str(wheel)],
