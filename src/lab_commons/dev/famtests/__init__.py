@@ -39,6 +39,8 @@ WHAT IS HERE, one module per shared body:
 * :mod:`lab_commons.dev.famtests.agentguard` -- the guard is live, and the rule that fires is the
   rule that was meant to.
 * :mod:`lab_commons.dev.famtests.configrender` -- the rendered family artefacts equal base + delta.
+* :mod:`lab_commons.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND
+  in total, because a named set and a budget are each blind to what the other sees.
 
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the
