@@ -258,6 +258,39 @@ holds only `extend = "ruff.toml"`. It is dead rather than lying, so this is a de
 migration behind it — but it must happen before R2 rewrites either file, or R2's renderer has two
 places to write and one of them is a trap.
 
+### R4 — WHAT THREE TRANCHES MEASURED ABOUT THE ROSTER ITSELF
+
+Executed 2026-09-17. Every tranche was dispatched with "the roster's label is a PRIOR, not an
+instruction" and every tranche needed it:
+
+    tranche            declared      measured
+    1  scripts/hooks   4 MOVES       3 MOVES + 1 SPLIT
+    2  scripts/gate    8 MOVES       3 MOVES + 3 SPLITS + 2 ALREADY IN THE KIT
+    3  lanes + repo    5 MOVES       1 MOVE  + 1 SPLIT  + 3 ALREADY IN THE KIT
+    ------------------------------------------------------------------------
+                      17 MOVES       7 MOVES + 5 SPLITS + 5 ALREADY DONE
+
+**Seventeen declared, seven real, and the error runs one way every time.** That is a property of
+the instrument, not of any row: the roster's side is decided by a DENSITY bar, which answers "is
+this file mostly generic?" — a good question, and a different one from "has the family already
+expressed this?". Nothing re-reads the roster against `lab_commons.dev`'s published surface, so a
+row stays MOVES-pending after its subject has landed upstream and no mechanism notices.
+
+Three of the five already-done rows had left a trail nobody followed: `lab_commons.dev.bounded`'s
+docstring NAMES `scripts/gate/bounded.py` and `_box.py` as its provenance, and
+`session_branches.py`'s own placement row says "THE REST LANDED 2026-09-17 and this row is CLOSED".
+The evidence was written down and the roster still said otherwise.
+
+THE FOURTH IS WORSE AND IS THE ONE TO CARRY: `scripts/repo/worktree_debris.py` is a LIVE FORK with
+no declaration anywhere that it is one. Unlike its two siblings it imports nothing — it holds its
+own `_git`, `registered_worktrees`, `orphan_directories`, `stale_branches`, `report` — while
+`checkout` publishes a strict SUPERSET of all of them (same nested-one-level orphan rule, same
+"a checked-out branch is live", plus a parameterised worktree home and protected set). A roster
+that reads "should move" is indistinguishable from one that reads "is a duplicate running today".
+
+The cheap repair, for whoever takes the next tranche: before pricing a row, read the kit's module
+DOCSTRINGS for its subject, not just the module names. Three of these five say where they came from.
+
 ### R4 — the 29 declared-but-unmoved motronics rows
 
 17 MOVES and 12 SPLITS, executed against the two-phase split rule: a SPLIT whose family half is NEW
