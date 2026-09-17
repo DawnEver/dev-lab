@@ -97,3 +97,72 @@ def test_the_scan_reads_this_package_and_excludes_by_shape() -> None:
     assert 'verify' in present, present
     assert not any(name.startswith('_') for name in present), present
     assert '__init__' not in present
+
+
+#: THE INDEX IS AN INDEX, AND THE CEILING IS WHAT KEEPS IT ONE. MEASURED 2026-09-17 over the live
+#: docstring: 37 bullets, median 5 lines, and one outlier at 13 whose every clause was already in
+#: `famconfig.py`'s own docstring -- a second copy of a module's reasoning, in the one document a
+#: reader treats as the surface, with nothing linking the two. That is the drift shape this package
+#: names everywhere else, arriving inside its own inventory.
+#:
+#: It also has a MEASURED cost the band makes concrete: `__init__.py` reached 399 of a 400-line band
+#: and its own text told the next arrival to split the inventory first. A ceiling per bullet is what
+#: turns that from a recurring wall into a rule -- the reasoning goes in the module the bullet is
+#: about, and the bullet says which module and what for.
+#:
+#: 10 is the measured maximum once the outlier is trimmed (`ab_bench`). From here it may only go DOWN:
+#: raising it is how the index becomes a second docstring again, one row at a time.
+BULLET_CEILING = 10
+
+#: MEASURED 2026-09-17: 37 bullets. Under it, because "no bullet is over the ceiling" reads exactly
+#: the same over a docstring the parser failed to read at all.
+BULLET_FLOOR = 25
+
+
+def bullet_lengths(docstring: str) -> dict[str, int]:
+    """``{module name: how many lines its bullet spans}``, including the ``* :mod:`` line itself.
+
+    A bullet continues through every following INDENTED non-empty line, which is what reStructuredText
+    means by a continuation, and stops at anything else. Pure over its argument, so the planted control
+    below drives this function rather than a second implementation that would agree by construction.
+    """
+    lines = docstring.splitlines()
+    spans: dict[str, int] = {}
+    index = 0
+    while index < len(lines):
+        found = _BULLET.search(lines[index]) if lines[index].lstrip().startswith('* :mod:') else None
+        if found is None:
+            index += 1
+            continue
+        end = index + 1
+        while end < len(lines) and lines[end].startswith('  ') and lines[end].strip():
+            end += 1
+        spans[found.group(1)] = end - index
+        index = end
+    return spans
+
+
+def test_no_inventory_bullet_exceeds_the_ceiling() -> None:
+    """The ratchet: a bullet that grew into a second copy of its module's docstring reds here."""
+    spans = bullet_lengths(dev_pkg.__doc__ or '')
+    assert_floor(len(spans), BULLET_FLOOR, 'dev inventory bullets')
+    over = {name: length for name, length in spans.items() if length > BULLET_CEILING}
+    assert over == {}, (
+        f'inventory bullets past the {BULLET_CEILING}-line ceiling (name, lines): {over}. Move the '
+        f"reasoning into the module's own docstring and leave the bullet saying which module and what "
+        f'for -- an index that restates a module is a second copy nothing keeps in step.'
+    )
+
+
+def test_the_ceiling_is_not_vacuous_and_a_planted_overlong_bullet_is_refused() -> None:
+    """THE CONTROL, BOTH WAYS: a real long bullet is counted, and a real short one is not."""
+    long_bullet = '* :mod:`lab_commons.dev.wordy` -- one.\n' + '  more prose.\n' * 4
+    short_bullet = '* :mod:`lab_commons.dev.terse` -- one line, and it ends here.\n'
+    spans = bullet_lengths(long_bullet + '\n' + short_bullet)
+    assert spans == {'wordy': 5, 'terse': 1}, spans
+    assert {n: v for n, v in spans.items() if v > 3} == {'wordy': 5}
+    live = bullet_lengths(dev_pkg.__doc__ or '')
+    assert max(live.values()) == BULLET_CEILING, (
+        f'the ceiling is {BULLET_CEILING} and the longest live bullet is {max(live.values())}; a '
+        f'ceiling no live row touches is slack nobody is holding, so lower it to the measurement.'
+    )
