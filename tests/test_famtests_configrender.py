@@ -440,3 +440,66 @@ def test_the_round_trip_control_passes_then_reds_on_one_edited_line(tmp_path: Pa
         assert_render_round_trips(
             artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('not-in-the-base', 'x')
         )
+
+
+# ------------------------------------------- last-match-wins is about POSITION, not about presence
+
+#: A re-inclusion of a whole SUBTREE. Everything under it comes back, including the cache
+#: directories a base directory rule excluded at any depth -- which is what makes a later
+#: re-statement of that rule load-bearing rather than redundant.
+_DEEP_NEGATION = '!**/.claude/memory/**'
+
+#: The delta's re-statement of a base directory rule. It closes the re-inclusion above it and
+#: closes NOTHING below it, because gitignore is last-match-wins per path.
+_CLOSURE = '__pycache__/'
+
+
+def test_a_closure_only_closes_the_reinclusions_ABOVE_it() -> None:
+    """A membership test cannot see order, and order is the entire rule.
+
+    The two deltas below hold the SAME TWO LINES and differ only in which comes first. One is
+    correct and one re-includes every cache directory under the re-included subtree -- the incident
+    a sibling repo's `.gitignore` records, where a `.pyc` under `.claude/memory/` ended up TRACKED.
+    A reading that reduced `added` to a set would pass both, which is why both are driven here.
+    """
+    base = artefact_base('.gitignore')
+    assert any(line.rstrip('/').lstrip('*/') == _CLOSURE.rstrip('/') for line in base.content_lines), (
+        'the premise: the base must actually exclude this directory, or the case proves nothing'
+    )
+
+    sealed = _gitignore_delta(added=(_DEEP_NEGATION, _CLOSURE))
+    assert reopenings(base, sealed).unsealed == ()
+    assert_no_rule_is_reopened(base=base, delta=sealed, repo=_REPO, directory_floor=1)
+
+    unsealed = _gitignore_delta(added=(_CLOSURE, _DEEP_NEGATION))
+    assert reopenings(base, unsealed).unsealed == (_CLOSURE,)
+    with pytest.raises(AssertionError, match='re-included by a LATER'):
+        assert_no_rule_is_reopened(base=base, delta=unsealed, repo=_REPO, directory_floor=1)
+
+
+def test_a_negation_naming_one_file_does_not_reopen_a_directory_rule() -> None:
+    """THE OTHER SIDE, and it is what keeps the reading from being a ban on negations.
+
+    One sibling repo's whole `.gitignore` negation is a single FILE name. It re-includes that path
+    and nothing under it, so no directory rule is reopened and no closure is owed -- a reading that
+    reported it would have to be waived somewhere, and a waiver is how this guard would be lost.
+    """
+    base = artefact_base('.gitignore')
+    shallow = _gitignore_delta(added=(_CLOSURE, '!example.log'))
+    assert reopenings(base, shallow).unsealed == ()
+    assert_no_rule_is_reopened(base=base, delta=shallow, repo=_REPO, directory_floor=1)
+
+
+def test_a_closure_that_comes_first_does_not_close_the_negation_it_precedes() -> None:
+    """The same correction applied to `reopened`: `closed` was a set and answered ANYWHERE.
+
+    The negation and its closure name the same base rule here, so the older membership reading
+    reported the rule closed whichever order they were written in.
+    """
+    base = artefact_base('.gitignore')
+    slashed = next(line for line in base.content_lines if line.endswith('/'))
+    negation = f'!{slashed}'
+    closure = slashed.lstrip('*/')
+
+    assert reopenings(base, _gitignore_delta(added=(negation, closure))).reopened == ()
+    assert reopenings(base, _gitignore_delta(added=(closure, negation))).reopened == (negation,)

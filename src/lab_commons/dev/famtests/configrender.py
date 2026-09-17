@@ -160,11 +160,14 @@ def assert_delta_is_not_a_fork(*, artefact: str, deltas: Mapping[str, Delta], re
 def assert_no_rule_is_reopened(*, base: Base, delta: Delta, repo: str, directory_floor: int) -> None:
     """A delta renders AFTER the base, and ``.gitignore`` is last-match-wins, so ORDER is the rule.
 
-    Two shapes, one hazard. A BARE re-statement of a slashed base rule is a different rule wearing a
+    Three shapes, one hazard. A BARE re-statement of a slashed base rule is a different rule wearing a
     duplicate's clothes -- a trailing slash matches a directory only -- and it wins by coming later. A
     NEGATION re-includes what the base excluded above it unless the delta closes the rule again below.
-    Neither is visible to a byte comparison: both render exactly as declared. *directory_floor* has no
-    default, because how many directory rules a base carries is a fact about that base.
+    An UNSEALED closure is the same fact read from the other end: a re-statement of a base rule that a
+    subtree negation BELOW it re-includes again, which is the shape a presence test is blind to and
+    the one a consumer had to pin by hand as "this line must be last". None of the three is visible to
+    a byte comparison: all render exactly as declared. *directory_floor* has no default, because how
+    many directory rules a base carries is a fact about that base.
     """
     found = reopenings(base, delta)
     assert_floor(len(found.base_directories), directory_floor, f'{base.artefact} base holds no directory rule')
@@ -180,6 +183,14 @@ def assert_no_rule_is_reopened(*, base: Base, delta: Delta, repo: str, directory
             f'{sorted(found.reopened)} re-include a path the {base.artefact} base excludes, and the delta '
             f'renders AFTER the base. Either narrow the negation to something the base does not exclude, '
             f'or close the rule again as a LATER line. Last-match-wins means order is the rule.'
+        )
+        raise AssertionError(msg)
+    if found.unsealed:
+        msg = (
+            f'{sorted(found.unsealed)} re-state a {base.artefact} base directory rule and are then re-included '
+            f'by a LATER subtree negation in the same delta, so each closes nothing. The line exists, which is '
+            f'why a presence check passes; it is above the re-inclusion, which is why the rule is open. Move it '
+            f'BELOW every negation it is meant to close.'
         )
         raise AssertionError(msg)
 
