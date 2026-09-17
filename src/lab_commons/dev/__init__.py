@@ -186,6 +186,20 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   distributions a workspace builds is READ from the manifests the caller hands in, never spelled in a
   guard, and an empty set refuses everything rather than comparing vacuously. Not re-exported below.
 
+* :mod:`lab_commons.dev.famconfig` -- the family's CONFIG artefacts as one BASE plus a named DELTA,
+  with a renderer and a guard that reds on a hand edit rather than letting it drift. MEASURED
+  2026-09-17 across the four repos: 14 `.gitignore` patterns in all three consumers, 11
+  `.pre-commit-config.yaml` hook ids in all three, 3 `Makefile` targets in all four and 8 in all
+  three consumers -- each hand-maintained three times, with nothing linking the copies. A DROP is a
+  mapping from the dropped base line to its REASON and never a set, because a removal and a drift
+  are the same bytes on disk and only the declaration tells them apart; the rendering prints the
+  drop as a comment, so the removal is legible to a reader of the artefact too. Two modes, and the
+  Makefile is why: its shared targets share a NAME and no RECIPE, so ``REQUIRED`` says the base
+  lines must be PRESENT while ``RENDERED`` demands byte equality -- naming the weaker mode is what
+  stops it being used out of convenience. `[tool.ruff]` is deliberately NOT a base here. Not
+  re-exported below: ``render``, ``Base`` and ``Delta`` are exactly the unqualified spellings that
+  stop saying what they are once flattened into a namespace this wide.
+
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
 flattening them into one namespace beside :data:`lab_commons.dev.content.ABSENT` would leave a
