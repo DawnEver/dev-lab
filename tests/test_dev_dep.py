@@ -24,6 +24,7 @@ from lab_commons.dev.dep import (
     HeldEnvironmentError,
     Mode,
     Port,
+    Version,
     current_env_key,
     mutate,
     pip_argv,
@@ -168,6 +169,36 @@ def test_resolution_is_the_default_and_pinned_is_the_narrow_mode() -> None:
     assert '--no-index' in pinned
     assert '--no-deps' in pinned
     assert resolving[:4] == ('py', '-m', 'pip', 'install')
+
+
+def test_a_repeating_version_forces_a_reinstall_and_an_identifying_one_never_does() -> None:
+    """THE RATCHET, both sides. Measured against pip 26.2.1's resolver: a local wheel already
+    installed at the same version is SKIPPED with exit code 0 unless `--force-reinstall` is given --
+    so a self-build needs the flag. Every other install must NOT get it: forcing a published
+    dependency reinstalls bytes that are already correct, on every call.
+    """
+    repeats = pip_argv(_REQS, mode=Mode.PINNED, version=Version.REPEATS, python='py')
+    assert '--force-reinstall' in repeats
+    for mode in Mode:
+        identifies = pip_argv(_REQS, mode=mode, version=Version.IDENTIFIES, python='py')
+        assert '--force-reinstall' not in identifies, f'{mode} forced a reinstall nobody asked for'
+        assert pip_argv(_REQS, mode=mode, python='py') == identifies, 'IDENTIFIES must be the default'
+    assert len(list(Mode)) == 2, 'the floor: this scan must cover every mode there is'
+
+
+def test_the_argv_the_report_declares_is_the_argv_the_child_was_given() -> None:
+    """THE DECLARATION. `Report.argv` is the only thing a reader sees, so it must BE the command.
+
+    This is the defect that produced `Version`: a caller needing a flag the door would not emit
+    composed it into the injected `run`, and the report then named a command pip never got. The
+    door answers the fact instead, and the argv stays single-sourced.
+    """
+    run = _Run()
+    port = Port(name='repo', holders=tuple, anchor_paths=tuple, key=_keys('same'))
+    report = mutate(_REQS, port=port, mode=Mode.PINNED, version=Version.REPEATS, run=run)
+    assert len(run.calls) == 1, 'the floor: a scan over no call is vacuous'
+    assert run.calls[0] == report.argv
+    assert '--force-reinstall' in report.render(), 'a flag absent from the rendered command is unread'
 
 
 def test_a_dry_run_checks_everything_and_mutates_nothing(tmp_path: Path) -> None:

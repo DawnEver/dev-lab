@@ -77,6 +77,7 @@ __all__ = [
     'Mode',
     'Port',
     'Report',
+    'Version',
     'current_env_key',
     'mutate',
     'pip_argv',
@@ -122,6 +123,35 @@ class Mode(Enum):
 
     RESOLVE = 'resolve'
     PINNED = 'pinned'
+
+
+class Version(Enum):
+    """Whether the artefact's VERSION is an IDENTITY for the bytes being installed.
+
+    THIS IS A SECOND AXIS AND NOT A SHADE OF :class:`Mode`, and conflating the two is what hid the
+    defect. ``Mode`` says how the change may reach an index; this says whether pip's
+    already-satisfied shortcut is a correct answer for this artefact. They are independent: a pinned
+    install of a third party's wheel is genuinely already satisfied, and a resolving install of a
+    package whose version repeats would be just as blind.
+
+    ``IDENTIFIES`` is the default and describes every published distribution: two builds carrying one
+    version are the same bytes by the publisher's promise, so skipping is right and forcing would
+    reinstall for nothing on every call.
+
+    ``REPEATS`` is the case where that promise does not exist -- a package with
+    ``dynamic = ["version"]`` reading its number out of a ``Cargo.toml``, rebuilt from a checkout
+    whose SOURCE moved while the number did not. MEASURED against the pip this family ships against
+    (26.2.1, ``_internal/resolution/resolvelib/resolver.py``): for a LOCAL WHEEL already installed at
+    the same version pip logs "is already installed with the same version as the provided wheel. Use
+    --force-reinstall to force an installation of the wheel" and ``continue``s -- and then EXITS
+    ZERO. So the caller is told the install succeeded, the environment did not move, and ``env_key``
+    truthfully agrees that it did not: a no-op that every instrument here reports as a success. Note
+    the narrowness pip's own code shows -- a local sdist or directory DOES reinstall -- so this is a
+    wheel-shaped hazard specifically, which is exactly what a self-build installs.
+    """
+
+    IDENTIFIES = 'identifies'
+    REPEATS = 'repeats'
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,14 +225,26 @@ def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
     return tuple(str(path) for path in retired)
 
 
-def pip_argv(requirements: Sequence[str], *, mode: Mode = Mode.RESOLVE, python: str | None = None) -> tuple[str, ...]:
+def pip_argv(
+    requirements: Sequence[str],
+    *,
+    mode: Mode = Mode.RESOLVE,
+    version: Version = Version.IDENTIFIES,
+    python: str | None = None,
+) -> tuple[str, ...]:
     """The command that performs the change, through the INVOKING interpreter's own pip.
 
     ``sys.executable -m pip`` rather than a bare ``pip`` on ``PATH``: the door's whole claim is about
     the environment it measured, and a ``pip`` resolved from ``PATH`` can belong to a different one.
+
+    THIS IS THE ONE PLACE THE ARGV IS DECIDED, and every flag is derived from a DECLARED enum member
+    rather than from a caller's opinion -- which is what makes :attr:`Report.argv` able to be the
+    whole truth. A caller that wants a flag declares the FACT that implies it; there is no free-text
+    extras parameter, because an argv assembled in two places cannot be reported from one.
     """
     flags = ('--no-index', '--no-deps') if mode is Mode.PINNED else ()
-    return (python or sys.executable, '-m', 'pip', 'install', *flags, *requirements)
+    forced = ('--force-reinstall',) if version is Version.REPEATS else ()
+    return (python or sys.executable, '-m', 'pip', 'install', *flags, *forced, *requirements)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +287,7 @@ def mutate(
     *,
     port: Port,
     mode: Mode = Mode.RESOLVE,
+    version: Version = Version.IDENTIFIES,
     run: Callable[..., Any] = subprocess.run,
     dry_run: bool = False,
     timeout: float = CHILD_WALL_S,
@@ -253,6 +296,14 @@ def mutate(
 
     *run* is injected so a control can drive this function itself rather than a re-implementation of
     it; it is called exactly as :func:`subprocess.run` is and its ``returncode`` is what is reported.
+
+    **THE SEAM CARRIES THE ARGV AND MUST NOT COMPOSE IT.** *run* receives exactly the list this
+    function reports as :attr:`Report.argv`; a *run* that appends a flag on the way past makes that
+    attribute a declaration that lies, and the report is the only thing a reader ever sees. That is
+    not a rule asking for restraint -- it is why *mode* and *version* are parameters HERE: every
+    question a caller has ever needed to answer by wrapping *run* is answerable by naming a fact,
+    and :func:`pip_argv` turns the fact into the flag. If a new flag is needed, the deliverable is
+    the enum member that implies it.
 
     A dry run performs every CHECK and no mutation -- including no retirement, because a dry run that
     deleted an anchor would have mutated the very thing it reports on.
@@ -275,7 +326,7 @@ def mutate(
     if declared is None:
         gaps.append(NO_ANCHORS_DECLARED)
     before = port.env_key()
-    argv = pip_argv(requirements, mode=mode)
+    argv = pip_argv(requirements, mode=mode, version=version)
     if dry_run:
         return Report(port.name, sys.prefix, argv, None, before, None, (), tuple(gaps))
     completed = run(list(argv), check=False, timeout=timeout)

@@ -203,3 +203,35 @@ def test_the_workspace_label_defaults_to_the_port_name(tmp_path: Path) -> None:
             port=port,
             run=_Recorder(),
         )
+
+
+def test_two_builds_at_one_version_both_reach_pip_as_a_forced_reinstall(tmp_path: Path) -> None:
+    """THE PLANT: the same wheel FILENAME, hence the same version, carrying different bytes.
+
+    That is what a crate with `dynamic = ["version"]` produces when its source moves and its
+    `Cargo.toml` number does not, and it is the situation pip 26.2.1 answers by logging "already
+    installed with the same version as the provided wheel" and exiting ZERO. Without
+    `--force-reinstall` the second install here is a no-op the caller is told succeeded, and
+    `env_key` -- which is the only other instrument in this door -- truthfully agrees nothing moved.
+
+    Driven through the REAL entry point with a recording `run`, asserted on the argv the child was
+    actually handed, and then asserted EQUAL to `report.argv`: a report naming a command pip did not
+    get is the declaration-that-lies half of the same defect.
+    """
+    manifests = _workspace(tmp_path)
+    argvs = []
+    for content in (b'BUILD A -- one sha', b'BUILD B -- a later sha, same Cargo.toml version'):
+        wheel = tmp_path / _WHEEL
+        wheel.write_bytes(content)
+        run = _Recorder()
+        port = Port(name='plant', holders=lambda: (), anchor_paths=lambda: (), key=lambda: 'unmoved')
+        report = install_self_build(wheel, manifests=manifests, port=port, run=run)
+        assert len(run.calls) == 1, 'the floor: no call means nothing was measured'
+        assert run.calls[0] == list(report.argv), 'the report named a command the child never got'
+        assert not report.moved, 'the plant is an UNCHANGED version -- env_key cannot see this hazard'
+        argvs.append(tuple(run.calls[0]))
+    assert len(argvs) == 2, 'the floor: two builds, or the hazard was never planted'
+    assert len({argv[-1] for argv in argvs}) == 1, 'both builds must name ONE wheel path and version'
+    for argv in argvs:
+        assert '--force-reinstall' in argv, f'pip would skip this install and exit zero: {argv}'
+        assert '--no-index' in argv and '--no-deps' in argv, 'forcing must not have loosened the pin'

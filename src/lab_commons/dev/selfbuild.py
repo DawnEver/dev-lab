@@ -11,6 +11,11 @@ you are standing in is the opposite case in every respect:
 * it must not resolve ANYTHING. :attr:`~lab_commons.dev.dep.Mode.PINNED` makes that mechanical --
   pip cannot reach an index it is forbidden to consult -- so no transitive dependency can move under
   another lane even in principle;
+* and its VERSION IS NOT AN IDENTITY. A crate taking ``dynamic = ["version"]`` out of its
+  ``Cargo.toml`` carries the same number across two builds of different source, and pip skips a
+  local wheel already installed at the same version -- logging the remedy, and exiting ZERO. That
+  turns "installed" into a no-op that ``env_key`` truthfully reports as no movement, so this module
+  declares :attr:`~lab_commons.dev.dep.Version.REPEATS` and the argv carries ``--force-reinstall``;
 * and the wheel must be OURS. Without that check ``Mode.PINNED`` is a loaded gun with the safety on:
   it stops an index being read, and does nothing at all about ``pip install ./scipy-*.whl`` arriving
   through the one door the blocklist was told to allow.
@@ -41,7 +46,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from lab_commons.dev.dep import CHILD_WALL_S, Mode, Port, Report, mutate
+from lab_commons.dev.dep import CHILD_WALL_S, Mode, Port, Report, Version, mutate
 
 __all__ = [
     'ForeignDistributionError',
@@ -162,8 +167,13 @@ def install_self_build(
     anchors a later ``env=`` comparison refuses anyway. The failure mode is a stale REFUSAL, never a
     stale PASS.
 
-    ``Mode.PINNED`` is not a parameter here. A flag that could select a resolving install would make
-    this the general dependency door wearing an ownership check, and the general door already exists.
+    ``Mode.PINNED`` is not a parameter here, and neither is ``Version.REPEATS``. A flag that could
+    select a resolving install would make this the general dependency door wearing an ownership
+    check, and the general door already exists; a flag that could select ``Version.IDENTIFIES``
+    would be a flag for "this wheel's version tells two builds apart", which is false of every wheel
+    that can legally arrive here -- the ownership check above has already established that the
+    source is in THIS tree at THIS sha, which is precisely the situation in which the version is
+    not an identity.
 
     Args:
         wheel: a LOCAL wheel built from this checkout.
@@ -184,4 +194,12 @@ def install_self_build(
     if not wheel.is_file():
         raise FileNotFoundError(f'no such wheel: {wheel}')
     refuse_foreign_wheel(wheel, declared_distributions(manifests), workspace=workspace or port.name)
-    return mutate([str(wheel)], port=port, mode=Mode.PINNED, run=run, dry_run=dry_run, timeout=timeout)
+    return mutate(
+        [str(wheel)],
+        port=port,
+        mode=Mode.PINNED,
+        version=Version.REPEATS,
+        run=run,
+        dry_run=dry_run,
+        timeout=timeout,
+    )
