@@ -38,9 +38,17 @@ def surface_problems(paths: tuple[Path, ...]) -> tuple[str, ...]:
         tree = parse(path)
         declared: list[str] | None = None
         for node in tree.body:
-            if isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == '__all__' for t in node.targets
-            ):
+            # ANNOTATED AND PLAIN ALIKE. MEASURED 2026-09-17 on a package declaring an EMPTY surface:
+            # `__all__: list[str] = []` needs its annotation, because an empty list has no element type
+            # to infer -- and reading only `ast.Assign` convicted that TRUE declaration of being absent.
+            # Same blind spot and same direction as the PEP 695 one below: it manufactures a lie where
+            # there is none, never the reverse, so nothing that already passed was wrong.
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            if any(isinstance(t, ast.Name) and t.id == '__all__' for t in targets):
                 declared = [e.value for e in getattr(node.value, 'elts', []) if isinstance(e, ast.Constant)]
         if declared is None:
             out.append(f'{path.name} declares no __all__, so its public surface is whatever happens to be defined')
@@ -108,12 +116,17 @@ def test_a_planted_module_is_refused(tmp_path: Path) -> None:
     clean.write_text("__all__ = ['X']\nX = 1\n", encoding='utf-8')
     aliased = tmp_path / 'aliased.py'
     aliased.write_text("__all__ = ['Row']\ntype Row = tuple[str, ...]\n", encoding='utf-8')
-    problems = surface_problems((missing, lying, clean, aliased))
+    annotated = tmp_path / 'annotated.py'
+    annotated.write_text('__all__: list[str] = []' + chr(10), encoding='utf-8')
+    problems = surface_problems((missing, lying, clean, aliased, annotated))
     assert any('declares no __all__' in p for p in problems)
     assert any("names 'gone'" in p for p in problems)
     assert not any('clean.py' in p for p in problems)
     # A PEP 695 alias is a real binding, so declaring it is TRUE and must not be convicted.
     assert not any('aliased.py' in p for p in problems)
+    # An ANNOTATED `__all__` is a declaration, and an EMPTY one is the strongest kind: it says the
+    # module publishes nothing, which is exactly the claim the unseeing reading erased.
+    assert not any('annotated.py' in p for p in problems)
 
 
 def test_the_guard_reads_this_repo() -> None:

@@ -200,8 +200,8 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   deliberately absent are all in that module's own docstring. Not re-exported below: ``render``,
   ``Base`` and ``Delta`` stop saying what they are once flattened into a namespace this wide.
 
-R4 PHASE 1, THE ``scripts/gate/`` MECHANISM (2026-09-17) -- six modules, family half only, no
-consumer re-pointed, none re-exported. ONE LINE EACH AND THE BREVITY IS FORCED: this file entered
+R4 PHASE 1, THE ``scripts/gate/`` AND ``scripts/repo/`` MECHANISMS (2026-09-17) -- eight modules,
+family half only, no consumer re-pointed, none re-exported. ONE LINE EACH AND THE BREVITY IS FORCED: this file entered
 the tranche at 387 lines against a 400-line band, so the reasoning stays in each module's own
 docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
 
@@ -211,6 +211,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.seams` -- rebinding for measurement WITH the undo; an unresolved seam is reported.
 * :mod:`lab_commons.dev.gatebase` -- the NARROWEST admitted ancestor of HEAD; refs arrive with NO DEFAULT.
 * :mod:`lab_commons.dev.treedirt` -- did the tree MOVE while judged; identity stays with ``content``.
+* :mod:`lab_commons.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
+* :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
+* :mod:`lab_commons.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
 
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
