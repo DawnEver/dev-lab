@@ -263,7 +263,30 @@ runner, the case library and the vendor engines, which are motronics facts.
 Labs = MOVES, motronics = SPLITS, **both already executed**. Nothing to do. Kept as a numbered
 stage so the 13/1/1 asymmetry is not re-opened by the next reader who sees only the line counts.
 
-## THE ONE DECISION THAT IS NOT MINE
+## THE DECISION, ANSWERED — and it moves the fix rather than removing it
+
+**USER RULING 2026-09-17: `uv.lock` stays OUT of git.** Not a lockfile, and not a `rev=`/`tag=` pin
+on the requirement either. "The latest from that URL" is the family's deliberate declaration.
+
+That does NOT leave the `make install-dev` revert standing, because the revert is not what the
+declaration says — it is the mechanism failing to deliver it. The declaration says LATEST; uv hands
+back CACHED. So the repair is to make the mechanism true rather than to weaken the declaration:
+
+* `--refresh-package lab-commons` (or `-P`, which implies it) on every install path.
+* NOT a global `--refresh`: refreshing everything is a wider, slower change than the defect, and a
+  fix wider than its cause is how the next reader loses the reason.
+
+This also explains the asymmetry nobody had accounted for. motronics never reverted because
+`scripts/gate/dep_sync.py` already passes `--upgrade-package lab-commons`. wdg-lab's
+`scripts/dep.py` escapes it for a DIFFERENT reason — it shells to `pip`, and pip re-clones a
+direct-URL requirement instead of treating it as satisfied. So wdg-lab has two install doors, one
+correct and one reverting, **and the reverting one is the one humans are told to use.** Two tools
+behaving differently on the identical requirement string is why this hid for so long, and it is why
+"read the command text" is not a measurement here.
+
+The section below is kept as the record of the question and of what it cost to answer it.
+
+## THE QUESTION AS IT STOOD BEFORE THE RULING
 
 `uv.lock` is ignored by family rule. Reversing it is what makes a checkout reproducible on the
 integrator's box; keeping it is what keeps a fast-moving kit from costing a bump commit per hop.
@@ -278,7 +301,12 @@ is not that a checkout MIGHT drift, it is that the repo's own install target rev
 deterministically, three times measured in one day. Any fix short of pinning has to explain why
 that command should keep resolving from cache.
 
-State the choice before R4 starts, or R4's evidence is not transferable off this box.
+ANSWERED. R4 is unblocked: once every install door refreshes the kit, the version a consumer runs
+is determined by the declaration plus the clock rather than by the box's cache, which is what R4's
+evidence needs in order to travel. It is a weaker guarantee than a lockfile — two boxes installing
+at different times still differ — so R4's reports must quote the kit version they measured against,
+and a red that cannot be reproduced upstream is to be re-measured at a stated version rather than
+attributed.
 
 ## Floors for whoever picks this up
 
