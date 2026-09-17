@@ -1,3 +1,12 @@
+---
+name: plan-one-source-of-truth-for-the-family-config-layer
+description: A content-level census of the four repos' config layer and the R0-R6 refactor it implies under one premise - lab_commons is the single source of truth and no backward compatibility is owed. The finding that reorders the plan is that the kit selects 12 ruff rule groups against the consumers' identical 58, so every stage that moves code INTO lab-commons would move it into a weaker standard; but the relation is NOT a subset in either direction, because the consumers globally ignore 8 codes the kit enforces.
+metadata:
+  type: project
+created: 2026-09-17
+accessed: 2026-09-17
+---
+
 # Plan — one source of truth for the family, and the config layer is the last tree nobody measured
 
 Measured 2026-09-17 across the four repos. `motronics` below always means the LANE worktree
@@ -21,24 +30,47 @@ a gap.
 
 ## THE FINDING THAT REVERSES THE ARROW
 
-The ruff select set:
+CORRECTED 2026-09-17 by the census in `tests/_config_census_rows.py`. The first reading of this
+called the relation a subset. **It is not a subset in either direction**, and that matters to R1.
 
-    lab-commons   E W F I UP B SIM RUF PLC0415 PLW0603 ARG001 TRY301        12 groups
-    wdg-lab       AIR ERA YTT ANN ASYNC S BLE FBT B A COM C4 ... TRY        ~57 groups
-    optimi-lab    the same ~57, diverging only in `ignore`
-    motronics     the same ~57, diverging only in `ignore`
+    lab-commons   E W F I UP B SIM RUF  +  ARG001 PLC0415 PLW0603 TRY301     12 selectors
+    wdg-lab / optimi-lab / motronics    BYTE-IDENTICAL, 58 selectors each
+                                        (pairwise symmetric difference EMPTY)
+                                        ignore lists agree on 62 of 63/62/66
 
-**The repo that SHIPS code to the other three is linted least strictly of the four.** This is not
-"not yet migrated". It is backwards: a shared kit's standard must be at least its consumers', or
-every consumer inherits code its own gate would have refused. Nothing in the family enforces the
-direction of that inequality today.
+* 8 of the kit's 12 are whole groups the consumers also take.
+* The other 4 are single codes inside consumer groups `ARG PLC PLW TRY`, ignored by NO consumer —
+  so on those four the consumers are at least as strict.
+* **50 selector groups** the consumers lint and the kit does not: `D ANN S PTH PT N TRY PLR` ...
+* **Counter-direction, exactly 8 codes**: inside the 8 shared groups every consumer GLOBALLY
+  IGNORES `B018 B904 E501 RUF012 RUF043 SIM108 SIM113 UP017`, which lab-commons enforces.
+
+Scalars are identical across the three consumers (`line-length 120`, `py313`, `unsafe-fixes`,
+`quote-style single`, `preview false`); lab-commons is `py312` with no ignore list at all.
+
+**The repo that SHIPS code to the other three is blind to 50 groups its consumers lint.** That is
+the part that is backwards, and it is why reversing it is R1: every later stage moves code INTO
+lab-commons, and code arriving in a tree blind to 50 groups is how the blindness persists. But the
+rule cannot be written as "the consumer's select is a superset of the kit's" — that is FALSE today
+in the 8-code direction, and a rule that is false on arrival teaches people to weaken it.
 
 Two more in the same class:
 
-* `lab-commons` has **no `.pre-commit-config.yaml`** while all three consumers do.
-* `motronics` carries BOTH `ruff.toml` (123 lines) AND `[tool.ruff]` in `pyproject.toml`. One
-  decision, two sources, so one of them is read by nobody — a declaration that lies, and which one
-  loses must be MEASURED against ruff's precedence, not assumed.
+* `lab-commons` has **no `.pre-commit-config.yaml`** while all three consumers do. This is the same
+  finding one layer out: the repo that ships `dev.hook_install`, `dev.hooks`, `dev.hook_adoption`
+  and `dev.githooks` runs NONE of it on itself and has no commit-time enforcement at all.
+* `motronics` carries BOTH `ruff.toml` and `[tool.ruff]`. MEASURED via `ruff check --show-settings`:
+  `ruff.toml` wins outright, and the loser holds exactly one key, `extend = "ruff.toml"`, naming the
+  winner. So it is **DEAD, NOT LYING** — deleting it changes nothing, but leaving it invites the
+  next reader to edit the file ruff never reads.
+
+Installed git hooks, measured 2026-09-17 by resolving the hooks dir THROUGH git (a first hand
+reading with `ls .git/hooks` from the wrong directory reported zero everywhere and was refused by
+the census reader): lab-commons `()`, wdg-lab `(pre-commit, pre-push)`, optimi-lab `(pre-commit,)`,
+motronics `(commit-msg, pre-commit, pre-push)`. `dev.hook_install`'s docstring claim of zero
+everywhere is now HISTORICAL and needs updating. What is still unwired is a STAGE, not a repo: both
+labs declare `commitizen`, whose stage is `commit-msg`, and neither has a `commit-msg` hook — so
+the one non-whitelist hook optimi-lab declares is the one part of its config nothing executes.
 
 ## What the config layer actually shares, measured by CONTENT
 
@@ -100,15 +132,27 @@ Plus a config-layer census in lab-commons covering the six artefacts above.
 
 DECLARATION ONLY. No file moves in R0.
 
-### R1 — reverse the ruff arrow
+### R1 — reverse the ruff arrow, and state the rule the measurement actually supports
 
-`lab_commons` adopts the consumers' ~57-group select as its own floor, and fixes what that reds.
-Then the family rule becomes enforceable and is added as a row: **a consumer's select must be a
-superset of the kit's.** The test lives in `lab_commons.dev.rules` and each consumer's adoption
-arm asserts it, so the inequality cannot silently invert again.
+`lab_commons` adopts the consumers' 58-selector set as its own floor and fixes what that reds.
+That set is byte-identical in all three consumers, so it is not a negotiation — it is already the
+family's answer, held three times.
 
-This is R1 and not R3 because every later stage moves code INTO lab-commons, and code arriving in
-a tree with a weaker standard is how the standard stays weak.
+The rule that follows is NOT "the consumer's select is a superset of the kit's": the 8-code
+counter-direction makes that false on arrival. The measured relation is two separate facts, and
+each gets its own arm:
+
+* **the kit's select covers every group any consumer selects** — the blindness, closed by adoption;
+* **a code the kit enforces may not be globally ignored by a consumer** — today `B018 B904 E501
+  RUF012 RUF043 SIM108 SIM113 UP017` violate this, so the arm ships with those eight as a NAMED
+  waiver set with a ceiling, not as a silent exception. A ratchet has two sides: the waiver set may
+  only shrink, and it reds if it grows.
+
+Eight rows, each with a reason, is the deliverable — deciding per code whether the kit should stop
+enforcing it or the consumers should stop ignoring it. Both answers are legitimate; neither is
+"lower the count".
+
+This is R1 and not a tidy-up at the end because every later stage moves code INTO lab-commons.
 
 ### R2 — the config seam, one artefact at a time
 
@@ -122,11 +166,12 @@ deltas.
 The seam is the same one `dep.py` already uses: the mechanism is the family's, the two or three
 answers that are not derivable from there are the repo's, and the repo states them.
 
-### R3 — kill the second ruff source
+### R3 — delete motronics' dead `[tool.ruff]` block  (MEASURED, one line)
 
-Measure which of motronics' `ruff.toml` and `[tool.ruff]` ruff actually reads, move anything the
-loser uniquely holds into the winner, delete the loser. One decision, one source. Falls out of R2
-if R2 chooses `[tool.ruff]` as the family base.
+`ruff check --show-settings` names `ruff.toml` as the settings path; the `pyproject.toml` block
+holds only `extend = "ruff.toml"`. It is dead rather than lying, so this is a deletion with no
+migration behind it — but it must happen before R2 rewrites either file, or R2's renderer has two
+places to write and one of them is a trap.
 
 ### R4 — the 29 declared-but-unmoved motronics rows
 
@@ -144,11 +189,18 @@ the reason — the shape `agent_guard` already uses for GIT-NETWORK-VERB and RAW
 `netverb` is the known live one: `pull_all.py` calls git directly and `wdg-lab-update.sh` exits on
 the first failed fetch.
 
-### R6 — `docs-src/dev`, 13 / 1 / 1 / 14
+### R6 — DISSOLVED: `docs-src/dev` 13/1/1/14 is not a gap
 
-The labs have one page each. Either their mechanics genuinely live elsewhere, or `rules/**` is
-carrying mechanism that the width cap says belongs in `docs-src/dev/`. MEASURE before deciding;
-this is the one stage whose direction is not yet established by evidence.
+Measured, and it refutes the line-count reading that produced this stage. Both labs' single page is
+a 30-line POINTER TABLE into `lab-commons/docs-src/dev/`, generated by
+`lab_commons.dev.devdocs.pointer_table` and listing 12 family pages — the MOVES already executed
+2026-09-16. motronics' 14 shares nine filenames with the kit's 13, every one already a pointer plus
+a local delta (`the-three-participants.md` is 6 lines against 38 upstream); the five with no
+upstream twin (`gate.md testing.md integration.md user-flow.md compute-resources.md`) are the gate
+runner, the case library and the vendor engines, which are motronics facts.
+
+Labs = MOVES, motronics = SPLITS, **both already executed**. Nothing to do. Kept as a numbered
+stage so the 13/1/1 asymmetry is not re-opened by the next reader who sees only the line counts.
 
 ## THE ONE DECISION THAT IS NOT MINE
 
@@ -169,5 +221,10 @@ State the choice before R4 starts, or R4's evidence is not transferable off this
 * All-three `.gitignore` intersection: 14 lines. All-three pre-commit ids: 11.
 * `lab_commons.dev` public modules: 30.
 * wdg-lab consumes 28; optimi-lab and motronics 33.
-* ruff select: 12 groups in the kit against ~57 in each consumer. R1 is done when that inequality
-  points the other way and a test says so.
+* ruff select: 12 selectors in the kit against 58 in each consumer, the consumers' sets
+  BYTE-IDENTICAL (pairwise symmetric difference empty). 50 groups the kit is blind to; 8 codes the
+  consumers globally ignore and the kit enforces. R1 is done when the first number is 0 and the
+  second is a named, shrinking waiver set.
+* Config census: 24 rows (4 repos x 6 artefacts) = 4 STAYS, 2 MOVES, 18 SPLITS.
+* Installed git hooks: lab-commons 0, wdg-lab 2, optimi-lab 1, motronics 3. A later reading of zero
+  everywhere means the hooks dir was resolved by path rather than through git.
