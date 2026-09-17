@@ -214,6 +214,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
+* :mod:`lab_commons.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.
 
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
