@@ -1,4 +1,4 @@
-"""THE FOURTEEN ROWS THREE TRANCHES MEASURED BY HAND on 2026-09-17 -- DATA.
+"""THE FIFTEEN ROWS THREE TRANCHES AND ONE CONSUMER LANE MEASURED BY HAND on 2026-09-17 -- DATA.
 
 They are the only reason the instrument beside them is worth shipping.
 
@@ -23,6 +23,17 @@ THE CONTROL IS IN THE SET, not beside it. `_symbol_coverage.py` publishes `surve
 `lab_commons.dev.checkout`, which has nothing whatever to do with it: a name-matching census
 convicts it against the wrong module. It is here so that the instrument's refusal to treat overlap
 as a detector is EXERCISED by the same run that validates the positives.
+
+THE FIFTEENTH ROW IS THE ONE THAT FOUND THE INSTRUMENT'S BLIND SPOT, and it comes from a different
+repo on purpose. optimi-lab's `tests/architecture/test_the_rules_pages_are_a_ratchet.py` is declared
+MOVES by its own roster and graded UNTOUCHED by the first census ever run against it -- while
+`lab_commons.dev.famtests.rulespages`, landed hours earlier, already published its whole subject and
+more. Both detectors were silent: the kit module named no consumer, and a test file that has not
+adopted a shared body yet imports nothing from the kit BY DEFINITION. That is the class of row the
+provenance registry exists for, so it is pinned here by the case that found it rather than by a
+plant alone. Its surface includes its three `test_*` functions, which is why the grade is PARTIAL
+rather than SUPERSEDED, and its ONE shared name in six is the measurement that kept surface overlap
+out of the detector set.
 
 ONE DECLARED DISAGREEMENT, and it is stated rather than smoothed. `scripts/gate/width.py` reads
 PARTIAL where the tranche said STAYS. The tranche is right that the file did not leave; the roster
@@ -51,7 +62,7 @@ __all__ = [
 ALREADY_IN_THE_KIT: Final = 'already_in_the_kit'
 STILL_LOCAL: Final = 'still_local'
 
-#: Below the 13 rows held here. A floor, not a second pin on the count: adding a measured row must
+#: Below the 15 rows held here. A floor, not a second pin on the count: adding a measured row must
 #: not red, and a fixture that lost its rows must.
 ROW_FLOOR: Final = 10
 
@@ -277,6 +288,23 @@ MEASURED_ROWS: Final[tuple[MeasuredRow, ...]] = (
         imports=frozenset(),
         hand=STILL_LOCAL,
         expected=UNTOUCHED,
+    ),
+    MeasuredRow(
+        path='tests/architecture/test_the_rules_pages_are_a_ratchet.py',
+        side='moves',
+        public=frozenset(
+            [
+                'PAGE_FLOOR',
+                'ratchet_breaks',
+                'rule_pages',
+                'test_the_ratchet_refuses_all_four_movements',
+                'test_the_rule_pages_hold_their_measured_budget',
+                'test_the_scan_counts_a_planted_page',
+            ]
+        ),
+        imports=frozenset(),
+        hand=ALREADY_IN_THE_KIT,
+        expected=PARTIAL,
     ),
     MeasuredRow(
         path='scripts/repo/worktree_debris.py',

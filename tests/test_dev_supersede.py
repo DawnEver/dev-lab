@@ -1,4 +1,4 @@
-"""`lab_commons.dev.supersede`: both plants, both floors, and the fourteen rows it has to reproduce.
+"""`lab_commons.dev.supersede`: every plant, both floors, and the fifteen rows it has to reproduce.
 
 THE TEST THAT DECIDES WHETHER THIS MODULE WAS WORTH WRITING is `test_the_hand_measurement_is_
 reproduced`. Three tranches read a placement roster by hand on 2026-09-17 and corrected 17 declared
@@ -6,6 +6,11 @@ MOVES to 7; the instrument is only interesting if it reaches the same answer fro
 without being handed it. The rows live in `_supersede_rows.py` as DATA, the kit side is read LIVE,
 and the expected grades are asserted one by one rather than in aggregate -- an aggregate count can
 be satisfied by two compensating mistakes.
+
+THE THREE HOLES THE FIRST CONSUMER FOUND each get a plant that FIRES and a plant that proves the
+old correct answer did not move: provenance-as-data against a kit module that names nobody, an
+unreadable row against a shell script, and a wrong `package` that must refuse rather than report a
+clean zero. The last is this family's dominant defect inside the instrument built to find it.
 
 BOTH DIRECTIONS ARE PLANTED, because only the second one makes this a census rather than a name
 matcher: a file whose subject IS upstream must be flagged, and a file that merely SHARES NAMES with
@@ -30,23 +35,28 @@ from lab_commons.dev.supersede import (
     PROVENANCE,
     SUPERSEDED,
     UNMEASURABLE,
+    UNREADABLE,
     UNTOUCHED,
     KitModule,
+    PackageMismatch,
     Row,
     VacuousCensus,
     grade_row,
     kit_modules,
+    provenance_rows,
     take_census,
+    undeclared_modules,
 )
 
 #: The shipped kit, read as source. This is the half of the fixture that can rot, so it is not pinned.
 DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 
 #: The kit publishes far more than this; the floor refuses a directory the scan failed to reach.
+#: It counts the sub-packages too, since `kit_modules` recurses: 46 modules MEASURED 2026-09-17.
 KIT_FLOOR = 15
 
 #: Both halves of the validation need a population or the separation is vacuous. MEASURED over the
-#: fixture: 6 rows hand-read as already in the kit, 8 as still local.
+#: fixture: 7 rows hand-read as already in the kit, 8 as still local.
 FLAGGED_FLOOR = 4
 LOCAL_FLOOR = 6
 
@@ -88,6 +98,15 @@ def stale_branches(): ...
 def report(): ...
 def main(): ...
 '''
+
+_ADOPTER = '''"""A consumer that delegates."""
+
+from lab_commons.dev.bounded import run_bounded
+
+def worker_count(): ...
+'''
+
+_ROWS = "PROVENANCE = {{'checkout': ({kind!r}, 'scripts/repo/debris.py')}}\n"
 
 
 def test_a_row_whose_subject_is_upstream_is_flagged(tmp_path: Path) -> None:
@@ -235,3 +254,170 @@ def test_the_live_fork_is_the_row_this_was_built_for() -> None:
     assert claim.detectors == (PROVENANCE,)
     assert claim.flagged
     assert 'orphan_directories' in claim.covered
+
+
+# -- HOLE 1: the kit module that names nobody, and the registry that makes forgetting a red. --------
+
+
+def test_a_kit_module_that_names_no_consumer_is_still_caught_by_its_row(tmp_path: Path) -> None:
+    """THE PLANT FOR THE MISS. Silent docstring, no import, and the census convicts on the DATA.
+
+    This is `famtests.rulespages` reduced: a kit module that published a consumer's whole subject,
+    named no path and was imported by nobody, so both detectors were silent and the row read
+    UNTOUCHED. The registry is what fires here, and nothing else in the plant changed.
+    """
+    kit = {'checkout.py': _SILENT_KIT, '_provenance_rows.py': _ROWS.format(kind='supersedes')}
+    kit_dir, root = _plant(tmp_path, kit, {'scripts/repo/debris.py': _FORK})
+    (claim,) = take_census(
+        {'scripts/repo/debris.py': 'moves'},
+        kit_modules(kit_dir),
+        root=root,
+        package=PACKAGE,
+        row_floor=1,
+        module_floor=1,
+    ).claims
+    assert claim.grade == SUPERSEDED
+    assert claim.detectors == (PROVENANCE,)
+    assert claim.kit_module == 'checkout'
+
+
+def test_an_adopted_by_row_is_not_a_provenance_claim(tmp_path: Path) -> None:
+    """THE CONTROL THAT KEEPS THE OLD ANSWER. Delegation is not supersession, so the row stays put.
+
+    Without this the registry would re-admit exactly the false positive `named_only` was measured
+    into existence for: `verify` names `scripts/gate/runner.py` as the tree it was carved FROM.
+    """
+    kit = {'checkout.py': _SILENT_KIT, '_provenance_rows.py': _ROWS.format(kind='adopted_by')}
+    kit_dir, root = _plant(tmp_path, kit, {'scripts/repo/debris.py': _FORK})
+    (claim,) = take_census(
+        {'scripts/repo/debris.py': 'moves'},
+        kit_modules(kit_dir),
+        root=root,
+        package=PACKAGE,
+        row_floor=1,
+        module_floor=1,
+    ).claims
+    assert claim.grade == UNTOUCHED, 'a consumer that delegates has not been replaced'
+    assert claim.detectors == ()
+
+
+def test_the_registry_is_two_sided_over_planted_modules() -> None:
+    """A module with no row, a row with no module, and a kind that is not a kind. Over the REAL audit."""
+    modules = [KitModule(name='checkout', claims=frozenset(), universe=frozenset())]
+    assert undeclared_modules(modules, {'checkout': ('original',)}) == ()
+    assert 'no provenance row' in undeclared_modules(modules, {})[0]
+    assert (
+        'naming no published module'
+        in undeclared_modules(modules, {'checkout': ('original',), 'gone': ('original',)})[0]
+    )
+    assert 'not one of' in undeclared_modules(modules, {'checkout': ('moved',)})[0]
+
+
+def test_every_published_kit_module_declares_its_provenance() -> None:
+    """THE RATCHET, live. A module that forgets to say what it replaced is itself the red now.
+
+    The convention it replaces cost the census its worst miss: `rulespages` landed hours before the
+    census ran, said nothing, and its consumer graded UNTOUCHED against the module that supersedes it.
+    """
+    modules = kit_modules(DEV_DIR)
+    assert len(modules) >= KIT_FLOOR
+    problems = undeclared_modules(modules, provenance_rows(DEV_DIR))
+    assert problems == (), 'the kit provenance registry disagrees with what is published:\n  ' + '\n  '.join(problems)
+
+
+def test_the_row_that_found_the_miss_is_flagged() -> None:
+    """optimi-lab's rules-page ratchet, against the LIVE kit -- the fifteenth row, named not aggregated.
+
+    It also measures why OVERLAP was not promoted to a third detector: the consumer shares ONE of its
+    six public names with the module that supersedes it, so an overlap detector misses this row too.
+    """
+    row = next(r for r in MEASURED_ROWS if r.path.endswith('test_the_rules_pages_are_a_ratchet.py'))
+    claim = grade_row(Row(row.path, row.side, row.public, row.imports), kit_modules(DEV_DIR))
+    assert claim.kit_module == 'rulespages'
+    assert claim.detectors == (PROVENANCE,)
+    assert claim.flagged
+    assert claim.covered == ('ratchet_breaks',), 'one shared name in six: overlap could not have found this'
+
+
+# -- HOLE 2: a row that is not Python is a row, and it refuses a grade. ----------------------------
+
+
+def test_a_shell_row_grades_unreadable_instead_of_crashing(tmp_path: Path) -> None:
+    """THE PLANT. `ast.parse` on a shell script raised and the caller had to filter by hand."""
+    kit_dir, root = _plant(tmp_path, {'checkout.py': _CLAIMING_KIT}, {'scripts/repo/debris.py': _FORK})
+    (root / 'scripts' / 'hooks').mkdir(parents=True)
+    (root / 'scripts' / 'hooks' / 'with-retry.sh').write_text(
+        '#!/usr/bin/env bash\nset -euo pipefail\n', encoding='utf-8'
+    )
+    census = take_census(
+        {'scripts/hooks/with-retry.sh': 'moves', 'scripts/repo/debris.py': 'moves'},
+        kit_modules(kit_dir),
+        root=root,
+        package=PACKAGE,
+        row_floor=2,
+        module_floor=1,
+    )
+    graded = {claim.path: claim.grade for claim in census.claims}
+    assert graded['scripts/hooks/with-retry.sh'] == UNREADABLE
+    assert census.rows_read == 2, 'an unreadable row is still a row -- dropping it is how a MOVES row goes missing'
+    assert graded['scripts/repo/debris.py'] == SUPERSEDED, 'the readable row beside it is graded as before'
+
+
+def test_a_python_row_that_will_not_parse_still_raises(tmp_path: Path) -> None:
+    """THE OTHER SIDE. A broken `.py` is a broken file in the tree, not a file of another kind."""
+    kit_dir, root = _plant(tmp_path, {'checkout.py': _CLAIMING_KIT}, {'scripts/repo/debris.py': 'def (\n'})
+    with pytest.raises(SyntaxError):
+        take_census(
+            {'scripts/repo/debris.py': 'moves'},
+            kit_modules(kit_dir),
+            root=root,
+            package=PACKAGE,
+            row_floor=1,
+            module_floor=1,
+        )
+
+
+# -- HOLE 3: a wrong `package` must refuse, because its answer looks like a clean one. -------------
+
+
+def test_a_package_that_resolves_onto_nothing_is_refused(tmp_path: Path) -> None:
+    """THE PLANT. `package='lab_commons'` resolves every kit import to `'dev'` and reports 0 CONSULTS."""
+    kit_dir, root = _plant(tmp_path, {'bounded.py': _SILENT_KIT}, {'scripts/gate/runner.py': _ADOPTER})
+    with pytest.raises(PackageMismatch, match='wrong depth'):
+        take_census(
+            {'scripts/gate/runner.py': 'stays'},
+            kit_modules(kit_dir),
+            root=root,
+            package='lab_commons',
+            row_floor=1,
+            module_floor=1,
+        )
+
+
+def test_the_right_package_still_reports_the_adoption(tmp_path: Path) -> None:
+    """THE CONTROL. Same tree, correct depth: the IMPORT detector fires and the row reads CONSULTS."""
+    kit_dir, root = _plant(tmp_path, {'bounded.py': _SILENT_KIT}, {'scripts/gate/runner.py': _ADOPTER})
+    (claim,) = take_census(
+        {'scripts/gate/runner.py': 'stays'},
+        kit_modules(kit_dir),
+        root=root,
+        package=PACKAGE,
+        row_floor=1,
+        module_floor=1,
+    ).claims
+    assert claim.grade == CONSULTS
+    assert claim.detectors == (IMPORT,)
+
+
+def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -> None:
+    """THE FALSE-POSITIVE GUARD. A roster of live forks imports nothing, and that is an ANSWER."""
+    kit_dir, root = _plant(tmp_path, {'checkout.py': _SILENT_KIT}, {'scripts/repo/debris.py': _FORK})
+    census = take_census(
+        {'scripts/repo/debris.py': 'moves'},
+        kit_modules(kit_dir),
+        root=root,
+        package=PACKAGE,
+        row_floor=1,
+        module_floor=1,
+    )
+    assert census.claims[0].grade == UNTOUCHED
