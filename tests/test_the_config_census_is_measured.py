@@ -287,14 +287,22 @@ def test_the_makefile_core_is_three_targets_across_all_four() -> None:
     assert 'verify' in per_repo['lab-commons'], 'lab-commons lost `verify`, which its own Makefile calls the one entry'
 
 
-def test_the_hook_core_is_eleven_and_the_labs_commitizen_stage_is_unwired() -> None:
+def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() -> None:
     """THE RATCHET'S OTHER SIDE for the pre-commit rows: DECLARED is not INSTALLED.
 
-    This assertion has already earned its place once. A hand `ls` reported zero installed hooks in
-    every repo; the reader here -- which resolves the hooks directory through git, and a worktree's
-    through its parent -- found `pre-commit` in three of them and refused the recorded zero. The
-    census was wrong and the check caught it, which is the only reason the numbers below are worth
-    anything.
+    This assertion has now earned its place TWICE, in opposite directions, and the second time is
+    why the name changed.
+
+    First: a hand `ls` reported zero installed hooks in every repo; the reader here -- which
+    resolves the hooks directory through git, and a worktree's through its parent -- found
+    `pre-commit` in three of them and refused the recorded zero.
+
+    Second, 2026-09-17: this arm used to assert that the labs' `commit-msg` stage was UNWIRED, which
+    was true and meant EVERY COMMIT MESSAGE IN BOTH LABS WENT UNCHECKED while both trees read as
+    guarded. It was closed the same day, so the arm is now its mirror: the stage IS wired, and this
+    line is what reds if it is ever unwired again. A ratchet has two sides, and an arm that only
+    ever asserted the gap would have gone green forever the moment the gap closed -- silent about
+    the regression it exists to catch.
     """
     reached = reachable_repos(REPO_PATHS)
     assert hook_ids(reached['lab-commons']) == frozenset(), (
@@ -314,9 +322,11 @@ def test_the_hook_core_is_eleven_and_the_labs_commitizen_stage_is_unwired() -> N
         if repo not in reached:
             continue
         assert 'commitizen' in declared[repo], f'{repo} stopped declaring commitizen'
-        assert 'commit-msg' not in installed_hook_names(reached[repo]), (
-            f'{repo} wired its commit-msg stage. That is the repair its row asks for -- rewrite the row '
-            f'and INSTALLED_HOOKS to describe what landed rather than deleting this assertion.'
+        assert 'commit-msg' in installed_hook_names(reached[repo]), (
+            f'{repo} declares commitizen at the commit-msg stage and has no commit-msg hook file, so '
+            f'every commit message here goes UNCHECKED while the tree reads as guarded. That gap was '
+            f'open in both labs until 2026-09-17 and nothing was looking for it; this line is what '
+            f'looks. Re-wire it (`pre-commit install -t commit-msg`) rather than relaxing this arm.'
         )
     if 'motronics-studio' in reached:
         assert 'commit-msg' in installed_hook_names(reached['motronics-studio']), (

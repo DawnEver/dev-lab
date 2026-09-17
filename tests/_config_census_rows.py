@@ -333,14 +333,23 @@ HOOK_ID_CORE: tuple[str, ...] = (
 #: wdg-lab and optimi-lab on 2026-09-16, and a day later both have them, so that measurement is now
 #: historical and this table is the live one.
 #:
-#: WHAT IS STILL MISSING IS A STAGE, NOT A REPO. Both labs declare `commitizen`, whose stage is
-#: `commit-msg`, and NEITHER has a `commit-msg` hook file -- so in both repos that declaration
-#: governs nothing while the pre-commit half of the same file works. motronics is the only repo
-#: where every stage its config declares is actually wired.
+#: THE MISSING STAGE WAS CLOSED THE SAME DAY IT WAS RECORDED, and how it was found is the part worth
+#: keeping. This paragraph used to read "both labs declare `commitizen`, whose stage is `commit-msg`,
+#: and NEITHER has a `commit-msg` hook file". That was true, and nothing was looking for it: both
+#: repos read as guarded while EVERY COMMIT MESSAGE WENT UNCHECKED. What surfaced it was not a hunt.
+#: The family pre-commit base spells `stages: [commit-msg]` out where both labs had left it implicit,
+#: and `hook_install.declared_stages` reads the config TEXT -- so making an implicit declaration
+#: EXPLICIT turned `test_the_declared_hooks_are_installed` red and named the shim nobody had
+#: installed. The RESOLVED stage never moved; upstream already said `commit-msg`. Writing down what
+#: was already true is what made the gap visible, which is the argument for stating a thing rather
+#: than relying on it.
+#:
+#: lab-commons stays at ZERO and that is its own row rather than an oversight: it ships
+#: `hook_install`, `hooks`, `hook_adoption` and `githooks` and runs none of them on itself.
 INSTALLED_HOOKS: dict[str, tuple[str, ...]] = {
     'lab-commons': (),
-    'wdg-lab': ('pre-commit', 'pre-push'),
-    'optimi-lab': ('pre-commit',),
+    'wdg-lab': ('commit-msg', 'pre-commit', 'pre-push'),
+    'optimi-lab': ('commit-msg', 'pre-commit'),
     'motronics-studio': ('commit-msg', 'pre-commit', 'pre-push'),
 }
 
