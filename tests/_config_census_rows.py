@@ -306,7 +306,11 @@ MAKE_TARGET_CORE: tuple[str, ...] = (
     'test',
 )
 
-#: Hook ids declared by all three consumers that have a config at all. Eleven of 22/19/18.
+#: Hook ids declared by all three CONSUMERS. Eleven of 22/19/18 -- and as of 2026-09-17 also the
+#: complete set lab-commons declares, because the kit adopted the family base with an EMPTY delta
+#: (`tests/_famconfig_delta.py`). So this tuple is no longer "the shared part of three files"; it is
+#: the shared part of three files and the whole of a fourth, which is what a base looks like once
+#: the repo that publishes it runs it.
 HOOK_ID_CORE: tuple[str, ...] = (
     'check-added-large-files',
     'check-ast',
@@ -344,10 +348,27 @@ HOOK_ID_CORE: tuple[str, ...] = (
 #: was already true is what made the gap visible, which is the argument for stating a thing rather
 #: than relying on it.
 #:
-#: lab-commons stays at ZERO and that is its own row rather than an oversight: it ships
-#: `hook_install`, `hooks`, `hook_adoption` and `githooks` and runs none of them on itself.
+#: lab-commons LEFT ZERO ON 2026-09-17, and the sentence this replaces is worth keeping in view: it
+#: read "lab-commons stays at ZERO and that is its own row rather than an oversight". That was an
+#: accurate description and a bad resting place. The repo shipping `hook_install`, `hooks`,
+#: `hook_adoption`, `githooks` and the `lab-with-venv` bootstrap ran NONE of it on itself, so every
+#: commit here went through no check of any kind while this table judged three other repos on
+#: exactly that property. It now renders the family `.pre-commit-config.yaml` with an EMPTY delta and
+#: installs the two stages that config declares.
+#:
+#: TWO STAGES, NOT THREE, and the missing one is a decision rather than a gap: there is no `pre-push`
+#: here because `make verify` is this repo's whole verdict and a hook re-running it would block every
+#: push. `tests/test_the_kit_renders_its_own_precommit_config.py` pins that absence in BOTH
+#: directions, so installing one later is a red rather than a discovery.
+#:
+#: THE INTERPRETER IN THE SHIM IS NOT THIS REPO'S VENV, measured at install: `pre-commit` is a
+#: user-level `uv tool`, so `INSTALL_PYTHON` names the tool's environment. That is deliberate --
+#: installing into `.venv` would move an environment other worktrees gate against, mid-run -- and it
+#: is why `pre-commit` is declared in the `dev` extra anyway: the extra states what a CONSUMER needs
+#: to run `hook_install.install_command`, which is a different question from what this box happens
+#: to have on PATH.
 INSTALLED_HOOKS: dict[str, tuple[str, ...]] = {
-    'lab-commons': (),
+    'lab-commons': ('commit-msg', 'pre-commit'),
     'wdg-lab': ('commit-msg', 'pre-commit', 'pre-push'),
     'optimi-lab': ('commit-msg', 'pre-commit'),
     'motronics-studio': ('commit-msg', 'pre-commit', 'pre-push'),
@@ -423,16 +444,25 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
     ),
     'lab-commons::.pre-commit-config.yaml': Placement(
         SPLITS,
-        'ABSENT, AND THE ABSENCE IS THE ROW. This repo SHIPS the hook machinery -- `dev.hook_install` '
-        '(is a declared hook actually in the directory git consults), `dev.hooks` and '
-        '`dev.hook_adoption` (the denied shapes and their remedies), `dev.githooks` (the bump-version '
-        'payload wdg-lab now calls BY NAME rather than by copy) -- and runs none of it on itself. It is '
-        'finding 1 one layer out: the kit is held to less than what it ships. THE SEAM is the 11-hook '
-        'core all three consumers declare (commitizen plus the pre-commit-hooks whitelist), which is '
-        'the shared half; the repo-shaped half is the pre-push gate, and this repo genuinely has none '
-        '-- `make verify` is its whole verdict. What breaks while it stays absent: nothing reds, which '
-        'is the complaint -- the one repo whose own tests assert that a config without an install is a '
-        'lie has neither.',
+        'ABSENT UNTIL 2026-09-17, AND THE ABSENCE WAS THE ROW. This repo SHIPS the hook machinery -- '
+        '`dev.hook_install` (is a declared hook actually in the directory git consults), `dev.hooks` '
+        'and `dev.hook_adoption` (the denied shapes and their remedies), `dev.githooks` (the '
+        'bump-version payload wdg-lab now calls BY NAME rather than by copy), the `lab-with-venv` '
+        'bootstrap -- and ran none of it on itself: no config, no installed hook, no commit-time check '
+        'of any kind. It was finding 1 one layer out, the kit held to less than what it ships. IT IS '
+        'NOW A SPLIT WHOSE REPO HALF IS EMPTY, and that is the whole repair: the artefact is the '
+        'family base rendered by `famconfig` with a delta of ZERO lines, so every line of this file '
+        'came from `_famconfig_rows` and NOTHING is repo-shaped. THE SEAM is therefore the entire '
+        'file, which is the strongest form this row could take and the reason the side did not change '
+        'to MOVES -- a lab-commons row may not say MOVES, because this IS where a shared artefact '
+        'goes. The delta is empty by DECISION and not by '
+        'default -- each of the eleven base ids was checked against this tree, '
+        '`check-shebang-scripts-are-executable` was considered and refused on measurement (the five '
+        'shipped `.sh` payloads are mode 100644 here, so it would red on the first run), and the '
+        'pre-push gate the labs have is genuinely absent because `make verify` is this repo`s whole '
+        'verdict. Both declared stages are INSTALLED, which is the half a configuration cannot answer '
+        'for itself. What broke while it was absent: nothing reds, which was the complaint -- the one '
+        'repo whose own tests assert that a config without an install is a lie had neither.',
     ),
     'lab-commons::docs-src/dev/': Placement(
         STAYS,

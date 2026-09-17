@@ -303,22 +303,32 @@ def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() 
     line is what reds if it is ever unwired again. A ratchet has two sides, and an arm that only
     ever asserted the gap would have gone green forever the moment the gap closed -- silent about
     the regression it exists to catch.
+
+    Third, the same day: the kit's own half. This arm used to assert `hook_ids(lab-commons) ==
+    frozenset()` and its message named the repair it was waiting for -- "lab-commons grew a
+    .pre-commit-config.yaml ... rewrite the row to describe what landed rather than deleting this
+    assertion". That is what happened, so the assertion turned the way it was written to turn: the
+    kit is no longer the exception, and the core check below now covers ALL FOUR repos instead of
+    excluding the one that publishes the core. An arm phrased as "this repo has nothing" cannot
+    survive the repair it asks for; one phrased as "this repo has the core" survives and keeps biting.
     """
     reached = reachable_repos(REPO_PATHS)
-    assert hook_ids(reached['lab-commons']) == frozenset(), (
-        'lab-commons grew a .pre-commit-config.yaml. That is the repair its row asks for -- rewrite the '
-        'row to describe what landed rather than deleting this assertion.'
-    )
-    declared = {repo: hook_ids(root) for repo, root in reached.items() if repo != 'lab-commons'}
+    declared = {repo: hook_ids(root) for repo, root in reached.items()}
     for repo, ids in declared.items():
         assert set(HOOK_ID_CORE) <= ids, f'{repo} dropped part of the 11-hook core: {sorted(set(HOOK_ID_CORE) - ids)}'
+    assert declared['lab-commons'] == set(HOOK_ID_CORE), (
+        f'lab-commons declares {sorted(declared["lab-commons"])} against the family core '
+        f'{list(HOOK_ID_CORE)}. The kit adopted the base with an EMPTY delta on 2026-09-17, so its set '
+        f'IS the core exactly -- an extra id here is a repo-shaped line that belongs in '
+        f'`tests/_famconfig_delta.py` with a raised ceiling, and a missing one is the base losing a hook.'
+    )
     for repo, root in reached.items():
         assert installed_hook_names(root) == set(INSTALLED_HOOKS[repo]), (
             f'{repo}: installed hooks are now {sorted(installed_hook_names(root))}, recorded '
             f'{list(INSTALLED_HOOKS[repo])}. A config nobody installed is a declaration that lies, and '
             f'this line is the only thing in the family that would notice it changing.'
         )
-    for repo in ('wdg-lab', 'optimi-lab'):
+    for repo in ('lab-commons', 'wdg-lab', 'optimi-lab'):
         if repo not in reached:
             continue
         assert 'commitizen' in declared[repo], f'{repo} stopped declaring commitizen'

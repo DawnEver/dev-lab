@@ -61,6 +61,14 @@ dev = [
     "pytest",
     "pytest-mock",
     "ruff",
+    # `lab_commons.dev.hook_install.install_command` RETURNS `['-m', 'pre_commit', 'install', ...]`,
+    # derived from the consumer's own config so that nobody has to restate the stage list. That argv
+    # is only runnable if the extra gating the dev layer supplies the module it names -- and until
+    # 2026-09-17 it did not, in the repo that ships the function. Declared here rather than left to
+    # each consumer to notice: it is DRIVEN as an executable, exactly as pytest and ruff are, and
+    # `tests/test_dev_gate.py` still proves by reading the import statements that no module here
+    # imports it.
+    "pre-commit",
 ]
 
 [tool.pytest.ini_options]
