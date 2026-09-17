@@ -55,6 +55,7 @@ __all__ = [
     'UNGUARDED',
     'GuardReport',
     'PartReport',
+    'engine_beside',
     'guard_installation',
     'install_guard',
     'report_guard',
@@ -92,6 +93,23 @@ HOOK_COMMAND: Final = f'node {ENGINE_REL} {RULES_REL}'
 #: The parts, in the order a reader should fix them: an engine with no rules refuses nothing, and
 #: rules with no wiring are read by nobody.
 PART_NAMES: Final = ('engine', 'rules', 'wiring')
+
+
+def engine_beside(rules: Path) -> Path:
+    """The engine that judges *rules*: its SIBLING, because :data:`ENGINE_REL` and :data:`RULES_REL` are.
+
+    THE ONE PLACE THAT LAYOUT FACT IS SPELLED, so a body that is handed a rules file can name the
+    engine which will actually read it without being handed a root as well, and without any body
+    defaulting to the wheel's copy. Derived from the CALLER'S OWN argument rather than guessed: the
+    family's no-default doctrine is about one repo's answer being handed silently to another, and
+    "the engine beside the rules you named" is not an answer this module supplied.
+
+    A path is returned whether or not anything is there. Whether it exists is
+    :func:`lab_commons.dev.agenthooks.run_engine`'s refusal to make, in one place, rather than a
+    check every caller repeats slightly differently.
+    """
+    return rules.parent / Path(ENGINE_REL).name
+
 
 #: The matcher the tool uses to select Bash tool calls. A rule about a COMMAND can only be enforced
 #: where a command is issued.

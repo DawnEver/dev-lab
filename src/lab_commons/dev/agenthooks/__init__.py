@@ -55,6 +55,7 @@ __all__ = [
     'ENGINES',
     'ENGINE_SUFFIX',
     'STAMP',
+    'EngineNotReadable',
     'EngineNotShipped',
     'NoNode',
     'decide',
@@ -62,6 +63,7 @@ __all__ = [
     'engine_source',
     'main',
     'node_executable',
+    'run_engine',
 ]
 
 #: Every shipped engine is JavaScript; the suffix is what :data:`ENGINES` is derived through.
@@ -74,6 +76,9 @@ ENGINE_SUFFIX: Final = '.js'
 #: pre-commit's own marker, for the same reason.
 STAMP: Final = 'Engine shipped by lab-commons: lab_commons.dev.agenthooks'
 
+#: The engine reads a payload and writes a decision; nothing here waits on a network or an editor.
+_ENGINE_TIMEOUT_S: Final = 60
+
 _HERE: Final = Path(__file__).resolve().parent
 
 #: The shipped engines, BY NAME, derived from the directory rather than written down.
@@ -82,6 +87,17 @@ ENGINES: Final[tuple[str, ...]] = tuple(sorted(p.stem for p in _HERE.glob(f'*{EN
 
 class EngineNotShipped(LookupError):
     """An engine was asked for by a name this package does not ship."""
+
+
+class EngineNotReadable(OSError):
+    """The engine or the rules file named for a run is not there.
+
+    RAISED RATHER THAN FALLEN BACK FROM, and that is the whole point of naming an engine by PATH. The
+    engine fails OPEN by construction, so "run something else instead" and "run nothing" both reach a
+    caller as ``None`` -- an allowed command. A silent substitution of the wheel's copy for an absent
+    consumer copy would therefore report the consumer's engine as agreeing with the family on every
+    probe at exactly the moment the consumer has no engine at all.
+    """
 
 
 class NoNode(RuntimeError):
@@ -126,42 +142,85 @@ def node_executable() -> str:
     raise NoNode(msg)
 
 
-def decide(command: str, rules: Path, *, cwd: Path | None = None, engine: str = 'deny-commands') -> str | None:
-    """Run the engine over ONE Bash command and return the denial reason, or ``None`` if allowed.
+def run_engine(engine: Path, command: str, rules: Path, *, cwd: Path | None = None) -> str | None:
+    """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
     THE ENGINE IS DRIVEN, NEVER MODELLED. This feeds the real hook payload on stdin exactly as the
-    tool does and reads the real decision off stdout, so a test built on it is testing the file the
-    consuming repo will run rather than a Python restatement of what it is believed to do.
+    tool does and reads the real decision off stdout, so a test built on it is testing a file that
+    will really run rather than a Python restatement of what it is believed to do.
+
+    AN ENGINE IS NAMED BY A PATH WHENEVER THE QUESTION IS *WHOSE COPY*, and this function is why
+    there is one spelling of that rather than two. Two runners existed until 2026-09-17 -- this
+    module's :func:`decide`, which takes a shipped engine NAME and so always judges the wheel's copy,
+    and a hand-rolled ``subprocess`` call in :mod:`lab_commons.dev.famtests.agentguard`, which takes
+    a repo root and so judges the installed copy. Same package, opposite answers to *which file is
+    the subject*, and a consumer measured that contradiction rather than adopting either body. The
+    two copies DRIFT: measured 2026-09-17, the engines installed in three repos were stale enough to
+    ALLOW the heredoc-wrapped test invocation the shipped one had refused since 2026-08-22. They
+    agree today because somebody reinstalled, not because they cannot differ.
 
     Args:
+        engine: the ``deny-commands.js`` to run -- a consumer's installed copy, or
+            :func:`engine_path` for the one this wheel ships. Say which; never guess.
         command: the Bash command line the agent asked for.
         rules: the ``deny-rules.json`` to judge it against.
         cwd: the tool call's working directory, which the engine expands into ``{root}``.
-        engine: which shipped engine to run.
 
     Returns:
         The ``permissionDecisionReason`` when the engine denies, else ``None``. The engine fails OPEN
         by construction -- unparseable input or a bad rule prints nothing -- and that shows up here
         as ``None``, which is the truthful answer: nothing was refused.
 
+    Raises:
+        EngineNotReadable: either path is not a file. See that class for why this is not a fallback.
+
     """
+    for path in (engine, rules):
+        if not path.is_file():
+            msg = f'{path} is not a file, so nothing judged {command!r} -- and nothing else may judge it instead'
+            raise EngineNotReadable(msg)
     payload = {
         'tool_name': 'Bash',
         'tool_input': {'command': command},
         'cwd': str(cwd) if cwd is not None else '',
     }
     done = subprocess.run(
-        [node_executable(), str(engine_path(engine)), str(rules)],
+        [node_executable(), str(engine), str(rules)],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
         check=False,
-        timeout=60,
+        timeout=_ENGINE_TIMEOUT_S,
     )
     if not done.stdout.strip():
         return None
     decision = json.loads(done.stdout)['hookSpecificOutput']
     return decision['permissionDecisionReason'] if decision.get('permissionDecision') == 'deny' else None
+
+
+def decide(command: str, rules: Path, *, cwd: Path | None = None, engine: str = 'deny-commands') -> str | None:
+    """Run THE WHEEL'S OWN copy of a shipped engine over one Bash command; the reason, or ``None``.
+
+    THE SUBJECT IS THE WHEEL, AND THAT IS THE ONLY QUESTION THIS ANSWERS: *does the engine this
+    family ships refuse this shape?* A body asking about a CHECKOUT wants :func:`run_engine` with
+    that checkout's own ``.claude/hooks/deny-commands.js`` -- the installed copy drifts, and the
+    measurement is in :func:`run_engine`. A shipped NAME is what makes a call read as a family
+    question; a PATH is what makes it read as a repo question.
+
+    Args:
+        command: the Bash command line the agent asked for.
+        rules: the ``deny-rules.json`` to judge it against.
+        cwd: the tool call's working directory, which the engine expands into ``{root}``.
+        engine: which SHIPPED engine to run, by name.
+
+    Returns:
+        What :func:`run_engine` returns for the shipped engine of that name.
+
+    Raises:
+        EngineNotShipped: no engine of that name is in this wheel.
+
+    """
+    return run_engine(engine_path(engine), command, rules, cwd=cwd)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

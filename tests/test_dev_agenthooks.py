@@ -213,3 +213,34 @@ def test_the_engine_fails_open_on_an_unreadable_rules_file(tmp_path: Path) -> No
     broken = tmp_path / 'deny-rules.json'
     broken.write_text('[ {"name": "x", ', encoding='utf-8')
     assert agenthooks.decide('pytest tests/', broken) is None
+
+
+# --------------------------------------------------------------------------------------------
+# run_engine -- the ONE runner, and the path is how a caller says whose copy
+
+
+def test_run_engine_drives_the_file_it_is_handed_and_not_the_shipped_one(rules: Path, tmp_path: Path) -> None:
+    """THE POINT OF THE PATH. A stub at another location must decide, or the argument is decoration."""
+    stub = tmp_path / 'stub-engine.js'
+    stub.write_text(
+        "let raw='';process.stdin.on('data',c=>{raw+=c;});process.stdin.on('end',()=>{"
+        "process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',"
+        "permissionDecision:'deny',permissionDecisionReason:'STUB-ENGINE'}}));});",
+        encoding='utf-8',
+    )
+    assert agenthooks.run_engine(stub, 'echo hello', rules) == 'STUB-ENGINE'
+    assert agenthooks.decide('echo hello', rules) is None, 'the shipped engine must be untouched by the stub'
+
+
+def test_run_engine_refuses_an_absent_engine_or_rules_file_rather_than_allowing(rules: Path, tmp_path: Path) -> None:
+    """``None`` MEANS ALLOWED, so a missing file must raise: silence here would read as permission."""
+    with pytest.raises(agenthooks.EngineNotReadable, match='not a file'):
+        agenthooks.run_engine(tmp_path / 'nothing.js', 'echo hello', rules)
+    with pytest.raises(agenthooks.EngineNotReadable, match='not a file'):
+        agenthooks.run_engine(agenthooks.engine_path(), 'echo hello', tmp_path / 'nothing.json')
+
+
+def test_decide_is_run_engine_over_the_shipped_copy(rules: Path) -> None:
+    """One runner, two spellings of WHOSE: a name reaches the wheel, a path reaches a checkout."""
+    for command in ('pytest tests/', 'git status --short'):
+        assert agenthooks.decide(command, rules) == agenthooks.run_engine(agenthooks.engine_path(), command, rules)

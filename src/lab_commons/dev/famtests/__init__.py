@@ -40,6 +40,21 @@ WHAT IS HERE, one module per shared body:
   rule that was meant to.
 * :mod:`lab_commons.dev.famtests.configrender` -- the rendered family artefacts equal base + delta.
 
+WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
+2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the
+tree it is handed -- and the wheel's copy of anything is only ever the DECLARATION those files are
+compared against, never the subject. Audited across all five modules that day: ``hookinstall``,
+``visibility`` and ``configrender`` were already clean (each takes a ``root`` or an explicit path,
+and ``configrender``'s family BASE is a declaration, which is the allowed direction); ``agentguard``
+was right and ``allowguard`` was wrong, driving the engine inside the installed wheel. The subject is
+named by a PATH wherever it can differ, and :func:`lab_commons.dev.agenthooks.run_engine` is the one
+runner that takes one -- a shipped NAME (:func:`lab_commons.dev.agenthooks.decide`) now reads as the
+family question it is. An absent consumer file REFUSES; it never falls back to the wheel's, because a
+fall-back reports the family's answer as the repo's at exactly the moment the repo has none. What
+made this a defect rather than a tidiness point is that the two copies DRIFT: measured that day, the
+engines installed in three repos allowed a shape the shipped one had refused since 2026-08-22, and
+they agreed again only because somebody re-installed them.
+
 NOTHING HERE IS RE-EXPORTED FROM :mod:`lab_commons.dev`. Flattened, ``entries``, ``contradictions``
 and ``assert_live`` stop saying what they are about, and the import in a consumer's test file is the
 one place the subject should be spelled.

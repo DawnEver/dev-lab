@@ -14,6 +14,17 @@ BOTH DIRECTIONS ARE PLANTED EVERYWHERE, because every assertion here can be sati
 instrument that stopped working: a contradiction that must be SEEN sits beside a harmless row that
 must NOT be reported, an unwired repo sits beside a wired one, and the vacuous scan -- a settings
 file with no Bash row at all -- is driven as its own case rather than assumed impossible.
+
+WHOSE ENGINE IS PROVED BY A DRIFT, NOT BY A GREEN SUITE. Every case below would pass unchanged
+against a body that judged the copy inside the installed wheel, because after a re-install the two
+files are byte-identical -- which is exactly how the defect survived: measured 2026-09-17, the
+engines installed in three repos had drifted far enough to ALLOW a shape the shipped one refused,
+and they agreed again only because somebody re-installed them. So the cases under *a drifted
+consumer engine* PLANT a different ``deny-commands.js`` at the consumer's own path and assert the
+body follows THAT one, in both directions: one stub that refuses what the real engine allows, one
+that allows what the real engine refuses. The wheel's copy must still be reachable when it is asked
+for BY NAME, and an absent consumer copy must REFUSE, because a silent fall-back to the wheel would
+rebuild the original defect with extra steps.
 """
 
 from __future__ import annotations
@@ -24,7 +35,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev import agenthooks
-from lab_commons.dev.agent_guard import RULES_REL, SETTINGS_REL, install_guard
+from lab_commons.dev.agent_guard import ENGINE_REL, RULES_REL, SETTINGS_REL, engine_beside, install_guard
 from lab_commons.dev.famtests.allowguard import (
     GLOB_CASES,
     Scan,
@@ -209,6 +220,9 @@ def test_an_unwired_repository_refuses_instead_of_reporting_agreement(tmp_path: 
     """
     repo = tmp_path / 'unwired'
     (repo / '.claude' / 'hooks').mkdir(parents=True)
+    # The engine and the rules are BOTH there, so the only part missing is the one under test: the
+    # floor reports parts in the order a reader fixes them, and an absent engine would answer first.
+    (repo / ENGINE_REL).write_text(agenthooks.engine_source(), encoding='utf-8')
     (repo / RULES_REL).write_text(render(ADOPTION), encoding='utf-8')
     (repo / SETTINGS_REL).write_text(json.dumps({'permissions': {'allow': [DENIED_ENTRY]}}), encoding='utf-8')
     with pytest.raises(AssertionError, match='wiring'):
@@ -266,4 +280,144 @@ def test_the_instrument_check_reds_when_a_harmless_row_is_reported(clean: Path, 
             denied_entry=DENIED_ENTRY,
             harmless_entry=DENIED_ENTRY,
             scratch=tmp_path / 'probe3',
+        )
+
+
+# --------------------------------------------------------------------------------------------
+# a drifted consumer engine -- the direction this seam exists for
+
+
+#: A stub that is NOT the engine lab-commons ships and answers the opposite way: everything is
+#: denied, with a reason no real rule carries, so a refusal traced to it cannot be mistaken for the
+#: registry's own.
+_REFUSE_EVERYTHING = """
+let raw = '';
+process.stdin.on('data', (chunk) => { raw += chunk; });
+process.stdin.on('end', () => {
+  const payload = JSON.parse(raw);
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'PLANTED-DRIFTED-ENGINE refused ' + payload.tool_input.command,
+    },
+  }));
+});
+"""
+
+#: Its counterweight: a stub that refuses nothing. The engine fails OPEN by printing nothing, so
+#: this is also what a silently-broken installed engine looks like from outside.
+_REFUSE_NOTHING = """
+process.stdin.on('data', () => {});
+process.stdin.on('end', () => {});
+"""
+
+
+def _plant_engine(repo: Path, source: str) -> Path:
+    """Overwrite the repo's installed engine with a stub that answers differently from the wheel's."""
+    engine = repo / ENGINE_REL
+    engine.write_text(source, encoding='utf-8')
+    return engine
+
+
+def test_the_engine_beside_a_rules_file_is_the_one_that_repo_runs(clean: Path) -> None:
+    """The default is DERIVED from the caller's own argument, not guessed and not the wheel's."""
+    assert engine_beside(clean / RULES_REL) == clean / ENGINE_REL
+    assert engine_beside(clean / RULES_REL) != agenthooks.engine_path('deny-commands')
+
+
+def test_the_scan_follows_a_drifted_consumer_engine_that_refuses_more(clean: Path) -> None:
+    """THE DRIFT, in the direction that matters: the consumer's copy refuses what the wheel allows.
+
+    The fixture is the CLEAN repo, so the control is in the same test: against the real installed
+    engine its one Bash row is honest. Planting a stub at the same path must move the verdict -- if
+    it does not, the body is reading some other file, which is the whole defect.
+    """
+    before = contradictions(clean / SETTINGS_REL, clean / RULES_REL, cwd=clean)
+    assert before.refused == {}, 'the control failed: this fixture must be clean against its own engine'
+
+    _plant_engine(clean, _REFUSE_EVERYTHING)
+    after = contradictions(clean / SETTINGS_REL, clean / RULES_REL, cwd=clean)
+    assert set(after.probed) == set(before.probed), after
+    assert set(after.refused) == {HARMLESS_ENTRY}, (
+        'the planted engine at the consumer path did not decide, so this body is judging some other '
+        'file -- almost certainly the copy inside the installed wheel'
+    )
+    assert 'PLANTED-DRIFTED-ENGINE' in after.refused[HARMLESS_ENTRY], after.refused
+
+
+def test_the_scan_follows_a_drifted_consumer_engine_that_refuses_less(contradictory: Path) -> None:
+    """The other direction, and the one measured in the field: a stale installed engine ALLOWS more.
+
+    A body judging the wheel would still red here and look correct while the checkout it is
+    reporting on refuses nothing.
+    """
+    before = contradictions(contradictory / SETTINGS_REL, contradictory / RULES_REL, cwd=contradictory)
+    assert set(before.refused) == {DENIED_ENTRY}, before
+
+    _plant_engine(contradictory, _REFUSE_NOTHING)
+    after = contradictions(contradictory / SETTINGS_REL, contradictory / RULES_REL, cwd=contradictory)
+    assert after.probed == before.probed, after
+    assert after.refused == {}, (
+        'the consumer engine was replaced by one that refuses nothing and this body still reported a '
+        'contradiction, so it is not reading the file that repo runs'
+    )
+
+
+def test_the_assertion_reds_on_a_row_only_the_consumers_own_engine_refuses(clean: Path) -> None:
+    """The consumer-facing arm inherits the subject, not just the low-level scan."""
+    assert_no_allow_contradicts(root=clean, sanctioned=SANCTIONED)
+    _plant_engine(clean, _REFUSE_EVERYTHING)
+    with pytest.raises(AssertionError, match='PLANTED-DRIFTED-ENGINE'):
+        assert_no_allow_contradicts(root=clean, sanctioned=SANCTIONED)
+
+
+def test_the_wheels_engine_is_still_reachable_when_it_is_asked_for(contradictory: Path) -> None:
+    """THE CONTROL IN THE OTHER DIRECTION: a ratchet that removed a capability is as wrong as its opposite.
+
+    *Does the engine we ship refuse this shape* stays answerable -- it is just no longer what a body
+    asks by accident.
+    """
+    _plant_engine(contradictory, _REFUSE_NOTHING)
+    shipped = contradictions(
+        contradictory / SETTINGS_REL,
+        contradictory / RULES_REL,
+        cwd=contradictory,
+        engine=agenthooks.engine_path('deny-commands'),
+    )
+    assert set(shipped.refused) == {DENIED_ENTRY}, shipped
+    assert 'PLANTED' not in ''.join(shipped.refused.values())
+
+
+def test_an_absent_consumer_engine_refuses_rather_than_falling_back_to_the_wheel(contradictory: Path) -> None:
+    """A SILENT FALL-BACK WOULD REBUILD THE DEFECT WITH EXTRA STEPS, so the absence is the finding.
+
+    The wheel always has an engine, so falling back means this scan can never report the one state
+    it most needs to: a checkout with no guard in it at all.
+    """
+    (contradictory / ENGINE_REL).unlink()
+    with pytest.raises(agenthooks.EngineNotReadable, match=r'deny-commands.js'):
+        contradictions(contradictory / SETTINGS_REL, contradictory / RULES_REL, cwd=contradictory)
+    with pytest.raises(AssertionError, match=r'deny-commands.js'):
+        assert_no_allow_contradicts(root=contradictory, sanctioned=SANCTIONED)
+
+
+def test_an_unreadable_consumer_engine_refuses_too(contradictory: Path) -> None:
+    """Absent is the easy case; a path occupied by something that is not a file must refuse alike."""
+    engine = contradictory / ENGINE_REL
+    engine.unlink()
+    engine.mkdir()
+    with pytest.raises(agenthooks.EngineNotReadable, match='not a file'):
+        contradictions(contradictory / SETTINGS_REL, contradictory / RULES_REL, cwd=contradictory)
+
+
+def test_the_instrument_check_is_judged_by_the_consumers_engine_as_well(clean: Path, tmp_path: Path) -> None:
+    """The plant-both-ways arm shares the subject; otherwise the floor guards a different file."""
+    _plant_engine(clean, _REFUSE_NOTHING)
+    with pytest.raises(AssertionError, match='UNDETECTED'):
+        assert_the_scan_can_still_see(
+            root=clean,
+            denied_entry=DENIED_ENTRY,
+            harmless_entry=HARMLESS_ENTRY,
+            scratch=tmp_path / 'drifted',
         )

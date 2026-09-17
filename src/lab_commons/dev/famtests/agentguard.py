@@ -23,14 +23,20 @@ the reason the committed rules file carries for the rule that was meant to fire,
 :func:`reason_for` READS that text rather than restating it, so the arm cannot drift from the file.
 
 THE INSTALLED ENGINE IS DRIVEN, NOT THE SHIPPED ONE, and the distinction is the question being asked.
-:func:`lab_commons.dev.agenthooks.decide` runs the engine inside this interpreter's ``lab_commons``,
-which answers *"does the engine we ship refuse this"*. That is a fact about the wheel. This module
-asks *"does the guard installed IN THIS CHECKOUT refuse this"*, so it runs
-``<root>/.claude/hooks/deny-commands.js`` against ``<root>/.claude/hooks/deny-rules.json`` -- the two
-files the agent's tool will actually execute. :func:`assert_the_guard_is_live` is what makes that
-pair trustworthy: it reads the provenance stamp, so a hand-copied engine in the same slot reports
-FOREIGN rather than installed. Node resolution is still the kit's
-(:func:`lab_commons.dev.agenthooks.node_executable`), because where ``node`` lives is not a repo fact.
+:func:`lab_commons.dev.agenthooks.decide` names a SHIPPED engine and so runs the copy inside this
+interpreter's ``lab_commons``, which answers *"does the engine we ship refuse this"*. That is a fact
+about the wheel. This module asks *"does the guard installed IN THIS CHECKOUT refuse this"*, so it
+runs ``<root>/.claude/hooks/deny-commands.js`` against ``<root>/.claude/hooks/deny-rules.json`` --
+the two files the agent's tool will actually execute. :func:`assert_the_guard_is_live` is what makes
+that pair trustworthy: it reads the provenance stamp, so a hand-copied engine in the same slot
+reports FOREIGN rather than installed.
+
+THE SUBPROCESS ITSELF IS NOT THIS MODULE'S, and stopped being so on 2026-09-17. It was a hand-rolled
+second runner beside :func:`lab_commons.dev.agenthooks.decide`, and that pair is what let this module
+and :mod:`lab_commons.dev.famtests.allowguard` disagree about which file either one judged. There is
+now ONE runner, :func:`lab_commons.dev.agenthooks.run_engine`, which takes the engine as a PATH; the
+subject is chosen by which path a body passes it, in the open, rather than by which of two
+near-identical functions it happened to call.
 
 THE FLOOR IS THE SHIPPED SET, PINNED BY NAME. A rules file that rendered EMPTY would satisfy "the
 committed rules are the rendered rules" and every sanctioned row, and would refuse nothing. A count
@@ -45,11 +51,10 @@ reader can switch off without editing it is the silent absence this module exist
 from __future__ import annotations
 
 import json
-import subprocess
 from typing import TYPE_CHECKING
 
 from lab_commons.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_installation
-from lab_commons.dev.agenthooks import node_executable
+from lab_commons.dev.agenthooks import node_executable, run_engine
 from lab_commons.dev.hook_adoption import DENY_RULES, assert_shippable, render
 from lab_commons.dev.rules import tracked_files
 
@@ -73,9 +78,6 @@ __all__ = [
     'reason_for',
     'shipped_rules',
 ]
-
-#: The engine reads a payload and writes a decision; nothing here waits on a network or an editor.
-_ENGINE_TIMEOUT_S = 60
 
 
 class GuardNotLive(AssertionError):
@@ -124,19 +126,7 @@ def decision_for(*, root: Path, command: str) -> str | None:
     for path in (engine, rules):
         if not path.is_file():
             _refuse(f'{path} is not there, so nothing in {root} judged {command!r}')
-    payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(root)})
-    done = subprocess.run(
-        [node_executable(), str(engine), str(rules)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=_ENGINE_TIMEOUT_S,
-    )
-    if not done.stdout.strip():
-        return None
-    hook = json.loads(done.stdout)['hookSpecificOutput']
-    return hook['permissionDecisionReason'] if hook.get('permissionDecision') == 'deny' else None
+    return run_engine(engine, command, rules, cwd=root)
 
 
 def shipped_rules(*, root: Path) -> frozenset[str]:

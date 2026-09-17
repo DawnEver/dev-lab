@@ -35,6 +35,14 @@ A SCAN REPORTS WHAT IT SEARCHED FOR. :class:`Scan` carries *probed* beside *refu
 contradictions over zero probed rows is not agreement -- it is an unasked question, and
 :func:`assert_no_allow_contradicts` refuses it rather than passing.
 
+THE SUBJECT IS THE CONSUMER'S OWN ENGINE, and that had to be decided rather than inherited. Until
+2026-09-17 this body drove the copy inside the installed wheel while its sibling
+:mod:`lab_commons.dev.famtests.agentguard` drove ``<root>/.claude/hooks/deny-commands.js``; one
+consumer adopted four of the five bodies and refused this one over that contradiction instead of
+weakening its arm, which was the right call. :func:`contradictions` now takes the engine as a PATH --
+the family's one spelling for *whose copy* -- defaulting to the one beside the rules it was handed,
+and REFUSING rather than falling back when it is absent.
+
 WHAT THIS DOES NOT PROVE. That the agent client honours ``permissions.allow`` at all; that is a fact
 about a tool's configuration loading, not about any tree here.
 """
@@ -46,8 +54,15 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from lab_commons.dev import agenthooks
-from lab_commons.dev.agent_guard import INSTALLED, RULES_REL, SETTINGS_REL, guard_installation
+from lab_commons.dev.agent_guard import (
+    ENGINE_REL,
+    INSTALLED,
+    RULES_REL,
+    SETTINGS_REL,
+    engine_beside,
+    guard_installation,
+)
+from lab_commons.dev.agenthooks import run_engine
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -147,13 +162,39 @@ def allow_entries(settings: Path) -> tuple[str, ...]:
     return tuple(str(row) for row in rows)
 
 
-def contradictions(settings: Path, rules: Path, *, cwd: Path) -> Scan:
+def contradictions(settings: Path, rules: Path, *, cwd: Path, engine: Path | None = None) -> Scan:
     """Every allow row in *settings* whose own promise *rules* refuses, and what it was asked.
 
-    The engine is DRIVEN through :func:`lab_commons.dev.agenthooks.decide` -- the real
+    The engine is DRIVEN through :func:`lab_commons.dev.agenthooks.run_engine` -- a real
     ``deny-commands.js`` under ``node``, on the real payload shape -- because comparing an allow glob
     against a deny regex by eye is the reasoning this measurement exists to replace.
+
+    WHICH COPY IS THE SUBJECT, AND WHY THE DEFAULT IS THE CONSUMER'S. This body used to drive
+    :func:`lab_commons.dev.agenthooks.decide`, which names a SHIPPED engine and therefore always
+    judged the copy inside the installed wheel -- while :func:`lab_commons.dev.famtests.agentguard.decision_for`,
+    one module over in the same package, drove ``<root>/.claude/hooks/deny-commands.js``. Two bodies,
+    opposite answers to *which file is the subject*, and a consumer refused to adopt this one for
+    exactly that reason rather than weakening its own arm. The consumer was right, and not as a
+    preference: measured 2026-09-17, the installed engines in three repos had drifted far enough to
+    ALLOW a shape the shipped engine had refused since 2026-08-22, so a body judging the wheel goes
+    green on precisely the checkout whose own guard has stopped working.
+
+    Args:
+        settings: the ``settings.json`` whose ``permissions.allow`` rows are the declaration.
+        rules: the ``deny-rules.json`` those rows are judged against.
+        cwd: the tool call's working directory, which the engine expands into ``{root}``.
+        engine: the ``deny-commands.js`` to run. Defaults to the one BESIDE *rules*
+            (:func:`lab_commons.dev.agent_guard.engine_beside`) -- the copy that repo really runs.
+            Pass :func:`lab_commons.dev.agenthooks.engine_path` to ask about the wheel's instead.
+
+    Raises:
+        UnreadableSettings: *settings* is absent or is not JSON.
+        lab_commons.dev.agenthooks.EngineNotReadable: the engine or the rules file is not there.
+            REFUSED RATHER THAN FALLEN BACK to the wheel: a silent substitution would re-create the
+            defect above with extra steps, reporting the family's engine as this repo's verdict.
+
     """
+    judge = engine_beside(rules) if engine is None else engine
     probed: list[str] = []
     refused: dict[str, str] = {}
     for entry in allow_entries(settings):
@@ -161,7 +202,7 @@ def contradictions(settings: Path, rules: Path, *, cwd: Path) -> Scan:
         if not command:
             continue
         probed.append(entry)
-        reason = agenthooks.decide(command, rules, cwd=cwd)
+        reason = run_engine(judge, command, rules, cwd=cwd)
         if reason is not None:
             refused[entry] = reason
     return Scan(probed=tuple(probed), refused=refused)
@@ -172,8 +213,17 @@ def _assert_there_is_something_to_contradict(root: Path) -> None:
     rules = root / RULES_REL
     if not rules.is_file():
         msg = (
-            f'{rules} does not exist, so there is no engine for an allow row to contradict and every '
+            f'{rules} does not exist, so there is no registry for an allow row to contradict and every '
             f'row is trivially honest. That is an unasked question, not agreement.'
+        )
+        raise AssertionError(msg)
+    engine = root / ENGINE_REL
+    if not engine.is_file():
+        msg = (
+            f'{engine} does not exist, so no engine in this checkout judges anything and every allow '
+            f'row is trivially honest. Install one with `python -m lab_commons.dev.agent_guard '
+            f'--install --repo .`; the wheel ships a copy but running THAT one here would answer '
+            f'about the family rather than about this tree.'
         )
         raise AssertionError(msg)
     wiring = guard_installation(root).by_part['wiring']
