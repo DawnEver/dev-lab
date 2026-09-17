@@ -5,11 +5,15 @@ three times each across the consumers of this package, and the shared halves are
 the counts, and what each was measured over, are in :mod:`lab_commons.dev._famconfig_rows`, which is
 DATA and computes nothing. Nothing links the copies, so a fix in one is a fix in one.
 
-THE SHAPE. A repo declares a :class:`Delta` -- what it ADDS, and which base lines it DROPS with a
-reason -- and :func:`render` produces the file. :func:`inspect_file` re-renders from the LIVE base
-and delta and compares against disk, so a hand edit reds instead of drifting. A consumer therefore
-has exactly two states, which is this refactor's premise: it reads the family artefact, or it
-declares its delta. There is no third state where a local edit quietly wins.
+THE SHAPE. A repo declares a :class:`Delta` -- what it ADDS, WHERE, and which base lines it DROPS
+with a reason -- and :func:`render` produces the file. :func:`inspect_file` re-renders from the LIVE
+base and delta and compares against disk, so a hand edit reds instead of drifting. A consumer
+therefore has exactly two states, which is this refactor's premise: it reads the family artefact, or
+it declares its delta. There is no third state where a local edit quietly wins.
+
+THIS MODULE IS THE WRITE HALF. The vocabulary (:class:`Base`, :class:`Delta`), the line readings and
+the survey live in :mod:`lab_commons.dev._famconfig_survey` and are re-exported here, so the surface
+a consumer imports is one name. The import runs one way: measuring a file does not need the renderer.
 
 WHAT A DELTA MAY SAY, and this was the design question rather than a detail. A delta that can only
 APPEND cannot express "not this one", so the first repo that genuinely does not want a base line
@@ -18,6 +22,14 @@ but it is a MAPPING from the dropped line to its reason, never a set, because a 
 are the same bytes on disk and only the DECLARATION can tell them apart. The rendering prints the
 drop as a comment, so the removal is legible to a reader of the artefact and not only to a reader of
 this package.
+
+AND AN APPEND CANNOT REACH INSIDE A BLOCK, which is the same limit pointing the other way and it
+blocked `.pre-commit-config.yaml` in both labs until 2026-09-17. Their extra `pre-commit-hooks` ids,
+and the `exclude:` one of them must hang on `trailing-whitespace`, belong INSIDE the entry the base
+renders. So an addition may be ANCHORED to a base line -- see :attr:`Delta.anchored` for why that was
+preferred to dropping the block and restating it, which is a fork wearing a workaround as a disguise.
+An anchor names a position by a base line's TEXT, so it is refused when the base does not have that
+line, when the base has it more than once, and when the same delta also drops it.
 
 THE STAMP, AND WHAT IT DELIBERATELY DOES NOT CARRY. A rendered file opens with a provenance block --
 the shape :mod:`lab_commons.dev.agent_guard` proves out on the hook engine, where an unstamped copy
@@ -34,11 +46,12 @@ naming the weaker mode is what stops it reaching `.gitignore` out of convenience
 A RATCHET HAS TWO SIDES, and both are mechanised rather than described:
 
 * a base line cannot silently vanish -- :func:`inspect_file` reds on a base line absent from disk
-  with no drop declaring it, and a drop naming a line the base lacks is refused, so a stale drop
-  cannot outlive its subject either;
-* a delta cannot silently grow into a fork -- every delta carries a CEILING, a delta re-stating a
-  base line is refused at render time, and :func:`fork_signals` names any line EVERY consumer's
-  delta holds, because that is the base re-forming where nobody is looking at it.
+  with no drop declaring it, and a drop or an anchor naming a line the base lacks is refused, so a
+  stale declaration cannot outlive its subject either;
+* a delta cannot silently grow into a fork -- every delta carries a CEILING counting its anchored
+  lines too, a delta re-stating a base CONTENT line is refused at render time, and
+  :func:`fork_signals` names any line EVERY consumer's delta holds, because that is the base
+  re-forming where nobody is looking at it.
 
 `[tool.ruff]` IS NOT HERE. It is the fourth config artefact the family census names and it belongs to
 the stage widening this repo's select to the consumers' 58 selectors; two renderers on one artefact
@@ -48,7 +61,7 @@ what makes saying it out loud the only thing holding it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -60,6 +73,18 @@ from lab_commons.dev._famconfig_rows import (
     MAKE_TARGET_CORE,
     REPO_FLOOR,
     STAMP,
+)
+from lab_commons.dev._famconfig_survey import (
+    MIN_BASE_LINES,
+    Base,
+    Delta,
+    VacuousBase,
+    assert_base_floor,
+    delta_lines,
+    fork_signals,
+    meaningful_lines,
+    measured_delta,
+    satisfies,
 )
 
 __all__ = [
@@ -83,19 +108,16 @@ __all__ = [
     'VacuousBase',
     'artefact_base',
     'assert_base_floor',
+    'delta_lines',
     'delta_problems',
     'fork_signals',
     'inspect_file',
+    'meaningful_lines',
     'measured_delta',
     'render',
     'rendered_lines',
     'satisfies',
 ]
-
-#: The smallest base that can carry a guarantee. ONE, because its subject is a table that read EMPTY:
-#: the per-artefact counts are pinned in the data module, and pinning them twice would red on every
-#: line the family agrees to share.
-MIN_BASE_LINES: Final = 1
 
 #: MODE. The file must equal base-plus-delta byte for byte.
 RENDERED: Final = 'RENDERED'
@@ -112,51 +134,8 @@ DRIFTED: Final = 'DRIFTED'
 FOREIGN: Final = 'FOREIGN'
 
 
-class VacuousBase(AssertionError):
-    """A base held fewer lines than its floor, so rendering or checking it proves nothing."""
-
-
 class ForkedDelta(ValueError):
-    """A delta drops a line the base does not have, re-states one it does, or exceeds its ceiling."""
-
-
-def assert_base_floor(reached: int, floor: int, what: str) -> None:
-    """Refuse a base that read below *floor* lines -- an empty table renders a clean-looking file."""
-    if reached < floor:
-        msg = (
-            f'the {what} base holds only {reached} lines, below the {floor} floor. A base that read '
-            f'empty renders a file every consumer passes against, which is the vacuous green this '
-            f'guard exists to refuse. Fix the table, do not lower the floor.'
-        )
-        raise VacuousBase(msg)
-
-
-@dataclass(frozen=True, slots=True)
-class Base:
-    """One family artefact: its lines, how strictly they bind, and how a comment is spelled in it."""
-
-    artefact: str
-    lines: tuple[str, ...]
-    mode: str
-    comment: str = '#'
-
-    @property
-    def content_lines(self) -> tuple[str, ...]:
-        """The base lines that CARRY something -- a blank renders as layout and cannot be absent.
-
-        `meaningful_lines` strips blanks off the disk side, so comparing them would report every
-        blank as a missing base line and bury the two that matter.
-        """
-        return tuple(line for line in self.lines if line.strip())
-
-    @property
-    def stamp_lines(self) -> tuple[str, ...]:
-        """The provenance block, in this artefact's own comment syntax."""
-        return (
-            f'{self.comment} {STAMP} from the family base for {self.artefact}.',
-            f'{self.comment} Hand edits RED. The base is data in lab_commons.dev._famconfig_rows;',
-            f"{self.comment} this repo's own lines are its declared delta. Change one, re-render, commit.",
-        )
+    """A delta drops or anchors a line the base cannot carry, re-states one it has, or over-runs."""
 
 
 #: Every artefact, by name. Built from the data table rather than restated, so a base added there
@@ -185,30 +164,20 @@ def artefact_base(artefact: str) -> Base:
         raise ForkedDelta(msg) from None
 
 
-@dataclass(frozen=True, slots=True)
-class Delta:
-    """What one repo adds to a base, and which base lines it drops WITH the reason it drops them.
-
-    ``ceiling`` has no default on purpose. An escape hatch needs a ceiling rather than a reason, and a
-    default ceiling is a ceiling nobody chose -- the number is the point at which this repo's delta
-    has stopped being a delta, and only the repo can say where that is.
-    """
-
-    repo: str
-    added: tuple[str, ...]
-    dropped: Mapping[str, str]
-    ceiling: int
-
-
 def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
     """Every way *delta* is not a delta of *base* -- pure over its arguments.
 
-    Three refusals, and each is one half of a ratchet: a drop naming a line the base does not have
-    (so a drop cannot outlive its base line), an addition that re-states a base line (so the base
-    cannot be duplicated into the delta and then edited there), and a delta past its own ceiling.
+    EVERY COMPARISON IS AGAINST ``content_lines``, and that is the 2026-09-17 correction rather than
+    a detail: this function read ``base.lines`` while the other four sites read ``content_lines``, so
+    a delta line equal to a base BLANK was reported as re-stating the base. A blank is layout and
+    carries nothing to copy, so it cannot be the fork the refusal exists for.
+
+    THE STRUCTURAL LINES ARE STILL REFUSED AND THAT IS NOT THE SAME BUG. `    hooks:` is a content
+    line, so it stays refused -- a second copy of a rendered block IS the base re-forming inside the
+    delta. The remedy is an ANCHOR, which copies nothing, and the refusal names it.
     """
     out: list[str] = []
-    known = set(base.lines)
+    known = set(base.content_lines)
     out += [
         f'{delta.repo} drops {line!r} from the {base.artefact} base, and the base does not have that '
         f'line. Delete the drop in the edit that removed the base line; a drop that outlives its '
@@ -217,13 +186,18 @@ def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
     ]
     out += [
         f'{delta.repo} adds {line!r} to {base.artefact}, and the base already has it. A delta that '
-        f're-states the base is the base copied into a place the guard does not re-render.'
-        for line in sorted(set(delta.added) & known)
+        f're-states the base is the base copied into a place the guard does not re-render. If the '
+        f'line was restated only to reach a position inside a rendered block, that is what a '
+        f'Delta.anchored entry is for: anchor the new lines to the base line they belong under, and '
+        f'copy nothing.'
+        for line in sorted(set(delta_lines(delta)) & known)
     ]
-    if len(delta.added) > delta.ceiling:
+    out += _anchor_problems(base, delta, known)
+    if len(delta_lines(delta)) > delta.ceiling:
         out.append(
-            f'{delta.repo} adds {len(delta.added)} lines to {base.artefact}, past its ceiling of '
-            f'{delta.ceiling}. Raise the ceiling with the reason, or move what is shared into the base.'
+            f'{delta.repo} adds {len(delta_lines(delta))} lines to {base.artefact}, past its ceiling '
+            f'of {delta.ceiling}. Raise the ceiling with the reason, or move what is shared into the '
+            f'base. Anchored lines count here too, or anchoring would be a ceiling nobody chose.'
         )
     out += [
         f'{delta.repo} drops {line!r} from {base.artefact} with an empty reason. A removal and a '
@@ -234,13 +208,53 @@ def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _anchor_problems(base: Base, delta: Delta, known: set[str]) -> list[str]:
+    """Every way an anchor fails to name ONE live position in *base*.
+
+    Three refusals, and each is the anchor's half of a ratchet the drops already have: an anchor on a
+    line the base lacks (a declaration outliving its subject), an anchor on a line the base repeats
+    (a position that is not a position -- the YAML base holds `    hooks:` twice, so picking one
+    silently would be a coin flip the reader cannot see), and an anchor on a line the same delta
+    drops (two declarations contradicting each other). The empty anchor is the fourth and it is the
+    ratchet's other side: an anchor that adds nothing is a waiver nothing uses.
+    """
+    out: list[str] = []
+    for line, added in sorted(delta.anchored.items()):
+        if line not in known:
+            out.append(
+                f'{delta.repo} anchors {len(added)} line(s) to {line!r} in {base.artefact}, and the '
+                f'base does not have that line. An anchor names a position by the text of a base '
+                f'line, so it dies with the line it names -- move it, or delete it.'
+            )
+            continue
+        if base.occurrences(line) > 1:
+            out.append(
+                f'{delta.repo} anchors to {line!r} in {base.artefact}, and the base has it '
+                f'{base.occurrences(line)} times. That names no position. Anchor to a line that '
+                f'occurs once -- a hook id, not a structural key.'
+            )
+        if line in delta.dropped:
+            out.append(
+                f'{delta.repo} drops it and anchors to it: {line!r} in {base.artefact}. One '
+                f'declaration says the line goes and the other hangs content off it.'
+            )
+        if not added:
+            out.append(
+                f'{delta.repo} anchors no lines to {line!r} in {base.artefact}. An anchor that adds '
+                f'nothing is a waiver nothing uses -- delete the entry.'
+            )
+    return out
+
+
 def rendered_lines(base: Base, delta: Delta) -> tuple[str, ...]:
     """The file *base* plus *delta* produces, as lines, stamp included.
 
     A dropped base line is rendered as a COMMENT naming the repo and the reason, in place. That is
     what makes a removal legible to somebody reading the artefact rather than only to somebody
     reading this package -- a deletion that leaves no trace in the file is indistinguishable from the
-    line never having been in the base.
+    line never having been in the base. An anchored block gets the same treatment for the same
+    reason: a comment at the anchor's own indentation says whose lines follow and how many, so the
+    reader of the artefact can see where the base stops and the repo starts.
     """
     problems = delta_problems(base, delta)
     if problems:
@@ -253,6 +267,11 @@ def rendered_lines(base: Base, delta: Delta) -> tuple[str, ...]:
             out.append(line)
         else:
             out.append(f'{base.comment} dropped from the base by {delta.repo}: {line} -- {reason}')
+        anchored = delta.anchored.get(line, ())
+        if anchored:
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f'{indent}{base.comment} {delta.repo} delta, anchored here: {len(anchored)} line(s)')
+            out += list(anchored)
     if delta.added:
         out += ['', f'{base.comment} --- {delta.repo} delta, {len(delta.added)} of {delta.ceiling} allowed ---']
         out += list(delta.added)
@@ -262,15 +281,6 @@ def rendered_lines(base: Base, delta: Delta) -> tuple[str, ...]:
 def render(base: Base, delta: Delta) -> str:
     """:func:`rendered_lines` as text, newline-terminated."""
     return '\n'.join(rendered_lines(base, delta)) + '\n'
-
-
-def meaningful_lines(text: str, comment: str) -> tuple[str, ...]:
-    """*text*'s lines with blanks and whole-line comments removed, each stripped of trailing space.
-
-    Leading whitespace is KEPT: a Makefile recipe is a tab, and a YAML nesting level is two spaces,
-    so a comparison that stripped the left margin would call two different files equal.
-    """
-    return tuple(line.rstrip() for line in text.splitlines() if line.strip() and not line.strip().startswith(comment))
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,21 +330,6 @@ def inspect_file(path: Path, base: Base, delta: Delta) -> ArtefactReport:
     return ArtefactReport(base.artefact, path, DRIFTED, detail, offending)
 
 
-def satisfies(required: str, live: Sequence[str]) -> bool:
-    """Whether *required* is met by one of *live* -- a TARGET HEADER matching by its name only.
-
-    MEASURED, AND THIS IS WHY THE FUNCTION EXISTS RATHER THAN AN ``in``. A first cut compared headers
-    literally and called `all:` absent from all three consumers, `install-dev:` absent from wdg-lab
-    and `verify:` absent from two -- every one a false positive, because a Makefile target carries its
-    prerequisites on the same line (`all: install-dev lint test`), and a contract over target NAMES
-    that reds on that is a contract about punctuation. So a base line ending in a colon matches by
-    PREFIX and everything else exactly, which keeps the recipe lines byte-checked.
-    """
-    if required.endswith(':'):
-        return any(line == required or line.startswith(required + ' ') for line in live)
-    return required in live
-
-
 def _required_report(path: Path, base: Base, delta: Delta, live: tuple[str, ...]) -> ArtefactReport:
     """The weaker mode: every base line present, unless a drop declares it gone."""
     problems = delta_problems(base, delta)
@@ -358,43 +353,3 @@ def _line_differences(expected: Sequence[str], live: Sequence[str]) -> tuple[str
     out = [f'missing: {line}' for line in expected if line not in live]
     out += [f'unexpected: {line}' for line in live if line not in expected]
     return tuple(out)
-
-
-def measured_delta(path: Path, base: Base, repo: str) -> Delta:
-    """What *path* would have to declare, today, to be a rendering of *base*.
-
-    The survey half, READ-ONLY: how an adoption lane sizes the change in a consumer before touching
-    it, and how :func:`fork_signals` gets real deltas. The ceiling it returns is the measurement
-    itself -- a starting point, not a decision; stating one is the act that makes it a ceiling.
-    """
-    live = meaningful_lines(path.read_text(encoding='utf-8'), base.comment) if path.is_file() else ()
-    added = tuple(line for line in live if not any(satisfies(base_line, (line,)) for base_line in base.content_lines))
-    dropped = {
-        line: 'MEASURED: absent from the file on disk at survey time'
-        for line in base.content_lines
-        if not satisfies(line, live)
-    }
-    return Delta(repo=repo, added=added, dropped=dropped, ceiling=len(added))
-
-
-def fork_signals(deltas: Sequence[Delta], floor: int = REPO_FLOOR) -> tuple[str, ...]:
-    """Lines that EVERY delta adds -- the base re-forming where no base line can guard it.
-
-    The anti-fork arm, and the reason it takes a floor: a comparison over one delta finds every line
-    it holds, and a comparison over zero finds nothing and reads exactly like agreement.
-    """
-    if len(deltas) < floor:
-        msg = (
-            f'fork_signals read {len(deltas)} delta(s), below the {floor} floor. Comparing fewer '
-            f'deltas than the family has repos cannot say whether a line is shared; finding nothing '
-            f'there is vacuous rather than green.'
-        )
-        raise VacuousBase(msg)
-    shared = set(deltas[0].added)
-    for delta in deltas[1:]:
-        shared &= set(delta.added)
-    return tuple(
-        f'every delta adds {line!r} -- {len(deltas)} repos declaring one line is a base line that was '
-        f'never promoted. Move it into lab_commons.dev._famconfig_rows.'
-        for line in sorted(shared)
-    )

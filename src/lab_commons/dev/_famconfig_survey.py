@@ -1,0 +1,202 @@
+r"""The READ half of the family-config mechanism: what a file SAYS, and what a delta declares.
+
+SPLIT OUT OF :mod:`lab_commons.dev.famconfig` ON 2026-09-17, at the seam that module's own refactor
+note named. `famconfig` is the WRITE half -- it renders, compares and refuses -- and it now imports
+everything here. The dependency runs one way on purpose: measuring a file cannot require the
+renderer, so the survey an adoption lane runs before touching a consumer has nothing to do with the
+guard that will later judge it.
+
+THE VOCABULARY TRAVELS WITH THE SURVEY rather than into a third module. :class:`Base` and
+:class:`Delta` are what both halves talk through, and the survey CONSTRUCTS a `Delta` -- a module
+holding two dataclasses and nothing else would be a split made to fit a line count rather than a
+seam, which is the band deforming the code it measures.
+
+Nothing here writes, renders or raises about rendering. The one refusal that lives here is
+:class:`VacuousBase`, because a floor belongs beside the reading it refuses.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Final
+
+from lab_commons.dev._famconfig_rows import REPO_FLOOR, STAMP
+
+__all__ = [
+    'MIN_BASE_LINES',
+    'Base',
+    'Delta',
+    'VacuousBase',
+    'assert_base_floor',
+    'delta_lines',
+    'fork_signals',
+    'meaningful_lines',
+    'measured_delta',
+    'satisfies',
+]
+
+#: The smallest base that can carry a guarantee. ONE, because its subject is a table that read EMPTY:
+#: the per-artefact counts are pinned in the data module, and pinning them twice would red on every
+#: line the family agrees to share.
+MIN_BASE_LINES: Final = 1
+
+
+class VacuousBase(AssertionError):
+    """A base held fewer lines than its floor, so rendering or checking it proves nothing."""
+
+
+def assert_base_floor(reached: int, floor: int, what: str) -> None:
+    """Refuse a base that read below *floor* lines -- an empty table renders a clean-looking file."""
+    if reached < floor:
+        msg = (
+            f'the {what} base holds only {reached} lines, below the {floor} floor. A base that read '
+            f'empty renders a file every consumer passes against, which is the vacuous green this '
+            f'guard exists to refuse. Fix the table, do not lower the floor.'
+        )
+        raise VacuousBase(msg)
+
+
+@dataclass(frozen=True, slots=True)
+class Base:
+    """One family artefact: its lines, how strictly they bind, and how a comment is spelled in it."""
+
+    artefact: str
+    lines: tuple[str, ...]
+    mode: str
+    comment: str = '#'
+
+    @property
+    def content_lines(self) -> tuple[str, ...]:
+        """The base lines that CARRY something -- a blank renders as layout and cannot be absent.
+
+        `meaningful_lines` strips blanks off the disk side, so comparing them would report every
+        blank as a missing base line and bury the two that matter. Every reader of "is this line the
+        base's" reads THIS, including :func:`lab_commons.dev.famconfig.delta_problems`, which until
+        2026-09-17 was the one exception and reported a BLANK delta line as a re-statement.
+        """
+        return tuple(line for line in self.lines if line.strip())
+
+    @property
+    def stamp_lines(self) -> tuple[str, ...]:
+        """The provenance block, in this artefact's own comment syntax."""
+        return (
+            f'{self.comment} {STAMP} from the family base for {self.artefact}.',
+            f'{self.comment} Hand edits RED. The base is data in lab_commons.dev._famconfig_rows;',
+            f"{self.comment} this repo's own lines are its declared delta. Change one, re-render, commit.",
+        )
+
+    def occurrences(self, line: str) -> int:
+        """How many times *line* appears in this base -- the question an ANCHOR has to ask.
+
+        A YAML base repeats its structural lines by construction (`    hooks:` twice here), so a
+        position named by line text is only a position when the text occurs exactly once.
+        """
+        return self.lines.count(line)
+
+
+@dataclass(frozen=True, slots=True)
+class Delta:
+    """What one repo adds to a base, where it adds it, and which base lines it drops WITH the reason.
+
+    ``ceiling`` has no default on purpose. An escape hatch needs a ceiling rather than a reason, and a
+    default ceiling is a ceiling nobody chose -- the number is the point at which this repo's delta
+    has stopped being a delta, and only the repo can say where that is.
+
+    ``anchored`` IS THE NESTED ADDITION, added 2026-09-17, and it is why `.pre-commit-config.yaml` is
+    adoptable at all. ``added`` appends after the whole base, which cannot place a line INSIDE a
+    rendered block -- and every hook a lab runs beyond the family's eleven, plus the `exclude:` one
+    of them must hang on `trailing-whitespace`, lives exactly there. It maps a base line to the lines
+    rendered immediately AFTER it.
+
+    THE ALTERNATIVE WAS REFUSED, and naming it is the point: the block could instead be dropped and
+    RESTATED in ``added``, which is the base copied into a place re-rendering no longer guards --
+    precisely the fork :func:`fork_signals` exists to catch. An anchor copies nothing, so the base
+    keeps owning its own lines, and a removal stays a ``dropped`` entry with a reason rather than
+    becoming indistinguishable from an anchored block that quietly lost a row.
+    """
+
+    repo: str
+    added: tuple[str, ...]
+    dropped: Mapping[str, str]
+    ceiling: int
+    anchored: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+def delta_lines(delta: Delta) -> tuple[str, ...]:
+    """Every line *delta* contributes, appended or anchored, in one sequence.
+
+    The ceiling and the anti-fork scan both read THIS rather than ``added``: a line that did not
+    count because of where it sits would be an escape hatch with no ceiling, and one the fork scan
+    could not see would be the base re-forming in the half nobody looks at.
+    """
+    return tuple(delta.added) + tuple(line for lines in delta.anchored.values() for line in lines)
+
+
+def meaningful_lines(text: str, comment: str) -> tuple[str, ...]:
+    """*text*'s lines with blanks and whole-line comments removed, each stripped of trailing space.
+
+    Leading whitespace is KEPT: a Makefile recipe is a tab, and a YAML nesting level is two spaces,
+    so a comparison that stripped the left margin would call two different files equal.
+    """
+    return tuple(line.rstrip() for line in text.splitlines() if line.strip() and not line.strip().startswith(comment))
+
+
+def satisfies(required: str, live: Sequence[str]) -> bool:
+    """Whether *required* is met by one of *live* -- a TARGET HEADER matching by its name only.
+
+    MEASURED, AND THIS IS WHY THE FUNCTION EXISTS RATHER THAN AN ``in``. A first cut compared headers
+    literally and called `all:` absent from all three consumers, `install-dev:` absent from wdg-lab
+    and `verify:` absent from two -- every one a false positive, because a Makefile target carries its
+    prerequisites on the same line (`all: install-dev lint test`), and a contract over target NAMES
+    that reds on that is a contract about punctuation. So a base line ending in a colon matches by
+    PREFIX and everything else exactly, which keeps the recipe lines byte-checked.
+    """
+    if required.endswith(':'):
+        return any(line == required or line.startswith(required + ' ') for line in live)
+    return required in live
+
+
+def measured_delta(path: Path, base: Base, repo: str) -> Delta:
+    """What *path* would have to declare, today, to be a rendering of *base*.
+
+    The survey half, READ-ONLY: how an adoption lane sizes the change in a consumer before touching
+    it, and how :func:`fork_signals` gets real deltas. The ceiling it returns is the measurement
+    itself -- a starting point, not a decision; stating one is the act that makes it a ceiling.
+
+    It returns an APPENDING delta and never an anchored one, because where a measured line belongs is
+    a judgement about the artefact's grammar that reading the file cannot make. Deciding it is the
+    adoption commit's job, which is also why this returns a starting point rather than an answer.
+    """
+    live = meaningful_lines(path.read_text(encoding='utf-8'), base.comment) if path.is_file() else ()
+    added = tuple(line for line in live if not any(satisfies(base_line, (line,)) for base_line in base.content_lines))
+    dropped = {
+        line: 'MEASURED: absent from the file on disk at survey time'
+        for line in base.content_lines
+        if not satisfies(line, live)
+    }
+    return Delta(repo=repo, added=added, dropped=dropped, ceiling=len(added))
+
+
+def fork_signals(deltas: Sequence[Delta], floor: int = REPO_FLOOR) -> tuple[str, ...]:
+    """Lines that EVERY delta contributes -- the base re-forming where no base line can guard it.
+
+    The anti-fork arm, and the reason it takes a floor: a comparison over one delta finds every line
+    it holds, and a comparison over zero finds nothing and reads exactly like agreement.
+    """
+    if len(deltas) < floor:
+        msg = (
+            f'fork_signals read {len(deltas)} delta(s), below the {floor} floor. Comparing fewer '
+            f'deltas than the family has repos cannot say whether a line is shared; finding nothing '
+            f'there is vacuous rather than green.'
+        )
+        raise VacuousBase(msg)
+    shared = set(delta_lines(deltas[0]))
+    for delta in deltas[1:]:
+        shared &= set(delta_lines(delta))
+    return tuple(
+        f'every delta adds {line!r} -- {len(deltas)} repos declaring one line is a base line that was '
+        f'never promoted. Move it into lab_commons.dev._famconfig_rows.'
+        for line in sorted(shared)
+    )

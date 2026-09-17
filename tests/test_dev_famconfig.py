@@ -22,6 +22,7 @@ nobody would notice the deletion of.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -350,3 +351,162 @@ def test_rendered_lines_and_render_agree() -> None:
     """One rendering, two spellings: the text form is the line form joined, never a second answer."""
     base, delta = _base(), _delta()
     assert render(base, delta) == '\n'.join(rendered_lines(base, delta)) + '\n'
+
+
+# ------------------------------------------ the nested addition, and what it did NOT turn out to be
+
+#: wdg-lab's seven extra `pre-commit-hooks` ids, MEASURED 2026-09-17 from that repo's own
+#: `tests/architecture/_famconfig.py::EXTRA_HOOK_IDS`. They are the real subject: every one of them
+#: belongs INSIDE the entry the base renders, which is the position an append cannot reach.
+_EXTRA_HOOK_IDS: Final = (
+    'check-builtin-literals',
+    'check-illegal-windows-names',
+    'check-symlinks',
+    'check-vcs-permalinks',
+    'destroyed-symlinks',
+    'fix-byte-order-marker',
+    'requirements-txt-fixer',
+)
+
+#: The `exclude:` wdg-lab must hang on `trailing-whitespace` -- a CHILD of a base line rather than a
+#: sibling of the block, and the second shape an append cannot express.
+_EXCLUDE = r'        exclude: ^tests/architecture/_suppressions\.tsv$'
+
+#: The two anchors, both MEASURED unique in the base by the first test below before they are used.
+_ID_ANCHOR: Final = '      - id: check-added-large-files'
+_TW_ANCHOR: Final = '      - id: trailing-whitespace'
+
+
+def _precommit() -> Base:
+    """The real `.pre-commit-config.yaml` base -- the artefact both labs are blocked on."""
+    return artefact_base('.pre-commit-config.yaml')
+
+
+def _nested() -> Delta:
+    """wdg-lab's blocked delta, expressed as anchored additions rather than as an append."""
+    return Delta(
+        repo='wdg-lab',
+        added=(),
+        dropped={},
+        ceiling=8,
+        anchored={
+            _ID_ANCHOR: tuple(f'      - id: {hook_id}' for hook_id in _EXTRA_HOOK_IDS),
+            _TW_ANCHOR: (_EXCLUDE,),
+        },
+    )
+
+
+def test_the_precommit_base_really_does_repeat_its_structural_lines() -> None:
+    """THE FLOOR UNDER THE WHOLE SECTION. Finding no collision would make every arm below vacuous."""
+    base = _precommit()
+    assert base.lines.count('    hooks:') == 2, base.lines
+    assert base.lines.count('') >= 1, 'no blank base line, so the content_lines distinction has no subject'
+    assert base.lines.count(_ID_ANCHOR) == 1, 'the id anchor is not unique, so anchoring on it is ambiguous'
+    assert base.lines.count(_TW_ANCHOR) == 1, 'the trailing-whitespace anchor is not unique'
+
+
+def test_a_blank_base_line_is_not_a_restatement() -> None:
+    """DEFECT 1. `delta_problems` was the module's ONE reader of `base.lines`; a blank is LAYOUT.
+
+    `content_lines` exists for exactly this distinction and every other site already reads it. A
+    blank cannot be the base copied into the delta, because it carries nothing to copy.
+    """
+    base = _precommit()
+    assert '' in base.lines, 'no blank base line to plant against'
+    assert '' not in base.content_lines
+    problems = delta_problems(base, Delta(repo='planted-repo', added=('',), dropped={}, ceiling=4))
+    assert not [problem for problem in problems if 'already has it' in problem], problems
+
+
+def test_restating_a_structural_content_line_is_still_refused_and_the_refusal_names_the_anchor() -> None:
+    """DEFECT 1 IS NOT THE ADOPTION FIX, and this arm is the measurement that says so.
+
+    `    hooks:` is a CONTENT line, so reading `content_lines` instead of `lines` leaves it refused --
+    correctly, since a second copy of the block is the base re-forming inside the delta. What changes
+    is that the refusal now NAMES the remedy instead of failing opaquely.
+    """
+    base = _precommit()
+    delta = Delta(repo='planted-repo', added=('    hooks:',), dropped={}, ceiling=4)
+    problems = delta_problems(base, delta)
+    assert any('already has it' in problem for problem in problems), problems
+    assert any('anchored' in problem for problem in problems), problems
+    with pytest.raises(ForkedDelta, match='already has it'):
+        render(base, delta)
+
+
+def test_the_real_blocked_delta_is_expressible_and_lands_inside_the_block() -> None:
+    """DEFECT 2. The seven extra ids and the `exclude:` go where they belong, restating nothing."""
+    base, delta = _precommit(), _nested()
+    assert delta_problems(base, delta) == (), delta_problems(base, delta)
+    lines = rendered_lines(base, delta)
+    commitizen = lines.index('  - repo: https://github.com/commitizen-tools/commitizen')
+    for hook_id in _EXTRA_HOOK_IDS:
+        assert lines.index(f'      - id: {hook_id}') < commitizen, f'{hook_id} landed outside the block'
+    assert lines[lines.index(_TW_ANCHOR) + 2] == _EXCLUDE, lines
+    assert _EXCLUDE not in base.content_lines, 'the delta must restate nothing'
+
+
+def test_a_nested_delta_round_trips_and_a_hand_edit_to_an_anchored_line_reds(tmp_path: Path) -> None:
+    """PLANTED, BOTH DIRECTIONS. The rendering installs, and breaking one anchored line drifts."""
+    base, delta = _precommit(), _nested()
+    path = tmp_path / '.pre-commit-config.yaml'
+    path.write_text(render(base, delta), encoding='utf-8')
+    assert inspect_file(path, base, delta).status == INSTALLED
+
+    path.write_text(path.read_text(encoding='utf-8').replace('check-symlinks', 'check-symlinkz'), encoding='utf-8')
+    edited = inspect_file(path, base, delta)
+    assert edited.status == DRIFTED, edited
+    assert any('check-symlinks' in line for line in edited.offending), edited.offending
+
+
+def test_an_anchor_naming_a_line_the_base_does_not_have_is_refused() -> None:
+    """THE ANCHOR'S RATCHET, the same side as a drop's: a declaration cannot outlive its subject."""
+    delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={'      - id: gone': ('x',)})
+    with pytest.raises(ForkedDelta, match='the base does not have that line'):
+        render(_precommit(), delta)
+
+
+def test_an_ambiguous_anchor_is_refused_by_count() -> None:
+    """A base line that occurs twice names no position, and silently picking one is a coin flip."""
+    delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={'    hooks:': ('      - id: x',)})
+    with pytest.raises(ForkedDelta, match='2 times'):
+        render(_precommit(), delta)
+
+
+def test_an_anchor_on_a_dropped_line_is_refused() -> None:
+    """The two declarations contradict: one says the line goes, the other hangs content off it."""
+    delta = Delta(
+        repo='planted-repo',
+        added=(),
+        dropped={_TW_ANCHOR: 'this repo does not run it'},
+        ceiling=4,
+        anchored={_TW_ANCHOR: (_EXCLUDE,)},
+    )
+    with pytest.raises(ForkedDelta, match='drops it and anchors'):
+        render(_precommit(), delta)
+
+
+def test_an_anchor_carrying_no_lines_is_refused() -> None:
+    """A ratchet's other side: an anchor that adds nothing is a waiver nothing uses."""
+    delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={_TW_ANCHOR: ()})
+    with pytest.raises(ForkedDelta, match='anchors no lines'):
+        render(_precommit(), delta)
+
+
+def test_anchored_lines_count_against_the_ceiling() -> None:
+    """Otherwise the ceiling is escapable by anchoring, which is an escape hatch with no ceiling."""
+    delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=2, anchored={_TW_ANCHOR: (_EXCLUDE, 'a', 'b')})
+    with pytest.raises(ForkedDelta, match='past its ceiling'):
+        render(_precommit(), delta)
+    assert delta_problems(_precommit(), _nested()) == ()
+
+
+def test_fork_signals_names_a_line_every_delta_anchors() -> None:
+    """The anti-fork arm reads the WHOLE delta: a line hidden in an anchor is still a shared line."""
+    deltas = [
+        Delta(repo=name, added=(f'{name}/',), dropped={}, ceiling=4, anchored={_TW_ANCHOR: (_EXCLUDE,)})
+        for name in ('a', 'b', 'c')
+    ]
+    signals = fork_signals(deltas)
+    assert len(signals) == 1, signals
+    assert repr(_EXCLUDE) in signals[0], signals
