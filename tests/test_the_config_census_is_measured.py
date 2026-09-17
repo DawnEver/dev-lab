@@ -57,7 +57,9 @@ from _config_census_rows import (
     GROUPS_THE_KIT_DOES_NOT_LINT,
     HOOK_ID_CORE,
     INSTALLED_HOOKS,
+    KIT_IGNORE,
     KIT_SELECT,
+    KIT_SELECT_BEFORE_R1,
     MAKE_TARGET_CORE,
     PARTITIONS,
     REPO_PATHS,
@@ -154,28 +156,49 @@ def test_the_census_reaches_at_least_its_own_checkout() -> None:
     assert stray == [], f'reached a repo the census does not declare: {stray}'
 
 
-def test_the_kit_selects_twelve_and_is_neither_a_superset_nor_a_subset() -> None:
-    """FINDING 1, RE-DERIVED. Always runs: both sides of it are readable from this checkout alone."""
-    live = ruff_select(reachable_repos(REPO_PATHS)['lab-commons'])
+def test_the_kit_now_selects_the_fifty_eight_and_the_counter_direction_is_unchanged() -> None:
+    """FINDING 1, RE-DERIVED AFTER R1. Always runs: both sides are readable from this checkout alone.
+
+    The original reading of this test -- "the kit selects twelve and is neither a superset nor a
+    subset" -- was true when the census was written on 2026-09-17 and false by the end of that day.
+    What CLOSED is the blindness: the kit adopted the consumers' 58 verbatim. What did NOT close is
+    the counter-direction, because its remedy is in three other repos, and it is asserted UNCHANGED
+    here rather than deleted: eight codes the kit enforces and every consumer globally ignores.
+    """
+    kit_root = reachable_repos(REPO_PATHS)['lab-commons']
+    live = ruff_select(kit_root)
     assert live == set(KIT_SELECT), f'lab-commons now selects {sorted(live)}, not the recorded {list(KIT_SELECT)}'
-    assert ruff_ignore(reachable_repos(REPO_PATHS)['lab-commons']) == frozenset(), (
-        'lab-commons acquired a global ignore list; finding 1 is stated against a config that had none'
+    assert live == set(CONSUMER_SELECT), 'the kit and the consumers no longer agree on the select'
+
+    groups = {code for code in CONSUMER_SELECT if not any(selector_covers(s, code) for s in live)}
+    assert len(groups) == GROUPS_THE_KIT_DOES_NOT_LINT, (
+        f'the kit is blind to {sorted(groups)}; R1 closed that gap and this number may only be 0'
     )
-    groups = {code for code in CONSUMER_SELECT if code not in KIT_SELECT}
-    assert len(groups) == GROUPS_THE_KIT_DOES_NOT_LINT, f'{len(groups)} groups, not {GROUPS_THE_KIT_DOES_NOT_LINT}'
-    narrow = [code for code in KIT_SELECT if code not in CONSUMER_SELECT]
-    assert narrow == ['PLC0415', 'PLW0603', 'ARG001', 'TRY301'], narrow
-    assert all(
-        any(selector_covers(group, code) for group in CONSUMER_SELECT) and code not in CONSUMER_IGNORE_CORE
-        for code in narrow
-    ), 'a narrow kit code is not enabled by any consumer group, so the "at least as strict" claim fails'
+
+    waived = ruff_ignore(kit_root)
+    assert waived == set(KIT_IGNORE), (
+        f'lab-commons ignores {sorted(waived)}, not the recorded {list(KIT_IGNORE)}. That list is a '
+        f'ratchet: it may only SHRINK, and every entry carries its reason in pyproject.toml.'
+    )
+    assert not (waived & set(COUNTER_DIRECTION_CODES)), (
+        'the kit started ignoring one of the eight codes the counter-direction is measured over, which '
+        'would close that finding by lowering the count rather than by deciding it'
+    )
+
     counter = tuple(
-        sorted(code for code in CONSUMER_IGNORE_CORE if any(selector_covers(group, code) for group in KIT_SELECT))
+        sorted(
+            code
+            for code in CONSUMER_IGNORE_CORE
+            if any(selector_covers(group, code) for group in KIT_SELECT_BEFORE_R1)
+            and not any(selector_covers(w, code) for w in waived)
+        )
     )
     assert counter == COUNTER_DIRECTION_CODES, (
-        f'the counter-direction set is now {list(counter)}, not {list(COUNTER_DIRECTION_CODES)}. The kit '
-        f'is stricter on these and blind to {GROUPS_THE_KIT_DOES_NOT_LINT} groups, which is why finding '
-        f'1 is NOT stated as a subset in either direction.'
+        f'the counter-direction set is now {list(counter)}, not {list(COUNTER_DIRECTION_CODES)}. It is '
+        f'stated over the TWELVE selectors the kit had before R1 on purpose: those eight were '
+        f'divergences inside groups both sides already took, and re-deriving them over the adopted 58 '
+        f'would fold them into the 48 the adoption itself created. Both sets are ratchets, and they '
+        f'are owned by test_the_kit_is_not_linted_less_than_what_it_ships.py.'
     )
 
 
@@ -203,12 +226,13 @@ def test_motronics_reads_ruff_toml_and_the_pyproject_block_is_dead() -> None:
     assert ruff_select(root) == set(CONSUMER_SELECT), 'the winning config drifted from the consumer select'
     project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
     loser = project.get('tool', {}).get('ruff', {})
-    assert loser == {'extend': 'ruff.toml'}, (
-        f'the LOSING [tool.ruff] block now holds {sorted(loser)}. It was exactly one key naming the '
-        f'winner, which is what made it dead rather than lying; anything else in it is a decision ruff '
-        f'never reads.'
+    assert loser in ({}, {'extend': 'ruff.toml'}), (
+        f'the LOSING [tool.ruff] block now holds {sorted(loser)}. It held exactly one key naming the '
+        f'winner, which is what made it dead rather than lying, and R3 deleted it; anything else in it '
+        f'is a decision ruff never reads.'
     )
     assert ruff_config(root) != loser, 'the reader returned the losing config, so precedence is not being applied'
+    assert ruff_config(root), 'ruff.toml is the winner and it must be the non-empty side of that comparison'
 
 
 def test_the_three_consumers_agree_on_the_select_and_diverge_by_five_codes_in_total() -> None:
@@ -218,7 +242,7 @@ def test_the_three_consumers_agree_on_the_select_and_diverge_by_five_codes_in_to
     assert present, f'no consumer is checked out beside this repo; absent: {list(CONSUMERS)}'
     for repo in present:
         root = reached[repo]
-        assert ruff_select(root) == set(CONSUMER_SELECT), f'{repo}: select diverged from the family 58'
+        assert ruff_select(root) == set(CONSUMER_SELECT), f'{repo}: select diverged from the family 58'  # noqa: S608 -- 'select' is a ruff selector list, not SQL
         delta = ruff_ignore(root) - set(CONSUMER_IGNORE_CORE)
         assert delta == set(CONSUMER_IGNORE_DELTA[repo]), (
             f'{repo}: ignore delta is now {sorted(delta)}, recorded {list(CONSUMER_IGNORE_DELTA[repo])}'

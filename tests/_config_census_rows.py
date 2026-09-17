@@ -1,4 +1,4 @@
-"""The CONFIG-layer placement census, FIRST half -- pure DATA, one row per artefact per repo.
+r"""The CONFIG-layer placement census, FIRST half -- pure DATA, one row per artefact per repo.
 
 A row is ``<repo>::<artefact> -> Placement(side, why)``, partitioned by REPO because a repo is what
 a lane owns. The machinery that reads it, and the three sides it may use, are `_config_census.py`;
@@ -11,7 +11,12 @@ against, so a number that stops being true reds rather than ageing quietly into 
 
 THE TWO HEADLINE FINDINGS, both confirmed and both sharper than the line counts that suggested them:
 
-1. THE KIT IS LINTED LESS STRICTLY THAN EVERYTHING IT SHIPS TO -- and it is not a clean subset. The
+1. THE KIT WAS LINTED LESS STRICTLY THAN EVERYTHING IT SHIPS TO -- CLOSED 2026-09-17 by R1, which
+   adopted the 58 verbatim; `GROUPS_THE_KIT_DOES_NOT_LINT` is 0 and
+   `test_the_kit_is_not_linted_less_than_what_it_ships.py` reds if it re-opens. The COUNTER-DIRECTION
+   half is NOT closed and cannot be from this repo: it lives in three other repos' ignore lists, so
+   it ships as a named waiver set with a ceiling. The finding as measured, kept verbatim: it was not
+   a clean subset. The
    three consumers share an IDENTICAL 58-selector `select` (symmetric difference EMPTY, all three
    pairs). lab-commons selects 12. Eight of those are whole groups the consumers also take
    (E W F I UP B SIM RUF); the other four are single codes (ARG001 PLC0415 PLW0603 TRY301) that sit
@@ -42,7 +47,9 @@ __all__ = [
     'GROUPS_THE_KIT_DOES_NOT_LINT',
     'HOOK_ID_CORE',
     'INSTALLED_HOOKS',
+    'KIT_IGNORE',
     'KIT_SELECT',
+    'KIT_SELECT_BEFORE_R1',
     'MAKE_TARGET_CORE',
     'PARTITIONS',
     'REPOS',
@@ -137,8 +144,12 @@ CONSUMER_SELECT: tuple[str, ...] = (
     'YTT',
 )
 
-#: What lab-commons selects. Twelve against fifty-eight, and finding 1 above is what that means.
-KIT_SELECT: tuple[str, ...] = (
+#: WHAT LAB-COMMONS SELECTED BEFORE R1, kept because COUNTER_DIRECTION_CODES is stated over it. The
+#: eight codes below are the divergences that existed INSIDE the groups both sides already took; the
+#: adoption necessarily created more (48 of them, held as ADOPTION_DEBT in
+#: `test_the_kit_is_not_linted_less_than_what_it_ships.py`), and mixing the two would make the
+#: pre-existing eight unfindable. Eight of these twelve are whole groups; four are single codes.
+KIT_SELECT_BEFORE_R1: tuple[str, ...] = (
     'E',
     'W',
     'F',
@@ -153,8 +164,33 @@ KIT_SELECT: tuple[str, ...] = (
     'TRY301',
 )
 
-#: Selector groups every consumer lints and lab-commons does not select at all.
-GROUPS_THE_KIT_DOES_NOT_LINT = 50
+#: What lab-commons selects. AS OF 2026-09-17 (R1) this IS `CONSUMER_SELECT`, adopted verbatim --
+#: the blindness below is closed, and the alias is kept rather than collapsed so the census keeps one
+#: name per REPO and a future divergence has somewhere to be recorded.
+KIT_SELECT: tuple[str, ...] = CONSUMER_SELECT
+
+#: What lab-commons IGNORES, as of the same commit. It was EMPTY before R1, and every entry names a
+#: rule that is wrong for this repo rather than one that was expensive; `pyproject.toml` carries the
+#: reasons and `test_arch_suppressions_are_a_named_set.py` carries the per-file ones. NONE of the
+#: eight COUNTER_DIRECTION_CODES appears here, which is what keeps arm 2 below non-vacuous.
+KIT_IGNORE: tuple[str, ...] = (
+    'COM812',
+    'D203',
+    'D213',
+    'D400',
+    'D401',
+    'N818',
+    'PLR0913',
+    'Q000',
+    'Q003',
+    'S603',
+)
+
+#: Selector groups every consumer lints and lab-commons does not select at all. It was 50 when this
+#: census was written on 2026-09-17 and it is 0 by the end of the same day: R1 adopted the 58. The
+#: constant STAYS rather than being deleted, because a number that can only be 0 is the shape a
+#: ratchet needs -- `test_the_kit_is_not_linted_less_than_what_it_ships.py` is what holds it there.
+GROUPS_THE_KIT_DOES_NOT_LINT = 0
 
 #: The 62 codes all three consumers ignore. This is the SHARED BASE of the lint config: the select
 #: is byte-identical and the ignore lists agree on 62 of 63/62/66 entries.
@@ -339,11 +375,14 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
     ),
     'lab-commons::ruff-config': Placement(
         SPLITS,
-        'THE FINDING, AND IT IS A DEFECT ON RECORD RATHER THAN A PLACEMENT. This repo selects 12 '
-        'selectors; all three consumers select an IDENTICAL 58, so the kit is blind to 50 selector '
-        'groups it lints its own consumers for -- among them D, ANN, S, PTH, PT, N and TRY. It is not a '
-        'subset either way: inside the 8 groups both sides take, the consumers globally ignore 8 codes '
-        '(B018 B904 E501 RUF012 RUF043 SIM108 SIM113 UP017) that this repo enforces. THE SEAM: the 58 '
+        'THE FINDING, AND HALF OF IT IS NOW CLOSED. As measured on 2026-09-17 this repo selected 12 '
+        'selectors against the consumers` IDENTICAL 58, so the kit was blind to 50 selector groups it '
+        'lints its own consumers for -- among them D, ANN, S, PTH, PT, N and TRY. R1 ADOPTED THE 58 the '
+        'same day, so that half is a ratchet rather than a defect now. It was not a subset either way: '
+        'inside the 8 groups both sides took, the consumers globally ignore 8 codes '
+        '(B018 B904 E501 RUF012 RUF043 SIM108 SIM113 UP017) that this repo enforces, and THAT half is '
+        'open -- its remedy is in three other repos, so it ships as a named waiver set with a ceiling. '
+        'THE SEAM: the 58 '
         'selectors and the 62 shared ignores are the base and belong here as shipped DATA; what stays '
         'per repo is `exclude` (which trees a repo carries) and `per-file-ignores`. What breaks if the '
         'base moved: nothing today -- the consumers already agree byte for byte, which is exactly why '

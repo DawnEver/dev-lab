@@ -56,14 +56,94 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
+# py312 AND NOT py313, against the consumers' identical py313 -- this is the one scalar where the
+# kit must differ, and the evidence is `requires-python = ">=3.12"` eleven lines above. This repo
+# SHIPS A WHEEL to the family; a py313 target lets the UP group rewrite shipped code into syntax a
+# 3.12 interpreter cannot parse, and the 3.12 half of this repo's own declared support would break
+# at import rather than at lint. Two of the three consumers ALSO declare `>=3.12` while targeting
+# py313, so their scalar is the one that disagrees with its own metadata; only motronics
+# (`>=3.13,<3.14`) has earned it. This repo's venv is CPython 3.12.14.
 target-version = "py312"
 
 [tool.ruff.format]
 quote-style = "single"
 
 [tool.ruff.lint]
-# PLC0415 is the mechanism this repo supplies for the shared NO-LAZY-IMPORT rule: an import
-# graph a cost model reads must be exact, and a deferred import makes it a guess. The five
-# surviving deferrals -- three in src/, two in tests/ -- each carry a `# noqa: PLC0415`
-# naming the reason that one is unavoidable.
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "PLC0415", "PLW0603", "ARG001", "TRY301"]
+# THE FAMILY'S SELECT, ADOPTED VERBATIM (R1, 2026-09-17). These 58 selectors are byte-identical in
+# wdg-lab, optimi-lab and motronics -- pairwise symmetric difference EMPTY, measured by
+# `tests/_config_census_rows.py::CONSUMER_SELECT` -- so this is not a negotiation but the family's
+# answer, already held three times. Until today this repo selected 12 and was therefore blind to 50
+# groups it lints everything it ships to for; `tests/test_the_kit_is_not_linted_less_than_what_it_ships.py`
+# now reds if that gap reopens. The four single codes the old 12 carried beyond E W F I UP B SIM RUF
+# (ARG001 PLC0415 PLW0603 TRY301) are subsumed by the groups ARG PLC PLW TRY, and none of them is
+# ignored below, so nothing this repo enforced yesterday stopped being enforced today.
+select = [
+    "A", "AIR", "ANN", "ARG", "ASYNC", "B", "BLE", "C4", "C90", "COM", "D", "DJ", "DTZ", "E", "EM",
+    "ERA", "F", "FA", "FBT", "FIX", "FLY", "FURB", "G", "I", "ICN", "INP", "INT", "ISC", "LOG", "N",
+    "NPY", "PD", "PERF", "PGH", "PIE", "PLC", "PLE", "PLR", "PLW", "PT", "PTH", "PYI", "Q", "RET",
+    "RSE", "RUF", "S", "SIM", "SLF", "SLOT", "T10", "T20", "TD", "TID", "TRY", "UP", "W", "YTT",
+]
+
+# A RATCHET THAT MAY ONLY SHRINK. Every entry states why the rule is wrong FOR THIS REPO, not that
+# it was expensive; `test_the_kit_is_not_linted_less_than_what_it_ships.py` pins the set so an
+# addition is a deliberate edit to a named constant. Deliberately NOT copied from the consumers:
+# their 62-code list carries a 20-code block headed "TODO: remove these", and none of the eight
+# codes this repo already enforced (B018 B904 E501 RUF012 RUF043 SIM108 SIM113 UP017) appears here.
+ignore = [
+    # -- the three the FORMATTER owns; ruff itself documents each as conflicting with `ruff format`,
+    # and `quote-style = "single"` above is the decision Q000/Q003 would argue with.
+    "COM812",  # missing-trailing-comma -- the formatter adds them; the lint rule fights its output
+    "Q000",    # bad-quotes-inline-string -- asserts double quotes against our single-quote format
+    "Q003",    # avoidable-escaped-quote -- same axis, and the formatter already picks the cheaper quote
+    # -- the two MUTUALLY EXCLUSIVE pairs. Ruff emits a warning and disables one of each pair anyway;
+    # naming which half we drop is the difference between a decision and a startup warning.
+    "D203",    # incorrect-blank-line-before-class -- we take D211 (no blank line before a class docstring)
+    "D213",    # multi-line-summary-second-line -- we take D212 (summary on the first physical line)
+    # -- the four where a SHARPER rule already covers the hazard, so dropping these loses nothing.
+    #    Each names the rule that keeps the floor; none of them is "the count was high".
+    "D400",    # missing-trailing-period -- D415 is KEPT and accepts "?"; five summaries here are
+               # QUESTIONS ("Does origin carry this branch at all?"), which is this repo's idiom for
+               # a predicate, and D400 would force them into worse statements. D415 still reds a
+               # summary with no terminal punctuation at all, which is the floor that mattered.
+    "D401",    # non-imperative-mood -- 96 sites, and every one is a NOUN-PHRASE summary naming what
+               # the accessor IS ("The stamped line: the five fields, one per token"). D401 wants
+               # "Return the stamped line", which adds a verb carrying no information. D205/D415 and
+               # the whole D1xx family are kept, so a MISSING or malformed docstring still reds.
+    "PLR0913", # too-many-arguments -- counts KEYWORD-ONLY parameters, i.e. a declared configuration
+               # surface, not a call-site hazard. PLR0917 (too-many-POSITIONAL-arguments) is the
+               # honest half, it is SELECTED, and it is at zero: `MultiProcessing.__init__` was made
+               # keyword-only in this same pass rather than waived.
+    "S603",    # subprocess-without-shell-equals-true -- fires on EVERY subprocess call whose argv is
+               # not a literal, which in a repo whose job is driving git, uv, ruff and pre-commit is
+               # every call it has. It carries no per-site information, so it cannot be acted on.
+               # S607 is NOT waived: its one site carries a `# noqa` naming why PATH resolution is
+               # deliberate there.
+    # -- ONE DEBT, NOT A JUDGEMENT, and it is labelled as such so it is not read as settled.
+    "N818",    # error-suffix-on-exception-name -- 16 classes (2026-09-17). This is the kit's PUBLIC
+               # exception surface; seven of the sixteen are re-exported through
+               # `lab_commons.dev.__init__`, so the rename is a cross-file, cross-repo move and
+               # belongs to the stage that re-points the consumers (R4), not to a lint pass. The
+               # count above is the ceiling: this entry is expected to DISAPPEAR, not to be explained
+               # again.
+]
+
+# Per-file ignores are a statement about a TREE'S JOB, not a second ignore list. Each line names the
+# property of `tests/` that makes the rule inapplicable there and would be false of `src/`.
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "ANN001",  # a test's parameters are pytest FIXTURES; the type is declared ONCE on the fixture and
+               # repeating it at 275 request sites is a copy that can drift. ANN2xx is NOT waived, so
+               # every fixture and helper still declares what it RETURNS -- which is where the type is.
+    "ARG002",  # a test may request a fixture for its SIDE EFFECT (a seat taken, an env var set); the
+               # unused parameter IS the request, and removing it removes the setup
+    "D101",    # a test class is a NAMED GROUPING; its name and its methods' docstrings are the prose
+    "D102",    # ditto for a test method, whose name is already a sentence in this suite
+    "D103",    # ditto for a module-level test function
+    "INP001",  # tests/ is rootdir-relative by design and has no __init__.py -- adding one shadows src/
+    "N802",    # this suite SHOUTS the load-bearing word in a test name
+               # (`test_a_transient_that_never_clears_STOPS_at_the_bound`), 64 times. Lower-casing them
+               # deletes the emphasis, which is information the name is carrying on purpose.
+    "PLR2004", # a literal in an assertion IS the expected value; hoisting it to a constant hides it
+    "S101",    # assert IS the test vocabulary; src/ carries this rule unwaived
+    "SLF001",  # a test that cannot read a private member cannot pin a private invariant
+]
