@@ -21,6 +21,10 @@ the population that matched NOTHING -- the files that are in a slow tier because
 and for no reason any code can read. A partition with no residual bucket loses exactly that
 population, so :func:`census` requires a name for it.
 
+A READING IS A TUPLE AND NEVER A SET. A set answers WHICH and not HOW MANY, so a module holding one
+waiver and one holding nine were a single value here -- and a per-file site COUNT is exactly what a
+ceiling is: without one, a pinned module absorbs new waivers while the NAME set sits still.
+
 A FLOOR IS MANDATORY, not a courtesy argument. A scan over an empty corpus reports the same clean
 numbers as a scan over a healthy one, so :func:`collect` and :func:`census` both take a required
 ``floor`` and raise :class:`VacuousScanError` under it. Finding nothing must not be able to read as
@@ -42,12 +46,14 @@ __all__ = [
     'FileFacts',
     'Predicate',
     'VacuousScanError',
+    'call_names',
     'census',
     'collect',
     'count_test_functions',
     'mark_names',
     'pytest_files',
     'read_facts',
+    'site_ledger',
     'timeout_ceilings',
 ]
 
@@ -66,19 +72,45 @@ class FileFacts:
     """Everything one test file DECLARES about itself, and nothing inferred from where it sits.
 
     ``name`` is the caller's identifier for the file -- a repo-relative forward-slash path in every
-    use so far. It is carried rather than derived because the thing a consumer's tables and pins are
-    keyed by is a repo-relative path, and this module does not know which root to make it relative
-    to.
+    use so far. It is carried rather than derived because a consumer's tables and pins are keyed by a
+    repo-relative path, and this module does not know which root to make it relative to.
 
     ``parse_error`` is a fact and not a failure: a file that does not parse is REPORTED as unreadable
-    rather than dropped, because dropping it would quietly shrink every population it belongs to.
+    rather than dropped, because dropping it would shrink every population it belongs to.
+    ``mark_uses`` and ``call_uses`` are TUPLES in source order: a ceiling is read from multiplicity.
     """
 
     name: str
     tests: int
-    marks: frozenset[str]
+    mark_uses: tuple[str, ...]
+    call_uses: tuple[str, ...]
     ceilings_s: tuple[int, ...]
     parse_error: bool = False
+
+    @property
+    def marks(self) -> frozenset[str]:
+        """WHICH spellings, DERIVED: a second field is a second answer, free to disagree."""
+        return frozenset(self.mark_uses)
+
+    @property
+    def calls(self) -> frozenset[str]:
+        """WHICH imperative verbs, DERIVED from :attr:`call_uses` for the same reason."""
+        return frozenset(self.call_uses)
+
+    def sites(self, *names: str) -> int:
+        """HOW MANY TIMES *names* appear, as a decoration or a call -- what a set cannot hold.
+
+        SUMMED: neither reading reaches the other's form, so nothing is double-counted or missed.
+
+        Raises:
+            ValueError: no name was asked about -- ``0`` over every corpus agrees with every claim.
+
+        """
+        if not names:
+            msg = 'sites() needs at least one name: a count over no names is 0 for every file alive.'
+            raise ValueError(msg)
+        wanted = frozenset(names)
+        return sum(1 for use in (*self.mark_uses, *self.call_uses) if use in wanted)
 
     @property
     def max_ceiling_s(self) -> int:
@@ -114,6 +146,33 @@ def mark_names(tree: ast.AST) -> tuple[str, ...]:
             isinstance(owner, ast.Name) and owner.id == 'mark'
         ):
             names.append(node.attr)
+    return tuple(names)
+
+
+def call_names(tree: ast.AST) -> tuple[str, ...]:
+    """Every IMPERATIVE ``pytest.<verb>(...)`` call anywhere inside *tree*, in walk order.
+
+    THE HALF A DECORATOR SCAN CANNOT SEE, and no lesser half: a waiver raised in a test BODY is a
+    statement rather than a decoration and waives just as completely, so a scan reading only
+    :func:`mark_names` reports a module clean while it skips at run time. A BARE ``<verb>(...)`` is
+    read only when the file imported that name FROM pytest, which the tree STATES. The DECORATOR form
+    is excluded BY SHAPE: a ``pytest.mark.skip(...)`` callee is owned by ``pytest.mark``, not pytest.
+    """
+    imported = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == 'pytest'
+        for alias in node.names
+    }
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id in imported:
+            names.append(func.id)
+        elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == 'pytest':
+            names.append(func.attr)
     return tuple(names)
 
 
@@ -155,11 +214,12 @@ def read_facts(path: Path, *, name: str | None = None) -> FileFacts:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return FileFacts(name=label, tests=0, marks=frozenset(), ceilings_s=(), parse_error=True)
+        return FileFacts(name=label, tests=0, mark_uses=(), call_uses=(), ceilings_s=(), parse_error=True)
     return FileFacts(
         name=label,
         tests=count_test_functions(tree),
-        marks=frozenset(mark_names(tree)),
+        mark_uses=mark_names(tree),
+        call_uses=call_names(tree),
         ceilings_s=timeout_ceilings(tree),
     )
 
@@ -199,6 +259,25 @@ def collect(paths: Iterable[Path], *, root: Path, floor: int) -> tuple[FileFacts
         )
         raise VacuousScanError(msg)
     return facts
+
+
+def site_ledger(facts: Iterable[FileFacts], *names: str) -> dict[str, int]:
+    """Per-file site counts for *names*, in row order, omitting every file that holds none.
+
+    A RATCHET WITH BOTH SIDES IN ONE READING. The KEYS are the named set -- a file that stops
+    declaring a site leaves the ledger, so a declaration still naming it reds. The VALUES are the
+    ceiling -- a file in the set absorbing one more moves the sum without moving a key, the half a
+    named set is blind to. A clean file is ABSENT rather than zero, so the keys ARE the population.
+
+    Raises:
+        ValueError: no name was asked about -- see :meth:`FileFacts.sites`.
+
+    """
+    if not names:
+        msg = 'site_ledger() needs at least one name: a ledger over no names is empty for every tree.'
+        raise ValueError(msg)
+    counts = ((row.name, row.sites(*names)) for row in facts)
+    return {name: count for name, count in counts if count}
 
 
 @dataclass(frozen=True, slots=True)

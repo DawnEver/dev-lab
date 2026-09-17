@@ -33,6 +33,7 @@ from lab_commons.dev.testfacts import (
     mark_names,
     pytest_files,
     read_facts,
+    site_ledger,
     timeout_ceilings,
 )
 
@@ -208,7 +209,7 @@ def test_a_rule_order_swap_moves_the_file_and_the_totals_hold(tmp_path: Path) ->
 
 def test_the_census_refuses_a_duplicate_bucket_name_and_an_empty_corpus() -> None:
     """Two refusals that would otherwise surface far from the mistake."""
-    rows = (FileFacts(name='tests/test_a.py', tests=1, marks=frozenset(), ceilings_s=()),)
+    rows = (FileFacts(name='tests/test_a.py', tests=1, mark_uses=(), call_uses=(), ceilings_s=()),)
     with pytest.raises(ValueError, match='distinct'):
         census(rows, selects=bool, rules=[('x', bool), ('x', bool)], residual='r', floor=1)
     with pytest.raises(ValueError, match='distinct'):
@@ -225,7 +226,7 @@ def test_a_missing_bucket_name_raises_rather_than_reading_clean() -> None:
     assert empty.by_directory() == {}
     with pytest.raises(KeyError):
         census(
-            (FileFacts(name='tests/test_a.py', tests=1, marks=frozenset(), ceilings_s=()),),
+            (FileFacts(name='tests/test_a.py', tests=1, mark_uses=(), call_uses=(), ceilings_s=()),),
             selects=bool,
             rules=[('real', bool)],
             residual='r',
@@ -239,3 +240,157 @@ def test_a_computed_timeout_is_not_read_as_a_declared_ceiling() -> None:
     assert timeout_ceilings(tree) == ()
     assert mark_names(tree) == ('timeout',)
     assert count_test_functions(tree) == 1
+
+
+# ------------------------------------------------- order and multiplicity: what a set cannot hold
+
+#: THE SPELLINGS ARE ASSEMBLED, NEVER WRITTEN OUT, and that is the trap this subject has already
+#: sprung twice. A fixture naming an imperative waiver in full makes the scanner count ITSELF: the
+#: consumer guard that first hit this scored zero against its own file for exactly that reason. So
+#: the constants below are built from `_PYTEST` plus a verb, and every planted site lives in a file
+#: this module writes on purpose -- the only place the reader is ever pointed at.
+_PYTEST = 'pytest'
+_WAIVE = 'skip'
+_WAIVE_IF = 'skipif'
+
+#: One file, THREE waiver sites, TWO spellings. A set-valued reading cannot tell it from a file
+#: holding one of each, which is the whole of the multiplicity gap.
+_CROWDED = (
+    f'import {_PYTEST}\n\n\n'
+    f'@{_PYTEST}.mark.{_WAIVE_IF}(True, reason="one")\n'
+    f'def test_a() -> None: ...\n\n\n'
+    f'@{_PYTEST}.mark.{_WAIVE_IF}(True, reason="two")\n'
+    f'def test_b() -> None: ...\n\n\n'
+    f'def test_c() -> None:\n'
+    f'    {_PYTEST}.{_WAIVE}("three")\n'
+)
+
+#: The same two spellings ONCE each. Its `marks` differs from `_CROWDED`'s by nothing at all.
+_SPARSE = (
+    f'import {_PYTEST}\n\n\n'
+    f'@{_PYTEST}.mark.{_WAIVE_IF}(True, reason="one")\n'
+    f'def test_a() -> None: ...\n\n\n'
+    f'def test_b() -> None:\n'
+    f'    {_PYTEST}.{_WAIVE}("two")\n'
+)
+
+#: The imperative call reached through an alias import, which a qualified-only reading misses.
+_ALIASED = f'from {_PYTEST} import {_WAIVE}\n\n\ndef test_a() -> None:\n    {_WAIVE}("aliased")\n'
+
+#: A file that only TALKS about waivers -- in a docstring, a comment and a string constant. It is
+#: the self-count trap planted where the scan is pointed deliberately, and it must read as zero.
+_PROSE = (
+    f'"""Never write the {_WAIVE_IF} decorator here, and never call {_PYTEST}.{_WAIVE}() either."""\n\n'
+    f'# {_PYTEST}.mark.{_WAIVE} and {_PYTEST}.mark.{_WAIVE_IF} are the decorator spellings.\n'
+    f'DOC = "{_PYTEST}.{_WAIVE}(reason)"\n\n\n'
+    f'def test_a() -> None: ...\n'
+)
+
+
+def _plant_sites(root: Path) -> Path:
+    """A real ``tests/`` tree whose four files differ only in HOW MANY waivers they hold."""
+    unit = root / 'tests' / 'unit'
+    unit.mkdir(parents=True)
+    (unit / 'test_crowded.py').write_text(_CROWDED, encoding='utf-8')
+    (unit / 'test_sparse.py').write_text(_SPARSE, encoding='utf-8')
+    (unit / 'test_aliased.py').write_text(_ALIASED, encoding='utf-8')
+    (unit / 'test_prose.py').write_text(_PROSE, encoding='utf-8')
+    return root
+
+
+def test_two_files_with_the_same_spellings_and_different_counts_are_told_apart(tmp_path: Path) -> None:
+    """A ``frozenset`` answers WHICH spellings and never HOW MANY, so a ceiling cannot be read off it.
+
+    Both files below declare the identical mark set. The count is the only reading that separates
+    them, and it is exactly what a site ceiling is: without it an already-pinned module absorbs any
+    number of new waivers while the NAME set sits still.
+    """
+    root = _plant_sites(tmp_path)
+    crowded = read_facts(root / 'tests' / 'unit' / 'test_crowded.py', name='crowded')
+    sparse = read_facts(root / 'tests' / 'unit' / 'test_sparse.py', name='sparse')
+
+    assert crowded.marks == sparse.marks, 'the premise: the SET reading cannot separate these two'
+    assert crowded.sites(_WAIVE, _WAIVE_IF) == 3
+    assert sparse.sites(_WAIVE, _WAIVE_IF) == 2
+    assert crowded.mark_uses == (_WAIVE_IF, _WAIVE_IF)
+
+
+def test_the_imperative_call_is_read_and_the_decorator_is_not_counted_twice(tmp_path: Path) -> None:
+    """A waiver RAISED in a body is a statement, not a decoration, and it waives just as fully.
+
+    A decorator-only reading reports the aliased file as waiver-free while it waives at run time.
+    The ``mark.``-owned attribute is excluded from the call reading because ``mark_names`` already
+    holds it -- counting it in both would double every decorator and halve any ceiling built here.
+    """
+    root = _plant_sites(tmp_path)
+    aliased = read_facts(root / 'tests' / 'unit' / 'test_aliased.py', name='aliased')
+    crowded = read_facts(root / 'tests' / 'unit' / 'test_crowded.py', name='crowded')
+
+    assert aliased.calls == frozenset({_WAIVE})
+    assert aliased.marks == frozenset(), 'nothing here is a decoration'
+    assert aliased.sites(_WAIVE, _WAIVE_IF) == 1
+    assert crowded.call_uses == (_WAIVE,), 'the two decorators are marks, counted once and there'
+
+
+def test_a_waiver_that_is_only_text_is_not_a_site(tmp_path: Path) -> None:
+    """THE SELF-COUNT TRAP, planted where the scan is pointed on purpose.
+
+    Every spelling in that fixture sits in a docstring, a comment or a string constant. A text scan
+    would score the file that EXPLAINS the rule above the file that breaks it; a parser sees
+    declarations and nothing else.
+    """
+    root = _plant_sites(tmp_path)
+    prose = read_facts(root / 'tests' / 'unit' / 'test_prose.py', name='prose')
+    assert prose.sites(_WAIVE, _WAIVE_IF) == 0
+    assert prose.mark_uses == ()
+    assert prose.call_uses == ()
+
+
+def test_the_ledger_moves_in_both_directions(tmp_path: Path) -> None:
+    """A RATCHET HAS TWO SIDES, and one reading carries both: the KEYS and the VALUES.
+
+    The keys are the named set -- a file that stops waiving drops out, and a declaration naming it
+    reds. The values are the ceiling -- a file already in the set absorbing one more moves the sum,
+    which is the half the named set alone is blind to.
+    """
+    root = _plant_sites(tmp_path)
+    facts = collect(pytest_files(root), root=root, floor=4)
+    ledger = site_ledger(facts, _WAIVE, _WAIVE_IF)
+
+    assert ledger == {
+        'tests/unit/test_aliased.py': 1,
+        'tests/unit/test_crowded.py': 3,
+        'tests/unit/test_sparse.py': 2,
+    }, 'a clean file is absent rather than present with a zero'
+    assert sum(ledger.values()) == 6
+
+    (root / 'tests' / 'unit' / 'test_sparse.py').write_text(_CROWDED, encoding='utf-8')
+    risen = site_ledger(collect(pytest_files(root), root=root, floor=4), _WAIVE, _WAIVE_IF)
+    assert set(risen) == set(ledger), 'THE POINT: the named set did not move'
+    assert sum(risen.values()) == 7, 'and the count is the only reading that saw it'
+
+    (root / 'tests' / 'unit' / 'test_aliased.py').write_text(_BARE, encoding='utf-8')
+    vanished = site_ledger(collect(pytest_files(root), root=root, floor=4), _WAIVE, _WAIVE_IF)
+    assert set(ledger) - set(vanished) == {'tests/unit/test_aliased.py'}
+
+
+def test_a_ledger_over_no_names_is_refused_rather_than_answered_empty() -> None:
+    """A scan for nothing finds nothing and agrees with every claim anybody makes about it."""
+    with pytest.raises(ValueError, match='at least one name'):
+        site_ledger(())
+
+
+def test_the_count_and_the_names_come_from_one_read_of_the_file(tmp_path: Path) -> None:
+    """ONE PARSE, both readings: a count and a name set taken in two passes can disagree.
+
+    The file is REWRITTEN between the two questions. A reading that re-opened the file for the count
+    would answer about the new bytes and the old spellings at once -- a disagreement whose two
+    halves are each individually defensible, which is why it would never be diagnosed.
+    """
+    path = tmp_path / 'test_moving.py'
+    path.write_text(_CROWDED, encoding='utf-8')
+    facts = read_facts(path, name='moving')
+    path.write_text(_BARE, encoding='utf-8')
+
+    assert facts.sites(_WAIVE, _WAIVE_IF) == 3
+    assert facts.marks == frozenset({_WAIVE_IF})
