@@ -124,6 +124,16 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   during it. It reports a KERNEL ratio and deliberately carries no end-to-end figure: the weight
   that would produce one is a property of the consuming repo's cases. Not re-exported below --
   ``build_wheel`` and ``interleaved`` say nothing about their subject once flattened.
+* :mod:`lab_commons.dev.ab_bench` -- the other half of that measurement: an IN-PROCESS seam, where
+  its sibling times CHILD PROCESSES. The difference is the failure modes, not the scale. There may
+  be more than two arms; an arm may legitimately REFUSE an input its rivals accept, which is an
+  ANSWER and is recorded rather than aborted on; and an arm may pay a one-time setup, which is
+  amortised over a recurrence count the CALLER measured, never over 1 and never over 0. A refused
+  arm reports no median at all, because a candidate timed only on the inputs it accepted has
+  selected its own sample. And the dispatch question is asked rather than assumed: a seam faster on
+  one input and slower on another needs a THRESHOLD, and when the winner changes back as size grows
+  there is none -- the pairs that forbid it are named. Not re-exported below: ``interleave``,
+  ``ratio`` and ``crossover`` say nothing about their subject once flattened.
 
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
