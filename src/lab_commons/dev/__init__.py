@@ -206,6 +206,18 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   re-exported below: ``render``, ``Base`` and ``Delta`` are exactly the unqualified spellings that
   stop saying what they are once flattened into a namespace this wide.
 
+R4 PHASE 1, THE ``scripts/gate/`` MECHANISM (2026-09-17) -- six modules, family half only, no
+consumer re-pointed, none re-exported. ONE LINE EACH AND THE BREVITY IS FORCED: this file entered
+the tranche at 387 lines against a 400-line band, so the reasoning stays in each module's own
+docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
+
+* :mod:`lab_commons.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
+* :mod:`lab_commons.dev.shards` -- a partition, the AND over a shard set, and a required population FLOOR.
+* :mod:`lab_commons.dev.bypath` -- a by-path load as a CALL: one object per FILE, nothing to suppress.
+* :mod:`lab_commons.dev.seams` -- rebinding for measurement WITH the undo; an unresolved seam is reported.
+* :mod:`lab_commons.dev.gatebase` -- the NARROWEST admitted ancestor of HEAD; refs arrive with NO DEFAULT.
+* :mod:`lab_commons.dev.treedirt` -- did the tree MOVE while judged; identity stays with ``content``.
+
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
 flattening them into one namespace beside :data:`lab_commons.dev.content.ABSENT` would leave a
