@@ -138,22 +138,30 @@ Measured consequence, same day: lab-commons moved dev26 -> dev40 in one session;
 opposite pins, each correctly. **Nothing in any repo determines which lab-commons a fresh checkout
 gets**, so an integrator on another box cannot attribute a single red.
 
-### THE MECHANISM, found after the third occurrence
+### THE MECHANISM — and the first diagnosis in this file was WRONG
 
 wdg-lab reverted to dev26 THREE times on 2026-09-17, twice after being explicitly upgraded. It was
-read as contention between agents both times. It is not contention. `wdg-lab/Makefile`:
+read as contention between agents twice, and then written up here as uv re-resolving `make
+install-dev` from its cache. **Both readings are wrong.** Measured:
 
-    install-dev:  uv pip install -e ".[dev,web,rust,cad3d,full]"
+    wdg-lab/uv.lock:  name = "lab-commons"
+                      version = "0.2.2.dev26+gba3bf6dee"
 
-With `lab-commons @ git+...` carrying no ref and no lockfile to pin it, that re-resolution takes
-the build uv already has — the dev26 from the first clone. **So the repo's own documented install
-command silently reverts the shared kit to a stale version, every time it is run.** That is not a
-race and not an accident; it is the deterministic consequence of the unpinned declaration, and it
-will keep happening on every workstation that runs `make install-dev`.
+**There IS a lockfile. It pins dev26 — the exact version the repo kept returning to — and it is
+UNTRACKED, so nothing in git shows it and no review ever saw it.** `uv run` performs an implicit
+sync against it before running anything, and the pre-commit `bump-version` hook and the
+`generate-changelog` hook both go through `uv run`. So every commit and every push reinstalled the
+kit at the lock's version. That is why the reverts clustered around commits rather than around
+anyone running `make install-dev`, which nobody did.
 
-This turns the lock question below from a preference into a measured cost. It also means any
-instruction of the form "run `make install-dev` first" is, today, an instruction to downgrade the
-shared kit.
+THE SENTENCE WORTH KEEPING: **"not in git" is not "not there."** `.gitignore` made the lockfile
+invisible, not absent. What the family actually has today is a pin that cannot be seen, cannot be
+reviewed, and does not move when a commit moves — which is strictly worse than either a committed
+lockfile or no lockfile at all, and it is the state that produced every symptom in this section.
+
+The fix is `uv run --no-sync` in both hooks, so a hook runs the environment it was given instead of
+silently rebuilding one. `--refresh-package`, proposed here earlier, was aimed at a mechanism that
+was not the cause; it is not wrong, but it is not this.
 
 ## The refactor, first principles
 
@@ -268,21 +276,28 @@ stage so the 13/1/1 asymmetry is not re-opened by the next reader who sees only 
 **USER RULING 2026-09-17: `uv.lock` stays OUT of git.** Not a lockfile, and not a `rev=`/`tag=` pin
 on the requirement either. "The latest from that URL" is the family's deliberate declaration.
 
-That does NOT leave the `make install-dev` revert standing, because the revert is not what the
-declaration says — it is the mechanism failing to deliver it. The declaration says LATEST; uv hands
-back CACHED. So the repair is to make the mechanism true rather than to weaken the declaration:
+CORRECTED after the ruling: the ruling is about what GIT holds, and the defect was never about
+that. An untracked `uv.lock` pinning dev26 exists on disk in wdg-lab and `uv run` syncs against it
+(see the mechanism section above). So "no lockfile in git" was being read as "no lockfile", and the
+repo has been running against an invisible pin all along.
 
-* `--refresh-package lab-commons` (or `-P`, which implies it) on every install path.
-* NOT a global `--refresh`: refreshing everything is a wider, slower change than the defect, and a
-  fix wider than its cause is how the next reader loses the reason.
+The repair therefore has two halves, and only the first is about the ruling:
 
-This also explains the asymmetry nobody had accounted for. motronics never reverted because
-`scripts/gate/dep_sync.py` already passes `--upgrade-package lab-commons`. wdg-lab's
-`scripts/dep.py` escapes it for a DIFFERENT reason — it shells to `pip`, and pip re-clones a
-direct-URL requirement instead of treating it as satisfied. So wdg-lab has two install doors, one
-correct and one reverting, **and the reverting one is the one humans are told to use.** Two tools
-behaving differently on the identical requirement string is why this hid for so long, and it is why
-"read the command text" is not a measurement here.
+* **Keep the lockfile out of git — and stop letting an invisible one decide.** `uv run --no-sync`
+  wherever a hook or script runs the project, so a hook uses the environment it was handed instead
+  of silently rebuilding one from a file nobody reviewed.
+* **Make the install doors deliver what the declaration says.** `--refresh-package lab-commons`
+  (or `-P`, which implies it). This was proposed as THE fix earlier in this file and it is not —
+  it addresses a real second-order gap, not the cause. NOT a global `--refresh`: a fix wider than
+  its cause is how the next reader loses the reason.
+
+The asymmetry this also explains: motronics never reverted because its verdict path does not run
+through `uv run` against a stale lock the way wdg-lab's hooks do, and because `dep_sync.py` already
+passes `--upgrade-package`. wdg-lab's `scripts/dep.py` escapes for a THIRD reason — it shells to
+`pip`, which re-clones a direct-URL requirement rather than treating it as satisfied. Three doors,
+three different behaviours on the identical requirement string, **and the reverting one is the one
+that runs automatically on every commit.** That is why "read the command text" was not a
+measurement here, and why this file recorded the wrong cause twice before measuring the lock.
 
 The section below is kept as the record of the question and of what it cost to answer it.
 
