@@ -80,6 +80,14 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   reaps unbounded, which is a hang detector that hangs), the WIDTH a refusal must consult before it
   may call a run a tier boundary rather than a narrowed box, and the sentence itself -- three
   states, three DIFFERENT remedies, two of which are wrong in the other's case.
+* :mod:`lab_commons.dev.netverb` - NETWORK-RETRY-THEN-REPORT, the family half of it: a BOUNDED
+  retry around a network verb, a classification table saying which failures can clear on another
+  attempt (a 401 cleared on a retry; a rejected ref, a 403 and a pre-push hook's refusal repeat
+  identically), and a ``Report`` the caller BRANCHES on instead of a printed word "blocked". It
+  composes with ``bounded`` for the wall rather than restating it. Reached BY NAME -- as an API,
+  and as ``python -m lab_commons.dev.netverb -- git fetch origin`` for a shell caller -- so it is
+  not re-exported below, exactly as ``verify`` is not: a package that imports its own entry point
+  makes ``runpy`` warn the module was already in ``sys.modules``.
 * :mod:`lab_commons.dev.checkout` — SHARED-CHECKOUT, which both siblings declared absent on the
   grounds that the push obligation "is a fact about origin, not about any file in this checkout".
   The premise is true and the conclusion was wrong: git answers "what is here that origin does not
