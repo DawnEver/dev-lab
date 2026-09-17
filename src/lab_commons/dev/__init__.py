@@ -89,6 +89,23 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
 * :mod:`lab_commons.dev.githooks` -- the git hook SCRIPTS themselves, shipped as a package payload
   and reached by NAME (``python -m lab_commons.dev.githooks bump-version``). Not re-exported below,
   for the same reason ``verify`` is not: it is run rather than imported.
+* :mod:`lab_commons.dev.agenthooks` -- the agent-guard ENGINE itself, shipped as a package payload
+  the way ``githooks`` ships its scripts. It is JavaScript because the tool that runs a ``PreToolUse``
+  hook executes a command and reads a JSON decision from its stdout, and it is the file whose
+  behaviour has been measured against real evasions -- so it MOVES verbatim rather than being
+  re-implemented, because two answers to "what will this shell line execute" is the fork these modules
+  exist to remove. Unlike a git hook it is INSTALLED into the consumer rather than reached by name:
+  it runs on every Bash tool call, and its command line lives in a committed
+  ``.claude/settings.json`` where an absolute ``site-packages`` path would be true on one box only.
+  Not re-exported below: it is run, not imported.
+* :mod:`lab_commons.dev.agent_guard` -- AGENT-GUARD-IS-LIVE, the hook-install question one layer up:
+  a rendered ``deny-rules.json`` is a DECLARATION, and installing the engine plus its ``PreToolUse``
+  wiring is a separate act. MEASURED 2026-09-17: the registry and its wiring recipe existed while the
+  engine lived in ONE repo of four, so rendering rules anywhere else would have produced an inert
+  declaration that reads as a guard. Three parts reported BY NAME -- engine, rules, wiring -- because
+  each fails differently, and installing is an EXPLICIT request that never clobbers an unrelated
+  setting, an unrelated matcher, or an engine lab-commons did not ship. Not re-exported below: its
+  status constants are local to its own question, exactly as ``hook_install``'s are.
 * :mod:`lab_commons.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
   rather than failing the build or vanishing from it. Not re-exported below: its surface
