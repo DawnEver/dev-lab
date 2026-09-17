@@ -52,7 +52,12 @@ from __future__ import annotations
 DENY_ROWS: tuple[dict[str, object], ...] = (
     {
         'id': 'BARE-TEST-INVOCATION',
-        'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|uv\s+run\s+pytest\b|pytest\b)',
+        # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the
+        # engine now yields `uv run <command>` as a command POSITION, so `pytest\b` reaches it the
+        # same way it already reached `timeout 900 pytest` -- and a rule carrying its own wrapper
+        # list is answering a question the engine has already answered, which is how the two
+        # hand-anchored rules drifted apart in the first place. `uv run pytest` stays in `refuses`.
+        'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)',
         'matches': 'command',
         'hazard': (
             'a hand-written test line has no VERDICT. An exit code cannot say whether the run COVERED what '
@@ -66,7 +71,12 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'pytest -k thing -x',
             'python -m pytest tests',
             '.venv/Scripts/python.exe -m pytest -q',
-            'uv run pytest',
+            # `uv run pytest` USED to sit here. It is a SHELL LINE, not a segment, and this row's
+            # examples are segments by contract (see tests/test_dev_hooks.py's docstring) -- it only
+            # ever passed because the pattern hand-anchored `uv run`, which is the smell removed
+            # above. It moved, WITH `uvx pytest -q` and the wrapped-heredoc shapes, to
+            # test_dev_agenthooks.py, where the real engine judges it. That is a stronger control,
+            # not a dropped one: it is now proved through the file the consuming repo runs.
         ),
         'permits': (
             'grep -rn "pytest" src',

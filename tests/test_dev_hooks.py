@@ -38,7 +38,7 @@ from lab_commons.dev.hooks import (
     rules_by_id,
 )
 
-#: The floor on the row/example scan, MEASURED 2026-09-16 (7 rows, 25 refusing and 20 permitted
+#: The floor on the row/example scan, MEASURED 2026-09-17 (7 rows, 24 refusing and 19 permitted
 #: examples). Set below the measurement on purpose: a floor refuses an UNREAD registry, it is not a
 #: second pin on the count -- pinning the exact number would red on every row added, which is how a
 #: floor gets deleted.

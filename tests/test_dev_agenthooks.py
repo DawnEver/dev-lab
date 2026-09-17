@@ -6,12 +6,17 @@ EXECUTE, and every defect it has had was a disagreement between that decision an
 about it. So each arm builds a real ``deny-rules.json`` out of the shared registry, feeds a real hook
 payload to ``node``, and asserts the verdict that comes back.
 
-THE FOUR ARMS THAT ARE INCIDENTS RATHER THAN EXAMPLES:
+THE FIVE ARMS THAT ARE INCIDENTS RATHER THAN EXAMPLES:
 
 * the WRAPPER case. ``timeout 900 pytest`` invokes two commands and anchoring at the first alone
   misses the second; six shapes slipped through when that was measured (2026-09-01).
 * the HEREDOC EVASION, measured 2026-08-22: an agent ran pytest through ``python - <<EOF ...
   pytest.main([...]) ... EOF`` and disclosed it. A CLOSED incident, pinned here so it stays closed.
+* the two CROSSED, measured 2026-09-17: ``uv run python - <<PY ... PY``. The heredoc arm asked only
+  the segment's FIRST WORD whether it was an interpreter, so any wrapper in front of ``python`` put
+  the body back into the data class and reopened the arm above. It was allowed by EVERY copy of the
+  engine in this family; the one repo whose rules name ``uv run`` refused it for an unrelated
+  reason, which is precisely what made the hole read as closed.
 * the other side of the same coin -- a heredoc consumed by a SINK is DATA. ``cat > notes.md <<EOF``
   writing the words ``uv sync`` is documentation, and refusing it fired twice in one session while
   the author was recording why the rule is right.
@@ -54,7 +59,7 @@ ADOPTION = HookAdoption(
 )
 
 #: The floor on the registry-wide scan below: rows times their own controls. MEASURED 2026-09-17 --
-#: 7 rows carrying 24 ``refuses`` and 20 ``permits``. Set under the measurement on purpose: a floor
+#: 7 rows carrying 24 ``refuses`` and 19 ``permits``. Set under the measurement on purpose: a floor
 #: refuses an UNREAD registry, it is not a second pin on the count.
 CONTROL_FLOOR = 30
 
@@ -98,6 +103,63 @@ def test_the_heredoc_evasion_stays_closed(rules: Path) -> None:
     command = 'python - <<EOF\nimport os\nprint(os.getcwd())\npytest.main(["-q", "tests"])\nEOF'
     reason = agenthooks.decide(command, rules)
     assert reason is not None, 'pytest ran through a heredoc body and the guard did not see it -- the evasion reopened'
+
+
+def test_a_wrapper_cannot_hide_the_interpreter_that_consumes_a_heredoc(rules: Path) -> None:
+    """THE 2026-08-22 EVASION, REOPENED BY A WRAPPER AND MEASURED 2026-09-17.
+
+    A heredoc body is scanned only when its CONSUMER is an interpreter, and the consumer was read as
+    the segment's FIRST WORD. So `uv run python - <<PY` and `timeout 900 python - <<PY` read as `uv`
+    and `timeout`, the body was classified as data, and `pytest.main(...)` inside it was never seen.
+    Both were ALLOWED by every copy of the engine in this family before this test existed; the repo
+    whose rules happened to name `uv run` refused the first one for an UNRELATED reason, which is
+    what made the hole look closed.
+
+    The fix is not a new interpreter list: `commandPositions` already enumerates what a segment
+    runs, and the heredoc test now asks ALL of them instead of position zero.
+    """
+    body = '\nimport os\nprint(os.getcwd())\npytest.main(["-q", "tests"])\nPY'
+    for command in (
+        'uv run python - <<PY' + body,
+        'uvx python - <<PY' + body,
+        'timeout 900 python - <<PY' + body,
+        'nohup uv run python - <<PY' + body,
+        # The plain wrapped invocations too. These are SHELL LINES, so they cannot live in the
+        # registry row's `refuses` (whose examples are segments) -- this is their only home, and
+        # `uv run pytest` was moved here out of that row rather than dropped.
+        'uv run pytest',
+        'uvx pytest -q',
+    ):
+        assert agenthooks.decide(command, rules) is not None, (
+            f'a wrapper hid the interpreter and the heredoc body went unscanned: {command.splitlines()[0]!r}'
+        )
+
+
+def test_uv_run_is_a_wrapper_but_uv_itself_is_still_a_command(tmp_path: Path) -> None:
+    """THE RATCHET'S OTHER SIDE. `uv run X` unwraps to X, but `uv sync`/`uv add`/`uv pip` are
+    commands in their own right: stripping a bare `uv` would leave the segment reading `sync`, and a
+    rule naming `uv sync` -- motronics-studio ships one, this registry does not -- would go quiet.
+
+    Driven through a rule this test writes, because the property belongs to the ENGINE and no
+    shipped row depends on it yet. A consumer's rule must not be the only thing that notices.
+    """
+    uv_rule = tmp_path / 'uv-rules.json'
+    uv_rule.write_text(
+        json.dumps(
+            [
+                {
+                    'name': 'UV-MUTATES',
+                    'pattern': r'uv\s+(?:sync|add|pip)\b',
+                    'matches': 'command',
+                    'reason': 'mutates the shared venv',
+                }
+            ]
+        ),
+        encoding='utf-8',
+    )
+    for intact in ('uv sync', 'uv add ruff', 'uv pip install x', 'timeout 60 uv sync'):
+        assert agenthooks.decide(intact, uv_rule) is not None, f'`uv` was unwrapped as a wrapper, hiding {intact!r}'
+    assert agenthooks.decide('uv run python script.py', uv_rule) is None, '`uv run` is not a venv mutation'
 
 
 def test_a_heredoc_consumed_by_a_sink_is_data_and_is_not_denied(rules: Path) -> None:

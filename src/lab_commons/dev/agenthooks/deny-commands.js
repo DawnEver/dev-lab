@@ -84,6 +84,17 @@ const ENV_PREFIX = /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+/;
  */
 const WRAPPERS = /^(?:timeout|nohup|time|env|nice|ionice|stdbuf|command|exec|sudo|doas|xargs)$/i;
 
+/**
+ * `uv run <command>` is a wrapper too, but its verb is a SECOND token, so `WRAPPERS` cannot name
+ * it: matching `uv` alone would also strip `uv sync`/`uv add`/`uv pip`, which are commands in their
+ * own right and are exactly what the uv rule must keep seeing. Only the `run` form is a wrapper.
+ *
+ * MEASURED 2026-09-17: without this, `uv run python - <<PY ... PY` hid its interpreter behind `uv`
+ * and the heredoc body was never scanned. A repo whose rules happen to name `uv run` refused that
+ * line for an unrelated reason; one whose rules do not (optimi-lab, wdg-lab) ALLOWED it outright.
+ */
+const UV_RUN = /^(?:[^\s]*[/\\])?(uvx?)(?:\.exe)?$/i;
+
 /** An argument that belongs to the WRAPPER rather than to the command it runs. */
 const WRAPPER_ARG = /^(?:-|\d+(?:\.\d+)?[smhd]?$)/;
 
@@ -131,7 +142,10 @@ function splitHeredocs(cmd) {
     // exempted a real evasion route to buy a check that was doing nothing.
     const openingLine = cmd.slice(index, opener.lastIndex).split('\n').pop();
     const opening = segments(openingLine).pop() || openingLine;
-    if (INTERPRETERS.test(commandWord(opening))) executed.push(body);
+    // EVERY command position, not just the first word: `timeout 900 python - <<PY` and
+    // `uv run python - <<PY` both run an interpreter, and both read as `timeout`/`uv` at token
+    // zero. Asking only `commandWord(opening)` reopened the 2026-08-22 evasion behind any wrapper.
+    if (commandPositions(opening).some((position) => INTERPRETERS.test(commandWord(position)))) executed.push(body);
 
     rest += cmd.slice(index, opener.lastIndex);
     index = bodyEnd;
@@ -178,8 +192,13 @@ function commandPositions(segment) {
     seen.add(text);
     out.push(text);
     const tokens = text.split(/\s+/);
-    if (!WRAPPERS.test(tokens[0].replace(/^["']|["']$/g, ''))) break;
-    let i = 1;
+    const head = tokens[0].replace(/^["']|["']$/g, '');
+    let i;
+    const uv = UV_RUN.exec(head);
+    if (WRAPPERS.test(head)) i = 1;
+    else if (uv && uv[1].toLowerCase() === 'uvx') i = 1; // `uvx <command>`: no verb of its own
+    else if (uv && tokens[1] === 'run') i = 2; // `uv run <command>`; `uv sync` is NOT a wrapper
+    else break;
     while (i < tokens.length && WRAPPER_ARG.test(tokens[i])) i += 1;
     text = tokens.slice(i).join(' ').replace(ENV_PREFIX, '').trim();
   }
