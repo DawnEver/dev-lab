@@ -70,6 +70,12 @@ def _defined_names(body: list[ast.stmt]) -> set[str]:
             names.update(t.id for t in node.targets if isinstance(t, ast.Name))
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             names.add(node.target.id)
+        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
+            # ``type Row = ...`` (PEP 695) binds a module-level name a consumer imports and
+            # annotates with. MEASURED 2026-09-17 on ``dev.shards.Row``: omitting this convicted a
+            # TRUE ``__all__`` entry. The blind spot ran in that direction only -- it manufactured a
+            # lie where there was none, never the reverse -- so nothing already declared was wrong.
+            names.add(node.name.id)
         elif isinstance(node, ast.If | ast.Try):
             names |= _defined_names(node.body)
             names |= _defined_names(node.orelse)
@@ -100,10 +106,14 @@ def test_a_planted_module_is_refused(tmp_path: Path) -> None:
     lying.write_text("__all__ = ['gone']\n", encoding='utf-8')
     clean = tmp_path / 'clean.py'
     clean.write_text("__all__ = ['X']\nX = 1\n", encoding='utf-8')
-    problems = surface_problems((missing, lying, clean))
+    aliased = tmp_path / 'aliased.py'
+    aliased.write_text("__all__ = ['Row']\ntype Row = tuple[str, ...]\n", encoding='utf-8')
+    problems = surface_problems((missing, lying, clean, aliased))
     assert any('declares no __all__' in p for p in problems)
     assert any("names 'gone'" in p for p in problems)
     assert not any('clean.py' in p for p in problems)
+    # A PEP 695 alias is a real binding, so declaring it is TRUE and must not be convicted.
+    assert not any('aliased.py' in p for p in problems)
 
 
 def test_the_guard_reads_this_repo() -> None:

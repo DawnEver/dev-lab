@@ -67,7 +67,10 @@ def _is_this_file(module: ModuleType | None, resolved: Path) -> bool:
         return False
     try:
         return Path(origin).resolve() == resolved
-    except OSError:  # pragma: no cover -- an unresolvable __file__ is not this file
+    except OSError:
+        # An unresolvable __file__ is not this file. Carries NO coverage exemption: this repo
+        # reads one as a declaration owing a reason, and "hard to reach" is not a reason -- the
+        # branch is either reachable and testable, or it is dead code.
         return False
 
 
