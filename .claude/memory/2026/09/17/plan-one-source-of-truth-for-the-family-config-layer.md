@@ -109,11 +109,27 @@ Line counts are not evidence; these are set intersections.
     .pre-commit        absent       98        72        128
     docs-src/dev        13           1         1         14
 
-`.gitignore`, pairwise overlap among the three consumers: wdg/opt 27, wdg/motr 33, opt/motr 16.
-Present in ALL THREE:
+`.gitignore` — CORRECTED 2026-09-17, and the correction is not cosmetic. The first reading here
+normalised trailing slashes away with `sed 's:/*$::'`. **A trailing slash matches a DIRECTORY ONLY,
+so `**/__pycache__/` and `**/__pycache__` are different rules, not different spellings**, and
+motronics' own `.gitignore` carries a comment recording the incident that proves it: a `.pyc` under
+`.claude/memory/` was TRACKED, because gitignore is last-match-wins per path and
+`!**/.claude/memory/**` re-included what the `__pycache__` rule had excluded.
+
+    intersection over all three consumers:   12 LITERAL    14 normalised
+    pairwise  wdg/opt  wdg/motr  opt/motr:   27/31/14      27/33/16
+
+The five that differ only by a trailing slash — `**/__pycache__`, `*.egg-info`, `.mypy_cache`,
+`.pytest_cache`, `.ruff_cache` — are slashed in motronics and bare in both labs. All five name
+directories, so the slashed spelling is the correct base, and adopting it is a REAL BEHAVIOUR
+CHANGE for the two labs that belongs in their adoption commit rather than being slipped in as
+formatting. Twelve is the number to quote when the question is what the three repos literally
+agree on; fourteen is the number to quote when the question is what the base should hold.
+
+Present in all three, literally:
 
     **/.env  **/__pycache__  **/log/*.log  **/log/*.log.error  **/temp/**  *.c
-    *.egg-info  *.spec  .coverage*  .mypy_cache  .pytest_cache  .ruff_cache  .venv*  uv.lock
+    *.spec  .coverage*  .venv*  uv.lock   (+ 2 more)
 
 `.pre-commit-config.yaml` hook ids in ALL THREE: `check-added-large-files check-ast
 check-case-conflict check-json check-merge-conflict check-toml commitizen debug-statements
@@ -329,7 +345,16 @@ attributed.
   read. wdg-lab 31 rows (14/5/12), optimi-lab 23 rows (9/6/8). If a later reading shows fewer rows
   than files, the completeness arm has been weakened.
 * Consumption by IMPORT, not by grep: wdg-lab 17, optimi-lab 16, of 30 published modules.
-* All-three `.gitignore` intersection: 14 lines. All-three pre-commit ids: 11.
+* All-three `.gitignore` intersection: **12 LITERAL, 14 normalised** — say which you mean, and see
+  the correction above for why the difference is a behaviour difference rather than a spelling one.
+  All-three pre-commit ids: 11, over 22/19/18, and the three disagree on BOTH pins
+  (`pre-commit-hooks` v6.0.0/v5.0.0/v5.0.0, `commitizen` v4.13.9/v4.6.0/v4.6.0).
+* Makefile targets: 3 in all four (over 6/18/14/15), 8 in all three consumers. `verify` is in three
+  of four and motronics is the exception.
+* `famconfig.py` is at exactly 400 lines, the module-size band: it passes, and the next addition
+  must split it. The named seam is the SURVEY half (`measured_delta`, `fork_signals`).
+* R2 adoption sizing, `.gitignore` added/dropped per repo: wdg-lab 49/2, optimi-lab 18/2,
+  motronics 59/0.
 * `lab_commons.dev` public modules: 30.
 
 * ruff select: 12 selectors in the kit against 58 in each consumer, the consumers' sets
