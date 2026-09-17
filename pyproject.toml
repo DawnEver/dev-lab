@@ -21,6 +21,18 @@ dependencies = [
     "numpy",
 ]
 
+[project.scripts]
+# THE ONE CONSOLE SCRIPT, AND IT EXISTS FOR EXACTLY ONE CALLER. A `.pre-commit-config.yaml` entry is
+# exec'd, never evaluated, so its FIRST TOKEN must already be runnable -- and measured against a real
+# `pre-commit.exe` (2026-09-17, see `lab_commons.dev.githooks.bootstrap`), a `language: system` or
+# `language: script` hook inherits a PATH with no venv on it at all, where `python` resolves to the
+# Microsoft Store stub. `language: python` prepends pre-commit's OWN managed environment, so a
+# console script installed there IS nameable with nothing in front of it. That is the only measured
+# way for this package to be reached from a hook without a file committed in the consumer, and it is
+# why the name is spelled after the shell wrapper it replaces: a consumer's entry reads
+# `lab-with-venv ruff check` where it used to read `bash scripts/hooks/with-venv.sh ruff check`.
+lab-with-venv = "lab_commons.dev.githooks.bootstrap:main"
+
 [project.urls]
 Homepage = "https://github.com/DawnEver/lab-commons"
 

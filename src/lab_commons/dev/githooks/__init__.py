@@ -26,6 +26,15 @@ carries none, and the script refuses when it is missing -- ``branch-push-only.sh
 and ``cz-push-range.sh``'s base ref are both of that second kind, because a default would hand every
 other repo one repo's answer while looking like it worked.
 
+AND THE CONSUMER-SIDE BOOTSTRAP IS :mod:`lab_commons.dev.githooks.bootstrap`, which is what makes the
+paragraph above true for pre-commit and not only for a caller that already has an interpreter. A
+``.pre-commit-config.yaml`` entry is exec'd rather than evaluated, so its first token must already be
+runnable -- and measured against a real ``pre-commit.exe``, a ``language: system`` hook inherits a
+PATH with no venv on it at all. That module ships as the ``lab-with-venv`` console script and is
+reached under ``language: python``, where pre-commit supplies the interpreter in front of it; it then
+resolves the CONSUMER's own venv and hands the command over, so the environment pre-commit caches
+stays a launcher rather than becoming a second install of this package.
+
 NOT EVERY SHIPPED SCRIPT IS A HOOK, and the distinction is enforced rather than left to a reader.
 ``with-venv.sh`` is a WRAPPER -- it takes the command to run as its arguments -- and
 ``git-env-repair.sh`` is a FRAGMENT that must be SOURCED, so running it is a no-op that exits 0 and
