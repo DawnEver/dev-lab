@@ -95,7 +95,13 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   and with ``git cherry`` rather than ancestry, because those are the two ways this audit has
   actually been observed to lie.
 * :mod:`lab_commons.dev.githooks` -- the git hook SCRIPTS themselves, shipped as a package payload
-  and reached by NAME (``python -m lab_commons.dev.githooks bump-version``). Not re-exported below,
+  and reached by NAME (``python -m lab_commons.dev.githooks bump-version``). Five scripts as of R4,
+  and they are not all hooks: ``with-venv`` and ``branch-push-only`` are WRAPPERS that take the
+  command to run as arguments, and ``git-env-repair`` is a FRAGMENT that is SOURCED -- running one
+  exits 0 having done nothing, which reads exactly like a hook that passed, so ``KINDS`` declares
+  what each is and ``run_hook`` refuses the fragment. A repo fact a script cannot derive arrives as
+  an environment variable with NO DEFAULT (``LAB_PUSH_PROTECTED_REF``, ``LAB_CZ_BASE_REF``), the
+  shape :mod:`~lab_commons.dev.dep` already uses for its two repo answers. Not re-exported below,
   for the same reason ``verify`` is not: it is run rather than imported.
 * :mod:`lab_commons.dev.agenthooks` -- the agent-guard ENGINE itself, shipped as a package payload
   the way ``githooks`` ships its scripts. It is JavaScript because the tool that runs a ``PreToolUse``
