@@ -18,15 +18,40 @@ Measured 2026-09-17 across the four repos. `motronics` below always means the LA
 `tests/architecture/layering/_placement_*.py` composes 77 rows — **48 STAYS, 17 MOVES, 12 SPLITS**.
 29 rows are judged-to-move and not yet moved.
 
-Neither lab has a roster at all. That is worse than being behind: 11 scripts and 39 architecture
-modules across wdg-lab and optimi-lab have no declared placement, so their migration is
-UNMEASURED, and an unmeasured tree reads as a finished one.
+CLOSED 2026-09-17 (R0): both labs now have one too.
 
-`lab_commons.dev` publishes 30 public modules. Consumption measured today: optimi-lab and
-motronics reach 33 names (including private row tables), wdg-lab only 28 — it does not consume
-`ab_bench`, `netverb`, `selfbuild`, `shadow_build`, `testfacts`. For each, the question is whether
-wdg-lab HAS the subject; a module it has no subject for is correctly absent and that is a row, not
-a gap.
+    wdg-lab      31 rows — 14 STAYS,  5 MOVES, 12 SPLITS   (8 scripts + 21 modules + its own 2)
+    optimi-lab   23 rows —  9 STAYS,  6 MOVES,  8 SPLITS   (3 scripts + 18 modules + its own 2)
+
+Both landed independently on motronics' two bars — binder ceiling 50 own lines, density bar 3.0% —
+each BOUNDED in its own tree rather than copied: wdg-lab's ceiling must exceed 49 and fall below
+55, optimi-lab's exceed 43 and fall below 67; density above 1.41% / at-or-below 4.79% in wdg-lab,
+above 0.65% / at-or-below 3.06% in optimi-lab. The second interval is tight and says so.
+
+A NUMBER IN DISPUTE: the roster agent reported motronics' PLACEMENT as 71 rows (44/13/14). Composed
+live from the six partitions in the LANE worktree at HEAD it reads 77 (48 STAYS, 17 MOVES, 12
+SPLITS), reproduced twice. The likeliest explanation is the same one that bit the engine comparison
+today — reading `D:\MingyangBao\motronics-studio` (the main checkout, `integrate/main`, which has
+older placement data) instead of the lane. NOT RESOLVED; whoever picks this up should say which
+tree they read before quoting either number.
+
+`lab_commons.dev` publishes 30 public modules. CONSUMPTION, and my first number was wrong: I
+grepped for the string `lab_commons.dev.<name>`, which counts prose and docstrings, and got 28
+(wdg-lab) / 33 (optimi-lab, motronics). Measured by DIRECT IMPORT across `scripts/`, `tests/` and
+`src/`: **wdg-lab 17, optimi-lab 16.** The import reading is the one to trust — a module named in a
+comment is not consumed. Neither lab imports `ab_bench netverb selfbuild shadow_build testfacts
+content envkey logref verdict reports units quantity_values devdocs`.
+
+The five that were asked about, each ANSWERED rather than counted:
+
+* `netverb` — SUBJECT PRESENT, no mechanism. `scripts/pull_all.py` drives clone/pull with a 120 s
+  timeout and ZERO retries; `wdg-lab-update.sh` exits on its first failed fetch. SPLITS.
+* `shadow_build` / `selfbuild` — SUBJECT PRESENT, hand-rolled. `scripts/build_rust.py` runs
+  `maturin develop --release` into the shared venv, the exact mutation `shadow_build` removes.
+* `testfacts` — SUBJECT PRESENT, hand-rolled and WEAKER: `test_skips_are_a_named_set.py` reads a
+  test file's declarations with a REGEX where `testfacts` reads the AST.
+* `ab_bench` — correctly ABSENT. No file in either tree times, interleaves or reports a median.
+  That statement is the row; a module with no subject is not a gap.
 
 ## THE FINDING THAT REVERSES THE ARROW
 
@@ -108,10 +133,27 @@ It appears in the all-three intersection above. So the fact that one declaration
 dev26 / dev34 / dev34 on one box today is not an oversight anyone forgot. It is the direct
 consequence of a rule the family wrote down: never commit the lockfile.
 
-Measured consequence, same day: lab-commons moved dev26 -> dev37 in one session; a consumer's
+Measured consequence, same day: lab-commons moved dev26 -> dev40 in one session; a consumer's
 `agent_guard` import vanished under an agent mid-task; two agents read the same repo and reported
 opposite pins, each correctly. **Nothing in any repo determines which lab-commons a fresh checkout
 gets**, so an integrator on another box cannot attribute a single red.
+
+### THE MECHANISM, found after the third occurrence
+
+wdg-lab reverted to dev26 THREE times on 2026-09-17, twice after being explicitly upgraded. It was
+read as contention between agents both times. It is not contention. `wdg-lab/Makefile`:
+
+    install-dev:  uv pip install -e ".[dev,web,rust,cad3d,full]"
+
+With `lab-commons @ git+...` carrying no ref and no lockfile to pin it, that re-resolution takes
+the build uv already has — the dev26 from the first clone. **So the repo's own documented install
+command silently reverts the shared kit to a stale version, every time it is run.** That is not a
+race and not an accident; it is the deterministic consequence of the unpinned declaration, and it
+will keep happening on every workstation that runs `make install-dev`.
+
+This turns the lock question below from a preference into a measured cost. It also means any
+instruction of the form "run `make install-dev` first" is, today, an instruction to downgrade the
+shared kit.
 
 ## The refactor, first principles
 
@@ -123,14 +165,33 @@ The ordering principle: **a declaration before a move.** Every stage below produ
 can red before anything is relocated, because a migration with no roster cannot tell an
 intentional local copy from an unmigrated one — which is exactly the state the two labs are in now.
 
-### R0 — make the two unmeasured trees measured (IN FLIGHT)
+### R0 — make the two unmeasured trees measured  (DONE 2026-09-17)
 
-Placement rosters for wdg-lab's and optimi-lab's `scripts/` and `tests/architecture/`, on
-motronics' shape: path key, STAYS/MOVES/SPLITS, and a REASON naming the deciding fact. Completeness
-test so a new file cannot be silently unplaced; a floor so an empty scan is not green.
-Plus a config-layer census in lab-commons covering the six artefacts above.
+Landed: wdg-lab `6d7a6c8b`, optimi-lab `f69f22e`, lab-commons config census `2048b37`.
+Declaration only; no file moved.
 
-DECLARATION ONLY. No file moves in R0.
+What the rosters proved beyond their own rows — similarity is EVIDENCE, not a verdict:
+
+    test_no_allow_entry_names_a_denied_shape.py   88.9% identical, ZERO repo nouns   -> clean MOVES
+    test_the_dependency_door_is_wired.py          91.5% identical, 6 lines name the
+                                                  repo's own port                    -> SPLITS
+    test_the_public_surface_is_declared.py        89% DIFFERENT                       -> STAYS both
+
+The last row is the counter-evidence that makes the other two mean something: a shared FILENAME is
+not shared code, and a census that only ever finds MOVES is measuring its own expectation.
+
+The guard corrected its author on first run, which is the part worth keeping: wdg-lab's
+repo-noun property refused three MOVES rows over the English word "slot" and over prose naming the
+repo. Property 3 now reads CODE with docstrings and comments blanked while property 2 keeps reading
+prose, and the asymmetry is pinned by its own test on live rows. One row survived the refusal
+correctly — `test_memory_lives_under_a_date.py` really does hold `src/wdg_lab/...` paths as data —
+and moved to SPLITS.
+
+Debt carried honestly: 5 `BELOW_THE_BAR` rows in wdg-lab, 4 in optimi-lab, each strict-xfailed with
+its measurement, date and the seam it owes. SPLITS answers the SAME bar as STAYS, with a planted
+control proving the SPLITS arm cannot be deleted. One self-row in optimi-lab predicted 0.00% and
+XPASSED at 3.90% — recorded WITH the caveat that all six hits are planted-control fixtures rather
+than real assertions about the repo.
 
 ### R1 — reverse the ruff arrow, and state the rule the measurement actually supports
 
@@ -212,15 +273,22 @@ re-point consumers at kit versions, and until the lock question is answered **th
 consumer ends up on is a property of the box, not of the commit** — so the integrator on another
 workstation will not be able to attribute any red those stages produce.
 
+The `make install-dev` mechanism above raises the cost of "keep it unpinned" past a preference: it
+is not that a checkout MIGHT drift, it is that the repo's own install target reverts the kit
+deterministically, three times measured in one day. Any fix short of pinning has to explain why
+that command should keep resolving from cache.
+
 State the choice before R4 starts, or R4's evidence is not transferable off this box.
 
 ## Floors for whoever picks this up
 
-* `scripts/` roster: 77 rows, 48/17/12. If a later reading shows fewer rows than files, the
-  completeness arm has been weakened.
+* motronics `scripts/` roster: 77 rows, 48/17/12, read from the LANE at HEAD — say which tree you
+  read. wdg-lab 31 rows (14/5/12), optimi-lab 23 rows (9/6/8). If a later reading shows fewer rows
+  than files, the completeness arm has been weakened.
+* Consumption by IMPORT, not by grep: wdg-lab 17, optimi-lab 16, of 30 published modules.
 * All-three `.gitignore` intersection: 14 lines. All-three pre-commit ids: 11.
 * `lab_commons.dev` public modules: 30.
-* wdg-lab consumes 28; optimi-lab and motronics 33.
+
 * ruff select: 12 selectors in the kit against 58 in each consumer, the consumers' sets
   BYTE-IDENTICAL (pairwise symmetric difference empty). 50 groups the kit is blind to; 8 codes the
   consumers globally ignore and the kit enforces. R1 is done when the first number is 0 and the
