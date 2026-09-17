@@ -71,6 +71,12 @@ _ENFORCED = {
         guard('tests/test_the_adoption_accounts_for_every_rule.py'),
     ),
     'ENV-MUTATION-THROUGH-THE-DOOR': (guard('tests/test_dev_dep.py'),),
+    # ENFORCED rather than declared absent, and the distinction is worth the line. This repo declares
+    # no floating requirement -- it IS the kit -- so the cheap reading is "no subject here". But the
+    # guard does not merely sit in this tree: it READS this manifest and these door files, so the day
+    # a bare `git+` requirement lands here the CI `uv sync` it already scans stops being inert and
+    # reds. A rule whose subject can arrive without anyone noticing is the one to enforce before it does.
+    'INSTALL-DOOR-DELIVERS-THE-DECLARATION': (guard('tests/test_dev_installdoor.py'),),
     'FIX-THE-CAUSE': (guard('tests/test_arch_one_name_one_definition.py'),),
     'FLOOR-ON-EVERY-SCAN': (
         guard('tests/test_arch_every_scan_binds_a_floor.py'),

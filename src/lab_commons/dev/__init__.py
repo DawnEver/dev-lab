@@ -134,6 +134,14 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
   stored anchors. It reads ``sys.prefix`` of the invoking interpreter, which is what makes the
   sibling-repo false positive structurally impossible rather than merely fixed.
+* :mod:`lab_commons.dev.installdoor` -- the OTHER half of ``dep``'s invariant, and the half nothing
+  enforced until 2026-09-17: ``dep`` decides WHEN an environment may move, this decides whether a
+  path that moves one delivers the DECLARED build of a requirement that carries no ref. Which
+  commands re-resolve is MEASURED per tool rather than read off a flag name -- ``uv pip install`` and
+  ``pip install`` re-resolve a bare git URL, ``uv sync`` and ``uv run`` serve whatever the untracked
+  lock pins -- which is why the reverting door found in this family was a git hook rather than a
+  Makefile target. Not re-exported below: ``classify``, ``commands`` and ``Door`` are exactly the
+  unqualified spellings that stop saying what they are once flattened into a namespace this wide.
 * :mod:`lab_commons.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
   repo's ``docs-src/dev/``, with the pointer table a consuming repo RENDERS instead of copying. The
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under

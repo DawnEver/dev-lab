@@ -293,6 +293,18 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
     ),
     (
+        'INSTALL-DOOR-DELIVERS-THE-DECLARATION',
+        'A requirement declared with no ref SAYS "whatever that URL holds now", so every path that '
+        'mutates an environment must deliver it re-resolved -- and the paths that mutate an '
+        'environment are not the set named "install": a git hook spelled as a project run is an '
+        'install door nobody declared. A lock file is a per-box artefact, so a command that consults '
+        'one serves the sha of whenever that lock was first written; it must either NAME the floating '
+        'requirement for re-resolution or not touch the environment at all. Which commands re-resolve '
+        'is MEASURED per tool rather than read off a flag name, because two doors that differ by one '
+        'flag differ by a whole environment, and that is how the defect hides.',
+        ('tests/test_dev_installdoor.py',),
+    ),
+    (
         'AGENT-GUARD',
         'A hand-written test invocation, a bare network git verb and a stash are refused by the shared '
         'deny machinery rather than by prose, so the refusal is identical in every repo that adopts it.',
