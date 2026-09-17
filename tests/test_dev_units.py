@@ -24,8 +24,10 @@ exemption is USED, so the day these literals move the exemption has to move with
 from __future__ import annotations
 
 import ast
+import json
 import re
-from collections.abc import Mapping
+import tomllib
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 import pytest
@@ -764,3 +766,136 @@ def test_the_single_descent_agrees_with_the_control_on_this_repository() -> None
     for path in sources:
         text = path.read_text(encoding='utf-8')
         assert tuple(units._python_signatures(text)) == _subtract_enclosing_scopes(text), path.name
+
+
+def _search_per_name(lines: Sequence[str], names: Iterable[str], pattern: str) -> tuple[units._Signature, ...]:
+    """The pre-index implementation of :func:`~lab_commons.dev.units._locate`, kept as the CONTROL.
+
+    This is how a key's line was found before the word-run index landed: one compiled pattern per
+    name, and every one of them searched against every line -- quadratic in a file's key count, which
+    is what put 3.96M ``re.search`` calls at the top of the scan's profile. It is reproduced here
+    rather than imported so the equivalence test below compares two INDEPENDENT answers. It must
+    never be "fixed" to agree with the new one: it is the OLD behaviour on purpose, and the day it is
+    edited to match, this test stops proving anything.
+    """
+    patterns = [(name, re.compile(pattern.format(name=re.escape(name)))) for name in names]
+    found: list[units._Signature] = []
+    for number, raw in enumerate(lines, start=1):
+        text = units._strip_comment(raw)
+        found.extend((number, name, False) for name, compiled in patterns if compiled.search(text))
+    return tuple(found)
+
+
+#: Every key shape the two locators must agree about, in ONE document: a leaf repeated under two
+#: tables, a key inside an array of tables (twice, at two lines), a dotted key, a quoted key, a kebab
+#: key, an inline table, a name that occurs in a COMMENT (which must not be located) and the same
+#: name inside a STRING VALUE (which the control DOES locate -- the pattern is loose by design, and
+#: an equivalence test asserts what the control does, not what one wishes it did).
+_KEY_CORPUS = """\
+# gap_mm = 0.0 -- a comment that reads as an assignment
+gap_mm = 1.0
+note = "gap_mm = 99.0 in a string"
+
+[stator]
+gap_mm = 2.0
+"quoted_mm" = 3.0
+tooth.depth_mm = 4.0
+kebab-mm = 5.0
+inline = { span_mm = 6.0 }
+
+[[rotor.magnets]]
+length_mm = 7.0
+
+[[rotor.magnets]]
+length_mm = 8.0
+"""
+
+#: The JSON half of the same question: the pattern differs (quoted both sides, ``:`` for delimiter)
+#: and the prefilter has to be exact for it too. A repeated key at two lines and a nested object.
+_KEY_CORPUS_JSON = """\
+{
+  "gap_mm": 1.0,
+  "stator": {"gap_mm": 2.0, "tooth-mm": 3.0},
+  "note": "\\"gap_mm\\": 99.0",
+  "rotor": [{"length_mm": 4.0}, {"length_mm": 5.0}]
+}
+"""
+
+
+def _keys(loaded: object) -> list[str]:
+    return sorted({dotted.rsplit('.', 1)[-1] for dotted in units._dotted_keys(loaded)})
+
+
+def test_the_indexed_locator_reports_exactly_what_the_search_per_name_locator_reported() -> None:
+    """THE EQUIVALENCE PROOF for TOML: every key shape the two locators must agree about, planted at once.
+
+    The risk the index carries is entirely in WHICH names it lets through to the regex: a name whose
+    first word-run is absent from the line is never searched for. So the plant is key SHAPES --
+    quoted, dotted, kebab, inline, array-of-tables, a leaf shared by two tables -- plus the two
+    places a name appears where it is NOT a key.
+
+    THE FLOOR COMES FIRST: the control is asserted to report the planted keys at their exact lines,
+    and to report NOTHING on the comment line, before the two answers are compared. Without it an
+    equality between two empty tuples would read as success and the index could be dropping
+    everything.
+    """
+    lines = _KEY_CORPUS.splitlines()
+    control = _search_per_name(lines, _keys(tomllib.loads(_KEY_CORPUS)), units._TOML_KEY)
+
+    # THE FLOOR: the exact rows, at the exact lines the plant puts them on.
+    assert (2, 'gap_mm', False) in control
+    assert (6, 'gap_mm', False) in control, 'the leaf shared by two tables is two violations'
+    assert (7, 'quoted_mm', False) in control
+    assert (8, 'depth_mm', False) in control, 'a dotted key is located at its leaf'
+    assert (9, 'kebab-mm', False) in control
+    assert (10, 'span_mm', False) in control, 'an inline table is a key position'
+    assert (13, 'length_mm', False) in control
+    assert (16, 'length_mm', False) in control, 'the second array-of-tables entry is its own line'
+    # ...and the comment is stripped before anything is searched, so line 1 carries no row at all.
+    assert [row for row in control if row[0] == 1] == []
+
+    assert tuple(units._locate(lines, _keys(tomllib.loads(_KEY_CORPUS)), units._TOML_KEY)) == control
+
+
+def test_the_indexed_locator_agrees_with_the_control_on_json_too() -> None:
+    """The same proof for the JSON pattern, which is a DIFFERENT pattern and needs its own floor.
+
+    ``"{name}"[ \t]*:`` has no lookbehind -- the opening quote is what bounds the name on the left --
+    so the argument that makes the word-run prefilter exact has to hold for it separately.
+    """
+    lines = _KEY_CORPUS_JSON.splitlines()
+    names = _keys(json.loads(_KEY_CORPUS_JSON))
+    control = _search_per_name(lines, names, units._JSON_KEY)
+
+    assert (2, 'gap_mm', False) in control
+    assert (3, 'gap_mm', False) in control, 'a nested object key is its own line'
+    assert (3, 'tooth-mm', False) in control
+    assert (5, 'length_mm', False) in control
+
+    assert tuple(units._locate(lines, names, units._JSON_KEY)) == control
+
+
+def test_the_indexed_locator_agrees_with_the_control_on_this_repository_and_on_an_empty_document() -> None:
+    """Every TOML this repository tracks, plus the two degenerate documents a planted corpus omits.
+
+    A document with NO lines and one with no key at all must agree too, and they agree trivially --
+    which is exactly why they are compared behind a floor rather than on their own: the assertion
+    that carries this test is the row count of the real files, and a comparison over an empty list
+    would agree with itself.
+    """
+    root = Path(__file__).resolve().parents[1]
+    sources = [path for path in sorted(root.glob('*.toml')) if path.is_file()]
+    rows = 0
+    for path in sources:
+        text = path.read_text(encoding='utf-8')
+        lines = text.splitlines()
+        names = _keys(tomllib.loads(text))
+        control = _search_per_name(lines, names, units._TOML_KEY)
+        rows += len(control)
+        assert tuple(units._locate(lines, names, units._TOML_KEY)) == control, path.name
+    assert rows >= 40, f'the corpus is too small to prove anything: {rows} located keys'
+
+    for degenerate in ('', '# nothing but a comment\n'):
+        lines = degenerate.splitlines()
+        names = _keys(tomllib.loads(degenerate))
+        assert tuple(units._locate(lines, names, units._TOML_KEY)) == _search_per_name(lines, names, units._TOML_KEY)
