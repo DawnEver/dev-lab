@@ -26,9 +26,11 @@ def skip_sites(paths: tuple[Path, ...]) -> tuple[str, ...]:
     """Every ``pytest.mark.skip*`` / ``pytest.skip()`` site, as ``path:line`` -- pure over its argument."""
     out: list[str] = []
     for path in paths:
-        for node in ast.walk(parse(path)):
-            if isinstance(node, ast.Attribute) and node.attr.startswith('skip') and _root_name(node) == 'pytest':
-                out.append(f'{_name(path)}:{node.lineno} ({node.attr})')
+        out.extend(
+            f'{_name(path)}:{node.lineno} ({node.attr})'
+            for node in ast.walk(parse(path))
+            if isinstance(node, ast.Attribute) and node.attr.startswith('skip') and _root_name(node) == 'pytest'
+        )
     return tuple(out)
 
 

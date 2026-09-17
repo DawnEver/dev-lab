@@ -133,7 +133,8 @@ def test_the_install_is_pinned_names_the_wheel_and_retires_the_moved_anchors(tmp
 
     assert len(run.calls) == 1
     argv = run.calls[0]
-    assert '--no-index' in argv and '--no-deps' in argv, f'a resolving install was issued: {argv}'
+    assert '--no-index' in argv, f'a resolving install was issued: {argv}'
+    assert '--no-deps' in argv, f'a resolving install was issued: {argv}'
     assert argv[-1] == str(wheel)
     assert report.returncode == 0
     assert report.moved
@@ -234,4 +235,5 @@ def test_two_builds_at_one_version_both_reach_pip_as_a_forced_reinstall(tmp_path
     assert len({argv[-1] for argv in argvs}) == 1, 'both builds must name ONE wheel path and version'
     for argv in argvs:
         assert '--force-reinstall' in argv, f'pip would skip this install and exit zero: {argv}'
-        assert '--no-index' in argv and '--no-deps' in argv, 'forcing must not have loosened the pin'
+        assert '--no-index' in argv, 'forcing must not have loosened the pin'
+        assert '--no-deps' in argv, 'forcing must not have loosened the pin'

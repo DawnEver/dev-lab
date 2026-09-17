@@ -36,7 +36,7 @@ from lab_commons.dev.reports import (
     read_pytest,
     read_ruff,
 )
-from lab_commons.dev.verdict import Outcome
+from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
 
@@ -87,7 +87,7 @@ SKIPPED [20] tests/test_vendor.py:31: needs the vendor engine
 VENDOR = 'tests/test_vendor.py'
 
 
-def _verdict(reports: tuple[StepReport, ...], log: Path):
+def _verdict(reports: tuple[StepReport, ...], log: Path) -> Verdict:
     """Build a verdict over *reports*, with the two plumbing fields held constant.
 
     A helper rather than a fixture because two of these tests want DIFFERENT reports over the same
@@ -185,7 +185,8 @@ class TestTheSkipRatchet:
         throughout, because it was checking the flag against itself rather than against what the
         parser downstream needs. The letters each have their own reason; see `PYTEST_ARGS`.
         """
-        assert 's' in PYTEST_ARGS[0] and PYTEST_ARGS[0].startswith('-r')
+        assert 's' in PYTEST_ARGS[0]
+        assert PYTEST_ARGS[0].startswith('-r')
 
     def test_a_declared_skip_lets_the_run_settle(self) -> None:
         assert read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR,)).truncated == ()
@@ -210,8 +211,10 @@ class TestTheSkipRatchet:
         assert read_pytest(SKIPPING, returncode=0, allowed_skips=('tests/test_vendor.py:99',)).truncated != ()
 
     def test_a_windows_spelled_location_matches_a_posix_declaration(self) -> None:
-        """MEASURED 2026-09-16: pytest prints ``tests\\test_vendor.py:4`` on Windows, ``tests/...``
-        on Linux. One declaration is committed for both, so the comparison normalises -- otherwise
+        r"""MEASURED 2026-09-16: the node-id separator differs by platform.
+
+        pytest prints ``tests\\test_vendor.py:4`` on Windows, ``tests/...`` on Linux.
+        One declaration is committed for both, so the comparison normalises -- otherwise
         the same repo settles on one box and truncates on the other, which is not a verdict.
         """
         windows = SKIPPING.replace('tests/test_vendor.py', 'tests\\test_vendor.py')
@@ -263,8 +266,10 @@ class TestTheDeclaration:
         ids=['a bare string', 'a list of integers', 'a list holding an empty entry'],
     )
     def test_a_malformed_allowance_is_refused_rather_than_defaulted(self, tmp_path: Path, body: str) -> None:
-        """NOT an empty set. A declaration nobody could parse exempts nothing while its author
-        believes it exempted everything -- and the author never finds out, because the tool is
+        """NOT an empty set.
+
+        A declaration nobody could parse exempts nothing while its author believes it exempted
+        everything -- and the author never finds out, because the tool is
         green either way.
         """
         with pytest.raises(MalformedAllowance, match='not a list of non-empty strings'):

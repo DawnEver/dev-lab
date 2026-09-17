@@ -41,9 +41,11 @@ def dangling_citations(pages: tuple[Path, ...], known: frozenset[str]) -> tuple[
     """Every rule ID a page cites that *known* does not define -- pure over its arguments."""
     out: list[str] = []
     for page in pages:
-        for cited in sorted(set(_CITATION.findall(page.read_text(encoding='utf-8')))):
-            if cited not in known:
-                out.append(f'{page.name} cites {cited}, which the registry does not define')
+        out.extend(
+            f'{page.name} cites {cited}, which the registry does not define'
+            for cited in sorted(set(_CITATION.findall(page.read_text(encoding='utf-8'))))
+            if cited not in known
+        )
     return tuple(out)
 
 

@@ -135,9 +135,12 @@ def test_the_refusal_names_a_DIFFERENT_remedy_in_each_of_the_three_states() -> N
     assert len({unmeasured, narrowed, healthy}) == 3, 'one sentence for three states is a diagnosis nobody computed'
     for sentence in (unmeasured, narrowed, healthy):
         assert 'heavy' in sentence, "every refusal names the remedy, and the tier is the caller's own word"
-    assert 'not measured' in unmeasured and 'NARROWED' not in unmeasured
-    assert 'NARROWED' in narrowed and 'memory pressure' in narrowed
-    assert '7 of the 8' in healthy and 'different TIER' in healthy
+    assert 'not measured' in unmeasured
+    assert 'NARROWED' not in unmeasured
+    assert 'NARROWED' in narrowed
+    assert 'memory pressure' in narrowed
+    assert '7 of the 8' in healthy
+    assert 'different TIER' in healthy
 
 
 def test_the_wider_tier_has_no_default() -> None:

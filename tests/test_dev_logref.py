@@ -27,51 +27,51 @@ def _verdict(log: LogRef) -> Verdict:
 
 
 @pytest.fixture
-def log(tmp_path):
+def log(tmp_path) -> LogRef:
     path = tmp_path / 'run.log'
     path.write_text('collected 1 item\nit ran\n', encoding='utf-8')
     return LogRef.of(path)
 
 
 class TestTheReference:
-    def test_a_reference_carries_the_path_the_line_count_and_the_digest(self, log):
+    def test_a_reference_carries_the_path_the_line_count_and_the_digest(self, log) -> None:
         assert log.path.name == 'run.log'
         assert log.lines == 2
         assert log.digest.startswith('sha256:')
 
-    def test_an_empty_log_is_refused(self, tmp_path):
+    def test_an_empty_log_is_refused(self, tmp_path) -> None:
         """An empty log is a run that said nothing, which is not a run that found nothing wrong."""
         empty = tmp_path / 'empty.log'
         empty.write_text('', encoding='utf-8')
         with pytest.raises(UnverifiableLog, match='empty'):
             LogRef.of(empty)
 
-    def test_a_missing_log_is_refused(self, tmp_path):
+    def test_a_missing_log_is_refused(self, tmp_path) -> None:
         with pytest.raises(UnverifiableLog, match='cannot be read'):
             LogRef.of(tmp_path / 'nowhere.log')
 
 
 class TestTheReader:
-    def test_a_stamped_verdict_reads_back(self, log):
+    def test_a_stamped_verdict_reads_back(self, log) -> None:
         _verdict(log).stamp()
         citation = verify_log(log.path)
         assert isinstance(citation, Citation)
         assert (citation.result, citation.tree, citation.env) == (Outcome.PASS.value, 'sha256:deadbeef', 'c0ffee')
         assert citation.spec == SELECTOR.spec
 
-    def test_a_log_with_no_stamp_is_refused(self, log):
+    def test_a_log_with_no_stamp_is_refused(self, log) -> None:
         """A run that produced results wrote no verdict -- which is a state, not a pass."""
         with pytest.raises(UnverifiableLog, match='WROTE NO VERDICT'):
             verify_log(log.path)
 
-    def test_a_log_that_grew_AFTER_the_stamp_still_verifies(self, log):
+    def test_a_log_that_grew_AFTER_the_stamp_still_verifies(self, log) -> None:
         """The stamp is appended to the log it describes, so the digest covers the PREFIX only."""
         _verdict(log).stamp()
         with log.path.open('a', encoding='utf-8') as handle:
             handle.write('teardown noise that arrived after the conclusion\n')
         assert verify_log(log.path).result == Outcome.PASS.value
 
-    def test_a_log_whose_EARLIER_lines_were_edited_is_refused(self, log):
+    def test_a_log_whose_EARLIER_lines_were_edited_is_refused(self, log) -> None:
         """The evidence a verdict names moved, so the verdict describes a log that no longer exists."""
         _verdict(log).stamp()
         original = log.path.read_text(encoding='utf-8')
@@ -79,7 +79,7 @@ class TestTheReader:
         with pytest.raises(UnverifiableLog, match='has been changed since it was stamped'):
             verify_log(log.path)
 
-    def test_a_stamp_a_text_editor_wrote_from_nothing_is_refused(self, tmp_path):
+    def test_a_stamp_a_text_editor_wrote_from_nothing_is_refused(self, tmp_path) -> None:
         """Finding the marker and stopping is believing a line anybody could have typed."""
         forged = tmp_path / 'forged.log'
         forged.write_text(
@@ -89,7 +89,7 @@ class TestTheReader:
         with pytest.raises(UnverifiableLog, match='has been changed since it was stamped'):
             verify_log(forged)
 
-    def test_the_last_stamp_wins(self, log):
+    def test_the_last_stamp_wins(self, log) -> None:
         """Two verdicts in one log is a re-run; a reader must get the conclusion, not the first try."""
         _verdict(log).stamp()
         first = verify_log(log.path)
@@ -107,12 +107,12 @@ class TestTheGrammarHasONEspelling:
     previous stamp matched NOTHING and reported "no verdict" for every commit.
     """
 
-    def test_the_reader_is_built_from_the_marker_the_writer_writes(self):
+    def test_the_reader_is_built_from_the_marker_the_writer_writes(self) -> None:
         """Change ``MARKER`` and the reader follows, because it is not a second spelling of it."""
         assert _STAMPED.pattern.startswith('^' + re.escape(MARKER))
         assert stamp_line(result='pass', tree='t', env='e', digest='sha256:00', lines=1, spec='gate').startswith(MARKER)
 
-    def test_every_field_the_writer_writes_round_trips_through_the_reader(self):
+    def test_every_field_the_writer_writes_round_trips_through_the_reader(self) -> None:
         """Two-sided: the pair accepts what it accepted, field for field and not merely as a match."""
         written = stamp_line(
             result='inconclusive',
@@ -132,7 +132,7 @@ class TestTheGrammarHasONEspelling:
         # LAST AND GREEDY: a spec with spaces round-trips with no quoting rule a reader must know.
         assert match.group('spec') == 'gate tests/unit/a.py tests/unit/b.py'
 
-    def test_a_line_that_is_not_a_stamp_is_still_refused(self):
+    def test_a_line_that_is_not_a_stamp_is_still_refused(self) -> None:
         """The other side of the move: the reader did not widen while acquiring its producer."""
         assert _STAMPED.match('collected 3 items') is None
         assert _STAMPED.match('VERDICT it went fine') is None
@@ -140,7 +140,7 @@ class TestTheGrammarHasONEspelling:
         prose = 'see: ' + stamp_line(result='pass', tree='t', env='e', digest='d', lines=1, spec='g')
         assert _STAMPED.match(prose) is None
 
-    def test_the_verdict_object_writes_exactly_what_the_reader_expects(self, log):
+    def test_the_verdict_object_writes_exactly_what_the_reader_expects(self, log) -> None:
         """Reader-next-to-writer stated as a measurement rather than as a comment."""
         verdict = _verdict(log)
         assert _STAMPED.match(verdict.line()) is not None

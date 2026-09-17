@@ -131,7 +131,8 @@ def test_integration_is_measured_against_the_remote_not_a_stale_local(tmp_path: 
     _run(work, 'fetch', '-q', 'origin')  # refs/remotes moves; refs/heads/main does NOT
     local_head = git_out(work, 'rev-parse', 'main')
     remote_head = git_out(work, 'rev-parse', 'origin/main')
-    assert local_head is not None and remote_head is not None
+    assert local_head is not None
+    assert remote_head is not None
     assert local_head.strip() != remote_head.strip(), 'the planted state: the local trunk is behind origin'
 
     assert authority_for(work, 'main') == 'origin/main'
@@ -149,8 +150,10 @@ def test_the_origin_survey_counts_CHANGES_rather_than_commits(tmp_path: Path) ->
     _run(work, 'checkout', '-q', 'main')
 
     rows = survey(work, 'origin/main')
-    assert rows is not None and [row.name for row in rows] == ['feat/y']
-    assert rows[0].unmerged == 1 and not rows[0].deletable
+    assert rows is not None
+    assert [row.name for row in rows] == ['feat/y']
+    assert rows[0].unmerged == 1
+    assert not rows[0].deletable
 
     # The SAME change, cherry-picked onto the trunk and pushed. Ancestry still says "not merged";
     # patch-id equality says the change is there, which is the question actually being asked.
@@ -158,7 +161,8 @@ def test_the_origin_survey_counts_CHANGES_rather_than_commits(tmp_path: Path) ->
     _run(work, 'push', '-q', 'origin', 'main')
     _run(work, 'fetch', '-q', 'origin')
     rows = survey(work, 'origin/main')
-    assert rows is not None and rows[0].deletable, 'the change is on the base; only the commit id differs'
+    assert rows is not None, 'the change is on the base; only the commit id differs'
+    assert rows[0].deletable, 'the change is on the base; only the commit id differs'
     assert origin_branches(work) == ('feat/y',), '`main` is protected and never a deletion candidate'
 
 

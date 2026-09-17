@@ -1,4 +1,4 @@
-"""The shared deny registry, proved row by row -- and every refusal proved to be reachable.
+r"""The shared deny registry, proved row by row -- and every refusal proved to be reachable.
 
 WHAT A GUARD LIKE THIS CAN GET WRONG, and each one is checked below rather than read:
 
@@ -144,7 +144,7 @@ def test_a_planted_remedyless_rule_is_refused() -> None:
 
 
 def test_a_planted_uncompilable_pattern_is_refused() -> None:
-    """The `[/\\]` incident, as a control: an unterminated class must never reach a shipped file."""
+    r"""The `[/\\]` incident, as a control: an unterminated class must never reach a shipped file."""
     with pytest.raises(ValueError, match='does not compile'):
         DenyRule(id='PLANTED', pattern=r'[/\\', hazard='h', remedy='do this')
     with pytest.raises(ValueError, match='does not compile'):

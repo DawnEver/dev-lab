@@ -134,9 +134,9 @@ def test_a_malformed_rule_is_refused_before_it_can_be_adopted() -> None:
 def test_a_mechanism_must_be_repo_relative() -> None:
     """A mechanism naming one box is not a mechanism the fleet has."""
     for bad in ('', '/abs/tests/x.py', r'tests\win.py', 'tests/../x.py'):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match='path'):
             TestPath(bad)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='code'):
         LintRule('  ')
     assert guard('tests/a.py').path == 'tests/a.py'
     assert lint('PLC0415') == LintRule('PLC0415')
@@ -151,15 +151,18 @@ def test_the_check_fires_on_a_planted_dead_mechanism() -> None:
     )
     problems = unresolved(planted, tracked={'tests/live.py'}, selected={'PLC0415'}, ignored=set())
     assert len(problems) == 2, f'expected exactly the two dead rows, got {problems}'
-    assert 'VANISHED' in problems[0] and 'no_such_mechanism' in problems[0]
-    assert 'DEAD-LINT' in problems[1] and 'ZZZ999' in problems[1]
+    assert 'VANISHED' in problems[0], problems[0]
+    assert 'no_such_mechanism' in problems[0], problems[0]
+    assert 'DEAD-LINT' in problems[1], problems[1]
+    assert 'ZZZ999' in problems[1], problems[1]
 
 
 def test_a_globally_ignored_lint_rule_is_reported_even_though_it_is_selected() -> None:
     """A waiver is the other way a lint mechanism stops refusing, and it is not the same as absence."""
     planted = (Rule(id='WAIVED', statement='x', mechanisms=(lint('PLC0415'),)),)
     problems = unresolved(planted, tracked=set(), selected={'PLC0415'}, ignored={'PLC0415'})
-    assert len(problems) == 1 and 'IGNORED' in problems[0], problems
+    assert len(problems) == 1, problems
+    assert 'IGNORED' in problems[0], problems
     assert not unresolved(planted, tracked=set(), selected={'PLC0415'}, ignored=set())
 
 
@@ -176,7 +179,11 @@ def _scratch_checkout(tmp_path: Path, lint_select: str) -> RepoProfile:
     """A real git tree with a real lint config, so the check runs against files that ARE tracked."""
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'ruff.toml').write_text(f'[lint]\nselect = ["{lint_select}"]\n', encoding='utf-8')
-    subprocess.run(['git', '-C', str(tmp_path), 'init'], check=True, capture_output=True)
+    subprocess.run(
+        ['git', '-C', str(tmp_path), 'init'],  # noqa: S607 -- git through PATH, as everywhere else in this family
+        check=True,
+        capture_output=True,
+    )
     return RepoProfile(app_name='scratch', package='scratch', root=tmp_path, lint_config='ruff.toml')
 
 
@@ -196,7 +203,11 @@ def test_a_missing_mechanism_reds_against_a_real_checkout_and_returns_green_when
         assert_enforceable(profile, planted)
 
     (tmp_path / 'tests' / 'test_the_guard.py').write_text('# the guard\n', encoding='utf-8')
-    subprocess.run(['git', '-C', str(tmp_path), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(
+        ['git', '-C', str(tmp_path), 'add', '-A'],  # noqa: S607 -- git through PATH, as everywhere else in this family
+        check=True,
+        capture_output=True,
+    )
     assert 'tests/test_the_guard.py' in tracked_files(tmp_path), 'the scratch tree must TRACK the mechanism'
     assert_enforceable(profile, planted)
 
@@ -292,12 +303,20 @@ def test_the_adoption_path_runs_over_a_real_tree_in_both_directions(tmp_path: Pa
 
     # Supplying THIS repo's mechanism is what makes it enforced, and then it must genuinely be live.
     (tmp_path / 'tests' / 'test_the_guard.py').write_text('# the guard\n', encoding='utf-8')
-    subprocess.run(['git', '-C', str(tmp_path), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(
+        ['git', '-C', str(tmp_path), 'add', '-A'],  # noqa: S607 -- git through PATH, as everywhere else in this family
+        check=True,
+        capture_output=True,
+    )
     live = Adoption(app_name='scratch', mechanisms={'SHARED': (guard('tests/test_the_guard.py'),)})
     assert_adopted(profile, live, shared)
 
     # And deleting that mechanism from the real tree brings the red back, naming the rule.
     (tmp_path / 'tests' / 'test_the_guard.py').unlink()
-    subprocess.run(['git', '-C', str(tmp_path), 'add', '-A'], check=True, capture_output=True)
+    subprocess.run(
+        ['git', '-C', str(tmp_path), 'add', '-A'],  # noqa: S607 -- git through PATH, as everywhere else in this family
+        check=True,
+        capture_output=True,
+    )
     with pytest.raises(UnenforceableRule, match='SHARED'):
         assert_adopted(profile, live, shared)

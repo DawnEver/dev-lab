@@ -90,7 +90,8 @@ def test_a_transient_that_clears_is_retried_and_reported_as_RECOVERED(tmp_path: 
     argv, counter = _child(tmp_path, fails=2, message='fatal: Authentication failed for the forge\n')
     report = run_network_verb(argv, backoff_s=0.0, sleep=clock)
     assert _ran(counter) == 3, 'the child itself must record three real invocations'
-    assert report.ok and report.attempt_count == 3
+    assert report.ok
+    assert report.attempt_count == 3
     assert report.disposition is Disposition.RECOVERED
     assert [a.diagnosis for a in report.attempts] == [
         Diagnosis.TRANSIENT,
@@ -98,7 +99,8 @@ def test_a_transient_that_clears_is_retried_and_reported_as_RECOVERED(tmp_path: 
         Diagnosis.SUCCEEDED,
     ]
     assert len(clock.waits) == 2, 'one backoff per retry, and none after the success'
-    assert 'RECOVERED' in report.remedy and 'no action is needed' in report.remedy
+    assert 'RECOVERED' in report.remedy
+    assert 'no action is needed' in report.remedy
 
 
 def test_a_transient_that_never_clears_STOPS_at_the_bound(tmp_path: Path) -> None:
@@ -110,8 +112,10 @@ def test_a_transient_that_never_clears_STOPS_at_the_bound(tmp_path: Path) -> Non
     assert report.attempt_count == DEFAULT_ATTEMPTS
     assert report.disposition is Disposition.EXHAUSTED
     assert report.diagnosis is Diagnosis.TRANSIENT
-    assert not report.ok and report.returncode == 1
-    assert 'gave up after 3 of 3' in report.remedy and 'report it' in report.remedy
+    assert not report.ok
+    assert report.returncode == 1
+    assert 'gave up after 3 of 3' in report.remedy
+    assert 'report it' in report.remedy
     assert len(clock.waits) == DEFAULT_ATTEMPTS - 1, 'no backoff after the last attempt'
 
 
@@ -152,7 +156,8 @@ def test_a_command_that_succeeds_is_not_retried_at_all(tmp_path: Path) -> None:
     argv, counter = _child(tmp_path, fails=0, message='')
     report = run_network_verb(argv, backoff_s=0.0, sleep=clock)
     assert _ran(counter) == 1
-    assert report.ok and report.disposition is Disposition.SUCCEEDED
+    assert report.ok
+    assert report.disposition is Disposition.SUCCEEDED
     assert report.diagnosis is Diagnosis.SUCCEEDED
     assert clock.waits == []
 
@@ -198,7 +203,8 @@ def test_a_callers_veto_stops_the_loop_and_is_named_in_the_report(tmp_path: Path
 
     argv, counter = _child(tmp_path, fails=99, message='fatal: Connection reset\n')
     report = run_network_verb(argv, backoff_s=0.0, sleep=_Clock(), before_retry=veto)
-    assert _ran(counter) == 1 and len(seen) == 1
+    assert _ran(counter) == 1
+    assert len(seen) == 1
     assert report.diagnosis is Diagnosis.STOPPED_BY_CALLER
     assert report.disposition is Disposition.REFUSED
 
@@ -220,7 +226,8 @@ def test_the_classification_table_is_read_in_both_directions() -> None:
     assert len(patterns) >= PATTERN_FLOOR, f'{len(patterns)} patterns, below the {PATTERN_FLOOR} floor'
     retryable_rows = {name for name, retryable, _ in ROWS if retryable}
     permanent_rows = {name for name, retryable, _ in ROWS if not retryable}
-    assert retryable_rows and permanent_rows, 'a table with only one side classifies nothing'
+    assert retryable_rows, 'a table with only one side classifies nothing'
+    assert permanent_rows, 'a table with only one side classifies nothing'
     for name, retryable, row_patterns in ROWS:
         for pattern in row_patterns:
             found = classify(f'remote: {pattern.upper()} while talking to the forge')
@@ -270,4 +277,5 @@ def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_pa
     assert report['diagnosis'] == 'ref-rejected'
     assert report['attempt_count'] == 1
     assert 'rejected' in report['attempts'][0]['output']
-    assert '[netverb]' in done.stderr and 'rejected' in done.stderr
+    assert '[netverb]' in done.stderr
+    assert 'rejected' in done.stderr

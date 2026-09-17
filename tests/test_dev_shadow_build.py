@@ -129,7 +129,7 @@ class TestBuildRefusesAnEmptyBuild:
         """
         monkeypatch.setattr(
             'lab_commons.dev.shadow_build.subprocess.run',
-            lambda *a, **k: subprocess.CompletedProcess(a[0] if a else [], 0),
+            lambda *a, **_k: subprocess.CompletedProcess(a[0] if a else [], 0),
         )
         with pytest.raises(RuntimeError, match='wrote no wheel'):
             build_wheel(tmp_path / 'Cargo.toml', tmp_path / 'out')
@@ -138,7 +138,7 @@ class TestBuildRefusesAnEmptyBuild:
         """THE FLOOR for the case above: the refusal must not be unconditional."""
         out = tmp_path / 'out'
 
-        def _fake_run(*args, **kwargs):  # noqa: ARG001 -- stands in for maturin
+        def _fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:  # noqa: ARG001 -- stands in for maturin
             out.mkdir(parents=True, exist_ok=True)
             (out / 'probe-1.0-py3-none-any.whl').write_bytes(b'')
             return subprocess.CompletedProcess([], 0)
@@ -155,7 +155,7 @@ class TestBuildRefusesAnEmptyBuild:
         seen: list[list[str]] = []
         out = tmp_path / 'out'
 
-        def _fake_run(argv, *args, **kwargs):  # noqa: ARG001 -- stands in for maturin
+        def _fake_run(argv, *args: object, **kwargs: object) -> subprocess.CompletedProcess:  # noqa: ARG001 -- stands in for maturin
             seen.append(list(argv))
             out.mkdir(parents=True, exist_ok=True)
             (out / 'probe-1.0-py3-none-any.whl').write_bytes(b'')
@@ -279,7 +279,7 @@ class TestInterleaving:
         """
         order: list[str] = []
 
-        def _fake_time_once(probe, shadow, **kwargs):  # noqa: ARG001 -- order is the whole subject
+        def _fake_time_once(probe, shadow, **kwargs: object) -> float:  # noqa: ARG001 -- order is the whole subject
             order.append('installed' if shadow is None else 'shadow')
             return 1.0
 

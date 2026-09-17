@@ -193,7 +193,8 @@ def test_the_installed_guard_actually_refuses_a_command(repo: Path) -> None:
     agent_guard.install_guard(repo)
     settings = json.loads((repo / agent_guard.SETTINGS_REL).read_text(encoding='utf-8'))
     wired = settings['hooks']['PreToolUse'][0]['hooks'][0]['command'].split()
-    assert (repo / wired[1]).is_file() and (repo / wired[2]).is_file(), 'the wiring names a path that is not there'
+    assert (repo / wired[1]).is_file(), 'the wiring names a path that is not there'
+    assert (repo / wired[2]).is_file(), 'the wiring names a path that is not there'
 
     denied = _ask(repo, wired, 'pytest tests/')
     assert denied is not None, 'the installed guard allowed a bare test line'

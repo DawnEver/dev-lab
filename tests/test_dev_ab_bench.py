@@ -15,6 +15,7 @@ against a set that HAS one, so an implementation that always answered ``None`` w
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -34,7 +35,7 @@ from lab_commons.dev.ab_bench import (
 SLOW_S = 0.05
 
 
-def _busy(seconds: float):
+def _busy(seconds: float) -> float:
     """A real workload: spin until *seconds* of wall clock have passed, then return how long it took.
 
     A busy loop rather than ``sleep`` because ``sleep`` yields the CPU, and an arm that yields is
@@ -59,7 +60,7 @@ class TestInterleave:
         """
         order: list[str] = []
 
-        def note(name: str):
+        def note(name: str) -> Callable[[], str]:
             def arm() -> str:
                 order.append(name)
                 return name
@@ -278,5 +279,5 @@ class TestCrossover:
         enough = {f'row{i}': (float(i + 1) * 100.0, 1.5) for i in range(MIN_CROSSOVER_POINTS)}
         assert crossover(enough).threshold is not None
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match='crossover'):
             crossover(dict(list(enough.items())[: MIN_CROSSOVER_POINTS - 1]))

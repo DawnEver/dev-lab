@@ -13,6 +13,7 @@ than skipped.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
@@ -46,7 +47,7 @@ class _Run:
         return self
 
 
-def _keys(*values: str):
+def _keys(*values: str) -> Callable[[], str]:
     """A key function that answers *values* in order -- the planted 'the environment moved' control."""
     seen = iter(values)
     last = [values[-1]]
@@ -172,8 +173,10 @@ def test_resolution_is_the_default_and_pinned_is_the_narrow_mode() -> None:
 
 
 def test_a_repeating_version_forces_a_reinstall_and_an_identifying_one_never_does() -> None:
-    """THE RATCHET, both sides. Measured against pip 26.2.1's resolver: a local wheel already
-    installed at the same version is SKIPPED with exit code 0 unless `--force-reinstall` is given --
+    """THE RATCHET, both sides.
+
+    Measured against pip 26.2.1's resolver: a local wheel already installed at the same version is SKIPPED with exit
+    code 0 unless `--force-reinstall` is given --
     so a self-build needs the flag. Every other install must NOT get it: forcing a published
     dependency reinstalls bytes that are already correct, on every call.
     """

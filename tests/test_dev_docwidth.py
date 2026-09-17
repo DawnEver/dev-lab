@@ -124,8 +124,10 @@ def test_the_ratchet_refuses_both_an_undeclared_hit_and_an_orphaned_declaration(
 
     orphaned = width_ratchet((), frozenset({'AGENTS.md:4'}))
     assert orphaned == (
-        "ORPHANED overwidth declaration 'AGENTS.md:4' -- the line is no longer over width; remove it "
-        'from the declared set in this same commit.',
+        (
+            "ORPHANED overwidth declaration 'AGENTS.md:4' -- the line is no longer over width; remove it "
+            'from the declared set in this same commit.'
+        ),
     )
 
     assert width_ratchet(found, frozenset({'AGENTS.md:4'})) == ()

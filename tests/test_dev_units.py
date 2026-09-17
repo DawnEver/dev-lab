@@ -366,7 +366,8 @@ def test_the_carve_out_is_reported_rather_than_silent(tmp_path: Path) -> None:
     assert {violation.token for violation in scan.exempt} == {'mm'}, 'each record keeps the token it matched'
 
     # And the carve-out is not a blanket on the file: the same scan still reports its violations.
-    assert scan.files_read == 1 and {violation.name for violation in scan.violations} == {
+    assert scan.files_read == 1
+    assert {violation.name for violation in scan.violations} == {
         'GAP_MM',
         'LEGACY_MM',
         'bore_mm',
@@ -465,7 +466,8 @@ def test_the_excluded_registry_is_not_vacuous() -> None:
     assert blank == [], f'exclusions with no recorded collision: {blank}'
     assert 'm' in EXCLUDED_TOKENS, "metre is core's own unit; its omission must be declared"
     assert 'metre' in EXCLUDED_TOKENS['m']
-    assert 's' in EXCLUDED_TOKENS and 'second' in EXCLUDED_TOKENS['s']
+    assert 's' in EXCLUDED_TOKENS
+    assert 'second' in EXCLUDED_TOKENS['s']
     assert set(UNIT_TOKENS).isdisjoint(EXCLUDED_TOKENS), 'a token in both tables refuses and excuses itself'
     assert 'mm' not in EXCLUDED_TOKENS, "sanity: the user's own example token is included"
 
@@ -858,7 +860,7 @@ def test_the_indexed_locator_reports_exactly_what_the_search_per_name_locator_re
 
 
 def test_the_indexed_locator_agrees_with_the_control_on_json_too() -> None:
-    """The same proof for the JSON pattern, which is a DIFFERENT pattern and needs its own floor.
+    r"""The same proof for the JSON pattern, which is a DIFFERENT pattern and needs its own floor.
 
     ``"{name}"[ \t]*:`` has no lookbehind -- the opening quote is what bounds the name on the left --
     so the argument that makes the word-run prefilter exact has to hold for it separately.

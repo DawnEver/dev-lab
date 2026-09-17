@@ -193,4 +193,6 @@ def test_an_unusable_remote_exits_0_and_NAMES_the_cause(repo: Path) -> None:
     line = next((ln for ln in out.splitlines() if 'could not publish' in ln), None)
     assert line is not None, f'the hook went quiet about a failed tag push: {out!r}'
     _, sep, cause = line.partition(' -- ')
-    assert sep and cause.strip(), f'the message names no cause, so every failure reads identically: {line!r}'
+    why = f'the message names no cause, so every failure reads identically: {line!r}'
+    assert sep, why
+    assert cause.strip(), why

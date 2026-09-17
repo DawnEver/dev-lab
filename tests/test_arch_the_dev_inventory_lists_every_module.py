@@ -93,6 +93,7 @@ def test_a_planted_inventory_reds_on_both_sides() -> None:
 def test_the_scan_reads_this_package_and_excludes_by_shape() -> None:
     """The corpus really is this directory, and the private exclusion is computed rather than listed."""
     present = public_modules(DEV_DIR)
-    assert 'rules' in present and 'verify' in present, present
+    assert 'rules' in present, present
+    assert 'verify' in present, present
     assert not any(name.startswith('_') for name in present), present
     assert '__init__' not in present

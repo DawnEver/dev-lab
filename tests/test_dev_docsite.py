@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ import pytest
 from lab_commons.dev import docsite
 
 
-def _writes(name: str = 'index.html', body: str = 'ok'):
+def _writes(name: str = 'index.html', body: str = 'ok') -> Callable[[Path, Path], None]:
     def build(_root: Path, out_dir: Path) -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / name).write_text(body, encoding='utf-8')
@@ -40,7 +41,7 @@ PRESENT = docsite.Exe(sys.executable)
 ABSENT = docsite.Exe('no-such-tool-anywhere-on-this-box')
 
 
-def _site(slug: str, *, requires=PRESENT, build=None, **kw) -> docsite.SubSite:
+def _site(slug: str, *, requires=PRESENT, build=None, **kw: object) -> docsite.SubSite:
     return docsite.SubSite(
         slug=slug,
         title=slug.title(),
@@ -83,7 +84,8 @@ def test_an_absent_tool_SKIPS_and_the_report_NAMES_what_is_lost(tmp_path: Path) 
     assert report.built == []
     assert 'rust' in report.skipped
     reason = report.skipped['rust']
-    assert 'not on PATH' in reason and 'the rust reference' in reason, reason
+    assert 'not on PATH' in reason, reason
+    assert 'the rust reference' in reason, reason
     assert 'SKIPPED rust' in report.summary(), 'a count would let a permanently-broken toolchain look routine'
 
 
@@ -93,14 +95,16 @@ def test_a_skipped_subsite_is_RENDERED_on_the_portal_with_its_reason(tmp_path: P
     docsite.build_all(sites, tmp_path, tmp_path / 'out', title='T', version='1.0')
     portal = (tmp_path / 'out' / 'index.html').read_text(encoding='utf-8')
     assert 'href="python/index.html"' in portal
-    assert 'not built here' in portal and 'the rust reference' in portal
+    assert 'not built here' in portal
+    assert 'the rust reference' in portal
     assert 'href="rust/index.html"' not in portal, 'the portal must not link a sub-site that was not built'
 
 
 def test_a_present_tool_is_BUILT_not_skipped(tmp_path: Path) -> None:
     """The accepting side of the skip: a driver that skipped everything would pass the arm above."""
     report = docsite.build_all([_site('python')], tmp_path, tmp_path / 'out', title='T', version='1.0')
-    assert report.built == ['python'] and report.skipped == {}
+    assert report.built == ['python']
+    assert report.skipped == {}
 
 
 def test_a_builder_that_raises_is_NOT_swallowed(tmp_path: Path) -> None:
@@ -124,7 +128,8 @@ def test_prose_in_a_reason_is_ESCAPED() -> None:
     """A reason is written by a person; an unescaped ``<`` or ``&`` breaks the page it explains."""
     site = docsite.SubSite(slug='x', title='X & <Y>', requires=ABSENT, absent_means='a <tag> & more', build=_writes())
     portal = docsite.render_portal(docsite.BuildReport(skipped={'x': 'a <tag> & more'}), [site], title='T', version='1')
-    assert '<tag>' not in portal and '&lt;tag&gt;' in portal
+    assert '<tag>' not in portal
+    assert '&lt;tag&gt;' in portal
 
 
 # ----------------------------------------------------------------------- the pdoc invocation
@@ -140,7 +145,8 @@ def test_pdoc_is_never_asked_for_two_mutually_exclusive_modes() -> None:
     """``-o`` writes files and exits; ``-h``/``-p`` serve. optimi-lab passed both, under check=False."""
     argv = docsite.pdoc_argv(['pkg'], 'out')
     assert '-o' in argv
-    assert '-h' not in argv and '-p' not in argv
+    assert '-h' not in argv
+    assert '-p' not in argv
 
 
 def test_an_unset_pdoc_option_contributes_no_flag() -> None:
@@ -176,7 +182,8 @@ def test_a_composite_requirement_NAMES_the_missing_part(tmp_path: Path) -> None:
     """A composite that reports only its own absence sends the reader to check every part."""
     every = docsite.Every((PRESENT, docsite.Tree(str(tmp_path / 'never-cloned'))))
     assert not every.present()
-    assert 'never-cloned' in every.absent_kind and 'not present' in every.absent_kind
+    assert 'never-cloned' in every.absent_kind
+    assert 'not present' in every.absent_kind
     assert PRESENT.name not in every.absent_kind, 'a satisfied part must not be reported as missing'
 
 

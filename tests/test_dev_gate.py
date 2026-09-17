@@ -41,7 +41,7 @@ def _imported_roots(source: Path) -> set[str]:
 
 
 class TestTheOptInGate:
-    def test_importing_lab_commons_does_not_pull_the_dev_layer(self):
+    def test_importing_lab_commons_does_not_pull_the_dev_layer(self) -> None:
         """A runtime consumer must not acquire a development system by importing the package.
 
         A FRESH INTERPRETER, because ``sys.modules`` in this process already holds the subpackage
@@ -58,14 +58,14 @@ class TestTheOptInGate:
         )
         assert result.stdout.strip() == 'False', 'importing lab_commons pulled lab_commons.dev in'
 
-    def test_the_dev_extra_exists_and_names_the_tools_this_layer_drives(self):
+    def test_the_dev_extra_exists_and_names_the_tools_this_layer_drives(self) -> None:
         """The extra IS the gate, so it has to be the one whose contents this layer actually uses."""
         extras = read_toml(REPO_ROOT / 'pyproject.toml')['project']['optional-dependencies']
         assert 'dev' in extras
         named = {requirement.split('>')[0].split('=')[0].strip().lower() for requirement in extras['dev']}
         assert {'pytest', 'ruff'} <= named
 
-    def test_no_dev_module_imports_anything_outside_stdlib_and_tier_one(self):
+    def test_no_dev_module_imports_anything_outside_stdlib_and_tier_one(self) -> None:
         """THE DEPENDENCY IS NOT ADDED, and the way to say so is to read the import statements.
 
         A ``pip install lab-commons`` must keep pulling exactly what it pulled before -- the
@@ -85,7 +85,7 @@ class TestTheOptInGate:
         }
         assert not offenders, f'dev modules reach beyond stdlib + tier 1: {offenders}'
 
-    def test_the_scan_has_a_floor(self):
+    def test_the_scan_has_a_floor(self) -> None:
         """A scan that read no file would pass every one of the assertions above, vacuously."""
         sources = sorted(DEV_ROOT.glob('*.py'))
         assert len(sources) >= 6

@@ -46,9 +46,11 @@ def surface_problems(paths: tuple[Path, ...]) -> tuple[str, ...]:
             out.append(f'{path.name} declares no __all__, so its public surface is whatever happens to be defined')
             continue
         defined = _defined_names(tree.body)
-        for name in declared:
-            if name not in defined:
-                out.append(f'{path.name}: __all__ names {name!r}, which the module does not define or import')
+        out.extend(
+            f'{path.name}: __all__ names {name!r}, which the module does not define or import'
+            for name in declared
+            if name not in defined
+        )
     return tuple(out)
 
 

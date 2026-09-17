@@ -136,8 +136,10 @@ def test_a_wrapper_cannot_hide_the_interpreter_that_consumes_a_heredoc(rules: Pa
 
 
 def test_uv_run_is_a_wrapper_but_uv_itself_is_still_a_command(tmp_path: Path) -> None:
-    """THE RATCHET'S OTHER SIDE. `uv run X` unwraps to X, but `uv sync`/`uv add`/`uv pip` are
-    commands in their own right: stripping a bare `uv` would leave the segment reading `sync`, and a
+    """THE RATCHET'S OTHER SIDE.
+
+    `uv run X` unwraps to X, but `uv sync`/`uv add`/`uv pip` are commands in their own right:
+    stripping a bare `uv` would leave the segment reading `sync`, and a
     rule naming `uv sync` -- motronics-studio ships one, this registry does not -- would go quiet.
 
     Driven through a rule this test writes, because the property belongs to the ENGINE and no

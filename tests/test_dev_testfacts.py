@@ -220,7 +220,9 @@ def test_the_census_refuses_a_duplicate_bucket_name_and_an_empty_corpus() -> Non
 def test_a_missing_bucket_name_raises_rather_than_reading_clean() -> None:
     """A misspelled lookup returning an empty bucket would report a typo as a healthy population."""
     empty = Bucket('nothing', ())
-    assert empty.files == 0 and empty.tests == 0 and empty.by_directory() == {}
+    assert empty.files == 0
+    assert empty.tests == 0
+    assert empty.by_directory() == {}
     with pytest.raises(KeyError):
         census(
             (FileFacts(name='tests/test_a.py', tests=1, marks=frozenset(), ceilings_s=()),),

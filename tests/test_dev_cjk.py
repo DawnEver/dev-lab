@@ -70,7 +70,7 @@ def test_find_cjk_locates_line_and_column_one_based() -> None:
 
 
 def test_an_escape_sequence_is_ascii_source_and_passes(tmp_path: Path) -> None:
-    """The remedy for a test that must PLANT a CJK literal: write it as \\uXXXX, not the character.
+    r"""The remedy for a test that must PLANT a CJK literal: write it as \\uXXXX, not the character.
 
     ``naming.assert_ascii('\\u76f8_br01')`` runs against the real character at runtime while its
     SOURCE is eight ASCII characters -- this scanner reads the file as written, never a decoded
@@ -166,8 +166,10 @@ def test_the_ratchet_refuses_both_an_undeclared_hit_and_an_orphaned_declaration(
 
     orphaned = ratchet((), frozenset({'gone.py'}))
     assert orphaned == (
-        "ORPHANED CJK declaration 'gone.py' -- no CJK remains in this file; remove it from the "
-        'declared set in this same commit.',
+        (
+            "ORPHANED CJK declaration 'gone.py' -- no CJK remains in this file; remove it from the "
+            'declared set in this same commit.'
+        ),
     )
 
     assert ratchet(found, frozenset({'dirty.py'})) == ()
@@ -252,7 +254,7 @@ def test_the_prefilter_skips_work_without_changing_one_reported_occurrence(tmp_p
 
 
 def test_the_prefilter_agrees_with_the_control_on_every_declared_range_and_line_boundary() -> None:
-    """The endpoints of every range, and the line boundaries `splitlines()` counts but `\n` does not.
+    r"""The endpoints of every range, and the line boundaries `splitlines()` counts but `\n` does not.
 
     A regex class is built from the SAME `CJK_RANGES`, so the endpoints are where a derived class and
     a comparison would first disagree if either were off by one. The boundary characters matter
