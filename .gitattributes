@@ -1,0 +1,12 @@
+# A SHELL PAYLOAD IS EXECUTED, NOT READ, and the line ending is part of the program.
+#
+# This repo SHIPS `src/lab_commons/dev/githooks/*.sh` inside the wheel, and every consumer runs them
+# through bash -- including on Windows, where `core.autocrlf=true` is the default Git for Windows
+# installs. A checkout under that setting rewrites these files to CRLF, and bash then reads the
+# trailing `\r` as part of the last word on every line: `#!/usr/bin/env bash\r` is a missing
+# interpreter, and `then\r` is a syntax error. The failure lands on the CONSUMER, one wheel build
+# later, and reads as the hook being broken rather than as a checkout setting.
+#
+# So the ending is declared here rather than left to whatever each box configured. `text eol=lf`
+# normalises on commit and checks out LF on every platform.
+*.sh text eol=lf
