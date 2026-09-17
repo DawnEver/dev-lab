@@ -66,8 +66,8 @@ __all__ = [
     'PREFIX_TOKENS',
     'Delivery',
     'Door',
-    'RevertingDoors',
-    'VacuousDoorScan',
+    'RevertingDoorsError',
+    'VacuousDoorScanError',
     'assert_doors_deliver',
     'classify',
     'commands',
@@ -93,6 +93,10 @@ PREFIX_TOKENS: Final = frozenset(
         '-',
         '@',
         '||',
+        # A shell GROUP opens a command: `cmd() { uv run ...; }` is how one of the two reverting
+        # hooks measured on 2026-09-17 was actually written, and without this the scan read the
+        # whole function body as arguments to `cmd()` and found no door in it at all.
+        '{',
         'command',
         'do',
         'else',
@@ -131,11 +135,11 @@ class Delivery(Enum):
     INERT = 'inert'
 
 
-class RevertingDoors(AssertionError):
+class RevertingDoorsError(AssertionError):
     """At least one install door serves a stale build of a floating requirement."""
 
 
-class VacuousDoorScan(AssertionError):
+class VacuousDoorScanError(AssertionError):
     """The scan read fewer doors than its floor -- finding nothing proves nothing."""
 
 
@@ -174,7 +178,7 @@ def floating_requirements(pyproject: Path) -> tuple[str, ...]:
 
 
 def _is_floating(url: str) -> bool:
-    """Does this ``git+`` URL carry NO ref at all? ``@sha``, ``?rev=``, ``?tag=``, ``?branch=`` are refs."""
+    """Answer whether this ``git+`` URL carries NO ref: ``@sha``, ``?rev=``, ``?tag=``, ``?branch=`` are refs."""
     body, _, _fragment = url.partition('#')
     path, _, query = body.partition('?')
     pinned_by_query = any(key in query for key in ('rev=', 'tag=', 'branch=', 'commit='))
@@ -182,7 +186,7 @@ def _is_floating(url: str) -> bool:
 
 
 def _upgrades(argv: list[str], names: tuple[str, ...]) -> bool:
-    """Does *argv* name every one of *names* for re-resolution, or ask for a blanket upgrade?"""
+    """Answer whether *argv* names every one of *names* for re-resolution, or asks for a blanket upgrade."""
     if '-U' in argv or '--upgrade' in argv:
         return True
     named: set[str] = set()
@@ -195,12 +199,29 @@ def _upgrades(argv: list[str], names: tuple[str, ...]) -> bool:
 
 
 def _verb(argv: list[str]) -> str:
-    """The first token of *argv* that is not a flag -- ``uv --native-tls sync`` is still ``sync``."""
+    """Return the first token of *argv* that is not a flag -- ``uv --native-tls sync`` is still ``sync``."""
     return next((token for token in argv if not token.startswith('-')), '')
 
 
+def _pip_delivery(rest: list[str]) -> Delivery:
+    """Decide what a ``pip`` invocation delivers. MEASURED: pip re-clones a direct URL every time."""
+    return Delivery.RESOLVES if _verb(rest) == 'install' else Delivery.INERT
+
+
+def _uv_delivery(rest: list[str], names: tuple[str, ...]) -> Delivery:
+    """Decide what a ``uv`` invocation delivers, which is the whole question this module exists for."""
+    verb = _verb(rest)
+    if verb == 'pip':
+        return _pip_delivery(rest[rest.index('pip') + 1 :])
+    if verb == 'lock':
+        return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.INERT
+    if verb not in LOCK_CONSUMING or '--no-sync' in rest:
+        return Delivery.INERT
+    return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.REVERTS
+
+
 def classify(argv: list[str], names: tuple[str, ...]) -> Delivery:
-    """What this command delivers for the floating requirements *names*.
+    """Decide what this command delivers for the floating requirements *names*.
 
     Pure over its arguments, so a planted control drives THIS function rather than a second
     implementation that would agree with it by construction. Every branch is a row of the measured
@@ -211,22 +232,12 @@ def classify(argv: list[str], names: tuple[str, ...]) -> Delivery:
     program = Path(argv[0]).name.removesuffix('.exe').lower()
     rest = argv[1:]
     if program in {'pip', 'pip3'}:
-        return Delivery.RESOLVES if _verb(rest) == 'install' else Delivery.INERT
+        return _pip_delivery(rest)
     if program.startswith('python') and rest[:2] == ['-m', 'pip']:
-        return Delivery.RESOLVES if _verb(rest[2:]) == 'install' else Delivery.INERT
-    if program != 'uv':
-        # `uvx` included: it runs a tool in its own ephemeral environment and touches no project.
-        return Delivery.INERT
-    verb = _verb(rest)
-    if verb == 'pip':
-        tail = rest[rest.index('pip') + 1 :]
-        return Delivery.RESOLVES if _verb(tail) == 'install' else Delivery.INERT
-    if verb == 'lock':
-        return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.INERT
-    if verb in LOCK_CONSUMING:
-        if '--no-sync' in rest:
-            return Delivery.INERT
-        return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.REVERTS
+        return _pip_delivery(rest[2:])
+    if program == 'uv':
+        return _uv_delivery(rest, names)
+    # `uvx` lands here with everything else: it runs a tool in its own ephemeral environment.
     return Delivery.INERT
 
 
@@ -261,7 +272,7 @@ def commands(text: str) -> tuple[tuple[int, list[str]], ...]:
 
 
 def _is_program(token: str) -> bool:
-    """Is this token the name of a program that can install into an environment?"""
+    """Answer whether this token names a program that can install into an environment."""
     name = Path(token).name.removesuffix('.exe').lower()
     # EXACT rather than a prefix: `python-versions:` is a YAML key, and reading it as an interpreter
     # is how a scan starts reporting doors that do not exist -- measured against this repo's own CI.
@@ -286,19 +297,21 @@ def scan_doors(root: Path, paths: list[str], names: tuple[str, ...]) -> tuple[Do
 
 
 def reverting(doors: tuple[Door, ...]) -> tuple[Door, ...]:
-    """The doors that move an environment and serve a stale build."""
+    """Return the doors that move an environment and serve a stale build."""
     return tuple(door for door in doors if door.delivery is Delivery.REVERTS)
 
 
 def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], floor: int) -> tuple[Door, ...]:
-    """THE GUARD. Every declared door delivers *names* as declared, and the scan actually read some.
+    """Refuse unless every declared door delivers *names*, and unless the scan actually read some.
+
+    THE GUARD.
 
     Returns the doors it read, so a caller can pin the named set rather than a count.
 
     Raises:
-        VacuousDoorScan: fewer than *floor* commands were read. A repo whose door files moved or
+        VacuousDoorScanError: fewer than *floor* commands were read. A repo whose door files moved or
             were renamed would otherwise report a clean result having read nothing.
-        RevertingDoors: at least one door serves a stale build, named with its file, its line and
+        RevertingDoorsError: at least one door serves a stale build, named with its file, its line and
             the remedy that applies to it.
 
     """
@@ -310,7 +323,7 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
             f'Either a door file was renamed -- repoint the declared paths -- or the scan stopped '
             f'recognising a command, which is a defect in this scan and not a clean tree.'
         )
-        raise VacuousDoorScan(msg)
+        raise VacuousDoorScanError(msg)
     stale = reverting(doors)
     if stale:
         listed = '\n  '.join(door.describe() for door in stale)
@@ -324,5 +337,5 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
             f'or a tool invocation adds `--no-sync`, because a hook that reinstalls the environment '
             f'on every commit is an install door nobody declared.'
         )
-        raise RevertingDoors(msg)
+        raise RevertingDoorsError(msg)
     return doors

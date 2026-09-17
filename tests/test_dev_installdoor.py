@@ -27,8 +27,8 @@ import pytest
 
 from lab_commons.dev.installdoor import (
     Delivery,
-    RevertingDoors,
-    VacuousDoorScan,
+    RevertingDoorsError,
+    VacuousDoorScanError,
     assert_doors_deliver,
     classify,
     commands,
@@ -120,6 +120,15 @@ def test_a_comment_explaining_a_door_is_not_a_second_door() -> None:
     assert [argv for _line, argv in commands(text)] == [['uv', 'sync', '-P', 'lab-commons']]
 
 
+def test_a_command_inside_a_shell_function_body_is_still_a_door() -> None:
+    """The one-liner shape the real changelog hook uses -- and the shape the first cut read past."""
+    text = 'cmd() { uv run python -m commitizen changelog; }' + chr(10)
+    found = [argv for _line, argv in commands(text)]
+    assert len(found) == 1, found
+    assert found[0][:3] == ['uv', 'run', 'python'], found
+    assert classify(found[0], _KIT) is Delivery.REVERTS
+
+
 def test_a_wrapped_command_is_still_the_command() -> None:
     """`timeout`, `if !`, and a YAML `entry:` all leave a program a program."""
     text = 'timeout 900 uv sync\nif ! /root/.local/bin/uv pip install -e .; then\n    entry: uv run python -m x\n'
@@ -150,7 +159,7 @@ def test_floating_requirements_reads_both_tables_and_ignores_every_pinned_shape(
 
 
 def test_a_missing_manifest_raises_rather_than_answering_none(tmp_path: Path) -> None:
-    """ "No floating requirement" is the reading under which every door passes, so it must not be free."""
+    """Answering "no floating requirement" passes every door, so a missing manifest must not be free."""
     with pytest.raises(OSError, match='pyproject'):
         floating_requirements(tmp_path / 'pyproject.toml')
 
@@ -187,11 +196,13 @@ def _plant(root: Path, *, door: str) -> None:
 def test_the_guard_fires_on_a_planted_reverting_door(tmp_path: Path) -> None:
     """THE PLANTED CONTROL. A reverting door in a real tree, through the REAL guard, and it refuses."""
     _plant(tmp_path, door='uv sync --extra dev')
-    with pytest.raises(RevertingDoors) as refusal:
+    with pytest.raises(RevertingDoorsError) as refusal:
         assert_doors_deliver(tmp_path, ['Makefile', 'hook.sh'], _KIT, floor=2)
     message = str(refusal.value)
-    assert 'Makefile:2' in message and 'hook.sh:1' in message
-    assert '--upgrade-package lab-commons' in message and '--no-sync' in message
+    assert 'Makefile:2' in message
+    assert 'hook.sh:1' in message
+    assert '--upgrade-package lab-commons' in message
+    assert '--no-sync' in message
 
 
 def test_the_guard_passes_once_both_remedies_are_applied(tmp_path: Path) -> None:
@@ -206,7 +217,7 @@ def test_the_guard_passes_once_both_remedies_are_applied(tmp_path: Path) -> None
 def test_the_scan_refuses_to_report_a_clean_tree_it_never_read(tmp_path: Path) -> None:
     """A renamed door file must red as INCONCLUSIVE rather than pass having read nothing."""
     _plant(tmp_path, door='uv sync -P lab-commons')
-    with pytest.raises(VacuousDoorScan, match='below the floor'):
+    with pytest.raises(VacuousDoorScanError, match='below the floor'):
         assert_doors_deliver(tmp_path, ['Makefile.renamed', 'hook.sh.renamed'], _KIT, floor=2)
 
 
