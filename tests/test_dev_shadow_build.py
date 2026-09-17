@@ -237,7 +237,10 @@ class TestTheComparison:
         comparison = Comparison(installed_s=(3.0, 1.0, 2.0), shadow_s=(1.0, 0.5, 0.75))
         assert comparison.median_installed_s == 2.0
         assert comparison.median_shadow_s == 0.75
-        assert comparison.speedup == pytest.approx(2.0 / 0.75)
+        # abs=0.0: EXACT, and this site is not a tolerance at all. The expected value is spelled
+        # as the SAME division the property performs on the SAME two medians, both of which the
+        # two lines above have just pinned exactly, so the two sides are the same double.
+        assert comparison.speedup == pytest.approx(2.0 / 0.75, abs=0.0)
 
     def test_a_zero_shadow_median_reports_NOTHING_rather_than_a_number(self) -> None:
         """A probe that did no work cannot be reported as infinitely fast; "I cannot say" is honest."""

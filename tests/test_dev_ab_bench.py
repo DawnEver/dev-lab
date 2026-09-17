@@ -153,7 +153,9 @@ class TestArmSamples:
         clean = ArmSamples(name='clean', samples_s=samples, refusals=())
         partial = ArmSamples(name='partial', samples_s=samples, refusals=('ValueError: singular',))
 
-        assert clean.median_s == pytest.approx(0.2)
+        # abs=0.0: EXACT. `statistics.median` over an odd-length sample returns the middle element
+        # itself, so this is the planted 0.2 coming back unchanged rather than an arithmetic result.
+        assert clean.median_s == pytest.approx(0.2, abs=0.0)
         assert partial.median_s is None, 'an arm measured only on the inputs it accepted is not comparable'
 
     def test_an_arm_with_no_sample_has_no_median(self) -> None:
@@ -175,7 +177,11 @@ class TestSpeedup:
             base=ArmSamples(name='base', samples_s=(0.4,), refusals=()),
             cand=ArmSamples(name='cand', samples_s=(0.2,), refusals=()),
         )
-        assert honest.speedup('base', 'cand') == pytest.approx(2.0), 'the control: without the refusal it is 2x'
+        # abs=0.0: EXACT. float(0.4) is float(0.2) with the exponent one higher and the same
+        # significand, so the quotient is representable and MEASURED equal to 2.0 bit for bit.
+        assert honest.speedup('base', 'cand') == pytest.approx(2.0, abs=0.0), (
+            'the control: without the refusal it is 2x'
+        )
 
     def test_a_zero_median_candidate_reports_no_speedup_rather_than_infinity(self) -> None:
         trials = self._trials(
@@ -195,14 +201,21 @@ class TestRatio:
         if expected is None:
             assert got is None
         else:
-            assert got == pytest.approx(expected)
+            # abs=0.0: EXACT for both live rows. 0.4/0.2 and 0.2/0.4 are the same pair of doubles
+            # divided each way, and each quotient is representable -- MEASURED equal to 2.0 and 0.5.
+            assert got == pytest.approx(expected, abs=0.0)
 
 
 class TestAmortised:
     def test_a_setup_reused_many_times_costs_less_per_call_than_one_reused_once(self) -> None:
         """Both directions of the amortisation, so a function ignoring ``over`` would red."""
-        assert amortised(0.01, 1.0, over=100) == pytest.approx(0.02)
-        assert amortised(0.01, 1.0, over=1) == pytest.approx(1.01)
+        # abs=0.0 on both: EXACT, and each for its own reason. 1.0/100 rounds to float(0.01), and
+        # float(0.01) + float(0.01) is a doubling, which binary floating point never rounds -- the
+        # sum IS float(0.02). The over=1 row is the one that had to be measured rather than argued:
+        # float(0.01) + 1.0 rounds to float(1.01), residual 0.0 against an ulp of 2.2e-16 at that
+        # magnitude. Both checked on this repo's CPython 3.12 on 2026-09-17.
+        assert amortised(0.01, 1.0, over=100) == pytest.approx(0.02, abs=0.0)
+        assert amortised(0.01, 1.0, over=1) == pytest.approx(1.01, abs=0.0)
 
     @pytest.mark.parametrize('over', [0, -5])
     def test_a_non_positive_reuse_count_refuses_rather_than_making_the_setup_free(self, over) -> None:
