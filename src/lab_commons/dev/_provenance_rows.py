@@ -131,6 +131,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'tests/architecture/docs/test_a_cited_test_function_exists.py',
     ),
     'configrender': ('supersedes', 'tests/architecture/test_the_family_config_is_rendered.py'),
+    # THREE consumer files under ONE filename, which is the counter-example to this package's own
+    # counter-example: the two labs' copies share their nine test-function NAMES line for line and
+    # differ in four values. NOT a second spelling of an injected-width body: measured 2026-09-18,
+    # `dev.cjk` and `dev.docwidth` publish 12 and 14 names with an EMPTY intersection, the declared
+    # set is keyed by FILE here and by `path:line` there, and only the width guard has a ceiling on
+    # its escape hatch. The argument is in the module, because it is a fact about the two scanners.
+    'trackedcjk': ('supersedes', 'tests/architecture/test_no_cjk_in_tracked_source.py'),
     # NOT a second spelling of `datedlog`, which CONSTRUCTS `<base>/<yy>/<mm>/<dd>/<kind>/<name>` and
     # cannot write the four-digit, kind-less layout these readers are about. The argument is in the
     # readings half, `famtests/_datedmemory_readings.py`, because it is a fact about the readers.

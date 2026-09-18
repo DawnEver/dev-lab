@@ -75,6 +75,12 @@ WHAT IS HERE, one module per shared body:
   Reads a POSITIONAL ``rel``/``abs`` pair every consumer file is blind to today, which makes this
   stricter than the files it replaces -- said here because an adopter meets it as a first red.
 
+* :mod:`lab_commons.dev.famtests.trackedcjk` -- no tracked, non-exempt file carries CJK, over
+  :mod:`lab_commons.dev.cjk`'s readings. Takes the floor on BOTH sides where every consumer takes
+  only the low one, and refuses a waiver spelled in a shape the ratchet cannot key on -- the failure
+  that reds loudly for the wrong reason. NOT the body the injected-width guard needs: the two
+  scanners' surfaces share no name, and the declared set is keyed by FILE here and by site there.
+
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
   all four, and the bars it is judged against are arguments rather than a property closing over one
