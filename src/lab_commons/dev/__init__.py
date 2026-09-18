@@ -49,8 +49,10 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
 * :mod:`lab_commons.dev.hooks` and :mod:`lab_commons.dev.hook_adoption` — the same split one level
   down, for the machinery that REFUSES a command rather than a design: one row per universal denied
   shape, each NAMING ITS REMEDY, and a per-repo adoption that supplies the exit. A rule whose remedy
-  does not exist in the adopting repo is not shipped to it at all -- a refusal with no exit gets
-  routed around rather than obeyed, which is the measured lesson these two modules encode.
+  does not exist in the adopting repo is not shipped there: a sealed road is routed around, not
+  obeyed. :mod:`lab_commons.dev.allow_adoption` is that registry's ALLOW half and closes the seam
+  that left those exits unreachable -- ``permissions.allow`` is DERIVED from the remedies a repo
+  supplies (three of nine live rows, 2026-09-18), and only a road answering no rule is DECLARED.
 * :mod:`lab_commons.dev.units` — the naming half of the units rule: a scan that refuses an
   identifier whose trailing segment spells a unit, because the unit belongs in the VALUE (see
   :func:`lab_commons.units.quantity_parser`). It reports the token set it searched for, so finding

@@ -85,6 +85,52 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         ),
     },
     {
+        'id': 'GIT-COMMIT-AMEND',
+        # Spelled as PUSH-FORCE is, and deliberately: `--amend` is an OPTION, so `matches: argument`
+        # reaches `git -C <tree> commit --amend` and `git commit -a --amend` alike, which a command
+        # anchor on `git commit` would not. A pattern catching every `git commit` would be routed
+        # around within a day, so the literal flag is the whole match.
+        'pattern': r'\bcommit\b[^\n]*\s--amend\b',
+        'matches': 'argument',
+        'hazard': (
+            '`--amend` does not act on YOUR last commit, it acts on HEAD -- and on a shared lane HEAD belongs '
+            'to whoever committed most recently. This family has NO single-agent mode, so "I just committed" '
+            'is not a safety argument; it is the exact condition under which this fires. MEASURED 2026-09-18 '
+            'on `feat/optimi-lab`: agent A committed, agent B committed 40 seconds later, and A amended to fix '
+            "two digits in its OWN message -- rewriting B's commit and replacing B's message with A's. It was "
+            'caught inside a minute through `git reflog` and the tree recovered byte-identical, so only the '
+            'SHA moved; nothing about the recovery made that outcome likelier than losing the work.'
+        ),
+        'remedy': (
+            'Do not rewrite -- land the correction FORWARD. Read what HEAD actually is first: '
+            'git log -1 --format="%h %an %s". If the CONTENT is wrong, commit the fix on top. If only the '
+            'message is wrong and nothing a reader acts on changes, record the correction where the work is '
+            'reported and leave the commit alone; that is the right call once anything sits on top of it.'
+        ),
+        # `needs` is None after checking what a repo could possibly supply, and the answer is nothing:
+        # `git commit` and `git log` exist in every checkout, and a follow-up convention is prose
+        # rather than a file. Giving this row a `needs` would DROP it from every repo that has no
+        # such artefact -- which is all four -- so a universal hazard would ship to nobody.
+        'needs': None,
+        # NO `allow`, and that is a decision rather than an omission. The opening would have to say
+        # "this branch is reachable by nobody else", and the engine reads TEXT: whether HEAD is
+        # shared is a property of the repo at that instant and is nowhere on the command line. So it
+        # ships CLOSED -- a rule that fires on a real hazard and occasionally inconveniences a solo
+        # lane is the better error. A rebase that rewrites history is a DIFFERENT shape and is not
+        # registered here; this row reads the `--amend` spelling and claims nothing beyond it.
+        'refuses': (
+            'git commit --amend',
+            'git commit --amend --no-edit',
+            'git commit -a --amend -m "fix the digits"',
+            'git -C .claude/worktrees/lane commit --amend',
+        ),
+        'permits': (
+            'git commit -F - -- src/thing.py',
+            'git commit -m "amend the ledger prose"',
+            'git log -1 --format=%h',
+        ),
+    },
+    {
         'id': 'GIT-NETWORK-VERB',
         'pattern': r'\bgit\s+(?:push|fetch|pull|clone|ls-remote)\b',
         'matches': 'command',

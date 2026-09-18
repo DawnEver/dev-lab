@@ -31,6 +31,10 @@ __all__ = ['PROVENANCE']
 PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'ab_bench': ('original',),
     'agent_guard': ('original',),
+    # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
+    # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
+    # derives or admits. The row motronics added by hand on 2026-09-18 is the first thing it subsumes.
+    'allow_adoption': ('original',),
     'bounded': (
         'supersedes',
         'scripts/gate/bounded.py',
