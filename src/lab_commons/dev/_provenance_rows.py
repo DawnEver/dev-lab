@@ -115,6 +115,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # readings half, `famtests/_datedmemory_readings.py`, because it is a fact about the readers.
     'datedmemory': ('supersedes', 'tests/architecture/test_memory_lives_under_a_date.py'),
     'hookinstall': ('supersedes', 'tests/architecture/test_the_declared_hooks_are_installed.py'),
+    # NOT a second spelling of `bounded`, which OWNS THE WAIT -- it runs a child under a wall, reaps
+    # the tree and prices the width. This owns THE SCAN. Measured 2026-09-18: the two surfaces share
+    # no name and no argument type, the refusals are opposite in kind (terminate one live tree vs
+    # return a pinnable set before anything runs), and only one of them reads a population and so
+    # needs a floor. The argument is in the module, because it is a fact about the scanner.
+    'untimedwaits': ('supersedes', 'tests/architecture/gate/test_no_untimed_subprocess.py'),
     # FOUR consumer rosters, not three: motronics holds TWO, one for `scripts/` and one for
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why
