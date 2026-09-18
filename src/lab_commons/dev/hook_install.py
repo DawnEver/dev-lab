@@ -38,6 +38,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from lab_commons.log import emit
+
 __all__ = [
     'ABSENT',
     'DEFAULT_CONFIG_NAME',
@@ -298,25 +300,25 @@ def report_installation(argv: list[str] | None = None) -> int:
         # THE CHECK STILL NEVER REPAIRS ITSELF. What is refused is a SILENT fix; an explicitly
         # requested install is neither silent nor a repair of somebody else's tree.
         command = install_command(root, config_name=args.config_name)
-        sys.stdout.write(f'[hooks-installed] installing: {Path(sys.executable).name} {" ".join(command)}\n')
+        emit(f'[hooks-installed] installing: {Path(sys.executable).name} {" ".join(command)}')
         return subprocess.run([sys.executable, *command], cwd=root, check=False, timeout=600).returncode
 
     report = hook_installation(root, config_name=args.config_name)
-    sys.stdout.write(f'[hooks-installed] the hooks directory git will use: {report.hooks_dir}\n')
+    emit(f'[hooks-installed] the hooks directory git will use: {report.hooks_dir}')
     if report.verdict == NOTHING_DECLARED:
-        sys.stdout.write(f'[hooks-installed] NOTHING DECLARED -- no {args.config_name} in {report.repo}\n')
+        emit(f'[hooks-installed] NOTHING DECLARED -- no {args.config_name} in {report.repo}')
         return 2
     for stage in report.stages:
-        sys.stdout.write(f'  {stage.stage:<18} {stage.status:<28} {stage.detail}\n')
-        sys.stdout.write(f'  {"":<18} declares: {", ".join(stage.hook_ids)}\n')
+        emit(f'  {stage.stage:<18} {stage.status:<28} {stage.detail}')
+        emit(f'  {"":<18} declares: {", ".join(stage.hook_ids)}')
     if report.verdict == PROTECTED:
-        sys.stdout.write('[hooks-installed] OK -- every declared stage has a live hook.\n')
+        emit('[hooks-installed] OK -- every declared stage has a live hook.')
         return 0
     install = ' '.join(install_command(root, config_name=args.config_name)[2:])
-    sys.stdout.write(
+    emit(
         f'[hooks-installed] UNPROTECTED -- {len(report.failing)} of {len(report.stages)} declared stage(s) '
         f'are not live. Every commit or push through this checkout ran none of them.\n'
-        f'  Install with:  python -m pre_commit {install}\n'
+        f'  Install with:  python -m pre_commit {install}'
     )
     return 1
 

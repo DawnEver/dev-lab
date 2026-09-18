@@ -48,10 +48,11 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
+
+from lab_commons.log import emit
 
 __all__ = [
     'FRAGMENT',
@@ -271,11 +272,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if parsed.list:
         listed = SCRIPTS if parsed.kind is None else scripts_of_kind(parsed.kind)
-        sys.stdout.write('\n'.join(listed) + '\n')
+        emit('\n'.join(listed))
         return 0
     if not parsed.hook:
         parser.error('a script name is required (or --list)')
     if parsed.path:
-        sys.stdout.write(f'{hook_path(parsed.hook)}\n')
+        emit(f'{hook_path(parsed.hook)}')
         return 0
     return run_hook(parsed.hook, parsed.args)

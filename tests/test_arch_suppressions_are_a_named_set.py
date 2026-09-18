@@ -190,26 +190,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'key: Callable[[], str] = field(default=lambda: current_env_key())',
     ): 'the lambda is a FORWARD reference: current_env_key is defined below this dataclass',
     (
-        'src/lab_commons/dev/netverb.py',
-        'T201',
-        'print(head, file=sys.stderr)',
-    ): "the module's command-line surface: the narrative goes to stderr, the report to stdout",
-    (
-        'src/lab_commons/dev/netverb.py',
-        'T201',
-        "print(attempt.output, file=sys.stderr, end='' if attempt.output.endswith('\\n') else '\\n')",
-    ): "the same CLI surface: an attempt's own output, passed through unchanged",
-    (
-        'src/lab_commons/dev/netverb.py',
-        'T201',
-        "print(f'[netverb] {report.remedy}', file=sys.stderr)",
-    ): 'the same CLI surface: the remedy line a human reads',
-    (
-        'src/lab_commons/dev/netverb.py',
-        'T201',
-        'print(json.dumps(report.as_dict(), indent=2))',
-    ): 'the same CLI surface: the JSON a shell caller branches on, and it must be on stdout',
-    (
         'src/lab_commons/dev/quantity_values.py',
         'BLE001',
         'except Exception:',

@@ -58,6 +58,7 @@ from typing import Final
 
 from lab_commons.dev._netverb_rows import ROWS
 from lab_commons.dev.bounded import run_bounded
+from lab_commons.log import emit
 
 __all__ = [
     'DEFAULT_ATTEMPTS',
@@ -367,17 +368,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = run_network_verb(
         command, attempts=args.attempts, backoff_s=args.backoff, timeout=args.timeout, cwd=args.cwd
     )
-    # T201 is waived four times below: this IS the module's command-line surface. The narrative
-    # goes to stderr and the machine-readable report to stdout, which is the split a shell caller
-    # branches on; a logger here would send a CLI's own output through a sink nobody asked for.
+    # The narrative goes to stderr and the machine-readable report to stdout, which is the split a
+    # shell caller branches on; a logger here would send a CLI's own output through a sink nobody
+    # asked for. Both halves go through ``emit`` rather than ``print``, which is what retired the
+    # four T201 waivers that used to stand here: the attempt OUTPUT below is a SUBPROCESS's, so its
+    # characters are the remote tool's choice and not ours, and a console that cannot encode one
+    # must not take the report down with it.
     for attempt in report.attempts:
         head = f'[netverb] attempt {attempt.index}/{report.allowed_attempts}: {attempt.diagnosis.value}'
-        print(head, file=sys.stderr)  # noqa: T201
+        emit(head, err=True)
         if attempt.output:
-            print(attempt.output, file=sys.stderr, end='' if attempt.output.endswith('\n') else '\n')  # noqa: T201
-    print(f'[netverb] {report.remedy}', file=sys.stderr)  # noqa: T201
+            emit(attempt.output.removesuffix('\n'), err=True)
+    emit(f'[netverb] {report.remedy}', err=True)
     if args.json:
-        print(json.dumps(report.as_dict(), indent=2))  # noqa: T201
+        emit(json.dumps(report.as_dict(), indent=2))
     return report.returncode
 
 

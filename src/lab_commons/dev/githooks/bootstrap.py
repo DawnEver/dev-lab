@@ -67,6 +67,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final
 
+from lab_commons.log import emit
+
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
     'NoInterpreter',
@@ -318,7 +320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         python = find_interpreter(roots, needed_module(args))
         command = command_for(python, args)
     except NoInterpreter as exc:
-        sys.stderr.write(f'lab-with-venv: {exc}\n')
+        emit(f'lab-with-venv: {exc}', err=True)
         return 1
     return subprocess.run(command, check=False, env=sanitized_env()).returncode
 

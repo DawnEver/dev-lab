@@ -33,12 +33,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.agenthooks import STAMP, engine_source
+from lab_commons.log import emit
 
 __all__ = [
     'ABSENT',
@@ -324,23 +324,23 @@ def report_guard(argv: list[str] | None = None) -> int:
 
     if args.install:
         for action in install_guard(root, force=args.force):
-            sys.stdout.write(f'[agent-guard] {action}\n')
+            emit(f'[agent-guard] {action}')
 
     report = guard_installation(root)
     for part in report.parts:
-        sys.stdout.write(f'  {part.part:<8} {part.status:<28} {part.detail}\n')
+        emit(f'  {part.part:<8} {part.status:<28} {part.detail}')
     if report.verdict == NOTHING_DECLARED:
-        sys.stdout.write(f'[agent-guard] NOTHING DECLARED -- no agent guard in {report.repo} at all\n')
+        emit(f'[agent-guard] NOTHING DECLARED -- no agent guard in {report.repo} at all')
         return 2
     if report.verdict == GUARDED:
-        sys.stdout.write('[agent-guard] OK -- engine, rules and wiring are all live.\n')
+        emit('[agent-guard] OK -- engine, rules and wiring are all live.')
         return 0
-    sys.stdout.write(
+    emit(
         f'[agent-guard] UNGUARDED -- {len(report.failing)} of {len(report.parts)} part(s) are not the '
         f'installed guard: {", ".join(part.part for part in report.failing)}. An ABSENT or unreadable part '
         f'refuses nothing, and every agent command so far went through it; a FOREIGN one may well refuse '
         f'things, but it is enforcing a file nobody in this family can vouch for.\n'
-        f'  Install with:  python -m lab_commons.dev.agent_guard --install --repo {report.repo}\n'
+        f'  Install with:  python -m lab_commons.dev.agent_guard --install --repo {report.repo}'
     )
     return 1
 

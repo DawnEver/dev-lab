@@ -46,10 +46,11 @@ import argparse
 import json
 import shutil
 import subprocess
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
+
+from lab_commons.log import emit
 
 __all__ = [
     'ENGINES',
@@ -241,16 +242,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parsed = parser.parse_args(argv)
 
     if parsed.list:
-        sys.stdout.write('\n'.join(ENGINES) + '\n')
+        emit('\n'.join(ENGINES))
         return 0
     if parsed.check is not None:
         if parsed.rules is None:
             parser.error('--check needs --rules: the engine has no rules of its own, and that is the design')
         reason = decide(parsed.check, parsed.rules, cwd=Path.cwd(), engine=parsed.engine)
         if reason is None:
-            sys.stdout.write('[agent-guard] ALLOWED -- no shipped rule names this command\n')
+            emit('[agent-guard] ALLOWED -- no shipped rule names this command')
             return 0
-        sys.stdout.write(f'[agent-guard] DENIED -- {reason}\n')
+        emit(f'[agent-guard] DENIED -- {reason}')
         return 1
-    sys.stdout.write(f'{engine_path(parsed.engine)}\n')
+    emit(f'{engine_path(parsed.engine)}')
     return 0

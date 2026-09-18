@@ -168,13 +168,21 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
       this function launches, not only the CPython ones, so a native tool that respects it benefits
       too and one that does not is unaffected.
 
+    ``PYTHONIOENCODING=utf-8`` is set for the same reason the encoding below is NAMED: this function
+    DECLARES the pipe carries utf-8, and on Windows a child writing to a pipe otherwise encodes in
+    the locale codepage (cp1252 here), which makes that declaration false. MEASURED 2026-09-18: a
+    child printing U+2713 into this pipe died of its OWN ``UnicodeEncodeError`` before a byte
+    arrived, and a child that survives one sends bytes this end then mis-decodes. Naming the
+    encoding on BOTH sides is what keeps ``errors='replace'`` a last resort rather than the normal
+    path -- it is the consumer's hand-set ``PYTHONIOENCODING=utf-8`` workaround, absorbed.
+
     ``stderr`` is merged into ``stdout`` because a reader reconstructing what happened needs the two
     INTERLEAVED -- a separated stderr puts every ruff diagnostic after every line of pytest output,
     in an order that never occurred.
     """
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
-    env = os.environ | {'PYTHONUNBUFFERED': '1'}
+    env = os.environ | {'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}
     with subprocess.Popen(
         command,
         cwd=cwd,

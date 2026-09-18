@@ -6,7 +6,9 @@ motronics' OLD import paths still resolved to the shared implementation) is drop
 that assertion belongs in the CONSUMER's tree (motronics-studio), not this package's.
 """
 
+import io
 import logging
+import sys
 
 import pytest
 
@@ -57,3 +59,37 @@ class TestEmit:
     def test_emit_formats_non_strings_like_print(self, capsys) -> None:
         emit(42)
         assert capsys.readouterr().out == '42\n'
+
+
+class TestEmitOnAConsoleThatCannotCarryTheCharacter:
+    """THE CONSOLE DEGRADES; IT DOES NOT KILL THE RUN -- both directions, planted.
+
+    MEASURED 2026-09-18 on wdg-lab: a test printed U+2713, ``lab_commons.dev.verify._tee`` handed it
+    to ``emit``, and a cp1252 stdout -- the Windows DEFAULT whenever nothing overrides it -- raised
+    ``UnicodeEncodeError`` out through the verdict runner, which produced an INCONCLUSIVE WITH NO
+    LOG. The crash reproduces in four lines, so the fix is controlled in four.
+
+    THE STREAM IS PLANTED, NOT MOCKED. ``capsys`` hands back a stream that encodes anything, so it
+    can never see this defect; these two build a real ``TextIOWrapper`` over cp1252 and drive the
+    REAL writer through it.
+
+    THE SECOND TEST IS THE HALF THAT IS EASY TO FORGET. Without it, a "fix" that ran every line
+    through a lossy re-encode -- mangling every log this family cites -- would pass the first test
+    and look green.
+    """
+
+    @staticmethod
+    def _cp1252_console() -> io.TextIOWrapper:
+        return io.TextIOWrapper(io.BytesIO(), encoding='cp1252', newline='')
+
+    def test_a_character_cp1252_cannot_carry_is_replaced_rather_than_raised(self, monkeypatch) -> None:
+        console = self._cp1252_console()
+        monkeypatch.setattr(sys, 'stdout', console)
+        emit('spinner ✓ done', flush=True)
+        assert console.buffer.getvalue() == b'spinner ? done\n'
+
+    def test_ordinary_output_reaches_the_same_console_unchanged(self, monkeypatch) -> None:
+        console = self._cp1252_console()
+        monkeypatch.setattr(sys, 'stdout', console)
+        emit('verdict: PASS  ruff=0  pytest=307 passed', flush=True)
+        assert console.buffer.getvalue() == b'verdict: PASS  ruff=0  pytest=307 passed\n'

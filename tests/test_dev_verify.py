@@ -20,6 +20,8 @@ against this checkout rather than against a double.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import threading
 import time
@@ -474,3 +476,33 @@ class TestThePlantedControl:
         assert _verdict(clean, log).result.outcome is Outcome.PASS
         planted = (*clean, StepReport(name='a step that never launched'))
         assert _verdict(planted, log).result.outcome is Outcome.INCONCLUSIVE
+
+
+class TestTheTeeOnAConsoleThatCannotCarryTheCharacter:
+    """THE WHOLE CHAIN, planted: a child's character must not cost the run its verdict.
+
+    THE REPRODUCTION, 2026-09-18. A wdg-lab verify died with
+    ``UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'`` inside
+    ``_tee -> lab_commons.log.emit``, on a cp1252 stdout. The run then had no verdict AND no log --
+    the one state ``workflow.md`` says proves nothing. ``TestEmitOnAConsoleThatCannotCarryTheCharacter``
+    in ``test_log.py`` controls the writer; this controls the PLUMBING around it, with a real child
+    process, because that is where the character enters.
+
+    IT ALSO PINS THE TWO PROMISES APART, which is the substantive claim of the fix. The LOG is
+    opened utf-8 and keeps the character byte for byte -- it is the evidence a ``log=sha256:...``
+    citation is re-read from. The CONSOLE is a VIEW of that log and may lose a glyph to ``?``. Only
+    one of the two is evidence, so only one of them has to be lossless.
+    """
+
+    def test_a_planted_non_cp1252_character_leaves_a_verdict_and_a_lossless_log(self, tmp_path: Path) -> None:
+        script = tmp_path / 'loud_step.py'
+        script.write_text("print('spinner \u2713 done')\n", encoding='utf-8')
+        log = tmp_path / 'log.txt'
+        console = io.TextIOWrapper(io.BytesIO(), encoding='cp1252', newline='')
+
+        with log.open('w', encoding='utf-8') as handle, contextlib.redirect_stdout(console):
+            code = tee_step([sys.executable, str(script)], cwd=tmp_path, handle=handle)
+
+        assert code == 0, 'the step must still report its own exit code rather than dying in the tee'
+        assert 'spinner ✓ done' in log.read_text(encoding='utf-8'), 'the evidence keeps every byte'
+        assert b'spinner ? done' in console.buffer.getvalue(), 'the view degrades, in the place it degraded'
