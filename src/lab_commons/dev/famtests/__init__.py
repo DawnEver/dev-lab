@@ -26,9 +26,17 @@ repo no place to say what its answer is.
 
 A SHARED FILENAME IS NOT SHARED CODE, and the counter-evidence is kept because it is what makes the
 rest mean something. ``test_the_public_surface_is_declared.py`` exists under one name in two repos at
-89% DIFFERENT, and ``test_memory_lives_under_a_date.py`` measures 33% identical between the two labs
--- one walks five declared memory trees, the other walks one. Neither is here. A census that only
-ever finds MOVES is measuring its own expectation.
+89% DIFFERENT, and it is NOT here. A census that only ever finds MOVES is measuring its own
+expectation.
+
+``test_memory_lives_under_a_date.py`` WAS THE OTHER HALF OF THAT COUNTER-EXAMPLE AND IS NOW A ROW,
+and the correction is recorded rather than quietly removed. It measured 33% identical between the two
+labs -- one walks five declared memory trees, the other walks one -- and was read as a repo fact. It
+was not: the 67% is the TREE LIST, THE FLOOR AND THE TWO EXCLUSION SETS, four repo-shaped facts, and
+the readers underneath them are the same four functions. Passed as arguments with no default they
+leave a body that is identical, which is what :mod:`lab_commons.dev.famtests.datedmemory` publishes.
+A PERCENTAGE IS A RULER AND NOT A VERDICT -- the same lesson ``supersede`` states about surface
+overlap, arriving here through the opposite door: there it over-convicted, here it under-convicted.
 
 WHAT IS HERE, one module per shared body:
 
@@ -43,6 +51,9 @@ WHAT IS HERE, one module per shared body:
   in total, because a named set and a budget are each blind to what the other sees.
 * :mod:`lab_commons.dev.famtests.rostercensus` -- a placement roster is re-read against the kit,
   so a row's side cannot go stale after its subject lands upstream.
+* :mod:`lab_commons.dev.famtests.datedmemory` -- every memory entry sits under its own date, and
+  the entry's own header agrees with it. READERS, not the constructor next door in
+  :mod:`lab_commons.dev.datedlog`: a different layout, the opposite refusal, and a floor.
 
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the

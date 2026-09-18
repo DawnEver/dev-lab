@@ -16,8 +16,8 @@ BOTH NAMED ``VacuousScan`` over different base classes -- so a consumer cannot c
 failing* without naming which module's floor it was, and the one name it would reach for is
 ambiguous inside this repo alone. Three more are inlined at the top of a larger arm
 (``famtests.rulespages``, ``famtests.rostercensus``, ``installdoor``). Outside the kit, ``wdg-lab``
-publishes ``tests/architecture/_corpus.bind_floor`` and calls it from nine guards, while
-``optimi-lab`` inlines the same ``assert len(x) >= FLOOR`` with its own prose in six.
+publishes ``tests/architecture/_corpus.bind_floor`` and calls it from SEVEN guards, while
+``optimi-lab`` inlines the same ``assert len(x) >= FLOOR`` with its own prose in EIGHT.
 
 THE FLOOR HAS TWO SIDES AND ONLY ONE OF THEM WAS EVER WRITTEN, which is the substantive addition
 here rather than de-duplication. Every copy above guards the LOW side: the scan fell below its
