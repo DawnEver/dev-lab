@@ -69,6 +69,13 @@ WHAT IS HERE, one module per shared body:
   pinnable SET against a terminated process tree -- and a floor, because only one of them reads a
   population at all.
 
+* :mod:`lab_commons.dev.famtests.boundedremedy` -- a wall terminates the TREE, a reaper never kills
+  its own lineage, and a refusal names a DIFFERENT remedy per state. The RUN to ``untimedwaits``'
+  SCAN: one live wait on a real process tree against a set read off the AST, empty surface overlap,
+  and a CALIBRATION where that one has a floor. The only body here that asserts on ELAPSED TIME, so
+  the only one that can be flaky -- priced from this box in the same second, with a ceiling past
+  which it reports INCONCLUSIVE rather than a pass it could not have failed.
+
 * :mod:`lab_commons.dev.famtests.approxfloors` -- a tolerance states the floor it falls back to,
   under a BAR the repo names. Three consumers asking TWO different questions, so ``bar`` is a member
   of a published set rather than a default, and the call they disagree about is asserted under each.

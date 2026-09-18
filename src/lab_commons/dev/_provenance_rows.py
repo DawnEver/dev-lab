@@ -167,6 +167,17 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # return a pinnable set before anything runs), and only one of them reads a population and so
     # needs a floor. The argument is in the module, because it is a fact about the scanner.
     'untimedwaits': ('supersedes', 'tests/architecture/gate/test_no_untimed_subprocess.py'),
+    # THE OTHER HALF OF THAT PAIR, and the boundary was settled by measurement rather than by taste.
+    # NOT inside `untimedwaits`, which is the SCAN: that one imports `ast`, takes a `Path`, returns a
+    # pinnable SET, refuses BEFORE anything runs and needs a floor. This imports `subprocess`/`time`/
+    # `os`, SPAWNS A REAL PROCESS TREE, asserts on ELAPSED TIME, refuses ONE LIVE WAIT and needs no
+    # floor -- it has a calibration instead. Measured 2026-09-18: the overlap between the two
+    # surfaces is EMPTY. NOT on `dev.bounded` either: 293 lines plus this body lands past the 400
+    # band, and `famtests` is where a body a CONSUMER'S architecture test is judged by lives.
+    # `untimedwaits`' own docstring already pointed at `bounded.wall_reason` for the sized-ceiling
+    # claim; the pointer existed and the module it should have pointed at did not. The readings half,
+    # `famtests/_boundedremedy_readings.py`, is private and has no row.
+    'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
     # FOUR consumer rosters, not three: motronics holds TWO, one for `scripts/` and one for
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why

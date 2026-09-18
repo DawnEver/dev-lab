@@ -51,7 +51,9 @@ WHAT THIS DOES NOT PROVE. ``shell=True`` is out of scope -- ruff's ``S602`` alre
 second mechanism for one defect gives a reader two messages and no owner. Nor does a ``timeout=``
 keyword prove the ceiling is SIZED: a call bounded at 86400 clears every arm here. That is
 :func:`lab_commons.dev.bounded.wall_reason`'s subject, one layer in, and a claim otherwise would be
-the declaration that lies.
+the declaration that lies. The arms that DRIVE it are
+:mod:`lab_commons.dev.famtests.boundedremedy`, which is this module's opposite half -- one live wait
+on a real tree and a real clock, where this one reads a whole tree before anything runs.
 """
 
 from __future__ import annotations
