@@ -255,8 +255,26 @@ MAKE_TARGET_CONSUMER_CORE: Final[tuple[str, ...]] = (
 #: `verify` carries its recipe because that recipe is portable by construction: `lab_commons.dev.verify`
 #: runs ruff, ruff format and pytest, tees them into a log and prints a stamped verdict, and it takes
 #: no argument naming a tree. It is the one line here that is the family's answer rather than the
-#: family's question, and motronics -- the only repo with no `verify` at all -- is the one whose
-#: verdict path (`scripts/gate/runner.py`) its Makefile never mentions.
+#: family's question. This paragraph used to end "and motronics -- the only repo with no `verify` at
+#: all"; that is no longer true, all four declare one, and the sentence is corrected rather than left
+#: standing, because a base's own prose asserting an absence the tree has filled is the declaration
+#: that lies.
+#:
+#: REQUIRED IS THIS ARTEFACT'S TERMINAL MODE, re-opened and re-closed 2026-09-18 on the ground that
+#: the reason had expired -- that the base only read REQUIRED because motronics had no `verify:`, and
+#: that gap closed. It never was that reason, and re-measuring all four live Makefiles says the
+#: recorded one still holds: SEVEN of the nine shared targets carry a different recipe in more than
+#: one repo (`install:` and `install-dev:` four distinct ones apiece), and the two whose bodies DO
+#: agree disagree on the HEADER -- `all:` is spelled three ways and `verify:` two, because a
+#: prerequisite list is each repo's own dependency graph. RENDERED compares BYTES and has no
+#: match-by-target-name affordance, so adopting it would mean fixing one repo's prerequisites on the
+#: other three. The measurement is PINNED both ways by
+#: `tests/test_the_kit_meets_its_own_makefile_contract.py::TestRequiredIsTheTerminalModeForThisArtefact`:
+#: it reds if the recipes ever converge -- the day to re-open this -- and it reds if the mode moves
+#: while they have not. The separate complaint, that REQUIRED cannot see a recipe DIVERGE, was closed
+#: the same day by `unbound_recipes` wired into `famconfig._required_report` -- a mechanism rather
+#: than a mode change, and it catches the state a mode change would not have made legible: a target
+#: present with the base's recipe sitting under something else, so `make verify` does nothing.
 MAKEFILE_BASE: Final[tuple[str, ...]] = (
     'all:',
     'clean:',

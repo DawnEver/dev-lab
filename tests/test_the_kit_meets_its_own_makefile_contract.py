@@ -22,15 +22,52 @@ a completeness that has not happened.
 NOTHING HERE RE-IMPLEMENTS THE KIT. Every assertion is one of the shared bodies in
 :mod:`lab_commons.dev.famtests.configrender` -- the same ones both labs parametrize. This module
 supplies only what is a fact about THIS repo: the root, the name, the delta table, and the remedy.
+
+`REQUIRED` IS THIS ARTEFACT'S TERMINAL MODE, AND THE LAST CLASS DRIVES THE MEASUREMENT THAT SAYS SO.
+The question was reopened on 2026-09-18 on the ground that the stated reason had expired: the base
+reads REQUIRED because motronics had no `verify:`, that gap closed, so the Makefile can now be
+RENDERED. BOTH HALVES OF THAT ARE WRONG and re-measuring is what says which:
+
+* The recorded reason was never motronics' missing target. `_famconfig_rows` says it is that the four
+  repos share target NAMES and NO recipe, so a rendered family Makefile would be a declaration that
+  lies. Re-measured over all four today, SEVEN of the nine shared targets still carry a different
+  recipe in more than one repo, and `install:` and `install-dev:` carry four distinct ones apiece.
+* RENDERED compares BYTES, and no base header is a shared LINE. The two targets whose recipe BODIES
+  do agree are the two that carry their content on the header: `all:` is spelled three ways
+  (`all: verify`, `all: fmt test`, `all: fmt lint test`) and `verify:` two (`verify:`,
+  `verify: lint`). REQUIRED matches a colon-terminated base line by TARGET NAME, which is the
+  affordance that lets one base bind all three spellings; RENDERED has no such affordance, so
+  adopting it would mean the base fixing one repo's prerequisite list on the other three -- a
+  per-tree fact legislated from here.
+* The sharper half of the complaint -- "REQUIRED asserts presence, so it cannot see a recipe
+  diverge" -- was closed the same day by a DIFFERENT mechanism rather than by a mode change.
+  `unbound_recipes` is wired into `famconfig._required_report`, and it catches the state a mode
+  change would not have made legible anyway: a target present with the base's recipe sitting under
+  something else, so `make verify` runs and does nothing.
+
+So the two sides are not "presence" versus "bytes". They are a CONTRACT that binds three spellings
+of nine targets and byte-checks the one portable recipe, against a RENDERING that would have to own
+every recipe in every repo. The class below pins the measurement, both ways: it reds if the recipes
+ever converge -- which is the day to reopen this -- and it reds if the mode moves without them.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from _config_census import reachable_repos
+from _config_census_rows import REPO_PATHS
 from _famconfig_delta import DELTAS, MAKE_TARGET_FLOOR, MAKEFILE, MAKEFILE_DELTA, REPO
 
-from lab_commons.dev.famconfig import REQUIRED, artefact_base, delta_lines, measured_delta
+from lab_commons.dev.famconfig import (
+    REQUIRED,
+    artefact_base,
+    delta_lines,
+    meaningful_lines,
+    measured_delta,
+    recipe_blocks,
+    satisfies,
+)
 from lab_commons.dev.famtests.configrender import (
     assert_artefact_is_rendered,
     assert_delta_is_not_a_fork,
@@ -39,6 +76,23 @@ from lab_commons.dev.famtests.configrender import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+#: The targets whose RECIPE differs between at least two of the four repos, MEASURED 2026-09-18. It
+#: is a NAMED SET rather than a count, for the reason the integration rule gives: an integer cannot
+#: say WHICH target converged, and the honest-looking repair when it disagrees is to edit the digit.
+DIVERGENT_RECIPES: frozenset[str] = frozenset(
+    {'clean:', 'fmt:', 'install:', 'install-dev:', 'lint:', 'test:', 'test-parallel:'}
+)
+
+#: The two whose recipe BODIES agree in all four -- and both of them carry their content on the
+#: HEADER instead, which is why their agreement is not an argument for rendering. `all:` has an empty
+#: body everywhere and three different prerequisite lists; `verify:` has the base's one portable
+#: recipe and two different prerequisite lists.
+SHARED_RECIPES: frozenset[str] = frozenset({'all:', 'verify:'})
+
+#: How many repos must be readable before "they disagree" means anything. TWO: divergence measured
+#: over one checkout is not a weak reading, it is an impossible one.
+DIVERGENCE_FLOOR = 2
 
 #: The remedy this suite prints. It has NO default in the kit's arm because the command is the repo's
 #: own; REQUIRED mode cannot re-render a Makefile at all, so the remedy is to add the target or to
@@ -108,4 +162,78 @@ class TestTheMakefileIsTheFamilyContractPlusThisReposRecipes:
         assert 'verify:' in bent.dropped, f'deleting the verify target did not red: {sorted(bent.dropped)}'
         assert 'python -m lab_commons.dev.verify' in ' '.join(bent.dropped), (
             f'the refusal never names the recipe the base owns: {sorted(bent.dropped)}'
+        )
+
+
+class TestRequiredIsTheTerminalModeForThisArtefact:
+    """THE RE-OPENED QUESTION, ANSWERED BY MEASUREMENT. See this module's docstring for the argument.
+
+    Every arm here reads all four live Makefiles through the kit's own readers -- `meaningful_lines`,
+    `recipe_blocks` and `satisfies` -- and nothing in it is a fact about lab-commons alone. That is
+    deliberate: a mode is a property of the ARTEFACT across the family, so an arm that could be
+    satisfied by this repo's own file would be answering a different question.
+    """
+
+    @staticmethod
+    def _blocks() -> dict[str, dict[str, tuple[str, ...]]]:
+        """Each reached repo's Makefile as ``header line -> recipe lines``, read by the kit."""
+        base = artefact_base(MAKEFILE)
+        reached = reachable_repos(REPO_PATHS)
+        return {
+            repo: recipe_blocks(meaningful_lines((root / MAKEFILE).read_text(encoding='utf-8'), base.comment))
+            for repo, root in sorted(reached.items())
+            if (root / MAKEFILE).is_file()
+        }
+
+    def test_the_shared_targets_still_carry_unshared_recipes(self) -> None:
+        """THE MEASUREMENT RENDERING WOULD HAVE TO SURVIVE, and it does not: 7 of the 9 diverge."""
+        blocks = self._blocks()
+        assert len(blocks) >= DIVERGENCE_FLOOR, (
+            f'{len(blocks)} Makefile(s) readable here; divergence measured over fewer than '
+            f'{DIVERGENCE_FLOOR} repos is not a weak reading but an impossible one'
+        )
+        base = artefact_base(MAKEFILE)
+        headers = [line for line in base.content_lines if line.endswith(':')]
+        assert len(headers) >= MAKE_TARGET_FLOOR, f'the base declares {len(headers)} target headers'
+        divergent = {
+            header
+            for header in headers
+            if len(
+                {tuple(lines) for repo in blocks for name, lines in blocks[repo].items() if satisfies(header, (name,))}
+            )
+            > 1
+        }
+        assert divergent == DIVERGENT_RECIPES, (
+            f'the recipe divergence moved: now {sorted(divergent)}, recorded {sorted(DIVERGENT_RECIPES)}. '
+            f'If it SHRANK to nothing the four repos finally agree on their recipes and RENDERED is '
+            f'worth re-opening -- with this measurement quoted. If it GREW, a repo took its own tree '
+            f'or toolchain into a recipe the base had, and the remedy is there and not here.'
+        )
+        assert set(headers) - divergent == SHARED_RECIPES, sorted(set(headers) - divergent)
+
+    def test_no_base_header_is_a_shared_LINE_so_byte_equality_has_nothing_to_stand_on(self) -> None:
+        """THE SECOND HALF, and the one that settles it even for the two recipes that DO agree.
+
+        RENDERED compares bytes. `all:` and `verify:` agree on their bodies and disagree on the
+        header itself, because that is where a Makefile puts its prerequisites -- and a prerequisite
+        list is each repo's own dependency graph. A base fixing one spelling would legislate it.
+        """
+        blocks = self._blocks()
+        assert len(blocks) >= DIVERGENCE_FLOOR, f'{len(blocks)} Makefile(s) readable here'
+        spellings = {
+            header: {name for repo in blocks for name in blocks[repo] if satisfies(header, (name,))}
+            for header in SHARED_RECIPES
+        }
+        for header, seen in sorted(spellings.items()):
+            assert len(seen) > 1, (
+                f'{header} is now spelled identically in every reached repo: {sorted(seen)}. That is '
+                f'one of the two preconditions RENDERED needs; check the other arm before acting on it.'
+            )
+
+    def test_the_mode_is_still_required_and_the_reason_is_the_measurement_above(self) -> None:
+        """THE RATCHET. A mode arriving as RENDERED while the recipes still diverge is the bad half."""
+        assert_modes_are_as_agreed(modes={MAKEFILE: REQUIRED})
+        assert artefact_base(MAKEFILE).mode == REQUIRED, (
+            'Makefile moved off REQUIRED. The two arms above are the evidence that has to have '
+            'flipped first; if it has not, this is a base promising byte equality it cannot hold.'
         )
