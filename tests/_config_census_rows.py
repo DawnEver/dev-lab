@@ -761,9 +761,17 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         'carry `verify`, so the sentence a newcomer reads to learn how to check this repo now names '
         'the check. THE SEAM is the nine-target base. What STAYS is `build-rust`, `fmt-rust`, '
         '`test-femm` and `typecheck` -- a Cargo workspace and a live vendor engine, neither of which '
-        'any other repo has. What breaks if the base moved: nothing. The RESIDUAL gap, named so it is '
-        'not read as closed too: this repo`s `verify` shells its own 1770-line runner rather than '
-        '`lab_commons.dev.verify`, so the four repos share the target NAME and not the contract.',
+        'any other repo has. What breaks if the base moved: nothing. A RESIDUAL WAS CLAIMED HERE AND IT '
+        'WAS FALSE: this row said "this repo`s `verify` shells its own 1770-line runner rather than '
+        '`lab_commons.dev.verify`, so the four repos share the target NAME and not the contract". '
+        'MEASURED 2026-09-18 off the live Makefile at line 91 (header 90): the recipe is `python -m '
+        'lab_commons.dev.verify`, the family base line verbatim, and `unbound_recipes` confirms it '
+        'bound to that header. THE TARGET AND THE CONTRACT ARE BOTH SHARED. The claim was written '
+        'from an assumption about what a repo owning a 1770-line runner must do, and never read the '
+        'two lines that refute it. What DOES diverge is the VERDICT -- `scripts/gate/runner.py '
+        '{measure|gate|heavy}` knows cases, solvers and the live vendor engines and separates '
+        'INCONCLUSIVE from PASS/FAIL, none of which the kit`s portable remainder models or should. '
+        'That divergence is correct and motronics now declares it with a test.',
     ),
     'motronics-studio::.pre-commit-config.yaml': Placement(
         SPLITS,

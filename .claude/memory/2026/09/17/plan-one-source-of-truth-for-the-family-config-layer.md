@@ -393,9 +393,18 @@ targets were "absent from lab-commons alone" -- none of which still held. Both w
 which makes them EQUAL: the kit has adopted its own base with an empty delta, the same shape
 `HOOK_ID_CORE` reached on 2026-09-17. 36 planted single-drops (4 repos x 9 targets) all convicted.
 
-**THE RESIDUAL, named so this is not read as more closed than it is:** the four repos now share the
-target NAME and not the CONTRACT -- motronics' `verify` shells its own 1770-line runner rather than
-`lab_commons.dev.verify`. This arm is done; that is a different question. Separately, `fork_signals` fires 8 (`.DEFAULT_GOAL` + seven `.PHONY:`)
+**A RESIDUAL WAS CLAIMED HERE AND IT WAS FALSE, corrected 2026-09-18.** This paragraph said the
+four repos share the target NAME and not the CONTRACT, because motronics' `verify` shells its own
+1770-line runner. Measured off the live Makefile at line 91: the recipe is `python -m
+lab_commons.dev.verify`, the family base line verbatim. **The target AND the contract are shared.**
+The claim was written from an assumption about what a repo owning its own runner must do, and never
+read the two lines that refute it -- the dominant defect of this family, committed by the file that
+names it, and repeated three times before a lane measured it.
+
+What actually diverges is the VERDICT, and that divergence is CORRECT: `scripts/gate/runner.py
+{measure|gate|heavy}` knows cases, solvers and the live vendor engines, and separates INCONCLUSIVE
+from PASS/FAIL -- none of which the kit's portable remainder models or should. motronics declares it
+as a test rather than leaving it to prose. Separately, `fork_signals` fires 8 (`.DEFAULT_GOAL` + seven `.PHONY:`)
 which `MAKEFILE_RESIDUAL_SIGNALS` already declines to promote — **R2 must not read those 8 as work.**
 
 **`[tool.ruff]` — `famconfig` CANNOT express it at all, and the gap is structural.** `famconfig` is
@@ -632,8 +641,10 @@ beside the live ones so a reader can tell drift from a misreading.
 * **Makefile targets: NINE in all four** (over 11/18/14/16), and nine in all three consumers -- the
   two readings are now EQUAL. Was "3 in all four (over 6/18/14/15), 8 in all three consumers,
   `verify` in three of four and motronics the exception". **That exception is closed**: all four
-  carry `verify`. The four repos share the target NAME and not the CONTRACT -- motronics' `verify`
-  shells its own runner, not `lab_commons.dev.verify`.
+  carry `verify`. The four repos share the target AND the contract: motronics'
+  `verify` recipe is `python -m lab_commons.dev.verify`, measured off the live Makefile 2026-09-18
+  after this bullet had claimed the opposite. What diverges is the VERDICT tier, correctly so, and
+  it is declared with a test.
 
 * **ruff: 58 selectors in all four**, pairwise symmetric difference EMPTY -- R1's first number is 0.
   Was "12 in the kit against 58 in each consumer, 50 groups the kit is blind to". `ignore`
