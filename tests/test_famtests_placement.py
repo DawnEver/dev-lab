@@ -255,3 +255,40 @@ def test_the_boundary_rows_each_carry_the_count_that_decided_them() -> None:
     for held_by, why in NOT_FAMILY.values():
         assert 1 <= held_by <= len(ROSTERS)
         assert len(why) > 80, 'a count without its reason is the pin that cannot say which half moved'
+
+
+def test_a_checkout_under_an_excluded_directory_still_has_a_population(tmp_path: Path) -> None:
+    """THE CONTROL FOR THE `not_placed` MATCH BEING RELATIVE, and it is a MEASURED family defect.
+
+    The exclusion used to test the ABSOLUTE path's parts. Every ancestor of the checkout is in those
+    parts, so a repo living under a directory whose name is in *not_placed* excluded ITS WHOLE TREE
+    -- for any commit, with no refusal. That is not hypothetical: this family fans lanes out into
+    ``<repo>/.claude/worktrees/<branch>``, `.claude` is in both labs' `NOT_PLACED`, and a worktree cut
+    there collapsed every population scanner in that repo at once.
+
+    THE PLANT IS THE LAYOUT AND NOT THE SET, which is what makes this a different control from
+    `test_a_wrong_exclusion_set_shrinks_the_population_silently`. The set here is CORRECT; only the
+    checkout's location moved, and nothing about the roster's own declaration changed.
+    """
+    nested = tmp_path / '.claude' / 'worktrees' / 'kit' / 'repo'
+    a_tree(nested)
+    found = placed_files(nested, trees=('scripts',), suffixes=('.py',), not_placed=('__pycache__', '.claude'))
+    assert found == ('scripts/runner.py',), (
+        f'a checkout under an excluded directory walked {found}. The exclusion must test the '
+        f'REPO-RELATIVE path -- testing the absolute one makes the population a fact about where the '
+        f'checkout happens to sit, and an empty population reports a fully classified tree.'
+    )
+
+
+def test_the_exclusion_still_bites_on_a_relative_part_under_that_same_layout(tmp_path: Path) -> None:
+    """THE RATCHET'S OTHER SIDE. A fix that stopped excluding anything would satisfy the arm above.
+
+    So the same nested checkout must still drop a file that is genuinely inside an excluded directory
+    WITHIN the repo -- a capability that disappears is as wrong as a waiver nothing uses.
+    """
+    nested = tmp_path / '.claude' / 'worktrees' / 'kit' / 'repo'
+    a_tree(nested)
+    plant(nested, 'scripts/.claude/agents/helper.py', 'value = 1\n')
+    found = placed_files(nested, trees=('scripts',), suffixes=('.py',), not_placed=('__pycache__', '.claude'))
+    assert 'scripts/.claude/agents/helper.py' not in found, f'the exclusion stopped biting entirely: {found}'
+    assert found == ('scripts/runner.py',), found

@@ -183,6 +183,19 @@ def placed_files(
             exclusion set does not raise, it REMOVES files from the population, and the walk then
             reports a tree with nothing unplaced in it.
 
+            THE SAME HAZARD ARRIVES THROUGH THE CHECKOUT'S LOCATION AND NOT ONLY THROUGH THIS SET'S
+            CONTENTS, and that is the half nobody saw until it fired. These parts are matched against
+            the REPO-RELATIVE path. Until 2026-09-18 they were matched against the ABSOLUTE one, so
+            every ancestor directory of the checkout counted: a repo living under a directory whose
+            name is in this set excluded ITS ENTIRE TREE, for any commit, with a correct set and no
+            refusal. MEASURED -- this family fans lanes out into ``<repo>/.claude/worktrees/<branch>``
+            and ``.claude`` is in both labs' exclusion sets, so a worktree cut there collapsed every
+            population scanner in that repo at once; motronics had already hit the identical shape in
+            four of its own scanners, where one of them "found 0 offenders among 19 and the test
+            passed". A caller's set can therefore be right and its answer still empty, which is why
+            the floor in :func:`assert_every_file_is_placed` is a separate assertion and not a
+            comment.
+
     Returns:
         The population, sorted. ``__init__.py`` is ALWAYS omitted rather than left to the exclusion
         set: it carries no knowledge, so it follows whatever its directory does, and placing it would
@@ -195,9 +208,10 @@ def placed_files(
         for path in (root / tree).rglob('*'):
             if not path.is_file() or path.suffix not in suffixes:
                 continue
-            if path.name == '__init__.py' or any(part in not_placed for part in path.parts):
+            relative = path.relative_to(root)
+            if path.name == '__init__.py' or any(part in not_placed for part in relative.parts):
                 continue
-            out.add(path.relative_to(root).as_posix())
+            out.add(relative.as_posix())
     return tuple(sorted(out))
 
 
