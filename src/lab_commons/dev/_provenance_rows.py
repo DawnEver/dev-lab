@@ -95,6 +95,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'allowguard': ('supersedes', 'tests/architecture/test_no_allow_entry_names_a_denied_shape.py'),
     'configrender': ('supersedes', 'tests/architecture/test_the_family_config_is_rendered.py'),
     'hookinstall': ('supersedes', 'tests/architecture/test_the_declared_hooks_are_installed.py'),
+    'rostercensus': ('supersedes', 'tests/architecture/test_the_roster_is_re_read_against_the_kit.py'),
     'rulespages': (
         'supersedes',
         'tests/architecture/test_the_rules_pages_are_a_ratchet.py',
