@@ -16,7 +16,18 @@ and one cheap check:
 
 > Before writing a commit message that makes a CLAIM, read `git diff --cached -- <path>`.
 
-Both were FOLLOWED today, by two different agents, and both commits were swept anyway.
+Both were FOLLOWED today and both commits were swept anyway.
+
+**CORRECTED the same day, and the correction matters because this entry's whole subject is records
+that are wrong.** The first cut of this file said "by two different agents". Measured: ONE agent
+made both commits. A second lane made ZERO commits in this checkout -- it staged, built a candidate
+tree in an ISOLATED index (`GIT_INDEX_FILE`) precisely to avoid racing, and found the tree it had
+just built was already identical to `HEAD^{tree}`, because the other lane's commit had swept its
+content in from the WORKING TREE during that window. It then deleted its scratch index and stopped.
+
+That detail sharpens the mechanism rather than softening it: **content reaches a commit from the
+working tree, not from what anybody staged.** An agent can be swept without ever running `git
+commit`, and no discipline available to the swept agent prevents it.
 
 ## THE MECHANISM: the race window is INSIDE the commit
 
@@ -76,3 +87,17 @@ They were not: `famconfig.py` and `_famconfig_survey.py` were shared by all thre
 that names topics does not bound files, and the lanes correctly reported the collision before any
 damage -- the first one flagged it in advance, which is the first time that has happened here.
 The damage came from continuing to let them commit after the collision was known.
+
+## The tension this exposed, which needs a ruling rather than an apology
+
+`taste.md` requires TDD: failing test first. On a shared checkout that step is not free -- the red
+an agent is REQUIRED to produce is, for its duration, every other agent's outage. Two stalls today
+were exactly this: a test importing a name before its module defined it interrupted pytest
+COLLECTION for the whole box, and separately an unformatted file made every lane's verdict
+INCONCLUSIVE, because `lab_commons.dev.verify` runs `ruff format --check .` TREE-WIDE regardless
+of the paths given after `--`.
+
+So a "targeted" measurement in this repo is not targeted on its formatter leg, and a red-first test
+is not local. Both are consequences of one checkout, not of any agent's carelessness. The same two
+structural fixes answer this as answer the commit race -- one lane per worktree, or a lock that
+covers more than the CPU. Recorded here as an open tension, unresolved.
