@@ -81,6 +81,12 @@ WHAT IS HERE, one module per shared body:
   that reds loudly for the wrong reason. NOT the body the injected-width guard needs: the two
   scanners' surfaces share no name, and the declared set is keyed by FILE here and by site there.
 
+* :mod:`lab_commons.dev.famtests.injectedwidth` -- every document an agent is handed fits the width,
+  over :mod:`lab_commons.dev.docwidth`'s readings. The PAIR to ``trackedcjk``: each refuses the
+  other's ledger shape, a ``path:line`` SITE here against a FILE there, which is what stops a
+  consumer copying one declaration into the other guard. Carries the ceiling on the escape hatch,
+  where ``0`` is legal and strongest -- the opposite of a floor, which refuses zero.
+
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
   all four, and the bars it is judged against are arguments rather than a property closing over one

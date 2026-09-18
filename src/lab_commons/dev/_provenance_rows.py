@@ -138,6 +138,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # set is keyed by FILE here and by `path:line` there, and only the width guard has a ceiling on
     # its escape hatch. The argument is in the module, because it is a fact about the two scanners.
     'trackedcjk': ('supersedes', 'tests/architecture/test_no_cjk_in_tracked_source.py'),
+    # THE OTHER HALF OF THAT PAIR, and a separate row for the reasons `trackedcjk` records. The two
+    # bodies each refuse the OTHER's ledger shape -- a SITE here, a FILE there -- which is what keeps
+    # a consumer from copying one declaration into the other file, where it would pass every arm but
+    # orphan every entry. Also NOT `famtests.rulespages`: that pins how many LINES a page has and
+    # sums the pins; this caps how long a line IS. One page measured 32 lines at 694 columns.
+    'injectedwidth': ('supersedes', 'tests/architecture/test_injected_doc_width_ceiling.py'),
     # NOT a second spelling of `datedlog`, which CONSTRUCTS `<base>/<yy>/<mm>/<dd>/<kind>/<name>` and
     # cannot write the four-digit, kind-less layout these readers are about. The argument is in the
     # readings half, `famtests/_datedmemory_readings.py`, because it is a fact about the readers.
