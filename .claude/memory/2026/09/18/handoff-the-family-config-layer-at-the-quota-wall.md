@@ -1,4 +1,8 @@
 ---
+name: handoff-the-family-config-layer-at-the-quota-wall
+description: State of the four repos at the 2026-09-18 quota wall - the structural imported_kit_modules
+  defect that made twelve fully-adopted rows grade NAMED_ONLY, the four upstream family halves both labs
+  are blocked on, and the retraction of the verify-exits-0-on-a-held-box finding.
 created: 2026-09-18
 accessed: 2026-09-18
 ---
