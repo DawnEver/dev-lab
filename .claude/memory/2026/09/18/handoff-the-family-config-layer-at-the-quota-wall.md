@@ -153,3 +153,48 @@ line as absent evidence, and the fix above should land BEFORE the next tranche i
 - `git add -A`, `git reset`, `git stash` in any shared checkout.
 - `heavy` locally.
 - Widen an agent's own permission file without a user ruling.
+
+## THE MOTRONICS LANE, and two findings of the same family as the one above
+
+Lane `feat/optimi-lab`, four commits, **NOT pushed and correctly so** -- its pre-push gate could not
+acquire the box and answered INCONCLUSIVE. `a5c9d3c31` (the shared-venv guard test), `0c5eb3110`
+(`_dated.py` -> `dev.datedlog`), `68f161358` (a 4th call site), `a4de78caa` (`base.py` ->
+`dev.gatebase`). `tree_state.py` -> `dev.treedirt` is designed and deliberately NOT started:
+`runner.py` is size-ratcheted and the `tests/architecture/gate` tier is over the 300s wall as one
+selection, so it needs many sub-selections and the box was never free.
+
+### A PORT SILENTLY WIDENED A BASE, and only running the contract found it
+
+`lab_commons.dev.checkout.git_out` returns `stdout` VERBATIM where the local `_git_out` returned
+`stdout.strip()`. The resolved `@{push}` carried a trailing newline, was therefore not a ref git
+would admit, silently stopped being a candidate, and every hand-run gate FELL THROUGH TO THE TRUNK
+-- **the widest possible base wearing the shape of a working resolution.** Nothing red. Caught by
+`test_the_push_target_is_the_base_between_hook_runs`, which drives the contract rather than reading
+it.
+
+This is the `LAB_CZ_BASE_REF` lesson arriving through a different door: last time a guessed default
+resolved to nothing and reported the lane clean; this time a stray newline did. **The failure mode
+of a base is not an error, it is a wider base.**
+
+### A FAILED PRE-COMMIT RUN DESTROYS STAGED WORK, and the tree looks clean afterwards
+
+The ruff hook failed; pre-commit's stash/restore left the working tree **clean at HEAD** with three
+files of finished work gone and `git status` showing nothing. Recovered from
+`C:\Users\ezxmb14\.cache\pre-commit\patch1789689677-17872`.
+
+**It also produced a false MEASUREMENT**: density was re-read on the silently-reverted file and
+returned `own=20`, which is the ORIGINAL file's number. A measurement taken after a silent revert
+measures the thing you were replacing.
+
+RULE: **run `ruff check` and `ruff format` BEFORE `git commit` here.** A hook failure in this
+configuration is destructive, not merely a refusal. And if a tree is unexpectedly clean, look in
+the pre-commit patch cache before concluding anything.
+
+Same family as the `verify` exit-0 above and worth naming once: **three times this window, a
+failure presented as a benign state** -- a give-up as success, a stray newline as a resolved base, a
+destroyed stash as a clean tree. In each case the reader's normal instrument said nothing was wrong.
+
+### Also confirmed
+`scripts/gate/envkey.py` does not exist. The docs-registry row
+`agent_swarm.environment -> scripts/gate/envkey.py` names a path with no file, which is why
+`test_no_prose_names_a_retired_package` fires on it. Real, small, unassigned.
