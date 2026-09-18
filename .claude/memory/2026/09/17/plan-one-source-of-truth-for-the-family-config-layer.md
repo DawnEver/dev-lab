@@ -217,46 +217,133 @@ control proving the SPLITS arm cannot be deleted. One self-row in optimi-lab pre
 XPASSED at 3.90% — recorded WITH the caveat that all six hits are planted-control fixtures rather
 than real assertions about the repo.
 
-### R1 — reverse the ruff arrow, and state the rule the measurement actually supports
+### R1 — reverse the ruff arrow  (DONE before 2026-09-18; VERIFIED 2026-09-18)
 
-`lab_commons` adopts the consumers' 58-selector set as its own floor and fixes what that reds.
-That set is byte-identical in all three consumers, so it is not a negotiation — it is already the
-family's answer, held three times.
+**Measured live in all four repos today. The 50-group blindness is CLOSED.**
 
-The rule that follows is NOT "the consumer's select is a superset of the kit's": the 8-code
-counter-direction makes that false on arrival. The measured relation is two separate facts, and
-each gets its own arm:
+    motronics(ruff.toml)   select=58 ignore=66 line-length=120 target=py313
+    wdg-lab                select=58 ignore=63 line-length=120 target=py313
+    optimi-lab             select=58 ignore=62 line-length=120 target=py313
+    lab-commons            select=58 ignore=10 line-length=120 target=py312
 
-* **the kit's select covers every group any consumer selects** — the blindness, closed by adoption;
-* **a code the kit enforces may not be globally ignored by a consumer** — today `B018 B904 E501
-  RUF012 RUF043 SIM108 SIM113 UP017` violate this, so the arm ships with those eight as a NAMED
-  waiver set with a ceiling, not as a silent exception. A ratchet has two sides: the waiver set may
-  only shrink, and it reds if it grows.
+lab-commons is at 58 selectors and **the pairwise symmetric difference with every consumer is
+EMPTY**. What still differs is `target-version` (py312 vs py313) and the ignore lists.
 
-Eight rows, each with a reason, is the deliverable — deciding per code whether the kit should stop
-enforcing it or the consumers should stop ignoring it. Both answers are legitimate; neither is
-"lower the count".
+Also stale in this plan's opening census, in the direction of progress: **lab-commons now HAS a
+`.pre-commit-config.yaml`** (27 lines, same three top-level keys), against the census line saying it
+had no commit-time enforcement at all.
 
-This is R1 and not a tidy-up at the end because every later stage moves code INTO lab-commons.
+STILL OWED from this stage: the eight-code NAMED waiver arm (`B018 B904 E501 RUF012 RUF043 SIM108
+SIM113 UP017`), each row with its reason and the ratchet's two sides. The SELECT half is done; the
+IGNORE half is not, and the ignore lists above (66 / 63 / 62 against the kit's 10) are where it
+lives.
 
-### R2 — the config seam, one artefact at a time
+### R2 — the config seam, one artefact at a time  (THE ONLY STAGE STILL OPEN)
 
-For each of `.gitignore`, `.pre-commit-config.yaml`, `Makefile`, `[tool.ruff]`:
-`lab_commons.dev` owns the BASE as data plus a renderer; each consumer declares only its named
-delta; a test re-renders and asserts the file on disk equals base+delta. A hand edit to the
-rendered file reds rather than drifting. The eleven stock pre-commit hooks and the fourteen
-all-three gitignore lines are the first base; `build-rust*`, `serve`, `purity` are deltas and stay
-deltas.
+For each of `.gitignore`, `.pre-commit-config.yaml`, `Makefile`, `[tool.ruff]`: `lab_commons.dev`
+owns the BASE as data plus a renderer; each consumer declares only its named delta; a test
+re-renders and asserts the file on disk equals base+delta. A hand edit to the rendered file reds
+rather than drifting.
 
-The seam is the same one `dep.py` already uses: the mechanism is the family's, the two or three
-answers that are not derivable from there are the repo's, and the repo states them.
+RECONNAISSANCE, measured 2026-09-18 against the live kit. `famconfig` is 355 lines (write half) +
+`_famconfig_survey` 202 (read half) + `_famconfig_rows` 256 (data).
 
-### R3 — delete motronics' dead `[tool.ruff]` block  (MEASURED, one line)
+#### THE ONE THING R2 MUST NOT START WITHOUT
 
-`ruff check --show-settings` names `ruff.toml` as the settings path; the `pyproject.toml` block
-holds only `extend = "ruff.toml"`. It is dead rather than lying, so this is a deletion with no
-migration behind it — but it must happen before R2 rewrites either file, or R2's renderer has two
-places to write and one of them is a trap.
+**`.gitignore` is LAST-MATCH-WINS, `famconfig`'s anchor points ONE WAY, and this repo's own
+2026-08-12 incident is the shape that exploits the gap.** `Delta.anchored` maps a BASE line's text
+to delta lines rendered immediately after it. **There is no expression for "this BASE line must come
+after that DELTA line."**
+
+motronics' `.gitignore` is a three-stage ordered argument, and the file says so itself:
+
+    line   8   **/__pycache__/                <- BASE line
+    line  84   !**/.claude/memory/            <- delta negation, re-includes that directory
+    line 108   **/.claude/**/__pycache__/     <- delta re-ignore, must be LAST to win
+
+with the incident recorded in the file: a `.pyc` under `.claude/memory/` was TRACKED, and *"a bare
+`**/__pycache__/` here would sit BEFORE nothing and change nothing; these must follow the negations
+to win."*
+
+Rendering today is SAFE BY LUCK and nothing checks it: the base block renders first, then the 59
+delta lines in file order, so the three stages survive. **The moment anyone promotes
+`**/.claude/**/__pycache__/` into the base — a plausible family line, since wdg-lab has the same
+`.claude` allow-list shape — the renderer places it BEFORE the negations and silently re-tracks the
+`.pyc`, reinstating the exact defect. And `fork_signals` would have argued FOR that promotion.**
+
+Note what the base data itself says: it is stored SORTED, with the comment *"a `.gitignore` is
+order-insensitive apart from negations, and the base declares none."* **That parenthetical is the
+entire risk surface, and it is load-bearing PROSE rather than a mechanism.** R2 gives it an
+ordering constraint — a negation-aware section, or an anchor-after-delta arm — or at minimum a
+planted test that a re-ignore promoted into the base REDS.
+
+#### The four artefacts, LITERAL counts (no normalisation anywhere)
+
+                        .gitignore   .pre-commit   Makefile    pyproject   ruff.toml
+    motronics(lane)     150 / 73     153 / 109     81 / 54     293 / 162   123 / 91
+    wdg-lab              90 / 61      93 /  59    130 / 69     344 / 233   ABSENT
+    optimi-lab           49 / 30      36 /  29    114 / 58     225 / 172   ABSENT
+    lab-commons          10 / 10      27 /  21     30 / 19     169 /  76   ABSENT
+
+(`total / meaningful`, the second being what `famconfig` compares.) Both labs SHRANK since
+2026-09-17: wdg gitignore 103->90, optimi 73->49, optimi pre-commit 72->36.
+
+**`.gitignore` — the 12-vs-14 trap is CLOSED and the literal number is 14.** All three consumers
+now write the slashed spelling of all five contested patterns; the labs adopted it since 09-17. So
+the base is 14/14 literally present in all three, **adoptable with no behaviour change for anybody**
+— the one flagged behaviour-change cost of this stage, now paid. Of motronics' 73 meaningful
+lines, 59 are its own (38 in neither lab); `fork_signals` reports 0 shared delta lines.
+
+**`.pre-commit-config.yaml` — expressible via `anchored`, at a price to state out loud.** The
+plan's "eleven stock hooks are the first base" CHECKS OUT: all 11 present in all three. motronics
+declares 18 hook ids. **19 of 21 base lines match literally; the 2 that do not are both `rev:` pins**
+— base pins `v6.0.0`/`v4.13.9`, motronics runs `v5.0.0`/`v4.6.0`, so adoption is a real upstream
+version bump and belongs stated in its commit. The strain is the ceiling: `measured_delta` sizes
+motronics' delta at **87 added lines against a 21-line base**. `Delta.ceiling` has no default
+because "the number is the point at which this repo's delta has stopped being a delta", and 87/21
+is arguably past it by the mechanism's own words. `fork_signals` reports 0, so those 87 really are
+motronics'.
+
+**`Makefile` — nearly free, and it exposes one real gap.** The plan's delta prior holds and
+UNDERCOUNTS motronics (`build-rust*`, `fmt-rust`, `test-femm`, `test-full`, `typecheck`). `REQUIRED`
+mode reads INSTALLED only because `measured_delta` manufactured two drops: **`verify:` and
+`python -m lab_commons.dev.verify` are ABSENT from motronics' Makefile.** It is the only repo with
+no `verify` target and the only one whose Makefile never mentions its own verdict path. Adopt rather
+than write a drop reason. Separately, `fork_signals` fires 8 (`.DEFAULT_GOAL` + seven `.PHONY:`)
+which `MAKEFILE_RESIDUAL_SIGNALS` already declines to promote — **R2 must not read those 8 as work.**
+
+**`[tool.ruff]` — `famconfig` CANNOT express it at all, and the gap is structural.** `famconfig` is
+a WHOLE-FILE mechanism keyed by filename; `[tool.ruff]` is a SECTION. `artefact_base('[tool.ruff]')`,
+`('ruff.toml')` and `('pyproject.toml')` all raise `ForkedDelta` listing the three declared
+artefacts. Pointing it at `pyproject.toml` is not the workaround: `RENDERED` would then demand the
+base own `[build-system]`, `[project]`, `[tool.pytest.ini_options]` and `[tool.pyright]` too.
+`REQUIRED` mode is the nearest existing shape and is the WRONG one — it asserts presence only, so it
+could not stop a consumer ADDING an `ignore` entry, which is the entire point of the ruff arm. **The
+deliverable is a section-scoped `Base`: one that owns a named TOML table and leaves the rest of the
+file alone.**
+
+Second, smaller: **the artefact is a different FILE in different repos.** motronics keeps
+`ruff.toml`; the other three keep `[tool.ruff]*` tables in `pyproject.toml` and have no `ruff.toml`
+at all. A base keyed by filename cannot serve both, so the ruff arm decides the FILE as well as the
+content — and motronics is the lone dissenter, which is the cheap direction to resolve.
+
+`famconfig`'s own docstring declares `[tool.ruff]` deliberately out of scope because the stage
+widening the kit's select was mid-sweep. **That stage has landed (see R1), so the stated reason for
+the absence has expired.**
+
+### R3 — delete motronics' dead `[tool.ruff]` block  (DONE 2026-09-17, `093d1b307`)
+
+Executed by this plan's own session before any lane was dispatched for it, and re-measured
+2026-09-18: `ruff check --show-settings` names `ruff.toml`, and `grep -n ruff pyproject.toml`
+returns exactly one hit — `"ruff",` as a dev-extra dependency name. The block is gone.
+
+`093d1b307` already produced the no-op proof this stage asked for: `--show-settings` captured before
+and after is **byte-for-byte identical across all 1698 lines of resolved settings**.
+
+THE PREDICTED SAVING FELL AND WAS IMMEDIATELY SPENT, ON RECORD. The root-config ratchet still reads
+730 because `pyproject.toml`'s own comment accounts for it: `-3` the dead block, `+1` the
+`lab-commons[dev]` requirement, `+2` the comment that entry keeps. Net zero is the right answer and
+the arithmetic is written down rather than inferred.
 
 ### R4 — WHAT THREE TRANCHES MEASURED ABOUT THE ROSTER ITSELF
 
@@ -299,13 +386,39 @@ re-point. Take `scripts/hooks/*.sh` first: four MOVES in one mechanism, and `wit
 already being borrowed cross-repo today (wdg-lab has no copy and reaches into motronics' tree for
 it), which is the seam arguing for itself.
 
-### R5 — wdg-lab's five unconsumed modules
+### R5 — wdg-lab's five unconsumed modules  (DONE 2026-09-18, wdg-lab `e3c54631`)
 
-`ab_bench netverb selfbuild shadow_build testfacts`. For each: does wdg-lab have the SUBJECT? Where
-it does, adopt and delete the local equivalent. Where it does not, record `declared_absent` with
-the reason — the shape `agent_guard` already uses for GIT-NETWORK-VERB and RAW-PROCESS-KILL.
-`netverb` is the known live one: `pull_all.py` calls git directly and `wdg-lab-update.sh` exits on
-the first failed fetch.
+`ab_bench netverb selfbuild shadow_build testfacts`. **All five have the subject. ZERO
+`declared_absent` rows were owed, and this stage's own reading of the fifth was WRONG.**
+
+Four were already adopted 2026-09-17, before this stage was written — `netverb` (`pull_all.py`
+imports `run_network_verb`; `wdg-lab-update.sh` routes every fetch through it and `deny_rules.py`
+ships GIT-NETWORK-VERB naming it as the remedy), `selfbuild` and `shadow_build` (both in
+`build_rust.py`), `testfacts` (`test_skips_are_a_named_set.py`). Checked for leftovers: no shim, no
+re-export, no local copy. The substantive half of `netverb` DID land — `wdg-lab-update.sh` still
+exits 1, but only AFTER three bounded attempts and a written remedy, which is the opposite of the
+first-failed-fetch exit this stage was written about.
+
+**`ab_bench` was recorded as correctly ABSENT — "no file in either tree times, interleaves or
+reports a median" — and that reading was TRUE AND SCOPE-LIMITED.** It covered `scripts/` and
+`tests/architecture/`. The subject lives in
+`examples/tasks/winding_design/benchmarks/benchmark_matching_split_depth.py`, in exactly the weaker
+form `ab_bench` exists to fix: five split depths run in a BLOCK, one sample each, winner taken as
+`max(nodes_per_second)` — and that winner then set as the production `WDG_MATCHING_SPLIT_DEPTH`.
+The roster's own row said the subject was "somewhere in this repo"; nobody followed the sentence.
+
+**THE LESSON IS ABOUT THE INSTRUMENT, AND IT IS THE THIRD INSTANCE THIS WEEK: a scope-limited scan
+reporting "correctly absent" reads exactly like a repo-wide one.** Compare `supersede`'s blind
+IMPORT detector (six modules, two repos, every one reporting what a clean tree reports) and the five
+one-sided floors `assert_floor_still_binds` has since convicted. **A negative result carries the
+scope it was taken over, or it is not a result.**
+
+Adopted with the METRIC kept local and stated: each shard is bounded, so a deeper split does
+strictly more work and wall clock is NOT comparable across depths. A refusal is fatal in the 48S
+oracle but merely non-comparable in the throughput pass — an asymmetry that closes a hole the
+first draft opened, since a depth dropped by the oracle has an unknown cover count and the
+throughput pass checks no covers at all, so dropping it would have let the one unchecked depth be
+the one recommended.
 
 ### R6 — DISSOLVED: `docs-src/dev` 13/1/1/14 is not a gap
 
