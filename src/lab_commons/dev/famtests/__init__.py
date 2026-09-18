@@ -76,6 +76,15 @@ WHAT IS HERE, one module per shared body:
   the only one that can be flaky -- priced from this box in the same second, with a ceiling past
   which it reports INCONCLUSIVE rather than a pass it could not have failed.
 
+* :mod:`lab_commons.dev.famtests.echoedtoken` -- no assertion searches for a token its own producer
+  was handed, which is the one shape that cannot fail however green it reads. Found 2026-09-18 in
+  ``boundedremedy`` itself and it is why this row exists: every body in this package asserts on text
+  another module builds from words the repo supplies, so the precondition is standing. Keys on DATA
+  FLOW rather than on the comparison, which is what clears ``allowguard``'s planted row -- a producer
+  that FILTERS convicts, one that INTERPOLATES cannot -- and on ASSERTIONS rather than expressions,
+  which is what clears :func:`lab_commons.proc.kill_process_tree`. Intraprocedural, so its offender
+  set is a LOWER BOUND and its floor counts function bodies READ.
+
 * :mod:`lab_commons.dev.famtests.approxfloors` -- a tolerance states the floor it falls back to,
   under a BAR the repo names. Three consumers asking TWO different questions, so ``bar`` is a member
   of a published set rather than a default, and the call they disagree about is asserted under each.

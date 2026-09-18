@@ -197,6 +197,16 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # claim; the pointer existed and the module it should have pointed at did not. The readings half,
     # `famtests/_boundedremedy_readings.py`, is private and has no row.
     'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
+    # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
+    # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
+    # driven on an absent tier word and passed in all three repos on 2026-09-18.
+    # NOT inside `untimedwaits`, whose walk shape it shares: that one reads CALLS and asks whether a
+    # wait declares a ceiling; this reads DATA FLOW inside one body and asks whether an assertion can
+    # fail at all. Measured the same day, the two surfaces share `take_scan` and nothing else, and
+    # one is entirely about `subprocess` while the other never mentions it. NOT inside `citedtests`
+    # either, the nearest neighbour BY SUBJECT -- a declaration that lies -- which reads PROSE
+    # against the whole tree where this cannot see across a single function boundary.
+    'echoedtoken': ('original',),
     # FOUR consumer rosters, not three: motronics holds TWO, one for `scripts/` and one for
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why
