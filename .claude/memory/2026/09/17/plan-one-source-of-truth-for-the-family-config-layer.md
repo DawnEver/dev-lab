@@ -14,6 +14,26 @@ Measured 2026-09-17 across the four repos. `motronics` below always means the LA
 
 ## Where the migration actually stands
 
+**RE-MEASURED 2026-09-18, all four rosters read as DATA rather than counted by grep** (a grep over
+this file over-counted SPLITS by 1.4-2.6x and read 30 MOVES where the true count was 0, because
+every partition's PROSE explains past reclassifications):
+
+    roster                rows   STAYS   SPLITS   MOVES
+    motronics scripts       70      54       16       0
+    motronics tests        254     225       26       3
+    wdg-lab                 38      18       19       1
+    optimi-lab              29      13       16       0
+    TOTAL                  391     310       77       4
+
+**MOVES is down to 4 and two rosters are at zero. SPLITS is the whole remaining bucket at 77.**
+The standing prior holds and should be applied to every one of those 77: the roster OVER-REPORTS
+work, erring the same way every time -- three tranches measured 17 declared MOVES as 7 real -- so a
+lane's FIRST action on a row is to check whether the kit already publishes its subject, by reading
+the kit module DOCSTRINGS rather than the module names.
+
+The counts below are the 2026-09-17 reading, kept for the shape of the argument they support.
+
+
 `scripts/` is the only tree with a DECLARED answer, and it is motronics' alone:
 `tests/architecture/layering/_placement_*.py` composes 77 rows — **48 STAYS, 17 MOVES, 12 SPLITS**.
 29 rows are judged-to-move and not yet moved.
@@ -238,7 +258,14 @@ SIM113 UP017`), each row with its reason and the ratchet's two sides. The SELECT
 IGNORE half is not, and the ignore lists above (66 / 63 / 62 against the kit's 10) are where it
 lives.
 
-### R2 — the config seam, one artefact at a time  (THE ONLY STAGE STILL OPEN)
+### R2 — the config seam, one artefact at a time  (ALL FOUR ARMS DONE 2026-09-18)
+
+**EVERY ARM CONTRADICTED THE PARAGRAPH THAT COMMISSIONED IT, and the contradictions are the
+deliverable.** The reconnaissance below is kept as written, with each arm's correction attached
+to it, because a plan that quietly absorbs its own refutations teaches nobody what it got wrong.
+Landed in lab-commons `6019d20`, `a2045dd`, `2927e5e` and `7e7e0ee`; the attribution on the
+first two is damaged by a commit race recorded in
+`2026/09/18/the-recorded-remedy-for-a-swept-commit-does-not-work-and-three-commits-proved-it.md`.
 
 For each of `.gitignore`, `.pre-commit-config.yaml`, `Makefile`, `[tool.ruff]`: `lab_commons.dev`
 owns the BASE as data plus a renderer; each consumer declares only its named delta; a test
@@ -248,7 +275,29 @@ rather than drifting.
 RECONNAISSANCE, measured 2026-09-18 against the live kit. `famconfig` is 355 lines (write half) +
 `_famconfig_survey` 202 (read half) + `_famconfig_rows` 256 (data).
 
-#### THE ONE THING R2 MUST NOT START WITHOUT
+#### THE ONE THING R2 MUST NOT START WITHOUT  (DONE -- AND THIS SECTION WAS STALE WHEN WRITTEN)
+
+**CORRECTION 1 of 3, 2026-09-18.** Deliverable (b) below -- an ordering constraint in the mechanism
+-- **already existed before this section was written**: `d5b5ee4` shipped `PositionalBase`,
+`assert_base_is_order_free`, `positional_base_lines`, `floating_subject` and
+`ORDER_SENSITIVE_ARTEFACTS`, with the planted `**/.claude/**/__pycache__/` arm and a floating-rule
+floor. The re-ignore hazard stated below was mechanised; this section never re-read it.
+
+**The genuinely unguarded half was the SECOND clause of the same sentence.** `GITIGNORE_BASE`'s
+comment reads "order-insensitive apart from negations, AND THE BASE DECLARES NONE". Clause one had
+a mechanism; clause two was still prose -- and `positional_base_lines` is STRUCTURALLY BLIND to it,
+because it reads a rule as a set of paths and asks what subsumes it, while a negation excludes no
+paths, so nothing subsumes it and the reading reports clean. `floating_subject` on a negation
+returns `None`. The hazard this leaves open is far likelier than the single re-ignore: `.gitignore`'s
+allow-list block is ~20 CONSECUTIVE NEGATIONS every consumer holds, and `fork_signals` argues for
+promoting all of them.
+
+The negation arm now shipped is the COMPLETE one, and the argument is in its docstring: two
+`.gitignore` rules can only disagree about a path if one RE-INCLUDES, so a base holding no negation
+is order-free whatever else it holds. The re-ignore arm stays beside it because it names the
+offending line. Neither is the other's fallback.
+
+The reconnaissance that follows is kept as originally written.
 
 **`.gitignore` is LAST-MATCH-WINS, `famconfig`'s anchor points ONE WAY, and this repo's own
 2026-08-12 incident is the shape that exploits the gap.** `Delta.anchored` maps a BASE line's text
@@ -294,6 +343,31 @@ the base is 14/14 literally present in all three, **adoptable with no behaviour 
 — the one flagged behaviour-change cost of this stage, now paid. Of motronics' 73 meaningful
 lines, 59 are its own (38 in neither lab); `fork_signals` reports 0 shared delta lines.
 
+**`.pre-commit-config.yaml` — ANSWERED 2026-09-18, and the answer was none of the three offered.**
+The arm was asked whether 87-against-21 is past the ceiling, with "the base is too thin", "motronics
+is genuinely a fork" and "`measured_delta` counts the wrong thing" on the table. **The third, and
+the evidence is a RANK INVERSION in the same three deltas under two units:**
+
+    repo               line delta   own hooks   lines per own hook
+    wdg-lab                    38          11                 3.5
+    optimi-lab                  8           8                 1.0
+    motronics-studio           87           7                12.4
+
+By lines motronics is the family's largest delta by a factor of two; **by hooks it is the smallest
+of the three consumers**, with all 11 core ids present, 19/21 base lines literal and 0 fork signals.
+The cause: a `.gitignore` pattern or a Makefile recipe is ONE LINE PER DECISION, so a line ceiling
+there IS a decision ceiling and `Delta.ceiling` means what its docstring says. A pre-commit hook is
+a YAML MAPPING -- the labs' extra hooks come from an upstream repo and cost ~1 line each, while
+motronics' seven are `- repo: local` and cost 10-12. **A line ceiling on this artefact scores hook
+SOURCING, not distance from the base.** Of the 87: 2 `rev` pins, ~14 attribute lines hanging on
+BASE-OWNED hook ids (exactly what `Delta.anchored` exists for, and not additions at all), ~71 across
+7 local hooks. **Verdict: ADOPT** -- `anchored` for the attributes, `added` for the 7 local hooks.
+The 2 `rev:` pins remain a real upstream bump owed its own commit in the motronics lane. Landed as
+`declared_hooks`/`hook_delta` plus `PRECOMMIT_OWN_HOOKS`/`PRECOMMIT_LINE_DELTA`, with the two units
+kept SO THEY CAN BE COMPARED -- the test is phrased so that the two units AGREEING is a failure.
+
+The original paragraph, whose every number re-measured true:
+
 **`.pre-commit-config.yaml` — expressible via `anchored`, at a price to state out loud.** The
 plan's "eleven stock hooks are the first base" CHECKS OUT: all 11 present in all three. motronics
 declares 18 hook ids. **19 of 21 base lines match literally; the 2 that do not are both `rev:` pins**
@@ -333,6 +407,30 @@ base own `[build-system]`, `[project]`, `[tool.pytest.ini_options]` and `[tool.p
 could not stop a consumer ADDING an `ignore` entry, which is the entire point of the ruff arm. **The
 deliverable is a section-scoped `Base`: one that owns a named TOML table and leaves the rest of the
 file alone.**
+
+**DELIVERED 2026-09-18** as `SectionBase`/`SectionDelta`/`inspect_section` in
+`_famconfig_sections.py`, 21 tests. It COMPARES and never RENDERS -- a table inside somebody else's
+`pyproject.toml` has nowhere to carry a stamp -- so its statuses are its own (`NO_FILE`/`NO_TABLE`/
+`OWNED`/`DIVERGED`; `FOREIGN` is meaningless without a stamp). Both named controls red through the
+real mechanism: a consumer ADDING an `ignore` entry (the thing `REQUIRED` mode is structurally blind
+to) and a consumer DROPPING a selector; the same drop WITH a reason reads `OWNED`, which is the
+ratchet's other side. Measured base: `select` 58 with an EMPTY four-way symmetric difference,
+`ignore` intersection 10 / union 67 so each consumer's waiver set is its own delta, `line-length`
+120 and `quote-style` single in all four; `target-version` is NOT shared (kit py312, consumers
+py313) and is recorded rather than dropped.
+
+**CORRECTION 3 of 3 — THE FILE DECISION BELOW IS WRONG, and the cheap direction is the other one.**
+The paragraph that follows calls motronics "the lone dissenter, which is the cheap direction to
+resolve". Measured: motronics names `ruff.toml` in **15 tracked files, seven of them live
+mechanisms** -- five open it by path (`test_one_python_version_source.py`,
+`test_a_cited_test_file_exists.py::ROOT_CONFIGS`, `test_enforced_registry.py`,
+`test_motronics_adopts_the_shared_registry.py`, `test_disabled_rule_ratchet.py`) and two pin it by
+name (`test_config_line_ratchet.py` pins `'ruff.toml': 123`; `test_suppression_ratchet.py` keys
+`_RUFF_CONFIG`). **Keying the base by TABLE instead costs zero**, because this kit had already ruled
+the path is per-repo data TWICE -- `profile.DEFAULT_LINT_CONFIG` ("one tree in this family has no
+`ruff.toml` at all") and `rules.lint_selection`, which reads both shapes deliberately. Converging
+the filename would be the family re-deciding the same question a third time, against its own two
+standing answers. **Resolution: keep `ruff.toml` in motronics; key by table.**
 
 Second, smaller: **the artefact is a different FILE in different repos.** motronics keeps
 `ruff.toml`; the other three keep `[tool.ruff]*` tables in `pyproject.toml` and have no `ruff.toml`
