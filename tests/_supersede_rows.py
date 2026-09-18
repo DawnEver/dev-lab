@@ -24,16 +24,44 @@ THE CONTROL IS IN THE SET, not beside it. `_symbol_coverage.py` publishes `surve
 convicts it against the wrong module. It is here so that the instrument's refusal to treat overlap
 as a detector is EXERCISED by the same run that validates the positives.
 
-THE FIFTEENTH ROW IS THE ONE THAT FOUND THE INSTRUMENT'S BLIND SPOT, and it comes from a different
-repo on purpose. optimi-lab's `tests/architecture/test_the_rules_pages_are_a_ratchet.py` is declared
-MOVES by its own roster and graded UNTOUCHED by the first census ever run against it -- while
-`lab_commons.dev.famtests.rulespages`, landed hours earlier, already published its whole subject and
-more. Both detectors were silent: the kit module named no consumer, and a test file that has not
-adopted a shared body yet imports nothing from the kit BY DEFINITION. That is the class of row the
-provenance registry exists for, so it is pinned here by the case that found it rather than by a
-plant alone. Its surface includes its three `test_*` functions, which is why the grade is PARTIAL
-rather than SUPERSEDED, and its ONE shared name in six is the measurement that kept surface overlap
-out of the detector set.
+THE FIFTEENTH ROW IS THE ONE THAT FOUND THE INSTRUMENT'S BLIND SPOT -- TWICE, and it comes from a
+different repo on purpose. optimi-lab's `tests/architecture/test_the_rules_pages_are_a_ratchet.py`
+is declared MOVES by its own roster and graded UNTOUCHED by the first census ever run against it --
+while `lab_commons.dev.famtests.rulespages`, landed hours earlier, already published its whole
+subject and more. Both detectors were silent: the kit module named no consumer, and a test file that
+has not adopted a shared body yet imports nothing from the kit BY DEFINITION. That is the class of
+row the provenance registry exists for, so it is pinned here by the case that found it rather than
+by a plant alone.
+
+RE-MEASURED 2026-09-18 against optimi-lab `aab4074c`, WHICH EXECUTED THE MOVE the row predicted. The
+local `rule_pages`/`ratchet_breaks` mechanism and both its controls are gone upstream, the file
+imports `rulespages` and calls `assert_rules_ratchet`, and what is left is FOUR declarations that
+are about optimi-lab and nothing else. So the grade is STILL PARTIAL and for the opposite reason:
+it was PARTIAL because a whole local mechanism had not left, and it is PARTIAL now because what
+remains is the repo's own half of a finished split. THE REMAINDER IS THE ANSWER, so it is named in
+the row itself -- the two pins, the scan floor and the one surviving test -- and `covered` is EMPTY:
+after the move the file shares ZERO names with the module that superseded it, a sharper version of
+the one-in-six that already kept overlap out of the detector set. An overlap detector now scores
+this row at zero.
+
+THE RE-MEASUREMENT IS WHAT FOUND THE SECOND BLIND SPOT, and the row could not be written honestly
+until it was fixed. `kit_modules` recurses and publishes `rulespages` under its own stem, while
+`imported_kit_modules` took only the FIRST segment below the package and answered `famtests` --
+a token no published module answers to. So the IMPORT detector was blind to the entire `famtests`
+family: all SIX consumers across three repos, each importing the very module that supersedes it,
+graded NAMED_ONLY, which is the grade that means NOTHING CORROBORATES THE CLAIM. It cost no red
+anywhere, because a blind detector reports what a clean tree reports.
+
+WHY THE ROW WENT STALE THE DAY IT WAS WRITTEN, which is the half worth more than the row. Its
+`public` field recorded a MOMENT in another repo, and nothing here can see that repo, so the drift
+reds nowhere: the fixture stays green while it certifies history. That is a property of this file
+and not of this row, and there is no arm in this repo that could close it -- the honest re-measure
+is a job for the CONSUMER's suite. What IS closeable here is the instrument the re-measure runs
+through, and `test_every_published_kit_module_is_reachable_by_the_import_detector` is that arm.
+
+WHAT `imports` HOLDS IS THE KIT-MODULE SUBSET, not everything `imported_kit_modules` returns. That
+function yields a CANDIDATE set which includes sub-package tokens and imported function names; only
+the names `kit_modules` published can ever grade, so the rows record those and stay readable.
 
 ONE DECLARED DISAGREEMENT, and it is stated rather than smoothed. `scripts/gate/width.py` reads
 PARTIAL where the tranche said STAYS. The tranche is right that the file did not leave; the roster
@@ -289,20 +317,21 @@ MEASURED_ROWS: Final[tuple[MeasuredRow, ...]] = (
         hand=STILL_LOCAL,
         expected=UNTOUCHED,
     ),
+    # RE-MEASURED off optimi-lab `aab4074c` on 2026-09-18 -- see the module docstring. The move the
+    # row predicted has happened, so the surface is the four LOCAL declarations that survive it and
+    # `covered` is empty: PARTIAL naming a finished split, not PARTIAL naming an unstarted one.
     MeasuredRow(
         path='tests/architecture/test_the_rules_pages_are_a_ratchet.py',
         side='moves',
         public=frozenset(
             [
+                'CEILING',
                 'PAGE_FLOOR',
-                'ratchet_breaks',
-                'rule_pages',
-                'test_the_ratchet_refuses_all_four_movements',
-                'test_the_rule_pages_hold_their_measured_budget',
-                'test_the_scan_counts_a_planted_page',
+                'PINNED',
+                'test_the_rule_pages_hold_their_measured_budget_per_page_and_in_total',
             ]
         ),
-        imports=frozenset(),
+        imports=frozenset(['rulespages']),
         hand=ALREADY_IN_THE_KIT,
         expected=PARTIAL,
     ),

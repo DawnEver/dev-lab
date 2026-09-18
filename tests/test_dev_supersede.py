@@ -7,10 +7,13 @@ without being handed it. The rows live in `_supersede_rows.py` as DATA, the kit 
 and the expected grades are asserted one by one rather than in aggregate -- an aggregate count can
 be satisfied by two compensating mistakes.
 
-THE THREE HOLES THE FIRST CONSUMER FOUND each get a plant that FIRES and a plant that proves the
-old correct answer did not move: provenance-as-data against a kit module that names nobody, an
-unreadable row against a shell script, and a wrong `package` that must refuse rather than report a
-clean zero. The last is this family's dominant defect inside the instrument built to find it.
+THE FOUR HOLES A REAL CONSUMER FOUND each get a plant that FIRES and a plant that proves the old
+correct answer did not move: provenance-as-data against a kit module that names nobody, an
+unreadable row against a shell script, a wrong `package` that must refuse rather than report a
+clean zero, and -- found 2026-09-18 by RE-MEASURING a row rather than re-labelling it -- a kit
+module no import form could NAME, which made the IMPORT detector blind to a whole sub-package.
+The third is this family's dominant defect inside the instrument built to find it; the fourth is
+the same defect one level down, and it is the one that cost six true positives their corroboration.
 
 BOTH DIRECTIONS ARE PLANTED, because only the second one makes this a census rather than a name
 matcher: a file whose subject IS upstream must be flagged, and a file that merely SHARES NAMES with
@@ -21,6 +24,7 @@ through the REAL `take_census`, never through a re-implementation that would agr
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -42,6 +46,7 @@ from lab_commons.dev.supersede import (
     Row,
     VacuousCensus,
     grade_row,
+    imported_kit_modules,
     kit_modules,
     provenance_rows,
     take_census,
@@ -328,15 +333,24 @@ def test_every_published_kit_module_declares_its_provenance() -> None:
 def test_the_row_that_found_the_miss_is_flagged() -> None:
     """optimi-lab's rules-page ratchet, against the LIVE kit -- the fifteenth row, named not aggregated.
 
-    It also measures why OVERLAP was not promoted to a third detector: the consumer shares ONE of its
-    six public names with the module that supersedes it, so an overlap detector misses this row too.
+    RE-MEASURED 2026-09-18 after optimi-lab `aab4074c` EXECUTED the move this row predicted. The
+    grade is unchanged and everything under it moved: both detectors fire now instead of one, and
+    the remainder is the repo's own four declarations instead of a local mechanism that had not
+    left. It also still measures why OVERLAP was not promoted to a third detector, more sharply
+    than before -- `covered` is now EMPTY, so an overlap detector scores this row at zero.
     """
     row = next(r for r in MEASURED_ROWS if r.path.endswith('test_the_rules_pages_are_a_ratchet.py'))
     claim = grade_row(Row(row.path, row.side, row.public, row.imports), kit_modules(DEV_DIR))
     assert claim.kit_module == 'rulespages'
-    assert claim.detectors == (PROVENANCE,)
+    assert claim.detectors == (PROVENANCE, IMPORT)
     assert claim.flagged
-    assert claim.covered == ('ratchet_breaks',), 'one shared name in six: overlap could not have found this'
+    assert claim.covered == (), 'zero shared names: overlap could not have found this'
+    assert claim.remainder == (
+        'CEILING',
+        'PAGE_FLOOR',
+        'PINNED',
+        'test_the_rule_pages_hold_their_measured_budget_per_page_and_in_total',
+    ), 'the remainder IS the answer here, so it is pinned by name rather than counted'
 
 
 # -- HOLE 2: a row that is not Python is a row, and it refuses a grade. ----------------------------
@@ -421,3 +435,82 @@ def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -
         module_floor=1,
     )
     assert census.claims[0].grade == UNTOUCHED
+
+
+# -- HOLE 4: a kit module the IMPORT detector cannot be reached by. --------------------------------
+
+
+#: Below the kit's published module count, and separately below the count of modules living one
+#: level down. A round-trip over ZERO modules passes, and a round-trip over only top-level ones
+#: passes today while the sub-package half is exactly what was broken.
+NESTED_FLOOR = 3
+
+
+def _import_forms(module_path: Path) -> tuple[str, ...]:
+    """The two ways a consumer spells an import of one published kit module, as SOURCE."""
+    dotted = '.'.join((PACKAGE, *module_path.relative_to(DEV_DIR).with_suffix('').parts))
+    parent, stem = dotted.rsplit('.', 1)
+    return (f'from {parent} import {stem}\n', f'import {dotted}\n')
+
+
+def test_every_published_kit_module_is_reachable_by_the_import_detector() -> None:
+    """THE ARM THAT WOULD HAVE CAUGHT IT: what `kit_modules` PUBLISHES, `imported_kit_modules` must NAME.
+
+    The two halves are one agreement and nothing held them to it. `kit_modules` recurses and
+    publishes `famtests.rulespages` under the stem `rulespages`; `imported_kit_modules` took only
+    the first segment below the package and answered `famtests`. A token no module answers to is a
+    detector that never fires, and a detector that never fires costs no red -- all SIX `famtests`
+    consumers graded NAMED_ONLY, the grade that means nothing corroborates the claim, while each of
+    them imported the very module superseding it.
+
+    It is a ROUND TRIP rather than a scan of consumer trees, which is the only form available here:
+    this repo's suite cannot read the four consumer repos. It is also the stronger form, because it
+    holds for every module published TODAY rather than for whichever ones somebody wrote a row for.
+    """
+    modules = sorted(
+        path
+        for path in DEV_DIR.rglob('*.py')
+        if not any(part.startswith('_') for part in path.relative_to(DEV_DIR).parts)
+    )
+    assert len(modules) >= KIT_FLOOR, 'a round trip over a directory the walk did not reach proves nothing'
+    nested = [path for path in modules if len(path.relative_to(DEV_DIR).parts) > 1]
+    assert len(nested) >= NESTED_FLOOR, (
+        f'{len(nested)} kit modules live below the top level, under a floor of {NESTED_FLOOR}. The '
+        f'defect this arm exists for is reachable ONLY through a sub-package, so a corpus of '
+        f'top-level modules would pass it while blind.'
+    )
+    unreachable = {
+        path.stem: form
+        for path in modules
+        for form in _import_forms(path)
+        if path.stem not in imported_kit_modules(ast.parse(form), package=PACKAGE)
+    }
+    assert not unreachable, (
+        f'these published kit modules cannot be NAMED by the import form a consumer writes, so the '
+        f'IMPORT detector is blind to every file that adopted them: {unreachable}. Widen '
+        f'`imported_kit_modules`; do not narrow what `kit_modules` publishes.'
+    )
+
+
+def test_the_round_trip_refuses_a_resolver_that_stops_one_level_short() -> None:
+    """THE PLANT, and it is the real bug rather than an imitation of it.
+
+    `package='lab_commons'` is one level short of the kit, which is the same mistake one level up:
+    every sub-package module resolves to a token it is not named by. If this passed, the arm above
+    would be asserting a property of the strings rather than of the resolver.
+    """
+    form = 'from lab_commons.dev.famtests import rulespages\n'
+    assert 'rulespages' not in imported_kit_modules(ast.parse(form), package='lab_commons')
+    assert 'rulespages' in imported_kit_modules(ast.parse(form), package=PACKAGE)
+
+
+def test_a_name_no_kit_module_answers_to_is_not_manufactured() -> None:
+    """THE CONTROL IN THE OTHER DIRECTION. Widening the resolver must not make every import a hit.
+
+    The candidate set may over-emit -- it yields sub-package tokens and imported function names --
+    and that is only safe because it is intersected with what `kit_modules` published. An import of
+    another library must contribute NOTHING, or the IMPORT detector would corroborate every claim
+    and the census would flag the whole roster.
+    """
+    form = 'import pathlib\nfrom collections.abc import Mapping\nfrom lab_commons import paths\n'
+    assert imported_kit_modules(ast.parse(form), package=PACKAGE) == frozenset()

@@ -41,14 +41,12 @@ Seven grades, and the three that exist to REFUSE a verdict matter most:
 * :data:`UNREADABLE` -- not a Python file, so no detector can see it. A shell row is a row; refusing
   a grade for it is the answer, and crashing on it or calling it UNTOUCHED are both worse.
 
-EVERY REPO-SHAPED FACT ARRIVES AS AN ARGUMENT WITH NO DEFAULT -- which paths, which kit modules, which
-floor. A default hands all four repos one repo's answer: ``LAB_CZ_BASE_REF`` is the worked example.
-
+EVERY REPO-SHAPED FACT ARRIVES AS AN ARGUMENT WITH NO DEFAULT -- which paths, which kit modules,
+which floor -- since a default hands four repos one repo's answer (``LAB_CZ_BASE_REF``).
 A LEADING UNDERSCORE IS NORMALISED AWAY ON BOTH SIDES: on ``_box.py`` -> ``bounded._available_gb``
-that one character was a false remainder. It widens the RULER, never a detector.
-
-THE FLOOR IS REQUIRED AND ZERO IS REFUSED: no rows, or no kit modules, reports what a finished
-migration reports. So does a *package* that resolves onto nothing, and that is refused too.
+that one character was a false remainder. It widens the RULER, never a detector. THE FLOOR IS
+REQUIRED AND ZERO IS REFUSED: no rows, or no kit modules, reports what a finished migration reports.
+So does a *package* that resolves onto nothing, and that is refused too.
 
 THE KIT IS READ AS SOURCE, NEVER IMPORTED. A census must judge a kit version that is not the one
 installed here, and executing the thing under measurement is how a measurement acquires a side effect.
@@ -225,12 +223,15 @@ def named_paths(docstring: str | None) -> frozenset[str]:
 
 
 def imported_kit_modules(tree: ast.Module, *, package: str) -> frozenset[str]:
-    """Which submodules of *package* this file imports, by either import form.
+    """Every kit-module token this file's imports could name, by either import form.
 
-    *package* must be the kit directory's OWN dotted path, because the answer is the segment at
-    ``len(package.split('.'))``. One level short resolves every import of the kit to the same token
-    -- ``lab_commons`` turns every ``lab_commons.dev.x`` into ``'dev'`` -- and that token matches no
-    kit module, so the IMPORT detector silently never fires. :func:`take_census` REFUSES that.
+    *package* must be the kit directory's OWN dotted path: one level short turns every
+    ``lab_commons.dev.x`` into ``'dev'``, matching no kit module, so the IMPORT detector never fires
+    and :func:`take_census` REFUSES it. TWO SEGMENTS BELOW *package*, not one and not all, because
+    :func:`kit_modules` RECURSES: one reached ``famtests`` rather than ``rulespages`` and graded all
+    SIX ``famtests`` consumers :data:`NAMED_ONLY` while each imported the module superseding it, and
+    all would find ``bounded`` one level short and retire that refusal. A name an ``ImportFrom``
+    binds is the second, since ``from pkg.sub import mod`` spells ``mod`` nowhere else.
     """
     depth = len(package.split('.'))
     out: set[str] = set()
@@ -239,9 +240,10 @@ def imported_kit_modules(tree: ast.Module, *, package: str) -> frozenset[str]:
             if node.module == package:
                 out.update(alias.name for alias in node.names)
             elif node.module.startswith(f'{package}.'):
-                out.add(node.module.split('.')[depth])
+                below = node.module.split('.')[depth:]
+                out.update(below[:1] if below[1:] else (*below, *(a.name for a in node.names)))
         elif isinstance(node, ast.Import):
-            out.update(a.name.split('.')[depth] for a in node.names if a.name.startswith(f'{package}.'))
+            out.update(s for a in node.names if a.name.startswith(f'{package}.') for s in a.name.split('.')[depth:][:2])
     return frozenset(out)
 
 
@@ -335,14 +337,12 @@ def grade_row(row: Row, modules: Iterable[KitModule]) -> Claim:
 def _refuse_mismatch(rows: tuple[Row, ...], names: frozenset[str], package: str) -> None:
     """A census whose imports NAME NOTHING in the kit is answering about the wrong package.
 
-    THE FAIL-QUIET THIS CLOSES, and it is this family's dominant defect appearing inside the
-    instrument built to find it: a wrong *package* does not raise, it reports zero CONSULTS, and zero
-    CONSULTS is exactly what a roster of live forks reports. MEASURED 2026-09-17 on this module's
-    first consumer, on its first run.
-
-    The test is ANY match, not every match: a roster may legitimately import a private kit module or
-    a sub-PACKAGE (``famtests``) that :func:`kit_modules` does not publish as a row. What cannot
-    happen under a correct *package* is that NOT ONE import lands on a kit module while imports exist.
+    THE FAIL-QUIET THIS CLOSES, this family's dominant defect inside the instrument built to find
+    it: a wrong *package* does not raise, it reports zero CONSULTS, and that is exactly what a
+    roster of live forks reports. MEASURED 2026-09-17, on this module's first consumer's first run.
+    The test is ANY match, not every match -- a roster may legitimately import a private module or a
+    sub-PACKAGE that :func:`kit_modules` publishes no row for. What cannot happen under a correct
+    *package* is NOT ONE import landing on a kit module while imports exist.
     """
     seen = frozenset().union(*(row.imports for row in rows)) if rows else frozenset()
     if seen and not seen & names:
