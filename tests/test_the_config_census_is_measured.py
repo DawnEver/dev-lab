@@ -256,18 +256,30 @@ def test_the_three_consumers_agree_on_the_select_and_diverge_by_five_codes_in_to
         }, f'{repo}: a scalar knob diverged, so "identical except the ignore delta" no longer holds'
 
 
-def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_two_of_it() -> None:
-    """The kit is a subset of NO consumer and no consumer is a subset of it -- both sides."""
+def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_three_of_it() -> None:
+    """The consumer core, as an EQUALITY, and the three patterns of it the kit happens to share.
+
+    IT ASSERTED A SUBSET UNTIL 2026-09-19 AND THAT IS WHY IT WAS WRONG. `SHARED_GITIGNORE_CORE` read
+    12 while the live three-way intersection was 14, and `core <= consumer` is satisfied by every
+    shorter tuple -- so the constant could drift DOWN forever and this arm would stay green. An
+    equality has no such slack: a pattern leaving any consumer reds, and so does one arriving in all
+    three without the constant moving.
+    """
     reached = reachable_repos(REPO_PATHS)
     kit = gitignore_patterns(reached['lab-commons'])
     assert len(kit) >= 8, f'{len(kit)} patterns read from lab-commons/.gitignore; the reader found nothing'
-    assert kit & set(SHARED_GITIGNORE_CORE) == {'.pytest_cache/', '.ruff_cache/'}, sorted(
+    assert kit & set(SHARED_GITIGNORE_CORE) == {'*.egg-info/', '.pytest_cache/', '.ruff_cache/'}, sorted(
         kit & set(SHARED_GITIGNORE_CORE)
     )
     present = [repo for repo in CONSUMERS if repo in reached]
+    assert len(present) >= 2, f'{present}: a three-way intersection over fewer than two repos is not a reading'
+    measured = frozenset.intersection(*(gitignore_patterns(reached[repo]) for repo in present))
+    assert measured == set(SHARED_GITIGNORE_CORE), (
+        f'the consumer core moved: measured {sorted(measured)} over {present}, recorded '
+        f'{sorted(SHARED_GITIGNORE_CORE)}. Re-measure and move the constant in the same edit.'
+    )
     for repo in present:
         other = gitignore_patterns(reached[repo])
-        assert set(SHARED_GITIGNORE_CORE) <= other, f'{repo} dropped part of the 12-pattern consumer core'
         assert not kit <= other, f'{repo} became a superset of the kit, so the SPLITS seam moved'
 
 

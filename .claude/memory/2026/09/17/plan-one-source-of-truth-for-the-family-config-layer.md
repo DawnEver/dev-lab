@@ -681,3 +681,53 @@ beside the live ones so a reader can tell drift from a misreading.
   and `test_the_tests_roster_is_re_read_against_the_kit.py` in motronics -- and the config half is
   covered by `test_the_config_census_is_measured.py` here. **Neither reads THIS file.** A later
   reader should treat every bullet above as a hypothesis with a date on it, not as a floor.
+
+---
+
+## 2026-09-19 — `pyproject.toml` gets a section base, and the `.gitignore` exemption stops being prose
+
+Two of the three artefacts this plan left with NO BASE AT ALL are now decided. `docs-src/dev/` is
+still open.
+
+### `pyproject.toml` — 39 tables measured, TWO promoted, SEVEN decline rows
+
+`lab_commons.dev._famconfig_pyproject_rows` + `tests/_famconfig_pyproject_section_delta.py` +
+`tests/test_the_pyproject_sections_are_owned_in_all_four_repos.py`. Owned:
+
+* `[project]` — `readme = "README.md"` (scalar) and `dynamic = ["version"]` (set). Four-way verbatim.
+* `[tool.pytest.ini_options]` — `testpaths` (set), `tests` in all four; wdg-lab adds `src/wdg_lab`
+  and optimi-lab adds `src`, each ceiling 1. The only real delta in the whole base.
+
+**THE BAR IS FOUR-WAY AND NOT THREE, and applying it is what kept this base small.** Three of the
+biggest candidates — `[tool.commitizen]` (6 keys verbatim in all three consumers),
+`[tool.coverage.*]` (3 keys), `[tool.pytest.ini_options].filterwarnings` — have the `RUFF_QUOTE_STYLE`
+shape EXACTLY: consumer-identical and ABSENT in the kit. Promoting them is the anti-fork arm
+pointing at the publisher. `[build-system]` is a 2-2 hatchling/setuptools split and drags
+`[tool.hatch.*]`/`[tool.setuptools*]` with it. `[tool.pyright]` and `[tool.lab_commons.*]` are one
+repo each. All of it is in `PYPROJECT_DECLINED` with the number, floored at 7 rows and driven both
+ways: a decline naming a table no repo declares reds, and so does a table both declined and owned.
+
+**A GENERIC FLOOR CANNOT CARRY ONE ARTEFACT'S NAME.** `section_problems` binds the key floor for
+EVERY base and the constant was `RUFF_KEY_FLOOR`, which became a declaration that lies the moment a
+second section artefact existed. It is `SECTION_KEY_FLOOR` in `_famconfig_sections` now, and
+`ruff_section_base` is `section_base` over ONE merged `SECTION_BASES` — a second lookup per rows
+module would have been the dual entry point this family refuses.
+
+### `.gitignore` — the publisher's exemption HOLDS, and `SHARED_GITIGNORE_CORE` was two short
+
+Re-measured over the four live checkouts. The subset answer is unchanged and all six pairwise
+subset tests are still FALSE. What was WRONG is the size of the core: `SHARED_GITIGNORE_CORE` read
+TWELVE while the live three-way intersection is FOURTEEN — the `12-vs-14 trap` this very file had
+already recorded as closed on the consumer side, still open in the code. The kit shares THREE of
+the fourteen (`*.egg-info/` joins `.pytest_cache/` and `.ruff_cache/`), not two.
+
+**THE ARM GUARDING IT COULD NOT HAVE CAUGHT THAT**: it asserted `SHARED_GITIGNORE_CORE <= consumer`,
+which every shorter tuple satisfies, so the constant could drift down forever and stay green. It is
+an EQUALITY against the live intersection now. The census arm also only ever checked ONE of the two
+subset directions the row claimed.
+
+`tests/test_the_kit_declines_the_gitignore_base.py` pins the answer the way
+`TestRequiredIsTheTerminalModeForThisArtefact` pins the Makefile's: one class reds the day the base
+becomes adoptable here (eleven named base lines absent, a planted rendering proving the reader says
+"adoptable" for a tree that adopted), the other reds if anyone stamps the file or declares a
+`.gitignore` delta while the measurement still says not to.

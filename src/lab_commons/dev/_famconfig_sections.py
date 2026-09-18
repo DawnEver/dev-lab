@@ -27,19 +27,12 @@ EVERY KEY IS EXACT, and the two kinds differ only in how a delta may move them:
   arm: an entry on disk that no declaration produced is named, and a base entry gone with no drop is
   named. Both directions, from one comparison.
 
-THE FILE IS NOT THE ARTEFACT, which is this arm's second decision. motronics keeps these tables in
-``ruff.toml``; the other three keep them in ``pyproject.toml``. :func:`locate_section` therefore
-resolves a base's dotted path OR that path with its ``prefix`` stripped, and refuses a file
-declaring both -- which is the dead-block shape this family has already measured once, where one
-spelling wins and the other is a decision nothing reads. The kit had already ruled the path is
-per-repo data twice (`profile.DEFAULT_LINT_CONFIG`, `rules.lint_selection`); converging the lone
-dissenter onto one filename would re-decide it a third time, and MEASURED 2026-09-18 it is not the
-cheap direction the plan assumed. That repo names ``ruff.toml`` in 15 tracked files, SEVEN of them
-live mechanisms that would have to move with it: five open it by path (its one-Python-version
-source, its cited-test root-config walk, its enforced registry, its registry-adoption test and its
-disabled-rule ratchet) and two pin it by name (a 123-line config ratchet and a suppression ratchet
-keyed on the filename). Keying the base by TABLE costs none of that, because reading both spellings
-is a thing this package already does.
+THE FILE IS NOT THE ARTEFACT, which is this arm's second decision. :func:`locate_section` resolves a
+base's dotted path OR that path with its ``prefix`` stripped, so one base binds a table wherever a
+repo keeps it, and it refuses a file declaring both -- the dead-block shape where one spelling wins
+and the other is a decision nothing reads. Why keying by TABLE rather than by FILE was the cheap
+direction is a fact about one repo's tree, and it is argued where that repo's data lives, in
+`_famconfig_ruff_rows`.
 """
 
 from __future__ import annotations
@@ -50,7 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev._famconfig_ruff_rows import RUFF_KEY_FLOOR, RUFF_SECTION_PREFIX, RUFF_SECTION_ROWS
+from lab_commons.dev._famconfig_pyproject_rows import PYPROJECT_SECTION_PREFIX, PYPROJECT_SECTION_ROWS
+from lab_commons.dev._famconfig_ruff_rows import RUFF_CONFIG_NAMES, RUFF_SECTION_PREFIX, RUFF_SECTION_ROWS
 from lab_commons.dev._famconfig_survey import assert_base_floor
 
 __all__ = [
@@ -58,7 +52,10 @@ __all__ = [
     'NO_FILE',
     'NO_TABLE',
     'OWNED',
+    'PYPROJECT_SECTIONS',
     'RUFF_SECTIONS',
+    'SECTION_BASES',
+    'SECTION_KEY_FLOOR',
     'AmbiguousSection',
     'ForkedSectionDelta',
     'SectionBase',
@@ -68,7 +65,7 @@ __all__ = [
     'inspect_section',
     'locate_section',
     'ruff_config_path',
-    'ruff_section_base',
+    'section_base',
     'section_problems',
 ]
 
@@ -81,12 +78,6 @@ NO_TABLE: Final = 'NO_TABLE'
 OWNED: Final = 'OWNED'
 #: STATUS. At least one owned key disagrees, and the report names which and in which direction.
 DIVERGED: Final = 'DIVERGED'
-
-#: The filenames a ruff config may live in, in RUFF'S OWN PRECEDENCE. A ``ruff.toml`` beside a
-#: ``pyproject.toml`` WINS -- verified against ``ruff check --show-settings``, which prints the
-#: settings path it used -- so a repo carrying both has one live config and one dead one, and reading
-#: ``[tool.ruff]`` unconditionally would report the dead one as current.
-RUFF_CONFIG_NAMES: Final[tuple[str, ...]] = ('.ruff.toml', 'ruff.toml', 'pyproject.toml')
 
 
 class ForkedSectionDelta(ValueError):
@@ -160,33 +151,56 @@ class SectionReport:
         return self.status == OWNED
 
 
+#: The floor under a section base's key count: a base owning NO key reports every file it reads as
+#: conforming, which is the vacuous green every floor in this package exists to refuse. ONE, because
+#: the ``[tool.ruff]`` and ``[tool.pytest.ini_options]`` rows each legitimately own a single key.
+#:
+#: IT IS NOT NAMED FOR ONE ARTEFACT, and that is why it lives here rather than in a rows module.
+#: `section_problems` binds it for EVERY base, so an artefact-shaped name on it would be a
+#: declaration that lies the moment a second artefact arrives -- which it now has.
+SECTION_KEY_FLOOR: Final = 1
+
+
+def _bases(
+    rows: Mapping[str, tuple[tuple[str, ...], Mapping[str, object], Mapping[str, tuple[str, ...]]]],
+    prefix: tuple[str, ...],
+) -> dict[str, SectionBase]:
+    """A rows table turned into bases, so WHICH tables and WHICH keys stay declared as data."""
+    return {
+        artefact: SectionBase(artefact=artefact, table=table, prefix=prefix, scalars=scalars, sets=sets)
+        for artefact, (table, scalars, sets) in rows.items()
+    }
+
+
 #: Every ruff table this package owns, built from the DATA table rather than restated here, so a row
 #: added there arrives here and a row deleted there cannot leave a live entry behind.
-RUFF_SECTIONS: Final[dict[str, SectionBase]] = {
-    artefact: SectionBase(
-        artefact=artefact,
-        table=table,
-        prefix=RUFF_SECTION_PREFIX,
-        scalars=scalars,
-        sets=sets,
-    )
-    for artefact, (table, scalars, sets) in RUFF_SECTION_ROWS.items()
-}
+RUFF_SECTIONS: Final[dict[str, SectionBase]] = _bases(RUFF_SECTION_ROWS, RUFF_SECTION_PREFIX)
+
+#: Every ``pyproject.toml`` table this package owns. Its prefix is EMPTY -- these tables have one
+#: home -- which is what makes the pair below a real test of the resolver rather than two copies of
+#: one case: the ruff bases exercise the dedicated-file branch and these exercise the other.
+PYPROJECT_SECTIONS: Final[dict[str, SectionBase]] = _bases(PYPROJECT_SECTION_ROWS, PYPROJECT_SECTION_PREFIX)
+
+#: ONE registry over both artefacts, so :func:`section_base` is one lookup rather than one per rows
+#: module. The two names above stay as the SUBSETS each suite is a claim about; a second lookup
+#: function would be the dual entry point this codebase refuses.
+SECTION_BASES: Final[dict[str, SectionBase]] = {**RUFF_SECTIONS, **PYPROJECT_SECTIONS}
 
 
-def ruff_section_base(artefact: str) -> SectionBase:
+def section_base(artefact: str) -> SectionBase:
     """The base for *artefact*, or a refusal naming the ones that exist.
 
     A lookup rather than an attribute, for the reason `famconfig.artefact_base` is one: a table this
     package does not own fails HERE, with the set it could have meant, instead of at the point a
     caller indexes ``None``.
     """
-    base = RUFF_SECTIONS.get(artefact)
+    base = SECTION_BASES.get(artefact)
     if base is None:
         msg = (
-            f'no family section base for {artefact!r}. Declared sections: {sorted(RUFF_SECTIONS)}. A '
+            f'no family section base for {artefact!r}. Declared sections: {sorted(SECTION_BASES)}. A '
             f'config table with no base is not shared by default -- add the row to '
-            f'lab_commons.dev._famconfig_ruff_rows with the measurement that says it is.'
+            f'lab_commons.dev._famconfig_ruff_rows or _famconfig_pyproject_rows with the measurement '
+            f'that says it is, or record it in PYPROJECT_DECLINED with the number that declined it.'
         )
         raise ForkedSectionDelta(msg)
     return base
@@ -261,7 +275,7 @@ def expected_entries(base: SectionBase, delta: SectionDelta, key: str) -> frozen
 
 def section_problems(base: SectionBase, delta: SectionDelta) -> tuple[str, ...]:
     """Every way *delta* is not a delta of *base*. Pure, and it binds the base's key floor first."""
-    assert_base_floor(len(base.owned_keys), RUFF_KEY_FLOOR, f'{base.artefact} section')
+    assert_base_floor(len(base.owned_keys), SECTION_KEY_FLOOR, f'{base.artefact} section')
     out: list[str] = []
     out += _drop_problems(base, delta)
     out += _addition_problems(base, delta)

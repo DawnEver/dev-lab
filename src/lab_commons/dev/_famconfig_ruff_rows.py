@@ -37,6 +37,18 @@ other three keep them in ``pyproject.toml``. The kit already ruled that the PATH
 :data:`lab_commons.dev.profile.DEFAULT_LINT_CONFIG` says so, and
 :func:`lab_commons.dev.rules.lint_selection` reads both shapes on purpose -- so a base keyed by
 FILENAME would be the third place this family re-decided a question it had already answered twice.
+
+WHY THE SECTION BASE IS KEYED BY TABLE AND NOT BY FILE, and why that is a fact about THIS repo's
+data rather than about the machinery that reads it. motronics keeps the ruff tables in
+``ruff.toml``; the other three keep them in ``pyproject.toml``. The kit had already ruled the path
+is per-repo data twice (`profile.DEFAULT_LINT_CONFIG`, `rules.lint_selection`); converging the lone
+dissenter onto one filename would re-decide it a third time, and MEASURED 2026-09-18 it is not the
+cheap direction the plan assumed. That repo names ``ruff.toml`` in 15 tracked files, SEVEN of them
+live mechanisms that would have to move with it: five open it by path (its one-Python-version
+source, its cited-test root-config walk, its enforced registry, its registry-adoption test and its
+disabled-rule ratchet) and two pin it by name (a 123-line config ratchet and a suppression ratchet
+keyed on the filename). Keying the base by TABLE costs none of that, because reading both spellings
+is a thing this package already does.
 """
 
 from __future__ import annotations
@@ -44,8 +56,8 @@ from __future__ import annotations
 from typing import Final
 
 __all__ = [
+    'RUFF_CONFIG_NAMES',
     'RUFF_IGNORE_CORE',
-    'RUFF_KEY_FLOOR',
     'RUFF_LINE_LENGTH',
     'RUFF_QUOTE_STYLE',
     'RUFF_SECTION_PREFIX',
@@ -165,15 +177,17 @@ RUFF_TARGET_VERSIONS: Final[dict[str, str]] = {
     'motronics-studio': 'py313',
 }
 
+#: The filenames a ruff config may live in, in RUFF'S OWN PRECEDENCE. A ``ruff.toml`` beside a
+#: ``pyproject.toml`` WINS -- verified against ``ruff check --show-settings``, which prints the
+#: settings path it used -- so a repo carrying both has one live config and one dead one, and reading
+#: ``[tool.ruff]`` unconditionally would report the dead one as current.
+RUFF_CONFIG_NAMES: Final[tuple[str, ...]] = ('.ruff.toml', 'ruff.toml', 'pyproject.toml')
+
+
 #: The prefix a DEDICATED config file drops. In ``pyproject.toml`` the tables are ``[tool.ruff]*``;
 #: in a ``ruff.toml`` the same tables are the file's root and ``[lint]`` / ``[format]``. One base,
 #: two spellings, and the resolver refuses a file that somehow declares both.
 RUFF_SECTION_PREFIX: Final[tuple[str, ...]] = ('tool', 'ruff')
-
-#: The floor under a section base's key count: a base owning NO key reports every file it reads as
-#: conforming, which is the vacuous green every floor in this package exists to refuse. ONE, because
-#: the ``[tool.ruff]`` row legitimately owns a single key today.
-RUFF_KEY_FLOOR: Final = 1
 
 #: Every owned table, by the spelling a reader writes it in. The value is
 #: ``(dotted path, EXACT scalars, SET-valued keys)``; what the machinery adds is the prefix rule, the

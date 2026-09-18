@@ -286,14 +286,27 @@ COUNTER_DIRECTION_CODES: tuple[str, ...] = (
     'UP017',
 )
 
-#: `.gitignore` patterns shared by all three consumers. lab-commons shares only two of them
-#: (`.pytest_cache/`, `.ruff_cache/`) and is a SUBSET OF NONE of the four -- measured, not assumed.
+#: `.gitignore` patterns shared by all three consumers. FOURTEEN, and it read TWELVE until
+#: 2026-09-19: `**/__pycache__/` and `*.egg-info/` are in all three and had been left out, so the
+#: constant sat two patterns UNDER its own measurement and the arm guarding it could not see that --
+#: it asserted `SHARED_GITIGNORE_CORE <= each consumer`, which any shorter tuple satisfies. It is now
+#: asserted as an EQUALITY against the live three-way intersection.
+#:
+#: THE RE-MEASUREMENT ALSO FOUND THE FOURTEEN ARE EXACTLY `BASES['.gitignore'].content_lines`. The
+#: census and the base are two independent readings and that they agree is a FINDING rather than a
+#: reason to derive one from the other.
+#:
+#: lab-commons shares THREE of them (`*.egg-info/`, `.pytest_cache/`, `.ruff_cache/`) and is a SUBSET
+#: OF NONE of the other three, none of which is a subset of it -- measured, not assumed, in both
+#: directions, and pinned by `test_the_kit_declines_the_gitignore_base.py`.
 SHARED_GITIGNORE_CORE: tuple[str, ...] = (
     '**/.env',
+    '**/__pycache__/',
     '**/log/*.log',
     '**/log/*.log.error',
     '**/temp/**',
     '*.c',
+    '*.egg-info/',
     '*.spec',
     '.coverage*',
     '.mypy_cache/',
@@ -510,9 +523,14 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
     ),
     'lab-commons::.gitignore': Placement(
         SPLITS,
-        'TEN PATTERNS, AND ONLY TWO OF THEM ARE THE FAMILY`S. Measured: the three consumers share a '
-        '12-pattern core and this repo holds just `.pytest_cache/` and `.ruff_cache/` of it -- it is a '
-        'SUBSET OF NONE of the other three, and none of them is a subset of it. THE SEAM is the '
+        'TEN PATTERNS, AND ONLY THREE OF THEM ARE THE FAMILY`S. Re-measured 2026-09-19: the three '
+        'consumers share a FOURTEEN-pattern core -- this row said 12, because `SHARED_GITIGNORE_CORE` '
+        'was two patterns short of its own intersection -- and this repo holds `*.egg-info/`, '
+        '`.pytest_cache/` and `.ruff_cache/` of it. THE SUBSET ANSWER IS UNCHANGED AND IS THE POINT: '
+        'it is a SUBSET OF NONE of the other three, and none of them is a subset of it, in all six '
+        'pairwise directions, and `test_the_kit_declines_the_gitignore_base.py` now pins that BOTH '
+        'ways -- it reds if the base ever becomes adoptable here, and it reds if somebody stamps this '
+        'file while the measurement still says they should not. THE SEAM is the '
         'generated-artefact core (caches, venv, coverage, `**/.env`, `**/log/*.log`), which is a fact '
         'about the toolchain every repo runs. What STAYS is one line and it names this repo: '
         '`src/lab_commons/__version__.py`, the file hatch-vcs writes -- the consumers spell the same '

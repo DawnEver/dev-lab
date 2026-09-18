@@ -56,7 +56,7 @@ from lab_commons.dev.famconfig import (
     inspect_section,
     locate_section,
     ruff_config_path,
-    ruff_section_base,
+    section_base,
     section_problems,
 )
 
@@ -293,11 +293,11 @@ def test_the_ruff_base_is_the_measured_fifty_eight_and_the_ten_code_core() -> No
     assert len(RUFF_SELECT) >= RUFF_SELECT_FLOOR, len(RUFF_SELECT)
     assert len(RUFF_SELECT) == 58, len(RUFF_SELECT)
     assert len(RUFF_IGNORE_CORE) == 10, RUFF_IGNORE_CORE
-    lint = ruff_section_base('[tool.ruff.lint]')
+    lint = section_base('[tool.ruff.lint]')
     assert set(lint.sets['select']) == set(RUFF_SELECT)
     assert set(lint.sets['ignore']) == set(RUFF_IGNORE_CORE)
     assert lint.prefix == RUFF_SECTION_PREFIX
-    root = ruff_section_base('[tool.ruff]')
+    root = section_base('[tool.ruff]')
     assert root.scalars['line-length'] == RUFF_LINE_LENGTH
     assert 'target-version' not in root.scalars, (
         'target-version is a MEASURED disagreement (py312 in the kit, py313 in all three consumers) '
@@ -309,7 +309,7 @@ def test_the_ruff_base_is_the_measured_fifty_eight_and_the_ten_code_core() -> No
 def test_an_unknown_section_names_the_ones_that_exist() -> None:
     """The lookup refuses HERE with the set it could have meant, as `artefact_base` does one layer up."""
     with pytest.raises(ForkedSectionDelta, match=r'\[tool\.ruff\.lint\]'):
-        ruff_section_base('[tool.ruff.isort]')
+        section_base('[tool.ruff.isort]')
 
 
 def test_the_kit_is_owned_by_the_ruff_base_with_an_empty_delta() -> None:
@@ -318,7 +318,7 @@ def test_the_kit_is_owned_by_the_ruff_base_with_an_empty_delta() -> None:
     path = ruff_config_path(root)
     assert path.name == 'pyproject.toml', path
     for artefact in ('[tool.ruff]', '[tool.ruff.lint]'):
-        report = inspect_section(path, ruff_section_base(artefact), KIT_DELTA)
+        report = inspect_section(path, section_base(artefact), KIT_DELTA)
         assert report.status == OWNED, f'{artefact}: {report.detail}\n  ' + '\n  '.join(report.offending)
 
 

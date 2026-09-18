@@ -1,7 +1,7 @@
 r"""THE RUFF SECTION BASE IS DRIVEN OVER THE LIVE TREES, and until this module it was driven over nothing.
 
 WHAT WAS WRONG, MEASURED 2026-09-18. `lab_commons.dev.famconfig` published `RUFF_SECTIONS`,
-`ruff_section_base` and `section_problems` with 21 green tests, and every one of them drove a PLANTED
+`section_base` and `section_problems` with 21 green tests, and every one of them drove a PLANTED
 file. Scanning ``tests/`` and ``src/`` for those three names returned the module that defines them
 and the kit's re-export -- nothing else. So the base could not have refused anything in any of the
 four repos it is a claim about, and this family's own rule says what that is: "a ratchet has two
@@ -38,16 +38,17 @@ from _config_census import reachable_repos
 from _config_census_rows import REPO_PATHS, REPOS
 from _famconfig_section_delta import RUFF_LINT, SECTION_DELTAS
 
-from lab_commons.dev._famconfig_ruff_rows import RUFF_KEY_FLOOR, RUFF_SELECT, RUFF_SELECT_FLOOR
+from lab_commons.dev._famconfig_ruff_rows import RUFF_SELECT, RUFF_SELECT_FLOOR
 from lab_commons.dev.famconfig import (
     OWNED,
     RUFF_SECTIONS,
+    SECTION_KEY_FLOOR,
     ForkedSectionDelta,
     SectionDelta,
     inspect_section,
     locate_section,
     ruff_config_path,
-    ruff_section_base,
+    section_base,
     section_problems,
 )
 
@@ -134,8 +135,8 @@ def test_no_declared_delta_is_a_fork_of_the_base_it_declares_against() -> None:
     """
     for repo, table in sorted(SECTION_DELTAS.items()):
         for artefact, delta in sorted(table.items()):
-            base = ruff_section_base(artefact)
-            assert len(base.owned_keys) >= RUFF_KEY_FLOOR, f'{artefact} owns no key; every arm below just went thin'
+            base = section_base(artefact)
+            assert len(base.owned_keys) >= SECTION_KEY_FLOOR, f'{artefact} owns no key; every arm below just went thin'
             assert delta.repo == repo, f'{repo}::{artefact} declares itself as {delta.repo!r}'
             assert section_problems(base, delta) == (), section_problems(base, delta)
 
@@ -169,7 +170,7 @@ def test_every_reached_repo_owns_every_table_the_base_declares() -> None:
     for repo, root in sorted(reached.items()):
         config = ruff_config_path(root)
         for artefact in ARTEFACTS:
-            report = inspect_section(config, ruff_section_base(artefact), SECTION_DELTAS[repo][artefact])
+            report = inspect_section(config, section_base(artefact), SECTION_DELTAS[repo][artefact])
             verdicts[f'{repo}::{artefact}'] = report.status
             assert report.ok, (
                 f'{repo}::{artefact} in {config.name} is {report.status}: {report.detail} {report.offending}'
@@ -202,7 +203,7 @@ def test_the_two_config_spellings_are_both_exercised_against_a_real_file() -> No
 def test_the_selects_are_one_set_across_every_reached_repo() -> None:
     """The base's biggest SET key, re-derived rather than trusted, with a floor under the reading."""
     reached = reachable_repos(REPO_PATHS)
-    base = ruff_section_base(RUFF_LINT)
+    base = section_base(RUFF_LINT)
     assert len(base.sets[SELECT]) >= RUFF_SELECT_FLOOR, (
         f'the base holds {len(base.sets[SELECT])} selectors, below the {RUFF_SELECT_FLOOR} floor -- '
         f'a comparison over a near-empty selector set agrees with everything it reads'
@@ -228,7 +229,7 @@ def test_an_added_ignore_entry_reds_and_the_refusal_names_the_code(tmp_path: Pat
     """
     root = reachable_repos(REPO_PATHS)['lab-commons']
     delta = SECTION_DELTAS['lab-commons'][RUFF_LINT]
-    base = ruff_section_base(RUFF_LINT)
+    base = section_base(RUFF_LINT)
     tables = kit_tables(root)
     assert PLANTED_WAIVER not in tables[RUFF_LINT]['ignore'], f'the kit already waives {PLANTED_WAIVER}'
 
@@ -247,7 +248,7 @@ def test_a_dropped_selector_reds_and_the_refusal_names_it(tmp_path: Path) -> Non
     """PLANTED CONTROL, the other direction: the base leaving through the file instead of the table."""
     root = reachable_repos(REPO_PATHS)['lab-commons']
     delta = SECTION_DELTAS['lab-commons'][RUFF_LINT]
-    base = ruff_section_base(RUFF_LINT)
+    base = section_base(RUFF_LINT)
     tables = kit_tables(root)
     assert BENT_SELECTOR in tables[RUFF_LINT][SELECT], 'this control bends nothing: the kit does not select it'
 
@@ -265,7 +266,7 @@ def test_the_same_drop_with_a_declared_reason_is_owned(tmp_path: Path) -> None:
     DECLARATION moved, which is the whole claim the mechanism makes.
     """
     root = reachable_repos(REPO_PATHS)['lab-commons']
-    base = ruff_section_base(RUFF_LINT)
+    base = section_base(RUFF_LINT)
     tables = kit_tables(root)
     tables[RUFF_LINT][SELECT] = [code for code in tables[RUFF_LINT][SELECT] if code != BENT_SELECTOR]
     planted = plant(tmp_path / 'pyproject.toml', tables)
