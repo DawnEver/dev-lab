@@ -318,26 +318,6 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'SUBJECT, not the tree the code happens to live in.'
         ),
         (
-            # THE SHARED MECHANISM FIRST, for the reason SHARED-CHECKOUT records above -- and this
-            # row is that correction arriving from the OTHER DIRECTION, which the registry had no
-            # shape for. There, three rows named CONSUMER paths that resolve in one checkout on
-            # earth. Here, a cited consumer path MOVED INTO THE KIT: motronics adopted
-            # `famtests.placement` and deleted its fork, at which point
-            # `tests/architecture/layering/_placement.py` resolved in NO checkout at all -- verified
-            # at the lane `bc8ca7cc6`, where the data is six `_placement_*.py` partitions and the
-            # composing body is the kit's. `assert_adopted` then refused that tree for a row whose
-            # subject was more enforced than before, and a LOCAL OVERRIDE was the interim.
-            #
-            # A ROW SHAPE, NOT A REPAIR OF ONE PATH. The registry already records the MIRROR -- three
-            # rows naming a KIT file as the existence proof of a shared statement (`checkout.py`,
-            # `bounded.py`, `proc.py`) -- and this is the same fact seen from the adopting side: when
-            # a consumer's mechanism is superseded upstream, the citation FOLLOWS THE BODY rather
-            # than being deleted or overridden locally. What is still owed is the type: `unresolved`
-            # checks every path against the ADOPTER'S tracked files, so a kit path is an existence
-            # proof in lab-commons' tree and nowhere else. A `KitPath` mechanism resolved against the
-            # INSTALLED package would make that true in every checkout; naming the gap here rather
-            # than half-building it, because a mechanism type is a change to what every consumer's
-            # `assert_enforceable` means.
             'src/lab_commons/dev/famtests/placement.py',
             'tests/architecture/layering/test_scripts_hold_no_domain_code.py',
         ),
