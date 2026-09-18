@@ -37,11 +37,13 @@ argument with no default: they are facts about these four checkouts on one day.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Final
 
 import pytest
 from _config_census import (
     CensusError,
+    head_sha,
     reachable_repos,
     ruff_config,
     ruff_excludes,
@@ -81,6 +83,17 @@ def _absent(reached: dict) -> list[str]:
 # ------------------------------------------------------------------- arm 1: the excludes are named
 
 
+def _at(repo: str, root: Path) -> str:
+    """How a cross-repo reading names WHERE and WHEN it read, so a refusal is reproducible.
+
+    A census reads three checkouts it does not own, each of which may be mid-lane. Without the sha a
+    reader meeting one of these refusals cannot tell a stale row from another repo's in-flight work,
+    and the family has already spent an afternoon on exactly that -- see `_config_census.head_sha`.
+    Every reading here is taken at HEAD, so the sha is the whole answer to "which tree, at what point".
+    """
+    return f'{repo} at {(head_sha(root) or "an unresolvable HEAD")[:12]} (read at HEAD, not the working tree)'
+
+
 def test_every_exclude_that_hides_source_is_a_declared_row() -> None:
     """ARM 1. The widest waiver in a ruff config may not arrive as a line nothing reads.
 
@@ -98,13 +111,13 @@ def test_every_exclude_that_hides_source_is_a_declared_row() -> None:
         declared = set(TREE_EXCLUDES[repo])
         undeclared, stale = sorted(live - declared), sorted(declared - live)
         assert undeclared == [], (
-            f'{repo} excludes {undeclared} from ruff entirely and no row declares it. An exclude is '
+            f'{_at(repo, root)} excludes {undeclared} from ruff entirely and no row declares it. An exclude is '
             f'the widest waiver a config can write -- all 58 selectors dropped over a subtree, no code '
             f'named -- so it is the one that must be typed into TREE_EXCLUDES with what the tree is. '
             f'The ceiling may only SHRINK.'
         )
         assert stale == [], (
-            f'{repo} no longer excludes {stale} and the rows are still here. A waiver nothing uses is '
+            f'{_at(repo, root)} no longer excludes {stale} and the rows are still here. A waiver nothing uses is '
             f'as wrong as an undeclared one: delete the rows in the edit that observed it.'
         )
 
@@ -146,12 +159,12 @@ def test_every_per_file_waiver_is_a_declared_row() -> None:
         declared = set(PER_FILE_WAIVERS[repo])
         undeclared, stale = sorted(live - declared), sorted(declared - live)
         assert undeclared == [], (
-            f'{repo} waives {undeclared} over a path and no row declares it. A per-file ignore is '
+            f'{_at(repo, root)} waives {undeclared} over a path and no row declares it. A per-file ignore is '
             f'invisible to every arm stated over the GLOBAL ignore list, which is every other ruff arm '
             f'in this family, so this table is the only thing that can see it grow.'
         )
         assert stale == [], (
-            f'{repo} no longer waives {stale} and the rows are still here -- a waiver nothing uses. '
+            f'{_at(repo, root)} no longer waives {stale} and the rows are still here -- a waiver nothing uses. '
             f'Delete them in the edit that observed it; that is what makes the ceiling worth having.'
         )
 

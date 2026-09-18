@@ -32,6 +32,8 @@ are read when they are checked out beside it and NAMED when they are not.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,13 +46,17 @@ __all__ = [
     'STAYS',
     'CensusError',
     'Placement',
+    'UnreadableTree',
     'compose',
     'dev_pages',
     'gitignore_patterns',
+    'head_sha',
     'hook_ids',
     'installed_hook_names',
     'make_targets',
+    'names_at_head',
     'reachable_repos',
+    'read_at_head',
     'repo_root',
     'ruff_config',
     'ruff_excludes',
@@ -79,8 +85,80 @@ REASON_FLOOR: Final = 240
 ROOT: Final = Path(__file__).resolve().parents[1]
 
 
+#: How long a `git` read of another checkout may take. Bounded because an unbounded wait here parks
+#: this repo's whole verdict on somebody else's index lock -- the shape
+#: `lab_commons.dev.famtests.untimedwaits` refuses before anything runs.
+_GIT_TIMEOUT_S: Final = 60
+
+#: Resolved once rather than looked up on PATH at every call.
+_GIT: Final = shutil.which('git') or 'git'
+
+
 class CensusError(ValueError):
     """A row the census refuses to hold: a bad side, a caption for a reason, a key in two hands."""
+
+
+class UnreadableTree(RuntimeError):
+    """A declared checkout is there and its committed state cannot be read, so it is not INCONCLUSIVE quietly."""
+
+
+def head_sha(root: Path) -> str | None:
+    """The commit this census read *root* at, or ``None`` when it cannot be resolved.
+
+    THE POINT IN TIME IS PART OF THE READING and must travel with it. A cross-repo census that names
+    no sha produces a verdict the next reader cannot reproduce, and this repo paid for that on
+    2026-09-18: an uncommitted edit in another repo's lane worktree turned a lab-commons test RED,
+    and that red was attributable to NO COMMIT -- it appeared and vanished with somebody else's
+    in-flight work. The lane that met it correctly refused to "fix" the row it accused.
+    """
+    found = subprocess.run(
+        [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    return found.stdout.strip() or None if found.returncode == 0 else None
+
+
+def read_at_head(root: Path, relpath: str) -> str | None:
+    """*relpath*'s content as COMMITTED in *root*, or ``None`` when that path is not committed there.
+
+    **A DECLARATION IS A COMMITTED FACT, AND THIS IS NOT THIS MODULE'S INVENTION.** It is the rule
+    :func:`lab_commons.dev.rules.tracked_files` already states and
+    :mod:`lab_commons.dev.cjk` already turns down its corpus for: *a file that exists only in one
+    working copy is not a file the fleet has, so a guarantee resting on it is one nobody else can
+    reproduce.* A cross-repo census asks what the four repos DECLARE, and a working tree is what one
+    box happens to hold this minute -- including another agent's half-finished edit.
+
+    WHAT THIS DELIBERATELY GIVES UP, so nobody reads it as free. A lane's uncommitted work is INVISIBLE
+    here, so the census describes the last published state rather than the one its author is looking
+    at. That is the correct trade for a guard whose whole subject is what the family has AGREED, and
+    it is the wrong trade for a guard about what this BOX has -- see :func:`installed_hook_names`,
+    which stays on the filesystem for exactly that reason and says so.
+    """
+    found = subprocess.run(
+        [_GIT, '-C', str(root), 'show', f'HEAD:{relpath}'],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    return found.stdout if found.returncode == 0 else None
+
+
+def names_at_head(root: Path, directory: str, suffix: str) -> frozenset[str]:
+    """Committed filenames directly under *directory* ending in *suffix*, never a working-tree glob."""
+    found = subprocess.run(
+        [_GIT, '-C', str(root), 'ls-tree', '--name-only', f'HEAD:{directory}'],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    if found.returncode != 0:
+        return frozenset()
+    return frozenset(name for name in found.stdout.split() if name.endswith(suffix))
 
 
 @dataclass(frozen=True)
@@ -151,11 +229,14 @@ def ruff_config(root: Path) -> dict:
     which prints the settings path it used. So a repo carrying both has one live config and one dead
     one, and reading ``[tool.ruff]`` unconditionally would report the dead one as current.
     """
-    own = root / 'ruff.toml'
-    if own.is_file():
-        return tomllib.loads(own.read_text(encoding='utf-8'))
-    project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    return project.get('tool', {}).get('ruff', {})
+    own = read_at_head(root, 'ruff.toml')
+    if own is not None:
+        return tomllib.loads(own)
+    project_text = read_at_head(root, 'pyproject.toml')
+    if project_text is None:
+        msg = f'{root} declares no committed pyproject.toml at {head_sha(root)}, so its ruff config cannot be read'
+        raise UnreadableTree(msg)
+    return tomllib.loads(project_text).get('tool', {}).get('ruff', {})
 
 
 #: EVERY SPELLING RUFF ACCEPTS FOR EACH WAIVER KIND, as a table rather than four `.get` chains.
@@ -279,7 +360,7 @@ def selector_covers(selector: str, code: str) -> bool:
 
 def gitignore_patterns(root: Path) -> frozenset[str]:
     """Live patterns -- blanks and comments dropped, so a rewrapped comment is not a divergence."""
-    return _live_lines(root / '.gitignore')
+    return _live_lines(read_at_head(root, '.gitignore'))
 
 
 _TARGET = re.compile('(?m)^([A-Za-z0-9_.-]+):(?!=)')
@@ -287,7 +368,10 @@ _TARGET = re.compile('(?m)^([A-Za-z0-9_.-]+):(?!=)')
 
 def make_targets(root: Path) -> frozenset[str]:
     """Every Makefile target except ``.PHONY``, which is a declaration ABOUT targets, not one."""
-    text = (root / 'Makefile').read_text(encoding='utf-8')
+    text = read_at_head(root, 'Makefile')
+    if text is None:
+        msg = f'{root} declares no committed Makefile at {head_sha(root)}'
+        raise UnreadableTree(msg)
     return frozenset(_TARGET.findall(text)) - {'.PHONY'}
 
 
@@ -315,6 +399,12 @@ _GIT_HOOKS: Final = ('pre-commit', 'pre-push', 'commit-msg', 'prepare-commit-msg
 def installed_hook_names(root: Path) -> frozenset[str]:
     """Which of git's hook files are PRESENT -- the half a configuration cannot answer for itself.
 
+    THE ONE READER THAT STAYS ON THE FILESYSTEM, and it is a decision rather than an omission. Every
+    other reader here moved to :func:`read_at_head` on 2026-09-18 because a DECLARATION is a committed
+    fact. An installed hook is not a declaration: it is a fact about THIS BOX, it is never committed
+    anywhere, and reading it at HEAD would answer nothing at all. The rule is that the tree a reader
+    consults must match the kind of fact it is about, not that one tree is always right.
+
     A worktree's ``.git`` is a FILE pointing at the parent checkout's git dir, and the hooks it runs
     are that checkout's. Resolving it is not a detail: reading ``<worktree>/.git/hooks`` as a
     directory reports every worktree in the family as having zero hooks, which is the opposite of
@@ -333,13 +423,13 @@ def installed_hook_names(root: Path) -> frozenset[str]:
 
 
 def dev_pages(root: Path) -> frozenset[str]:
-    """Markdown filenames under ``docs-src/dev/``. An absent tree reads empty rather than raising."""
-    tree = root / 'docs-src' / 'dev'
-    return frozenset(p.name for p in tree.glob('*.md')) if tree.is_dir() else frozenset()
+    """Committed Markdown filenames under ``docs-src/dev/``. An absent tree reads empty, never raises."""
+    return names_at_head(root, 'docs-src/dev', '.md')
 
 
-def _live_lines(path: Path) -> frozenset[str]:
-    if not path.is_file():
+def _live_lines(text: str | None) -> frozenset[str]:
+    """Meaningful lines of a COMMITTED file's text; an uncommitted or absent file reads empty."""
+    if text is None:
         return frozenset()
-    kept = (line.strip() for line in path.read_text(encoding='utf-8').splitlines())
+    kept = (line.strip() for line in text.splitlines())
     return frozenset(line for line in kept if line and not line.startswith('#'))
