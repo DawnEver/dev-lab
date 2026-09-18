@@ -159,17 +159,32 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why
     # both motronics paths are named -- a single row would have read as one repo, one answer.
+    #
+    # THE CONSUMER TEST FILES ARE NAMED AS WELL AS THE HELPERS, ADDED 2026-09-18, and the reason is
+    # that leaving them out made the instrument lie in the FLATTERING direction. Both rows listed only
+    # the private helper modules the halves were carved from, so the census's PROVENANCE detector had
+    # nothing to match the consumer's own test file against and graded
+    # `test_the_migration_boundary_is_declared.py` as CONSULTS -- a row that HAS done the work reading
+    # as not-done, which is the one error nobody goes looking for. VERIFIED before being written, at
+    # each repo's own tree: both labs' file imports `famtests.placement` AND `famtests.density`, and
+    # motronics' `test_migration_boundary_density.py` imports both at b44bc330c. Its three siblings
+    # there do NOT and are deliberately absent -- naming an unadopted file would be the same lie
+    # pointing the other way.
     'density': (
         'supersedes',
         'tests/architecture/_placement.py',
         'tests/architecture/layering/_helpers.py',
         'tests/architecture/layering/_tests_placement.py',
+        'tests/architecture/test_the_migration_boundary_is_declared.py',
+        'tests/architecture/layering/test_migration_boundary_density.py',
     ),
     'placement': (
         'supersedes',
         'tests/architecture/_placement.py',
         'tests/architecture/layering/_helpers.py',
         'tests/architecture/layering/_tests_placement.py',
+        'tests/architecture/test_the_migration_boundary_is_declared.py',
+        'tests/architecture/layering/test_migration_boundary_density.py',
     ),
     'rostercensus': ('supersedes', 'tests/architecture/test_the_roster_is_re_read_against_the_kit.py'),
     'rulespages': (
