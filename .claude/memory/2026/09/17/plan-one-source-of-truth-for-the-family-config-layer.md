@@ -571,6 +571,20 @@ three different behaviours on the identical requirement string, **and the revert
 that runs automatically on every commit.** That is why "read the command text" was not a
 measurement here, and why this file recorded the wrong cause twice before measuring the lock.
 
+**A FOURTH BEHAVIOUR, measured 2026-09-18 in the motronics lane, and it is DESTRUCTIVE rather than
+merely divergent.** The risk this file anticipated at that door was a credential failure. What
+happened is the opposite: `dep_sync --sync` SUCCEEDED, and with no `--extra` it PRUNED the
+environment from 113 distributions to 30 -- removing pytest, ruff, pre-commit, motronics_native,
+optimi_lab and wdg-lab among 83 others. **It printed its warning AFTER doing it.** Restoring took
+two passes, and `--extra all` does NOT include `img-to-cad`, so the sanctioned incantation in that
+tree is `--sync --extra all --extra dev --extra img-to-cad`.
+
+Two things follow. First, the door that reverts silently is not the only hazard at an install door;
+one of them can leave a repo unable to produce ANY verdict, which reads as a broken tree rather than
+a broken environment. Second, it is the same shape as everything else in this file: a default that
+is a repo-shaped fact arriving without the repo being asked. `--sync` with no extras means "the
+declared set", and the declared set is not what any of these repos actually runs on.
+
 The section below is kept as the record of the question and of what it cost to answer it.
 
 ## THE QUESTION AS IT STOOD BEFORE THE RULING
