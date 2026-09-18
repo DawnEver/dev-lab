@@ -304,12 +304,24 @@ because "the number is the point at which this repo's delta has stopped being a 
 is arguably past it by the mechanism's own words. `fork_signals` reports 0, so those 87 really are
 motronics'.
 
-**`Makefile` — nearly free, and it exposes one real gap.** The plan's delta prior holds and
-UNDERCOUNTS motronics (`build-rust*`, `fmt-rust`, `test-femm`, `test-full`, `typecheck`). `REQUIRED`
-mode reads INSTALLED only because `measured_delta` manufactured two drops: **`verify:` and
-`python -m lab_commons.dev.verify` are ABSENT from motronics' Makefile.** It is the only repo with
-no `verify` target and the only one whose Makefile never mentions its own verdict path. Adopt rather
-than write a drop reason. Separately, `fork_signals` fires 8 (`.DEFAULT_GOAL` + seven `.PHONY:`)
+**`Makefile` — the gap this arm named is CLOSED (2026-09-18, `7e7e0ee`).** The plan's delta prior
+holds and UNDERCOUNTS motronics (`build-rust*`, `fmt-rust`, `test-femm`, `test-full`, `typecheck`).
+This paragraph used to read "`verify:` is ABSENT from motronics' Makefile -- the only repo with no
+`verify` target and the only one whose Makefile never mentions its own verdict path. Adopt rather
+than write a drop reason." A lane edit did exactly that, giving motronics a `verify` naming
+`scripts/gate/runner.py`, and the census guard written around the absence went red FOR THE RIGHT
+REASON: the tree had moved past the prose.
+
+Re-measured 2026-09-18, and the wider reading is the finding: **the all-four common target set is
+NINE and it is EXACTLY what `MAKEFILE_BASE` defines**, `verify` included. `MAKE_TARGET_CORE` had
+read three (`fmt`/`lint`/`test`) and `MAKE_TARGET_CONSUMER_CORE` eight, with a comment claiming four
+targets were "absent from lab-commons alone" -- none of which still held. Both were raised to nine,
+which makes them EQUAL: the kit has adopted its own base with an empty delta, the same shape
+`HOOK_ID_CORE` reached on 2026-09-17. 36 planted single-drops (4 repos x 9 targets) all convicted.
+
+**THE RESIDUAL, named so this is not read as more closed than it is:** the four repos now share the
+target NAME and not the CONTRACT -- motronics' `verify` shells its own 1770-line runner rather than
+`lab_commons.dev.verify`. This arm is done; that is a different question. Separately, `fork_signals` fires 8 (`.DEFAULT_GOAL` + seven `.PHONY:`)
 which `MAKEFILE_RESIDUAL_SIGNALS` already declines to promote — **R2 must not read those 8 as work.**
 
 **`[tool.ruff]` — `famconfig` CANNOT express it at all, and the gap is structural.** `famconfig` is
