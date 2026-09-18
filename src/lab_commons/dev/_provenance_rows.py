@@ -58,6 +58,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'docwidth': ('original',),
     'envkey': ('original',),
     'famconfig': ('original',),
+    # The floor refusal was written EIGHT times across this family and no two copies agreed -- four
+    # standalone bodies raising four different exception types, three of them here in `src/`; three
+    # more inlined at the top of a larger arm; and wdg-lab's `bind_floor`. TWO of the four are both
+    # named `VacuousScan` over DIFFERENT base classes, in this one repo. The consumer path named is
+    # the one that PUBLISHED the helper; optimi-lab's six inline copies have no path to name.
+    'floors': ('supersedes', 'tests/architecture/_corpus.py'),
     # See the module docstring above: declared original against a measured 2-name overlap.
     'forge': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
