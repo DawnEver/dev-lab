@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import supersede
+from lab_commons.dev import floors, supersede
 from lab_commons.dev.famtests.rostercensus import (
     SUBPACKAGE_IMPORT,
     EmptyWaiver,
@@ -80,18 +80,39 @@ def test_an_unresolvable_package_refuses_instead_of_returning_a_directory() -> N
 def test_the_reach_arm_passes_only_when_every_declared_row_was_judged() -> None:
     """EQUALITY on rows, a FLOOR on modules -- and each refuses on its own."""
     taken = census(claim('a.py', side=MOVES, grade=supersede.UNTOUCHED))
-    assert_reach(taken, rows_declared=1, module_floor=35)
+    assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=16)
     with pytest.raises(AssertionError, match='judged 1 of 2 declared rows'):
-        assert_reach(taken, rows_declared=2, module_floor=35)
+        assert_reach(taken, rows_declared=2, module_floor=35, module_headroom=16)
     with pytest.raises(supersede.VacuousCensus, match='below the 99 floor'):
-        assert_reach(taken, rows_declared=1, module_floor=99)
+        assert_reach(taken, rows_declared=1, module_floor=99, module_headroom=16)
+
+
+def test_the_reach_arm_now_has_the_side_both_labs_had_to_write_by_hand() -> None:
+    """THE SECOND SIDE, PLANTED IN BOTH DIRECTIONS, and this arm did not exist until 2026-09-18.
+
+    `assert_reach` refused an UNDER-read kit and said nothing whatever about a floor the kit had
+    OUTGROWN, so `KIT_MODULE_FLOOR` sat at 35 in both labs through a kit that grew 46 -> 51 -> 56 --
+    a floor that would have passed a kit which had lost three fifths of itself. The remedy a
+    `SlackFloor` names is to RE-MEASURE THE FLOOR, never to widen the headroom, which is why the
+    headroom arrives as a keyword argument with no default rather than as a number chosen here.
+
+    THE AXIS THIS CONTROL IS BLIND TO: it drives the arithmetic of the band, not what
+    `kit_modules` counted. A resolver that reported 46 modules of the WRONG package clears every
+    assertion below -- that claim belongs to `supersede`, which calls surface overlap a RULER.
+    """
+    taken = census(claim('a.py', side=MOVES, grade=supersede.UNTOUCHED), modules_read=46)
+    assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=11)
+    with pytest.raises(floors.SlackFloor, match='RE-MEASURE THE FLOOR'):
+        assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=10)
+    with pytest.raises(floors.FloorMisdeclared, match='headroom'):
+        assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=0)
 
 
 def test_a_module_floor_of_zero_is_refused_as_the_vacuity_written_down() -> None:
     """THE FLOOR'S OWN FLOOR. A floor that refuses nothing is how a kit nobody read reads green."""
     taken = census(claim('a.py', side=MOVES, grade=supersede.UNTOUCHED), modules_read=0)
     with pytest.raises(supersede.VacuousCensus, match='refuses nothing'):
-        assert_reach(taken, rows_declared=1, module_floor=0)
+        assert_reach(taken, rows_declared=1, module_floor=0, module_headroom=16)
 
 
 def test_a_flagged_row_on_the_moves_side_is_named_and_an_unflagged_one_is_not() -> None:
@@ -187,7 +208,7 @@ def test_the_body_takes_a_real_census_end_to_end_against_the_installed_kit() -> 
         row_floor=2,
         module_floor=35,
     )
-    assert_reach(taken, rows_declared=2, module_floor=35)
+    assert_reach(taken, rows_declared=2, module_floor=35, module_headroom=len(modules) - 35 + 1)
     assert_no_stale_moves(taken, moves_side=MOVES)
     assert len(modules) >= 35, (
         f'{len(modules)} kit modules read; a census over a kit nobody read grades every row UNTOUCHED'

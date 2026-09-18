@@ -16,9 +16,11 @@ the extra paragraphs each one carries are exactly the repo's own measurement. A 
 under two names is not a shared convention, it is the fork this package exists to remove, and it had
 a two-day head start on being one.
 
-EVERY REPO-SHAPED FACT ARRIVES AS A KEYWORD ARGUMENT WITH NO DEFAULT, and here there are five: the
-kit's dotted package, the row count the roster declares, the kit-module floor, the spelling of the
-MOVES side, and the waiver. ``LAB_CZ_BASE_REF`` is the worked example the family already paid for
+EVERY REPO-SHAPED FACT ARRIVES AS A KEYWORD ARGUMENT WITH NO DEFAULT, and here there are six: the
+kit's dotted package, the row count the roster declares, the kit-module floor AND ITS HEADROOM, the
+spelling of the MOVES side, and the waiver. The headroom is the newest and the one that was missing
+rather than defaulted -- see :func:`assert_reach` for what a one-sided floor cost both labs on the
+day it was added. ``LAB_CZ_BASE_REF`` is the worked example the family already paid for
 twice -- a guessed ``origin/main`` in a repo whose trunk is named otherwise resolves to nothing and
 REPORTS THE LANE CLEAN, and a stray trailing newline on a resolved ``@{push}`` did the same thing
 from the other side. THE FAILURE MODE OF A GUESSED ANSWER IS NOT AN ERROR, IT IS A WIDER SCOPE. A
@@ -50,7 +52,7 @@ import importlib.util
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from lab_commons.dev import supersede
+from lab_commons.dev import floors, supersede
 
 if TYPE_CHECKING:
     from collections.abc import Container, Mapping
@@ -121,12 +123,21 @@ def kit_directory(*, package: str) -> Path:
     return Path(spec.submodule_search_locations[0])
 
 
-def assert_reach(census: supersede.Census, *, rows_declared: int, module_floor: int) -> None:
-    """THE FLOOR'S OWN ARM: every declared row was judged, against a kit that is really there.
+def assert_reach(census: supersede.Census, *, rows_declared: int, module_floor: int, module_headroom: int) -> None:
+    """THE FLOOR'S OWN ARM, BOTH SIDES: every declared row was judged, against a kit that is really there.
 
-    Two separate readings, because they fail for different reasons and a caller that conflates them
-    cannot act on either: a roster the census did not finish reading has rows whose side nothing
-    re-checks, and a kit nobody read grades the whole roster UNTOUCHED.
+    Three separate readings, because they fail for different reasons and a caller that conflates them
+    cannot act on any: a roster the census did not finish reading has rows whose side nothing
+    re-checks, a kit nobody read grades the whole roster UNTOUCHED, and a floor the kit has OUTGROWN
+    proves only that a kit exists.
+
+    THE THIRD READING IS NEW AND IT IS HERE BECAUSE THE ABSENCE WAS CONVICTED RATHER THAN SUSPECTED.
+    This function took a ``module_floor`` and no headroom, so it was structurally one-sided, and both
+    consumers paid for that the same way on 2026-09-18: ``KIT_MODULE_FLOOR`` had been left at 35 while
+    the kit grew 46 -> 51 -> 56, i.e. it would have passed a kit that had lost THREE FIFTHS of itself,
+    and each lab then wrote the missing side by hand in its own test file -- the same four lines under
+    two names, which is the fork this package exists to remove. Neither lab was wrong to write it; the
+    arm they were calling had one side.
 
     Args:
         census: what :func:`lab_commons.dev.supersede.take_census` returned.
@@ -134,10 +145,16 @@ def assert_reach(census: supersede.Census, *, rows_declared: int, module_floor: 
             roster is the population, so a row it declares and the census did not judge is a gap.
         module_floor: the smallest kit the consumer will accept a verdict from. No default: the kit
             grows and shrinks, and one repo's measured number is not another's.
+        module_headroom: how far past *module_floor* the installed kit may grow before the floor has
+            stopped separating a full read from a broken one and must be RE-MEASURED. No default, for
+            the same reason and one more: it prices how much of the kit a resolution may silently
+            lose, and that price is the consumer's to state rather than this module's to assume.
 
     Raises:
         supersede.VacuousCensus: the floor is not positive, or the kit read fell below it.
         AssertionError: the census judged a different number of rows than the roster declares.
+        lab_commons.dev.floors.FloorMisdeclared: *module_headroom* refuses nothing.
+        lab_commons.dev.floors.SlackFloor: the kit has outgrown the floor past its headroom.
 
     """
     if module_floor <= 0:
@@ -157,6 +174,9 @@ def assert_reach(census: supersede.Census, *, rows_declared: int, module_floor: 
             f'and that is exactly what a finished migration looks like.'
         )
         raise supersede.VacuousCensus(msg)
+    floors.assert_floor_still_binds(
+        census.modules_read, floor=module_floor, headroom=module_headroom, what='KIT-MODULE-FLOOR'
+    )
 
 
 def stale_moves(census: supersede.Census, *, moves_side: str) -> dict[str, str]:
