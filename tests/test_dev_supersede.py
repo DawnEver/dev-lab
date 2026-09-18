@@ -41,6 +41,7 @@ import pytest
 from _supersede_rows import ALREADY_IN_THE_KIT, DISAGREEMENTS, MEASURED_ROWS, ROW_FLOOR, STILL_LOCAL
 
 import lab_commons.dev as dev_pkg
+from lab_commons.dev import supersede
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.supersede import (
     CONSULTS,
@@ -639,3 +640,60 @@ def test_a_sub_package_the_kit_does_not_publish_is_not_read_two_deep() -> None:
     assert imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=SUBPACKAGES) == frozenset({'elsewhere'})
     widened = imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=frozenset({'elsewhere'}))
     assert widened == frozenset({'elsewhere', 'thing'})
+
+
+# ------------------------------- a package whose surface IS its `__init__` was invisible until today
+
+
+def test_a_package_whose_whole_surface_is_its_init_is_a_kit_module(tmp_path: Path) -> None:
+    """THE BLINDNESS, PLANTED AND DRIVEN THROUGH THE REAL WALK, and both of its sides.
+
+    `_published` drops any path with a private part and `__init__.py` has one, so a package that
+    publishes everything from its `__init__` was in NEITHER `kit_modules` nor `kit_subpackages`. The
+    live instance is `lab_commons.dev.agenthooks`: eleven public names, seen by nothing, and a
+    motronics roster row graded `untouched` purely because its one kit import names it -- while
+    being 98.0% identical to optimi-lab's file of the same name.
+
+    THE OTHER SIDE IS THE BAR, and it is what stops the repair from manufacturing agreement. An
+    `__init__` that declares nothing is an INDEX, not a module: emitting it would let a bare
+    `from lab_commons.dev import famtests` corroborate a row against a surface that does not exist.
+    """
+    (tmp_path / 'engine').mkdir()
+    (tmp_path / 'engine' / '__init__.py').write_text(
+        '"""E."""\n\n\ndef decide() -> int:\n    return 1\n', encoding='utf-8'
+    )
+    (tmp_path / 'index').mkdir()
+    (tmp_path / 'index' / '__init__.py').write_text('"""I."""\n\n__all__: list[str] = []\n', encoding='utf-8')
+    (tmp_path / '_hidden').mkdir()
+    (tmp_path / '_hidden' / '__init__.py').write_text('"""H."""\n\n\ndef x() -> int:\n    return 1\n', encoding='utf-8')
+    (tmp_path / '__init__.py').write_text('"""Root."""\n\n\ndef root() -> int:\n    return 1\n', encoding='utf-8')
+
+    found = {path.parent.name for path in supersede.package_modules(tmp_path)}
+    assert found == {'engine'}, (
+        f'{sorted(found)}: the package with a real surface must be seen, the empty INDEX must not '
+        f'(it would invent corroboration), the private one must not, and the ROOT must not -- a kit '
+        f'is never one of its own modules.'
+    )
+    names = {module.name for module in supersede.kit_modules(tmp_path)}
+    assert 'engine' in names, f'{sorted(names)}: the package module is named by its DIRECTORY'
+    assert 'index' not in names, f'{sorted(names)}: an empty INDEX must not be a module'
+    assert '__init__' not in names, f'{sorted(names)}: a package module is never named `__init__`'
+
+
+def test_the_live_kit_no_longer_hides_agenthooks() -> None:
+    """THE REGRESSION THIS CLOSES, on the real kit rather than on a fixture.
+
+    Stated over the NAMED set and not a count: a total cannot say which package came back, and the
+    honest-looking repair when a digit disagrees is to edit the digit.
+    """
+    directory = Path(supersede.__file__).resolve().parent
+    modules = {module.name for module in supersede.kit_modules(directory)}
+    assert {'agenthooks', 'githooks'} <= modules, (
+        f'agenthooks publishes eleven names from its `__init__` and githooks sixteen; both must be '
+        f'kit modules. Missing: {sorted({"agenthooks", "githooks"} - modules)}'
+    )
+    assert 'famtests' not in modules, (
+        'famtests declares `__all__: list[str] = []` and publishes nothing, so it is an INDEX. A row '
+        'for it would let a bare `from lab_commons.dev import famtests` corroborate against an empty '
+        'surface -- a detector inventing the finding it reports.'
+    )

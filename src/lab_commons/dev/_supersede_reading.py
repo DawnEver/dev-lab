@@ -181,6 +181,18 @@ def _published(directory: Path) -> tuple[Path, ...]:
     return tuple(sorted(found))
 
 
+def _subpackage_of(path: Path, directory: Path) -> str:
+    """Which published sub-package a module was found in, empty for a top-level one.
+
+    A package module is named by its OWN directory, so ``famtests/x/__init__.py`` sits in
+    ``famtests`` and ``agenthooks/__init__.py`` sits at the top level -- the same answer a reader
+    gets from the dotted path, which is what the import bound is stated over.
+    """
+    parts = path.relative_to(directory).parts
+    depth = _NESTED if path.stem == '__init__' else 1
+    return parts[0] if len(parts) > depth else ''
+
+
 def kit_subpackages(directory: Path) -> frozenset[str]:
     """The directory names *directory* publishes modules under -- the bound's other half.
 
@@ -188,6 +200,50 @@ def kit_subpackages(directory: Path) -> frozenset[str]:
     half of the pair and unknown to the other. That divergence IS the defect this argument closes.
     """
     return frozenset(path.relative_to(directory).parts[0] for path in _published(directory) if path.parent != directory)
+
+
+#: The shortest relative path a PACKAGE's ``__init__.py`` can have: a directory name and the file.
+#: The kit root's own ``__init__.py`` is one part and is excluded by it -- the kit is not one of its
+#: own modules, and a row for it would name the whole package as the thing a consumer superseded.
+_NESTED = 2
+
+
+def package_modules(directory: Path) -> tuple[Path, ...]:
+    """Every package below *directory* whose ``__init__.py`` IS the module -- the blind spot, closed.
+
+    MEASURED 2026-09-18. :func:`_published` drops any path with a private part, and ``__init__.py``
+    has one, so a package whose ENTIRE public surface lives in its ``__init__`` was invisible to
+    :func:`kit_modules` and to :func:`kit_subpackages` alike. ``lab_commons.dev.agenthooks`` is the
+    live instance: it holds an ``__init__.py``, a ``__main__.py`` and a ``.js``, publishes eleven
+    names, and appeared in NEITHER reading. A motronics roster row graded ``untouched`` purely
+    because its one kit import is ``dev.agenthooks``, while being 98.0% identical to optimi-lab's
+    file of the same name.
+
+    THIS IS NOT A SPELLING GAP AND A NEW ``IMPORT_SPELLINGS`` ROW CANNOT FIX IT. The consumer's
+    import already resolves to the token ``agenthooks``; what was missing is a kit module for that
+    token to match. The leading underscore in ``__init__`` is a PRIVACY marker everywhere else in
+    this walk and is not one here -- that file is the package's public surface -- so the repair is at
+    the reading, not at the token.
+
+    THE BAR IS A NON-EMPTY PUBLIC SURFACE, and it is what stops this manufacturing agreement. An
+    ``__init__`` that declares nothing is an INDEX rather than a module: ``famtests`` is exactly that
+    (``__all__: list[str] = []``, zero public names), and emitting it would let a bare
+    ``from lab_commons.dev import famtests`` corroborate a row against a module with no surface at
+    all -- a detector inventing the finding it reports. Measured today: ``agenthooks`` publishes 11
+    names and ``githooks`` 16, so both are modules; ``famtests`` publishes 0 and stays out.
+
+    Returns:
+        The ``__init__.py`` paths, sorted, of every public package that is itself a module.
+
+    """
+    out = []
+    for init in sorted(directory.rglob('__init__.py')):
+        rel = init.relative_to(directory).parts
+        if len(rel) < _NESTED or any(part.startswith('_') for part in rel[:-1]):
+            continue
+        if public_names(ast.parse(init.read_text(encoding='utf-8'))):
+            out.append(init)
+    return tuple(out)
 
 
 def kit_modules(directory: Path) -> tuple[KitModule, ...]:
@@ -198,19 +254,24 @@ def kit_modules(directory: Path) -> tuple[KitModule, ...]:
     missed. Only a :data:`~lab_commons.dev._provenance.SUPERSEDES` row joins the claims; an
     ``ADOPTED_BY`` row is a fact about a consumer that DELEGATES, which is the one thing a provenance
     claim must not be read as.
+
+    A PACKAGE WHOSE SURFACE IS ITS ``__init__`` IS A MODULE HERE, named by its DIRECTORY -- see
+    :func:`package_modules` for the blindness that closes and for the bar that keeps it from
+    inventing one.
     """
     rows = provenance_rows(directory)
     out: list[KitModule] = []
-    for path in _published(directory):
+    for path in (*_published(directory), *package_modules(directory)):
         tree = ast.parse(path.read_text(encoding='utf-8'))
-        row = rows.get(path.stem, ())
+        name = path.parent.name if path.stem == '__init__' else path.stem
+        row = rows.get(name, ())
         declared = frozenset(row[1:]) if row[:1] == (SUPERSEDES,) else frozenset()
         out.append(
             KitModule(
-                name=path.stem,
+                name=name,
                 claims=named_paths(ast.get_docstring(tree)) | declared,
                 universe=normalise(defined_names(tree)),
-                subpackage='' if path.parent == directory else path.relative_to(directory).parts[0],
+                subpackage=_subpackage_of(path, directory),
             )
         )
     return tuple(out)

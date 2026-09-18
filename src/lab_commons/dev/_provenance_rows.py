@@ -35,6 +35,25 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
     # derives or admits. The row motronics added by hand on 2026-09-18 is the first thing it subsumes.
     'allow_adoption': ('original',),
+    # THE TWO ROWS THE `__init__`-ONLY BLINDNESS HID, added 2026-09-18 in the commit that closed it.
+    # Neither is new; both were published, imported and unreadable to the ratchet, because
+    # `_published` drops any path with a private part and `__init__.py` has one. A guard that cannot
+    # SEE a module cannot notice it has no row, which is the failure mode that reads exactly like
+    # compliance.
+    #
+    # `agenthooks` SUPERSEDES the engine that lived in exactly ONE repo. `hooks` authored the deny
+    # registry and `hook_adoption` rendered it into the engine's JSON, while the engine itself was
+    # motronics' file alone -- so a repo could render a correct `deny-rules.json` and be left with an
+    # inert declaration that reads as a guard.
+    'agenthooks': ('supersedes', '.claude/hooks/deny-commands.js'),
+    # `githooks` SUPERSEDES the copies, and the drift is the measurement rather than the argument:
+    # `bump-version.sh` existed in motronics-studio and in wdg-lab, and the two had diverged in ONE
+    # direction for months, every fix landing in whichever copy its author's defect hit. ONE path is
+    # named, not two: `scripts/hooks/bump-version.sh` is live at the motronics lane `bc8ca7cc6`, and
+    # wdg-lab has no copy at `ef5fa9fc` -- checked before writing, because a row naming a path that
+    # does not exist downgrades a live fork to no finding at all, silently and in the flattering
+    # direction. That happened here on 2026-09-18 and is why the check is now the habit.
+    'githooks': ('supersedes', 'scripts/hooks/bump-version.sh'),
     'bounded': (
         'supersedes',
         'scripts/gate/bounded.py',

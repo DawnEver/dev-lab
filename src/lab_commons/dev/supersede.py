@@ -73,6 +73,7 @@ from ._supersede_reading import (
     kit_modules,
     kit_subpackages,
     named_paths,
+    package_modules,
     public_names,
     read_row,
 )
@@ -107,6 +108,7 @@ __all__ = [
     'kit_modules',
     'kit_subpackages',
     'named_paths',
+    'package_modules',
     'provenance_rows',
     'public_names',
     'read_row',
