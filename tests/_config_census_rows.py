@@ -767,8 +767,8 @@ TREE_EXCLUDES: dict[str, tuple[str, ...]] = {
 #: `PLR0917` over a visualisation subtree -- down from seven and five, because `wdg_viz/backend/**`
 #: and `wdg_viz/utils.py` were SPENT at the source on 2026-09-18 rather than defended, and the two
 #: rows here went with them in the same ratchet. 17 -> 15. motronics waives NOTHING, by a 2026-08-02
-#: user directive its `ruff.toml` states in full -- a waiver belongs in the file it governs, as a
-#: noqa comment carrying a reason, never in a central table -- and
+#: user directive its `ruff.toml` states in full -- a waiver belongs in the file it governs, as an
+#: inline suppression comment carrying a reason, never in a central table -- and
 #: `tests/architecture/ratchets/test_suppression_ratchet.py` pins that repo's table at zero pairs.
 #: optimi-lab has none either, and declares nothing about it.
 #:

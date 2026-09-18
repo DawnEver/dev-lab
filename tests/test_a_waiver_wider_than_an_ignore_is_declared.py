@@ -188,7 +188,17 @@ def test_motronics_holds_the_zero_and_it_is_a_principle_rather_than_an_accident(
     reached = _reached()
     lane = reached.get('motronics-studio')
     if lane is None:
-        pytest.skip('the motronics lane is not checked out beside this repo')
+        # NOT A SKIP, under this repo's XFAIL-NOT-SKIP rule and its EMPTY `ALLOWED_SKIPS`: a skip
+        # records nothing, and "the lane was not there" is a fact worth stating rather than
+        # swallowing. The reach floor above already permits a sibling to be absent, so what is owed
+        # here is that the absence is NAMED -- which is exactly what a reader meeting a green suite
+        # needs in order to know this row was not judged.
+        assert 'motronics-studio' in _absent(reached), (
+            f'the motronics lane is neither reached nor absent: {sorted(reached)} against '
+            f'{sorted(REPO_PATHS)}. One of the two readers is wrong, and a row in neither set is '
+            f'judged by nothing.'
+        )
+        return
     assert ruff_per_file_waivers(lane) == frozenset(), (
         'the motronics lane grew a per-file ignore. That table is EMPTY BY PRINCIPLE there and the '
         'principle is written in the file: a waiver belongs in the file it governs as a noqa comment carrying '
