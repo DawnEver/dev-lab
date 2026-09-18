@@ -597,26 +597,62 @@ attributed.
 
 ## Floors for whoever picks this up
 
-* motronics `scripts/` roster: 77 rows, 48/17/12, read from the LANE at HEAD — say which tree you
-  read. wdg-lab 31 rows (14/5/12), optimi-lab 23 rows (9/6/8). If a later reading shows fewer rows
-  than files, the completeness arm has been weakened.
-* Consumption by IMPORT, not by grep: wdg-lab 17, optimi-lab 16, of 30 published modules.
-* All-three `.gitignore` intersection: **12 LITERAL, 14 normalised** — say which you mean, and see
-  the correction above for why the difference is a behaviour difference rather than a spelling one.
-  All-three pre-commit ids: 11, over 22/19/18, and the three disagree on BOTH pins
-  (`pre-commit-hooks` v6.0.0/v5.0.0/v5.0.0, `commitizen` v4.13.9/v4.6.0/v4.6.0).
-* Makefile targets: 3 in all four (over 6/18/14/15), 8 in all three consumers. `verify` is in three
-  of four and motronics is the exception.
-* `famconfig.py` is at exactly 400 lines, the module-size band: it passes, and the next addition
-  must split it. The named seam is the SURVEY half (`measured_delta`, `fork_signals`).
-* R2 adoption sizing, `.gitignore` added/dropped per repo: wdg-lab 49/2, optimi-lab 18/2,
-  motronics 59/0.
-* `lab_commons.dev` public modules: 30.
+**EVERY FLOOR BELOW WAS RE-MEASURED 2026-09-18, and almost none of the 2026-09-17 numbers survived.**
+That is the finding, not a footnote: this section is the instrument a later reader calibrates
+against, and it had drifted on nine of its own rows within a day. The superseded values are quoted
+beside the live ones so a reader can tell drift from a misreading.
 
-* ruff select: 12 selectors in the kit against 58 in each consumer, the consumers' sets
-  BYTE-IDENTICAL (pairwise symmetric difference empty). 50 groups the kit is blind to; 8 codes the
-  consumers globally ignore and the kit enforces. R1 is done when the first number is 0 and the
-  second is a named, shrinking waiver set.
-* Config census: 24 rows (4 repos x 6 artefacts) = 4 STAYS, 2 MOVES, 18 SPLITS.
-* Installed git hooks: lab-commons 0, wdg-lab 2, optimi-lab 1, motronics 3. A later reading of zero
-  everywhere means the hooks dir was resolved by path rather than through git.
+* **Rosters, read as DATA** (a grep over the prose over-counts: it read 30 MOVES where the truth was
+  0, because every partition explains its past reclassifications). Say which tree you read.
+
+        roster                rows   STAYS   SPLITS   MOVES     was 2026-09-17
+        motronics scripts       70      54       16       0     77 -- 48/17/12
+        motronics tests        254     225       26       3     not in this section
+        wdg-lab                 38      18       19       1     31 -- 14/5/12
+        optimi-lab              29      13       16       0     23 -- 9/6/8
+        TOTAL                  391     310       77       4
+
+  **MOVES fell from 28 declared to 4; two rosters are at zero. SPLITS at 77 is the whole remaining
+  bucket.** If a later reading shows fewer rows than files, the completeness arm has been weakened.
+
+* **Makefile targets: NINE in all four** (over 11/18/14/16), and nine in all three consumers -- the
+  two readings are now EQUAL. Was "3 in all four (over 6/18/14/15), 8 in all three consumers,
+  `verify` in three of four and motronics the exception". **That exception is closed**: all four
+  carry `verify`. The four repos share the target NAME and not the CONTRACT -- motronics' `verify`
+  shells its own runner, not `lab_commons.dev.verify`.
+
+* **ruff: 58 selectors in all four**, pairwise symmetric difference EMPTY -- R1's first number is 0.
+  Was "12 in the kit against 58 in each consumer, 50 groups the kit is blind to". `ignore`
+  intersection 10 / union 67: the 10 are exactly the kit's, so the kit's ignore delta is EMPTY and
+  each consumer's waiver set is its own delta with its own ceiling. `line-length` 120 and
+  `quote-style` single in all four. `target-version` is NOT shared (kit py312, consumers py313).
+
+* **pre-commit: 11 ids in all three consumers**, over 22/19/18 -- unchanged, and the only floor in
+  this section that re-measured true. The three still disagree on BOTH pins (`pre-commit-hooks`
+  v6.0.0/v5.0.0/v5.0.0, `commitizen` v4.13.9/v4.6.0/v4.6.0), which is a real upstream bump owed its
+  own commit. Own hooks beyond the core: wdg-lab 11, optimi-lab 8, motronics 7. **Size this artefact
+  in HOOKS, never in lines** -- by lines motronics is the family's largest delta (87 against a
+  21-line base) and by hooks it is the smallest of the three, because a line ceiling on a YAML
+  mapping scores hook SOURCING rather than distance from the base.
+
+* **`.gitignore`: 14 LITERAL in all three** -- the 12-vs-14 trap is CLOSED, both numbers now agree
+  because all three consumers write the slashed spelling of all five contested patterns. Adoption
+  costs nobody a behaviour change. R2 sizing, added/dropped per repo: wdg-lab 49/2, optimi-lab 18/2,
+  motronics 59/0.
+
+* **`famconfig.py` is at 357 lines against the 400 band.** Was "exactly 400, and the next addition
+  must split it" -- the split HAPPENED, into `_famconfig_survey` (read), `_famconfig_rows` (data),
+  `_famconfig_refusals`, `_famconfig_sections` (the section half) and `_famconfig_ruff_rows`. The
+  named seam is spent; a further addition needs a new one argued from the file.
+
+* **`lab_commons.dev` publishes 44 modules directly**, one of which is the `famtests` package
+  holding 24 public submodules. Was 30. **Count by IMPORT rather than by grep, and say which count
+  you mean** -- a dotted-prefix grep reports the same number for both labs and is measuring the
+  prefix, not the consumption.
+
+* **THE FLOOR THIS SECTION DID NOT HAVE, and it is why it drifted.** Nothing re-reads these
+  numbers; they are prose in a memory file, and every one of them is a claim the tree could refute.
+  Two guards now exist for the roster half -- `test_the_scripts_roster_is_re_read_against_the_kit.py`
+  and `test_the_tests_roster_is_re_read_against_the_kit.py` in motronics -- and the config half is
+  covered by `test_the_config_census_is_measured.py` here. **Neither reads THIS file.** A later
+  reader should treat every bullet above as a hypothesis with a date on it, not as a floor.
