@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
+from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
@@ -290,6 +291,14 @@ def run_verify(
     twenty minutes being tested; acquiring first would make the same refusal arrive up to thirty
     minutes later, having queued for a box it was never going to use.
 
+    THE LOG IS READ BACK STREAMED AND IS NEVER RESIDENT, which is why the last two lines go through
+    :mod:`lab_commons.dev._logdistil` rather than ``path.read_text()``. MEASURED 2026-09-18: a
+    400,000-line / 80.8 MB run completes at ``rc=0``, and reading that whole log back to parse it
+    costs a multiple of it in memory -- a runaway run was a ``MemoryError`` and NO verdict, in the
+    module whose entire job is to leave one. That module's docstring carries the choice and what was
+    rejected; here it is enough that ``distil_log`` holds one line at a time and that
+    ``Distillate.annotate`` is the only thing in this function that can add a reason to the report.
+
     Raises:
         MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
         Exhausted: the box was held by another run for the whole of *wait_s*. Nothing was measured,
@@ -311,8 +320,8 @@ def run_verify(
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
         handle.write(_PYTEST_BANNER)
         code = _tee([sys.executable, '-m', 'pytest', *PYTEST_ARGS, *pytest_args], cwd=root, handle=handle)
-    whole = path.read_text(encoding='utf-8', errors='replace')
-    reports.append(read_pytest(whole.rpartition(_PYTEST_BANNER)[2], returncode=code, allowed_skips=allowed))
+    distillate = distil_log(path, banner=_PYTEST_BANNER)
+    reports.append(distillate.annotate(read_pytest(distillate.text, returncode=code, allowed_skips=allowed)))
     try:
         log = LogRef.of(path)
     except UnverifiableLog as exc:
