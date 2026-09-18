@@ -54,6 +54,17 @@ WHAT IS HERE, one module per shared body:
 * :mod:`lab_commons.dev.famtests.datedmemory` -- every memory entry sits under its own date, and
   the entry's own header agrees with it. READERS, not the constructor next door in
   :mod:`lab_commons.dev.datedlog`: a different layout, the opposite refusal, and a floor.
+* :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
+  that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
+  all four, and the bars it is judged against are arguments rather than a property closing over one
+  roster's numbers.
+* :mod:`lab_commons.dev.famtests.placement` -- a placement roster's walk, its completeness ratchet,
+  and the arms holding each repo's two bars inside the interval its own measured rows draw. Read
+  across all FOUR rosters, which is what let it refuse the obvious constant: three bound their
+  ceiling at 50 and the fourth at 40, over intervals that exclude each other's value, so the bar is
+  an ARGUMENT and the interval travels with it. The census next door in
+  :mod:`lab_commons.dev.famtests.rostercensus` reads the same rosters and asks a different question
+  -- whether a row's SIDE has gone stale against the kit -- and neither imports the other.
 
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the

@@ -104,6 +104,22 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # cannot write the four-digit, kind-less layout these readers are about. See the module docstring.
     'datedmemory': ('supersedes', 'tests/architecture/test_memory_lives_under_a_date.py'),
     'hookinstall': ('supersedes', 'tests/architecture/test_the_declared_hooks_are_installed.py'),
+    # FOUR consumer rosters, not three: motronics holds TWO, one for `scripts/` and one for
+    # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
+    # exclude each other's value. That is why the bars are arguments here and not constants, and why
+    # both motronics paths are named -- a single row would have read as one repo, one answer.
+    'density': (
+        'supersedes',
+        'tests/architecture/_placement.py',
+        'tests/architecture/layering/_helpers.py',
+        'tests/architecture/layering/_tests_placement.py',
+    ),
+    'placement': (
+        'supersedes',
+        'tests/architecture/_placement.py',
+        'tests/architecture/layering/_helpers.py',
+        'tests/architecture/layering/_tests_placement.py',
+    ),
     'rostercensus': ('supersedes', 'tests/architecture/test_the_roster_is_re_read_against_the_kit.py'),
     'rulespages': (
         'supersedes',
