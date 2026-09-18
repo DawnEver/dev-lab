@@ -100,59 +100,50 @@ returned, so nothing was committed on an unread verdict. FIRST ACTION NEXT WINDO
 in optimi-lab, and commit the two files together or not at all -- the torn write above is
 exactly what splitting them produces.
 
-## A SEPARATE FINDING, and it is the sharper one: THE WAIT THAT GAVE UP REPORTED SUCCESS
+## RETRACTED: `verify` DOES refuse a held box. The defect was in my instrument.
 
-The verify above was re-issued and **exited with code 0 having never run a single test.** Its whole
-output is seven lines:
+This file previously carried a finding -- committed in `27ab0a1` and again in `9a9e422` -- that a
+`verify` run which times out waiting for the box lock exits 0 with zero tests and no VERDICT line,
+"measured twice at 361s and 843s". **It is false and is retracted here rather than quietly edited.**
 
-    verify:optimi-lab: waiting 0s for the box. Held by: gate/runner.py gate [client:34872] ...
-    ... waiting 361s ...
-    [exited with code 0]
+Measured directly, with the box genuinely held by a live `gate/runner.py`:
 
-No VERDICT line, no selector, no counts -- and exit 0. A caller that reads the exit code, which is
-what every script and every hook does, concludes PASS. **This is the family's own dominant defect
-inside the instrument that measures it**: green over an unasked question, the exact shape
-`VacuousAllowScan` was added upstream to refuse, living in the runner that would have reported it.
+    $ python -m lab_commons.dev.verify --lock-wait-s 0 <a test file>
+    EXIT=2
+    stderr: verify: inconclusive -- this box is held and nothing was measured.
+            Held by: gate/runner.py gate push=320190 [client:40936] since 2026-09-18T01:58:45.
+            Wait for it, or stop that holder, then re-run; --lock-wait-s raises or drops
+            the 0s ceiling on the wait.
 
-A give-up MUST be distinguishable from a pass, and **THE SAME CODEBASE ALREADY DOES THIS
-CORRECTLY ON THE OTHER ENTRY POINT** -- which is what makes this a narrow, locatable defect rather
-than a missing concept. Measured minutes later, the motronics lane's pre-push gate hit the SAME
-holder and answered:
+`verify.py` catches `Exhausted`, prints the holder and the remedy, and returns
+`EXIT_CODES[Outcome.INCONCLUSIVE]` = 2. Its own `--help` epilog documents the code. `gate` and
+`verify` AGREE; there was never a disagreement between two entry points.
 
-    [gate] INCONCLUSIVE -- push REFUSED, but NOT by a defect in this tree: the gate never
-    started because another run held the box. Nothing was proved, so nothing may be pushed --
-    wait for the holder to finish and push again.
+### What actually produced the false reading, because that is the reusable part
 
-Exit 1, the state named, the cause disclaimed, the remedy given. So `gate` reaches for
-`INCONCLUSIVE` on a lock timeout and `verify` does not. **Two entry points on one runner give
-opposite answers to one question**, and the one that is wrong is the one agents are told to use. Candidate fix: a timed-out box wait exits NON-ZERO
-with `result=inconclusive` and the holder named, so the caller gets the same answer a human reading
-those seven lines gets.
+Both "measurements" were commands the harness moved to the background at its own 120s limit. I then
+read two things that were not what I took them for:
 
-Whether the wait should be bounded at all is a second question: `workflow.md` says bound every wait,
-and this one was. What it must not do is spell the bound as success.
+1. **The exit code was the BACKGROUNDED WRAPPER's, not the runner's.** The line `[exited with code
+   0]` in the task output belongs to the harness.
+2. **The capture held stdout only.** The `waiting Ns for the box` progress lines go to stdout; the
+   refusal goes to **stderr**. So the one line that would have refuted me was the one line not in
+   the file I was reading.
 
-MEASURED TWICE, which is what makes it a behaviour rather than a race. Two runs against optimi-lab,
-different selectors, different bounds, same holder:
+Two reads, same instrument, same blind spot -- which is why repeating it produced agreement rather
+than a correction. **A measurement repeated through the same instrument is one measurement.** The
+disproof cost one command, took eleven seconds, and separated the two streams and the two exit
+codes; I should have run it before writing the finding down, let alone before pushing it twice.
 
-    selector=tests/architecture                                     waited 843s -> exit 0
-    selector=.../test_no_allow_entry_names_a_denied_shape.py        waited 361s -> exit 0
+The irony is on the record deliberately: the claim was that a failure had presented as a benign
+state, and it was produced by exactly that -- a harness's success code presenting as the runner's.
 
-Both: zero tests, zero VERDICT lines, exit 0. The give-up is spelled as success on the ordinary
-path, not on an unlucky one.
+### What survives
 
-THE SECOND-ORDER COST IS THE ONE TO STATE. Every "verified" claim in this whole migration rests on
-a runner invocation whose exit code was trusted. Any of them made through `verify` while another party
-held the box is UNPROVEN -- not wrong, unproven, which is the distinction `workflow.md` draws, the
-`gate` path honours, and the `verify` path erases. Pushes are not affected: every push in this
-session went through `gate`, which refused correctly. A reader auditing this session should treat a verification with no quoted VERDICT
-line as absent evidence, and the fix above should land BEFORE the next tranche is called verified.
-
-## Do not do
-
-- `git add -A`, `git reset`, `git stash` in any shared checkout.
-- `heavy` locally.
-- Widen an agent's own permission file without a user ruling.
+The family of three is now a family of two, and both are still real and still measured:
+a stray newline that turned a resolved push base into a silent fall-through to the trunk, and a
+failed pre-commit hook that destroyed staged work and left `git status` clean. Both were found by
+driving the thing rather than reading it, which is the same method that just refuted the third.
 
 ## THE MOTRONICS LANE, and two findings of the same family as the one above
 
@@ -190,9 +181,10 @@ RULE: **run `ruff check` and `ruff format` BEFORE `git commit` here.** A hook fa
 configuration is destructive, not merely a refusal. And if a tree is unexpectedly clean, look in
 the pre-commit patch cache before concluding anything.
 
-Same family as the `verify` exit-0 above and worth naming once: **three times this window, a
-failure presented as a benign state** -- a give-up as success, a stray newline as a resolved base, a
-destroyed stash as a clean tree. In each case the reader's normal instrument said nothing was wrong.
+Worth naming once: **twice this window a failure presented as a benign state** -- a stray newline as
+a resolved base, a destroyed stash as a clean tree. In each case the reader's normal instrument said
+nothing was wrong. A third candidate was claimed and RETRACTED above; it turned out to be this same
+shape in the instrument I was measuring WITH, which is the more useful version of the lesson.
 
 ### Also confirmed
 `scripts/gate/envkey.py` does not exist. The docs-registry row
