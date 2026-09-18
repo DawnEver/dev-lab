@@ -103,7 +103,9 @@ from lab_commons.dev._famconfig_survey import (
     meaningful_lines,
     measured_delta,
     positional_base_lines,
+    recipe_blocks,
     satisfies,
+    unbound_recipes,
 )
 
 __all__ = [
@@ -138,9 +140,11 @@ __all__ = [
     'meaningful_lines',
     'measured_delta',
     'positional_base_lines',
+    'recipe_blocks',
     'render',
     'rendered_lines',
     'satisfies',
+    'unbound_recipes',
 ]
 
 #: MODE. The file must equal base-plus-delta byte for byte.
@@ -281,13 +285,22 @@ def _required_report(path: Path, base: Base, delta: Delta, live: tuple[str, ...]
         raise ForkedDelta('\n'.join(problems))
     missing = tuple(line for line in base.content_lines if line not in delta.dropped and not satisfies(line, live))
     resurrected = tuple(line for line in delta.dropped if satisfies(line, live))
-    offending = missing + resurrected
+    # THE ASSOCIATION, which neither list above can see. `satisfies` reads one line at a time, so a
+    # target matched by NAME and a recipe matched ANYWHERE in the file both pass while the recipe sits
+    # under a different target. DROPPED LINES COME OUT OF THE REQUIREMENT rather than out of the
+    # complaints: a line the delta declares gone is not required to sit anywhere, and filtering the
+    # messages instead would compare a raw line against its own repr and never match -- which is how
+    # the first cut of this arm reported a correctly declared drop as drift.
+    orphaned = unbound_recipes(tuple(line for line in base.content_lines if line not in delta.dropped), live)
+    offending = missing + resurrected + orphaned
     if not offending:
         return ArtefactReport(base.artefact, path, INSTALLED, f'all {len(base.content_lines)} base lines present', ())
     detail = (
         f'{len(missing)} base line(s) absent with no declared drop, {len(resurrected)} declared drop(s) '
-        f'present after all. A base line may leave this file only through a Delta.dropped entry that '
-        f'says why, and a drop that is contradicted by the file is a declaration that lies.'
+        f'present after all, {len(orphaned)} recipe line(s) present but not under the target they belong '
+        f'to. A base line may leave this file only through a Delta.dropped entry that says why, a drop '
+        f'contradicted by the file is a declaration that lies, and a target whose recipe moved elsewhere '
+        f'still RUNS -- it just does nothing.'
     )
     return ArtefactReport(base.artefact, path, DRIFTED, detail, offending)
 

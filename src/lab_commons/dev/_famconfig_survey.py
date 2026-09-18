@@ -160,6 +160,77 @@ def satisfies(required: str, live: Sequence[str]) -> bool:
     return required in live
 
 
+def recipe_blocks(lines: Sequence[str]) -> dict[str, tuple[str, ...]]:
+    """``{header: its indented lines}``, derived from ORDER -- never from a second hand-written table.
+
+    A block opens on an UNINDENTED line and continues through every indented line after it. That is
+    the whole grammar this needs, and it is deliberately not a Makefile parser: the only question is
+    which lines BELONG to which header, which is what :func:`satisfies` cannot see because it is a
+    predicate over one line at a time.
+
+    Deriving the blocks from the base's own line order is what keeps this from being a declaration
+    that can drift -- a recipe moved under a different target in the base moves here in the same
+    edit. An artefact with no indentation at all, a ``.gitignore``, yields blocks that are all empty,
+    so :func:`unbound_recipes` has nothing to say about it and says nothing.
+    """
+    blocks: dict[str, tuple[str, ...]] = {}
+    header: str | None = None
+    for line in lines:
+        if line[:1].isspace():
+            if header is not None:
+                blocks[header] = (*blocks[header], line)
+        else:
+            header = line
+            blocks.setdefault(header, ())
+    return blocks
+
+
+def unbound_recipes(required: Sequence[str], live: Sequence[str]) -> tuple[str, ...]:
+    """Base recipe lines present in *live* but NOT under the header they sit under in *required*.
+
+    THE HOLE THIS CLOSES, MEASURED 2026-09-18 against the live Makefile base. :func:`satisfies`
+    matches a colon-terminated base line by TARGET NAME ALONE, and every other base line by
+    membership ANYWHERE in the file. Each is right on its own, and together they cannot see an
+    ASSOCIATION: a Makefile whose ``verify:`` is followed by nothing, with
+    ``python -m lab_commons.dev.verify`` sitting under ``all:`` instead, satisfies BOTH base lines
+    and reports INSTALLED. ``make verify`` then does nothing, and under ``REQUIRED`` nothing else
+    byte-checks that recipe.
+
+    It is the recipe-shaped twin of the count pin: ``REQUIRED`` can see a target DISAPPEAR and cannot
+    see one GUTTED -- and gutted is the state a reader is least likely to look for, because the
+    target is right there in the file.
+
+    TWO THINGS ARE DELIBERATELY NOT REPORTED HERE, and both are the same rule: one defect, one voice.
+    A header MISSING entirely is already a missing base line. And a recipe line that is nowhere in the
+    file at all is already a missing base line too -- reporting it would also make the message UNTRUE,
+    since it says the line is in the file. So the complaint fires only when the recipe really is
+    present and really is under something else, which is the state no other arm can see.
+
+    Args:
+        required: the base's content lines, IN ORDER, so the association can be derived at all.
+        live: the file's meaningful lines, in order.
+
+    Returns:
+        One complaint per orphaned recipe line, sorted, naming the header it belongs under.
+
+    """
+    wanted = recipe_blocks(required)
+    found = recipe_blocks(live)
+    anywhere = set(live)
+    problems: list[str] = []
+    for header, recipes in wanted.items():
+        if not recipes or not any(satisfies(header, (name,)) for name in found):
+            continue
+        under = {line for name, lines in found.items() if satisfies(header, (name,)) for line in lines}
+        problems.extend(
+            f'{line!r} is in the file but not under {header!r} -- the target is present and its recipe is '
+            f'not, so it runs and does nothing'
+            for line in recipes
+            if line in anywhere and line not in under
+        )
+    return tuple(sorted(problems))
+
+
 def measured_delta(path: Path, base: Base, repo: str) -> Delta:
     """What *path* would have to declare, today, to be a rendering of *base*.
 
