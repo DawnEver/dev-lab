@@ -1,0 +1,155 @@
+---
+created: 2026-09-18
+accessed: 2026-09-18
+---
+
+# Handoff — the family config layer at the quota wall
+
+Written 2026-09-18 01:10 local, weekly quota nearly spent. A 4h one-shot reminder is scheduled
+(session-only; it dies with the session, so this file is the durable half).
+
+Plan: `.claude/memory/2026/09/17/plan-one-source-of-truth-for-the-family-config-layer.md`, stage R4.
+
+## State of the four repos
+
+| repo | HEAD | pushed |
+|---|---|---|
+| lab-commons | `a177ba6` + one live agent | yes |
+| wdg-lab | `7329b1c1`, then `cc8d8c11` | `7329b1c1` pushed; `cc8d8c11` NOT |
+| optimi-lab | `aab4074` pushed, then `4c5b1cd` | `4c5b1cd` NOT |
+| motronics lane `feat/optimi-lab` | `cb810816e` + live agent | push in flight at write time |
+
+NEVER `D:\MingyangBao\motronics-studio` itself.
+
+## THE FINDING THAT CHANGES THE PRIOR
+
+The standing prior — the roster OVER-reports, three tranches declared 17 MOVES and measured 7 — did
+NOT reproduce in the labs. Neither lab holds a stale MOVES row; optimi-lab has ZERO. The error is
+the opposite one and it is in the INSTRUMENT:
+
+**`supersede.imported_kit_modules(package='lab_commons.dev')` resolves
+`from lab_commons.dev.famtests import allowguard` to the segment at depth 2 — `'famtests'` — while
+`supersede.kit_modules` publishes the same module under the bare stem `'allowguard'`. The two
+halves spell one module two ways, so the IMPORT detector cannot corroborate ANY sub-package
+adoption.** Twelve rows across both labs grade `NAMED_ONLY` and every one is fully adopted:
+`allowguard agentguard hookinstall configrender rulespages visibility`, six modules, two labs.
+
+**FIXED UPSTREAM, lab-commons `1aa2738` on `main`, NOT PUSHED.** Two lanes reached this
+independently -- one measured it from the labs' rosters, one from the kit -- and converged on the
+same six modules. The kit lane took it: `imported_kit_modules` now reaches TWO segments below the
+package.
+
+**The bound is the interesting part and must not be widened.** Reading EVERY segment would let a
+one-level-short `lab_commons` resolve `bounded` inside `lab_commons.dev.bounded` and silently
+retire `_refuse_mismatch` -- a repair that switches off the guard it repairs. That plant passes
+unchanged; keep it.
+
+The re-measured row is `PARTIAL`, not `SUPERSEDED`, and for the opposite reason to before: it was
+PARTIAL because a local mechanism had not left, it is PARTIAL now because what remains is optimi's
+own half of a FINISHED split. `covered` is EMPTY -- after the move the file shares zero names with
+its superseder, which is a sharper restatement of why surface overlap is a RULER and never a
+detector. New round-trip arm: what `kit_modules` PUBLISHES, `imported_kit_modules` must NAME, with
+a `NESTED_FLOOR = 3` because the defect is reachable only through a sub-package.
+
+CONSEQUENCE FOR THE NEXT WINDOW: the labs pinned those 12 rows as a NAMED SET so they RED when the
+kit is fixed. The kit is fixed. **Push `1aa2738`, reinstall in both labs, and expect that set to
+red -- that is the ratchet working, not a regression.** Re-take the set to empty in the same change.
+
+This is the second measured `NAMED_ONLY` false positive (the first was `scripts/gate/runner.py`)
+and the first STRUCTURAL one. Fix is one line in `imported_kit_modules` — emit the full sub-path,
+or both tokens. It is pinned as a NAMED SET in both labs' new
+`test_the_roster_is_re_read_against_the_kit.py`, so it reds when the kit is fixed.
+
+## THE NEXT TRANCHE IS UPSTREAM, NOT IN THE LABS
+
+Every remaining SPLITS row in both labs is blocked on lab-commons. Four family halves, each with
+two consumers already waiting:
+
+1. `famtests.rostercensus` — the roster-vs-kit assertion body, written twice by hand already
+2. dated-memory READERS beside `datedlog` — `datedlog` publishes `date_parts`/`dated_log`, which
+   CONSTRUCT a dated path; the rows need `entries` / `undated` / `date_disagreements` / `silent`,
+   which nobody publishes. Adjacent subject, not the same one.
+3. a floor helper for `bind_floor` / `assert_floor`
+4. a `placement` module — no kit module owns placement at all
+
+## INVENTORY, caused by the `rulespages` adoption, one red per lab
+
+Both in `test_the_rules_pages_are_a_ratchet.py`, both refused by each repo's OWN guards:
+- wdg-lab: the suppression scanner reads a PROSE LINE ABOUT `noqa` as a `noqa`.
+- optimi-lab: a count pin named `CEILING` without the `_CEILING` suffix its ratchet requires.
+
+## optimi-lab `.claude/settings.json` — RESOLVED, and how it nearly unresolved itself
+
+The user ruled 2026-09-18: add the block. Added, one row —
+`Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)` — and the `strict=True` xfail on
+`test_no_allow_entry_names_a_command_the_engine_refuses` removed in the same change, which is what
+the mark's own reason instructed.
+
+**A concurrent agent then `git restore`d the settings half**, believing the permission machinery had
+written it, and correctly declined to touch the test half because it could not attribute it. That
+left the two halves inconsistent — xfail gone, row absent, `VacuousAllowScan` red. Re-applied.
+
+The shape worth keeping: **a two-file change made by two parties is a torn write, and the party who
+can only see one half will revert the half it can see.** The agent's restraint on the half it could
+not attribute is what kept this cheap.
+
+**UNCOMMITTED AND UNVERIFIED at hand-off.** Both halves sit in optimi-lab's working tree; the
+verify run was queued behind the box CPU lock (the lane's push was holding it) and never
+returned, so nothing was committed on an unread verdict. FIRST ACTION NEXT WINDOW: re-run
+`./.venv/Scripts/python.exe -m lab_commons.dev.verify tests/architecture/test_no_allow_entry_names_a_denied_shape.py`
+in optimi-lab, and commit the two files together or not at all -- the torn write above is
+exactly what splitting them produces.
+
+## A SEPARATE FINDING, and it is the sharper one: THE WAIT THAT GAVE UP REPORTED SUCCESS
+
+The verify above was re-issued and **exited with code 0 having never run a single test.** Its whole
+output is seven lines:
+
+    verify:optimi-lab: waiting 0s for the box. Held by: gate/runner.py gate [client:34872] ...
+    ... waiting 361s ...
+    [exited with code 0]
+
+No VERDICT line, no selector, no counts -- and exit 0. A caller that reads the exit code, which is
+what every script and every hook does, concludes PASS. **This is the family's own dominant defect
+inside the instrument that measures it**: green over an unasked question, the exact shape
+`VacuousAllowScan` was added upstream to refuse, living in the runner that would have reported it.
+
+A give-up MUST be distinguishable from a pass, and **THE SAME CODEBASE ALREADY DOES THIS
+CORRECTLY ON THE OTHER ENTRY POINT** -- which is what makes this a narrow, locatable defect rather
+than a missing concept. Measured minutes later, the motronics lane's pre-push gate hit the SAME
+holder and answered:
+
+    [gate] INCONCLUSIVE -- push REFUSED, but NOT by a defect in this tree: the gate never
+    started because another run held the box. Nothing was proved, so nothing may be pushed --
+    wait for the holder to finish and push again.
+
+Exit 1, the state named, the cause disclaimed, the remedy given. So `gate` reaches for
+`INCONCLUSIVE` on a lock timeout and `verify` does not. **Two entry points on one runner give
+opposite answers to one question**, and the one that is wrong is the one agents are told to use. Candidate fix: a timed-out box wait exits NON-ZERO
+with `result=inconclusive` and the holder named, so the caller gets the same answer a human reading
+those seven lines gets.
+
+Whether the wait should be bounded at all is a second question: `workflow.md` says bound every wait,
+and this one was. What it must not do is spell the bound as success.
+
+MEASURED TWICE, which is what makes it a behaviour rather than a race. Two runs against optimi-lab,
+different selectors, different bounds, same holder:
+
+    selector=tests/architecture                                     waited 843s -> exit 0
+    selector=.../test_no_allow_entry_names_a_denied_shape.py        waited 361s -> exit 0
+
+Both: zero tests, zero VERDICT lines, exit 0. The give-up is spelled as success on the ordinary
+path, not on an unlucky one.
+
+THE SECOND-ORDER COST IS THE ONE TO STATE. Every "verified" claim in this whole migration rests on
+a runner invocation whose exit code was trusted. Any of them made through `verify` while another party
+held the box is UNPROVEN -- not wrong, unproven, which is the distinction `workflow.md` draws, the
+`gate` path honours, and the `verify` path erases. Pushes are not affected: every push in this
+session went through `gate`, which refused correctly. A reader auditing this session should treat a verification with no quoted VERDICT
+line as absent evidence, and the fix above should land BEFORE the next tranche is called verified.
+
+## Do not do
+
+- `git add -A`, `git reset`, `git stash` in any shared checkout.
+- `heavy` locally.
+- Widen an agent's own permission file without a user ruling.
