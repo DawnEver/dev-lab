@@ -174,15 +174,15 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   there is none -- the pairs that forbid it are named. Not re-exported below: ``interleave``,
   ``ratio`` and ``crossover`` say nothing about their subject once flattened.
 
-* :mod:`lab_commons.dev.testfacts` -- what a test FILE declares about itself, read from the AST and
-  never by collecting: collection IMPORTS, and a module that discovers a live engine at import scope
-  starts one, so a census that collects starts MATLAB to find out whether a test starts MATLAB. Marks,
-  ``timeout`` literals and ``test_``-prefixed functions are facts about PYTEST and are shared; which
-  marks name a vendor, which paths a tier claims and what its wall is arrive as PREDICATES the
-  consumer supplies. The partition is first-match-wins with a REQUIRED residual bucket, because the
-  population that matched nothing -- in a slow tier for no reason any code can read -- is the reading
-  the whole instrument exists for. Not re-exported below: ``collect`` and ``census`` say nothing about
-  their subject once flattened.
+* :mod:`lab_commons.dev.testfacts` -- what a test FILE declares about itself, and one assertion
+  SHAPE (a test whose assertions are ALL ``is not None``, which cannot fail behaviourally), read from
+  the AST and never by collecting: collection IMPORTS, and a census that collects starts MATLAB to
+  find out whether a test starts MATLAB. Marks, ``timeout`` literals, ``test_``-prefixed functions
+  and that shape are facts about PYTEST and are shared; which marks name a vendor, which paths a tier
+  claims and what its wall is arrive as PREDICATES the consumer supplies. The partition is
+  first-match-wins with a REQUIRED residual bucket, because the population that matched nothing -- in
+  a slow tier for no reason any code can read -- is the reading the whole instrument exists for. Not
+  re-exported below: ``collect`` and ``census`` say nothing about their subject once flattened.
 * :mod:`lab_commons.dev.selfbuild` -- the one environment mutation that is NOT a dependency change:
   installing a wheel this workspace built from the checkout you are standing in. It composes with
   :mod:`~lab_commons.dev.dep` rather than repeating it -- that door decides WHEN an environment may

@@ -33,16 +33,22 @@ import ast
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 __all__ = [
+    'FAILING_CONTEXTS',
+    'VACUOUS_ASSERT_METHODS',
     'FileFacts',
     'Predicate',
     'VacuousScanError',
     'call_names',
     'count_test_functions',
+    'is_assertion',
+    'is_vacuous_assert',
     'mark_names',
     'read_facts',
     'timeout_ceilings',
+    'vacuous_test_functions',
 ]
 
 
@@ -67,6 +73,11 @@ class FileFacts:
     ``parse_error`` is a fact and not a failure: a file that does not parse is REPORTED as unreadable
     rather than dropped, because dropping it would shrink every population it belongs to.
     ``mark_uses`` and ``call_uses`` are TUPLES in source order: a ceiling is read from multiplicity.
+
+    ``vacuous_sites`` is the one reading here that is a SHAPE rather than a DECLARATION, and it is
+    carried on the same record deliberately -- see :func:`vacuous_test_functions`. It has NO DEFAULT,
+    like every other reading: a field that defaults to empty reports the same thing as a file with
+    nothing to report, which is the vacuity this module exists to refuse one level up.
     """
 
     name: str
@@ -74,6 +85,7 @@ class FileFacts:
     mark_uses: tuple[str, ...]
     call_uses: tuple[str, ...]
     ceilings_s: tuple[int, ...]
+    vacuous_sites: tuple[str, ...]
     parse_error: bool = False
 
     @property
@@ -183,6 +195,118 @@ def timeout_ceilings(tree: ast.AST) -> tuple[int, ...]:
     return tuple(out)
 
 
+#: The ``unittest`` spelling of the assertion that cannot fail for a behavioural reason. A named SET
+#: rather than a startswith test: ``assertIsNotNone`` is the only member today, and a set says which
+#: member arrived when a second one does.
+VACUOUS_ASSERT_METHODS: Final[frozenset[str]] = frozenset({'assertIsNotNone'})
+
+#: Context managers that make a ``with`` block able to FAIL on purpose. A test wrapping its call in
+#: one of these is asserting something, whatever its plain asserts look like.
+FAILING_CONTEXTS: Final[frozenset[str]] = frozenset({'assertRaises', 'deprecated_call', 'raises', 'warns'})
+
+
+def _called_name(node: ast.AST) -> str | None:
+    """The bare callee name of an expression statement that is a call, else ``None``."""
+    if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+        return None
+    func = node.value.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return None
+
+
+def is_vacuous_assert(node: ast.AST) -> bool:
+    """True for ``assert <expr> is not None`` and for ``self.assertIsNotNone(<expr>)``.
+
+    ``is not None`` is the assertion that cannot fail for a behavioural reason. A call returning the
+    wrong shape, the wrong sign, the wrong units or a value three orders of magnitude off still
+    returns an object, so a test whose ONLY assertion is that shape is a green cell asserting nothing
+    -- and a test NAMED for the property it does not check is the declaration that lies.
+
+    The comparison must be the WHOLE test and against the ``None`` constant: ``x is not None and
+    x.torque > 0`` is a ``BoolOp`` and is not this shape.
+    """
+    if isinstance(node, ast.Assert):
+        test = node.test
+        return (
+            isinstance(test, ast.Compare)
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.IsNot)
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None
+        )
+    return _called_name(node) in VACUOUS_ASSERT_METHODS
+
+
+def is_assertion(node: ast.AST) -> bool:
+    """Anything that can make a test FAIL on purpose.
+
+    DELIBERATELY BROAD, and the breadth runs in the SAFE direction: every false positive this reading
+    can produce costs someone an argument about a test that ALREADY proves something, so a function
+    carrying any of these beside an ``is not None`` is never named. An ``assert``, a bare ``raise``,
+    a ``fail(...)``, any call whose name CONTAINS ``assert`` -- unittest's ``assertEqual``, and
+    equally a shared helper named ``_assert_the_declared_gap_is_a_gap`` -- and a ``with`` block over
+    one of :data:`FAILING_CONTEXTS`. The helper form is measured rather than imagined: a first cut
+    matching only ``startswith('assert')`` and no ``Raise`` false-positived on exactly that shape.
+
+    ``skip`` and ``xfail`` are deliberately NOT here. A skipped test is not a test that proves
+    something, so a ``pytest.skip()`` guard must not license a vacuous assertion below it.
+
+    WHAT NO SYNTACTIC READING CAN SEE is a helper that neither raises nor is named for asserting.
+    That is a limit of the reading and not a gap an exemption list would close.
+    """
+    if isinstance(node, (ast.Assert, ast.Raise)):
+        return True
+    name = _called_name(node)
+    if name is not None and ('assert' in name or name == 'fail'):
+        return True
+    if isinstance(node, ast.With):
+        for item in node.items:
+            call = item.context_expr
+            if not isinstance(call, ast.Call):
+                continue
+            func = call.func
+            called = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', None)
+            if called in FAILING_CONTEXTS:
+                return True
+    return False
+
+
+def vacuous_test_functions(tree: ast.AST) -> tuple[str, ...]:
+    """Every ``test``-named function whose assertions are ALL ``is not None``, as ``lineno:name``.
+
+    WHY A SHAPE READER SITS AMONG THE DECLARATION READERS, which is the question this half was
+    dispatched with and which this module's own first sentence answers: the surface is "readings
+    taken from the AST", and an assertion shape is one. The seam that sentence names is
+    reading-versus-population, not declaration-versus-shape -- :func:`mark_names` and
+    :func:`call_names` already read the ``@pytest.mark.slow`` DECORATION and the ``pytest.skip()``
+    CALL, which are two syntactic forms of one question, and this is a third. The population half
+    next door in :mod:`lab_commons.dev.testfacts` is where a floor and a census go, unchanged.
+
+    A FUNCTION WITH NO ASSERTIONS AT ALL IS NOT NAMED. That is a different defect with a different
+    remedy, and folding the two makes the reported set a mixture no ratchet can move one half of.
+
+    ``is not None`` beside a real assertion is likewise untouched: it is a perfectly good
+    PRECONDITION, and this reading refuses it only as the WHOLE of a test's assertions.
+
+    Returns:
+        ``lineno:name`` per offender, in source order, so a consumer can prefix its own path and pin
+        the result as a set. The LINE is carried because a file gains and loses functions, and a bare
+        name says nothing about where the reader looked.
+
+    """
+    out: list[str] = []
+    for func in ast.walk(tree):
+        if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)) or not func.name.startswith('test'):
+            continue
+        assertions = [node for node in ast.walk(func) if is_assertion(node)]
+        if assertions and all(is_vacuous_assert(node) for node in assertions):
+            out.append(f'{func.lineno}:{func.name}')
+    return tuple(sorted(out, key=lambda site: int(site.split(':')[0])))
+
+
 def count_test_functions(tree: ast.AST) -> int:
     """How many ``test_``-prefixed functions the file defines, sync or async."""
     return sum(
@@ -203,11 +327,14 @@ def read_facts(path: Path, *, name: str | None = None) -> FileFacts:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return FileFacts(name=label, tests=0, mark_uses=(), call_uses=(), ceilings_s=(), parse_error=True)
+        return FileFacts(
+            name=label, tests=0, mark_uses=(), call_uses=(), ceilings_s=(), vacuous_sites=(), parse_error=True
+        )
     return FileFacts(
         name=label,
         tests=count_test_functions(tree),
         mark_uses=mark_names(tree),
         call_uses=call_names(tree),
         ceilings_s=timeout_ceilings(tree),
+        vacuous_sites=vacuous_test_functions(tree),
     )

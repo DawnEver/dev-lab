@@ -24,17 +24,22 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev.testfacts import (
+    FAILING_CONTEXTS,
+    VACUOUS_ASSERT_METHODS,
     Bucket,
     FileFacts,
     VacuousScanError,
     census,
     collect,
     count_test_functions,
+    is_assertion,
+    is_vacuous_assert,
     mark_names,
     pytest_files,
     read_facts,
     site_ledger,
     timeout_ceilings,
+    vacuous_test_functions,
 )
 
 #: A file that declares BOTH mark spellings, a ceiling and two tests. One file carrying every
@@ -209,7 +214,7 @@ def test_a_rule_order_swap_moves_the_file_and_the_totals_hold(tmp_path: Path) ->
 
 def test_the_census_refuses_a_duplicate_bucket_name_and_an_empty_corpus() -> None:
     """Two refusals that would otherwise surface far from the mistake."""
-    rows = (FileFacts(name='tests/test_a.py', tests=1, mark_uses=(), call_uses=(), ceilings_s=()),)
+    rows = (FileFacts(name='tests/test_a.py', tests=1, mark_uses=(), call_uses=(), ceilings_s=(), vacuous_sites=()),)
     with pytest.raises(ValueError, match='distinct'):
         census(rows, selects=bool, rules=[('x', bool), ('x', bool)], residual='r', floor=1)
     with pytest.raises(ValueError, match='distinct'):
@@ -226,7 +231,7 @@ def test_a_missing_bucket_name_raises_rather_than_reading_clean() -> None:
     assert empty.by_directory() == {}
     with pytest.raises(KeyError):
         census(
-            (FileFacts(name='tests/test_a.py', tests=1, mark_uses=(), call_uses=(), ceilings_s=()),),
+            (FileFacts(name='tests/test_a.py', tests=1, mark_uses=(), call_uses=(), ceilings_s=(), vacuous_sites=()),),
             selects=bool,
             rules=[('real', bool)],
             residual='r',
@@ -394,3 +399,98 @@ def test_the_count_and_the_names_come_from_one_read_of_the_file(tmp_path: Path) 
 
     assert facts.sites(_WAIVE, _WAIVE_IF) == 3
     assert facts.marks == frozenset({_WAIVE_IF})
+
+
+_SHAPES = """import unittest
+
+
+def test_vacuous():
+    assert build() is not None
+
+
+def test_precondition_plus_real():
+    v = build()
+    assert v is not None
+    assert v.torque > 0.0
+
+
+def test_real_only():
+    assert build().torque > 0.0
+
+
+def test_no_assertions_at_all():
+    build()
+
+
+def test_helper_named_for_asserting():
+    _assert_the_declared_gap_is_a_gap(build())
+    assert build() is not None
+
+
+def test_raises_block():
+    with pytest.raises(ValueError):
+        build()
+    assert build() is not None
+
+
+def test_skip_does_not_license_it():
+    pytest.skip('reason')
+    assert build() is not None
+
+
+class T(unittest.TestCase):
+    def test_unittest_vacuous(self):
+        self.assertIsNotNone(build())
+
+    def test_unittest_real(self):
+        self.assertEqual(build(), 1)
+        self.assertIsNotNone(build())
+"""
+
+
+def test_the_shape_reader_names_only_the_tests_that_prove_nothing() -> None:
+    """Every distinction at once.
+
+    A change that stops seeing the shape -- or starts seeing too much -- cannot pass here by
+    agreeing with a single example.
+    """
+    sites = vacuous_test_functions(ast.parse(_SHAPES))
+    assert sites == ('4:test_vacuous', '33:test_skip_does_not_license_it', '39:test_unittest_vacuous'), (
+        f'got {sites}: a precondition beside a real assertion, a real-only test, a test with NO '
+        f'assertions, a helper named for asserting and a raises block must all be left alone -- while '
+        f'the SKIPPED one must be named, because a skipped test proves nothing and may not license '
+        f'the vacuous assertion under it'
+    )
+
+
+def test_the_shape_reader_is_blind_to_a_compound_test() -> None:
+    """``x is not None and x.torque > 0`` is a BoolOp, not this shape -- it constrains the value."""
+    assert vacuous_test_functions(ast.parse('def test_c():\n    assert build() is not None and build().t > 0\n')) == ()
+
+
+def test_the_vacuous_sites_ride_on_the_same_single_read_as_the_declarations(tmp_path: Path) -> None:
+    """A SHAPE and a DECLARATION off ONE parse: two reads of one file can answer about two files."""
+    path = tmp_path / 'test_shapes.py'
+    path.write_text(_SHAPES, encoding='utf-8')
+    facts = read_facts(path, name='tests/test_shapes.py')
+    path.write_text(_BARE, encoding='utf-8')
+    assert facts.vacuous_sites == ('4:test_vacuous', '33:test_skip_does_not_license_it', '39:test_unittest_vacuous')
+    assert facts.tests == 9, 'the function count and the shapes are read off the same tree'
+
+
+def test_a_file_that_does_not_parse_reports_no_shapes_and_says_so(tmp_path: Path) -> None:
+    """An unreadable file must not silently contribute an empty offender set that reads as clean."""
+    path = tmp_path / 'test_broken.py'
+    path.write_text('def (:\n', encoding='utf-8')
+    facts = read_facts(path, name='tests/test_broken.py')
+    assert facts.vacuous_sites == ()
+    assert facts.parse_error, 'the empty reading is only honest because the file is FLAGGED unreadable'
+
+
+def test_the_vacuous_method_set_is_named_and_the_failing_contexts_are_too() -> None:
+    """Named SETS, not counts: a member that silently leaves is a hole with no symptom."""
+    assert frozenset({'assertIsNotNone'}) == VACUOUS_ASSERT_METHODS
+    assert frozenset({'assertRaises', 'deprecated_call', 'raises', 'warns'}) == FAILING_CONTEXTS
+    assert is_vacuous_assert(ast.parse('self.assertIsNotNone(x)').body[0])
+    assert is_assertion(ast.parse('with pytest.raises(ValueError):\n    f()\n').body[0])
+    assert not is_assertion(ast.parse('pytest.skip("reason")').body[0]), 'a skip proves nothing'

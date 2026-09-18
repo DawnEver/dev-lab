@@ -87,7 +87,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'shards': ('supersedes', 'scripts/gate/_shards.py'),
     'supersede': ('original',),
     'symcov': ('supersedes', 'scripts/repo/_symbol_coverage.py'),
-    'testfacts': ('original',),
+    # 'original' until 2026-09-18, when the assertion-SHAPE reader landed here and took the whole
+    # reading half of a consumer's vacuous-assert lint -- its `_called_name`, `_is_assertion`,
+    # `_is_vacuous_assert` and its walk. The consumer keeps its own floors and its bar, which is the
+    # population half `collect` and `census` already own; what moved is the reading.
+    'testfacts': ('supersedes', 'tests/architecture/ratchets/test_no_test_asserts_only_is_not_none.py'),
     'treedirt': ('supersedes', 'scripts/gate/tree_state.py'),
     'units': ('original',),
     'verdict': ('original',),

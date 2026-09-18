@@ -6,6 +6,13 @@ module and never learns where the seam falls. What THIS module adds is everythin
 POPULATION rather than a file: the glob that finds one, the floor that refuses an empty one, the
 ledger that ratchets it and the census that cuts it.
 
+A THIRD READING ARRIVED 2026-09-18 AND DID NOT MOVE THE SEAM. :func:`vacuous_test_functions` reads
+an assertion SHAPE where the others read a DECLARATION, and it belongs on the same surface for the
+reason this module's first sentence gives: what it publishes is "readings taken from the AST", and a
+shape is one. :func:`mark_names` already reads a DECORATION and :func:`call_names` an imperative
+CALL -- two syntactic forms of one question -- so a third form is not a fourth subject. What stays
+here is what needs a POPULATION, and that is unchanged.
+
 THE PARTITION IS FIRST-MATCH-WINS AND HAS A NAMED RESIDUAL. The whole point of a census like this is
 the population that matched NOTHING -- the files that are in a slow tier because of where they sit
 and for no reason any code can read. A partition with no residual bucket loses exactly that
@@ -26,17 +33,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lab_commons.dev._testfacts_readers import (
+    FAILING_CONTEXTS,
+    VACUOUS_ASSERT_METHODS,
     FileFacts,
     Predicate,
     VacuousScanError,
     call_names,
     count_test_functions,
+    is_assertion,
+    is_vacuous_assert,
     mark_names,
     read_facts,
     timeout_ceilings,
+    vacuous_test_functions,
 )
 
 __all__ = [
+    'FAILING_CONTEXTS',
+    'VACUOUS_ASSERT_METHODS',
     'Bucket',
     'Census',
     'FileFacts',
@@ -46,11 +60,14 @@ __all__ = [
     'census',
     'collect',
     'count_test_functions',
+    'is_assertion',
+    'is_vacuous_assert',
     'mark_names',
     'pytest_files',
     'read_facts',
     'site_ledger',
     'timeout_ceilings',
+    'vacuous_test_functions',
 ]
 
 
