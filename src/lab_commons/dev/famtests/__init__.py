@@ -69,6 +69,12 @@ WHAT IS HERE, one module per shared body:
   pinnable SET against a terminated process tree -- and a floor, because only one of them reads a
   population at all.
 
+* :mod:`lab_commons.dev.famtests.approxfloors` -- a tolerance states the floor it falls back to,
+  under a BAR the repo names. Three consumers asking TWO different questions, so ``bar`` is a member
+  of a published set rather than a default, and the call they disagree about is asserted under each.
+  Reads a POSITIONAL ``rel``/``abs`` pair every consumer file is blind to today, which makes this
+  stricter than the files it replaces -- said here because an adopter meets it as a first red.
+
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
   all four, and the bars it is judged against are arguments rather than a property closing over one

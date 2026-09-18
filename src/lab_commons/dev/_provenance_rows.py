@@ -107,6 +107,19 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     #    has not adopted the body yet imports nothing from the kit at all.
     'agentguard': ('supersedes', 'tests/architecture/test_the_agent_guard_is_live.py'),
     'allowguard': ('supersedes', 'tests/architecture/test_no_allow_entry_names_a_denied_shape.py'),
+    # THREE consumer files under THREE names, and the third is this repo's own -- a kit guard is a
+    # consumer of the kit like any other. They do not agree on the BAR: `test_arch_every_approx...`
+    # requires `abs=` unconditionally, the other two only under a stated `rel=`, and the two convict
+    # different sets. That disagreement is what made `bar` a member of a published set rather than a
+    # constant. NOT wdg-lab's `test_absolute_tolerances_state_their_unit.py`, which reads the VALUE of
+    # an `abs=` and asks whether it is spelled as a named unit -- the adjacent question, and naming it
+    # here would be the over-conviction `named_only` exists to hold.
+    'approxfloors': (
+        'supersedes',
+        'tests/test_arch_every_approx_states_its_floor.py',
+        'tests/architecture/test_a_relative_tolerance_carries_its_floor.py',
+        'tests/architecture/ratchets/test_approx_rel_requires_abs.py',
+    ),
     # TWO consumer files, not one, and the pair is why this is a single row: they ask the same
     # question of PATH citations and of bare NAME citations, share the walk, the prose reader and the
     # history exemptions, and measure 5.45% and 0.85% repo density against a 3.0% move bar -- so read
