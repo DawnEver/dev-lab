@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -107,6 +108,15 @@ PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs',)
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
 EXIT_CODES: Final[dict[Outcome, int]] = {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}
 
+#: ONE CSI escape, in ECMA-48's own grammar: ``ESC [``, then any number of PARAMETER bytes
+#: (``0x30``-``0x3f``), then any number of INTERMEDIATE bytes (``0x20``-``0x2f``), then exactly one
+#: FINAL byte (``0x40``-``0x7e``). SPELT OUT rather than written as "ESC and then whatever": a
+#: pattern that eats anything after an ``ESC`` eats real content the first time a test prints one,
+#: and ``\x1b\[[^m]*m`` -- the usual shorthand -- leaves every cursor-motion and erase-line sequence
+#: in the text while claiming to have cleaned it. A LONE ``ESC``, and an ``ESC`` followed by anything
+#: that is not this grammar, match nothing here and survive byte for byte.
+_CSI: Final = re.compile(r'\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]')
+
 #: The line that separates the ruff half of the log from the pytest half. The pytest parser is fed
 #: what comes AFTER it and never the whole log, because ruff's own output can carry a ``FAILED``
 #: line or a count, and a parser handed both halves would attribute one step's words to the other.
@@ -147,7 +157,7 @@ def project_root(start: Path | None = None) -> Path:
 
 
 def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
-    """Run *command*, streaming its merged output to *handle* AND to this process's stdout.
+    r"""Run *command*, streaming its merged output to *handle* AND to this process's stdout.
 
     STREAMED rather than captured and written afterwards, so a step that hangs still leaves in the
     log what it had printed when somebody killed it -- and so a step that is merely SLOW shows
@@ -179,6 +189,36 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
     ``stderr`` is merged into ``stdout`` because a reader reconstructing what happened needs the two
     INTERLEAVED -- a separated stderr puts every ruff diagnostic after every line of pytest output,
     in an order that never occurred.
+
+    ANSI COLOUR IS STRIPPED HERE, AT THE ONE POINT WHERE THE THREE READERS HAVE NOT YET DIVERGED,
+    and that placement is the decision rather than the regex. MEASURED 2026-09-18: pytest under
+    ``--color=yes`` (or ``FORCE_COLOR`` in a repo's ``addopts``) prints
+    ``'\x1b[31mFAILED\x1b[0m test_c.py::\x1b[1mtest_a\x1b[0m - assert 0'``, and
+    :data:`~lab_commons.dev.reports._FAILED_NODE` is anchored at ``^(?:FAILED|ERROR)`` -- so a
+    genuine red came back ``the summary names 1 failure(s) and the output names 0 node id(s)``, an
+    INCONCLUSIVE nobody can act on. The direction was safe, which is exactly why it went unnoticed;
+    the cost is that no red is diagnosable in any repo that colours its output.
+
+    LOOSENING THE ANCHOR WOULD NOT HAVE FIXED IT. The node id in that line is itself wrapped
+    (``test_c.py::\x1b[1mtest_a\x1b[0m``), so ``(\S+)`` would have captured a node id with escapes
+    inside it -- a FAIL naming a test that does not exist, which is worse than the refusal. The text
+    has to be plain before any parser looks at it.
+
+    ONE TEXT, THREE READERS, and that is why this is not done in the parser. ``50bf819`` settled that
+    the utf-8 LOG is the citable evidence (``log=sha256:...@lines``, quoted across four repos) and the
+    console is a VIEW of it. A parser-side strip would make the thing JUDGED a different text from the
+    thing CITED: the sha256 would cover bytes the verdict never read, and a reader who greps
+    ``FAILED`` in that log six months from now would MISS the very lines the verdict named -- the
+    parser's defect, handed to the human. So the log LOSES the escapes. They are a statement about a
+    terminal that will never render this file again, not about what happened, and the only reader who
+    ever wanted them is the one nobody has: a ``cat`` back to a tty. What the reader gains is a log a
+    plain ``grep -c '^FAILED'`` can count.
+
+    The console loses them too, because it is a view of that text and a view that disagrees with its
+    evidence is the same defect one layer up. The VIEW is what degrades, again.
+
+    A LONE CARRIAGE RETURN IS LEFT ALONE. Universal-newline translation already splits a progress
+    bar into lines -- ugly in a log, never fatal to a parse -- and :data:`_CSI` cannot match it.
     """
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
@@ -194,7 +234,8 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
         bufsize=1,
         env=env,
     ) as process:
-        for line in process.stdout or ():
+        for raw in process.stdout or ():
+            line = _CSI.sub('', raw)
             handle.write(line)
             handle.flush()
             emit(line.rstrip('\n'), flush=True)

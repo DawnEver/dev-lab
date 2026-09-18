@@ -506,3 +506,79 @@ class TestTheTeeOnAConsoleThatCannotCarryTheCharacter:
         assert code == 0, 'the step must still report its own exit code rather than dying in the tee'
         assert 'spinner ✓ done' in log.read_text(encoding='utf-8'), 'the evidence keeps every byte'
         assert b'spinner ? done' in console.buffer.getvalue(), 'the view degrades, in the place it degraded'
+
+
+class TestTheTeeOnAColouredStep:
+    r"""THE WHOLE CHAIN, planted: a coloured FAIL must stay a FAIL, and nothing else may change.
+
+    THE REPRODUCTION, 2026-09-18, driven through the REAL reader. ``read_pytest`` over a short
+    summary whose ``FAILED`` carries pytest's own ``--color=yes`` escapes answered
+    ``truncated=('the summary names 1 failure(s) and the output names 0 node id(s)...',)`` -- a
+    genuine red arriving as an INCONCLUSIVE, because ``_FAILED_NODE`` is anchored at ``^FAILED``
+    and ``\x1b[31mFAILED`` does not start there. That is every red in every repo which colours its
+    output, and the direction is SAFE, which is why it went unnoticed. ``_tee`` now strips CSI, so
+    the log, the console and the parser all read ONE text.
+
+    THREE DIRECTIONS, and the second and third are what make the first mean anything: the coloured
+    line must be caught, a PLAIN line must still come through byte for byte, and a line holding a
+    literal ``ESC`` that is not a CSI sequence must not be mangled by a pattern that eats
+    "anything after an ESC".
+    """
+
+    #: The exact bytes pytest prints for a failure under ``--color=yes`` -- MEASURED 2026-09-18 with
+    #: ``FORCE_COLOR=1`` on this box rather than hand-written. The node id is ITSELF wrapped, which is
+    #: why loosening the anchor would have produced a FAIL naming a test that does not exist.
+    COLOURED = (
+        '\x1b[31mFAILED\x1b[0m test_c.py::\x1b[1mtest_a\x1b[0m - assert 0\n'
+        '\x1b[31m==== \x1b[31m\x1b[1m1 failed\x1b[0m, \x1b[32m1 passed\x1b[0m\x1b[31m in 0.3s\x1b[0m ====\n'
+    )
+
+    #: The same run with no colour at all: what the log has always held, and what must not move.
+    PLAIN = 'FAILED test_c.py::test_a - assert 0\n==== 1 failed, 1 passed in 0.3s ====\n'
+
+    def _teed(self, tmp_path: Path, text: str) -> str:
+        """Drive the REAL ``_tee`` over a real child printing *text*, and answer what the LOG holds."""
+        script = tmp_path / 'coloured_step.py'
+        script.write_text(f'import sys\nsys.stdout.write({text!r})\n', encoding='utf-8')
+        log = tmp_path / 'log.txt'
+        with log.open('w', encoding='utf-8') as handle, contextlib.redirect_stdout(io.StringIO()):
+            assert tee_step([sys.executable, str(script)], cwd=tmp_path, handle=handle) == 0
+        return log.read_text(encoding='utf-8')
+
+    def test_the_parser_reads_a_raw_coloured_red_as_a_refusal(self) -> None:
+        """THE FLOOR: the defect is real AT THE PARSER, so stripping upstream is not a no-op."""
+        assert read_pytest(self.PLAIN, returncode=1).failures == ('test_c.py::test_a',)
+        assert read_pytest(self.COLOURED, returncode=1).truncated != (), (
+            'if the raw coloured text already parsed cleanly there would be nothing here to fix, and '
+            'every assertion below would pass for the wrong reason'
+        )
+
+    def test_a_planted_coloured_failure_is_named_after_the_tee(self, tmp_path: Path) -> None:
+        """DIRECTION ONE: through the real plumbing the red is a red, and it NAMES its node id."""
+        report = read_pytest(self._teed(tmp_path, self.COLOURED), returncode=1)
+        assert report.truncated == (), f'a coloured red must settle as a FAIL, not truncate: {report.truncated}'
+        assert report.failures == ('test_c.py::test_a',), 'and the node id must be the one that failed, unwrapped'
+
+    def test_a_plain_step_is_teed_byte_for_byte(self, tmp_path: Path) -> None:
+        """DIRECTION TWO, and without it a lossy re-encode would have passed direction one.
+
+        The log is the citable evidence. A fix that reached every line and changed ANY of them would
+        rewrite what four repos' ``log=sha256:...@lines`` citations are re-read from.
+        """
+        banner = f'$ {sys.executable} {tmp_path / "coloured_step.py"}\n'
+        assert self._teed(tmp_path, self.PLAIN) == banner + self.PLAIN
+
+    def test_a_literal_escape_in_legitimate_content_survives(self, tmp_path: Path) -> None:
+        r"""DIRECTION THREE: CSI is a GRAMMAR, and a lone ESC is content rather than a sequence.
+
+        A test asserting on ``\x1b`` -- this repo has one for the console writer -- prints it, and a
+        pattern eating "ESC and then whatever" would silently delete the rest of that line from the
+        evidence. The carriage return is in the same plant: universal-newline translation splits it
+        into lines, which is ugly and never fatal, and that behaviour predates this fix.
+        """
+        content = "FAILED t.py::test_esc - AssertionError: assert '\x1b' == '\x1bnot a csi'\n"
+        assert self._teed(tmp_path, content).endswith(content), 'a lone ESC is not a CSI sequence and is not eaten'
+        teed = self._teed(tmp_path, 'progress 1\rprogress 2\ndone\n')
+        assert 'progress 1' in teed, 'a bare CR still splits into lines rather than being swallowed'
+        assert 'progress 2' in teed
+        assert 'done' in teed
