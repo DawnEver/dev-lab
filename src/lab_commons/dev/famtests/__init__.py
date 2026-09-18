@@ -87,6 +87,12 @@ WHAT IS HERE, one module per shared body:
   consumer copying one declaration into the other guard. Carries the ceiling on the escape hatch,
   where ``0`` is legal and strongest -- the opposite of a floor, which refuses zero.
 
+* :mod:`lab_commons.dev.famtests.upperbounds` -- no requirement carries a ceiling nobody wrote down,
+  in TWO dialects that disagree about one spelling: a Cargo ``0.29`` refuses the next minor and
+  ``1.1`` does not. Two consumers, two POLICIES -- one bans the bound, one requires it argued -- so
+  both are members of published sets. The VERDICTS; the readings are the private
+  ``_upperbounds_readings`` beside it and are re-exported here.
+
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
   all four, and the bars it is judged against are arguments rather than a property closing over one

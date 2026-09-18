@@ -144,6 +144,18 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # orphan every entry. Also NOT `famtests.rulespages`: that pins how many LINES a page has and
     # sums the pins; this caps how long a line IS. One page measured 32 lines at 694 columns.
     'injectedwidth': ('supersedes', 'tests/architecture/test_injected_doc_width_ceiling.py'),
+    # TWO consumers in TWO LANGUAGES and they do not agree on the policy: wdg-lab BANS the bound with
+    # an exemption set it asserts is empty, motronics requires it to be DECLARED with its reason
+    # because two of its crates are ABI-coupled and unbounding either alone produces a pairing that
+    # does not compile. Both right for their repo, so `policy` is a member of a published set.
+    # NOT `installdoor`, which reads the same `optional-dependencies` table and asks whether the door
+    # DELIVERS the kit -- a floating requirement reaching an install, against a ceiling nobody
+    # re-argued. The readings half, `famtests/_upperbounds_readings.py`, is private and has no row.
+    'upperbounds': (
+        'supersedes',
+        'tests/architecture/test_dependencies_take_the_latest.py',
+        'tests/architecture/repo/test_no_rust_dependency_carries_an_undeclared_upper_bound.py',
+    ),
     # NOT a second spelling of `datedlog`, which CONSTRUCTS `<base>/<yy>/<mm>/<dd>/<kind>/<name>` and
     # cannot write the four-digit, kind-less layout these readers are about. The argument is in the
     # readings half, `famtests/_datedmemory_readings.py`, because it is a fact about the readers.
