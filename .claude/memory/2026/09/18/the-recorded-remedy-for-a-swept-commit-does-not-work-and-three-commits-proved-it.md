@@ -1,4 +1,8 @@
 ---
+name: the-recorded-remedy-for-a-swept-commit-does-not-work-and-three-commits-proved-it
+description: This repo's recorded remedy for one agent's commit swallowing another's unstaged rows - commit by explicit pathspec, plus a git diff --cached read - was followed today and failed, because the race window is INSIDE the commit - pre-commit stashes and restores unstaged files around every hook run, and a lane's HEAD can also move between two of its own tool calls. Three commits carry diffs their messages do not describe. The content is correct and green; the attribution is not, and is not repairable without amend or reset, both forbidden here. The fix is structural - one lane per worktree, or a lock covering git commit - and until then the operating rule is concurrency limit one on commits.
+metadata:
+  type: project
 created: 2026-09-18
 accessed: 2026-09-18
 ---
