@@ -274,7 +274,26 @@ def wall_reason(*, workers: int | None, capacity: int, wider_tier: str) -> str:
     *wider_tier* is the adopting repo's own name for the unbounded tier. It has no default: a
     remedy naming a tier that does not exist in the repo reading it is a dead end wearing a
     remedy's clothes, and this module cannot know what a repo calls its own.
+
+    AND IT IS REFUSED WHEN IT NAMES NOTHING, which is the one half of that claim this module CAN
+    judge. Until 2026-09-18 a blank word was interpolated like any other and the sentence ended
+    ``-- re-issue as ``: a refusal whose remedy is the empty string, reaching the reader as a
+    formatting fault rather than as the missing declaration it is. The paragraph above asserted the
+    property and nothing enforced it. Whether the word is one the adopting repo actually USES stays
+    outside this function's reach, and the asserter that drives it says so in its own prose.
+
+    Raises:
+        ValueError: *wider_tier* is empty or whitespace, so every sentence below would name a
+            remedy nobody can take.
+
     """
+    if not wider_tier.strip():
+        msg = (
+            'wall_reason was given a blank wider_tier, so all three of its sentences would end in '
+            '"re-issue as " and name no remedy at all. Pass this repo\'s own word for the unbounded '
+            'tier: there is no default, because a tier one repo has is a dead end in another.'
+        )
+        raise ValueError(msg)
     if not workers:
         # UNKNOWN, not narrow. Nothing measured the width, so nothing here may describe it.
         return f'over the wall: the width was not measured, so this is not diagnosed -- re-issue as {wider_tier}'

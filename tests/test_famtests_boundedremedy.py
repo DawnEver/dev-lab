@@ -175,13 +175,31 @@ def test_a_collapsed_refusal_is_NAMED_by_the_state_that_collapsed(monkeypatch: p
         )
 
 
-def test_a_refusal_that_omits_the_repos_own_word_for_a_wider_tier_reds(monkeypatch: pytest.MonkeyPatch) -> None:
-    """THE OTHER PLANT: three distinct sentences, none of which names a remedy this repo can take."""
+def test_a_producer_that_builds_a_refusal_from_a_blank_tier_reds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """THE OTHER PLANT, AND IT REPLACES ONE THAT COULD NOT FAIL THE SHIPPED BODY.
+
+    The clause this stands in for asserted ``wider_tier in text``, which every branch of the real
+    `wall_reason` satisfies by interpolation -- so it convicted only a monkeypatched fake, and a
+    consumer lane drove the real body on an absent tier word and got no refusal in either lab. What
+    is planted now is a producer that ACCEPTS a blank tier, which is a shape a real implementation
+    can have and which the real one had until 2026-09-18.
+    """
     monkeypatch.setattr(bounded, 'wall_reason', lambda *, workers, capacity, **_: f'{workers} of {capacity}')
-    with pytest.raises(AssertionError, match='does not name its remedy'):
+    with pytest.raises(AssertionError, match='built a refusal from a blank tier'):
         boundedremedy.assert_each_state_names_its_own_remedy(
             capacity=8, wider_tier='a tier this repo uses', narrowed_workers=bounded.NARROWED_FLOOR
         )
+
+
+def test_the_blank_tier_clause_is_driven_on_the_real_body_and_passes_only_since_the_refusal() -> None:
+    """THE SHIPPED PRODUCER, not a stand-in: a blank tier is refused at every one of the three states.
+
+    This is the arm the replaced clause should have been. It fails against `wall_reason` as it stood
+    yesterday, which is the property the clause it replaces never had.
+    """
+    for workers in (None, bounded.NARROWED_FLOOR, 8):
+        with pytest.raises(ValueError, match='blank wider_tier'):
+            bounded.wall_reason(workers=workers, capacity=8, wider_tier='   ')
 
 
 def test_the_planted_parent_really_spawns_a_grandchild_that_outlives_the_wall() -> None:

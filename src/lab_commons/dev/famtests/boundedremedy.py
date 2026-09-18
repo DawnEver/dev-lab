@@ -248,8 +248,21 @@ def assert_each_state_names_its_own_remedy(*, capacity: int, wider_tier: str, na
             the other passes :data:`lab_commons.dev.bounded.NARROWED_FLOOR`.
 
     Raises:
-        AssertionError: two states shared a sentence, a sentence omitted the remedy, or the narrowed
-            reading failed to separate a narrowed run from a healthy one.
+        AssertionError: two states shared a sentence, a state built a refusal naming no remedy at
+            all, or the narrowed reading failed to separate a narrowed run from a healthy one.
+
+    THE CLAUSE THAT USED TO BE HERE, AND WHY IT IS NOT. Until 2026-09-18 this body asserted
+    ``wider_tier in text`` over all three sentences. Every branch of
+    :func:`lab_commons.dev.bounded.wall_reason` INTERPOLATES the argument, so the clause held for
+    any string whatever -- driven on ``'ZZZ_NO_SUCH_TIER_ANYWHERE'`` it passed in both labs and in
+    the kit, which is how a consumer lane found it. It read as *the refusal names a tier this repo
+    can escalate to*, and it could not have checked that: the word arrives here from the same caller
+    that would have to be wrong about it, so no argument this function could take would make the
+    claim falsifiable. What IS falsifiable is that the producer refuses to build a remedy naming
+    NOTHING, and that is the clause below -- driven on the REAL body, with the empty tier as the one
+    case a shared module can judge without knowing any repo's vocabulary.
+    :mod:`lab_commons.dev.famtests.echoedtoken` is the arm that refuses the next clause of this
+    shape rather than this one again.
 
     """
     sentences = {
@@ -261,10 +274,17 @@ def assert_each_state_names_its_own_remedy(*, capacity: int, wider_tier: str, na
     if shared:
         msg = f'{shared} share one refusal sentence; one sentence for several states is a diagnosis nobody computed'
         raise AssertionError(msg)
-    for name, text in sentences.items():
-        if wider_tier not in text:
-            msg = f'the {name} refusal does not name its remedy in a word this repo uses: {text!r}'
-            raise AssertionError(msg)
+    for state, workers in (('unmeasured', None), ('narrowed', narrowed_workers), ('healthy', capacity)):
+        try:
+            blank = bounded.wall_reason(workers=workers, capacity=capacity, wider_tier='   ')
+        except ValueError:
+            continue
+        msg = (
+            f'the {state} state built a refusal from a blank tier instead of refusing it: {blank!r}. '
+            f'A remedy that names nothing reaches the reader as a formatting fault rather than as '
+            f'the missing declaration it is.'
+        )
+        raise AssertionError(msg)
     if 'NARROWED' not in sentences['narrowed']:
         msg = f'a run at {narrowed_workers} of {capacity} must be reported as NARROWED: {sentences["narrowed"]!r}'
         raise AssertionError(msg)

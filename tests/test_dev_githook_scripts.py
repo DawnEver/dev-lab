@@ -431,14 +431,22 @@ def test_a_branch_push_RUNS_the_wrapped_command(repo: Path, tmp_path: Path) -> N
     assert marker.is_file(), done.stdout + done.stderr
 
 
-@pytest.mark.parametrize('ref', ['refs/tags/v1.2.3', 'refs/notes/commits', 'refs/ci/heartbeat/box/1'])
+#: The three non-branch refs the decline path is driven over, hoisted out of the decorator so the
+#: arm can check that the message names THIS one and not one of its siblings. ``ref in done.stdout``
+#: alone cannot see that: the ref is handed to the hook and the hook prints it back, so the clause
+#: held whatever the hook did with it. Named set rather than a count, and rather than one string.
+DECLINING_REFS = ('refs/tags/v1.2.3', 'refs/notes/commits', 'refs/ci/heartbeat/box/1')
+
+
+@pytest.mark.parametrize('ref', DECLINING_REFS)
 def test_a_push_that_updates_no_branch_DECLINES(repo: Path, tmp_path: Path, ref: str) -> None:
     """The axis: decided on the REMOTE ref, which is the only one that differs between these pushes."""
     done, marker = _bpo(repo, tmp_path, PRE_COMMIT_REMOTE_BRANCH=ref, **DECLARED_NONE)
     assert done.returncode == 0, 'declining is not refusing: a tag push must still succeed'
     assert not marker.is_file(), f'{ref} reached the wrapped command'
     assert 'DECLINED' in done.stdout, done.stdout
-    assert ref in done.stdout, done.stdout
+    named = {candidate for candidate in DECLINING_REFS if candidate in done.stdout}
+    assert named == {ref}, f'the decline names {sorted(named)} and the push was of {ref}: {done.stdout}'
 
 
 def test_no_remote_ref_in_the_environment_RUNS(repo: Path, tmp_path: Path) -> None:
