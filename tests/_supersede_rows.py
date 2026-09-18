@@ -52,6 +52,18 @@ family: all SIX consumers across three repos, each importing the very module tha
 graded NAMED_ONLY, which is the grade that means NOTHING CORROBORATES THE CLAIM. It cost no red
 anywhere, because a blind detector reports what a clean tree reports.
 
+THE BLIND SPOT WAS CLOSED TWICE AND THE SECOND CLOSING WAS SWEPT, 2026-09-18. `1aa2738` taught the
+reader `from lab_commons.dev.famtests import x`; `from lab_commons.dev.famtests.x import y` stayed
+unresolved, so the round trip that was supposed to hold the two halves together passed over the two
+spellings the fix had just added. Re-driving both readers over all three consumer trees -- motronics
+`497dfb7b5`, wdg-lab `71e184a1`, optimi-lab `e66a32e`, 173 files that mention the kit -- moves SEVEN
+import sets and exactly TWO grades, both in motronics: `tests/architecture/layering/_tests_placement.py`
+NAMED_ONLY -> PARTIAL against `density`, and `tests/architecture/gate/test_an_empty_venv_stub_does_
+not_win_the_interpreter.py` UNTOUCHED -> CONSULTS against `githooks.bootstrap`, which is the same
+defect in the OTHER sub-package. NO ROW HELD HERE MOVES: these fifteen were captured from `scripts/`
+and from one optimi test, none of which adopts a sub-package module in the deep form. That is the
+re-measurement, not a re-labelling, and a row that did not move is not thereby certified fresh.
+
 WHY THE ROW WENT STALE THE DAY IT WAS WRITTEN, which is the half worth more than the row. Its
 `public` field recorded a MOMENT in another repo, and nothing here can see that repo, so the drift
 reds nowhere: the fixture stays green while it certifies history. That is a property of this file

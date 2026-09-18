@@ -30,10 +30,13 @@ THE WAIVER IS A NAMED SET AND IT MAY NOT BE EMPTY, which is the second side of t
 than a nicety. :func:`assert_waiver_is_the_named_set` compares by EQUALITY in both directions so an
 arrival is a real stale row and a departure is the fix landing; and it REFUSES an empty declaration
 outright, because the day a consumer's waiver goes to nothing the arm has to be DELETED rather than
-left pinned at the empty set, where it would be a waiver nothing uses. That day is scheduled: both
-labs pinned six ``NAMED_ONLY`` rows caused by :func:`~lab_commons.dev.supersede.imported_kit_modules`
-resolving a sub-package import to the wrong segment, the kit fixed it in ``1aa2738``, and the six go
-to zero on the next reinstall. The pin reddening then is the ratchet working.
+left pinned at the empty set, where it would be a waiver nothing uses. That day is scheduled, and it was
+scheduled once already: both labs pinned six ``NAMED_ONLY`` rows caused by
+:func:`~lab_commons.dev.supersede.imported_kit_modules` resolving a sub-package import to the wrong
+segment, ``1aa2738`` fixed ONE SPELLING of that import, and ``from lab_commons.dev.famtests.x import
+y`` stayed blind for another day -- so a consumer that wrote the natural form kept its waiver and had
+no way to earn its way out. Both spellings resolve now and the six go to zero on the next reinstall.
+The pin reddening then is the ratchet working.
 
 WHAT THIS DOES NOT PROVE, stated so an adoption row cannot overclaim. The census is blind to a LIVE
 FORK that imports nothing and that no kit docstring names; :mod:`~lab_commons.dev.supersede` says so
@@ -81,8 +84,11 @@ class UnadoptedWaiver(AssertionError):
 
 
 #: How a sub-package adoption is SPELLED, so a waiver is proved by the consumer file's own text
-#: rather than by the table that waives it. This one is the family's and not a repo's: it is the
-#: import form :mod:`lab_commons.dev.famtests` ships under, and a consumer cannot have another.
+#: rather than by the table that waives it. This one is the family's and not a repo's. It is ONE of
+#: the forms in :data:`lab_commons.dev.supersede.IMPORT_SPELLINGS` and not the only one a consumer
+#: may write -- that claim used to be made here and was false. It stays narrow on purpose: a waiver
+#: exists only for a row the IMPORT detector cannot corroborate, and since the detector now reads
+#: every spelling, a row that adopts by any other form is not NAMED_ONLY and never reaches here.
 SUBPACKAGE_IMPORT = 'from lab_commons.dev.famtests import '
 
 

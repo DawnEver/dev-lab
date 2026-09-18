@@ -48,19 +48,34 @@ that one character was a false remainder. It widens the RULER, never a detector.
 REQUIRED AND ZERO IS REFUSED: no rows, or no kit modules, reports what a finished migration reports.
 So does a *package* that resolves onto nothing, and that is refused too.
 
-THE KIT IS READ AS SOURCE, NEVER IMPORTED. A census must judge a kit version that is not the one
-installed here, and executing the thing under measurement is how a measurement acquires a side effect.
+THE KIT IS READ AS SOURCE, NEVER IMPORTED, and the READING is next door. A census must judge a kit
+version that is not the one installed here, and executing the thing under measurement is how a
+measurement acquires a side effect. :mod:`lab_commons.dev._supersede_reading` holds every AST walk
+this module grades over -- :func:`kit_modules`, :func:`read_row`, :func:`imported_kit_modules` and
+:data:`IMPORT_SPELLINGS`, re-exported here because the census IS the surface. The seam is that the
+reading fails by SEEING NOTHING and the grading fails by judging wrongly.
 """
 
 from __future__ import annotations
 
-import ast
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from ._provenance import ADOPTED_BY, ORIGINAL, PROVENANCE_ROWS, SUPERSEDES, provenance_rows, undeclared_modules
+from ._supersede_reading import (
+    ENTRY_NAMES,
+    IMPORT_SPELLINGS,
+    KitModule,
+    Row,
+    defined_names,
+    imported_kit_modules,
+    kit_modules,
+    kit_subpackages,
+    named_paths,
+    public_names,
+    read_row,
+)
 
 __all__ = [
     'ADOPTED_BY',
@@ -68,6 +83,7 @@ __all__ = [
     'ENTRY_NAMES',
     'FLAGGED',
     'IMPORT',
+    'IMPORT_SPELLINGS',
     'NAMED_ONLY',
     'ORIGINAL',
     'PARTIAL',
@@ -89,6 +105,7 @@ __all__ = [
     'grade_row',
     'imported_kit_modules',
     'kit_modules',
+    'kit_subpackages',
     'named_paths',
     'provenance_rows',
     'public_names',
@@ -96,10 +113,6 @@ __all__ = [
     'take_census',
     'undeclared_modules',
 ]
-
-#: A name that is an INVOCATION rather than a mechanism. Every runnable script has one, so counting it
-#: as remainder floors every file's remainder for a reason that says nothing about the migration.
-ENTRY_NAMES = frozenset({'main'})
 
 #: The two detectors, spelled once so a caller branches on the EVIDENCE rather than on the grade.
 PROVENANCE = 'provenance'
@@ -113,16 +126,9 @@ UNTOUCHED = 'untouched'
 UNMEASURABLE = 'unmeasurable'
 UNREADABLE = 'unreadable'
 
-#: The suffixes an AST can be taken of. Everything else is a row this instrument cannot READ, which
-#: is a different answer from a row it read and found nothing in.
-_PYTHON_SUFFIXES = frozenset({'.py', '.pyi'})
-
 #: The grades saying the kit already holds this row's subject. The ones that refuse a verdict and the
 #: ones that say "still local" are deliberately NOT in here.
 FLAGGED = frozenset({SUPERSEDED, PARTIAL})
-
-#: How a docstring spells a file. Suffix-matched, so a bare basename still reaches its row's path.
-_FILE_TOKEN = re.compile(r'[\w./\\-]+\.(?:py|sh|ps1|toml|md)')
 
 #: Strongest first, as data: a row claimed twice is reported under the strongest claim, and adding a
 #: grade cannot silently reorder the ones that refuse a verdict.
@@ -135,31 +141,6 @@ class VacuousCensus(AssertionError):
 
 class PackageMismatch(AssertionError):
     """Every import resolved to a token no kit module answers to, so the IMPORT detector was blind."""
-
-
-@dataclass(frozen=True)
-class KitModule:
-    """One upstream module: what it CLAIMS -- prose or registry -- and every name it defines."""
-
-    name: str
-    claims: frozenset[str]
-    universe: frozenset[str]
-
-
-@dataclass(frozen=True)
-class Row:
-    """One roster row, read: its declared side, its public surface, and the kit modules it imports.
-
-    *readable* is false for a row no AST can be taken of -- a shell script, a config file. Such a row
-    is still a row: it is counted and it grades :data:`UNREADABLE`, rather than crashing the census
-    or, worse, reading as :data:`UNTOUCHED`.
-    """
-
-    path: str
-    side: str
-    public: frozenset[str]
-    imports: frozenset[str]
-    readable: bool = True
 
 
 @dataclass(frozen=True)
@@ -192,100 +173,6 @@ class Census:
     def flagged(self) -> tuple[Claim, ...]:
         """Only the rows whose subject the kit already holds."""
         return tuple(claim for claim in self.claims if claim.flagged)
-
-
-def _normalise(names: Iterable[str]) -> frozenset[str]:
-    """Strip leading underscores on both sides -- see the module docstring for why, and for the cost."""
-    return frozenset(stripped for name in names if (stripped := name.lstrip('_')))
-
-
-def defined_names(tree: ast.Module) -> frozenset[str]:
-    """Every name bound at a module's top level, at any visibility. ``__all__`` is plumbing, not one."""
-    out: set[str] = set()
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            out.add(node.name)
-        elif isinstance(node, ast.Assign):
-            out.update(target.id for target in node.targets if isinstance(target, ast.Name))
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            out.add(node.target.id)
-    return frozenset(out - {'__all__'})
-
-
-def public_names(tree: ast.Module) -> frozenset[str]:
-    """A module's own public surface, normalised, with :data:`ENTRY_NAMES` removed."""
-    return _normalise(name for name in defined_names(tree) if not name.startswith('_')) - ENTRY_NAMES
-
-
-def named_paths(docstring: str | None) -> frozenset[str]:
-    """Every file path a docstring SPELLS -- the provenance claim, read rather than believed."""
-    return frozenset(token.replace('\\', '/') for token in _FILE_TOKEN.findall(docstring or ''))
-
-
-def imported_kit_modules(tree: ast.Module, *, package: str) -> frozenset[str]:
-    """Every kit-module token this file's imports could name, by either import form.
-
-    *package* must be the kit directory's OWN dotted path: one level short turns every
-    ``lab_commons.dev.x`` into ``'dev'``, matching no kit module, so the IMPORT detector never fires
-    and :func:`take_census` REFUSES it. TWO SEGMENTS BELOW *package*, not one and not all, because
-    :func:`kit_modules` RECURSES: one reached ``famtests`` rather than ``rulespages`` and graded all
-    SIX ``famtests`` consumers :data:`NAMED_ONLY` while each imported the module superseding it, and
-    all would find ``bounded`` one level short and retire that refusal. A name an ``ImportFrom``
-    binds is the second, since ``from pkg.sub import mod`` spells ``mod`` nowhere else.
-    """
-    depth = len(package.split('.'))
-    out: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module:
-            if node.module == package:
-                out.update(alias.name for alias in node.names)
-            elif node.module.startswith(f'{package}.'):
-                below = node.module.split('.')[depth:]
-                out.update(below[:1] if below[1:] else (*below, *(a.name for a in node.names)))
-        elif isinstance(node, ast.Import):
-            out.update(s for a in node.names if a.name.startswith(f'{package}.') for s in a.name.split('.')[depth:][:2])
-    return frozenset(out)
-
-
-def kit_modules(directory: Path) -> tuple[KitModule, ...]:
-    """Every public module under *directory* AND its public sub-packages: claims, and the universe.
-
-    RECURSIVE, because a census that reads one directory cannot see a module published one level
-    down and reports the row it supersedes as UNTOUCHED -- which is how ``famtests.rulespages`` was
-    missed. Only a :data:`SUPERSEDES` row joins the claims; an :data:`ADOPTED_BY` row is a fact about
-    a consumer that DELEGATES, which is the one thing a provenance claim must not be read as.
-    """
-    found = (p for p in directory.rglob('*.py') if not any(q.startswith('_') for q in p.relative_to(directory).parts))
-    paths = sorted(found)
-    rows = provenance_rows(directory)
-    out: list[KitModule] = []
-    for path in paths:
-        tree = ast.parse(path.read_text(encoding='utf-8'))
-        row = rows.get(path.stem, ())
-        declared = frozenset(row[1:]) if row[:1] == (SUPERSEDES,) else frozenset()
-        out.append(
-            KitModule(
-                name=path.stem,
-                claims=named_paths(ast.get_docstring(tree)) | declared,
-                universe=_normalise(defined_names(tree)),
-            )
-        )
-    return tuple(out)
-
-
-def read_row(root: Path, path: str, side: str, *, package: str) -> Row:
-    """Read one roster row off disk, under *root*, resolving its imports against *package*.
-
-    A row whose file is not Python is NOT an error and NOT something a caller has to anticipate: it
-    comes back unreadable. MEASURED 2026-09-17 -- a consumer's two shell rows raised ``SyntaxError``
-    out of :func:`ast.parse` and had to be filtered by hand, and one of them was that repo's only
-    MOVES row, so the census was blind to it by construction. A ``.py`` that will not parse still
-    RAISES: that is a broken file in the tree under measurement, not a file of another kind.
-    """
-    if (root / path).suffix not in _PYTHON_SUFFIXES:
-        return Row(path=path, side=side, public=frozenset(), imports=frozenset(), readable=False)
-    tree = ast.parse((root / path).read_text(encoding='utf-8'))
-    return Row(path=path, side=side, public=public_names(tree), imports=imported_kit_modules(tree, package=package))
 
 
 def coverage(row: Row, module: KitModule) -> tuple[frozenset[str], frozenset[str]]:
@@ -376,6 +263,11 @@ def take_census(
     at zero: a floor of zero is the vacuity written down, not a decision to permit it. A *package*
     that resolves no import onto the kit is refused too -- see :func:`_refuse_mismatch`, and note
     that a refusal is the only safe answer there because the wrong one LOOKS like a clean result.
+
+    The sub-packages the import reading is bounded by are DERIVED from *modules* rather than taken
+    as a seventh argument: they are a fact about the kit that was read, and a caller free to declare
+    them separately could declare a set the kit does not publish -- which is the wrong-depth failure
+    arriving through the argument list instead of through *package*.
     """
     held = tuple(modules)
     _refuse_floor(row_floor, 'row')
@@ -394,7 +286,10 @@ def take_census(
             f'census held. Fix the roster source, do not lower the floor.'
         )
         raise VacuousCensus(msg)
-    read = tuple(read_row(root, path, side, package=package) for path, side in sorted(rows.items()))
+    subpackages = frozenset(module.subpackage for module in held if module.subpackage)
+    read = tuple(
+        read_row(root, path, side, package=package, subpackages=subpackages) for path, side in sorted(rows.items())
+    )
     _refuse_mismatch(read, frozenset(module.name for module in held), package)
     claims = tuple(grade_row(row, held) for row in read)
     return Census(claims=claims, rows_read=len(claims), modules_read=len(held))

@@ -15,6 +15,16 @@ module no import form could NAME, which made the IMPORT detector blind to a whol
 The third is this family's dominant defect inside the instrument built to find it; the fourth is
 the same defect one level down, and it is the one that cost six true positives their corroboration.
 
+THE FOURTH WAS CLOSED TWICE, and the second closing is why this file's round trip is a CROSS PRODUCT.
+`1aa2738` fixed `from lab_commons.dev.famtests import allowguard` and shipped an arm holding
+`kit_modules` and `imported_kit_modules` to one agreement -- driven with the two spellings that fix
+had just taught the reader. `from lab_commons.dev.famtests.citedtests import take_scan` was a third
+spelling nobody had written down, it stayed unresolved, and the arm stayed green: a module can be
+imported in more than one way, so parametrising over MODULES alone measures the resolver against
+itself. The spellings are now DATA in the kit (`IMPORT_SPELLINGS`) and the corpus is modules x
+spellings, floored on both sides through `lab_commons.dev.floors` because an empty parametrisation
+collects nothing and reports what a full green reports.
+
 BOTH DIRECTIONS ARE PLANTED, because only the second one makes this a census rather than a name
 matcher: a file whose subject IS upstream must be flagged, and a file that merely SHARES NAMES with
 an upstream module must NOT be. The second plant is the load-bearing one -- this family has already
@@ -31,9 +41,11 @@ import pytest
 from _supersede_rows import ALREADY_IN_THE_KIT, DISAGREEMENTS, MEASURED_ROWS, ROW_FLOOR, STILL_LOCAL
 
 import lab_commons.dev as dev_pkg
+from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.supersede import (
     CONSULTS,
     IMPORT,
+    IMPORT_SPELLINGS,
     NAMED_ONLY,
     PARTIAL,
     PROVENANCE,
@@ -48,7 +60,9 @@ from lab_commons.dev.supersede import (
     grade_row,
     imported_kit_modules,
     kit_modules,
+    kit_subpackages,
     provenance_rows,
+    public_names,
     take_census,
     undeclared_modules,
 )
@@ -56,9 +70,12 @@ from lab_commons.dev.supersede import (
 #: The shipped kit, read as source. This is the half of the fixture that can rot, so it is not pinned.
 DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 
-#: The kit publishes far more than this; the floor refuses a directory the scan failed to reach.
-#: It counts the sub-packages too, since `kit_modules` recurses: 46 modules MEASURED 2026-09-17.
-KIT_FLOOR = 15
+#: The published kit, MEASURED 2026-09-18 at 54 modules (`kit_modules` recurses, so the sub-packages
+#: are in it). RE-MEASURED from 15, which had been left behind by a tree that grew past it: a floor
+#: 39 clear of its population refuses only a total collapse, and the remedy for that is the floor,
+#: never the headroom.
+KIT_FLOOR = 40
+KIT_HEADROOM = 25
 
 #: Both halves of the validation need a population or the separation is vacuous. MEASURED over the
 #: fixture: 7 rows hand-read as already in the kit, 8 as still local.
@@ -240,7 +257,7 @@ def test_the_fixture_holds_both_directions() -> None:
 def test_the_hand_measurement_is_reproduced() -> None:
     """THE DELIVERABLE: today's fourteen hand-read rows, graded against the LIVE kit source."""
     modules = kit_modules(DEV_DIR)
-    assert len(modules) >= KIT_FLOOR
+    assert_floor(len(modules), floor=KIT_FLOOR, what='published kit module')
     graded = {row.path: grade_row(Row(row.path, row.side, row.public, row.imports), modules) for row in MEASURED_ROWS}
     wrong = {path: claim.grade for row in MEASURED_ROWS if (claim := graded[(path := row.path)]).grade != row.expected}
     assert not wrong, f'the instrument moved away from the hand measurement: {wrong}'
@@ -325,7 +342,7 @@ def test_every_published_kit_module_declares_its_provenance() -> None:
     census ran, said nothing, and its consumer graded UNTOUCHED against the module that supersedes it.
     """
     modules = kit_modules(DEV_DIR)
-    assert len(modules) >= KIT_FLOOR
+    assert_floor(len(modules), floor=KIT_FLOOR, what='published kit module')
     problems = undeclared_modules(modules, provenance_rows(DEV_DIR))
     assert problems == (), 'the kit provenance registry disagrees with what is published:\n  ' + '\n  '.join(problems)
 
@@ -437,71 +454,166 @@ def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -
     assert census.claims[0].grade == UNTOUCHED
 
 
-# -- HOLE 4: a kit module the IMPORT detector cannot be reached by. --------------------------------
+# -- HOLE 4: a kit module the IMPORT detector cannot be reached by, BY SOME SPELLING. --------------
 
 
-#: Below the kit's published module count, and separately below the count of modules living one
-#: level down. A round-trip over ZERO modules passes, and a round-trip over only top-level ones
-#: passes today while the sub-package half is exactly what was broken.
-NESTED_FLOOR = 3
+#: The modules living below the top level, MEASURED 2026-09-18 at 13 across `famtests` and
+#: `githooks`. Its own floor because the defect this section exists for is reachable ONLY through a
+#: sub-package: a corpus of top-level modules would pass every arm here while blind.
+NESTED_FLOOR = 8
+NESTED_HEADROOM = 12
+
+#: The declared spellings. A floor rather than a pin, because the remedy for a spelling nobody
+#: resolved is to ADD a row and widen the reader -- which must not red the guard that demanded it.
+SPELLING_FLOOR = 3
+SPELLING_HEADROOM = 3
+
+#: Modules x spellings, MEASURED 2026-09-18 at 162. The cross product is the corpus, so it carries
+#: the floor rather than either factor alone: a parametrisation that lost one whole spelling still
+#: reports a full green over the other two, which is the shape that let this defect live twice.
+CASE_FLOOR = 110
+CASE_HEADROOM = 90
+
+#: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.
+SUBPACKAGES = kit_subpackages(DEV_DIR)
 
 
-def _import_forms(module_path: Path) -> tuple[str, ...]:
-    """The two ways a consumer spells an import of one published kit module, as SOURCE."""
-    dotted = '.'.join((PACKAGE, *module_path.relative_to(DEV_DIR).with_suffix('').parts))
+def _published_modules() -> tuple[Path, ...]:
+    """Every module `kit_modules` publishes, as PATHS -- the same walk, re-derived for the round trip."""
+    return tuple(
+        sorted(
+            path
+            for path in DEV_DIR.rglob('*.py')
+            if not any(part.startswith('_') for part in path.relative_to(DEV_DIR).parts)
+        )
+    )
+
+
+def _spelled(path: Path, spelling: str) -> str:
+    """One published module, written the way *spelling* says a consumer writes it, as SOURCE."""
+    dotted = '.'.join((PACKAGE, *path.relative_to(DEV_DIR).with_suffix('').parts))
     parent, stem = dotted.rsplit('.', 1)
-    return (f'from {parent} import {stem}\n', f'import {dotted}\n')
+    names = sorted(public_names(ast.parse(path.read_text(encoding='utf-8'))))
+    name = names[0] if names else 'anything'
+    return spelling.format(dotted=dotted, parent=parent, stem=stem, name=name) + '\n'
 
 
-def test_every_published_kit_module_is_reachable_by_the_import_detector() -> None:
-    """THE ARM THAT WOULD HAVE CAUGHT IT: what `kit_modules` PUBLISHES, `imported_kit_modules` must NAME.
+#: `(module path, spelling)` -- the corpus, built at import so the arms below are one case per pair
+#: and a failure NAMES the module and the spelling instead of returning a dict of them.
+REACHABILITY_CASES = tuple((path, spelling) for path in _published_modules() for spelling in IMPORT_SPELLINGS)
 
-    The two halves are one agreement and nothing held them to it. `kit_modules` recurses and
-    publishes `famtests.rulespages` under the stem `rulespages`; `imported_kit_modules` took only
-    the first segment below the package and answered `famtests`. A token no module answers to is a
-    detector that never fires, and a detector that never fires costs no red -- all SIX `famtests`
-    consumers graded NAMED_ONLY, the grade that means nothing corroborates the claim, while each of
-    them imported the very module superseding it.
+#: The same, restricted to the sub-package half, where the defect lives and where a top-level corpus
+#: would prove nothing.
+NESTED_CASES = tuple((path, spelling) for path, spelling in REACHABILITY_CASES if path.parent != DEV_DIR)
 
-    It is a ROUND TRIP rather than a scan of consumer trees, which is the only form available here:
-    this repo's suite cannot read the four consumer repos. It is also the stronger form, because it
-    holds for every module published TODAY rather than for whichever ones somebody wrote a row for.
+
+def _case_id(case: tuple[Path, str]) -> str:
+    path, spelling = case
+    return f'{path.stem}::{spelling}'
+
+
+def test_the_reachability_corpus_is_floored_on_both_sides() -> None:
+    """THE FLOOR, BOTH SIDES, for the parametrisation below -- which cannot floor itself.
+
+    A `pytest.mark.parametrize` over an empty sequence does not fail, it COLLECTS NOTHING, and a
+    suite that ran zero cases reports exactly what a suite whose cases all passed reports. So the
+    corpus is measured here: the modules, the sub-package half of them, the declared spellings, and
+    the cross product that is the real population. The high side is in because a floor the tree has
+    outgrown stops separating a clean walk from a broken one -- both readings come from
+    `lab_commons.dev.floors` rather than being written by hand a ninth time.
     """
-    modules = sorted(
-        path
-        for path in DEV_DIR.rglob('*.py')
-        if not any(part.startswith('_') for part in path.relative_to(DEV_DIR).parts)
+    modules = _published_modules()
+    assert_floor(len(modules), floor=KIT_FLOOR, what='published kit module')
+    assert_floor_still_binds(len(modules), floor=KIT_FLOOR, headroom=KIT_HEADROOM, what='published kit module')
+    nested = [path for path in modules if path.parent != DEV_DIR]
+    assert_floor(len(nested), floor=NESTED_FLOOR, what='sub-package kit module')
+    assert_floor_still_binds(len(nested), floor=NESTED_FLOOR, headroom=NESTED_HEADROOM, what='sub-package kit module')
+    assert_floor(len(IMPORT_SPELLINGS), floor=SPELLING_FLOOR, what='declared import spelling')
+    assert_floor_still_binds(
+        len(IMPORT_SPELLINGS), floor=SPELLING_FLOOR, headroom=SPELLING_HEADROOM, what='declared import spelling'
     )
-    assert len(modules) >= KIT_FLOOR, 'a round trip over a directory the walk did not reach proves nothing'
-    nested = [path for path in modules if len(path.relative_to(DEV_DIR).parts) > 1]
-    assert len(nested) >= NESTED_FLOOR, (
-        f'{len(nested)} kit modules live below the top level, under a floor of {NESTED_FLOOR}. The '
-        f'defect this arm exists for is reachable ONLY through a sub-package, so a corpus of '
-        f'top-level modules would pass it while blind.'
+    assert_floor(len(REACHABILITY_CASES), floor=CASE_FLOOR, what='module x spelling reachability')
+    assert_floor_still_binds(
+        len(REACHABILITY_CASES), floor=CASE_FLOOR, headroom=CASE_HEADROOM, what='module x spelling reachability'
     )
-    unreachable = {
-        path.stem: form
-        for path in modules
-        for form in _import_forms(path)
-        if path.stem not in imported_kit_modules(ast.parse(form), package=PACKAGE)
-    }
-    assert not unreachable, (
-        f'these published kit modules cannot be NAMED by the import form a consumer writes, so the '
-        f'IMPORT detector is blind to every file that adopted them: {unreachable}. Widen '
-        f'`imported_kit_modules`; do not narrow what `kit_modules` publishes.'
-    )
+    assert NESTED_CASES, 'the sub-package half of the corpus is empty, so the arms below are about top-level modules'
+    assert SUBPACKAGES, 'the kit published no sub-package, so the bound the reader is gated on is vacuous here'
 
 
-def test_the_round_trip_refuses_a_resolver_that_stops_one_level_short() -> None:
-    """THE PLANT, and it is the real bug rather than an imitation of it.
+@pytest.mark.parametrize('case', REACHABILITY_CASES, ids=_case_id)
+def test_every_published_kit_module_is_named_by_every_import_spelling(case: tuple[Path, str]) -> None:
+    """THE ARM THAT WOULD HAVE CAUGHT IT: what `kit_modules` PUBLISHES, `imported_kit_modules` NAMES.
 
-    `package='lab_commons'` is one level short of the kit, which is the same mistake one level up:
-    every sub-package module resolves to a token it is not named by. If this passed, the arm above
-    would be asserting a property of the strings rather than of the resolver.
+    The two halves are one agreement, and the version of this arm that shipped on 2026-09-17 held
+    them to it over ONE spelling each. That is why it passed while the defect was live: it drove
+    `import <dotted>` and `from <parent> import <stem>`, the two forms the fix of that day had just
+    taught the reader, and the third -- `from <dotted> import <name>`, how a consumer imports a
+    FUNCTION out of a sub-package module -- was never written down. A module can be imported in more
+    than one way, so the corpus is MODULES x SPELLINGS, and the declared set of spellings is
+    `IMPORT_SPELLINGS`, which lives in the kit and not in this file: a spelling the reader must
+    resolve is a fact about the reader.
+
+    MEASURED: `from lab_commons.dev.famtests.citedtests import take_scan` answered `{'famtests'}`,
+    a token no published module is named by, so every consumer adopting a `famtests` module in the
+    natural form graded NAMED_ONLY forever -- the grade that means nothing corroborates the claim.
+    It cost no red anywhere, because a detector that never fires reports what a clean tree reports.
     """
-    form = 'from lab_commons.dev.famtests import rulespages\n'
-    assert 'rulespages' not in imported_kit_modules(ast.parse(form), package='lab_commons')
-    assert 'rulespages' in imported_kit_modules(ast.parse(form), package=PACKAGE)
+    path, spelling = case
+    named = imported_kit_modules(ast.parse(_spelled(path, spelling)), package=PACKAGE, subpackages=SUBPACKAGES)
+    assert path.stem in named, (
+        f'`{path.stem}` is published by `kit_modules` and is not NAMED by `imported_kit_modules` when '
+        f'a consumer writes `{_spelled(path, spelling).strip()}` -- it answered {sorted(named)}. The '
+        f'IMPORT detector is blind to every file that adopted it by this spelling. Widen the reader; '
+        f'do not narrow what `kit_modules` publishes, and do not delete the spelling.'
+    )
+
+
+@pytest.mark.parametrize('case', NESTED_CASES, ids=_case_id)
+def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tuple[Path, str]) -> None:
+    """THE PLANT, over the same cross product, and it is the real bug rather than an imitation of it.
+
+    `package='lab_commons'` is one level short of the kit. Under it every module resolves one segment
+    deeper than it is, and the repair that would make the arm above pass by reading EVERY segment is
+    exactly the repair that makes `lab_commons.dev.bounded` answer `bounded` here -- at which point
+    `_refuse_mismatch` sees a match, the wrong depth stops being refusable, and the fix has switched
+    off the guard it repairs. So the bound is TWO segments below the package with the second one
+    gated on `kit_subpackages`: `famtests` is a directory in the kit and `dev` is not, which is the
+    only fact that tells the two cases apart.
+
+    Restricted to the sub-package half because that is where a widening would land. Without this
+    plant the arm above would be asserting a property of the strings rather than of the resolver.
+    """
+    path, spelling = case
+    named = imported_kit_modules(ast.parse(_spelled(path, spelling)), package='lab_commons', subpackages=SUBPACKAGES)
+    assert named == frozenset({'dev'}), (
+        f'a resolver one level short of the kit answered {sorted(named)} for '
+        f'`{_spelled(path, spelling).strip()}`; it must reach no further than `dev`. Anything else '
+        f'means the two-segment bound was widened, and `_refuse_mismatch` can no longer see a '
+        f'`package` resolving at the wrong depth.'
+    )
+
+
+@pytest.mark.parametrize(
+    'spelling', ['from lab_commons.dev.bounded import run_bounded', 'import lab_commons.dev.bounded']
+)
+def test_the_short_package_is_refused_in_either_spelling(tmp_path: Path, spelling: str) -> None:
+    """THE PLANT AT THE OTHER DEPTH, driven through the REAL census, in BOTH spellings of one import.
+
+    `test_a_package_that_resolves_onto_nothing_is_refused` plants exactly one of them. MEASURED
+    2026-09-18: under the OLD reader the `import lab_commons.dev.bounded` spelling of that same
+    consumer resolved to `{'dev', 'bounded'}` and the refusal did NOT fire -- the same
+    spelling-bound blindness as the round trip, this time inside the guard rather than the detector.
+    """
+    kit_dir, root = _plant(tmp_path, {'bounded.py': _SILENT_KIT}, {'scripts/gate/runner.py': f'{spelling}\n'})
+    with pytest.raises(PackageMismatch, match='wrong depth'):
+        take_census(
+            {'scripts/gate/runner.py': 'stays'},
+            kit_modules(kit_dir),
+            root=root,
+            package='lab_commons',
+            row_floor=1,
+            module_floor=1,
+        )
 
 
 def test_a_name_no_kit_module_answers_to_is_not_manufactured() -> None:
@@ -513,4 +625,17 @@ def test_a_name_no_kit_module_answers_to_is_not_manufactured() -> None:
     and the census would flag the whole roster.
     """
     form = 'import pathlib\nfrom collections.abc import Mapping\nfrom lab_commons import paths\n'
-    assert imported_kit_modules(ast.parse(form), package=PACKAGE) == frozenset()
+    assert imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=SUBPACKAGES) == frozenset()
+
+
+def test_a_sub_package_the_kit_does_not_publish_is_not_read_two_deep() -> None:
+    """THE BOUND'S OWN ARM: the second segment is earned by `kit_subpackages`, never by shape alone.
+
+    Planted from the other side -- a consumer importing `lab_commons.dev.elsewhere.thing` when the
+    kit publishes no `elsewhere`. If the reader took the second segment unconditionally this would
+    answer `thing`, and `thing` is exactly the shape of a top-level module name read one level short.
+    """
+    form = 'from lab_commons.dev.elsewhere.thing import helper\n'
+    assert imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=SUBPACKAGES) == frozenset({'elsewhere'})
+    widened = imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=frozenset({'elsewhere'}))
+    assert widened == frozenset({'elsewhere', 'thing'})
