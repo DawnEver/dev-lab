@@ -182,9 +182,17 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # motronics' `test_migration_boundary_density.py` imports both at b44bc330c. Its three siblings
     # there do NOT and are deliberately absent -- naming an unadopted file would be the same lie
     # pointing the other way.
+    # A PATH THAT DOES NOT EXIST DOWNGRADES A FINDING TO NO FINDING, added 2026-09-18. Both rows named
+    # `tests/architecture/_placement.py`, which is the LABS' spelling; motronics' file is one segment
+    # deeper at `tests/architecture/layering/_placement.py`, and matching is by SUFFIX, so the row
+    # reached neither. That file imports nothing from the kit while `famtests.placement` says adopting
+    # it "is an import rather than a rewrite" -- a LIVE FORK, and it graded `untouched` rather than
+    # `named_only` purely because the detector was pointed somewhere empty. A stale path does not fail
+    # loudly; it is silent in the flattering direction, which is the second time today.
     'density': (
         'supersedes',
         'tests/architecture/_placement.py',
+        'tests/architecture/layering/_placement.py',
         'tests/architecture/layering/_helpers.py',
         'tests/architecture/layering/_tests_placement.py',
         'tests/architecture/test_the_migration_boundary_is_declared.py',
@@ -193,6 +201,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'placement': (
         'supersedes',
         'tests/architecture/_placement.py',
+        'tests/architecture/layering/_placement.py',
         'tests/architecture/layering/_helpers.py',
         'tests/architecture/layering/_tests_placement.py',
         'tests/architecture/test_the_migration_boundary_is_declared.py',
