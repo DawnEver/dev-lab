@@ -12,7 +12,13 @@ THE RATCHET IS TESTED FROM BOTH SIDES, because a one-sided ratchet is the shape 
 * a base line cannot silently vanish -- `test_planted_a_deleted_base_line_reds` and, for the weaker
   mode, `test_planted_a_missing_required_target_reds`;
 * a delta cannot silently grow into a fork -- `test_a_delta_that_restates_a_base_line_is_refused`,
-  `test_a_delta_past_its_ceiling_is_refused`, and `test_planted_a_line_every_delta_adds_is_named`.
+  `test_a_delta_past_its_ceiling_is_refused`, and `test_planted_a_line_every_delta_adds_is_named`;
+* a base cannot acquire a line it is unable to PLACE --
+  `test_planted_a_re_ignore_promoted_into_the_base_is_refused_and_named` against
+  `test_an_ordinary_line_is_still_promotable_into_the_same_base`. That pair is the one this file was
+  missing: the anti-fork arm above argues FOR promoting a line every consumer holds, and for a
+  last-match-wins artefact that argument is sometimes wrong, so the two arms disagree on purpose and
+  both directions are planted.
 
 The floors are the third property. `assert_base_floor` and `fork_signals` each refuse a reading below
 one, and both refusals have their own test, because a floor that is never exercised is a floor
@@ -42,6 +48,7 @@ from lab_commons.dev.famconfig import (
     HOOK_ID_CORE,
     INSTALLED,
     MAKE_TARGET_CORE,
+    ORDER_SENSITIVE_ARTEFACTS,
     RENDERED,
     REPO_FLOOR,
     REQUIRED,
@@ -49,13 +56,17 @@ from lab_commons.dev.famconfig import (
     Base,
     Delta,
     ForkedDelta,
+    PositionalBase,
     VacuousBase,
     artefact_base,
     assert_base_floor,
+    assert_base_is_order_free,
     delta_problems,
+    floating_subject,
     fork_signals,
     inspect_file,
     measured_delta,
+    positional_base_lines,
     render,
     rendered_lines,
     satisfies,
@@ -510,3 +521,75 @@ def test_fork_signals_names_a_line_every_delta_anchors() -> None:
     signals = fork_signals(deltas)
     assert len(signals) == 1, signals
     assert repr(_EXCLUDE) in signals[0], signals
+
+
+#: THE RE-IGNORE, lifted verbatim from a sibling repo's live `.gitignore` where it sits at line 108,
+#: below the `!**/.claude/memory/**` negation at line 85 that re-included the cache the base rule at
+#: line 8 had excluded. That file records the incident in its own comment: a `.pyc` under
+#: `.claude/memory/` was TRACKED in 2026-08, and "a bare `**/__pycache__/` here would sit BEFORE
+#: nothing and change nothing; these must follow the negations to win."
+_RE_IGNORE: Final = '**/.claude/**/__pycache__/'
+
+#: THE CONTROL IN THE OTHER DIRECTION, and it is the half that stops this arm being a refusal of every
+#: promotion. `**/.DS_Store` is an ordinary family candidate: no base rule already matches it, so it
+#: means the same wherever it renders and the sorted table can carry it.
+_ORDINARY: Final = '**/.DS_Store'
+
+
+def _promoted(line: str) -> Base:
+    """The live `.gitignore` base with *line* promoted into it, sorted exactly as the table is."""
+    return Base('.gitignore', tuple(sorted((*GITIGNORE_BASE, line))), RENDERED)
+
+
+def test_planted_a_re_ignore_promoted_into_the_base_is_refused_and_named() -> None:
+    """THE PROMOTION HAZARD, planted with the real line from the incident that proves it.
+
+    `fork_signals` would argue FOR this promotion -- it is a line a consumer's delta holds -- and the
+    renderer would place it ABOVE every negation, so the `.pyc` goes back to being tracked with the
+    file reading as more strictly ignored than before. Nothing else in this package can see that: the
+    bytes render exactly as declared and every base line is present.
+    """
+    with pytest.raises(PositionalBase, match=r'\*\*/\.claude/\*\*/__pycache__/'):
+        rendered_lines(_promoted(_RE_IGNORE), _delta())
+
+
+def test_the_refusal_names_the_remedy_rather_than_only_the_defect() -> None:
+    """A refusal that cannot be acted on is one that gets routed around."""
+    with pytest.raises(PositionalBase, match='BELOW the negation it closes'):
+        assert_base_is_order_free(_promoted(_RE_IGNORE))
+
+
+def test_an_ordinary_line_is_still_promotable_into_the_same_base() -> None:
+    """THE CONTROL. A guard that refused every promotion would report what a frozen table reports."""
+    assert positional_base_lines(_promoted(_ORDINARY), floating_floor=2) == ()
+    assert_base_is_order_free(_promoted(_ORDINARY))
+    assert _ORDINARY in rendered_lines(_promoted(_ORDINARY), _delta())
+
+
+def test_the_live_base_is_order_free_today_and_the_scan_was_not_empty() -> None:
+    """THE FLOOR. Two floating rules here; a reading that found none subsumes nothing, vacuously."""
+    floating = tuple(line for line in _base().content_lines if floating_subject(line))
+    assert floating == ('**/.env', '**/__pycache__/'), floating
+    assert positional_base_lines(_base(), floating_floor=len(floating)) == ()
+
+
+def test_a_base_with_no_floating_rule_is_refused_rather_than_reported_clean() -> None:
+    """The floor's own arm: finding no subsumption in a table with nothing to subsume is not green."""
+    with pytest.raises(VacuousBase, match='floating-rule'):
+        positional_base_lines(Base('.gitignore', ('dist/', 'build/'), RENDERED), floating_floor=2)
+
+
+def test_a_rule_carrying_its_own_path_is_not_a_floating_subject() -> None:
+    """`**/log/*.log` is about a LOCATION, so a deeper rule genuinely narrows it and may be promoted."""
+    assert floating_subject('**/__pycache__/') == '/__pycache__/'
+    assert floating_subject('**/.env') == '/.env'
+    assert floating_subject('**/log/*.log') is None
+    assert floating_subject('**/temp/**') is None
+    assert floating_subject('.pytest_cache/') is None
+
+
+def test_the_order_sensitive_set_is_named_rather_than_counted() -> None:
+    """A base outside the map is DECLARED order-insensitive; adding one is a decision with a floor."""
+    assert set(ORDER_SENSITIVE_ARTEFACTS) == {'.gitignore'}, ORDER_SENSITIVE_ARTEFACTS
+    assert set(ORDER_SENSITIVE_ARTEFACTS) <= set(BASES), 'a declaration that outlived its subject'
+    assert all(floor >= 1 for floor in ORDER_SENSITIVE_ARTEFACTS.values()), 'a floor of zero is no floor'

@@ -12,8 +12,11 @@ therefore has exactly two states, which is this refactor's premise: it reads the
 it declares its delta. There is no third state where a local edit quietly wins.
 
 THIS MODULE IS THE WRITE HALF. The vocabulary (:class:`Base`, :class:`Delta`), the line readings and
-the survey live in :mod:`lab_commons.dev._famconfig_survey` and are re-exported here, so the surface
-a consumer imports is one name. The import runs one way: measuring a file does not need the renderer.
+the survey live in :mod:`lab_commons.dev._famconfig_survey`; every REFUSAL -- what makes a declaration
+illegal -- lives in :mod:`lab_commons.dev._famconfig_refusals` as of 2026-09-18, when the ordering arm
+took this module past the repo's line band. Both are re-exported here, so the surface a consumer
+imports is one name. The imports run one way: measuring a file does not need the renderer, and
+refusing a declaration does not either.
 
 WHAT A DELTA MAY SAY, and this was the design question rather than a detail. A delta that can only
 APPEND cannot express "not this one", so the first repo that genuinely does not want a base line
@@ -48,6 +51,13 @@ A RATCHET HAS TWO SIDES, and both are mechanised rather than described:
 * a base line cannot silently vanish -- :func:`inspect_file` reds on a base line absent from disk
   with no drop declaring it, and a drop or an anchor naming a line the base lacks is refused, so a
   stale declaration cannot outlive its subject either;
+* a base cannot acquire a line it is unable to place -- :func:`assert_base_is_order_free` refuses a
+  line that excludes a strict subset of what a floating base rule already excludes, in the artefacts
+  :data:`ORDER_SENSITIVE_ARTEFACTS` declares last-match-wins. An anchor points ONE way, so every base
+  line renders before every delta line; a re-ignore promoted into a `.gitignore` base would therefore
+  render above the negation it was written to close and silently undo it, and `fork_signals` would
+  have argued FOR the promotion. That is the one direction the anti-fork arm gets wrong, and this is
+  the arm that disagrees with it;
 * a delta cannot silently grow into a fork -- every delta carries a CEILING counting its anchored
   lines too, a delta re-stating a base CONTENT line is refused at render time, and
   :func:`fork_signals` names any line EVERY consumer's delta holds, because that is the base
@@ -66,11 +76,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev._famconfig_refusals import (
+    ForkedDelta,
+    PositionalBase,
+    assert_base_is_order_free,
+    delta_problems,
+)
 from lab_commons.dev._famconfig_rows import BASES as _BASE_LINES
 from lab_commons.dev._famconfig_rows import (
     GITIGNORE_FLOOR,
     HOOK_ID_CORE,
     MAKE_TARGET_CORE,
+    ORDER_SENSITIVE_ARTEFACTS,
     REPO_FLOOR,
     STAMP,
 )
@@ -81,9 +98,11 @@ from lab_commons.dev._famconfig_survey import (
     VacuousBase,
     assert_base_floor,
     delta_lines,
+    floating_subject,
     fork_signals,
     meaningful_lines,
     measured_delta,
+    positional_base_lines,
     satisfies,
 )
 
@@ -97,6 +116,7 @@ __all__ = [
     'INSTALLED',
     'MAKE_TARGET_CORE',
     'MIN_BASE_LINES',
+    'ORDER_SENSITIVE_ARTEFACTS',
     'RENDERED',
     'REPO_FLOOR',
     'REQUIRED',
@@ -105,15 +125,19 @@ __all__ = [
     'Base',
     'Delta',
     'ForkedDelta',
+    'PositionalBase',
     'VacuousBase',
     'artefact_base',
     'assert_base_floor',
+    'assert_base_is_order_free',
     'delta_lines',
     'delta_problems',
+    'floating_subject',
     'fork_signals',
     'inspect_file',
     'meaningful_lines',
     'measured_delta',
+    'positional_base_lines',
     'render',
     'rendered_lines',
     'satisfies',
@@ -134,10 +158,6 @@ DRIFTED: Final = 'DRIFTED'
 FOREIGN: Final = 'FOREIGN'
 
 
-class ForkedDelta(ValueError):
-    """A delta drops or anchors a line the base cannot carry, re-states one it has, or over-runs."""
-
-
 #: Every artefact, by name. Built from the data table rather than restated, so a base added there
 #: arrives here and a base deleted there cannot leave a live entry behind.
 BASES: Final[dict[str, Base]] = {
@@ -152,98 +172,21 @@ def artefact_base(artefact: str) -> Base:
 
     A lookup rather than an attribute so that an artefact this package does not own fails HERE, with
     the set it could have meant, instead of at the point a caller indexes ``None``.
+
+    IT ALSO RUNS :func:`assert_base_is_order_free`, so a base that needs an ordering this table cannot
+    express is refused on the way OUT of the kit rather than at a consumer's render. Every reader of a
+    base goes through here, including the survey half and every shared test body.
     """
-    try:
-        return BASES[artefact]
-    except KeyError:
+    base = BASES.get(artefact)
+    if base is None:
         msg = (
             f'no family base for {artefact!r}. Declared artefacts: {sorted(BASES)}. A config file '
             f'with no base is not shared by default -- add the row to lab_commons.dev._famconfig_rows '
             f'with the measurement that says it is shared.'
         )
-        raise ForkedDelta(msg) from None
-
-
-def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
-    """Every way *delta* is not a delta of *base* -- pure over its arguments.
-
-    EVERY COMPARISON IS AGAINST ``content_lines``, and that is the 2026-09-17 correction rather than
-    a detail: this function read ``base.lines`` while the other four sites read ``content_lines``, so
-    a delta line equal to a base BLANK was reported as re-stating the base. A blank is layout and
-    carries nothing to copy, so it cannot be the fork the refusal exists for.
-
-    THE STRUCTURAL LINES ARE STILL REFUSED AND THAT IS NOT THE SAME BUG. `    hooks:` is a content
-    line, so it stays refused -- a second copy of a rendered block IS the base re-forming inside the
-    delta. The remedy is an ANCHOR, which copies nothing, and the refusal names it.
-    """
-    out: list[str] = []
-    known = set(base.content_lines)
-    out += [
-        f'{delta.repo} drops {line!r} from the {base.artefact} base, and the base does not have that '
-        f'line. Delete the drop in the edit that removed the base line; a drop that outlives its '
-        f'subject reads as a decision and refuses nothing.'
-        for line in sorted(set(delta.dropped) - known)
-    ]
-    out += [
-        f'{delta.repo} adds {line!r} to {base.artefact}, and the base already has it. A delta that '
-        f're-states the base is the base copied into a place the guard does not re-render. If the '
-        f'line was restated only to reach a position inside a rendered block, that is what a '
-        f'Delta.anchored entry is for: anchor the new lines to the base line they belong under, and '
-        f'copy nothing.'
-        for line in sorted(set(delta_lines(delta)) & known)
-    ]
-    out += _anchor_problems(base, delta, known)
-    if len(delta_lines(delta)) > delta.ceiling:
-        out.append(
-            f'{delta.repo} adds {len(delta_lines(delta))} lines to {base.artefact}, past its ceiling '
-            f'of {delta.ceiling}. Raise the ceiling with the reason, or move what is shared into the '
-            f'base. Anchored lines count here too, or anchoring would be a ceiling nobody chose.'
-        )
-    out += [
-        f'{delta.repo} drops {line!r} from {base.artefact} with an empty reason. A removal and a '
-        f'drift are the same bytes on disk; the reason is the only thing that tells them apart.'
-        for line, reason in sorted(delta.dropped.items())
-        if not reason.strip()
-    ]
-    return tuple(out)
-
-
-def _anchor_problems(base: Base, delta: Delta, known: set[str]) -> list[str]:
-    """Every way an anchor fails to name ONE live position in *base*.
-
-    Three refusals, and each is the anchor's half of a ratchet the drops already have: an anchor on a
-    line the base lacks (a declaration outliving its subject), an anchor on a line the base repeats
-    (a position that is not a position -- the YAML base holds `    hooks:` twice, so picking one
-    silently would be a coin flip the reader cannot see), and an anchor on a line the same delta
-    drops (two declarations contradicting each other). The empty anchor is the fourth and it is the
-    ratchet's other side: an anchor that adds nothing is a waiver nothing uses.
-    """
-    out: list[str] = []
-    for line, added in sorted(delta.anchored.items()):
-        if line not in known:
-            out.append(
-                f'{delta.repo} anchors {len(added)} line(s) to {line!r} in {base.artefact}, and the '
-                f'base does not have that line. An anchor names a position by the text of a base '
-                f'line, so it dies with the line it names -- move it, or delete it.'
-            )
-            continue
-        if base.occurrences(line) > 1:
-            out.append(
-                f'{delta.repo} anchors to {line!r} in {base.artefact}, and the base has it '
-                f'{base.occurrences(line)} times. That names no position. Anchor to a line that '
-                f'occurs once -- a hook id, not a structural key.'
-            )
-        if line in delta.dropped:
-            out.append(
-                f'{delta.repo} drops it and anchors to it: {line!r} in {base.artefact}. One '
-                f'declaration says the line goes and the other hangs content off it.'
-            )
-        if not added:
-            out.append(
-                f'{delta.repo} anchors no lines to {line!r} in {base.artefact}. An anchor that adds '
-                f'nothing is a waiver nothing uses -- delete the entry.'
-            )
-    return out
+        raise ForkedDelta(msg)
+    assert_base_is_order_free(base)
+    return base
 
 
 def rendered_lines(base: Base, delta: Delta) -> tuple[str, ...]:
@@ -260,6 +203,7 @@ def rendered_lines(base: Base, delta: Delta) -> tuple[str, ...]:
     if problems:
         raise ForkedDelta('\n'.join(problems))
     assert_base_floor(len(base.lines), MIN_BASE_LINES, base.artefact)
+    assert_base_is_order_free(base)
     out = [*base.stamp_lines, '']
     for line in base.lines:
         reason = delta.dropped.get(line)

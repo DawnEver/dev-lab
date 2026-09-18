@@ -59,6 +59,7 @@ __all__ = [
     'MAKEFILE_RESIDUAL_SIGNALS',
     'MAKE_TARGET_CONSUMER_CORE',
     'MAKE_TARGET_CORE',
+    'ORDER_SENSITIVE_ARTEFACTS',
     'PRECOMMIT_BASE',
     'REPO_FLOOR',
     'STAMP',
@@ -92,6 +93,15 @@ REPO_FLOOR: Final = 3
 #:
 #: Sorted, because the order is then re-derivable by anybody who repeats the measurement. A
 #: `.gitignore` is order-insensitive apart from negations, and the base declares none.
+#:
+#: THAT PARENTHETICAL WAS THE WHOLE RISK SURFACE AND IT WAS PROSE UNTIL 2026-09-18. Sorting is only
+#: safe while no line here needs to sit AFTER another, and nothing checked it. The shape that breaks
+#: it is on record in a sibling repo's own file: `**/.claude/**/__pycache__/` exists there for no
+#: reason except POSITION -- `**/__pycache__/` already excludes everything it excludes -- and it works
+#: only because it is written BELOW the `!**/.claude/memory/**` negation that re-included the cache.
+#: Promoted into this table it would render ABOVE every delta line, re-tracking the `.pyc` the sibling
+#: repo measured as TRACKED in 2026-08, and `fork_signals` would have argued FOR the promotion. See
+#: :data:`ORDER_SENSITIVE_ARTEFACTS` for the mechanism that now refuses it.
 GITIGNORE_BASE: Final[tuple[str, ...]] = (
     '**/.env',
     '**/__pycache__/',
@@ -108,6 +118,29 @@ GITIGNORE_BASE: Final[tuple[str, ...]] = (
     '.venv*',
     'uv.lock',
 )
+
+#: WHICH ARTEFACTS ARE LAST-MATCH-WINS, and the floating-rule floor each scan over one must reach.
+#:
+#: THE GAP THIS DECLARES, stated as a mechanism rather than as the sentence it replaces. A `Delta`
+#: maps a BASE line to delta lines rendered AFTER it (`Delta.anchored`); there is no expression for
+#: the other direction, "this base line must come after that delta line", and every base line renders
+#: before every delta line. So in a last-match-wins file a base line whose only job is to come LAST
+#: cannot be a base line at all -- it would be promoted, rendered first, and silently defeated by the
+#: negation it was written to close.
+#:
+#: HOW SUCH A LINE IS RECOGNISED WITHOUT KNOWING THE DELTAS, which is what makes this checkable on the
+#: base ALONE and therefore on every future promotion from a repo nobody surveyed: a rule whose entire
+#: value is its position is a rule that is otherwise REDUNDANT. `**/.claude/**/__pycache__/` excludes
+#: a strict subset of what `**/__pycache__/` already excludes, so as a set of paths it adds nothing;
+#: all it can add is order, and this table cannot carry order. A line that is NOT subsumed by a
+#: floating sibling is promotable as normal -- `**/.DS_Store` matches nothing another base line
+#: matches, so it means the same wherever it renders.
+#:
+#: THE FLOOR IS PER ARTEFACT because it is a fact about that base: two floating rules here,
+#: `**/__pycache__/` and `**/.env`, and a scan that found none would report what a base with no
+#: shared rules reports. The map is a NAMED SET rather than a flag on `Base`, so extending the check
+#: to a second artefact is a decision somebody typed here with its own floor.
+ORDER_SENSITIVE_ARTEFACTS: Final[dict[str, int]] = {'.gitignore': 2}
 
 #: The floor under the gitignore base: a scan or a render over an EMPTY base is indistinguishable
 #: from one over a clean tree. Set below the measured 14 on purpose -- a floor refuses an unread

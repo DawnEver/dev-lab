@@ -31,9 +31,11 @@ __all__ = [
     'VacuousBase',
     'assert_base_floor',
     'delta_lines',
+    'floating_subject',
     'fork_signals',
     'meaningful_lines',
     'measured_delta',
+    'positional_base_lines',
     'satisfies',
 ]
 
@@ -177,6 +179,48 @@ def measured_delta(path: Path, base: Base, repo: str) -> Delta:
         if not satisfies(line, live)
     }
     return Delta(repo=repo, added=added, dropped=dropped, ceiling=len(added))
+
+
+def floating_subject(line: str) -> str | None:
+    """The path suffix a `**/`-prefixed rule matches at ANY depth, or ``None`` if *line* is not one.
+
+    `**/__pycache__/` answers `/__pycache__/` -- it excludes a directory of that name wherever it
+    sits, so EVERY rule ending in that suffix names a subset of what it already names. `**/log/*.log`
+    answers ``None``: it carries a path of its own below the wildcard, so it is a rule about a
+    LOCATION and a deeper rule can genuinely narrow it. `**/temp/**` answers ``None`` for the same
+    reason from the other end.
+    """
+    if not line.startswith('**/'):
+        return None
+    rest = line[3:]
+    return None if '/' in rest.rstrip('/') else '/' + rest
+
+
+def positional_base_lines(base: Base, *, floating_floor: int) -> tuple[str, ...]:
+    """Base lines that carry NO set of paths a floating sibling does not already carry. PURE.
+
+    THE READING THAT GIVES THE SORTED BASE ITS MECHANISM. `_famconfig_rows` stores its `.gitignore`
+    table sorted, on the stated ground that the file is order-insensitive apart from negations and
+    the base declares none. Nothing checked that, and a `Delta` cannot fix it after the fact: anchors
+    point one way only, so every base line renders BEFORE every delta line and a base line that needs
+    to come last has no way to say so.
+
+    A rule that is a strict subset of a floating rule already in the base excludes nothing new. Its
+    only possible contribution is POSITION -- it is a RE-IGNORE, written below a negation to win a
+    last-match-wins argument -- and position is exactly what a sorted table cannot carry. So the
+    reading is over the base ALONE and needs no delta, which is what makes it bind on a promotion out
+    of a repo nobody surveyed.
+
+    *floating_floor* has NO default. How many floating rules a base carries is a fact about that base,
+    and a scan that found none would report subsumption nowhere and read exactly like a clean table.
+    """
+    subjects = {line: subject for line in base.content_lines if (subject := floating_subject(line))}
+    assert_base_floor(len(subjects), floating_floor, f'{base.artefact} floating-rule')
+    return tuple(
+        line
+        for line in base.content_lines
+        if any(line != floater and line.endswith(subject) for floater, subject in subjects.items())
+    )
 
 
 def fork_signals(deltas: Sequence[Delta], floor: int = REPO_FLOOR) -> tuple[str, ...]:
