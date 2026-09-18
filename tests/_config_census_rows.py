@@ -727,24 +727,34 @@ PARTITIONS: tuple[tuple[str, dict[str, Placement]], ...] = (
 #: `.git` three times would be a number nobody could read.
 MACHINE_EXCLUDES: tuple[str, ...] = ('**/__version__.py', '.git', '.venv*')
 
-#: EVERY EXCLUDE THAT HIDES REAL SOURCE, per repo, MEASURED 2026-09-18 from the live config ruff
+#: EVERY EXCLUDE THAT HIDES REAL SOURCE, per repo, RE-MEASURED 2026-09-18 from the live config ruff
 #: resolves (so the motronics row is read from `ruff.toml`, which wins there, and the other three from
-#: `[tool.ruff]`).
+#: `[tool.ruff]`), each repo read at HEAD: lab-commons `069ce2b`, wdg-lab `ef5fa9fc`, optimi-lab
+#: `e3502ec`, the motronics lane `bc8ca7cc`.
 #:
 #: WHY THIS IS A CEILING AND NOT A VERDICT. An exclude is the WIDEST waiver a ruff config can write --
 #: it drops all 58 selectors over a subtree and names no code at all -- and until this table existed
-#: nothing in the family read one, so the 13 rows below had never been counted, let alone judged.
-#: Judging them is not this lane's to do: `attic` and `.claude/memory` are declared read-only archives
-#: in motronics' own AGENTS.md, and wdg-lab's `experiment`, `input`, `output` and `ignore` are that
-#: repo`s scratch trees. What the table buys today is that the FOURTEENTH arrives as an edit to a
-#: named set with a reason, rather than as a line in a file nothing reads. It may only SHRINK.
+#: nothing in the family read one, so the rows below had never been counted, let alone judged.
+#: Judging them is not this table's to do: `attic` and `.claude/memory` are declared read-only archives
+#: in motronics' own AGENTS.md, and wdg-lab's `output` and `ignore` are that repo`s scratch trees.
+#: What the table buys is that the NEXT one arrives as an edit to a named set with a reason, rather
+#: than as a line in a file nothing reads. It may only SHRINK.
+#:
+#: IT HAS NOW SHRUNK, 13 -> 8, AND THE FIVE THAT WENT ARE THE EVIDENCE THE CEILING WAS WORTH HAVING.
+#: A lane in each lab spent them at the source and the deletion here is the compulsory other half --
+#: a declared waiver whose config line is gone asserts a constraint on code that no longer exists.
+#: Two were ARGUED rather than assumed, and both arguments are facts about the tree rather than
+#: judgements: wdg-lab's `scripts/setup.py` is not a tracked path at `ef5fa9fc` at all, and
+#: optimi-lab's `archived` at `e3502ec` holds exactly one tracked file, a ZERO-BYTE `README.md`, with
+#: no Python anywhere under it. An exclude over an empty tree hides nothing and reads as if it hid
+#: something, which is the widest waiver in the config spent on nothing at all.
 #:
 #: lab-commons EXCLUDES NOTHING, and that is the evidence that the zero is reachable: the repo that
 #: ships the standard opens every file it tracks.
 TREE_EXCLUDES: dict[str, tuple[str, ...]] = {
     'lab-commons': (),
-    'wdg-lab': ('.claude', 'archived', 'experiment', 'ignore', 'input', 'output', 'scripts/setup.py'),
-    'optimi-lab': ('archived', 'ignore', 'input', 'output'),
+    'wdg-lab': ('.claude', 'archived', 'ignore', 'output'),
+    'optimi-lab': ('ignore', 'output'),
     'motronics-studio': ('.claude/memory', 'attic'),
 }
 
@@ -753,9 +763,11 @@ TREE_EXCLUDES: dict[str, tuple[str, ...]] = {
 #:
 #: THE THREE POSITIONS HERE ARE ALL DIFFERENT AND THE TABLE IS WHERE THAT BECOMES VISIBLE. lab-commons
 #: waives ten codes over `tests/**`, each line in its own `pyproject.toml` naming the property of a
-#: test tree that makes the rule inapplicable. wdg-lab waives two codes over seven globs, five of them
-#: `PLR0917` over a visualisation subtree. motronics waives NOTHING, by a 2026-08-02 user directive its
-#: `ruff.toml` states in full -- a waiver belongs in the file it governs, as a noqa comment carrying a reason,
+#: test tree that makes the rule inapplicable. wdg-lab waives two codes over FIVE globs, three of them
+#: `PLR0917` over a visualisation subtree -- down from seven and five, because `wdg_viz/backend/**`
+#: and `wdg_viz/utils.py` were SPENT at the source on 2026-09-18 rather than defended, and the two
+#: rows here went with them in the same ratchet. 17 -> 15. motronics waives NOTHING, by a 2026-08-02
+#: user directive its `ruff.toml` states in full -- a waiver belongs in the file it governs, as a noqa comment carrying a reason,
 #: never in a central table -- and `tests/architecture/ratchets/test_suppression_ratchet.py` pins that
 #: repo's table at zero pairs. optimi-lab has none either, and declares nothing about it.
 #:
@@ -779,10 +791,8 @@ PER_FILE_WAIVERS: dict[str, tuple[str, ...]] = {
     'wdg-lab': (
         'examples/tasks/**::T201',
         'scripts/*.py::T201',
-        'src/wdg_lab/wdg_viz/backend/**::PLR0917',
         'src/wdg_lab/wdg_viz/backend3d/**::PLR0917',
         'src/wdg_lab/wdg_viz/connection/**::PLR0917',
-        'src/wdg_lab/wdg_viz/utils.py::PLR0917',
         'src/wdg_lab/wdg_viz/visualize_2d.py::PLR0917',
     ),
     'optimi-lab': (),

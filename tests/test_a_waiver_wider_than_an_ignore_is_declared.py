@@ -257,6 +257,50 @@ def test_an_undeclared_waiver_is_NAMED_by_the_arm_and_not_merely_counted() -> No
     assert sorted(waiver_entries(planted, 'per-file-ignores')) == ['src/**::S101']
 
 
+def test_a_declared_row_no_live_config_needs_is_NAMED_by_the_other_side_of_the_ratchet() -> None:
+    """THE CONTROL FOR THE DIRECTION THIS TABLE ACTUALLY MOVED IN, and it had none until today.
+
+    Both arms above assert `stale == []` as well as `undeclared == []`, and only the UNDECLARED half
+    was ever driven on a doctored input. That is the half a growing table exercises; the half a
+    SHRINKING one exercises is stale, and five exclude rows plus two per-file rows were deleted here
+    on the strength of an arm no control had watched red. So this plants the shrink: a config that
+    has given a waiver up, read against a table that still declares it.
+
+    THE AXIS THIS CONTROL IS BLIND TO: it drives the SET ARITHMETIC, not the READER. A
+    `ruff_excludes` that returned the empty set for every checkout would make every declared row look
+    stale in exactly this shape, and this control would still pass -- which is what the floor arms and
+    the spelling controls are for, and why neither of them may be deleted in favour of this one.
+    """
+    give_up = {'exclude': ['ignore'], 'lint': {'per-file-ignores': {'examples/tasks/**': ['T201']}}}
+    live_excludes = waiver_entries(give_up, 'exclude') - set(MACHINE_EXCLUDES)
+    stale = sorted(set(TREE_EXCLUDES['wdg-lab']) - live_excludes)
+    assert stale == ['.claude', 'archived', 'output'], (
+        f'the stale side reported {stale}. It must NAME the rows whose config line is gone, because '
+        f'the edit it asks for is a DELETION and a count cannot say which line to delete.'
+    )
+    stale_waivers = sorted(set(PER_FILE_WAIVERS['wdg-lab']) - waiver_entries(give_up, 'per-file-ignores'))
+    assert 'scripts/*.py::T201' in stale_waivers
+    assert 'examples/tasks/**::T201' not in stale_waivers
+
+
+def test_the_exclude_band_reds_on_both_sides_at_the_numbers_it_was_re_taken_at() -> None:
+    """BOTH SIDES OF THE RE-TAKEN EXCLUDE BAND, PLANTED, so [2, 15] is driven and not just written.
+
+    The floor moved 8 -> 2 in the same edit that deleted five of the rows it counted. A re-taken
+    number that no control drives is a digit somebody edited, so both bounds are exercised here
+    against the live measurement's neighbours rather than against the measurement itself.
+    """
+    what = 'planted family exclude'
+    with pytest.raises(FloorUnmet):
+        assert_floor(EXCLUDE_FLOOR - 1, floor=EXCLUDE_FLOOR, what=what)
+    with pytest.raises(SlackFloor):
+        assert_floor_still_binds(
+            EXCLUDE_FLOOR + EXCLUDE_HEADROOM + 1, floor=EXCLUDE_FLOOR, headroom=EXCLUDE_HEADROOM, what=what
+        )
+    assert_floor(EXCLUDE_FLOOR, floor=EXCLUDE_FLOOR, what=what)
+    assert_floor_still_binds(EXCLUDE_FLOOR, floor=EXCLUDE_FLOOR, headroom=EXCLUDE_HEADROOM, what=what)
+
+
 def test_a_reader_that_went_silent_reds_on_the_low_side_and_a_stale_floor_on_the_high() -> None:
     """BOTH SIDES OF THE FLOOR, PLANTED, through the same `dev.floors` calls the arms make."""
     what = 'planted waiver'
