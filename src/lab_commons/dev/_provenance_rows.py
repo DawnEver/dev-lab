@@ -101,7 +101,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'allowguard': ('supersedes', 'tests/architecture/test_no_allow_entry_names_a_denied_shape.py'),
     'configrender': ('supersedes', 'tests/architecture/test_the_family_config_is_rendered.py'),
     # NOT a second spelling of `datedlog`, which CONSTRUCTS `<base>/<yy>/<mm>/<dd>/<kind>/<name>` and
-    # cannot write the four-digit, kind-less layout these readers are about. See the module docstring.
+    # cannot write the four-digit, kind-less layout these readers are about. The argument is in the
+    # readings half, `famtests/_datedmemory_readings.py`, because it is a fact about the readers.
     'datedmemory': ('supersedes', 'tests/architecture/test_memory_lives_under_a_date.py'),
     'hookinstall': ('supersedes', 'tests/architecture/test_the_declared_hooks_are_installed.py'),
     # FOUR consumer rosters, not three: motronics holds TWO, one for `scripts/` and one for

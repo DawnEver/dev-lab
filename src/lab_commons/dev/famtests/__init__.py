@@ -52,7 +52,9 @@ WHAT IS HERE, one module per shared body:
 * :mod:`lab_commons.dev.famtests.rostercensus` -- a placement roster is re-read against the kit,
   so a row's side cannot go stale after its subject lands upstream.
 * :mod:`lab_commons.dev.famtests.datedmemory` -- every memory entry sits under its own date, and
-  the entry's own header agrees with it. READERS, not the constructor next door in
+  the entry's own header agrees with it. The VERDICTS; the readers they judge are the private
+  ``_datedmemory_readings`` beside it and are re-exported here, the same reading/verdict seam
+  ``configrender`` runs on. READERS, not the constructor next door in
   :mod:`lab_commons.dev.datedlog`: a different layout, the opposite refusal, and a floor.
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
