@@ -56,6 +56,13 @@ WHAT IS HERE, one module per shared body:
   ``_datedmemory_readings`` beside it and are re-exported here, the same reading/verdict seam
   ``configrender`` runs on. READERS, not the constructor next door in
   :mod:`lab_commons.dev.datedlog`: a different layout, the opposite refusal, and a floor.
+* :mod:`lab_commons.dev.famtests.citedtests` -- prose that points at a guard must point at a guard
+  that EXISTS, in BOTH forms a citation takes: a ``tests/...`` PATH and a bare test NAME. The
+  VERDICTS; the readers they judge are the private ``_citedtests_readings`` beside it and are
+  re-exported here, the same reading/verdict seam ``configrender`` and ``datedmemory`` run on. ONE
+  row for two consumer files, because the pair is the useful reading: they measure 5.45% and 0.85%
+  repo density against a 3.0% bar, so read apart a roster moves one and keeps the other.
+
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
   all four, and the bars it is judged against are arguments rather than a property closing over one

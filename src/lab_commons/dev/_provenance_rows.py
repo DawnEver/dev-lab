@@ -99,6 +99,16 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     #    has not adopted the body yet imports nothing from the kit at all.
     'agentguard': ('supersedes', 'tests/architecture/test_the_agent_guard_is_live.py'),
     'allowguard': ('supersedes', 'tests/architecture/test_no_allow_entry_names_a_denied_shape.py'),
+    # TWO consumer files, not one, and the pair is why this is a single row: they ask the same
+    # question of PATH citations and of bare NAME citations, share the walk, the prose reader and the
+    # history exemptions, and measure 5.45% and 0.85% repo density against a 3.0% move bar -- so read
+    # separately a roster says MOVE about one and STAY about the other, and the repo keeps half a
+    # mechanism. The readings half, `famtests/_citedtests_readings.py`, is private and has no row.
+    'citedtests': (
+        'supersedes',
+        'tests/architecture/docs/test_a_cited_test_file_exists.py',
+        'tests/architecture/docs/test_a_cited_test_function_exists.py',
+    ),
     'configrender': ('supersedes', 'tests/architecture/test_the_family_config_is_rendered.py'),
     # NOT a second spelling of `datedlog`, which CONSTRUCTS `<base>/<yy>/<mm>/<dd>/<kind>/<name>` and
     # cannot write the four-digit, kind-less layout these readers are about. The argument is in the
