@@ -17,6 +17,7 @@ Nothing here writes, renders or raises about rendering. The one refusal that liv
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,9 +31,11 @@ __all__ = [
     'Delta',
     'VacuousBase',
     'assert_base_floor',
+    'declared_hooks',
     'delta_lines',
     'floating_subject',
     'fork_signals',
+    'hook_delta',
     'meaningful_lines',
     'measured_delta',
     'negated_base_lines',
@@ -251,6 +254,44 @@ def measured_delta(path: Path, base: Base, repo: str) -> Delta:
         if not satisfies(line, live)
     }
     return Delta(repo=repo, added=added, dropped=dropped, ceiling=len(added))
+
+
+#: How a pre-commit config spells the one unit it is edited in. A hook is a YAML MAPPING ITEM, and
+#: `- id:` is the only key every one of them carries -- `repo:` is a property of the BLOCK, and
+#: MEASURED 2026-09-18 wdg-lab writes it AFTER its own `hooks:` list, so a reader that tracked the
+#: enclosing repo by position reported that lab's four local hooks as zero.
+_HOOK_ID: Final = re.compile(r'^\s*-\s*id:\s*(\S+)', re.MULTILINE)
+
+
+def declared_hooks(text: str) -> tuple[str, ...]:
+    """Every hook id *text* DECLARES, in file order, with commented-out ones dropped.
+
+    All three consumers carry blocks of commented-out hooks, and a hook nobody runs is not a hook the
+    repo declares -- counting one would invent a delta line that no commit could remove.
+    """
+    live = '\n'.join(line for line in text.splitlines() if not line.strip().startswith('#'))
+    return tuple(_HOOK_ID.findall(live))
+
+
+def hook_delta(text: str, core: Sequence[str], *, floor: int) -> tuple[str, ...]:
+    """The hook ids *text* declares beyond *core*, sorted -- THE UNIT THIS ARTEFACT'S CEILING TAKES.
+
+    MEASURED 2026-09-18, and this function exists because of it: sized in LINES by
+    :func:`measured_delta`, the three consumers' pre-commit deltas rank 87 / 38 / 8 and motronics is
+    the largest in the family; sized in HOOKS they rank 7 / 11 / 8 and motronics is the SMALLEST.
+    Nothing about any repo's relationship to the base differs between the two readings. A `.gitignore`
+    pattern is one line per decision, so a line count IS a decision count there; a pre-commit hook is
+    a mapping costing one line or twelve depending only on whether it is pulled from an upstream repo
+    or declared `- repo: local`. A ceiling stated in lines therefore says more about a repo's hook
+    SOURCING than about how far it has forked, which is the question `ceiling` is asked.
+
+    *floor* is the number of ids the read must reach before an empty answer means anything: a YAML
+    this could not parse, or a file that is not there, yields exactly what a repo adding no hook
+    yields. Pass the family core's own size -- every consumer carries it by construction.
+    """
+    declared = declared_hooks(text)
+    assert_base_floor(len(declared), floor, 'pre-commit hook')
+    return tuple(sorted(set(declared) - set(core)))
 
 
 def floating_subject(line: str) -> str | None:

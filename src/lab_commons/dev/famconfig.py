@@ -63,10 +63,15 @@ A RATCHET HAS TWO SIDES, and both are mechanised rather than described:
   :func:`fork_signals` names any line EVERY consumer's delta holds, because that is the base
   re-forming where nobody is looking at it.
 
-`[tool.ruff]` IS NOT HERE. It is the fourth config artefact the family census names and it belongs to
-the stage widening this repo's select to the consumers' 58 selectors; two renderers on one artefact
-while that sweep is live is a trap rather than a seam. Nothing checks that absence, which is exactly
-what makes saying it out loud the only thing holding it.
+`[tool.ruff]` IS A SECTION AND NOT A FILE, so it arrives through a DIFFERENT base -- landed
+2026-09-18, when the sweep that had kept it out (this repo's select widening to the consumers' 58)
+finished and the stated reason for its absence expired. Everything above is keyed by FILENAME and
+`RENDERED` demands the whole file, which for a `pyproject.toml` would mean this base owning
+`[build-system]` and `[project]` as well; `REQUIRED` asserts presence only, so it cannot see a
+consumer ADD an `ignore` entry. :mod:`lab_commons.dev._famconfig_sections` is the half whose subject
+is a TABLE -- :class:`SectionBase`, :class:`SectionDelta`, :func:`inspect_section` -- and it COMPARES
+rather than renders, because a table inside somebody else's file has nowhere to carry a stamp. It is
+re-exported here, so the surface a consumer imports is still one name.
 """
 
 from __future__ import annotations
@@ -91,18 +96,37 @@ from lab_commons.dev._famconfig_rows import (
     REPO_FLOOR,
     STAMP,
 )
+from lab_commons.dev._famconfig_sections import (
+    DIVERGED,
+    NO_FILE,
+    NO_TABLE,
+    OWNED,
+    RUFF_SECTIONS,
+    AmbiguousSection,
+    ForkedSectionDelta,
+    SectionBase,
+    SectionDelta,
+    SectionReport,
+    expected_entries,
+    inspect_section,
+    locate_section,
+    ruff_config_path,
+    ruff_section_base,
+    section_problems,
+)
 from lab_commons.dev._famconfig_survey import (
     MIN_BASE_LINES,
     Base,
     Delta,
     VacuousBase,
     assert_base_floor,
+    declared_hooks,
     delta_lines,
     floating_subject,
     fork_signals,
+    hook_delta,
     meaningful_lines,
     measured_delta,
-    negated_base_lines,
     positional_base_lines,
     recipe_blocks,
     satisfies,
@@ -112,6 +136,7 @@ from lab_commons.dev._famconfig_survey import (
 __all__ = [
     'ABSENT',
     'BASES',
+    'DIVERGED',
     'DRIFTED',
     'FOREIGN',
     'GITIGNORE_FLOOR',
@@ -119,33 +144,49 @@ __all__ = [
     'INSTALLED',
     'MAKE_TARGET_CORE',
     'MIN_BASE_LINES',
+    'NO_FILE',
+    'NO_TABLE',
     'ORDER_SENSITIVE_ARTEFACTS',
+    'OWNED',
     'RENDERED',
     'REPO_FLOOR',
     'REQUIRED',
+    'RUFF_SECTIONS',
     'STAMP',
+    'AmbiguousSection',
     'ArtefactReport',
     'Base',
     'Delta',
     'ForkedDelta',
+    'ForkedSectionDelta',
     'PositionalBase',
+    'SectionBase',
+    'SectionDelta',
+    'SectionReport',
     'VacuousBase',
     'artefact_base',
     'assert_base_floor',
     'assert_base_is_order_free',
+    'declared_hooks',
     'delta_lines',
     'delta_problems',
+    'expected_entries',
     'floating_subject',
     'fork_signals',
+    'hook_delta',
     'inspect_file',
+    'inspect_section',
+    'locate_section',
     'meaningful_lines',
     'measured_delta',
-    'negated_base_lines',
     'positional_base_lines',
     'recipe_blocks',
     'render',
     'rendered_lines',
+    'ruff_config_path',
+    'ruff_section_base',
     'satisfies',
+    'section_problems',
     'unbound_recipes',
 ]
 
