@@ -120,6 +120,36 @@ ALLOWED: Final[dict[Site, str]] = {
         'import lab_commons.units',
     ): 'the same line: the measurement only means anything if the import happens inside the test body',
     (
+        'tests/test_famtests_injectedwidth.py',
+        'arg-type',
+        'assert_widths_are_the_named_set(scan, **(kwargs | over))',
+    ): 'one local helper builds the keyword set as dict[str, object] so a case can override any one',
+    (
+        'tests/test_famtests_injectedwidth.py',
+        'arg-type',
+        'scan = real(paths, **kwargs)',
+    ): 'a monkeypatch stand-in takes the shipped call untyped and forwards it verbatim to the real one',
+    (
+        'tests/test_famtests_trackedcjk.py',
+        'ANN003',
+        'def _forgetful(paths, **kwargs):',
+    ): 'the same stand-in shape: annotating it would assert a signature the patch is not claiming',
+    (
+        'tests/test_famtests_trackedcjk.py',
+        'ANN202',
+        'def _forgetful(paths, **kwargs):',
+    ): 'its return is whatever the shipped scanner returns, so a written return type would be a second claim',
+    (
+        'tests/test_famtests_upperbounds.py',
+        'ARG005',
+        "lambda spec, *, ecosystem: 'everything is a bound' if spec.strip() else None,",
+    ): 'the planted control is CONVICT-EVERYTHING, so ignoring `ecosystem` is the doctoring under test',
+    (
+        'tests/test_famtests_upperbounds.py',
+        'arg-type',
+        'assert_no_undeclared_upper_bound(scan, **(kwargs | over))',
+    ): 'the same overridable dict[str, object] keyword set as injectedwidth, for the same reason',
+    (
         'tests/test_structured.py',
         'TRY301',
         'raise ValueError(boom)',

@@ -272,7 +272,20 @@ def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_two_of_it() -> No
 
 
 def test_the_makefile_core_is_three_targets_across_all_four() -> None:
-    """MAKE_TARGET_CORE both ways, plus the motronics gap the census names explicitly."""
+    """MAKE_TARGET_CORE both ways, and `verify` in ALL FOUR rather than the gap this used to assert.
+
+    THE ARM THAT FLIPPED, 2026-09-18, and the flip is the point. This test used to assert
+    ``'verify' not in per_repo['motronics-studio']`` -- guarding the census row's claim that motronics
+    was the only repo without one. A separate edit in the motronics lane gave that repo a `verify`
+    naming its own runner, so the guard went red for the RIGHT reason: the tree had moved past the
+    prose. The honest repair is the ratchet's other side -- a capability ARRIVED, so it is asserted
+    rather than the census being edited to say the arrival never happened.
+
+    The wider re-measurement that came with it: the all-four common set is NINE, not three, and it is
+    exactly what `MAKEFILE_BASE` defines. `MAKE_TARGET_CORE` was raised to match, which puts a NAMED
+    SET on its population on purpose -- any repo dropping any of the nine reds, and the remedy is the
+    target, never the tuple.
+    """
     reached = reachable_repos(REPO_PATHS)
     per_repo = {repo: make_targets(root) for repo, root in reached.items()}
     assert per_repo, 'no Makefile was read at all'
@@ -280,11 +293,8 @@ def test_the_makefile_core_is_three_targets_across_all_four() -> None:
     assert set(MAKE_TARGET_CORE) <= common, (
         f'the four-repo core shrank below {list(MAKE_TARGET_CORE)}: {sorted(common)}'
     )
-    if 'motronics-studio' in per_repo:
-        assert 'verify' not in per_repo['motronics-studio'], (
-            'motronics grew a `verify` target; its Makefile row is written around not having one'
-        )
-    assert 'verify' in per_repo['lab-commons'], 'lab-commons lost `verify`, which its own Makefile calls the one entry'
+    absent = sorted(repo for repo, targets in per_repo.items() if 'verify' not in targets)
+    assert absent == [], f'{absent} lost `verify`, the one target every repo in the family reaches its verdict through'
 
 
 def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() -> None:

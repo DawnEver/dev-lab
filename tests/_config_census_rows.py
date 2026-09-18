@@ -301,12 +301,22 @@ SHARED_GITIGNORE_CORE: tuple[str, ...] = (
     'uv.lock',
 )
 
-#: Makefile targets present in ALL FOUR repos. Three, out of 7/19/15/16 -- which is why the Makefile
-#: rows are SPLITS on a thin base rather than MOVES.
+#: Makefile targets present in ALL FOUR repos. NINE, out of 11/18/14/16 -- and it read THREE
+#: (`fmt`, `lint`, `test`) until 2026-09-18, when a re-measurement found the shared base had fully
+#: ARRIVED underneath this tuple: the all-four set is now EXACTLY the nine targets `MAKEFILE_BASE`
+#: defines, `verify` included. The old three were not wrong when written; they were never re-read.
+#: This is a NAMED SET and not a floor, so it deliberately sits ON its population: the remedy when a
+#: repo drops one is to restore the TARGET, never to shorten this tuple to meet the tree.
 MAKE_TARGET_CORE: tuple[str, ...] = (
+    'all',
+    'clean',
     'fmt',
+    'install',
+    'install-dev',
     'lint',
     'test',
+    'test-parallel',
+    'verify',
 )
 
 #: Hook ids declared by all three CONSUMERS. Eleven of 22/19/18 -- and as of 2026-09-17 also the
@@ -435,15 +445,15 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
     ),
     'lab-commons::Makefile': Placement(
         SPLITS,
-        'SEVEN TARGETS AGAINST 19/15/16, AND THE BASE IS THREE. Measured: `fmt`, `lint` and `test` are '
-        'the only targets present in all four repos. THE SEAM is the verify contract -- `verify: lint '
-        'fmt-check test` is this file`s whole argument (its own comment: "CI calls `verify` and nothing '
-        'else"), and `lab_commons.dev.verify` already ships that contract as code, so the target is a '
-        'three-line shim over a shared entry point. What STAYS is `adoption`, which runs this repo`s '
-        'rules-adoption test by path: it names a test file, and a path into a tree is the one thing a '
-        'shared Makefile cannot carry. What breaks if `verify` moved: nothing -- the consumers would '
-        'gain a verdict-producing target, which is the deliverable `lab_commons.dev.verify` was '
-        'written for and which motronics is the only repo to have its own version of.',
+        'ELEVEN TARGETS AGAINST 18/14/16, AND THE BASE IS NINE -- WHICH IS TWO CLEAR. This row used to '
+        'read "seven against 19/15/16 and the base is three" and to argue the seam was the verify '
+        'contract still to be moved. Re-measured 2026-09-18: the move LANDED. All four repos now '
+        'carry `verify`, and the all-four common set is EXACTLY the nine targets `MAKEFILE_BASE` '
+        'defines, so this file is now two lines clear of the base rather than four short of it. THE '
+        'SEAM is therefore no longer a proposal: what STAYS is `adoption`, which runs this repo`s '
+        'rules-adoption test BY PATH -- it names a test file, and a path into a tree is the one thing '
+        'a shared Makefile cannot carry. What breaks if the remaining two moved: a shared file would '
+        'name a test that exists in one repo. Still SPLITS, but on a base that is now thick.',
     ),
     'lab-commons::.pre-commit-config.yaml': Placement(
         SPLITS,
@@ -667,15 +677,16 @@ ROWS_MOTRONICS: dict[str, Placement] = {
     ),
     'motronics-studio::Makefile': Placement(
         SPLITS,
-        'SIXTEEN TARGETS AND THE ONLY ONE OF THE FOUR WITH NO `verify` TARGET AT ALL -- measured, and it '
-        'is the sharpest thing in this row: this repo`s verdict is `python scripts/gate/runner.py '
-        '{measure|gate|heavy}`, a 1770-line runner, and the Makefile never mentions it, so the one file '
-        'a newcomer reads to learn how to check this repo does not name the check. THE SEAM is the '
-        'eight-target consumer core. What STAYS is `build-rust`, `fmt-rust`, `test-femm` and '
-        '`typecheck` -- a Cargo workspace and a live vendor engine, neither of which any other repo '
-        'has. What breaks if the core moved: nothing; what does NOT get fixed by moving it is the '
-        'missing verdict target, which is this repo`s own gap and is named here so the move cannot be '
-        'mistaken for closing it.',
+        'SIXTEEN TARGETS, AND THE GAP THIS ROW WAS WRITTEN AROUND IS CLOSED. It used to read "the only '
+        'one of the four with no `verify` target at all", and said the move could not be mistaken for '
+        'closing it -- correctly, because what closed it was a separate edit in the lane that gave '
+        'this repo its own `verify` naming `scripts/gate/runner.py`. Re-measured 2026-09-18: all four '
+        'carry `verify`, so the sentence a newcomer reads to learn how to check this repo now names '
+        'the check. THE SEAM is the nine-target base. What STAYS is `build-rust`, `fmt-rust`, '
+        '`test-femm` and `typecheck` -- a Cargo workspace and a live vendor engine, neither of which '
+        'any other repo has. What breaks if the base moved: nothing. The RESIDUAL gap, named so it is '
+        'not read as closed too: this repo`s `verify` shells its own 1770-line runner rather than '
+        '`lab_commons.dev.verify`, so the four repos share the target NAME and not the contract.',
     ),
     'motronics-studio::.pre-commit-config.yaml': Placement(
         SPLITS,

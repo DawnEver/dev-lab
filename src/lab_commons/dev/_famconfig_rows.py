@@ -219,10 +219,17 @@ PRECOMMIT_BASE: Final[tuple[str, ...]] = (
 #: census records as that repo's own gap rather than as a family absence.
 MAKE_TARGET_CORE: Final[tuple[str, ...]] = ('fmt', 'lint', 'test')
 
-#: The eight targets present in ALL THREE CONSUMERS, MEASURED over 18 / 14 / 15. This is the wider
-#: reading and it is the one the base uses: `clean`, `install`, `install-dev` and `test-parallel` are
-#: absent from lab-commons alone, which is the same shape as every other finding in this family --
-#: the kit held to less than what it ships -- rather than evidence that the four repos disagree.
+#: The NINE targets present in ALL THREE CONSUMERS, MEASURED over 18 / 14 / 16. It read EIGHT until
+#: 2026-09-18, and both halves of that number have since moved:
+#:
+#: - `verify` joined, because motronics grew one. The old comment for the eight said `clean`,
+#:   `install`, `install-dev` and `test-parallel` were "absent from lab-commons alone -- the kit held
+#:   to less than what it ships". Re-measured, lab-commons carries all four, so that gap closed too.
+#: - The consequence is worth stating rather than leaving for a reader to notice: this tuple is now
+#:   EQUAL to `MAKE_TARGET_CORE`, the all-four set. They are kept as two names because they answer two
+#:   QUESTIONS -- what the consumers share, and what the whole family shares -- and today's answer is
+#:   that the kit adopted its own base with an empty delta. That is the same shape `HOOK_ID_CORE`
+#:   reached on 2026-09-17, and it is what a base looks like once it has actually landed.
 #:
 #: THE ANTI-FORK ARM ARGUED FOR THIS SET AND THE FIRST CUT OF THIS FILE DID NOT HAVE IT. Run over the
 #: three measured deltas, `fork_signals` named `clean:`, `install:` and `test-parallel:` as lines every
@@ -236,6 +243,7 @@ MAKE_TARGET_CONSUMER_CORE: Final[tuple[str, ...]] = (
     'lint',
     'test',
     'test-parallel',
+    'verify',
 )
 
 #: The Makefile base, and it is a CONTRACT rather than a rendering -- see this module's docstring for
