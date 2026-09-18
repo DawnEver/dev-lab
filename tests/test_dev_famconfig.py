@@ -67,6 +67,7 @@ from lab_commons.dev.famconfig import (
     inspect_file,
     meaningful_lines,
     measured_delta,
+    negated_base_lines,
     positional_base_lines,
     recipe_blocks,
     render,
@@ -589,6 +590,53 @@ def test_a_rule_carrying_its_own_path_is_not_a_floating_subject() -> None:
     assert floating_subject('**/log/*.log') is None
     assert floating_subject('**/temp/**') is None
     assert floating_subject('.pytest_cache/') is None
+
+
+#: THE NEGATION, lifted verbatim from the same sibling `.gitignore` (line 85), where it re-includes
+#: `.claude/memory/` out of the blanket `**/.claude/**` twelve lines above it. Both labs carry the
+#: same allow-list shape, so `fork_signals` would argue for promoting the whole block -- roughly
+#: twenty lines -- which makes this a likelier promotion than the single re-ignore guarded above.
+_NEGATION: Final = '!**/.claude/memory/**'
+
+
+def test_a_negation_in_a_sorted_base_is_defeated_by_the_sort_itself() -> None:
+    """THE HAZARD, DEMONSTRATED before it is refused -- no mechanism here, just the table's own order.
+
+    `!` is ASCII 33, below every character a rule in this table starts with, so a negation promoted
+    into the SORTED base renders above the rule it was written to re-include and does nothing. This
+    arm owns no guard; it exists so the refusal below is not a rule nobody can show a victim for.
+    """
+    dead = '!**/log/keep.log'
+    lines = tuple(sorted((*GITIGNORE_BASE, dead)))
+    assert lines.index(dead) < lines.index('**/log/*.log'), lines
+    assert lines.index(dead) == 0, 'a negation sorts to the top of every base this table can hold'
+
+
+def test_planted_a_negation_promoted_into_the_base_is_refused_and_named() -> None:
+    """THE SECOND PROMOTION HAZARD, and the half the prose still carried on 2026-09-18.
+
+    The comment over `GITIGNORE_BASE` reads "order-insensitive apart from negations, AND THE BASE
+    DECLARES NONE". The re-ignore arm mechanised the first clause; the second stayed prose, and
+    `positional_base_lines` cannot see a negation -- `floating_subject` answers ``None`` for anything
+    not starting with `**/`, and a negation excludes no paths at all, so nothing subsumes it.
+    """
+    assert floating_subject(_NEGATION) is None, 'the older arm is blind to this line, by construction'
+    assert positional_base_lines(_promoted(_NEGATION), floating_floor=2) == ()
+    with pytest.raises(PositionalBase, match=r'!\*\*/\.claude/memory/\*\*'):
+        rendered_lines(_promoted(_NEGATION), _delta())
+
+
+def test_the_negation_refusal_names_the_remedy_too() -> None:
+    """Same standard as the re-ignore arm: a refusal that cannot be acted on gets routed around."""
+    with pytest.raises(PositionalBase, match='ABOVE the rule it re-includes from'):
+        assert_base_is_order_free(_promoted(_NEGATION))
+
+
+def test_the_live_base_declares_no_negation_and_the_reading_saw_every_line() -> None:
+    """THE FLOOR. A reading over an empty base finds no negation and reads exactly like a clean one."""
+    assert negated_base_lines(_base()) == ()
+    assert len(_base().content_lines) >= GITIGNORE_FLOOR, 'a reading over a gutted base is vacuous'
+    assert negated_base_lines(_promoted(_NEGATION)) == (_NEGATION,), 'the reading is not blind'
 
 
 def test_the_order_sensitive_set_is_named_rather_than_counted() -> None:

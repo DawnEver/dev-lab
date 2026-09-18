@@ -92,7 +92,8 @@ REPO_FLOOR: Final = 3
 #: stated, rather than in a normaliser that hides it.
 #:
 #: Sorted, because the order is then re-derivable by anybody who repeats the measurement. A
-#: `.gitignore` is order-insensitive apart from negations, and the base declares none.
+#: `.gitignore` is order-insensitive apart from negations, and the base declares none -- a clause
+#: `negated_base_lines` now ENFORCES rather than asserts, since `!` sorts above every rule here.
 #:
 #: THAT PARENTHETICAL WAS THE WHOLE RISK SURFACE AND IT WAS PROSE UNTIL 2026-09-18. Sorting is only
 #: safe while no line here needs to sit AFTER another, and nothing checked it. The shape that breaks

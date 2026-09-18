@@ -35,6 +35,7 @@ __all__ = [
     'fork_signals',
     'meaningful_lines',
     'measured_delta',
+    'negated_base_lines',
     'positional_base_lines',
     'satisfies',
 ]
@@ -265,6 +266,23 @@ def floating_subject(line: str) -> str | None:
         return None
     rest = line[3:]
     return None if '/' in rest.rstrip('/') else '/' + rest
+
+
+def negated_base_lines(base: Base) -> tuple[str, ...]:
+    """Base lines that RE-INCLUDE rather than exclude -- a `.gitignore` negation. PURE.
+
+    THE OTHER HALF OF THE SORTED TABLE'S PROSE. `_famconfig_rows` justifies storing its `.gitignore`
+    sorted with "order-insensitive apart from negations, AND THE BASE DECLARES NONE"; the re-ignore
+    arm mechanised the first clause and this one mechanises the second. A negation is meaningful only
+    BELOW the rule it re-includes from, and `!` sorts below every character a rule can start with, so
+    a negation in this table renders above its own subject and does nothing -- and the anchor points
+    one way, so no delta can move it down.
+
+    :func:`positional_base_lines` cannot see this line and never could: it reads a rule as a SET OF
+    PATHS and asks what subsumes it, while a negation excludes no paths at all, so nothing subsumes
+    it and it is reported clean.
+    """
+    return tuple(line for line in base.content_lines if line.startswith('!'))
 
 
 def positional_base_lines(base: Base, *, floating_floor: int) -> tuple[str, ...]:

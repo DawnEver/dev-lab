@@ -54,6 +54,8 @@ __all__ = [
     'MAKE_TARGET_CORE',
     'PARTITIONS',
     'PER_FILE_WAIVERS',
+    'PRECOMMIT_LINE_DELTA',
+    'PRECOMMIT_OWN_HOOKS',
     'REPOS',
     'REPO_PATHS',
     'SHARED_DEV_PAGES',
@@ -337,6 +339,81 @@ HOOK_ID_CORE: tuple[str, ...] = (
     'mixed-line-ending',
     'trailing-whitespace',
 )
+
+#: THE PRE-COMMIT DELTA IN THE UNIT ITS CEILING HAS TO BE STATED IN: the hook ids each repo declares
+#: BEYOND the eleven-hook core, exact and per repo, MEASURED 2026-09-18 over 11 / 22 / 19 / 18
+#: declared ids. Read by `test_the_precommit_delta_is_counted_in_hooks.py`, which drives the kit's own
+#: `hook_delta` over the live files.
+#:
+#: WHY THIS EXISTS BESIDE THE LINE COUNT BELOW rather than instead of it: the two disagree about who
+#: the biggest delta in the family is, and the disagreement is the evidence. See `PRECOMMIT_LINE_DELTA`.
+#:
+#: BOTH SIDES. A hook ARRIVING reds here and a hook DISAPPEARING reds here, because the recorded set
+#: is exact rather than a subset -- a local hook quietly dropped is a verdict that stopped running
+#: while the config still reads as guarded, and no other constant in this file would notice.
+PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
+    'lab-commons': (),
+    'wdg-lab': (
+        'bump-api-version',
+        'check-builtin-literals',
+        'check-illegal-windows-names',
+        'check-symlinks',
+        'check-vcs-permalinks',
+        'destroyed-symlinks',
+        'fix-byte-order-marker',
+        'fmt-python',
+        'generate-changelog',
+        'lint-python',
+        'requirements-txt-fixer',
+    ),
+    'optimi-lab': (
+        'check-builtin-literals',
+        'check-illegal-windows-names',
+        'check-shebang-scripts-are-executable',
+        'check-symlinks',
+        'check-vcs-permalinks',
+        'destroyed-symlinks',
+        'fix-byte-order-marker',
+        'requirements-txt-fixer',
+    ),
+    'motronics-studio': (
+        'bump-version',
+        'commitizen-branch',
+        'gate',
+        'primary-checkout',
+        'pyright-clean-leaf',
+        'ruff',
+        'ruff-format',
+    ),
+}
+
+#: THE SAME DELTA SIZED IN LINES, by the kit's `measured_delta` against the 21-line base, MEASURED
+#: 2026-09-18. It is recorded so the two units can be COMPARED rather than so either is trusted:
+#:
+#:     repo               line delta   own hooks   lines per own hook
+#:     wdg-lab                    38          11                 3.5
+#:     optimi-lab                  8           8                 1.0
+#:     motronics-studio           87           7                12.4
+#:
+#: By lines motronics is the largest delta in the family by a factor of two, and `Delta.ceiling`'s own
+#: words -- "the point at which this repo's delta has stopped being a delta" -- read 87-against-21 as
+#: a fork. By HOOKS it is the SMALLEST of the three consumers. Nothing about its relationship to the
+#: base differs between the readings: all 11 core ids are present and 19 of the 21 base lines match
+#: literally. The unit moved, not the repo. A pre-commit hook is a YAML MAPPING costing one line when
+#: pulled from an upstream repo and ten to twelve when declared `- repo: local`, so a line ceiling
+#: scores hook SOURCING and not distance from the base.
+#:
+#: THE VERDICT THIS SETTLES, recorded here because a conclusion in a report is not a deliverable:
+#: `.pre-commit-config.yaml` IS adoptable for motronics-studio and is NOT past the ceiling. It is not
+#: FREE -- the 2 base lines it does not match are `rev:` pins (`v5.0.0` -> `v6.0.0`, `v4.6.0` ->
+#: `v4.13.9`), a real upstream version bump changing what runs on every commit there, which belongs in
+#: its own commit saying so. Neither this repo nor that test performs it.
+PRECOMMIT_LINE_DELTA: dict[str, int] = {
+    'lab-commons': 0,
+    'wdg-lab': 38,
+    'optimi-lab': 8,
+    'motronics-studio': 87,
+}
 
 #: Git hooks actually INSTALLED, per repo, measured 2026-09-17 -- the ratchet's other side for the
 #: `.pre-commit-config.yaml` rows, since a configuration cannot answer for its own installation.
@@ -701,7 +778,15 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         '`default_stages` discipline and the `.dxf` exclusions on the rewriting hooks. Those encode '
         'this repo`s verdict model and its data formats. What breaks if the pre-push half moved: a repo '
         'with no gate runner inherits a hook that invokes one, which is a refusal with no exit -- the '
-        'failure `lab_commons.dev.hook_adoption` exists to refuse.',
+        'failure `lab_commons.dev.hook_adoption` exists to refuse. '
+        'THE CEILING QUESTION IS SETTLED AND THE ANSWER IS ADOPT: sized in LINES this delta is 87 '
+        'against a 21-line base, the largest in the family and arguably past what `Delta.ceiling` '
+        'calls a delta at all; sized in HOOKS it is SEVEN, the SMALLEST of the three consumers. The '
+        'unit moved, not the repo -- see `PRECOMMIT_LINE_DELTA` for the table and '
+        '`test_the_precommit_delta_is_counted_in_hooks.py` for the arm that re-derives it. What is '
+        'NOT free: 2 of the 21 base lines are `rev:` pins this repo runs behind (`v5.0.0`, `v4.6.0` '
+        'against `v6.0.0`, `v4.13.9`), so adoption is a real upstream version bump that changes what '
+        'runs on every commit here and belongs in its own commit stating that.',
     ),
     'motronics-studio::docs-src/dev/': Placement(
         SPLITS,

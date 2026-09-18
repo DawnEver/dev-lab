@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from lab_commons.dev._famconfig_rows import ORDER_SENSITIVE_ARTEFACTS
-from lab_commons.dev._famconfig_survey import delta_lines, positional_base_lines
+from lab_commons.dev._famconfig_survey import delta_lines, negated_base_lines, positional_base_lines
 
 if TYPE_CHECKING:
     from lab_commons.dev._famconfig_survey import Base, Delta
@@ -52,6 +52,18 @@ def assert_base_is_order_free(base: Base) -> None:
     makes a re-ignore unpromotable: it would render above the negation it was written to close, and
     the file would go quietly back to the behaviour the re-ignore was added to fix.
 
+    TWO SHAPES ARE REFUSED, and they are blind to each other. A RE-IGNORE excludes a strict subset of
+    what a floating base rule already excludes, so its only contribution is position. A NEGATION
+    excludes nothing at all, so the subsumption reading reports it clean -- and it is the likelier
+    promotion of the two, because a `.claude` allow-list is twenty consecutive negations that every
+    consumer holds.
+
+    THE NEGATION ARM IS THE COMPLETE ONE, and the re-ignore arm is the sharper proxy kept beside it.
+    Two `.gitignore` rules can only DISAGREE about a path if one of them re-includes, so a base
+    holding no negation is order-free whatever else it holds -- while a re-ignore promoted out of a
+    consumer is caught by the subsumption reading with the line named, which is a better refusal than
+    "some later negation might have existed". Both fire, and neither is the other's fallback.
+
     WHICH ARTEFACTS THIS BINDS ON IS DATA -- :data:`ORDER_SENSITIVE_ARTEFACTS`, artefact to its
     floating-rule floor -- so a base outside that map is not silently skipped but declared
     order-insensitive, and adding a second one is a decision somebody typed with its own floor.
@@ -59,6 +71,16 @@ def assert_base_is_order_free(base: Base) -> None:
     floor = ORDER_SENSITIVE_ARTEFACTS.get(base.artefact)
     if floor is None:
         return
+    negated = negated_base_lines(base)
+    if negated:
+        msg = (
+            f'the {base.artefact} base holds {list(negated)}, and a negation re-includes paths some '
+            f'EARLIER rule excluded. This table is stored sorted and `!` sorts below every character '
+            f'a rule starts with, so the line renders ABOVE the rule it re-includes from and does '
+            f'nothing; the anchor points one way, so no delta can push it down either. Leave it in '
+            f"the repo's Delta, below the blanket rule it opens a hole in."
+        )
+        raise PositionalBase(msg)
     positional = positional_base_lines(base, floating_floor=floor)
     if positional:
         msg = (
