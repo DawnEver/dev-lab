@@ -74,6 +74,16 @@ readings of a bar's derivation, they are not attached to a row, and
 argument. It also does not read population counts -- ``23 rows``, ``49 modules``, ``79 tracked
 paths`` -- because none of them is derivable from the file the row names, and a guard that guessed at
 them would convict prose it cannot re-measure.
+
+ONE SPELLING IN THE CORPUS IS READ IMPRECISELY AND IT IS NAMED HERE RATHER THAN QUIETLY WIDENED FOR.
+``own=95 project=2 -> 2.11%, then own=72 project=2 -> 2.78%`` retires its first reading with the word
+``then``, under a single date, so neither :data:`HISTORICAL_MARKERS` nor supersession sees it and both
+halves read as live. The row is still convicted -- two contradictory readings of NOW cannot both agree
+-- and the refusal names both, so the author is told the truth even though the reason is one step off.
+It is ONE site in four rosters, and a marker keyed on ``then`` would mark the wrong half: the word
+sits in front of the CURRENT reading, not the former one. The remedy belongs in the prose, which is
+what ``down from`` already spells, and inventing a rule for a single sentence is how a reader stops
+being explainable.
 """
 
 from __future__ import annotations
