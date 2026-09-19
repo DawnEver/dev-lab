@@ -1,4 +1,4 @@
-"""THIS repo's adoption of the venv-spelling guard, plus the arms that judge the guard itself.
+"""Adoption of the venv-spelling guard HERE, plus the arms that judge the guard itself.
 
 The shared bodies live in :mod:`lab_commons.dev.famtests.venvspelling`; what is here is this
 repo's own answers -- which tree, which floor -- and the controls that prove the reader convicts.
@@ -34,13 +34,13 @@ from lab_commons.dev.venvpath import (
 #: This repo's kit source, the population the guard judges here.
 SOURCE = Path(__file__).resolve().parent.parent / 'src'
 
-#: MEASURED 2026-09-19 at 115 modules under ``src``. The floor is on FILES READ: a walk that lost
-#: its root reports exactly what a clean tree reports, and this scan's whole value is its silence.
+#: MEASURED 2026-09-19 at 114 files under ``src``. The floor is on FILES READ: a walk that lost its
+#: root reports exactly what a clean tree reports, and this scan's whole value is its silence.
 FILE_FLOOR = 90
 
 
 def _tree() -> dict[str, str]:
-    """This repo's kit as ``{repo-relative POSIX path: source}``."""
+    """The kit as ``{repo-relative POSIX path: source}`` -- this repo's answer for the population."""
     return {path.relative_to(SOURCE).as_posix(): path.read_text(encoding='utf-8') for path in SOURCE.rglob('*.py')}
 
 
@@ -77,7 +77,7 @@ def test_the_floor_still_binds_on_the_tree_it_was_measured_against() -> None:
 
 def test_the_sanctioned_set_is_named_and_is_exactly_the_resolver() -> None:
     """A NAMED SET, and EQUALITY -- a superset pin cannot say which module stopped resolving."""
-    assert SANCTIONED_SPELLERS == frozenset({'lab_commons/dev/venvpath.py'})
+    assert frozenset({'lab_commons/dev/venvpath.py'}) == SANCTIONED_SPELLERS
 
 
 @pytest.mark.parametrize('os_name', sorted(VENV_LAYOUTS))
@@ -109,7 +109,7 @@ def test_this_box_resolves_through_the_same_door() -> None:
 @pytest.mark.parametrize(
     ('command', 'expected'),
     [
-        ('./.venv/Scripts/python.exe -m lab_commons.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify'),
+        ('./.venv/Scripts/python.exe -m lab_commons.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify'),  # noqa: E501 -- the two spellings must sit side by side to be read as a pair
         ('./.venv/bin/python -m lab_commons.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify'),
         ('.venv\\Scripts\\python.exe x', f'{VENV_INTERPRETER_GLOB} x'),
         ('.venv/bin/python3.12 x', f'{VENV_INTERPRETER_GLOB} x'),

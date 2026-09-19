@@ -53,6 +53,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Final
 
+from lab_commons.dev.allow_adoption import glob_for
 from lab_commons.dev.floors import assert_floor
 from lab_commons.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS, venv_interpreter
 
@@ -240,31 +241,30 @@ def assert_the_resolver_is_still_consulted() -> None:
     file. Two concrete spellings that CONVERGE cannot be faked -- if the normalisation stops, the
     Windows input renders a Windows row and the POSIX input renders a POSIX one, and they differ.
 
-    Imported inside the body so this module stays importable by a consumer that has adopted
-    ``venvpath`` and not ``allow_adoption``.
-
     Raises:
         AssertionError: the two platform spellings no longer derive one row, or the row that is
             written into a tracked file still names one platform.
 
     """
-    from lab_commons.dev.allow_adoption import glob_for
-
     tail = ' -m lab_commons.dev.verify'
     rendered = {name: glob_for(venv_interpreter(os_name=name) + tail) for name in VENV_LAYOUTS}
     distinct = set(rendered.values())
-    assert len(distinct) == 1, (
-        f'the {len(VENV_LAYOUTS)} platform spellings of one remedy derive {len(distinct)} different allow rows '
-        f'{sorted(distinct)}. `.claude/settings.json` is TRACKED IN GIT, so a row that differs by the machine '
-        f'that rendered it is wrong on the other one. `allow_adoption.glob_for` has stopped consulting '
-        f'`venvpath.portable` -- a resolver nothing calls is as wrong as the hardcoded path it replaced, and '
-        f'this is the arm that is not silent about it.'
-    )
+    if len(distinct) != 1:
+        msg = (
+            f'the {len(VENV_LAYOUTS)} platform spellings of one remedy derive {len(distinct)} different allow '
+            f'rows {sorted(distinct)}. `.claude/settings.json` is TRACKED IN GIT, so a row that differs by the '
+            f'machine that rendered it is wrong on the other one. `allow_adoption.glob_for` has stopped '
+            f'consulting `venvpath.portable` -- a resolver nothing calls is as wrong as the hardcoded path it '
+            f'replaced, and this is the arm that is not silent about it.'
+        )
+        raise AssertionError(msg)
     row = distinct.pop()
-    assert VENV_INTERPRETER_GLOB in row, (
-        f'the derived row {row!r} does not carry {VENV_INTERPRETER_GLOB!r}. The platforms agree, so the '
-        f'arm above passed, but they may be agreeing on a spelling neither of them can run.'
-    )
+    if VENV_INTERPRETER_GLOB not in row:
+        msg = (
+            f'the derived row {row!r} does not carry {VENV_INTERPRETER_GLOB!r}. The platforms agree, so the arm '
+            f'above passed, but they may be agreeing on a spelling neither of them can run.'
+        )
+        raise AssertionError(msg)
 
 
 def assert_a_planted_recipe_is_convicted() -> None:
@@ -289,26 +289,44 @@ def assert_a_planted_recipe_is_convicted() -> None:
 
     """
     windows = venv_interpreter(os_name='nt')
-    recipe = f'"""A recipe.\n\nRun it::\n\n    VERIFY = Remedy("v", "{windows} -m lab_commons.dev.verify")\n"""\n'
+    recipe = '\n'.join(
+        (
+            '"""A module whose docstring carries a consumption recipe.',
+            '',
+            'Wire it up::',
+            '',
+            f'    VERIFY = Remedy("verdict-entry-point", "{windows} -m lab_commons.dev.verify")',
+            '"""',
+            '',
+        )
+    )
     caught = spellings_in({'planted/recipe.py': recipe})
-    assert [item.where for item in caught] == ['recipe'], (
-        f'the planted recipe block spelling {windows!r} was read as {[str(x) for x in caught]}, not as one '
-        f'`recipe` finding. This is the exact shape that shipped into two repos; a reader that misses it '
-        f'reports a clean tree for the defect it was written against.'
-    )
+    if [item.where for item in caught] != [_RECIPE]:
+        msg = (
+            f'the planted recipe block spelling {windows!r} was read as {[str(x) for x in caught]}, not as one '
+            f'`recipe` finding. This is the exact shape that shipped into two repos; a reader that misses it '
+            f'reports a clean tree for the defect it was written against.'
+        )
+        raise AssertionError(msg)
 
-    narrative = f'"""It used to read ``{windows}`` literally, and that was the defect."""\n'
-    assert not spellings_in({'planted/narrative.py': narrative}), (
-        f'the planted NARRATIVE mention of {windows!r} was convicted. Naming a retired spelling while '
-        f'explaining its retirement is sanctioned by this family\'s integration rule, and a guard that '
-        f'forbids the explanation is one somebody deletes the explanation to satisfy.'
-    )
+    narrative = f'"""It used to read ``{windows}`` literally, and that spelling was the defect."""'
+    if spellings_in({'planted/narrative.py': narrative}):
+        msg = (
+            f'the planted NARRATIVE mention of {windows!r} was convicted. Naming a retired spelling while '
+            f"explaining its retirement is sanctioned by this family's integration rule, and a guard that "
+            f'forbids the explanation is one somebody deletes the explanation to satisfy.'
+        )
+        raise AssertionError(msg)
 
-    resolver = f'LAYOUT = "{windows}"\n'
+    resolver = f'LAYOUT = "{windows}"'
     sanctioned_path = next(iter(SANCTIONED_SPELLERS))
-    assert not spellings_in({sanctioned_path: resolver}), f'{sanctioned_path} is sanctioned and was convicted'
-    assert spellings_in({sanctioned_path: resolver}, sanctioned=()), (
-        f'{sanctioned_path} was NOT convicted with its sanction withdrawn, so the green above is the pattern '
-        f'failing to match rather than the sanction doing work. A scan that cannot convict its own exception '
-        f'has no floor under that exception.'
-    )
+    if spellings_in({sanctioned_path: resolver}):
+        msg = f'{sanctioned_path} is sanctioned and was convicted anyway, so the sanction is not being applied'
+        raise AssertionError(msg)
+    if not spellings_in({sanctioned_path: resolver}, sanctioned=()):
+        msg = (
+            f'{sanctioned_path} was NOT convicted with its sanction withdrawn, so the green above is the pattern '
+            f'failing to match rather than the sanction doing work. A scan that cannot convict its own exception '
+            f'has no floor under that exception.'
+        )
+        raise AssertionError(msg)
