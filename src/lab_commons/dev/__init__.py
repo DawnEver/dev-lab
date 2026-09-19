@@ -102,32 +102,26 @@ are too unqualified to survive being flattened into a namespace this wide.
   exits 0 having done nothing, which reads exactly like a hook that passed, so ``KINDS`` declares
   what each is and ``run_hook`` refuses the fragment. A repo fact a script cannot derive arrives as
   an environment variable with NO DEFAULT (``LAB_PUSH_PROTECTED_REF``, ``LAB_CZ_BASE_REF``), the
-  shape :mod:`~lab_commons.dev.dep` already uses for its two repo answers. Not re-exported below,
-  for the same reason ``verify`` is not: it is run rather than imported.
+  shape :mod:`~lab_commons.dev.dep` already uses. Not re-exported below: it is run, not imported.
 * :mod:`lab_commons.dev.agenthooks` -- the agent-guard ENGINE itself, shipped as a package payload
-  the way ``githooks`` ships its scripts. It is JavaScript because the tool that runs a ``PreToolUse``
-  hook executes a command and reads a JSON decision from its stdout, and it is the file whose
-  behaviour has been measured against real evasions -- so it MOVES verbatim rather than being
-  re-implemented, because two answers to "what will this shell line execute" is the fork these modules
-  exist to remove. Unlike a git hook it is INSTALLED into the consumer rather than reached by name:
-  it runs on every Bash tool call, and its command line lives in a committed
-  ``.claude/settings.json`` where an absolute ``site-packages`` path would be true on one box only.
-  Not re-exported below: it is run, not imported.
+  the way ``githooks`` ships its scripts, and JavaScript because a ``PreToolUse`` hook is a command
+  whose stdout is a JSON decision. It MOVES verbatim: two answers to "what will this shell line
+  execute" is the fork these modules exist to remove. Unlike a git hook it is INSTALLED into the
+  consumer, its command line in a committed ``.claude/settings.json``.
 * :mod:`lab_commons.dev.agent_guard` -- AGENT-GUARD-IS-LIVE, the hook-install question one layer up:
   a rendered ``deny-rules.json`` is a DECLARATION, and installing the engine plus its ``PreToolUse``
   wiring is a separate act. MEASURED 2026-09-17: the registry and its wiring recipe existed while the
   engine lived in ONE repo of four, so rendering rules anywhere else would have produced an inert
   declaration that reads as a guard. Three parts reported BY NAME -- engine, rules, wiring -- because
   each fails differently, and installing is an EXPLICIT request that never clobbers an unrelated
-  setting, an unrelated matcher, or an engine lab-commons did not ship. Not re-exported below.
+  setting, matcher, or an engine lab-commons did not ship. Not re-exported below.
 * :mod:`lab_commons.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
   rather than failing the build or vanishing from it. Not re-exported below.
 * :mod:`lab_commons.dev.quantity_values` -- the VALUE half of the units rule, and the reason it is a
   second module rather than a wider ``units``: a scan that refuses a unit-spelling NAME rewards the
-  LOSSY repair, because deleting the suffix silences it and records the unit nowhere. This proves
-  the unit reached the VALUE instead, and ``migration_conflicts`` refuses a key that sits in both
-  the unconverted-name waiver and the declared registry, so the waiver's exit leads somewhere.
+  LOSSY repair -- deleting the suffix silences it and records the unit nowhere. This proves the unit
+  reached the VALUE instead, and ``migration_conflicts`` refuses a key in both waiver and registry.
 * :mod:`lab_commons.dev.boxwait` -- the adoption half of ``boxlock``: what a dev tier DOES when it
   finds the box held. Three answers are wrong (start anyway, refuse instantly, block forever) and
   this is the fourth -- queue on a DEADLINE, say who you are waiting for while you wait, and refuse
@@ -152,6 +146,12 @@ are too unqualified to survive being flattened into a namespace this wide.
   delivering the declared build. A tree with no pytest reads as BROKEN, not as UNEQUIPPED, and the
   answer is a JOIN never a property of the command: ``--extra all`` means whatever that repo's own
   manifest says, which in motronics is six extras and neither ``dev`` nor ``img-to-cad``.
+* :mod:`lab_commons.dev.collectscope` -- the half ``syncscope`` names as UNMEASURABLE in its own
+  docstring, which needs a second text to answer: the TEST TREE. A scope that scored COMPLETE still
+  leaves a repo with NO VERDICT when a module-scope import is gone, because pytest IMPORTS what it
+  collects and a collection error judges nothing. The join is IMPORT name to DISTRIBUTION name and
+  they differ; reading that from installed metadata was measured and REFUSED, since an already-pruned
+  environment answers that a distribution does not exist. A guard DEGRADES and a skip mark does not.
 * :mod:`lab_commons.dev.synccensus` -- that reader pointed at the selections the family makes, which
   are mostly in a different repo from the command that syncs: one shared CI workflow builds its
   extras from each caller's ``extras:`` line. EQUALITY on scope and on the stranded set, plus a

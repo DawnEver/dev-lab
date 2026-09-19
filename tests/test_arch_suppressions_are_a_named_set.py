@@ -399,6 +399,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'S607',
         "['git', '-C', str(tmp_path), 'add', '-A'],",
     ): 'the same scratch checkout, staging the files the guard is then asked to read',
+    (
+        'src/lab_commons/dev/collectscope.py',
+        'S607',
+        "['git', '-C', str(root), 'cat-file', '--batch'],",
+    ): 'git through PATH, reading 2632 blobs in ONE process where a per-file show is 2632',
+    (
+        'src/lab_commons/dev/collectscope.py',
+        'S607',
+        "['git', '-C', str(root), *args],",
+    ): 'the same resolution for the ls-tree that lists the blobs that batch then reads',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

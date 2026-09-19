@@ -121,6 +121,10 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # AFTERWARDS; these two never touch one and answer BEFOREHAND, from command text joined to a
     # manifest. Nothing in the family answered "which extras survive" -- `_doorcensus_rows` names it
     # as an ABSENT mechanism rather than implying coverage -- so there is no prior code to name.
+    # The TEST-TREE half of the same question, and the one `syncscope`'s docstring names as
+    # unmeasurable from a manifest. No prior code in any repo read a test tree for its imports:
+    # `testfacts` reads marks and timeouts from the same AST and never an import.
+    'collectscope': ('original',),
     'synccensus': ('original',),
     'syncscope': ('original',),
     # 'original' until 2026-09-18, when the assertion-SHAPE reader landed here and took the whole

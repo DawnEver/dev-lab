@@ -9,12 +9,15 @@ MEASURED 2026-09-19 against four checkouts, at the commits `_doorcensus_rows.py`
 each selection with its repo's own `[project.optional-dependencies]`. Every scope and every stranded
 name below is re-derived by `assert_scopes`, so a row that stops being true REDS.
 
-THE FINDING, and it is a live line of running code rather than a hypothetical: motronics'
-`scripts/gate/dep_sync.py` prints, immediately AFTER a prune has removed distributions, "re-run
+THE FINDING, AND IT IS NOW CLOSED, WITH BOTH NUMBERS ON RECORD. motronics'
+`scripts/gate/dep_sync.py` printed, immediately AFTER a prune had removed distributions, "re-run
 naming every extra you need (`--extra all` where the project declares it)". That project DOES
-declare `all`, and `all` there is `motronics[euclid,maxwell,pareto,femm,gui,native]` -- no `dev`.
-Following the advice leaves the tree with no pytest, no xdist, no timeout plugin and no ruff, which
-is the incident of 2026-09-18 a second time, arriving through the remedy for the first.
+declare `all`, and `all` there is `motronics[euclid,maxwell,pareto,femm,gui,native]` -- no `dev` --
+so following the advice left the tree with no pytest, no xdist, no timeout plugin and no ruff: the
+incident of 2026-09-18 a second time, arriving through the remedy for the first. motronics commit
+1a50949 rewrote that text on 2026-09-19 and the row below is REPOINTED to the line that makes the
+selection today, STRANDS -> COMPLETE. The evidence pin is what forced the visit; without it the row
+would still be describing a sentence nobody prints.
 
 WHY THE CI ROWS ARE FILED UNDER THE CALLER AND NOT UNDER THE WORKFLOW THAT SYNCS. The `uv sync` is
 in `lab-commons/.github/workflows/python-verify.yml` and its extras come from `$extra_flags`, a
@@ -98,18 +101,21 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='motronics-studio',
         path='scripts/gate/dep_sync.py',
-        line=458,
-        evidence='--extra all',
-        selected=('all',),
-        scope='STRANDS',
-        stranded=frozenset({'pytest', 'pytest-timeout', 'pytest-xdist', 'ruff'}),
+        line=475,
+        evidence='--extra all --extra dev --extra img-to-cad',
+        selected=('all', 'dev', 'img-to-cad'),
+        scope='COMPLETE',
+        stranded=frozenset(),
         why=(
-            'THE FINDING. This is the REMEDY the tool prints to an operator who has just watched it '
-            'remove distributions, and the project does declare `all`, so the advice is followed. '
-            '`all` is `motronics[euclid,maxwell,pareto,femm,gui,native]` and carries no `dev`, so a '
-            'sync naming it alone removes the entire test runner -- which reads as a broken TREE and '
-            'sends the reader to debug the wrong thing. The repair is the incantation that actually '
-            'restored the box: `--extra all --extra dev --extra img-to-cad`.'
+            'THE FINDING, RE-MEASURED 2026-09-19 AFTER IT WAS FIXED, AND BOTH NUMBERS STAY ON RECORD. '
+            'At `dep_sync.py:458` this row read `--extra all`, scope STRANDS, stranded pytest, '
+            'pytest-xdist, pytest-timeout and ruff: the REMEDY the tool printed to an operator who '
+            'had just watched it remove distributions. motronics commit 1a50949 rewrote that text -- '
+            'it now says `all` is not all of them and names the whole set -- so the row is repointed '
+            'to the line that makes the selection today, and the scope moved STRANDS -> COMPLETE. '
+            'That is a ratchet closing, not a band loosening; the evidence pin is what forced the '
+            'visit. Note what COMPLETE still does not mean: `test_the_test_trees_collect_after_a_sync` '
+            'measures this same selection stranding `pillow` at COLLECTION.'
         ),
     ),
 )
