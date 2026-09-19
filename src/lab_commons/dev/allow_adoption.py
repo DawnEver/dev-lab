@@ -24,9 +24,19 @@ SIX are that repo's own road:
     wdg-lab      uv run python -m wdg_lab / uv sync --extra * / *yarn preview* /
                  python *kill-server.py* / *yarn test* / node **/scripts/post-review.js*
 
-The first two were hand-written in two repos by two hands and are CHARACTER-IDENTICAL to what
-:func:`glob_for` renders from ``Remedy.command``. That agreement is the evidence the derivation rule
-is read off the data rather than imposed on it.
+The first two were hand-written in two repos by two hands and were CHARACTER-IDENTICAL to what
+:func:`glob_for` rendered from ``Remedy.command`` on the day this module landed. That agreement is
+the evidence the derivation rule is read off the data rather than imposed on it.
+
+THEY ARE NO LONGER CHARACTER-IDENTICAL, AND THE REASON IS THE ONE CORRECTION THIS MODULE HAS TAKEN.
+Both hand-written rows spell ``.venv/Scripts/python.exe``, which is a file macOS does not have, so
+on half the fleet those rows permit NOTHING -- silently, because an allow list that matches no
+command is indistinguishable from one that was never consulted. ``settings.json`` is TRACKED IN GIT:
+it is authored on one machine and read on another, so no concrete spelling can be right in it.
+:func:`glob_for` now renders ``Bash(./.venv/*/python* -m lab_commons.dev.verify *)`` via
+:func:`lab_commons.dev.venvpath.portable`, and BOTH concrete spellings derive that same single row --
+which is what keeps the evidence above intact rather than discarding it: the two hands still agree
+with the derivation, they agree with it after a platform-blind spelling is normalised away.
 
 WHAT MAKES A ROW DERIVABLE IS A PROPERTY OF THE REGISTRY, not a judgement. A rule with ``needs``
 names a repo artefact and the repo answers it with a :class:`lab_commons.dev.hooks.Remedy`, whose
@@ -52,6 +62,15 @@ floor the block has outgrown is a waiver nothing uses. This is also why a derive
 CANONICAL spelling and not a widened one: ``stop_sweep.py --pid <root-pid>`` renders
 ``Bash(... --pid *)``, and the ``--all`` variant the remedy mentions in a parenthetical is a
 DECLARED row somebody argues for, not a free rider on the derivation.
+
+THE ONE SANCTIONED WIDENING IS THE VENV INTERPRETER, and it is named here rather than left as an
+exception a reader has to discover. ``.venv/*/python*`` admits more strings than the remedy spells,
+which the paragraph above otherwise forbids. It is admitted because the alternative is not a
+narrower row but a row that is FALSE on one of the two platforms this family runs on, and because
+every string it admits is still an interpreter inside this project's own venv -- the widening stays
+inside the road's meaning. It is bounded as DATA in :data:`lab_commons.dev.venvpath.VENV_LAYOUTS`,
+so a third layout is a row in that table and cannot arrive as a looser pattern in one repo's
+settings file.
 
 WHY THIS IS NOT :mod:`lab_commons.dev.famconfig`, which is the mechanism a reader will reach for
 first. ``famconfig`` is a WHOLE-FILE, LINE-ORIENTED renderer keyed by artefact filename, and it
@@ -91,6 +110,7 @@ from lab_commons.dev._allow_settings import promised_command as _promised
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, denies
+from lab_commons.dev.venvpath import portable
 
 __all__ = [
     'BASH',
@@ -138,12 +158,30 @@ def glob_for(command: str) -> str:
     prepended: ``Remedy.command`` is the text the refused agent is told to type VERBATIM, so a
     leading wildcard would permit invocation prefixes this package never sanctioned.
 
+    THE VENV INTERPRETER IS MADE PORTABLE FIRST, via
+    :func:`lab_commons.dev.venvpath.portable`, and that is the one place a row is deliberately
+    WIDER than the remedy it derives from. The remedy is concrete because an agent has to type it;
+    this row is written into ``.claude/settings.json``, which is TRACKED IN GIT and read on a
+    machine that may not be the one that wrote it, so a row naming ``Scripts/python.exe`` permits
+    nothing at all on macOS -- silently, which is the failure mode an allow list cannot report. See
+    that module for why a glob beats two rows or a render-at-adoption-time value.
+
+    KNOWN AND SCOPED: the glob puts a ``*`` INSIDE a path token, which is the first row in this
+    family to do so, and :func:`lab_commons.dev._allow_settings.promised_command` instantiates an
+    interior ``*`` as a separate word -- so the command this row is PROBED with reads
+    ``./.venv/ ARG /python ARG -m ...``. That is not corrected here: the splitting is pinned
+    deliberately, so that ``Bash(python *tool.py*)`` probes as ``python ARG tool.py`` and lands the
+    program at a command position. ``self_refused`` is already declared A FLOOR ON THE CHECK rather
+    than the whole of it, and no rule in the registry matches either reading of this row. The real
+    engine is driven over the committed file by
+    :mod:`lab_commons.dev.famtests.allowguard`, which is where a contradiction would surface.
+
     Raises:
         UnarguedAllow: *command* is blank, or collapses to nothing but wildcards -- a row reading
             ``Bash(*)`` promises every shell command there is and answers no rule in particular.
 
     """
-    text = _RUNS.sub('*', _METAVAR.sub('*', ' '.join(command.split())))
+    text = _RUNS.sub('*', _METAVAR.sub('*', portable(' '.join(command.split()))))
     if not text.strip().strip('*').strip():
         msg = (
             f'the remedy command {command!r} renders the glob {text!r}, which promises every command there '
