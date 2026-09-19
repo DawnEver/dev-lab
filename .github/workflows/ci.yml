@@ -28,6 +28,22 @@ jobs:
       # `requires-python = ">=3.12"` and ruff targets py312, so both ends of the supported range
       # run: a 3.13-only regression cannot hide behind a 3.12-only job, or the reverse.
       python-versions: '["3.12", "3.13"]'
+      # NAMED IN FULL EVEN THOUGH IT IS THE DEFAULT. This is the repository that PUBLISHES the
+      # reusable workflow, so its own caller is the worked example every other caller copies, and
+      # a coverage set that is only implicit gets copied as nothing at all. Spelling it also makes
+      # any future narrowing a deletion from THIS list rather than a silent change of default.
+      #
+      # WHY ALL THREE, each earning its leg by a DIFFERENT argument:
+      #   * windows-latest -- the platform every developer in this family actually uses, and the
+      #     one CI had never run. The gap that mattered most was never macOS.
+      #   * ubuntu-latest  -- the incumbent, and already green. Keeping it is what makes a red on
+      #     either new leg attributable to the PLATFORM rather than to the change that added it.
+      #   * macos-latest   -- the platform this kit claims in its docstrings and had never once
+      #     executed. Note that it is NOT the leg that first runs `.venv/bin/python`: `uv sync`
+      #     plus `uv run` have been building and running exactly that file on ubuntu-latest all
+      #     along. What macOS adds over Linux is Darwin itself -- a case-INSENSITIVE default
+      #     filesystem, BSD userland, and a different process/signal surface under `proc.py`.
+      runner-os: '["ubuntu-latest", "windows-latest", "macos-latest"]'
       # `dev` is the extra that gates `lab_commons.dev` -- pytest and ruff as executables.
       extras: 'dev'
       # `lab_commons.dev.rules` authors the family's development rules. An adoption test nobody

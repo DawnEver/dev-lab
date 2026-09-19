@@ -25,6 +25,30 @@ on:
         required: false
         default: '["3.12", "3.13"]'
         type: string
+      runner-os:
+        description: >
+          JSON array of GitHub-hosted runner labels to run the verify matrix over. Crossed with
+          `python-versions`, so the job count is the PRODUCT -- the default is 3 x 2 = 6 legs.
+
+          THE DEFAULT IS THE WHOLE SET, AND THAT IS THE COVERAGE GUARD. This family develops on
+          Windows, shipped a CI that ran only Ubuntu, and claims macOS support; a coverage claim
+          that silently shrinks is its named defect. An opt-IN axis reproduces that exactly -- the
+          callers that never pass it stay on one platform and nothing says so. Defaulting to the
+          full set inverts it: narrowing becomes an explicit JSON array in the CALLER's workflow,
+          which is a line in a diff a reviewer reads. No test can assert that a platform actually
+          ran; a default that must be typed over to shrink is the strongest guard this file holds.
+
+          COST, MEASURED 2026-09-19: both consuming repositories (DawnEver/lab-commons,
+          DawnEver/optimi-lab) answer the UNAUTHENTICATED GitHub API with 200, so both are PUBLIC
+          and GitHub-hosted minutes on all three platforms are FREE -- the 2x Windows and 10x macOS
+          multipliers apply to PRIVATE repositories only and are not being paid here. The real
+          budget is WALL CLOCK, and the legs run in parallel, so 6 legs cost the slowest one rather
+          than the sum. Should either repo go private, THIS is the input to narrow, and the trade
+          to weigh then is the full python matrix on one OS plus a single python on the others
+          (4 legs) -- a saving bought only by giving up coverage that is currently free.
+        required: false
+        default: '["ubuntu-latest", "windows-latest", "macos-latest"]'
+        type: string
       extras:
         description: 'Space-separated optional-dependency extras to sync (each becomes --extra X).'
         required: false
@@ -51,11 +75,23 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Already false, and the OS axis is why it must STAY false: the whole value of a macOS leg is
+      # the answer it gives, and fail-fast would cancel it the moment an unrelated Windows leg red.
       fail-fast: false
       matrix:
+        os: ${{ fromJSON(inputs.runner-os) }}
         python-version: ${{ fromJSON(inputs.python-versions) }}
+
+    defaults:
+      run:
+        # LOAD-BEARING FROM THE MOMENT WINDOWS ENTERED THE MATRIX. The two `run:` steps below are
+        # POSIX shell -- `for extra in ...; do` -- and a Windows runner's default shell is
+        # PowerShell, which parses neither. GitHub ships Git Bash on the Windows images and
+        # `shell: bash` selects it, so ONE recipe serves all three platforms. Setting it per-step
+        # would be the same string twice; setting it here is the job saying what language it is in.
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +128,15 @@ jobs:
         # one environment from 113 distributions to 30. It is also the `installdoor` remedy for a
         # lock-consuming command that is not meant to move an environment at all: it is already
         # built, one step up, with the flags the caller asked for.
+        #
+        # `make` ITSELF IS THE UNPROVEN LINK ON WINDOWS and is named here rather than worked
+        # around. GNU Make is present on the Ubuntu and macOS images; on `windows-latest` it comes
+        # in via the shipped MSYS2/Git-for-Windows tooling, and this repository has never executed
+        # a Windows runner, so that is a READ of the runner-image manifest and not a measurement.
+        # No fallback is added for it: `verify` exists precisely so CI and a human run the SAME
+        # entry point, and a `python -m lab_commons.dev.verify` escape hatch here would be a second
+        # definition of the gate -- the exact fork the header above forbids. If the first Windows
+        # leg reds on a missing `make`, the repair is to install it in a step, not to route around.
         run: uv run --no-sync make verify
 
       - name: Named guards
@@ -110,6 +155,12 @@ jobs:
     # that never clears is one people learn to ignore.
     needs: verify
     if: ${{ always() && inputs.report-failures && github.event_name == 'push' }}
+    # SINGLE-PLATFORM ON PURPOSE, and it is the one job that must NOT take the OS axis. This job
+    # makes GitHub REST calls; it neither builds nor imports the package, so a second platform
+    # could not tell it anything. Worse, it would be actively wrong: the mechanism is keyed on ONE
+    # stable issue title, so three legs would race to create it, then comment three times on a red
+    # and close-after-commenting three times on a green. `needs: verify` already collapses EVERY
+    # matrix leg into a single `needs.verify.result`, which is the aggregate a notification wants.
     runs-on: ubuntu-latest
     permissions:
       # A reusable workflow cannot widen what the caller granted. The caller's job must declare
