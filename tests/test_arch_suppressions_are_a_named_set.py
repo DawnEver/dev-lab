@@ -120,6 +120,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'import lab_commons.units',
     ): 'the same line: the measurement only means anything if the import happens inside the test body',
     (
+        'tests/test_dev_doorcensus.py',
+        'arg-type',
+        'return DoorRow(why=_WHY, **kwargs)',
+    ): 'one local builder supplies the shared reason and forwards its dict[str, object] fields verbatim',
+    (
         'tests/test_famtests_injectedwidth.py',
         'arg-type',
         'assert_widths_are_the_named_set(scan, **(kwargs | over))',

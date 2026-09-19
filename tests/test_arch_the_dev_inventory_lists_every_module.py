@@ -110,9 +110,12 @@ def test_the_scan_reads_this_package_and_excludes_by_shape() -> None:
 #: turns that from a recurring wall into a rule -- the reasoning goes in the module the bullet is
 #: about, and the bullet says which module and what for.
 #:
-#: 10 is the measured maximum once the outlier is trimmed (`ab_bench`). From here it may only go DOWN:
-#: raising it is how the index becomes a second docstring again, one row at a time.
-BULLET_CEILING = 10
+#: 10 was the measured maximum once the outlier was trimmed (`ab_bench`); it is 9 from 2026-09-19,
+#: when two modules arriving at a 400-line file had to be PAID FOR -- `verify`'s bullet gave up three
+#: lines of history, and the "not re-exported, its own names say nothing once flattened" rationale
+#: that six bullets each restated moved into the preamble, which now states it once. From here it may
+#: only go DOWN: raising it is how the index becomes a second docstring again, one row at a time.
+BULLET_CEILING = 9
 
 #: MEASURED 2026-09-17: 37 bullets. Under it, because "no bullet is over the ceiling" reads exactly
 #: the same over a docstring the parser failed to read at all.

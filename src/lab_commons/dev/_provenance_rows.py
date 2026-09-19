@@ -116,6 +116,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'shards': ('supersedes', 'scripts/gate/_shards.py'),
     'supersede': ('original',),
     'symcov': ('supersedes', 'scripts/repo/_symbol_coverage.py'),
+    # ORIGINAL rather than superseding motronics' `scripts/gate/dep_sync.py`, and the distinction is
+    # the pair's whole point. That script MUTATES an environment and reports what it removed
+    # AFTERWARDS; these two never touch one and answer BEFOREHAND, from command text joined to a
+    # manifest. Nothing in the family answered "which extras survive" -- `_doorcensus_rows` names it
+    # as an ABSENT mechanism rather than implying coverage -- so there is no prior code to name.
+    'synccensus': ('original',),
+    'syncscope': ('original',),
     # 'original' until 2026-09-18, when the assertion-SHAPE reader landed here and took the whole
     # reading half of a consumer's vacuous-assert lint -- its `_called_name`, `_is_assertion`,
     # `_is_vacuous_assert` and its walk. The consumer keeps its own floors and its bar, which is the

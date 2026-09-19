@@ -5,9 +5,8 @@ posture in its own words -- "*Tier 1 core deps only … a consumer that wants on
 nothing heavier than this*" -- so a runtime consumer must not acquire a development system by
 importing the package it already had. ``lab_commons/__init__.py`` does not import this subpackage,
 in the same way and for the same reason that it does not import ``lab_commons.em``: importing
-``lab_commons`` never pulls this in, and a consumer opts in explicitly::
-
-    from lab_commons.dev.verdict import Verdict
+``lab_commons`` never pulls this in, and a consumer opts in explicitly, by the full path:
+``from lab_commons.dev.verdict import Verdict``.
 
 THE OPT-IN IS GATED BY THE ``dev`` EXTRA, which already exists and is the right one: it names
 ``pytest`` and ``ruff``, and those two ARE this subpackage's dependencies -- as executables rather
@@ -17,7 +16,9 @@ than as imports. Nothing here needs a new install, because the layer is stdlib p
 lab-commons`` pulls nothing new, and a consumer that wants only logging still installs nothing
 heavier than it did yesterday.
 
-WHAT IS HERE, and the order is the order of dependency rather than of importance:
+WHAT IS HERE, and the order is the order of dependency rather than of importance. A bullet reading
+NOT RE-EXPORTED says one thing, stated once here instead of at each site: that module's own names
+are too unqualified to survive being flattened into a namespace this wide.
 
 * :mod:`lab_commons.dev.content` — a CONTENT address over the measured paths, the half of a verdict
   that a ``HEAD``-shaped stamp cannot supply.
@@ -28,13 +29,12 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   pure functions over a string and an exit code, including the two-sided skip ratchet a project
   declares in its own ``[tool.lab_commons.verify] allowed_skips``.
 * :mod:`lab_commons.dev.verify` — the family's ONE entry point that PRODUCES one:
-  ``python -m lab_commons.dev.verify`` runs ruff, ruff format and pytest, tees them into a log
-  under ``.verify/``, and prints a stamped verdict. It is the portable half of motronics-studio's
-  1770-line gate runner -- the half that needs no case library, no solver and no vendor engine --
-  so the three repos that had no verdict-producing invocation at all now have the same one. It is
-  the ONE module here NOT re-exported below, and that is deliberate rather than an omission: it is
-  run as ``__main__``, and a package that imports its own entry point makes ``runpy`` warn that the
-  module was already in ``sys.modules`` before it executed. Import it by its own path.
+  ``python -m lab_commons.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
+  ``.verify/``, and prints a stamped verdict -- the portable half of motronics-studio's 1770-line
+  gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
+  with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
+  reason, which is not the one above: it is run as ``__main__``, and a package that imports its own
+  entry point makes ``runpy`` warn the module was already in ``sys.modules``.
 * :mod:`lab_commons.dev.boxlock` — one CPU-saturating run at a time, ON the broker that already
   ships in this package rather than beside it.
 * :mod:`lab_commons.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
@@ -70,7 +70,6 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   code. The injected-document corpus (``AGENTS.md``/``CLAUDE.md`` by basename, ``.claude/rules/**``,
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`lab_commons.dev.cjk`.
-
 * :mod:`lab_commons.dev.hook_install` — HOOKS-ARE-WIRED, and the half a ``.pre-commit-config.yaml``
   cannot answer for itself: a configuration DECLARES hooks, ``pre-commit install`` is a separate act
   on a separate machine, and nothing links the two. Measured 2026-09-16: ``wdg-lab`` and
@@ -120,13 +119,10 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   engine lived in ONE repo of four, so rendering rules anywhere else would have produced an inert
   declaration that reads as a guard. Three parts reported BY NAME -- engine, rules, wiring -- because
   each fails differently, and installing is an EXPLICIT request that never clobbers an unrelated
-  setting, an unrelated matcher, or an engine lab-commons did not ship. Not re-exported below: its
-  status constants are local to its own question, exactly as ``hook_install``'s are.
+  setting, an unrelated matcher, or an engine lab-commons did not ship. Not re-exported below.
 * :mod:`lab_commons.dev.docsite` -- the documentation-site driver: a TABLE of sub-sites, every
   subprocess checked and bounded, and a missing toolchain that SKIPS and SAYS SO on the portal page
-  rather than failing the build or vanishing from it. Not re-exported below: its surface
-  (``Exe``, ``Module``, ``run``, ``build_all``) is generic enough that the unqualified spellings
-  belong to the module rather than to the package.
+  rather than failing the build or vanishing from it. Not re-exported below.
 * :mod:`lab_commons.dev.quantity_values` -- the VALUE half of the units rule, and the reason it is a
   second module rather than a wider ``units``: a scan that refuses a unit-spelling NAME rewards the
   LOSSY repair, because deleting the suffix silences it and records the unit nowhere. This proves
@@ -150,12 +146,21 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   about itself: **was this repo's door set ever looked at, and is it still what was measured?** One
   row per repo per door by EQUALITY, not a floor; plus DECLINED rows, so a door left out is
   distinguishable from one nobody looked at, and SHARED rows, stored in one repo and RUN in others.
+* :mod:`lab_commons.dev.syncscope` -- the OTHER half of what a sync does, which the two above are
+  blind to by construction: they judge the BUILD one distribution arrives at, this the POPULATION
+  left behind, after ``uv sync`` with no ``--extra`` took a box from 113 to 30 distributions while
+  delivering the declared build. A tree with no pytest reads as BROKEN, not as UNEQUIPPED, and the
+  answer is a JOIN never a property of the command: ``--extra all`` means whatever that repo's own
+  manifest says, which in motronics is six extras and neither ``dev`` nor ``img-to-cad``.
+* :mod:`lab_commons.dev.synccensus` -- that reader pointed at the selections the family makes, which
+  are mostly in a different repo from the command that syncs: one shared CI workflow builds its
+  extras from each caller's ``extras:`` line. EQUALITY on scope and on the stranded set, plus a
+  DERIVED scan refusing a pruning command no row accounts for. Not re-exported below.
 * :mod:`lab_commons.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
   repo's ``docs-src/dev/``, with the pointer table a consuming repo RENDERS instead of copying. The
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under
   ``src/`` -- so what ships is the table of contents, which is the half that rots when four repos
-  hand-maintain it. Not re-exported below: ``PAGES`` and ``Page`` are exactly the kind of
-  unqualified spelling that stops saying what it is once it is flattened into a namespace this wide.
+  hand-maintain it. Not re-exported below.
 * :mod:`lab_commons.dev.shadow_build` -- measuring a rebuilt native extension WITHOUT installing it.
   The venv is SHARED, so ``maturin develop`` mutates the interpreter another lane's verdict is
   running in -- the :mod:`~lab_commons.dev.dep` hazard arriving through a build tool, which takes no
@@ -163,8 +168,7 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   installed copy via ``PYTHONPATH``, refusing any output path inside ``sys.prefix``; and it times
   the two arms A/B/A/B, because a block design charges a shared box's drift to whichever arm ran
   during it. It reports a KERNEL ratio and deliberately carries no end-to-end figure: the weight
-  that would produce one is a property of the consuming repo's cases. Not re-exported below --
-  ``build_wheel`` and ``interleaved`` say nothing about their subject once flattened.
+  that would produce one is a property of the consuming repo's cases. Not re-exported below.
 * :mod:`lab_commons.dev.ab_bench` -- the other half of that measurement: an IN-PROCESS seam, where
   its sibling times CHILD PROCESSES. The difference is the failure modes, not the scale. There may
   be more than two arms; an arm may legitimately REFUSE an input its rivals accept, which is an
@@ -173,9 +177,7 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   arm reports no median at all, because a candidate timed only on the inputs it accepted has
   selected its own sample. And the dispatch question is asked rather than assumed: a seam faster on
   one input and slower on another needs a THRESHOLD, and when the winner changes back as size grows
-  there is none -- the pairs that forbid it are named. Not re-exported below: ``interleave``,
-  ``ratio`` and ``crossover`` say nothing about their subject once flattened.
-
+  there is none -- the pairs that forbid it are named. Not re-exported below.
 * :mod:`lab_commons.dev.testfacts` -- what a test FILE declares about itself, and one assertion
   SHAPE (a test whose assertions are ALL ``is not None``, which cannot fail behaviourally), read from
   the AST and never by collecting: collection IMPORTS, and a census that collects starts MATLAB to
@@ -193,14 +195,12 @@ WHAT IS HERE, and the order is the order of dependency rather than of importance
   being read and says nothing at all about ``pip install ./somebody-elses.whl``. The set of
   distributions a workspace builds is READ from the manifests the caller hands in, never spelled in a
   guard, and an empty set refuses everything rather than comparing vacuously. Not re-exported below.
-
 * :mod:`lab_commons.dev.famconfig` -- the family's CONFIG artefacts as one BASE plus a named DELTA,
   rendered, with a guard that reds on a hand edit rather than letting it drift. A consumer therefore
   has two states and no third: it reads the family artefact, or it declares its delta. The measured
   counts, why a DROP is a mapping-to-its-reason and never a set, why an addition may be ANCHORED
   inside a rendered block, why ``REQUIRED`` exists beside ``RENDERED``, and why `[tool.ruff]` is
-  deliberately absent are all in that module's own docstring. Not re-exported below: ``render``,
-  ``Base`` and ``Delta`` stop saying what they are once flattened into a namespace this wide.
+  deliberately absent are all in that module's own docstring. Not re-exported below.
 
 R4 PHASE 1, THE ``scripts/gate/`` AND ``scripts/repo/`` MECHANISMS (2026-09-17) -- eight modules,
 family half only, no consumer re-pointed, none re-exported. ONE LINE EACH AND THE BREVITY IS FORCED: this file entered
