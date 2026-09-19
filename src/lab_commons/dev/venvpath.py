@@ -48,11 +48,18 @@ third layout has to be added as data and cannot arrive as a looser pattern in on
 
 THE PLATFORM SIGNAL ARRIVES AS AN ARGUMENT WITH NO DEFAULT. That is not symmetry with
 :mod:`lab_commons.dev.floors` -- it is the only way either branch is reachable in a test. This family
-develops on Windows and has no macOS box in the loop, so a resolver reading ``os.name`` internally
-would ship with its POSIX half never once executed, which is the state every hand-written copy of
-this path was already in. Taking the signal means both branches carry a planted control on the box
-that actually runs the suite, and :func:`current_os_name` is the one-line reader a caller uses when
-it genuinely means *this* box.
+develops on Windows and has no macOS box on anybody's DESK, so a resolver reading ``os.name``
+internally would ship with its POSIX half never once executed on a developer's machine, which is
+the state every hand-written copy of this path was already in. Taking the signal means both
+branches carry a planted control on the box that actually runs the suite, and
+:func:`current_os_name` is the one-line reader a caller uses when it genuinely means *this* box.
+
+AND A CI LEG DOES NOT REPLACE THAT ARGUMENT, which is worth saying now that one exists. As of
+2026-09-19 ``.github/workflows/ci.yml`` runs this suite on ``macos-latest`` and ``windows-latest``
+as well as ``ubuntu-latest``, so the phrase "no box in the loop" is no longer true of the FLEET.
+It stays true of the unit of work this paragraph is about: a CI leg proves one branch per RUN,
+while an argument with no default proves BOTH in one process wherever the suite executes. The legs
+are additional evidence, not a reason to hand this function a default back.
 """
 
 from __future__ import annotations

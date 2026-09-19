@@ -84,10 +84,16 @@ def test_the_sanctioned_set_is_named_and_is_exactly_the_resolver() -> None:
 def test_both_platform_branches_resolve_on_whichever_box_runs_this(os_name: str) -> None:
     """BOTH BRANCHES, ON A WINDOWS BOX. The signal is an argument, which is the whole point.
 
-    This family has no macOS machine in the loop, so a resolver reading ``os.name`` internally
-    would ship with its POSIX half never once executed. Taking the platform as an argument with no
-    default is what makes this arm possible, and it is the only honest cross-platform claim
-    available from here: the PATH is asserted, the macOS filesystem is not.
+    No macOS machine sits on a developer's desk here, so a resolver reading ``os.name`` internally
+    would ship with its POSIX half never once executed locally. Taking the platform as an argument
+    with no default is what makes this arm possible: it proves BOTH branches in ONE process, which
+    a CI leg -- one platform per run -- cannot do however many platforms are added.
+
+    WHAT THIS ARM DOES NOT CLAIM, and the sentence here used to overclaim by omission. It asserts
+    the PATH and never opens it, so on its own it is the resolver agreeing with the table it is
+    derived from. ``test_the_resolved_interpreter_is_a_file_that_exists_on_this_box`` below is the
+    arm that opens the filesystem, and between them the pair is complete: this one covers every
+    platform shallowly, that one covers the running platform to the disk.
     """
     resolved = venv_interpreter(os_name=os_name)
     assert resolved == '/'.join(VENV_LAYOUTS[os_name])
