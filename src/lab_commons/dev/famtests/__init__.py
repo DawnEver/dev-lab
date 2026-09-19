@@ -114,6 +114,13 @@ WHAT IS HERE, one module per shared body:
   :mod:`lab_commons.dev.dep`, which already owned the MECHANISM -- the first row here whose gap was
   found by two audit lanes that did not know of each other, converging on the same two files.
 
+* :mod:`lab_commons.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the
+  resolver is still consulted. Both sides, because a resolver nothing calls is as wrong as the
+  hardcoded path it replaced and is SILENT about it. The row whose subject is not a DOCSTRING but
+  SOURCE SOMEBODY WILL PASTE: what shipped ``.venv/Scripts/python.exe`` into two consuming repos was
+  a ``::`` RECIPE BLOCK in a module docstring, so recipe blocks are scanned and narrative prose --
+  where this family records a retirement -- is not.
+
 * :mod:`lab_commons.dev.famtests.boxseat` -- the repo's own verdict entry point takes the box's one
   seat, releases it, and cannot buy an exemption with a pool name of its own. The PAIR to
   ``depdoor``, and the boundary between them is worth stating because both import ``BoxLock``: this
@@ -133,6 +140,16 @@ WHAT IS HERE, one module per shared body:
   an ARGUMENT and the interval travels with it. The census next door in
   :mod:`lab_commons.dev.famtests.rostercensus` reads the same rosters and asks a different question
   -- whether a row's SIDE has gone stale against the kit -- and neither imports the other.
+
+* :mod:`lab_commons.dev.famtests.countpins` -- a pin is a NAMED SET; a number may only be a
+  THRESHOLD, and its NAME must say so. The row that arrives as a CORRECTION rather than a move:
+  optimi-lab claimed ``NAMED-SETS-NOT-COUNTS`` as enforced while citing three modules that merely
+  USE named sets, and wdg-lab cites the same rule at six and holds no such guard at all. NOT
+  ``density``, which also parses constants: this reads a NAME against a declared suffix vocabulary
+  where that one counts LINES against two bars, and the floor here is on CONSTANTS READ because the
+  offender population is a lower bound whose clean value is the empty set -- the same answer walking
+  the wrong directory gives. ``threshold_suffixes`` is the argument the kit must never guess: it IS
+  the exemption mechanism, so a default would be a waiver the consumer never wrote.
 
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the

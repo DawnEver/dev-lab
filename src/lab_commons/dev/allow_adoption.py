@@ -24,9 +24,15 @@ SIX are that repo's own road:
     wdg-lab      uv run python -m wdg_lab / uv sync --extra * / *yarn preview* /
                  python *kill-server.py* / *yarn test* / node **/scripts/post-review.js*
 
-The first two were hand-written in two repos by two hands and are CHARACTER-IDENTICAL to what
-:func:`glob_for` renders from ``Remedy.command``. That agreement is the evidence the derivation rule
-is read off the data rather than imposed on it.
+The first two were hand-written in two repos by two hands and were CHARACTER-IDENTICAL to what
+:func:`glob_for` rendered from ``Remedy.command`` on the day this module landed. That agreement is
+the evidence the derivation rule is read off the data rather than imposed on it.
+
+THEY ARE NO LONGER CHARACTER-IDENTICAL: both hands spelled a Windows-only interpreter into a file
+that is TRACKED IN GIT, so :func:`glob_for` normalises it and BOTH spellings derive one row. This is
+THE ONE SANCTIONED WIDENING -- ``.venv/*/python*`` admits more than the remedy spells, because the
+alternative is a row FALSE on one platform -- bounded as DATA in
+:data:`lab_commons.dev.venvpath.VENV_LAYOUTS`, which holds the argument.
 
 WHAT MAKES A ROW DERIVABLE IS A PROPERTY OF THE REGISTRY, not a judgement. A rule with ``needs``
 names a repo artefact and the repo answers it with a :class:`lab_commons.dev.hooks.Remedy`, whose
@@ -91,6 +97,7 @@ from lab_commons.dev._allow_settings import promised_command as _promised
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, denies
+from lab_commons.dev.venvpath import portable, unportable_row
 
 __all__ = [
     'BASH',
@@ -136,14 +143,15 @@ def glob_for(command: str) -> str:
     A trailing ``*`` is appended when the command does not already end in one, so the arguments the
     agent supplies are covered while the program and its named options are not widened. Nothing is
     prepended: ``Remedy.command`` is the text the refused agent is told to type VERBATIM, so a
-    leading wildcard would permit invocation prefixes this package never sanctioned.
+    leading wildcard would permit invocation prefixes this package never sanctioned. The venv
+    interpreter is made portable FIRST via :func:`lab_commons.dev.venvpath.portable`, which argues it.
 
     Raises:
         UnarguedAllow: *command* is blank, or collapses to nothing but wildcards -- a row reading
             ``Bash(*)`` promises every shell command there is and answers no rule in particular.
 
     """
-    text = _RUNS.sub('*', _METAVAR.sub('*', ' '.join(command.split())))
+    text = _RUNS.sub('*', _METAVAR.sub('*', portable(' '.join(command.split()))))
     if not text.strip().strip('*').strip():
         msg = (
             f'the remedy command {command!r} renders the glob {text!r}, which promises every command there '
@@ -184,6 +192,8 @@ class DeclaredAllow:
                 f'needed yet -- say what this one is for, or leave it out until something needs it.'
             )
             raise UnarguedAllow(msg)
+        if (unportable := unportable_row(self.entry)) is not None:
+            raise UnarguedAllow(unportable)
         if self.needs is not None and (
             not self.needs.strip() or self.needs.startswith('/') or '\\' in self.needs or '..' in self.needs
         ):

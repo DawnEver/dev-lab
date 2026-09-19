@@ -29,6 +29,7 @@ from lab_commons.dev.allow_adoption import (
 from lab_commons.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import Remedy
+from lab_commons.dev.venvpath import VENV_LAYOUTS, venv_interpreter
 
 #: The verdict entry point BOTH labs hand-wrote, character for character, in their own settings
 #: files AND in their own `scripts/deny_rules.py`. The agreement is the evidence for `glob_for`.
@@ -63,14 +64,35 @@ MOTRONICS = HookAdoption(
 
 
 def test_the_glob_matches_the_row_two_repos_wrote_by_hand() -> None:
-    """THE DERIVATION IS READ OFF THE DATA: the rendered row is the one both labs already hold."""
-    assert glob_for(VERIFY.command) == 'Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)'
+    """THE DERIVATION IS READ OFF THE DATA: the rendered row is the one both labs already hold.
+
+    It is no longer CHARACTER-identical to what those two hands wrote, and that is the 2026-09-19
+    correction rather than a drift. Both wrote `.venv/Scripts/python.exe`, a file macOS does not
+    have, into a file that is TRACKED IN GIT -- so on half the fleet the row permitted nothing, and
+    an allow row that matches no command is indistinguishable from one nobody needed. The
+    interpreter is normalised; everything either hand actually decided is preserved.
+    """
+    assert glob_for(VERIFY.command) == 'Bash(./.venv/*/python* -m lab_commons.dev.verify *)'
+
+
+def test_both_platform_spellings_of_one_remedy_derive_the_same_row() -> None:
+    """THE ROW IS PORTABLE OR IT IS FALSE SOMEWHERE. Two inputs, one row -- not two rows.
+
+    Not two entries, because `derived_entries` renders one row per remedy command precisely so a
+    diff can say which road a deletion removed, and a platform pair is that hazard with a label on
+    it. Not rendered-at-adoption either: that makes a TRACKED file per-machine, so it reds in every
+    checkout on the other platform and the only repair available to that reader reds the first one
+    back. A glob is the one option that is TRUE on both platforms at once.
+    """
+    tail = ' -m lab_commons.dev.verify'
+    rendered = {glob_for('./' + venv_interpreter(os_name=name) + tail) for name in VENV_LAYOUTS}
+    assert rendered == {'Bash(./.venv/*/python* -m lab_commons.dev.verify *)'}
 
 
 def test_a_metavariable_becomes_one_wildcard_and_no_trailing_star_is_doubled() -> None:
     """`<root-pid>` is the agent's own value; a command already ending in `*` gains no second one."""
-    assert glob_for(SWEEP.command) == 'Bash(.venv/Scripts/python.exe scripts/gate/stop_sweep.py --pid *)'
-    assert glob_for(NETVERB.command) == 'Bash(./.venv/Scripts/python.exe -m lab_commons.dev.netverb -- *)'
+    assert glob_for(SWEEP.command) == 'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)'
+    assert glob_for(NETVERB.command) == 'Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)'
 
 
 def test_a_root_token_never_ships_literally() -> None:
@@ -87,21 +109,21 @@ def test_a_remedy_that_is_all_metavariable_derives_nothing() -> None:
 def test_one_row_per_remedy_naming_every_rule_it_answers() -> None:
     """A repo with one verdict command gets ONE row, and it says both rules it is the exit from."""
     assert derived_entries(OPTIMI) == {
-        'Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
+        'Bash(./.venv/*/python* -m lab_commons.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
     }
 
 
 def test_a_rule_declared_absent_derives_no_row() -> None:
     """THE `needs` RULE ON THIS SIDE: optimi-lab has no process-tree killer, so it promises none."""
     assert not any('stop_sweep' in entry for entry in derived_entries(OPTIMI))
-    assert 'Bash(.venv/Scripts/python.exe scripts/gate/stop_sweep.py --pid *)' in derived_entries(MOTRONICS)
+    assert 'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)' in derived_entries(MOTRONICS)
 
 
 def test_a_needs_none_rule_is_never_derived_from() -> None:
     """GIT-STASH, PUSH-FORCE and WORKTREE-BASE-IS-EXPLICIT have PROSE exits, so nothing is guessed."""
     assert set(derived_entries(WDG)) == {
-        'Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)',
-        'Bash(./.venv/Scripts/python.exe -m lab_commons.dev.netverb -- *)',
+        'Bash(./.venv/*/python* -m lab_commons.dev.verify *)',
+        'Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)',
     }
 
 
@@ -123,7 +145,7 @@ def test_a_declared_row_may_not_restate_a_derived_one() -> None:
         AllowAdoption(
             app_name='wdg_lab',
             adoption=OPTIMI,
-            declared=(DeclaredAllow('Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)', 'the verdict'),),
+            declared=(DeclaredAllow('Bash(./.venv/*/python* -m lab_commons.dev.verify *)', 'the verdict'),),
         )
 
 
@@ -132,7 +154,7 @@ def test_provenance_says_which_population_each_row_came_from() -> None:
     allow = AllowAdoption('wdg_lab', WDG, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     seen = provenance(allow)
     assert seen['Bash(*yarn preview*)'] == 'declared: the docs preview server'
-    assert seen['Bash(./.venv/Scripts/python.exe -m lab_commons.dev.netverb -- *)'] == 'derived from GIT-NETWORK-VERB'
+    assert seen['Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)'] == 'derived from GIT-NETWORK-VERB'
 
 
 #: A remedy spelling the very shape its own rule matches, with NO opening. `RAW-PROCESS-KILL` is
@@ -192,7 +214,7 @@ def test_the_section_merge_keeps_every_block_it_is_not_about() -> None:
     assert after['permissions']['deny'] == ['Bash(rm -rf *)']
     assert after['permissions']['allow'] == [
         'Read(**)',
-        'Bash(.venv/Scripts/python.exe scripts/gate/stop_sweep.py --pid *)',
+        'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)',
     ]
     assert live_bash_rows(before) == ('Bash(*scripts/gate/stop_sweep.py *)',)
 
@@ -225,3 +247,28 @@ def test_an_adoption_with_no_app_name_cannot_report_which_repo_failed() -> None:
     """The repo-shaped fact arrives as an argument, and a blank one is refused at construction."""
     with pytest.raises(ValueError, match='app_name'):
         AllowAdoption('  ', OPTIMI)
+
+
+def test_a_declared_row_may_not_spell_the_venv_interpreter_either() -> None:
+    """THE DOOR `glob_for` CANNOT REACH, and it is live in a consuming repo today.
+
+    A DERIVED row is normalised on the way out. A DECLARED row is the repo's own text, VERBATIM, so
+    nothing normalises it -- and optimi-lab's tracked settings file carries
+    `Bash(./.venv/Scripts/python.exe scripts/dep.py *)`, which permits nothing at all on macOS. The
+    refusal is at CONSTRUCTION rather than in a scan, because that is where the row is authored and
+    where the repair costs one character.
+    """
+    with pytest.raises(UnarguedAllow, match='rather than globbing it'):
+        DeclaredAllow('Bash(./.venv/Scripts/python.exe scripts/dep.py *)', 'the dependency door')
+
+
+def test_the_refusal_names_the_row_the_author_should_have_written() -> None:
+    """A refusal that names no remedy has named nothing -- the repair is quoted, not described."""
+    with pytest.raises(UnarguedAllow, match=r'Write Bash\(\./\.venv/\*/python\* scripts/dep\.py \*\)'):
+        DeclaredAllow('Bash(./.venv/Scripts/python.exe scripts/dep.py *)', 'the dependency door')
+
+
+def test_a_portable_declared_row_and_an_unrelated_one_both_pass() -> None:
+    """THE OTHER SIDE: a guard that refused every declared row would be switched off by lunchtime."""
+    assert DeclaredAllow('Bash(./.venv/*/python* scripts/dep.py *)', 'the door').entry.endswith('*)')
+    assert DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server').entry == 'Bash(*yarn preview*)'

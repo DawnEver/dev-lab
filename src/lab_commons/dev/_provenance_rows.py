@@ -79,6 +79,14 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # optimi-lab `scripts/pdoc`. The table stayed with each repo, so this is adoption, not a move.
     'docsite': ('adopted_by', 'scripts/repo/docs.py'),
     'docwidth': ('original',),
+    # SUPERSEDES wdg-lab's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
+    # verdict taken on it stays in that repo's `test_slow_is_discovered_by_the_wall.py`, which is
+    # therefore NOT named here: it holds `WALL_SECONDS`, `SLOW_BAR`, `FAST_CEILING`, the ledger floor
+    # and the marked NAME set, all five of them repo facts. The two readings that file wrote --
+    # `unmarked_but_slow` and `marked_but_fast` -- DO move, which is why this is a supersession of one
+    # file and an adoption of nothing: the consumer deletes its `scripts/durations.py` and keeps its
+    # own bars. Checked before writing: that path is live in wdg-lab today.
+    'durations': ('supersedes', 'scripts/durations.py'),
     'envkey': ('original',),
     'famconfig': ('original',),
     # The floor refusal was written EIGHT times across this family and no two copies agreed -- four
@@ -294,6 +302,25 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'tests/architecture/ratchets/test_rules_line_ratchet.py',
     ),
     'visibility': ('supersedes', 'tests/architecture/test_this_checkout_is_visible_on_origin.py'),
+    # ORIGINAL, and the declaration is refusable in the usual way. The Windows interpreter spelling
+    # it replaces was never a consumer MODULE -- it was a hand-written string in two repos'
+    # `scripts/deny_rules.py` and in three tracked `settings.json` allow rows, pasted out of this
+    # kit's own consumption recipe. There is no fork behind this, only a spelling it takes over, so
+    # `supersedes` would name files that keep every line they have. Not `adopted_by` either: no
+    # consumer delegates to it yet, and recording an adoption that has not happened is the
+    # declaration-that-lies this registry exists to refuse.
+    # SUPERSEDES optimi-lab's file whole. ONE consumer path and not two, and the second repo is the
+    # evidence for the row rather than a member of it: wdg-lab cites `NAMED-SETS-NOT-COUNTS` at six
+    # modules that merely USE named sets and has NO count-pin guard, so there is no file of its to
+    # supersede -- naming one would be the over-conviction `named_only` exists to hold. Checked
+    # before writing: `tests/architecture/test_a_pin_is_a_named_set.py` is live in optimi-lab today,
+    # and it is that repo's last open roster row.
+    'countpins': ('supersedes', 'tests/architecture/test_a_pin_is_a_named_set.py'),
+    'venvspelling': ('original',),
+    # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
+    # not a forked file. `CANDIDATE_RELATIVE_PATHS` moved here from `githooks.bootstrap`, which is
+    # in-kit and therefore not provenance -- that row below still supersedes `with-venv.sh`.
+    'venvpath': ('original',),
     # -- `lab_commons.dev.githooks`.
     'bootstrap': ('supersedes', 'scripts/hooks/with-venv.sh'),
 }

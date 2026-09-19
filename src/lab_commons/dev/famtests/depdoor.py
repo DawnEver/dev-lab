@@ -27,8 +27,16 @@ WHAT ARRIVES WITH NO DEFAULT, and why each is one repo's answer rather than a co
 * *anchor_glob* -- the repo-relative name shape its verdict logs take. Spelled by the repo because
   only the repo knows what its ``verify`` writes; the retirement arms are worthless if they retire a
   shape it never produces.
-* *root* -- the checkout being answered for. A guard rooted at the working directory answers,
-  plausibly, about somebody else's tree.
+* *broker* / *anchor* / *tree* -- the case's own doubles and the tree being read, supplied per arm.
+
+A *root* BULLET STOOD HERE UNTIL 2026-09-19 AND NAMED A KEYWORD NO FUNCTION IN THIS MODULE TAKES.
+None of the seven ``assert_*`` bodies has ever had a ``root`` parameter; the argument belongs to
+:func:`lab_commons.dev.famtests.boxseat.assert_the_rendezvous_is_outside_this_repository`, whose
+own docstring carries the same sentence verbatim -- so the line was a paragraph that travelled
+between two modules rather than a claim anybody checked. It cost no red, because a docstring
+naming an argument that does not exist raises nothing; a consumer lane found it by trying to PASS
+it. This is the dominant defect in this codebase's own words -- a declaration asserting a property
+the code does not have -- sitting inside the package written to refuse exactly that.
 
 THE GAP SET IS PINNED AS A NAMED SET, both directions, and never as a count. An integer cannot say
 WHICH half of the door came off, and this family has an incident where a disagreeing pin was edited

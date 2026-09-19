@@ -19,14 +19,26 @@ and is deliberately not performed from here::
     from pathlib import Path
     from lab_commons.dev.hooks import Remedy
     from lab_commons.dev.hook_adoption import HookAdoption, render
+    from lab_commons.dev.venvpath import current_os_name, venv_interpreter
 
-    VERIFY = Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m lab_commons.dev.verify')
+    PYTHON = venv_interpreter(os_name=current_os_name())
+    VERIFY = Remedy('verdict-entry-point', f'{PYTHON} -m lab_commons.dev.verify')
     ADOPTION = HookAdoption(
         app_name='wdg-lab',
         remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
         declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
     )
     Path('.claude/hooks/deny-rules.json').write_text(render(ADOPTION), encoding='utf-8')
+
+THE INTERPRETER IS RESOLVED AND NEVER SPELLED, and that line is the reason this recipe was
+rewritten on 2026-09-19. It used to read ``.venv/Scripts/python.exe`` literally, and it was copied
+VERBATIM into ``scripts/deny_rules.py`` in two consuming repos, where it became live code naming a
+file macOS does not have. A RECIPE IS NOT A DOCSTRING -- it is source somebody will paste, so a
+platform-blind spelling in one is a platform-blind spelling in every repo that adopts the kit, and
+prose is exactly where a retired spelling survives longest. A ``Remedy.command`` is shown VERBATIM
+to a refused agent and so must stay CONCRETE for the box that is running; making the tracked
+``permissions.allow`` row portable is a separate job and belongs to
+:func:`lab_commons.dev.allow_adoption.glob_for`, which normalises it.
 
 The repo then commits that JSON and points a ``PreToolUse`` Bash matcher in `.claude/settings.json`
 at the engine with the file as ``argv[2]``. The rendered rows carry exactly the engine's own field
