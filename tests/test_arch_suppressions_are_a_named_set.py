@@ -105,11 +105,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'global _structlog_configured',
     ): 'one-shot process-wide structured-logging configuration, the same idempotence flag as log.py',
     (
-        'src/lab_commons/dev/durations.py',
-        'PLC0415',
-        'from xdist import dsession',
-    ): 'an OPTIONAL scheduler: a top-level import would make the whole module unimportable without it',
-    (
         'tests/test_dev_githooks.py',
         'PLC0415',
         'import os',

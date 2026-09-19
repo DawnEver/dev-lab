@@ -2,11 +2,12 @@
 
 WHICH READING THIS REPO CANNOT TAKE, AND IT IS RECORDED RATHER THAN SKIPPED. ``pytest-xdist`` is NOT
 installed here (measured 2026-09-19 -- this repo declares no ``timeout`` and no ``-n`` either), so
-:func:`~lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` cannot read
-the sentence off a live scheduler in this tree. That is INCONCLUSIVE rather than clean, the module
-says so with its own exception type, and the arm below asserts exactly that -- which is also what
-drives the inconclusive branch. The claim it would otherwise make is driven anyway, against a
-PLANTED scheduler module whose source is a real file on disk, so the REAL reader runs either way.
+the LIVE arm of
+:func:`~lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` skips in this
+tree and is live in the sibling repos that shard. The claim is driven anyway, twice, on source handed
+straight to the reader: once carrying the sentence and once reworded. Its FLOOR -- source that was
+never read, which trivially contains no marker either -- is driven separately, because that is the
+green this arm would otherwise report most confidently.
 
 THE ONE THING NO TEST HERE CAN DO is stand up four xdist workers, wedge one past a wall and observe
 the controller file it at ~0.0s. The evidence for that is the consumer's: wdg-lab measured it on
@@ -18,7 +19,6 @@ sentence the installed xdist 3.8.0 writes at ``xdist/dsession.py:436``, quoted f
 from __future__ import annotations
 
 import json
-import sys
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -161,48 +161,50 @@ def test_a_repo_with_no_wall_files_a_crash_at_what_it_reported() -> None:
     assert phase_seconds(duration=0.0, failed=True, longrepr=longrepr, wall=0.0) == 0.0
 
 
-def test_the_crash_marker_check_is_inconclusive_in_this_repo() -> None:
-    """MEASURED: this repo has no ``pytest-xdist``, so the reading cannot be taken -- and SAYS SO.
-
-    An inconclusive reading reported as clean is the failure this whole package is about, so the
-    two are separate exception types and the absent-scheduler branch is driven here.
-    """
-    with pytest.raises(LedgerInconclusive, match='INCONCLUSIVE rather than clean'):
-        assert_the_crash_marker_is_what_the_scheduler_writes()
-
-
-def _plant_scheduler(monkeypatch: pytest.MonkeyPatch, source: Path) -> None:
-    """Install a stand-in ``xdist.dsession`` whose ``__file__`` is *source*, undone with the patch.
-
-    Written through ``__dict__`` rather than as an attribute assignment so no type suppression is
-    needed: a module object has no declared ``dsession`` member, and waiving that would be a
-    suppression carrying no information -- which this repo's ratchet is right to refuse.
-    """
-    module = types.ModuleType('xdist')
-    dsession = types.SimpleNamespace(__file__=str(source))
-    module.__dict__['dsession'] = dsession
-    monkeypatch.setitem(sys.modules, 'xdist', module)
-    monkeypatch.setitem(sys.modules, 'xdist.dsession', dsession)
-
-
-def test_the_marker_check_reads_a_planted_schedulers_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """THE CONTROL FOR THE READER ITSELF, both ways, against a real file on disk.
+def test_the_marker_check_reads_the_source_it_is_handed() -> None:
+    """THE CONTROL FOR THE READER ITSELF, both ways, on source shaped like the real scheduler's.
 
     A scheduler whose source carries the sentence passes; one whose source does not is convicted with
-    the consequence named. Planted rather than skipped, because the claim -- "a detector and its
-    subject must not agree only with each other" -- is exactly what goes silent when xdist rewords.
+    the consequence named. The claim -- "a detector and its subject must not agree only with each
+    other" -- is exactly what goes silent when the scheduler rewords, so it is driven rather than
+    asserted in prose.
     """
-    carrying = tmp_path / 'carrying.py'
-    carrying.write_text(f'msg = f"worker {{x!r}} {CRASH_MARKER} {{y!r}}"\n', encoding='utf-8')
-    reworded = tmp_path / 'reworded.py'
-    reworded.write_text('msg = "worker died"\n', encoding='utf-8')
+    carrying = f'msg = f"worker {{worker.gateway.id!r}} {CRASH_MARKER} {{nodeid!r}}"\n'
+    assert_the_crash_marker_is_what_the_scheduler_writes(scheduler_source=carrying, where='planted/carrying.py')
 
-    _plant_scheduler(monkeypatch, carrying)
-    assert_the_crash_marker_is_what_the_scheduler_writes()
-
-    _plant_scheduler(monkeypatch, reworded)
     with pytest.raises(AssertionError, match='no longer writes'):
-        assert_the_crash_marker_is_what_the_scheduler_writes()
+        assert_the_crash_marker_is_what_the_scheduler_writes(
+            scheduler_source='msg = "worker died"\n',
+            where='planted/reworded.py',
+        )
+
+
+def test_the_marker_check_refuses_source_it_never_read() -> None:
+    """THE FLOOR ON THIS READING, and it is not a formality: '' contains no marker either.
+
+    An empty string trivially lacks the marker, so without this arm the strongest-looking green the
+    function can report is the one where the caller's ``importorskip`` was skipped and nothing was
+    read at all. INCONCLUSIVE and clean are separate exception types for exactly that reason.
+    """
+    for blank in ('', '   \n\t'):
+        with pytest.raises(LedgerInconclusive, match='INCONCLUSIVE rather than clean'):
+            assert_the_crash_marker_is_what_the_scheduler_writes(scheduler_source=blank, where='planted/empty.py')
+
+
+def test_the_marker_is_what_the_real_scheduler_writes_where_one_is_installed() -> None:
+    """THE LIVE READING, taken wherever a scheduler exists -- skipped HERE, and that is measured.
+
+    This repo does not install ``pytest-xdist`` (it declares no ``timeout`` and no ``-n`` either), so
+    the reading cannot be taken in this tree. It is expressed as an ``importorskip`` rather than
+    silently omitted because the sibling repos that DO shard run this same file, and there the arm is
+    live against xdist's own source -- which is the only place the detector and its subject are
+    checked against each other rather than against a plant.
+    """
+    dsession = pytest.importorskip('xdist.dsession')
+    assert_the_crash_marker_is_what_the_scheduler_writes(
+        scheduler_source=Path(dsession.__file__).read_text(encoding='utf-8'),
+        where=dsession.__file__,
+    )
 
 
 # -- the ledger ------------------------------------------------------------------------------------

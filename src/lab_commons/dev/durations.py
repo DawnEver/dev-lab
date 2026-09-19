@@ -43,8 +43,9 @@ least that long. It is a LOWER BOUND WRITTEN DOWN AS THE NUMBER, which is the di
 floor and a fabricated measurement -- the true duration is unknowable, because the process that knew
 it died. MEASURED in this family's own installed toolchain rather than remembered: ``xdist`` 3.8.0
 writes that sentence at ``xdist/dsession.py:436``, and
-:func:`assert_the_crash_marker_is_what_the_scheduler_writes` re-reads it so a rename reds here
-instead of going silent.
+:func:`assert_the_crash_marker_is_what_the_scheduler_writes` re-reads it -- from source THE CONSUMER
+hands over, because this layer is stdlib plus tier 1 and never imports a scheduler -- so a rename
+reds instead of going silent.
 
 THE WALL IS NOT PER-TEST ON EVERY PLATFORM, AND THIS MODULE WILL BE CONSUMED ON THREE.
 ``pytest-timeout`` raises inside the test only where ``SIGALRM`` exists; ``hasattr(signal,
@@ -404,42 +405,65 @@ def assert_the_ledger_is_evidence(*, ledger: Ledger, floor: int, headroom: int, 
     floors.assert_floor_still_binds(len(ledger.seconds), floor=floor, headroom=headroom, what=what)
 
 
-def assert_the_crash_marker_is_what_the_scheduler_writes() -> None:
-    """:data:`CRASH_MARKER` is still the sentence the INSTALLED scheduler writes, read off its source.
+def assert_the_crash_marker_is_what_the_scheduler_writes(*, scheduler_source: str, where: str) -> None:
+    """:data:`CRASH_MARKER` is still the sentence the scheduler writes, read off SOURCE THE CALLER READ.
 
     A DETECTOR AND ITS SUBJECT MUST NOT AGREE ONLY WITH EACH OTHER. The crash arm keys on text
-    because a crash carries no structured field, so the day xdist rewords that sentence the arm goes
-    silent -- and silent means the ledger files the wall's own kills at ~0.0s again, which is the
-    mechanism refuting itself in its own data with no red anywhere.
+    because a dead worker leaves no structured field, so the day the scheduler rewords that sentence
+    the arm goes silent -- and silent means the ledger files the wall's own kills at ~0.0s again,
+    which is the mechanism refuting itself in its own data with no red anywhere.
 
-    A MISSING SCHEDULER IS INCONCLUSIVE, NEVER CLEAN, and the two are separate exception types for
-    the reason :mod:`lab_commons.dev.floors` separates its own: a repo that has not installed xdist
-    has not passed this check, it has failed to take it, and only the caller can decide whether that
-    is acceptable in its tier.
+    THE SOURCE IS AN ARGUMENT AND THIS MODULE NEVER IMPORTS THE SCHEDULER, which is a tier decision
+    and not a style one. ``lab_commons``'s pyproject promises that a consumer wanting only logging
+    installs nothing heavier, so ``lab_commons.dev`` is stdlib plus tier 1 and
+    ``test_dev_gate.py::test_no_dev_module_imports_anything_outside_stdlib_and_tier_one`` reads the
+    IMPORT STATEMENTS to enforce it. A guarded ``try: import xdist`` adds no dependency at install
+    time and the gate cannot see that -- but evading the gate by spelling the import dynamically
+    would be the declaration-that-lies shape arriving inside the guard against it. So the CONSUMER,
+    which is the party that actually installs a scheduler, reads its source and hands it over::
+
+        dsession = pytest.importorskip('xdist.dsession')
+        assert_the_crash_marker_is_what_the_scheduler_writes(
+            scheduler_source=Path(dsession.__file__).read_text(encoding='utf-8'),
+            where=dsession.__file__,
+        )
+
+    This is the shape :func:`lab_commons.dev.famtests.venvspelling.spellings_in` already uses for the
+    same reason: a body handed TEXT can be driven by a control, where a body that opens its own
+    subject can only be driven by having that subject installed.
+
+    EMPTY SOURCE IS INCONCLUSIVE, NEVER CLEAN, and the two are separate exception types for the
+    reason :mod:`lab_commons.dev.floors` separates its own. It is the FLOOR on this reading: a
+    caller whose ``importorskip`` was skipped, or whose read returned nothing, has not PASSED this
+    check -- it has failed to take it, and an empty string trivially contains no marker, so without
+    this arm the strongest-looking green here is the one that read nothing.
+
+    Args:
+        scheduler_source: the scheduler module's source, as the caller read it.
+        where: where it came from, so a refusal names a file a reader can open. NO DEFAULT -- a
+            borrowed label misdirects, which is worse than naming nothing.
 
     Raises:
-        LedgerInconclusive: the scheduler is not installed here, so nothing was read.
-        AssertionError: the scheduler is installed and no longer writes :data:`CRASH_MARKER`.
+        LedgerInconclusive: *scheduler_source* is empty or blank, so nothing was read.
+        AssertionError: the scheduler no longer writes :data:`CRASH_MARKER`.
 
     """
-    try:
-        from xdist import dsession  # noqa: PLC0415
-    except ImportError as absent:
+    if not scheduler_source.strip():
         msg = (
-            'pytest-xdist is not importable here, so the crash marker could not be checked against '
-            'the source that writes it. That is INCONCLUSIVE rather than clean -- and it is also the '
-            'state in which a wall on Windows kills the SESSION instead of a worker, because '
-            'sharding is what makes the wall recoverable at all.'
+            f'no scheduler source was read from {where!r}, so the crash marker was checked against '
+            f'nothing. That is INCONCLUSIVE rather than clean: an empty string contains no marker, '
+            f'so this arm would otherwise report its strongest green for the reading it failed to '
+            f'take. A repo with no scheduler is also the repo where a wall on Windows kills the '
+            f'SESSION instead of a worker, because sharding is what makes the wall recoverable.'
         )
-        raise LedgerInconclusive(msg) from absent
-    source = Path(dsession.__file__).read_text(encoding='utf-8')
-    if CRASH_MARKER not in source:
+        raise LedgerInconclusive(msg)
+    if CRASH_MARKER not in scheduler_source:
         msg = (
-            f'the installed scheduler no longer writes {CRASH_MARKER!r} in {dsession.__file__}. The '
-            f'crash arm keys on that text because a dead worker leaves no structured field, so it is '
-            f'now inert: every test the wall kills will be filed at the ~0.0s the controller reports '
-            f'for it, and the ledger will read the suite the wall just convicted as its fastest. '
-            f'Re-read the scheduler and move CRASH_MARKER onto the sentence it writes today.'
+            f'the scheduler at {where} no longer writes {CRASH_MARKER!r}. The crash arm keys on that '
+            f'text because a dead worker leaves no structured field, so it is now inert: every test '
+            f'the wall kills will be filed at the ~0.0s the controller reports for it, and the ledger '
+            f'will read the suite the wall just convicted as its FASTEST. Re-read the scheduler and '
+            f'move CRASH_MARKER onto the sentence it writes today.'
         )
         raise AssertionError(msg)
 
