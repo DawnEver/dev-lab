@@ -106,6 +106,52 @@ def test_this_box_resolves_through_the_same_door() -> None:
     assert venv_interpreter(os_name=current_os_name()) in {'/'.join(p) for p in CANDIDATE_RELATIVE_PATHS}
 
 
+def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
+    """THE ONE ARM THAT ASKS THE FILESYSTEM, and the only one whose answer differs by platform.
+
+    WHAT WAS VACUOUS, and it was vacuous on every platform rather than only on macOS. Every other
+    arm here compares a STRING to :data:`VENV_LAYOUTS` or to :data:`CANDIDATE_RELATIVE_PATHS` --
+    the resolver agreeing with the constant it is derived from, which no venv anywhere has to exist
+    for. ``test_this_box_resolves_through_the_same_door`` directly above is the sharpest of them
+    and it still only checks set membership.
+
+    WHAT IT IS AND IS NOT, under the user's ruling of 2026-09-19 that ``.venv`` and ``uv`` are a
+    CONTRACT which guarantees ``bin/python`` on POSIX and ``Scripts/python.exe`` on Windows. That
+    ruling means this arm is NOT discovering a layout -- the layout is promised, and
+    :data:`VENV_LAYOUTS` is that promise written as data. What it does is CHECK THE PROMISE against
+    the running box, which is worth exactly as much as any other declaration this family binds to
+    a mechanism: ``uv`` is a third party, the guarantee is its to change, and this is the single
+    place in the suite where a change to it would surface as a red rather than as a remedy string
+    nobody can run. A contract with no reader is the shape this repository keeps convicting.
+
+    SO BE PRECISE ABOUT WHAT THE CI LEGS BUY, because it is not the layout. ``ubuntu-latest`` is
+    not new and has been building and running exactly ``.venv/bin/python`` all along -- ``uv sync``
+    creates it and ``uv run --no-sync`` executes through it. The POSIX layout was therefore already
+    exercised in CI; it was never ASSERTED, which is this arm. What the legs added to
+    ``.github/workflows/ci.yml`` buy is that THIS KIT'S CODE runs on those platforms, and what had
+    never run anywhere is Windows-in-CI and macOS-at-all.
+
+    NOT CONDITIONAL, deliberately. An ``if .venv exists`` skip is how this arm would rejoin the
+    vacuous set it was written to leave, and it would be greenest precisely on a runner that failed
+    to build an environment. ``make verify`` is reached through this venv, so a suite running at
+    all is a venv existing; a checkout where it does not is one that owes itself ``uv sync``.
+
+    READS NO VERSION, and that is deliberate too: ``importlib.metadata.version`` and the live
+    import disagree in this very checkout, because the install is editable. This arm asks the
+    filesystem about a path and nothing else, so neither answer can steer it.
+    """
+    root = SOURCE.parent
+    resolved = root / venv_interpreter(os_name=current_os_name())
+    assert resolved.is_file(), (
+        f'{resolved} does not exist. VENV_LAYOUTS says this platform (os.name='
+        f'{current_os_name()!r}) keeps its venv interpreter there, and the filesystem disagrees -- '
+        f'so either this checkout owes itself `uv sync`, or the uv/.venv contract has moved and '
+        f'lab_commons.dev.venvpath.VENV_LAYOUTS is now wrong about this platform. Those are '
+        f'different repairs and only the filesystem tells them apart, which is why this arm opens '
+        f'it instead of comparing strings.'
+    )
+
+
 @pytest.mark.parametrize(
     ('command', 'expected'),
     [
