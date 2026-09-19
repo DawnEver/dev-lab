@@ -68,12 +68,17 @@ SCAN_FLOOR: Final = 80
 PROSE_CEILING: Final = 181
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
-#: module per kind, so a new module or a new kind cannot arrive under an existing waiver. Two of
-#: these need NO consumer edit and are the first to land: `agent_guard.py::path` and
-#: `rostercensus.py::path`, both hardcoded consumer paths in MACHINERY.
+#: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
+#:
+#: EVERY ONE OF THEM NEEDS A CONSUMER EDIT FIRST, and the first draft of this table claimed two did
+#: not -- `agent_guard.py::path` and `rostercensus.py::path`, on the reasoning that a hardcode in
+#: MACHINERY is this repo's to fix alone. MEASURED: wdg-lab and optimi-lab both import
+#: `famtests.rostercensus` and both name `agent_guard` in their placement rosters, so turning either
+#: hardcode into a no-default argument reds two trees. The claim was the exact defect this registry
+#: exists to refuse, one layer up, and it is left on record rather than quietly corrected.
 EVICTED: Final[dict[str, str]] = {
     'src/lab_commons/dev/_doorcensus_rows.py::data': (
-        '18 `DoorRow(repo=...)` rows for the three consumers. Read only by this repo`s own tests -- '
+        '20 `DoorRow(repo=...)` values for the three consumers, over 15 rows. Read only by this repo`s own tests -- '
         'wdg-lab`s single mention of `DOORS` is in a COMMENT, measured -- so the deletion reds only '
         'this repo`s floors, and those must be RE-MEASURED by executing the scan rather than '
         'lowered. Blocked on each consumer holding its own census.'
@@ -121,14 +126,16 @@ EVICTED: Final[dict[str, str]] = {
     'src/lab_commons/dev/agent_guard.py::path': (
         'THE THREE `.claude/` PATHS, AND THEY ARE IN THE MACHINERY. `deny-commands.js`, '
         '`deny-rules.json` and `settings.json` resolve in all three consumers and in NEITHER this '
-        'checkout -- the guard hardcodes a layout it cannot itself exhibit. This is the second '
-        'eviction that needs no consumer edit: the three names become an argument.'
+        'checkout -- the guard hardcodes a layout it cannot itself exhibit. The three names become '
+        'an argument, which both consumers` placement rosters name `agent_guard` against, so the '
+        'edit is theirs to take too.'
     ),
     'src/lab_commons/dev/famtests/rostercensus.py::path': (
         '3 `scripts/repo/worktree_debris.py` literals hardcoded in the MACHINERY, which is worse '
         'than the same path in a data module: a census body that knows one consumer`s filename '
-        'cannot be run by a consumer that spells it differently. This one needs no consumer edit '
-        'and is the first eviction to land.'
+        'cannot be run by a consumer that spells it differently. They sit inside a PLANTED CONTROL, '
+        'which is why they are here and not in SYNTHETIC: the plant is shaped like a real file in a '
+        'real consumer, and that is what makes it a control rather than a fiction.'
     ),
 }
 
