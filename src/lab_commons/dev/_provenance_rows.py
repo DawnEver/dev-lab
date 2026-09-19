@@ -202,6 +202,24 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # readings half, `famtests/_datedmemory_readings.py`, because it is a fact about the readers.
     'datedmemory': ('supersedes', 'tests/architecture/test_memory_lives_under_a_date.py'),
     'hookinstall': ('supersedes', 'tests/architecture/test_the_declared_hooks_are_installed.py'),
+    # TWO consumer copies under ONE filename, 91.5% identical in CODE, and a byte diff says the 8.5%
+    # is a docstring plus one noun -- the repo's own name, four times. `lab_commons.dev.dep` already
+    # published the MECHANISM (`Port`, `mutate`, the two gap sentences, the refusal, the retirement);
+    # the ASSERTIONS over it were what stayed forked, which is the class of row that has no import to
+    # be found by. NOT a second spelling of `dep` itself: that module OWNS the door -- it composes the
+    # argv, refuses, retires and renders -- and this only asserts on what it returned. NOT `boxseat`
+    # either, its nearest neighbour BY IMPORT: both touch `BoxLock`, but this plants a holder solely
+    # so an ADAPTER can be caught answering "nobody" forever, and asserts nothing about exclusion.
+    'depdoor': ('supersedes', 'tests/architecture/test_the_dependency_door_is_wired.py'),
+    # THE OTHER HALF OF THAT PAIR, from the same two audit lanes on the same day: 84.6% identical,
+    # and the 15.4% is a docstring, ONE value (the private pool name) and four messages that differ
+    # only in where the line wraps. `boxlock` publishes the exclusion and `boxwait` the bounded wait;
+    # this is the body that DRIVES them. NOT inside either: those are 2 and 4 public names about
+    # HOLDING a seat, while this takes no real lock at all -- every plant is on an injected
+    # `resource_dir=`, because the body runs inside a verdict run already holding the real one. The
+    # one behavioural difference from both forks is deliberate and named in the module: their
+    # `parameters.keys() >= {...}` is an EQUALITY here, since a superset cannot see an addition.
+    'boxseat': ('supersedes', 'tests/architecture/test_the_verdict_run_takes_the_box.py'),
     # NOT a second spelling of `bounded`, which OWNS THE WAIT -- it runs a child under a wall, reaps
     # the tree and prices the width. This owns THE SCAN. Measured 2026-09-18: the two surfaces share
     # no name and no argument type, the refusals are opposite in kind (terminate one live tree vs

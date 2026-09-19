@@ -109,6 +109,19 @@ WHAT IS HERE, one module per shared body:
   both are members of published sets. The VERDICTS; the readings are the private
   ``_upperbounds_readings`` beside it and are re-exported here.
 
+* :mod:`lab_commons.dev.famtests.depdoor` -- a dependency change goes through the door: both adapters
+  answered, the gaps rendered when either goes, and the retirement two-sided. THE ASSERTIONS over
+  :mod:`lab_commons.dev.dep`, which already owned the MECHANISM -- the first row here whose gap was
+  found by two audit lanes that did not know of each other, converging on the same two files.
+
+* :mod:`lab_commons.dev.famtests.boxseat` -- the repo's own verdict entry point takes the box's one
+  seat, releases it, and cannot buy an exemption with a pool name of its own. The PAIR to
+  ``depdoor``, and the boundary between them is worth stating because both import ``BoxLock``: this
+  one is about the EXCLUSION and plants two parties sharing nothing but a path; that one plants a
+  holder only so an ADAPTER can be caught answering "nobody" forever. The entry point is an ARGUMENT
+  here where both forks hard-coded :func:`lab_commons.dev.verify.run_verify` -- a repo with a runner
+  of its own would have asserted about a function it does not call, and read green.
+
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in
   all four, and the bars it is judged against are arguments rather than a property closing over one
