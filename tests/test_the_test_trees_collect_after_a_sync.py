@@ -18,12 +18,24 @@ from _collect_census import (
     PATHS,
     CollectRow,
     CollectRowError,
+    UnresolvedSupplierError,
+    VacuousTreeScanError,
+    assert_no_unresolved_has_a_declared_supplier,
     assert_reaches,
+    derivable_suppliers,
     measure,
     present,
     readings_of,
 )
-from _collect_census_rows import FILE_FLOORS, REPO_FLOOR, ROW_FLOOR, ROWS
+from _collect_census_rows import (
+    FILE_FLOORS,
+    PAIR_FLOOR,
+    REPO_FLOOR,
+    ROW_FLOOR,
+    ROWS,
+    UNRESOLVED_WHY,
+    WHY_FLOOR_PER_NAME,
+)
 
 from lab_commons.dev.collectscope import ALIASES, STDLIB
 
@@ -113,3 +125,84 @@ def test_the_measurement_is_the_real_join_and_not_a_recorded_number() -> None:
     found = measure(HERE, BASE / PATHS[HERE], ('dev',))
     assert found.files >= FILE_FLOORS['lab-commons'], found.files
     assert (found.errors, found.degrades, found.unresolved) == (frozenset(), frozenset(), frozenset())
+
+
+def _planted(unresolved: frozenset[str]) -> CollectRow:
+    """One row over the repo this file runs in, so a planted control drives the REAL declared set."""
+    return CollectRow(
+        repo=HERE,
+        selected=('dev',),
+        errors=frozenset(),
+        degrades=frozenset(),
+        unresolved=unresolved,
+        why='planted. ' * 40,
+    )
+
+
+def test_no_residue_name_has_a_declared_supplier_in_its_own_manifest() -> None:
+    """THE MISSING DIRECTION, and the defect it was written for was live when it arrived.
+
+    The alias table already had the arm that refuses a row no tree reaches. This is its other side:
+    a name reported UNRESOLVED while the SAME manifest declares something its spelling derives as a
+    supplier. Run against the residue as first recorded it convicts `pdfminer` -> `pdfminer.six`
+    immediately, which is why the table above no longer says five names.
+    """
+    pairs = assert_no_unresolved_has_a_declared_supplier(ROWS, pair_floor=PAIR_FLOOR)
+    assert pairs >= PAIR_FLOOR, pairs
+
+
+def test_a_residue_name_its_own_manifest_declares_is_convicted() -> None:
+    """THE PLANTED CONTROL, through the real guard and over lab-commons' REAL declared set.
+
+    `pytest` is planted as residue; the manifest declares `pytest-cov` and `pytest-mock`, so the
+    derivation fires. Revert the guard and this row passes silently -- which is precisely what the
+    five-name residue did.
+    """
+    with pytest.raises(UnresolvedSupplierError, match='not a transitive dependency'):
+        assert_no_unresolved_has_a_declared_supplier((_planted(frozenset({'pytest'})),), pair_floor=1)
+
+
+def test_the_derivation_refuses_to_force_the_half_a_spelling_cannot_reach() -> None:
+    """BOTH FAILURE DIRECTIONS OF THE DERIVATION, and the second is the one that keeps it honest.
+
+    `pdfminer` and `OCP` are derived from real declared sets with no table consulted. `win32com`,
+    `pywintypes` and `pydantic_core` are NOT, and must not be: nothing in `pywin32`'s spelling
+    reaches either import name, and `pydantic-core` is a distribution distinct from the declared
+    `pydantic`. A rule loose enough to catch those would read every `foo-bar` as supplying `foo`.
+    """
+    checked = 0
+    for repo, derived, refused in (
+        ('motronics-studio', {'pdfminer': 'pdfminer-six'}, ('win32com', 'pywintypes', 'tomlkit')),
+        ('wdg-lab', {'OCP': 'cadquery-ocp'}, ('pydantic_core', 'scipy')),
+    ):
+        if not present(repo):
+            continue
+        _, _, declared, _ = readings_of(repo)
+        for name, supplier in derived.items():
+            assert derivable_suppliers(name, declared) == frozenset({supplier}), name
+        for name in refused:
+            assert derivable_suppliers(name, declared) == frozenset(), name
+        checked += 1
+    assert checked >= 1, 'the derivation control read no sibling manifest, so it proved nothing'
+
+
+def test_a_derivation_scan_that_read_nothing_is_refused() -> None:
+    """THE FLOOR'S OWN CONTROL: a clean answer over zero pairs is vacuous, not green."""
+    with pytest.raises(VacuousTreeScanError, match='below the floor'):
+        assert_no_unresolved_has_a_declared_supplier((), pair_floor=1)
+
+
+def test_every_residue_name_carries_a_reason_and_no_reason_outlives_its_name() -> None:
+    """BOTH SIDES OF THE RESIDUE TABLE. A bare list of names cannot say whether it was checked.
+
+    The live residue is DERIVED from the rows the box can actually read, so a new unsettled import
+    arrives as a reason somebody wrote, and a name that stops being unsettled takes its reason with
+    it rather than leaving a waiver nothing uses.
+    """
+    named = frozenset(name for row in ROWS for name in row.unresolved)
+    assert named, 'the table records no residue at all, so both halves of this assertion are vacuous'
+    assert named == frozenset(UNRESOLVED_WHY), sorted(named ^ frozenset(UNRESOLVED_WHY))
+    live = frozenset(name for row in ROWS if present(row.repo) for name in row.unresolved)
+    assert live, 'no row the box can read reports a residue, so the table above was never re-measured'
+    for name, why in UNRESOLVED_WHY.items():
+        assert len(why) >= WHY_FLOOR_PER_NAME, f'{name}: {len(why)} characters'

@@ -42,6 +42,7 @@ TEXT, in a fixed order, and the residue is REPORTED rather than dropped:
 4. UNRESOLVED -- reported BY NAME. A transitive dependency no manifest declares cannot be settled
    from a manifest, because whether it survives is a property of the LOCK graph. Never guessed
    either way: "assume present" agrees with every selection and "assume absent" convicts the family.
+   **AUDITED THE OTHER WAY**: a residue its own manifest can supply is a SHORT TABLE, and refused.
 
 A CONDITIONAL IMPORT DEGRADES AND IS NOT A STRAND. A ``try/except ImportError``, an
 ``if TYPE_CHECKING:`` and a module-scope ``pytest.importorskip`` all leave the module collectable,
@@ -103,6 +104,9 @@ ALIASES: Final[dict[str, frozenset[str]]] = {
     'OCP': frozenset({'cadquery-ocp', 'cadquery-ocp-novtk'}),
     'PIL': frozenset({'pillow'}),
     'cv2': frozenset({'opencv-contrib-python', 'opencv-python', 'opencv-python-headless'}),
+    'pdfminer': frozenset({'pdfminer-six'}),
+    'pywintypes': frozenset({'pywin32'}),
+    'win32com': frozenset({'pywin32'}),
     'yaml': frozenset({'pyyaml'}),
 }
 

@@ -26,9 +26,12 @@ THE FINDING, and it is two COMPLETE rows and one documented repair:
   declares it only in a `tooldrivers` extra no recorded incantation names. That row is here
   precisely because it is the closest thing the family has to a correct answer.
 
-UNRESOLVED IS RECORDED, NEVER TOLERATED. A name no committed text can settle -- a transitive
-dependency no manifest declares -- is pinned by EQUALITY like everything else, so a new one is an
-edit somebody looked at rather than a hole that widens quietly.
+UNRESOLVED IS RECORDED, NEVER TOLERATED, AND AS OF 2026-09-19 IT IS ALSO AUDITED. A name no
+committed text can settle is pinned by EQUALITY like everything else -- but equality alone only
+proved the list did not CHANGE, never that it was right, and the first residue this table recorded
+was WRONG in three of its five names. `UNRESOLVED_WHY` below carries a reason per name and
+`assert_no_unresolved_has_a_declared_supplier` refuses a name the manifest beside it already
+answers, so a short table now fails where before it merely sat there looking like a blind spot.
 """
 
 from __future__ import annotations
@@ -37,9 +40,12 @@ from _collect_census import CollectRow
 
 __all__ = [
     'FILE_FLOORS',
+    'PAIR_FLOOR',
     'REPO_FLOOR',
     'ROWS',
     'ROW_FLOOR',
+    'UNRESOLVED_WHY',
+    'WHY_FLOOR_PER_NAME',
 ]
 
 #: One row per (repo, selection). Three sets, each by EQUALITY in both directions.
@@ -101,15 +107,18 @@ ROWS: tuple[CollectRow, ...] = (
                 'wdg-lab',
             }
         ),
-        degrades=frozenset({'gmsh'}),
-        unresolved=frozenset({'pdfminer', 'pywintypes', 'tomlkit', 'win32com', 'yaml'}),
+        degrades=frozenset({'gmsh', 'pdfminer-six', 'pywin32'}),
+        unresolved=frozenset({'tomlkit', 'yaml'}),
         why=(
             'THE FINDING. This is the selection `_synccensus_rows.py` scores COMPLETE and calls the '
             'sanctioned spelling, and it is right: the runner survives it. The tree it leaves cannot '
             'be collected -- seven distributions are hard module-scope imports under `tests/` and '
             'none of them is in `pareto` or `dev`. The scope and the reach disagree because they are '
-            'different questions, which is the entire argument for this module existing; `yaml` is '
-            'UNRESOLVED rather than stranded because pyyaml reaches that tree transitively and no '
+            'different questions, which is the entire argument for this module existing. `pdfminer-six` and '
+            '`pywin32` sit in DEGRADES rather than in the residue as first recorded: both are '
+            'declared -- `pdfminer.six` in `img-to-cad`, `pywin32` in BOTH `femm` and `tooldrivers` '
+            '-- and every use of them is guarded, so this selection makes them skip rather than '
+            'strand. `yaml` stays UNRESOLVED because pyyaml reaches that tree transitively and no '
             'manifest in it declares any supplier, so no text here can settle whether it survives.'
         ),
     ),
@@ -118,7 +127,7 @@ ROWS: tuple[CollectRow, ...] = (
         selected=('all', 'dev', 'img-to-cad'),
         errors=frozenset({'pillow'}),
         degrades=frozenset(),
-        unresolved=frozenset({'pdfminer', 'pywintypes', 'tomlkit', 'win32com', 'yaml'}),
+        unresolved=frozenset({'tomlkit', 'yaml'}),
         why=(
             'THE RECORDED REPAIR, STILL ONE EXTRA SHORT. The sibling table names this as "the '
             'incantation that actually restored the box" and it is the best selection the family has '
@@ -147,3 +156,52 @@ REPO_FLOOR: int = 2
 
 #: The floor under how many ROWS were checked. Below it the run reached repos and judged no selection.
 ROW_FLOOR: int = 3
+
+
+#: The shortest a residue REASON may be. Shorter than a row's `WHY_FLOOR` because the subject is one
+#: name rather than a whole selection, and long enough that "transitive" alone cannot be the answer.
+WHY_FLOOR_PER_NAME: int = 160
+
+#: EVERY name the table reports UNRESOLVED, and WHY no committed text settles it. Pinned in BOTH
+#: directions against the live residue: a new one cannot arrive without a reason, and a name that
+#: stops being unresolved cannot leave its reason behind as a waiver nothing uses.
+#:
+#: THIS TABLE IS THE CORRECTION TO 2026-09-19's FIRST RESIDUE. That reading was
+#: `{pdfminer, pywintypes, tomlkit, win32com, yaml}` and was reported as "all transitive, none
+#: declared by any manifest". Three of the five were declared -- by the manifest being read, in
+#: extras that were sitting right there -- and nothing could tell, because a residue is a bare list
+#: of names and a bare list of names looks the same whether it was checked or assumed. Writing the
+#: reason per name is what makes the assumption fail out loud; `derivable_suppliers` is what catches
+#: the half a spelling can settle without anybody writing anything.
+UNRESOLVED_WHY: dict[str, str] = {
+    'pydantic_core': (
+        'THE ONE THAT REALLY IS TRANSITIVE, and it is the near-miss the derivation must NOT force: '
+        'wdg-lab declares `pydantic`, and `pydantic-core` is a DIFFERENT distribution -- pydantic '
+        'depends on it and pins its version, so it arrives through the lock graph. No spelling rule '
+        'relates a declared name to a name that merely starts with it, and inventing one would read '
+        'every `foo-bar` in a manifest as the supplier of `foo`.'
+    ),
+    'scipy': (
+        'GENUINELY UNDECLARED: `scipy` appears nowhere in the wdg-lab manifest -- not in the base, not '
+        'in an extra -- and it is imported at module scope in its test tree anyway, so it is reaching '
+        'that environment through the requirements of some other distribution. Whether a prune keeps it '
+        'is a property of the LOCK, which no reading of a manifest can answer.'
+    ),
+    'tomlkit': (
+        'UNDECLARED IN MOTRONICS, and unlike `yaml` it needs no alias either: the import name IS the '
+        'distribution name, so `resolve` rule 1 would have claimed it the moment any manifest in that '
+        'repo declared it. None does. It arrives transitively -- commitizen and pdoc-class tooling '
+        'both carry it -- and a manifest cannot say whether a prune keeps it.'
+    ),
+    'yaml': (
+        'AN ALIAS WITH NO DECLARED SUPPLIER TO POINT AT. `yaml` is `pyyaml` and the ALIASES row says '
+        'so, but ALIASES only ever narrows to distributions the manifest DECLARES, and motronics '
+        'declares no pyyaml anywhere. So the row resolves nothing here and the name falls to the '
+        'residue, which is the rule working: an alias must never convict a manifest on a guess.'
+    ),
+}
+
+#: The floor under how many (import name, declared distribution) pairs the derivation scan examined.
+#: MEASURED 2026-09-19 at 222 across three present rows; below it, finding no derivable supplier
+#: says only that nothing was read.
+PAIR_FLOOR: int = 180

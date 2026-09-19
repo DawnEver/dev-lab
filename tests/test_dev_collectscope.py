@@ -144,8 +144,16 @@ def test_every_alias_row_is_reached_by_the_family_scan() -> None:
     The set of import names the four test trees actually need an alias for is DERIVED by the live
     census beside this file; here it is only asserted that the table is small, keyed by import name
     and never keyed by a distribution -- the mistake the whole module exists to avoid.
+
+    RE-TAKEN 2026-09-19 with BOTH READINGS QUOTED, because the pin went UP and a pin that goes up is
+    where a bar gets quietly widened. It read ``{OCP, PIL, cv2, yaml}`` and now reads
+    ``{OCP, PIL, cv2, pdfminer, pywintypes, win32com, yaml}``. Nothing was widened: the three new
+    rows were each measured against motronics' live manifest -- ``pdfminer`` -> ``pdfminer.six`` in
+    the ``img-to-cad`` extra, ``pywintypes`` and ``win32com`` -> ``pywin32`` in BOTH ``femm`` and
+    ``tooldrivers`` -- and each had been sitting in the UNRESOLVED residue being reported as a
+    transitive dependency no manifest declares. The table was short, not blind.
     """
-    assert set(ALIASES) == {'OCP', 'PIL', 'cv2', 'yaml'}, sorted(ALIASES)
+    assert set(ALIASES) == {'OCP', 'PIL', 'cv2', 'pdfminer', 'pywintypes', 'win32com', 'yaml'}, sorted(ALIASES)
     for name, suppliers in ALIASES.items():
         assert name not in suppliers, f'{name} needs no alias: it already spells its own distribution'
         assert suppliers, f'{name} maps to no supplier, so the row can never resolve anything'
