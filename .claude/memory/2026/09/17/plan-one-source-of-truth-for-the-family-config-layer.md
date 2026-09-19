@@ -731,3 +731,68 @@ subset directions the row claimed.
 becomes adoptable here (eleven named base lines absent, a planted rendering proving the reader says
 "adoptable" for a tree that adopted), the other reds if anyone stamps the file or declares a
 `.gitignore` delta while the measurement still says not to.
+
+### `docs-src/dev/` — R6's DISSOLUTION HOLDS, and the mechanism under it did not
+
+`tests/test_the_dev_docs_tree_is_shared_by_reference.py`, lab-commons `8b964136`. The census
+family is now settled on all six artefacts: two RENDERED, two SECTION bases, one REQUIRED, and this
+one DECLINED.
+
+**The counts are unchanged — 13 / 1 / 1 / 14 — and so is the verdict.** What changed is that the
+argument is no longer a line count against prose. A `famconfig.Base` exists to keep N COPIES of one
+file agreeing; this tree has none to keep. Measured over the four live checkouts: each of the twelve
+family pages exists exactly ONCE (`copies_of_page` finds zero outside the kit), both labs hold
+`index.md` and nothing else, and motronics' eight shared filenames each link upstream and repeat
+**0.0%–1.7%** of the page they name (ceiling 10%, planted verbatim copy reads 100%). Rendering a page
+into four repos is precisely the fork the reference removed, so a base here would UNDO the migration.
+
+**THE TWO ERRORS THE RE-MEASUREMENT FOUND, and both were in the load-bearing half:**
+
+* **"Generated" was a declaration that lies.** All four dev indexes say their table is what
+  `devdocs.pointer_table` renders, *"so a page renamed there does not leave this one quietly wrong"*.
+  **Nothing outside this repo has ever called that function.** It was run once on 2026-09-16 and its
+  output PASTED into three consumers. A rename in `PAGES` would have left three tables of dead links
+  each asserting in its own text that it could not rot. By luck all three were still verbatim-equal
+  to a live render on 2026-09-19; that is what the new equality freezes.
+* **And it had already rotted, at the ORIGIN.** The kit's own `docs-src/dev/index.md` table was
+  hand-typed, not rendered: all twelve titles agreed with `PAGES` and **six of the twelve subjects did
+  not**. Two tables describing the same twelve pages, disagreeing on half of them, and the
+  registry-driven one is the one shipped to three other repos. Fixed at the source rather than pinned:
+  the kit's table is `pointer_table('.')` now, so all four indexes are one render of one registry.
+
+The publisher-exemption shape that `.gitignore` and the Makefile each hit once more: **the one repo
+outside the contract it publishes was the one whose copy had drifted.** Third instance this week.
+
+Also closed: the census arm read `SHARED_DEV_PAGES <= pages` in both directions it checked — the
+downward-drift shape that hid a two-short `SHARED_GITIGNORE_CORE`. It is an EQUALITY against the
+live kit∩motronics intersection now (nine names), asserted from both modules.
+
+### The `DECLARED <= live` shape, swept: four cores, none short
+
+Same session, second commit. `SHARED_DEV_PAGES` was not the only subset guard in
+`tests/test_the_config_census_is_measured.py`; three more were live and all are equalities now,
+each naming in its message WHOSE drift it accuses.
+
+    core                    live  declared  accuses
+    CONSUMER_IGNORE_CORE      62        62  one of the three CONSUMERS (kit ignore is 10, its own delta)
+    MAKE_TARGET_CORE           9         9  any of the four, kit included
+    HOOK_ID_CORE              11        11  any of the four
+    SHARED_DEV_PAGES           9         9  kit or motronics
+
+**NONE was short**, which is the useful half of the result: unlike `SHARED_GITIGNORE_CORE` (12
+declared / 14 live) the constants were right and only the assertion SHAPE was wrong. So the fix was
+the mechanism in all four cases, and no number moved.
+
+`MAKE_TARGET_CORE` is the sharpest: its own comment already read *"a NAMED SET and not a floor ...
+the remedy when a repo drops one is to restore the TARGET, never to shorten this tuple"* — a
+sentence describing an equality, attached to a subset assertion, in the same commit. The
+declaration-that-lies, authored by the reviewer who was warning another lane about it.
+
+`HOOK_ID_CORE` is the one that could NOT have drifted down silently: the kit's own hook set is
+pinned EQUAL to the core two lines below, which bounds the intersection from above. Converted
+anyway, for the UPWARD half and for legibility, and the docstring says so rather than implying the
+conversion closed a hole it did not.
+
+One planted control drives all four through the real constants: drop one name from each core and
+the SUBSET still passes while the EQUALITY convicts. That is the whole argument for the change, and
+it now fails if any of the four reverts to a subset.

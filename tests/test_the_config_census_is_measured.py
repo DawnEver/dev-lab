@@ -254,6 +254,17 @@ def test_the_three_consumers_agree_on_the_select_and_diverge_by_five_codes_in_to
             'unsafe-fixes': True,
             'quote-style': 'single',
         }, f'{repo}: a scalar knob diverged, so "identical except the ignore delta" no longer holds'
+    live_core = set.intersection(*(set(ruff_ignore(reached[repo])) for repo in present))
+    assert live_core == set(CONSUMER_IGNORE_CORE), (
+        f'the three-way ignore core is now {len(live_core)} codes against the declared '
+        f'{len(CONSUMER_IGNORE_CORE)}: only-live {sorted(live_core - set(CONSUMER_IGNORE_CORE))}, '
+        f'only-declared {sorted(set(CONSUMER_IGNORE_CORE) - live_core)}. An EQUALITY because the '
+        f'subset above is satisfied by every shorter tuple, so the constant could be edited down '
+        f'forever and stay green -- the shape that hid a two-short `SHARED_GITIGNORE_CORE`. WHOSE '
+        f'DRIFT THIS ACCUSES: one of the three CONSUMERS; the kit is not in the intersection, since '
+        f'its ignore list is ten codes and is its own delta. Re-measured 2026-09-19: 62 live, 62 '
+        f'declared, so the constant was NOT short.'
+    )
 
 
 def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_three_of_it() -> None:
@@ -302,8 +313,15 @@ def test_the_makefile_core_is_three_targets_across_all_four() -> None:
     per_repo = {repo: make_targets(root) for repo, root in reached.items()}
     assert per_repo, 'no Makefile was read at all'
     common = set.intersection(*(set(t) for t in per_repo.values()))
-    assert set(MAKE_TARGET_CORE) <= common, (
-        f'the four-repo core shrank below {list(MAKE_TARGET_CORE)}: {sorted(common)}'
+    assert common == set(MAKE_TARGET_CORE), (
+        f'the four-repo common target set is now {sorted(common)} against the declared '
+        f'{list(MAKE_TARGET_CORE)}. THIS IS AN EQUALITY AND THE CONSTANT`S OWN COMMENT ALWAYS SAID SO '
+        f'-- "a NAMED SET and not a floor ... the remedy when a repo drops one is to restore the '
+        f'TARGET, never to shorten this tuple" -- while the assertion here was a subset any shorter '
+        f'tuple satisfies. Declaration and mechanism disagreed in the same commit; the mechanism '
+        f'moved. WHOSE DRIFT THIS ACCUSES: ANY of the four, the kit included. A target that JOINED '
+        f'the intersection is a real family target and belongs in the tuple and in `MAKEFILE_BASE`. '
+        f'Re-measured 2026-09-19: nine live, nine declared, so the constant was NOT short.'
     )
     absent = sorted(repo for repo, targets in per_repo.items() if 'verify' not in targets)
     assert absent == [], f'{absent} lost `verify`, the one target every repo in the family reaches its verdict through'
@@ -338,6 +356,16 @@ def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() 
     declared = {repo: hook_ids(root) for repo, root in reached.items()}
     for repo, ids in declared.items():
         assert set(HOOK_ID_CORE) <= ids, f'{repo} dropped part of the 11-hook core: {sorted(set(HOOK_ID_CORE) - ids)}'
+    common_ids = set.intersection(*(set(ids) for ids in declared.values()))
+    assert common_ids == set(HOOK_ID_CORE), (
+        f'the four-repo hook core is now {sorted(common_ids)} against the declared {list(HOOK_ID_CORE)}. '
+        f'Stated as an EQUALITY for the reason the other cores now are, with one honest caveat: this '
+        f'one could not have drifted DOWN silently, because the kit`s own set is pinned EQUAL to the '
+        f'core two lines below and the subset arm above bounds it from the other side. What this line '
+        f'adds is the UPWARD half -- an id all four repos grew is a family hook that belongs in the '
+        f'base -- and legibility, so a reader need not derive the equality from two arms. WHOSE DRIFT '
+        f'THIS ACCUSES: any of the four. Re-measured 2026-09-19: eleven live, eleven declared.'
+    )
     assert declared['lab-commons'] == set(HOOK_ID_CORE), (
         f'lab-commons declares {sorted(declared["lab-commons"])} against the family core '
         f'{list(HOOK_ID_CORE)}. The kit adopted the base with an EMPTY delta on 2026-09-17, so its set '
@@ -400,3 +428,41 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         assert '../../../lab-commons/docs-src/dev/' in stub, (
             'the motronics stub stopped pointing upstream, so its SPLITS row describes a former shape'
         )
+
+
+def test_a_planted_short_core_is_convicted_by_the_equality_and_not_by_the_subset() -> None:
+    """PLANTED CONTROL for the four cores this module now pins as EQUALITIES.
+
+    The defect being controlled for is not a wrong measurement -- all four constants re-measured
+    exactly right on 2026-09-19 -- but a wrong ASSERTION SHAPE. `DECLARED <= live` is satisfied by
+    every shorter declaration, so a constant can be edited down forever and stay green; that is how
+    `SHARED_GITIGNORE_CORE` sat at twelve against a live fourteen. This plants exactly that edit --
+    one name dropped from each core -- and shows the subset still passes while the equality convicts.
+    Without it the four equalities above are only a claim that today's numbers agree.
+    """
+    reached = reachable_repos(REPO_PATHS)
+    consumers = [repo for repo in CONSUMERS if repo in reached]
+    assert consumers, 'no consumer is checked out, so nothing below is measured against the family'
+    cores = {
+        'CONSUMER_IGNORE_CORE': (
+            set(CONSUMER_IGNORE_CORE),
+            set.intersection(*(set(ruff_ignore(reached[r])) for r in consumers)),
+        ),
+        'MAKE_TARGET_CORE': (
+            set(MAKE_TARGET_CORE),
+            set.intersection(*(set(make_targets(r)) for r in reached.values())),
+        ),
+        'HOOK_ID_CORE': (set(HOOK_ID_CORE), set.intersection(*(set(hook_ids(r)) for r in reached.values()))),
+    }
+    if 'motronics-studio' in reached:
+        cores['SHARED_DEV_PAGES'] = (
+            set(SHARED_DEV_PAGES),
+            dev_pages(reached['lab-commons']) & dev_pages(reached['motronics-studio']),
+        )
+    assert len(cores) >= 3, 'the control lost the cores it exists to drive'
+    for name, (declared, live) in cores.items():
+        assert declared, f'{name} is empty, so both shapes below are vacuous'
+        assert declared == live, f'{name}: {len(declared)} declared against {len(live)} live -- fix the CONSTANT'
+        shortened = declared - {min(declared)}
+        assert shortened <= live, f'{name}: a short core fails even the SUBSET, so this control proves nothing'
+        assert shortened != live, f'{name}: the equality accepts a core one name short -- it is not an equality'
