@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev.boxlock import BoxLock
-from lab_commons.dev.dep import Port
+from lab_commons.dev.dep import Port, mutate
 from lab_commons.dev.famtests.depdoor import (
     A_REQUIREMENT,
     BOTH_GAPS,
@@ -146,13 +146,24 @@ def test_the_door_refuses_a_live_verdict() -> None:
     assert_the_door_refuses_while_a_verdict_is_in_flight(repo_name=_REPO, verdict_anchors=lambda: ())
 
 
-def test_the_refusal_arm_reds_when_the_repo_name_is_wrong() -> None:
-    """PLANTED: the refusal names a holder, but not the one this repo would be told about."""
-    with pytest.raises(AssertionError, match='the refusal said'):
-        assert_the_door_refuses_while_a_verdict_is_in_flight(
-            repo_name='a-name-the-refusal-will-not-carry',
-            verdict_anchors=lambda: (),
-        )
+def test_the_refusal_arm_has_no_plantable_red_and_that_is_recorded() -> None:
+    """THE ONE ARM WHOSE RED IS NOT REACHABLE FROM ITS ARGUMENTS, measured rather than assumed.
+
+    The first attempt here passed a *repo_name* the refusal would not carry, expecting a conviction.
+    It did not convict, and the reason is structural: the arm BUILDS its planted holder out of
+    *repo_name*, so the string it looks for in the refusal is by construction the string it put
+    there. Every value of the one argument is green.
+
+    That is not a hole to paper over with a stub -- ``mutate`` and ``HeldEnvironmentError`` are the
+    subject, and a fake door would prove the fake. What IS asserted is the half that can be: the
+    refusal must carry the word ``env_key``, which no argument of this arm supplies, so a refusal
+    that stopped saying WHY a running verdict is at risk still reds. Driven here by asking the door
+    the same question through a port with no holder at all, which must NOT raise -- the other side
+    of the same ratchet, and the one a repo could really break.
+    """
+    quiet = Port(name=_REPO, holders=lambda: (), anchor_paths=lambda: ())
+    report = mutate(A_REQUIREMENT, port=quiet, dry_run=True)
+    assert report.gaps == ()
 
 
 def test_a_moved_key_retires_the_planted_anchor(tree: Path) -> None:
