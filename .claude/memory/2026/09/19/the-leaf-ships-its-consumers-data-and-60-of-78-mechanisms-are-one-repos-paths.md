@@ -1,6 +1,13 @@
-# The leaf ships its consumers' data, and 60 of 78 mechanisms are one repo's paths
+---
+name: the-leaf-ships-its-consumers-data-and-60-of-78-mechanisms-are-one-repos-paths
+description: lab-commons is the family's leaf and its dev layer had absorbed per-consumer data and per-consumer tree paths as shipped source, against its own README tier-1 rule and its own statement-and-mechanism page. Measured by ast over src/lab_commons - 38 executable data values naming a sibling, 153 path constants this checkout cannot resolve (60 of them in the rules registry, 58 resolving only in motronics-studio), and 181 prose mentions across 119 modules. motronics-studio does not import lab_commons.dev at all, so the largest block is data about a repo that never reads it. Designs the parametrized seam, names per module what stays and what moves, and records the eviction order.
+metadata:
+  type: project
+created: 2026-09-19
+accessed: 2026-09-19
+---
 
-`created: 2026-09-19, accessed: 2026-09-19`
+# The leaf ships its consumers' data, and 60 of 78 mechanisms are one repo's paths
 
 ## What was asked, and what is measured rather than argued
 
@@ -61,6 +68,25 @@ stator, motor).
 
 Raw totals for the repo-name scan alone: **399 hits on 341 lines in 85 of 117 modules.**
 
+## The two instruments disagree by a little, and BOTH numbers stay on record
+
+The counts above were taken by a line-based grep with an `ast` context pass. The shipped scan
+(`lab_commons.dev.foreign`) re-took them and reads **38 data / 153 path / 181 prose** against the
+grep's **36 / 41-by-shape / 183**. The scan is the instrument that can REFUSE, so its numbers are
+what `_foreign_rows.py` pins; the grep's stay here because a reader who finds them elsewhere
+deserves to know which instrument took which.
+
+Three deliberate differences, each a decision rather than a discrepancy:
+
+* the scan calls a string over 120 characters PROSE wherever it sits, because a row's `why=` is a
+  paragraph explaining a decision. That moves 21 `_unit_tokens` / `_famconfig_pyproject_rows` /
+  `_deny_rows` justification sentences out of DATA, which is where the grep had them;
+* the scan defines a PATH as "path-shaped, has a source-or-config extension, and does NOT resolve
+  against this checkout" -- which is portable (no sibling checkout needed) and which is why its
+  path count is 153 rather than the grep's 41: the grep only counted paths that also named a
+  sibling, and most foreign paths do not;
+* the scan reads 119 modules against the grep's 117, because it does not require git-tracking.
+
 ## The fact that reframes all of it
 
 **motronics-studio does not import `lab_commons.dev` at all.** Measured: its 106 `lab_commons`
@@ -103,7 +129,15 @@ Per module, what moves out and what stays:
 Prose cannot hold this: the drift happened while both rules pages were being read on every turn.
 So the finding ships as `lab_commons.dev.foreign` -- a scan that classifies every string constant
 under `src/lab_commons/` into the three kinds above, and an arm
-`assert_no_foreign_data(findings, *, waived)` whose `waived` argument has NO DEFAULT.
+`assert_no_foreign_data(findings, *, evicted, synthetic, read, floor)` -- no argument has a
+default, because a missing row must be a refusal and never a silent fall-back, which is the failure
+this module is about, one layer in.
+
+The waiver is TWO named sets, not one. `EVICTED` is the eviction ORDER: rows that must go, each
+with the reason the deletion is not in this pass. `SYNTHETIC` is the path-shaped strings that name
+no tree at all -- `tests/a/test_fast.py` in a refusal message, `planted/recipe.py` in a worked
+example. Merging them would put rows in the eviction list that are never going anywhere, and a
+waiver list nobody believes is a waiver list nobody reads.
 
 Two-sided, as a ratchet must be:
 

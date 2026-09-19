@@ -109,6 +109,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # second -- three consumers adopted `installdoor` with three differently-shaped door sets and no
     # tree could see the other two. There is no path to name because there was no prior mechanism.
     'doorcensus': ('original',),
+    # ORIGINAL, and the row is worth its comment because the thing it measures is THIS package. No
+    # prior mechanism asked whether the LEAF carries a consumer's data: the README's tier-1 rule and
+    # `.claude/rules/statement-and-mechanism.md` both stated it, both were read on every turn, and
+    # the `dev` layer absorbed 38 executable values, 153 unresolvable paths and 181 prose mentions
+    # anyway. There is no path to name because prose was the only prior mechanism, and it lost.
+    'foreign': ('original',),
     'installdoor': ('original',),
     'logref': ('original',),
     # Both named by `netverb`'s docstring as the vacuum it closes, and both ADOPTED it on 2026-09-17
