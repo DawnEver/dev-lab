@@ -580,6 +580,79 @@ three different behaviours on the identical requirement string, **and the revert
 that runs automatically on every commit.** That is why "read the command text" was not a
 measurement here, and why this file recorded the wrong cause twice before measuring the lock.
 
+## THE INSTALL DOORS, SETTLED 2026-09-19 -- and three of this file's four claims about them were wrong
+
+The section below listed four doors with four behaviours and called that the gap. Re-measured, the
+FRAMING was the gap: `lab_commons.dev.installdoor` already existed and **all four repos had already
+adopted it**, each with its own door set. Nothing could see ACROSS those four sets, which is a
+different defect and the one that was built.
+
+**Claim by claim, against this file's own text:**
+
+* **"`make install-dev` reverts the kit"** -- REFUTED. wdg-lab's target is `uv pip install -U` then
+  `uv pip install -e ".[...]"`, and `uv pip install` RE-RESOLVES a bare git URL. It was suspected on
+  2026-09-17, recorded here as measured, and was never the defect. The two doors that really did
+  revert were a pre-push hook and a changelog hook, both already remedied with `--no-sync`.
+* **"wdg-lab's `scripts/dep.py` re-clones"** -- confirmed in shape and NOT a defect: it delegates to
+  `lab_commons.dev.dep`, which spells `sys.executable -m pip install`, and pip re-cloning a direct
+  URL is correct there. Recorded as DECLINED with its covering mechanism named.
+* **"`dep_sync` prunes"** -- the revert half was ALREADY fixed (`--upgrade-package` per floating
+  requirement). The prune half is real and is the thread everything else hangs from.
+* **`uv run` without `--no-sync`** -- confirmed, and it produced the headline finding below.
+
+### THE SHARED DOOR: owned by a repo for which it is vacuous, used by repos that could not see it
+
+`lab-commons/.github/workflows/python-verify.yml` is a REUSABLE workflow that runs in every
+CALLER's checkout and holds three lock-consuming commands. Classified against lab-commons' own
+floating names it reads INERT three times over -- because the kit IS the kit. Classified against a
+caller's names, all three are REVERTS. No caller could see it: optimi-lab's `ci.yml` is a thin
+caller with zero commands of its own.
+
+lab-commons' own test docstring CLAIMED this file was a door of every caller, and the claim was
+inert, because the scan was handed this repo's empty name set. **A declaration that lies, inside
+the instrument built to find them.** Remedied cause-sized (`--no-sync` on the two `uv run` steps),
+and the condition the remaining `uv sync` rests on -- that no lock is ever checked out -- is now a
+mechanism rather than a sentence.
+
+### THE REMEDY PRINTED AFTER A PRUNE RE-CAUSED THE PRUNE, and then once more one layer down
+
+`dep_sync` printed, immediately after removing 83 distributions: *"re-run naming every extra you
+need (`--extra all` where the project declares it)"*. motronics DOES declare `all`, and `all` is
+`motronics[euclid,maxwell,pareto,femm,gui,native]` -- no `dev`, which is where pytest and ruff
+live. **A refusal that names its remedy is this family's rule; a refusal whose remedy reproduces
+the failure is that rule inverted**, and nothing caught it because the advice is PROSE the code
+never consults. Fixed in motronics with a mechanism that expands every named extra through the
+repo's own manifest (`1a5094982`).
+
+**That fix was still not enough, and the second reading is the more general lesson.** A
+runner-shaped question cannot see a collection-shaped hazard: `--extra all --extra dev --extra
+img-to-cad`, recorded as "the incantation that actually restored the box", leaves the runner whole
+and still strands `pillow` -- declared only in `tooldrivers`, a group named by no incantation, no
+document and no running line of code in that repo. **There was no selection on record that could
+collect motronics' own test tree.** Corrected in `d1ff1d78c`, whose guard now accounts for EVERY
+declared group, with an omission requiring a written reason.
+
+### What the family can now answer, and what it still cannot
+
+Two readers, both wired to all four repos, both answering from COMMITTED TEXT (nothing is ever
+installed, synced or pruned to measure it):
+
+* `lab_commons.dev.syncscope` -- will the test RUNNER survive this selection? (`COMPLETE` /
+  `STRANDS` / `INERT` / `UNMEASURED`)
+* `lab_commons.dev.collectscope` -- will the tree still COLLECT? The join is import-name to a SET
+  of suppliers (`cv2` may be `opencv-python` or `opencv-python-headless`; only candidates the
+  manifest declares are used, else `UNRESOLVED`).
+
+**Named blind spots, and they are the honest ceiling of a text-only answer:** `conftest.py`
+`collect_ignore`, `importlib`/string imports, a distribution that installs but fails to LOAD (ABI),
+and whether an UNRESOLVED name survives. That last residue is pinned by equality rather than waved
+at -- `pdfminer, pywintypes, tomlkit, win32com, yaml` in motronics, `pydantic_core, scipy` in
+wdg-lab, all transitive and declared by no manifest, so no text settles them.
+
+**AND A CORRECTION THAT COST THE MOST TO LEARN:** a module behind `pytest.mark.skipif` is NOT
+guarded. `pytestmark` is created BY the module body, so a module-scope import runs before pytest
+can read the mark. Treating marks as guards scores the loudest real hazard in the family as safe.
+
 **A FOURTH BEHAVIOUR, measured 2026-09-18 in the motronics lane, and it is DESTRUCTIVE rather than
 merely divergent.** The risk this file anticipated at that door was a credential failure. What
 happened is the opposite: `dep_sync --sync` SUCCEEDED, and with no `--extra` it PRUNED the
