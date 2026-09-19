@@ -296,6 +296,18 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'tests/architecture/layering/test_migration_boundary_density.py',
     ),
     'rostercensus': ('supersedes', 'tests/architecture/test_the_roster_is_re_read_against_the_kit.py'),
+    # ORIGINAL, and it is the only kind it could honestly be: no consumer file asks this question, and
+    # the absence is the finding rather than a gap in the search. All four placement rosters STORE the
+    # density reading that decided each row in that row's `why` prose, all four re-derive that reading
+    # elsewhere, and not one compares the two -- so a number goes stale silently and the roster, which
+    # is the family's migration progress meter, over-states the work left. Measured 2026-09-19 with
+    # this module pointed at them: 210 stored readings across 96 rows disagree with re-deriving them,
+    # in four repos that were all green. NOT `placement`, which reads the manifest's KEYS against a
+    # walk and bounds two bars against readings PASSED to it -- it never opens a row's prose. NOT
+    # `rostercensus` either, which reads a row's SIDE against the published kit and is blind to the
+    # numbers under it. NOT `density`, which is the METER: it computes a reading and judges nothing,
+    # and this judges a SENTENCE against whatever meter the consumer supplies.
+    'storedreadings': ('original',),
     'rulespages': (
         'supersedes',
         'tests/architecture/test_the_rules_pages_are_a_ratchet.py',

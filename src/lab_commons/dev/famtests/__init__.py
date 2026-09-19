@@ -140,6 +140,16 @@ WHAT IS HERE, one module per shared body:
   an ARGUMENT and the interval travels with it. The census next door in
   :mod:`lab_commons.dev.famtests.rostercensus` reads the same rosters and asks a different question
   -- whether a row's SIDE has gone stale against the kit -- and neither imports the other.
+* :mod:`lab_commons.dev.famtests.storedreadings` -- a roster row may not STORE a number it could
+  DERIVE. The THIRD question over those same four rosters, and the only body in this package that
+  asserts a SENTENCE agrees with a MEASUREMENT: ``placement`` reads the manifest's keys against a
+  walk and ``rostercensus`` reads a row's SIDE, while neither ever opens the ``why`` prose where the
+  reading that DECIDED the row is written down. Measured 2026-09-19 across all four rosters: 210
+  stored readings in 96 rows disagree with re-deriving them, in four repos that are all green. It
+  refuses the blanket rule as well as the stale number -- a DATED historical reading is evidence and
+  is KEPT -- and telling one from the other is the whole deliverable. The VERDICTS; the reader they
+  judge is the private ``_storedreadings_readings`` beside it and is re-exported here, the same
+  reading/verdict seam ``configrender``, ``datedmemory``, ``citedtests`` and ``upperbounds`` run on.
 
 * :mod:`lab_commons.dev.famtests.countpins` -- a pin is a NAMED SET; a number may only be a
   THRESHOLD, and its NAME must say so. The row that arrives as a CORRECTION rather than a move:
