@@ -39,10 +39,19 @@ THE_ONE_WRITER = 'src/lab_commons/log.py'
 #: The streams whose encoding this library never chooses -- it is the terminal's, or the pipe's.
 NOT_OURS = ('stdout', 'stderr')
 
-#: MEASURED 2026-09-18: 88 tracked modules under ``src/``. Set below it with room for ordinary
-#: deletion; the headroom re-prices the floor well before it stops separating a clean scan from a
-#: walk that lost its tree.
-MODULE_FLOOR = 70
+#: RE-MEASURED 2026-09-19: 117 tracked modules under ``src/``, and BOTH NUMBERS STAY ON RECORD.
+#: The row above read "MEASURED 2026-09-18: 88" and the tree held 111 that day -- a stored reading
+#: that had already stopped agreeing with its derivation, which is precisely what
+#: :mod:`lab_commons.dev.famtests.storedreadings` (landed in this same merge) exists to convict.
+#: The floor was not repriced with it, so the headroom absorbed the drift silently until the merge
+#: that added six modules pushed the scan 47 clear of a 45 headroom and the arm finally said so.
+#:
+#: SET BELOW THE MEASUREMENT ON PURPOSE, the same shape as before: a floor refuses an UNREAD tree
+#: and is not a second pin on the count, so it carries room for ordinary deletion. THE HEADROOM IS
+#: UNCHANGED AT 45, and that is the half worth checking -- raising the floor TIGHTENS what a walk
+#: must read, while raising the headroom would widen the waiver, which is the move this guard's own
+#: docstring calls giving up the arm to keep it.
+MODULE_FLOOR = 95
 MODULE_HEADROOM = 45
 
 
