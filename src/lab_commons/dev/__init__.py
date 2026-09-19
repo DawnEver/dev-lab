@@ -216,6 +216,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.floors` -- a scan that read NOTHING is not a clean scan; both sides, no default.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.
+* :mod:`lab_commons.dev.durations` -- what every test COST, as a ledger the runner merges rather than
+  overwrites, and the two readings a ``slow`` marker set is judged by. The wall's own kills arrive
+  at ~0.0s, so they are filed at the WALL: a naive reading acquits exactly what the wall caught.
+  NOT RE-EXPORTED -- ``read``, ``write`` and ``over`` say nothing once flattened.
 * :mod:`lab_commons.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
 * :mod:`lab_commons.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.
 

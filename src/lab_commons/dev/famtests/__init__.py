@@ -141,6 +141,16 @@ WHAT IS HERE, one module per shared body:
   :mod:`lab_commons.dev.famtests.rostercensus` reads the same rosters and asks a different question
   -- whether a row's SIDE has gone stale against the kit -- and neither imports the other.
 
+* :mod:`lab_commons.dev.famtests.countpins` -- a pin is a NAMED SET; a number may only be a
+  THRESHOLD, and its NAME must say so. The row that arrives as a CORRECTION rather than a move:
+  optimi-lab claimed ``NAMED-SETS-NOT-COUNTS`` as enforced while citing three modules that merely
+  USE named sets, and wdg-lab cites the same rule at six and holds no such guard at all. NOT
+  ``density``, which also parses constants: this reads a NAME against a declared suffix vocabulary
+  where that one counts LINES against two bars, and the floor here is on CONSTANTS READ because the
+  offender population is a lower bound whose clean value is the empty set -- the same answer walking
+  the wrong directory gives. ``threshold_suffixes`` is the argument the kit must never guess: it IS
+  the exemption mechanism, so a default would be a waiver the consumer never wrote.
+
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the
 tree it is handed -- and the wheel's copy of anything is only ever the DECLARATION those files are
