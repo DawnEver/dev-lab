@@ -114,6 +114,13 @@ WHAT IS HERE, one module per shared body:
   :mod:`lab_commons.dev.dep`, which already owned the MECHANISM -- the first row here whose gap was
   found by two audit lanes that did not know of each other, converging on the same two files.
 
+* :mod:`lab_commons.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the
+  resolver is still consulted. Both sides, because a resolver nothing calls is as wrong as the
+  hardcoded path it replaced and is SILENT about it. The row whose subject is not a DOCSTRING but
+  SOURCE SOMEBODY WILL PASTE: what shipped ``.venv/Scripts/python.exe`` into two consuming repos was
+  a ``::`` RECIPE BLOCK in a module docstring, so recipe blocks are scanned and narrative prose --
+  where this family records a retirement -- is not.
+
 * :mod:`lab_commons.dev.famtests.boxseat` -- the repo's own verdict entry point takes the box's one
   seat, releases it, and cannot buy an exemption with a pool name of its own. The PAIR to
   ``depdoor``, and the boundary between them is worth stating because both import ``BoxLock``: this

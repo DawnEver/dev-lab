@@ -49,6 +49,16 @@ sharper pattern with the near-miss added to ``permits`` -- never a narrower clai
 
 from __future__ import annotations
 
+from lab_commons.dev.venvpath import VENV_LAYOUTS
+
+#: The venv interpreter, spelled for EVERY platform this kit knows, as example subjects below.
+#: DERIVED rather than typed, and the derivation is the correction: this table used to carry the
+#: Windows spelling alone, so `BARE-TEST-INVOCATION`'s pattern was only ever PROVED to refuse a
+#: venv interpreter on Windows. It does refuse the POSIX one -- `\S*python[\w.]*` reaches
+#: `.venv/bin/python` -- but nothing demonstrated it, and an example set that covers one platform
+#: is a control with a hole exactly where this family's other half runs.
+_VENV_PYTHONS: tuple[str, ...] = tuple('/'.join(parts) for parts in VENV_LAYOUTS.values())
+
 DENY_ROWS: tuple[dict[str, object], ...] = (
     {
         'id': 'BARE-TEST-INVOCATION',
@@ -70,7 +80,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'pytest tests/',
             'pytest -k thing -x',
             'python -m pytest tests',
-            '.venv/Scripts/python.exe -m pytest -q',
+            *(f'{python} -m pytest -q' for python in _VENV_PYTHONS),
             # `uv run pytest` USED to sit here. It is a SHELL LINE, not a segment, and this row's
             # examples are segments by contract (see tests/test_dev_hooks.py's docstring) -- it only
             # ever passed because the pattern hand-anchored `uv run`, which is the smell removed
