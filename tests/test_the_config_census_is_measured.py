@@ -372,6 +372,10 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
     kit_pages = dev_pages(reached['lab-commons'])
     assert len(kit_pages) >= 10, f'{len(kit_pages)} pages under lab-commons/docs-src/dev; the reader found nothing'
     assert set(SHARED_DEV_PAGES) <= kit_pages, sorted(set(SHARED_DEV_PAGES) - kit_pages)
+    # The subset above says the kit still HOLDS the shared names; it cannot see the constant drifting
+    # DOWN, which is how `SHARED_GITIGNORE_CORE` sat two short and green. The equality is below, on
+    # the live intersection, and `test_the_dev_docs_tree_is_shared_by_reference.py` asserts the same
+    # one from the other side.
     for repo in ('wdg-lab', 'optimi-lab'):
         if repo not in reached:
             continue
@@ -382,7 +386,12 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         assert 'pointer_table' in text, f'{repo} index.md no longer names the generator that keeps it honest'
     if 'motronics-studio' in reached:
         pages = dev_pages(reached['motronics-studio'])
-        assert set(SHARED_DEV_PAGES) <= pages, 'motronics lost a page it shares with the kit'
+        assert pages & kit_pages == set(SHARED_DEV_PAGES), (
+            f'the kit/motronics shared page names are now {sorted(pages & kit_pages)} against the '
+            f'declared {sorted(SHARED_DEV_PAGES)}. Asserted as an EQUALITY on purpose: a subset is '
+            f'satisfied by every shorter declaration, so the constant could be edited down forever '
+            f'and stay green.'
+        )
         own = pages - kit_pages
         assert own >= {'gate.md', 'testing.md', 'integration.md', 'user-flow.md', 'compute-resources.md'}, sorted(own)
         stub = (reached['motronics-studio'] / 'docs-src' / 'dev' / 'the-three-participants.md').read_text(
