@@ -292,6 +292,37 @@ Three further corrections to what I first wrote here:
   which is `RATCHET-TWO-SIDES` done correctly. The one surviving `exitstatus` occurrence in that
   file is a COMMENT stating the absence is deliberate (`tests/conftest.py:204`).
 
+### Three findings the optimi-lab lane handed back, and one is an UPSTREAM DEFECT
+
+1. **`famtests.storedreadings`'s PROVENANCE detector fires on a NAMED EXAMPLE.** Its own line 82
+   names `scripts/dep.py` as a worked example of the calibration comment it deliberately does NOT
+   read — so the detector convicts a sentence whose entire content is *"this module has nothing to
+   do with that file"*. A false positive INSIDE the instrument. The lane declared
+   `NAMED_BY_AN_EXAMPLE` (one member, EQUALITY-asserted) locally and **routed it back rather than
+   absorbing it**, which is right: the family's own integration page already rules that naming the
+   SHAPE beats naming an EXAMPLE. **Fix it in the kit, at line 82, by removing the example.**
+
+2. **`test_every_SPLITS_row_is_MEASURED_by_this_section` opened `assert splits` — a floor that
+   demands the manifest NEVER FINISH.** This is the sharpest instrument defect of the day and it is
+   the exact inverse of the mistake I made: I read SPLITS as "a half is pending"; this floor
+   encodes "a split must always exist". Both are wrong for the same reason — SPLITS is a
+   STATE, not a phase. A repo that legitimately reaches zero SPLITS cannot satisfy it without
+   inventing a row. Replaced with a floor on `stays_rows()`; the arm it guarded is already held,
+   strictly better, by the adjacent PLANTED-MANIFEST control, which reds on the `== STAYS`
+   narrowing whether or not the tree happens to hold a split. **Check the other repos' rosters for
+   the same floor.**
+
+3. **`_placement.py`'s own roster row is a FIXPOINT, not a value** — every edit to the row changes
+   the number the row must quote. Cost the lane three iterations. A future lane that edits it once
+   and commits WILL ship a stale reading created by the fix itself. Already named in the
+   instrument-gap section above; repeated here because it bit a second party independently.
+
+Two operational traps the lane also hit, worth carrying to the next box: a Bash call whose LAST
+command is hook-denied is denied WHOLE, so an earlier heredoc file-write in the same line silently
+does not happen; and `git worktree add` is hook-forced under `.claude/worktrees/` INSIDE the repo,
+where two architecture guards then red on the baseline tree's own `.claude/memory` — so a baseline
+run costs two spurious reds unless the worktree is removed first.
+
 **Neither lane pushed. Verify both verdicts before trusting any count above.**
 
 ## THE ONE LESSON THIS HAND-OFF IS EVIDENCE FOR
