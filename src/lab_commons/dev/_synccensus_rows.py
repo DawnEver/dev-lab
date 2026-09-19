@@ -50,7 +50,7 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
         path='.github/workflows/ci.yml',
-        line=32,
+        line=48,
         evidence="extras: 'dev'",
         selected=('dev',),
         scope='COMPLETE',
@@ -61,7 +61,13 @@ ROWS: tuple[ScopeRow, ...] = (
             'in THIS repo. `dev` here is pytest, pytest-mock, ruff and pre-commit -- the extra that '
             'gates `lab_commons.dev` -- and this manifest names no pytest plugin in `addopts`, so '
             'the verdict set is pytest and ruff and both arrive. Dropping `dev` from this one line '
-            'would leave CI green-looking and unable to run a single test.'
+            'would leave CI green-looking and unable to run a single test. '
+            'REPOINTED 2026-09-19 FROM LINE 32, AND BOTH NUMBERS STAY ON RECORD. The OS-matrix merge '
+            'inserted a 16-line `runner-os` block above this input, so the evidence text moved 32 -> '
+            '48 with not one character of it changed. The SELECTION is therefore re-measured and '
+            'identical -- `dev`, COMPLETE, stranding nothing -- and only the position moved: this is '
+            'the row doing its job, since a pin that could not notice a 16-line shift could not '
+            'notice a deletion either.'
         ),
     ),
     ScopeRow(
@@ -125,13 +131,17 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, int], str] = {
-    ('lab-commons', '.github/workflows/python-verify.yml', 83): (
+    ('lab-commons', '.github/workflows/python-verify.yml', 119): (
         'THE FAMILY HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '
         'answers UNMEASURED here by construction and the ROWS above carry the judgement, one per '
         'caller. Every other lock-consuming door in the family takes `--no-sync`, which is what '
-        'makes this set a singleton rather than a sample.'
+        'makes this set a singleton rather than a sample. '
+        'REPOINTED 2026-09-19 FROM LINE 83: the OS-matrix merge added a `runner-os` input, a matrix '
+        'axis and a 30-line comment block above this step, moving the command down 36 lines. The '
+        'command TEXT is unchanged, so what this key says about the family is unchanged and only '
+        'the position was re-measured.'
     ),
 }
 
