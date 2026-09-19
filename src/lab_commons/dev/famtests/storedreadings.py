@@ -5,10 +5,21 @@ placement roster is ``path -> Placement(side, why)``, and the ``why`` is where t
 density reading that decided the side: ``MEASURED 2026-09-19: own=29 hits=0 -> 0.00%``. Those numbers
 are DERIVABLE -- :func:`lab_commons.dev.famtests.density.measure_density` re-computes every one of
 them from the file the row names -- and they are STORED, so they go stale the moment the file changes
-and nothing anywhere notices. A sweep of the two labs read 66 rows quoting ``own=`` and found **38 of
-them disagreeing with the live reading**, in a tree where every repo was GREEN. The worst were not
-close: a row read ``own=142`` against a live 26, another ``own=77`` against 12, another ``own=88``
-against 27.
+and nothing anywhere notices. Pointed at all four rosters, this reader finds **210 stored readings
+across 96 rows that disagree with re-deriving them** -- 14 in optimi-lab, 31 in wdg-lab, 83 in
+motronics' tests roster and 82 in its scripts roster -- in four repos that were all GREEN. Measured
+examples, stored against live: ``own=402`` against 453, ``own=107`` against 183, ``own=95`` against
+69, ``-> 2.11%`` against 8.70%.
+
+THE SWEEP THAT COMMISSIONED THIS MODULE WAS ITSELF THE DEFECT IT REPORTED, and that is kept here
+because it is the strongest argument for the rule below. It read 66 rows quoting ``own=`` across the
+two labs and called 38 of them wrong, by taking the LAST ``own=`` in each row -- and in this corpus
+the last ``own=`` is usually the ``down from`` half. Its three worst cases, ``own=142`` against a
+live 26, ``own=77`` against 12 and ``own=88`` against 27, are rows that are CORRECT: each states its
+current reading first and its former reading second, exactly as it should. Separating history from
+claim, the two labs hold 45 stale READINGS rather than 38 stale rows. A guard that cannot tell a
+live claim from a dated one does not measure less than this one -- it measures something else and
+reports it in the same units.
 
 THE DIRECTION IS THE FINDING AND IT IS NOT RANDOM. Most deltas are large and NEGATIVE -- the file
 SHRANK when its kit adoption landed and the sentence describing it was never re-read -- so a roster
