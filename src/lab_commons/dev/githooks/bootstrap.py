@@ -67,6 +67,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.venvpath import CANDIDATE_RELATIVE_PATHS as _CANDIDATE_RELATIVE_PATHS
 from lab_commons.log import emit
 
 __all__ = [
@@ -80,14 +81,13 @@ __all__ = [
     'sanitized_env',
 ]
 
-#: Where an interpreter lives inside a venv, BOTH layouts, probed on every platform rather than
-#: switched on the OS: a Windows venv is ``Scripts/python.exe``, a macOS/Linux one is ``bin/python``,
-#: and the fleet contains both. Probing for the file that exists is shorter than deciding which one
-#: should exist, and it is why no interpreter path is hard-coded beyond these two.
-CANDIDATE_RELATIVE_PATHS: Final[tuple[tuple[str, ...], ...]] = (
-    ('.venv', 'Scripts', 'python.exe'),
-    ('.venv', 'bin', 'python'),
-)
+#: Re-exported from :mod:`lab_commons.dev.venvpath`, which is now the ONE place this kit spells a
+#: venv interpreter. AUTHORED here and moved there unchanged: this module was already correct --
+#: it probes BOTH layouts on every platform rather than switching on the OS -- and the move is so
+#: that the two adoption modules, which were spelling the Windows half by hand in prose a consumer
+#: copies, consult the same data instead. The name stays exported here because `find_interpreter`
+#: below is documented in terms of it and consumers import it from this module.
+CANDIDATE_RELATIVE_PATHS: Final[tuple[tuple[str, ...], ...]] = _CANDIDATE_RELATIVE_PATHS
 
 #: pyright picks the environment it ANALYSES against from the project root it runs in, so a lane
 #: without a ``.venv`` silently analyses against the system interpreter and every third-party import
