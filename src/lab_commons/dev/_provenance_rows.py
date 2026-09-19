@@ -294,6 +294,18 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'tests/architecture/ratchets/test_rules_line_ratchet.py',
     ),
     'visibility': ('supersedes', 'tests/architecture/test_this_checkout_is_visible_on_origin.py'),
+    # ORIGINAL, and the declaration is refusable in the usual way. The Windows interpreter spelling
+    # it replaces was never a consumer MODULE -- it was a hand-written string in two repos'
+    # `scripts/deny_rules.py` and in three tracked `settings.json` allow rows, pasted out of this
+    # kit's own consumption recipe. There is no fork behind this, only a spelling it takes over, so
+    # `supersedes` would name files that keep every line they have. Not `adopted_by` either: no
+    # consumer delegates to it yet, and recording an adoption that has not happened is the
+    # declaration-that-lies this registry exists to refuse.
+    'venvspelling': ('original',),
+    # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
+    # not a forked file. `CANDIDATE_RELATIVE_PATHS` moved here from `githooks.bootstrap`, which is
+    # in-kit and therefore not provenance -- that row below still supersedes `with-venv.sh`.
+    'venvpath': ('original',),
     # -- `lab_commons.dev.githooks`.
     'bootstrap': ('supersedes', 'scripts/hooks/with-venv.sh'),
 }
