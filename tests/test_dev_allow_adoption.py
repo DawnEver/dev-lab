@@ -247,3 +247,28 @@ def test_an_adoption_with_no_app_name_cannot_report_which_repo_failed() -> None:
     """The repo-shaped fact arrives as an argument, and a blank one is refused at construction."""
     with pytest.raises(ValueError, match='app_name'):
         AllowAdoption('  ', OPTIMI)
+
+
+def test_a_declared_row_may_not_spell_the_venv_interpreter_either() -> None:
+    """THE DOOR `glob_for` CANNOT REACH, and it is live in a consuming repo today.
+
+    A DERIVED row is normalised on the way out. A DECLARED row is the repo's own text, VERBATIM, so
+    nothing normalises it -- and optimi-lab's tracked settings file carries
+    `Bash(./.venv/Scripts/python.exe scripts/dep.py *)`, which permits nothing at all on macOS. The
+    refusal is at CONSTRUCTION rather than in a scan, because that is where the row is authored and
+    where the repair costs one character.
+    """
+    with pytest.raises(UnarguedAllow, match='rather than globbing it'):
+        DeclaredAllow('Bash(./.venv/Scripts/python.exe scripts/dep.py *)', 'the dependency door')
+
+
+def test_the_refusal_names_the_row_the_author_should_have_written() -> None:
+    """A refusal that names no remedy has named nothing -- the repair is quoted, not described."""
+    with pytest.raises(UnarguedAllow, match=r'Write Bash\(\./\.venv/\*/python\* scripts/dep\.py \*\)'):
+        DeclaredAllow('Bash(./.venv/Scripts/python.exe scripts/dep.py *)', 'the dependency door')
+
+
+def test_a_portable_declared_row_and_an_unrelated_one_both_pass() -> None:
+    """THE OTHER SIDE: a guard that refused every declared row would be switched off by lunchtime."""
+    assert DeclaredAllow('Bash(./.venv/*/python* scripts/dep.py *)', 'the door').entry.endswith('*)')
+    assert DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server').entry == 'Bash(*yarn preview*)'

@@ -110,7 +110,7 @@ from lab_commons.dev._allow_settings import promised_command as _promised
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, denies
-from lab_commons.dev.venvpath import portable
+from lab_commons.dev.venvpath import hardcoded_spellings, portable
 
 __all__ = [
     'BASH',
@@ -220,6 +220,17 @@ class DeclaredAllow:
             msg = (
                 f'{self.entry}: no reason. An allow list is not a place to pre-pay for roads nobody has '
                 f'needed yet -- say what this one is for, or leave it out until something needs it.'
+            )
+            raise UnarguedAllow(msg)
+        spelled = hardcoded_spellings(self.entry)
+        if spelled:
+            msg = (
+                f'{self.entry}: spells the venv interpreter {spelled[0]!r} rather than globbing it. A DERIVED '
+                f'row is normalised by glob_for; a DECLARED row is verbatim, so this is the one door the '
+                f'normalisation cannot reach and it is refused here instead. `.claude/settings.json` is TRACKED '
+                f'IN GIT -- a row naming one platform\'s interpreter permits NOTHING on the other, silently, '
+                f'because a row that matches no command reads exactly like a row nobody needed. Write '
+                f'{portable(self.entry)} instead.'
             )
             raise UnarguedAllow(msg)
         if self.needs is not None and (
