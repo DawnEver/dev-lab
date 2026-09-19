@@ -108,6 +108,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/wdg-lab-update.sh'),
     'profile': ('original',),
     'quantity_values': ('original',),
+    # `supersedes` AND NOT `adopted_by`, and the distinction is load-bearing here: the whole of
+    # `_transcript.py` except its `[census]` grammar is on this page, so the consumer file is meant
+    # to SHRINK to that grammar rather than to delegate and stay. It cannot do either until a
+    # release carrying this module reaches that repo -- the row is the claim, not the landing.
+    'pytestout': ('supersedes', 'scripts/gate/_transcript.py'),
     'reports': ('original',),
     'rules': ('original',),
     'seams': ('supersedes', 'scripts/gate/seam_install.py'),

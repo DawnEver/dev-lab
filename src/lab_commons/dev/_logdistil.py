@@ -51,6 +51,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.pytestout import TRUNCATION_MARKERS
 from lab_commons.dev.reports import StepReport
 
 __all__ = ['KEEP_TOKENS', 'Distillate', 'distil', 'distil_log', 'relevant']
@@ -62,6 +63,15 @@ __all__ = ['KEEP_TOKENS', 'Distillate', 'distil', 'distil_log', 'relevant']
 #: is covered by its stems; ``INTERNALERROR`` and an ``ERROR`` node line are both covered by
 #: ``ERROR``; and ``N errors during collection`` is covered twice over. Re-compiling ``reports``'s own
 #: patterns here would put the identical grammar in two files and make a drift in either one silent.
+#:
+#: THE TRUNCATION VOCABULARY IS DERIVED AND NOT TYPED, 2026-09-19, and the ratchet in
+#: ``tests/test_dev_logdistil.py`` is what forced it. When ``read_pytest`` grew from one literal
+#: (``INTERNALERROR``) to :data:`~lab_commons.dev.pytestout.TRUNCATION_MARKERS`, the stems above
+#: covered exactly one of the eight: ``node down``, ``Not properly terminated``, ``0xC0000142``,
+#: ``MemoryError``, ``Killed``, ``ImportError while loading conftest`` and ``+ Timeout +`` carry
+#: neither ``ERROR`` nor ``error``, so the filter would have DROPPED the only line naming why a run
+#: died and the parser would have reported a clean absence. Spelling them here by hand would be the
+#: same drift one edit later, so the tuple is taken from the module that owns it.
 KEEP_TOKENS: Final[tuple[str, ...]] = (
     'ERROR',
     'FAILED',
@@ -74,6 +84,7 @@ KEEP_TOKENS: Final[tuple[str, ...]] = (
     'failed',
     'passed',
     'skipped',
+    *TRUNCATION_MARKERS,
 )
 
 #: pytest rules its stop-early banners off in exclamation marks, and

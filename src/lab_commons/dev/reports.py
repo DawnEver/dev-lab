@@ -52,6 +52,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.pytestout import collected_count, markers_in, summary_counts
 from lab_commons.file_io import read_toml
 
 __all__ = ['SKIP_CEILING', 'MalformedAllowance', 'StepReport', 'declared_skips', 'read_pytest', 'read_ruff']
@@ -73,10 +74,6 @@ _PYTEST_EXITS: Final[dict[int, str]] = {
     5: 'pytest exit 5: NO TESTS WERE COLLECTED, which is not the same as none failing',
 }
 
-#: The summary line's ``<count> <word>`` pairs. Searched for anywhere on the line so the ``=``
-#: rule that usually decorates it is not part of the grammar a reader has to reproduce.
-_COUNT = re.compile(r'(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed|deselected)\b')
-
 #: The words that mean a selected test PRODUCED an outcome. ``skipped`` and ``deselected`` are
 #: deliberately absent: neither ran, and the floor below is the one thing standing between a suite
 #: that skipped everything and a green verdict over zero executed tests.
@@ -87,9 +84,6 @@ _FAILED_NODE = re.compile(r'^(?:FAILED|ERROR)\s+(\S+)')
 
 #: One ``-rs`` short-summary line: the number of skips grouped there, and WHERE they are.
 _SKIPPED = re.compile(r'^SKIPPED \[(\d+)\]\s+(.+?):\s', re.MULTILINE)
-
-#: ``collected 307 items`` / ``collected 307 items / 3 errors``.
-_COLLECTED = re.compile(r'collected\s+(\d+)\s+item')
 
 #: The banner pytest prints when it stops early. The word alone is enough -- it appears in
 #: ``!!!! Interrupted: 3 errors during collection !!!!`` and in the KeyboardInterrupt banner, and
@@ -184,23 +178,6 @@ def read_ruff(name: str, returncode: int) -> StepReport:
     )
 
 
-def _summary_counts(text: str) -> dict[str, int] | None:
-    """The LAST line carrying ``<count> <word>`` pairs, as a mapping. ``None`` when there is none.
-
-    The last rather than the first: pytest prints per-file progress and a short summary above its
-    final line, and both can carry the same shape. ``None`` is not "zero of everything" -- a run
-    that printed no summary said nothing, and the caller must be able to tell the two apart.
-    """
-    for line in reversed(text.splitlines()):
-        pairs = _COUNT.findall(line)
-        if pairs:
-            counts: dict[str, int] = {}
-            for count, word in pairs:
-                counts['error' if word.startswith('error') else word] = int(count)
-            return counts
-    return None
-
-
 def _skip_shortfall(counts: dict[str, int], text: str, allowed: tuple[str, ...]) -> tuple[str, ...]:
     r"""The skip ratchet, BOTH directions, plus the ceiling and the naming floor.
 
@@ -261,9 +238,9 @@ def _summary_shortfall(counts: dict[str, int], text: str, failures: tuple[str, .
         )
     if not any(counts.get(word) for word in _OUTCOME_WORDS):
         reasons.append('no test produced a pass or fail outcome, so the run executed nothing it could be judged on')
-    if (collected := _COLLECTED.search(text)) and (total := sum(counts.values())) < int(collected.group(1)):
+    if (collected := collected_count(text)) is not None and (total := sum(counts.values())) < collected:
         reasons.append(
-            f'pytest collected {collected.group(1)} item(s) and accounted for {total}: the difference '
+            f'pytest collected {collected} item(s) and accounted for {total}: the difference '
             f'never reported, and a run that did not reach its selection cannot be promoted'
         )
     return tuple(reasons)
@@ -294,15 +271,17 @@ def read_pytest(text: str, *, returncode: int, allowed_skips: tuple[str, ...] = 
     * a skip on either side of *allowed_skips*, or a skip share above :data:`SKIP_CEILING`.
     """
     failures = tuple(dict.fromkeys(match.group(1) for line in text.splitlines() if (match := _FAILED_NODE.match(line))))
-    counts = _summary_counts(text)
+    counts = summary_counts(text)
     truncated: list[str] = []
 
     if banner := _INTERRUPTED.search(text):
         truncated.append(f'pytest was interrupted: {banner.group(0).strip("! ").strip()}')
     if errors := _COLLECTION_ERRORS.search(text):
         truncated.append(f'{errors.group(1)} error(s) during collection: those tests were never run')
-    if 'INTERNALERROR' in text:
-        truncated.append('pytest reported an INTERNALERROR, so the run describes pytest and not the suite')
+    truncated.extend(
+        f'the run reported {marker!r}, which is a run that died rather than one that finished'
+        for marker in markers_in(text)
+    )
     if counts is None:
         truncated.append('pytest printed no parsable summary line, so there is nothing to read a result out of')
     else:

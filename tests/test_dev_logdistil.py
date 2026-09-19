@@ -33,6 +33,7 @@ from _arch_corpus import ROOT
 
 from lab_commons.dev._logdistil import Distillate, distil, distil_log, relevant
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
+from lab_commons.dev.pytestout import TRUNCATION_MARKERS
 from lab_commons.dev.reports import StepReport, read_pytest
 from lab_commons.dev.verify import _PYTEST_BANNER, _tee
 
@@ -40,26 +41,42 @@ from lab_commons.dev.verify import _PYTEST_BANNER, _tee
 BANNER = _PYTEST_BANNER
 
 #: Every shape :func:`~lab_commons.dev.reports.read_pytest` consults, mapped to a line that carries
-#: it. MEASURED 2026-09-18 by reading ``reports.py``: six module-level ``re.compile`` patterns plus
-#: one literal ``'INTERNALERROR' in text``. The VALUES are what the distillation has to keep, and the
-#: KEYS are checked against the module's own source below, so this cannot drift into a list of shapes
-#: somebody remembered.
+#: it. RE-MEASURED 2026-09-19 by reading BOTH modules the parse now spans: ``reports.py`` keeps the
+#: verdict-facing shapes, and :mod:`lab_commons.dev.pytestout` holds the readers plus the truncation
+#: vocabulary. The VALUES are what the distillation has to keep, and the KEYS are checked against the
+#: two modules' own source below, so this cannot drift into a list of shapes somebody remembered.
+#:
+#: EACH TRUNCATION MARKER IS ITS OWN ROW, because the whole point of the set is that a marker names
+#: WHICH way a run died; a single row standing for eight would be the count pin this file refuses
+#: everywhere else, and it is exactly the shape that let seven of them go uncovered by the filter.
 PARSE_SHAPES: dict[str, str] = {
+    '+ Timeout +': '+ Timeout + tests/test_slow.py::test_a timed out after 900s',
+    '0xC0000142': 'INTERNALERROR> OSError: [WinError 0xC0000142] the application failed to start',
+    'INTERNALERROR': 'INTERNALERROR> Traceback (most recent call last):',
+    'ImportError while loading conftest': "ImportError while loading conftest 'tests/conftest.py'.",
+    'Killed': '[gw2] Killed by the box: no output for 854 s',
+    'MemoryError': '[gw1] node down: MemoryError',
+    'Not properly terminated': '[gw3] node down: Not properly terminated',
     '_COLLECTED': 'collected 307 items / 3 errors',
     '_COLLECTION_ERRORS': '3 errors during collection',
     '_COUNT': '=========== 3 failed, 304 passed, 2 xfailed in 14.8s ===========',
+    '_CSI': '\x1b[31mFAILED\x1b[0m tests/test_a.py::\x1b[1mtest_b\x1b[0m - assert 0',
     '_FAILED_NODE': 'FAILED tests/test_units.py::test_a_bare_float_is_refused - AssertionError',
     '_INTERRUPTED': '!!!!!!! Interrupted: 3 errors during collection !!!!!!!',
     '_SKIPPED': 'SKIPPED [1] tests/test_vendor.py:31: needs the vendor',
-    'INTERNALERROR': 'INTERNALERROR> Traceback (most recent call last):',
+    '_SUMMARY': '=========== 3 failed, 304 passed, 2 xfailed in 14.8s ===========',
+    'node down': '[gw3] node down: Not properly terminated',
 }
 
-#: The floor under the shape scan. MEASURED 2026-09-18: 7 shapes. Finding NOTHING in a source file is
-#: what a successful parse of the WRONG file also looks like, so the scan needs a number under it.
-SHAPE_FLOOR = 5
+#: The floor under the shape scan. RE-MEASURED 2026-09-19: 16 shapes, from 7, when the readers left
+#: `reports.py` for `pytestout` and the one `INTERNALERROR` literal became a vocabulary of eight.
+#: Finding NOTHING in a source file is what a successful parse of the WRONG file also looks like,
+#: so the scan needs a number under it.
+SHAPE_FLOOR = 12
 
-#: The other side. A parser that grew from 7 shapes to 13 without this file noticing is a filter
+#: The other side. A parser that grew from 16 shapes to 22 without this file noticing is a filter
 #: measured against a module that no longer exists; the remedy is to RE-MEASURE, never to widen.
+#: It bound for real on 2026-09-19: the growth from 7 to 16 tripped THIS arm, not the set arm.
 SHAPE_HEADROOM = 4
 
 #: Lines of noise for the oversize control. Not 400,000: the subject is RESIDENT SIZE rather than
@@ -69,38 +86,47 @@ NOISE_LINES = 120_000
 
 
 def source_shapes() -> set[str]:
-    """Every parse shape ``reports.py`` consults, read out of its AST rather than out of memory.
+    """Every parse shape the pytest read consults, out of the AST of BOTH modules it now spans.
 
-    Two kinds, because the module has two: a module-level name bound to a ``re.compile(...)`` call,
-    and a bare substring tested with ``in`` against the pytest text. Both are shapes a line has to
-    survive the distillation to be seen by, so both belong in the same set.
+    THREE KINDS, because the parse has three. A module-level name bound to a ``re.compile(...)``
+    call; a bare substring tested with ``in`` against the pytest text; and every element of
+    :data:`~lab_commons.dev.pytestout.TRUNCATION_MARKERS`, which is the ``in`` test moved into data
+    and would otherwise leave this scan reading SEVEN FEWER shapes than the parser consults while
+    still answering a clean set. All three are shapes a line has to survive the distillation to be
+    seen by, so all three belong in the same set.
+
+    READING BOTH FILES IS THE FIX RATHER THAN A WIDENING. This scan read ``reports.py`` alone, and
+    when the readers moved to ``pytestout`` it went on reporting a tidy four-shape set for a parse
+    that consults sixteen -- the vacuous-green shape, arrived at by the subject moving rather than
+    by the corpus emptying.
     """
-    tree = ast.parse((ROOT / 'src' / 'lab_commons' / 'dev' / 'reports.py').read_text(encoding='utf-8'))
     found: set[str] = set()
-    for node in tree.body:
-        if not isinstance(node, ast.Assign | ast.AnnAssign):
-            continue
-        value = node.value
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        compiled = (
-            isinstance(value, ast.Call)
-            and isinstance(value.func, ast.Attribute)
-            and value.func.attr == 'compile'
-            and isinstance(value.func.value, ast.Name)
-            and value.func.value.id == 're'
-        )
-        if compiled:
-            found |= {t.id for t in targets if isinstance(t, ast.Name)}
-    for node in ast.walk(tree):
-        literal_in = (
-            isinstance(node, ast.Compare)
-            and any(isinstance(op, ast.In) for op in node.ops)
-            and isinstance(node.left, ast.Constant)
-            and isinstance(node.left.value, str)
-        )
-        if literal_in:
-            found.add(node.left.value)
-    return found
+    for name in ('reports.py', 'pytestout.py'):
+        tree = ast.parse((ROOT / 'src' / 'lab_commons' / 'dev' / name).read_text(encoding='utf-8'))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign | ast.AnnAssign):
+                continue
+            value = node.value
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            compiled = (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Attribute)
+                and value.func.attr == 'compile'
+                and isinstance(value.func.value, ast.Name)
+                and value.func.value.id == 're'
+            )
+            if compiled:
+                found |= {t.id for t in targets if isinstance(t, ast.Name)}
+        for node in ast.walk(tree):
+            literal_in = (
+                isinstance(node, ast.Compare)
+                and any(isinstance(op, ast.In) for op in node.ops)
+                and isinstance(node.left, ast.Constant)
+                and isinstance(node.left.value, str)
+            )
+            if literal_in:
+                found.add(node.left.value)
+    return found | set(TRUNCATION_MARKERS)
 
 
 class TestTheShapeSetIsARatchet:

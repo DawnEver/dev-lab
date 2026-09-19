@@ -34,7 +34,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
-import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -46,6 +45,7 @@ from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.logref import LogRef, UnverifiableLog
+from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import MalformedAllowance, StepReport, declared_skips, read_pytest, read_ruff
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
 from lab_commons.log import emit
@@ -108,15 +108,6 @@ PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs',)
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
 EXIT_CODES: Final[dict[Outcome, int]] = {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}
-
-#: ONE CSI escape, in ECMA-48's own grammar: ``ESC [``, then any number of PARAMETER bytes
-#: (``0x30``-``0x3f``), then any number of INTERMEDIATE bytes (``0x20``-``0x2f``), then exactly one
-#: FINAL byte (``0x40``-``0x7e``). SPELT OUT rather than written as "ESC and then whatever": a
-#: pattern that eats anything after an ``ESC`` eats real content the first time a test prints one,
-#: and ``\x1b\[[^m]*m`` -- the usual shorthand -- leaves every cursor-motion and erase-line sequence
-#: in the text while claiming to have cleaned it. A LONE ``ESC``, and an ``ESC`` followed by anything
-#: that is not this grammar, match nothing here and survive byte for byte.
-_CSI: Final = re.compile(r'\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]')
 
 #: The line that separates the ruff half of the log from the pytest half. The pytest parser is fed
 #: what comes AFTER it and never the whole log, because ruff's own output can carry a ``FAILED``
@@ -219,7 +210,7 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
     evidence is the same defect one layer up. The VIEW is what degrades, again.
 
     A LONE CARRIAGE RETURN IS LEFT ALONE. Universal-newline translation already splits a progress
-    bar into lines -- ugly in a log, never fatal to a parse -- and :data:`_CSI` cannot match it.
+    bar into lines -- ugly in a log, never fatal to a parse -- and the CSI grammar cannot match it.
     """
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
@@ -236,7 +227,7 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
         env=env,
     ) as process:
         for raw in process.stdout or ():
-            line = _CSI.sub('', raw)
+            line = strip_ansi(raw)
             handle.write(line)
             handle.flush()
             emit(line.rstrip('\n'), flush=True)

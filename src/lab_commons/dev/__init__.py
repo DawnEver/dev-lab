@@ -25,16 +25,17 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.envkey` — a key over the resolved dependency set, the other half.
 * :mod:`lab_commons.dev.logref` — the log a verdict carries, and the reader that re-derives it.
 * :mod:`lab_commons.dev.verdict` — the algebra: ``(tree, env, selector, result, log)``.
-* :mod:`lab_commons.dev.reports` — what a verify step REPORTED, read out of the text it printed:
-  pure functions over a string and an exit code, including the two-sided skip ratchet a project
-  declares in its own ``[tool.lab_commons.verify] allowed_skips``.
+* :mod:`lab_commons.dev.pytestout` — READING one test runner's stdout and nothing more: the escape
+  strip, the anchored summary line, the collected count and the truncation vocabulary. Every reader
+  answers ``None`` for a line never printed, never ``0``. NOT RE-EXPORTED.
+* :mod:`lab_commons.dev.reports` — what those readings MEAN for a verify step: the exit-code table,
+  the shortfalls, and the two-sided skip ratchet a project declares in ``allowed_skips``.
 * :mod:`lab_commons.dev.verify` — the family's ONE entry point that PRODUCES one:
   ``python -m lab_commons.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
   ``.verify/``, and prints a stamped verdict -- the portable half of motronics-studio's 1770-line
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
-  reason, which is not the one above: it is run as ``__main__``, and a package that imports its own
-  entry point makes ``runpy`` warn the module was already in ``sys.modules``.
+  reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
 * :mod:`lab_commons.dev.boxlock` — one CPU-saturating run at a time, ON the broker that already
   ships in this package rather than beside it.
 * :mod:`lab_commons.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
@@ -175,9 +176,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   ANSWER and is recorded rather than aborted on; and an arm may pay a one-time setup, which is
   amortised over a recurrence count the CALLER measured, never over 1 and never over 0. A refused
   arm reports no median at all, because a candidate timed only on the inputs it accepted has
-  selected its own sample. And the dispatch question is asked rather than assumed: a seam faster on
-  one input and slower on another needs a THRESHOLD, and when the winner changes back as size grows
-  there is none -- the pairs that forbid it are named. Not re-exported below.
+  selected its own sample. Whether a seam can be DISPATCHED on at all is asked rather than assumed,
+  and the pairs that forbid it are named. NOT RE-EXPORTED.
 * :mod:`lab_commons.dev.testfacts` -- what a test FILE declares about itself, and one assertion
   SHAPE (a test whose assertions are ALL ``is not None``, which cannot fail behaviourally), read from
   the AST and never by collecting: collection IMPORTS, and a census that collects starts MATLAB to
