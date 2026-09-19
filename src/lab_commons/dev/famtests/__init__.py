@@ -133,6 +133,14 @@ WHAT IS HERE, one module per shared body:
   an ARGUMENT and the interval travels with it. The census next door in
   :mod:`lab_commons.dev.famtests.rostercensus` reads the same rosters and asks a different question
   -- whether a row's SIDE has gone stale against the kit -- and neither imports the other.
+* :mod:`lab_commons.dev.famtests.storedreadings` -- a roster row may not STORE a number it could
+  DERIVE. The THIRD question over those same four rosters, and the only body in this package that
+  asserts a SENTENCE agrees with a MEASUREMENT: ``placement`` reads the manifest's keys against a
+  walk and ``rostercensus`` reads a row's SIDE, while neither ever opens the ``why`` prose where the
+  reading that DECIDED the row is written down. Measured 2026-09-19 across all four rosters: 210
+  stored readings in 96 rows disagree with re-deriving them, in four repos that are all green. It
+  refuses the blanket rule as well as the stale number -- a DATED historical reading is evidence and
+  is KEPT -- and telling one from the other is the whole deliverable.
 
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the
