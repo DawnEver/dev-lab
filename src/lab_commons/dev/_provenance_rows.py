@@ -95,6 +95,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # `scripts/hooks/with-retry.sh` is a REMEDY that resolves in one checkout on earth, which is why
     # `hooks` holds the statements and `hook_adoption` holds the pointer. Neither replaced it.
     'hooks': ('original',),
+    # ORIGINAL rather than superseding `installdoor`, and the distinction is the whole row: it
+    # asks whether one COMMAND delivers the declared build, this asks whether a repo's DOOR SET was
+    # ever looked at and is still what was measured. Nothing anywhere in the family answered the
+    # second -- three consumers adopted `installdoor` with three differently-shaped door sets and no
+    # tree could see the other two. There is no path to name because there was no prior mechanism.
+    'doorcensus': ('original',),
     'installdoor': ('original',),
     'logref': ('original',),
     # Both named by `netverb`'s docstring as the vacuum it closes, and both ADOPTED it on 2026-09-17

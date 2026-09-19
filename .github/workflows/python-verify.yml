@@ -85,14 +85,21 @@ jobs:
       - name: make verify
         # THE WHOLE GATE, in one call. `uv run` puts the synced .venv on PATH, so the Makefile's
         # `python -m ruff` / `python -m pytest` resolve to the environment just built.
-        run: uv run make verify
+        #
+        # `--no-sync` IS LOAD-BEARING, AND THE STEP ABOVE IS WHY. A bare `uv run` performs an
+        # implicit resolution against `uv.lock`, and that implicit one carries NO `--extra` -- so it
+        # prunes exactly the extras the previous step just put in place, the shape measured taking
+        # one environment from 113 distributions to 30. It is also the `installdoor` remedy for a
+        # lock-consuming command that is not meant to move an environment at all: it is already
+        # built, one step up, with the flags the caller asked for.
+        run: uv run --no-sync make verify
 
       - name: Named guards
         if: inputs.guard-targets != ''
         run: |
           for target in ${{ inputs.guard-targets }}; do
             echo "::group::make $target"
-            uv run make "$target"
+            uv run --no-sync make "$target"
             echo "::endgroup::"
           done
 

@@ -165,12 +165,24 @@ def test_a_missing_manifest_raises_rather_than_answering_none(tmp_path: Path) ->
 
 
 #: THIS repo's own install doors, declared as a named set. `python-verify.yml` is here because it
-#: RUNS in every caller's checkout, so its `uv sync` is a door of this tree even though the
-#: environment it moves is somebody's CI runner.
+#: RUNS in every caller's checkout, so its lock-consuming steps are a door of this tree even though
+#: the environment they move is somebody's CI runner.
+#:
+#: AND THAT SENTENCE WAS INERT UNTIL 2026-09-19, which is worth keeping rather than tidying away.
+#: The claim was true and the scan below could not carry it: it classifies against THIS repo's
+#: floating requirements, which are `()`, so all three of that workflow's lock-consuming commands
+#: read INERT here and would have gone on doing so against any caller. The honest reading is
+#: `_doorcensus_rows.SHARED`, which judges the file against the names of the repos that RUN it.
 _OWN_DOORS: tuple[str, ...] = ('Makefile', '.github/workflows/ci.yml', '.github/workflows/python-verify.yml')
 
-#: MEASURED 2026-09-17: 9 installer-capable commands across those three files. The floor is under it
+#: MEASURED 2026-09-19: 16 installer-capable commands across those three files. The floor is under it
 #: because "no reverting door" over a set that was never read is the vacuous green this family refuses.
+#:
+#: THIS COMMENT READ 9 UNTIL TODAY AND NOTHING COULD SAY SO, which is the reason `doorcensus` exists
+#: one module over. A floor is `declared <= live`, satisfied by every shorter declaration, so a
+#: recorded number drifts in either direction under a green floor -- by seven here and by two in
+#: wdg-lab, both for two days. The floor STAYS, because its job is the other failure, a scan that
+#: read nothing; the EQUALITY that catches this one is in `_doorcensus_rows.py`.
 _OWN_DOOR_FLOOR = 5
 
 

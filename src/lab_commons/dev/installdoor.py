@@ -71,6 +71,7 @@ __all__ = [
     'assert_doors_deliver',
     'classify',
     'commands',
+    'floating_in_manifest',
     'floating_requirements',
     'reverting',
     'scan_doors',
@@ -168,7 +169,19 @@ def floating_requirements(pyproject: Path) -> tuple[str, ...]:
             floating requirements", which is the reading under which every door passes.
 
     """
-    table = tomllib.loads(pyproject.read_text(encoding='utf-8'))
+    return floating_in_manifest(pyproject.read_text(encoding='utf-8'))
+
+
+def floating_in_manifest(text: str) -> tuple[str, ...]:
+    """The same answer as :func:`floating_requirements`, over manifest TEXT rather than a path.
+
+    THE TEXT HALF EXISTS BECAUSE A CROSS-REPO READER HAS NO PATH TO GIVE IT. A census asks what four
+    checkouts DECLARE, and a declaration is a COMMITTED fact -- so its manifest arrives as the output
+    of ``git show HEAD:pyproject.toml``, never as a file on disk holding somebody's half-finished
+    edit. Splitting the read out is what stops that reader growing a second copy of the regex above,
+    which would then agree with itself rather than with this module.
+    """
+    table = tomllib.loads(text)
     project = table.get('project', {})
     specs: list[str] = list(project.get('dependencies', ()))
     for extra in project.get('optional-dependencies', {}).values():
