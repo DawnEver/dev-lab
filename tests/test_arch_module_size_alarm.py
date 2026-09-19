@@ -10,8 +10,35 @@ WHY A NAMED SET AND NOT "5 MODULES ARE OVER". An integer cannot say WHICH module
 refactor that fixed one file while another crossed the band compares equal, and the honest-looking
 repair when the digit disagrees is to edit the digit. The names make both halves visible.
 
-THE BAND IS REPO DATA; THAT THERE IS ONE IS NOT. 400 lines is this repo's number, chosen at the knee
-of its own distribution -- 17 of 22 modules are under it.
+THE UNIT IS CODE LINES, AND THAT IS THE REPAIR THIS FILE'S OWN DOCSTRING NAMED AND DID NOT MAKE.
+Until 2026-09-19 the band counted RAW lines. A raw band cannot tell a 600-line module from a
+400-line one carrying 200 lines of prose, so it measured the wrong thing in BOTH directions at once,
+and both directions were live:
+
+* IT TAXED DOCUMENTATION. Four of the six pinned rows were pinned for prose alone, and the
+  2026-09-17 re-measurement recorded that in the table itself -- adopting the family's 58-selector
+  ruff set required a docstring on every public class, method and ``__init__``, and counted with
+  docstrings and comments blanked the four pre-existing rows moved by ONE line in total. That is the
+  whole 483-line rise the ceiling had to absorb, for one real line of code.
+* IT DEADLOCKED THE PACKAGE AGAINST ITS OWN INVENTORY. ``src/lab_commons/dev/__init__.py`` is a
+  DOCUMENT -- 400 raw lines, of which 167 are code -- and
+  ``test_arch_the_dev_inventory_lists_every_module`` demands one bullet per public module. It sat at
+  exactly the raw band, so EVERY new public module needed a line the band refused, while the ceiling
+  below may only go DOWN. Two guards, each right, jointly refusing a module to exist. It was paid
+  once by reflowing prose; on the CODE reading that file has 133 lines of room, and the deadlock is
+  gone rather than deferred.
+* IT WAS ALSO LETTING A REAL OFFENDER THROUGH IN THE OTHER DIRECTION.
+  ``src/lab_commons/dev/famtests/depdoor.py`` stood at 411 raw lines -- over the raw band and in no
+  pin, a live red nobody had answered. On the code reading it is 209 and genuinely fine.
+
+THE BAND IS RE-CALIBRATED WITH ITS OWN EVIDENCE, because changing the unit invalidates the old
+number. MEASURED 2026-09-19 over all 115 tracked source modules, the code-line distribution has a
+GAP between 278 (``_doorcensus_rows.py``) and 310 (``_unit_tokens.py``); 300 sits in it. That is a
+knee in the data rather than a preference, and it is deliberately NOT placed just above the largest
+module landing today -- a band chosen to admit its author's own file is the digit being edited to
+meet the table, which is the defect the rest of this file is about. The blanker is
+:func:`lab_commons.dev.famtests.density.code_only`, the family's existing prose reader, so there is
+no second implementation to keep in step.
 """
 
 from __future__ import annotations
@@ -20,52 +47,51 @@ from pathlib import Path
 
 from _arch_corpus import ROOT, SOURCE_FLOOR, assert_floor, parse, rel, source_modules
 
-#: This repo's band. A module past it is refactored, or pinned below with its measurement.
-BAND = 400
+from lab_commons.dev.famtests.density import code_only
 
-#: The debt, MEASURED 2026-09-15, re-measured 2026-09-16 when ``resources.py`` gave up its
-#: record-writing half to ``_records.py``, and re-measured 2026-09-17 by R1: module -> the line count
-#: it may not exceed. Each entry is a refactor that has not happened, not a permission.
-#: ``resources.py`` is the standing one; it holds the broker, the registry and the record in one file
-#: and splitting it is its own change.
+#: This repo's band, in CODE lines. A module past it is refactored, or pinned below with its
+#: measurement. See the docstring for why the unit changed and where 300 was measured.
+BAND = 300
+
+
+def code_lines(path: Path) -> int:
+    """How many lines of *path* are CODE -- docstrings and comments blanked, blank lines dropped."""
+    return len([line for line in code_only(path.read_text(encoding='utf-8')) if line.strip()])
+
+
+#: The debt, RE-MEASURED 2026-09-19 ON CODE LINES: module -> the code-line count it may not exceed.
+#: Each entry is a refactor that has not happened, not a permission.
 #:
-#: THE 2026-09-17 RE-MEASUREMENT IS THE FIRST TIME THESE PINS WENT UP, AND THE COMMENT PER ROW IS THE
-#: EVIDENCE THAT NOTHING WAS ADDED. Adopting the family's 58-selector ruff set required a docstring on
-#: every public class, method and ``__init__``, and this band counts RAW lines, so a module can cross
-#: it by being DOCUMENTED. Counted with docstrings and comments blanked, the four pre-existing rows
-#: moved by ONE line in total -- `proc.py`'s `_KB_LINE_TOKENS`, which replaced a magic `2`.
+#: THREE ROWS WHERE THERE WERE SIX, AND NOTHING WAS REFACTORED TO ACHIEVE THAT. The three that left
+#: -- `rules.py` (466 raw, 214 code), `units.py` (540 raw, 209 code) and `proc.py` (515 raw, 270
+#: code) -- were pinned for PROSE, which is what the old unit could not see and what the old table
+#: said about them at the time. They are not waivers being dropped; they were never over THIS band.
+#: Two modules the raw reading never convicted -- `em.py` at 259 and `_doorcensus_rows.py` at 278 --
+#: are measured here for the first time and are under it, so they take no row either.
 #:
-#: `_rule_rows.py` IS A NEW ROW AND IT IS THE SAME STORY IN THE OTHER DIRECTION: 66 real code lines,
-#: every one of them ISC004's mandatory parenthesisation of a prose string that was already there.
-#: Not one rule row was added. It is pinned rather than refactored because the file is DATA and
-#: splitting a registry to fit a line count would be the band deforming the code it measures.
-#:
-#: THE UNIT IS THE THING TO FIX NEXT, and it is named here rather than fixed under a lint task: a
-#: band over raw lines cannot tell a 600-line module from a 400-line one with 200 lines of prose, and
-#: the code-line reading above is what it should have been measuring. Changing it re-calibrates the
-#: band, which is its own change with its own evidence.
+#: The two registries stay pinned rather than refactored for the reason the old table already gave:
+#: they are DATA, and splitting a registry to fit a line count is the band deforming the code it
+#: measures. `resources.py` is the standing one -- it holds the broker, the registry and the record
+#: in one file, and splitting it is its own change.
 DEBT: dict[str, int] = {
-    'src/lab_commons/dev/_rule_rows.py': 461,  # code 356 -> 422, all of it ISC004 parenthesisation
-    'src/lab_commons/dev/_unit_tokens.py': 408,  # unchanged by R1, code 310
-    'src/lab_commons/dev/rules.py': 466,  # +4 raw, code 214 UNCHANGED: four __post_init__ docstrings
-    'src/lab_commons/dev/units.py': 540,  # +1 raw, code 209 UNCHANGED: one __iter__ docstring
-    'src/lab_commons/proc.py': 515,  # +6 raw, code 269 -> 270: the one real line in this whole row set
-    'src/lab_commons/resources.py': 1547,  # +11 raw, code 741 UNCHANGED: docstrings only
+    'src/lab_commons/dev/_rule_rows.py': 422,  # 461 raw; every line it gained was ISC004 parenthesisation
+    'src/lab_commons/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
+    'src/lab_commons/resources.py': 741,  # 1547 raw; the broker, the registry and the record in one file
 }
 
-#: The ceiling on the escape hatch: total pinned debt in lines. It went UP exactly once, on
-#: 2026-09-17, from 3454 to the sum above, and the per-row comments are what makes that checkable:
-#: 22 of the 483 lines are docstrings the adopted lint standard requires, 66 are ISC004 wrapping
-#: prose that was already there, and 395 are `_rule_rows.py` arriving in the table rather than
-#: growing. From here it may only go DOWN.
-DEBT_CEILING = 3937
+#: The ceiling on the escape hatch: total pinned debt in CODE lines. It went UP exactly once, on
+#: 2026-09-17, and comes back DOWN here from 3937 to the sum above -- the direction that entry
+#: declared was the only one allowed. THE DROP IS A UNIT CHANGE AND NOT A REPAYMENT, and saying so is
+#: the difference between a ceiling and a number edited to fit: 2464 of those lines were never code.
+#: From here it may only go DOWN.
+DEBT_CEILING = 1473
 
 
 def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:
-    """``{repo-relative path: line count}`` for every module past *band* -- pure over its argument."""
+    """``{repo-relative path: code-line count}`` for every module past *band* -- pure over its argument."""
     out: dict[str, int] = {}
     for path in paths:
-        lines = len(path.read_text(encoding='utf-8').splitlines())
+        lines = code_lines(path)
         if lines > band:
             key = rel(path) if path.is_relative_to(ROOT) else path.name
             out[key] = lines
@@ -109,3 +135,37 @@ def test_a_planted_oversized_module_is_refused(tmp_path: Path) -> None:
     live = oversized((big, small), band=10)
     assert live == {'big.py': 12}
     assert parse(small).body, 'the planted files are real modules, not text the guard never parsed'
+
+
+def test_the_band_measures_code_and_not_prose(tmp_path: Path) -> None:
+    """THE CONTROL FOR THE UNIT ITSELF: a module huge in RAW lines and tiny in CODE, and its mirror.
+
+    Without this arm the switch to code lines is asserted only by the docstring above, and a
+    ``code_only`` that stopped blanking would restore the raw band SILENTLY -- the exact state the
+    dev inventory deadlocked against, arriving back with no red anywhere. BOTH directions are
+    planted, because a blanker that returned NOTHING would pass a one-sided version of this.
+    """
+    prose = tmp_path / 'prose.py'
+    prose.write_text('"""\n' + 'a documented module.\n' * 40 + '"""\n' + 'X = 1\n' * 3, encoding='utf-8')
+    dense = tmp_path / 'dense.py'
+    dense.write_text('X = 1\n' * 40, encoding='utf-8')
+
+    assert len(prose.read_text(encoding='utf-8').splitlines()) > 40, 'the planted prose file must be big RAW'
+    assert code_lines(prose) == 3, code_lines(prose)
+    assert code_lines(dense) == 40, code_lines(dense)
+    assert oversized((prose, dense), band=10) == {'dense.py': 40}, (
+        'the band convicted the documented module or acquitted the dense one, so it is still '
+        'measuring raw lines -- the reading that taxed four pinned rows for prose and deadlocked '
+        'the dev inventory against its own band.'
+    )
+
+
+def test_the_debt_names_only_modules_this_repo_has() -> None:
+    """A pin naming a path that is not here would be absent from ``live`` and read as repaid."""
+    present = {rel(path) for path in source_modules()}
+    missing = sorted(set(DEBT) - present)
+    assert missing == [], (
+        f'these pins name no module in this tree: {missing}. A pin on a path that does not exist '
+        f'never appears in the live oversized set, so the two-sided arm above reads it as a module '
+        f'that came back under the band -- a waiver that has quietly stopped being about anything.'
+    )
