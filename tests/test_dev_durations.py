@@ -3,11 +3,13 @@
 WHICH READING THIS REPO CANNOT TAKE, AND IT IS RECORDED RATHER THAN SKIPPED. ``pytest-xdist`` is NOT
 installed here (measured 2026-09-19 -- this repo declares no ``timeout`` and no ``-n`` either), so
 the LIVE arm of
-:func:`~lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` skips in this
-tree and is live in the sibling repos that shard. The claim is driven anyway, twice, on source handed
-straight to the reader: once carrying the sentence and once reworded. Its FLOOR -- source that was
-never read, which trivially contains no marker either -- is driven separately, because that is the
-green this arm would otherwise report most confidently.
+:func:`~lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` is the
+CONSUMER'S and is not in this file at all. Writing it here as an ``importorskip`` was tried and this
+repo's own guards refused it twice -- see the comment where it would have gone; both refusals were
+right. The claim is driven anyway, twice, on source handed straight to the reader: once carrying the
+sentence and once reworded. Its FLOOR -- source that was never read, which trivially contains no
+marker either -- is driven separately, because that is the green this arm would otherwise report
+most confidently.
 
 THE ONE THING NO TEST HERE CAN DO is stand up four xdist workers, wedge one past a wall and observe
 the controller file it at ~0.0s. The evidence for that is the consumer's: wdg-lab measured it on
@@ -191,20 +193,22 @@ def test_the_marker_check_refuses_source_it_never_read() -> None:
             assert_the_crash_marker_is_what_the_scheduler_writes(scheduler_source=blank, where='planted/empty.py')
 
 
-def test_the_marker_is_what_the_real_scheduler_writes_where_one_is_installed() -> None:
-    """THE LIVE READING, taken wherever a scheduler exists -- skipped HERE, and that is measured.
-
-    This repo does not install ``pytest-xdist`` (it declares no ``timeout`` and no ``-n`` either), so
-    the reading cannot be taken in this tree. It is expressed as an ``importorskip`` rather than
-    silently omitted because the sibling repos that DO shard run this same file, and there the arm is
-    live against xdist's own source -- which is the only place the detector and its subject are
-    checked against each other rather than against a plant.
-    """
-    dsession = pytest.importorskip('xdist.dsession')
-    assert_the_crash_marker_is_what_the_scheduler_writes(
-        scheduler_source=Path(dsession.__file__).read_text(encoding='utf-8'),
-        where=dsession.__file__,
-    )
+# THE LIVE READING IS THE CONSUMER'S ARM AND IT IS DELIBERATELY NOT HERE, which two of this repo's
+# own guards established rather than an opinion. An `importorskip('xdist.dsession')` was written at
+# this point and the verify run refused it twice over: `_collect_census` measured
+# `unresolved={'xdist'}` for the `dev` extra -- "a test grew an import its selection cannot supply,
+# which is a repo that reports no verdict rather than a failing one" -- and the skip it produced took
+# the whole verdict to INCONCLUSIVE. Both are correct. A kit that promises `pip install lab-commons`
+# pulls nothing heavier must not have a test reaching for a scheduler it does not install, and an
+# arm that can only ever skip here is a declaration that lies about being exercised.
+#
+# So the live check belongs in the repos that actually shard, next to their own ledger wiring, and
+# the three lines it takes are written out in the recipe block of
+# `lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` -- once, in the
+# module a consumer reads to adopt it, rather than a second time here where nothing runs them.
+#
+# Nothing is lost by its absence: the reader is driven above on source carrying the sentence and on
+# source reworded, and its FLOOR is driven on source that was never read.
 
 
 # -- the ledger ------------------------------------------------------------------------------------
