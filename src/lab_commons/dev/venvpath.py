@@ -69,6 +69,7 @@ __all__ = [
     'current_os_name',
     'hardcoded_spellings',
     'portable',
+    'unportable_row',
     'venv_interpreter',
 ]
 
@@ -186,3 +187,26 @@ def hardcoded_spellings(text: str) -> tuple[str, ...]:
     THIS body against a string instead of re-implementing it and agreeing with itself.
     """
     return tuple(found.group(0) for found in _SPELLING.finditer(text))
+
+
+def unportable_row(entry: str) -> str | None:
+    """Why *entry* may not go into a tracked permission file, or ``None`` when it may.
+
+    THE REFUSAL'S TEXT LIVES HERE RATHER THAN AT THE CALL SITE because it is a statement about venv
+    portability, which is this module's subject, and because the repair it names is
+    :func:`portable` -- a message that must quote this function's own output should be built where
+    that output is. :mod:`lab_commons.dev.allow_adoption` raises it as its own exception type; the
+    WORDING is not a second copy of this argument living in another module.
+
+    A DECLARED allow row is the only door :func:`lab_commons.dev.allow_adoption.glob_for` cannot
+    reach: a derived row is normalised on the way out, a declared one is the repo's verbatim text.
+    """
+    spelled = hardcoded_spellings(entry)
+    if not spelled:
+        return None
+    return (
+        f'{entry}: spells the venv interpreter {spelled[0]!r} rather than globbing it. A DERIVED row is '
+        f'normalised by glob_for; a DECLARED row is verbatim, so this is the door normalisation cannot reach. '
+        f'settings.json is TRACKED IN GIT and a one-platform row permits NOTHING on the other, silently. '
+        f'Write {portable(entry)} instead.'
+    )

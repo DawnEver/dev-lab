@@ -8,13 +8,12 @@ in the same way and for the same reason that it does not import ``lab_commons.em
 ``lab_commons`` never pulls this in, and a consumer opts in explicitly, by the full path:
 ``from lab_commons.dev.verdict import Verdict``.
 
-THE OPT-IN IS GATED BY THE ``dev`` EXTRA, which already exists and is the right one: it names
-``pytest`` and ``ruff``, and those two ARE this subpackage's dependencies -- as executables rather
-than as imports. Nothing here needs a new install, because the layer is stdlib plus tier 1:
-:mod:`lab_commons.resources` (the box lock), :mod:`lab_commons.paths` (the repo root), and
-``hashlib``/``importlib.metadata``. That is a measurement, not an aspiration -- ``pip install
-lab-commons`` pulls nothing new, and a consumer that wants only logging still installs nothing
-heavier than it did yesterday.
+THE OPT-IN IS GATED BY THE ``dev`` EXTRA, which already exists and is the right one: it names ``pytest`` and
+``ruff``, and those two ARE this subpackage's dependencies -- as executables rather than as imports. Nothing
+here needs a new install, because the layer is stdlib plus tier 1: :mod:`lab_commons.resources` (the box
+lock), :mod:`lab_commons.paths` (the repo root), and ``hashlib``/``importlib.metadata``. That is a
+measurement, not an aspiration -- ``pip install lab-commons`` pulls nothing new, and a consumer that wants
+only logging still installs nothing heavier than it did yesterday.
 
 WHAT IS HERE, and the order is the order of dependency rather than of importance. A bullet reading
 NOT RE-EXPORTED says one thing, stated once here instead of at each site: that module's own names
@@ -216,6 +215,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.floors` -- a scan that read NOTHING is not a clean scan; both sides, no default.
+* :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.
 * :mod:`lab_commons.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
 * :mod:`lab_commons.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.
 

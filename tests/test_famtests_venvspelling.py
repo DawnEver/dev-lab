@@ -109,7 +109,10 @@ def test_this_box_resolves_through_the_same_door() -> None:
 @pytest.mark.parametrize(
     ('command', 'expected'),
     [
-        ('./.venv/Scripts/python.exe -m lab_commons.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify'),  # noqa: E501 -- the two spellings must sit side by side to be read as a pair
+        (
+            './.venv/Scripts/python.exe -m lab_commons.dev.verify',
+            f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify',
+        ),
         ('./.venv/bin/python -m lab_commons.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify'),
         ('.venv\\Scripts\\python.exe x', f'{VENV_INTERPRETER_GLOB} x'),
         ('.venv/bin/python3.12 x', f'{VENV_INTERPRETER_GLOB} x'),
