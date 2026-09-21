@@ -55,6 +55,15 @@ CALL came back; it does not say the grandchild died. A child that crashed on its
 same clock reading as a correct reap. That is why :func:`assert_the_reaper_kills_what_is_not_ours`
 confirms its planted process by the process's OWN EXIT rather than by a return value, and why no arm
 asserts over a pid table: a pid table on a busy box is a snapshot of a mutating machine.
+
+ONE ARM HERE IS NOT A LIVE WAIT AND DOES NOT BELONG TO THE PAIR ABOVE, and it is kept because the
+consumers kept it in the same file. :func:`assert_the_pool_vars_are_the_named_set` reads DATA --
+:data:`lab_commons.dev.bounded.BLAS_THREAD_VARS` against a declared set of names -- with no clock, no
+child and no box reading. It is the same question ``test_a_width_is_computed_rather_than_guessed``
+ends on, one line below the width arithmetic, and both labs pinned it with a COUNT under a message
+that said *"by name rather than by count"*. It is here rather than in :mod:`lab_commons.dev.bounded`
+for the boundary this package runs on: the runtime those repos CALL is in ``dev``, and the assertion
+their ARCHITECTURE TEST makes belongs here.
 """
 
 from __future__ import annotations
@@ -62,6 +71,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from typing import Final
 
 from lab_commons.dev import bounded
 from lab_commons.dev.famtests._boundedremedy_readings import (
@@ -84,6 +94,7 @@ __all__ = [
     'allowance',
     'assert_a_run_inside_the_wall_is_left_alone',
     'assert_each_state_names_its_own_remedy',
+    'assert_the_pool_vars_are_the_named_set',
     'assert_the_reaper_kills_what_is_not_ours',
     'assert_the_reaper_refuses_its_own_lineage',
     'assert_the_wall_terminates_the_tree',
@@ -91,6 +102,18 @@ __all__ = [
     'separation_verdict',
     'spawn_overhead',
 ]
+
+#: The POOL-SPAWNING RUNTIMES, BY NAME -- which is the whole mechanism, because the count this
+#: replaces could not tell one of these from a name that does not exist. Read the docstring of
+#: :func:`assert_the_pool_vars_are_the_named_set` for the two plants that measured it.
+_POOL_RUNTIMES: Final[frozenset[str]] = frozenset(
+    {
+        'OMP_NUM_THREADS',
+        'MKL_NUM_THREADS',
+        'OPENBLAS_NUM_THREADS',
+        'NUMEXPR_NUM_THREADS',
+    }
+)
 
 
 def assert_the_wall_terminates_the_tree(
@@ -296,4 +319,54 @@ def assert_each_state_names_its_own_remedy(*, capacity: int, wider_tier: str, na
         raise AssertionError(msg)
     if bounded.is_narrowed(capacity, capacity):
         msg = f'a run at the full {capacity} was read as narrowed, so the reading convicts everything'
+        raise AssertionError(msg)
+
+
+def assert_the_pool_vars_are_the_named_set() -> None:
+    """``NAMED-SETS-NOT-COUNTS`` over the one constant in this family that was pinned by a COUNT.
+
+    THE DEFECT, AND ITS OWN MESSAGE IS THE EVIDENCE. Both labs carried this line in their
+    ``test_a_bounded_wait_names_its_remedy.py``::
+
+        assert len(BLAS_THREAD_VARS) >= 4, 'the pool-spawning runtimes, by name rather than by count'
+
+    The sentence describes a named set and the assertion counts. Two plants make that a measured
+    defect rather than a wording slip, and both are asserted in the kit's own controls: replacing
+    ``OMP_NUM_THREADS`` with a runtime that does not exist leaves the length at 4, and spelling three
+    real runtimes as four entries leaves it at 4 as well. The rule's own incident is one layer over --
+    a pin read ``mec transient: 2``, a merge dropped a restriction, the table delivered 1, and the PIN
+    was lowered -- and the reason a count failed there is the reason it fails here: an integer cannot
+    say WHICH member moved, so the honest-looking repair when it disagrees is to edit the digit.
+
+    WHY AN EQUALITY AGAINST A DECLARED SET, WHEN THE SET IS THE KIT'S OWN CONSTANT. Because nothing
+    in this tree DERIVES it. ``BLAS_THREAD_VARS`` is data no module reads at runtime -- the runtimes
+    behind it are native libraries whose honouring of the name is not observable in-process -- so there
+    is no reading to compare against and a derivation here would be an invention wearing a
+    measurement's clothes. What an equality buys is the thing a count cannot: the four names are
+    written down twice, once where they are used and once here, and neither may move without the
+    other. A pin is a declaration; this one is honest about being one, and states its own limit --
+    it cannot tell you these are the runtimes THIS box spawns pools with, only that the kit's list has
+    not changed and is not a count.
+
+    Raises:
+        AssertionError: the declared names and :data:`lab_commons.dev.bounded.BLAS_THREAD_VARS`
+            disagree -- by substitution, by omission, or by a duplicate inflating the length.
+
+    """
+    named = tuple(bounded.BLAS_THREAD_VARS)
+    if len(set(named)) != len(named):
+        msg = (
+            f'{list(named)} holds a duplicate, so its LENGTH overstates the runtimes it names. This is '
+            f'the failure a `>= 4` pin is blind to: three real runtimes spelled four times pass it.'
+        )
+        raise AssertionError(msg)
+    if frozenset(named) != _POOL_RUNTIMES:
+        msg = (
+            f'BLAS_THREAD_VARS names {sorted(named)} and the family declares {sorted(_POOL_RUNTIMES)}. '
+            f'Unnamed: {sorted(set(named) - _POOL_RUNTIMES)}; missing: {sorted(_POOL_RUNTIMES - set(named))}. '
+            f'A count cannot report either list, which is why this pin is an equality -- a one-for-one '
+            f'swap of a runtime that exists for one that does not is the edit a `>= 4` assertion reads '
+            f'as UNCHANGED. If the pool-spawning runtimes of this family have genuinely changed, change '
+            f'BOTH sides of this sentence in the same commit.'
+        )
         raise AssertionError(msg)

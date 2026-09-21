@@ -73,6 +73,8 @@ __all__ = [
     'WAITERS',
     'UnboundedWait',
     'UntimedScan',
+    'VacuousExemption',
+    'assert_every_exemption_is_real',
     'assert_every_wait_is_bounded',
     'assert_the_scanner_still_convicts',
     'take_scan',
@@ -91,6 +93,10 @@ WAITERS: Final[frozenset[str]] = frozenset({'communicate', 'wait'})
 
 class UnboundedWait(AssertionError):
     """At least one blocking wait declares no ceiling, so a hung child can park whatever ran it."""
+
+
+class VacuousExemption(AssertionError):
+    """An exempt path is not on disk, so the waiver has stopped covering anything it names."""
 
 
 @dataclass(frozen=True)
@@ -119,7 +125,9 @@ def untimed_waits(root: Path, *, roots: Collection[tuple[str, str]], exempt: Col
         exempt: repo-relative paths whose own source names these calls as DATA -- the consumer's
             guard file itself, and any fixture that plants an offender on purpose. NO DEFAULT, and a
             consumer must assert each one exists: an exemption naming a deleted file covers nothing
-            while still reading as a decision.
+            while still reading as a decision. :func:`assert_every_exemption_is_real` IS that
+            assertion, published here rather than left to each consumer to hand-write -- it was the
+            last body in this module a repo still had to write for itself.
 
     Returns:
         An :class:`UntimedScan`. Offenders are spelled ``path:line: attr() waits with no timeout=``,
@@ -208,6 +216,45 @@ def assert_every_wait_is_bounded(scan: UntimedScan, *, floor: int, headroom: int
             'verdict is then INCONCLUSIVE -- evidence about nothing. Add timeout=:\n  ' + '\n  '.join(scan.offenders)
         )
         raise UnboundedWait(msg)
+
+
+def assert_every_exemption_is_real(root: Path, *, exempt: Collection[str]) -> None:
+    """Every path the scan SKIPS is a file that is still here -- the other half of the ratchet.
+
+    THE OBLIGATION :func:`untimed_waits` STATES AND DOES NOT ENFORCE. Its ``exempt`` argument is a
+    waiver, and a waiver naming a deleted file covers nothing while still reading as a decision --
+    the segment of the tree it was written about is once again scanned, or once again not, and
+    nobody is told either way. This is the arm that refuses it, and it is the counterpart of
+    :func:`lab_commons.dev.famtests.citedtests.assert_every_exemption_is_real`, which published the
+    same mechanism for the prose half while this half was left to each consumer to hand-write.
+
+    IT IS DRIVEN ON AN EMPTY SET AS WELL AS A POPULATED ONE, and that is not padding. Both consumer
+    files this arm was carved from declare ``EXEMPT = ()`` -- the state they are measured in -- so an
+    assertion that only ever ran over a non-empty set would never have been exercised in the shape
+    those repos are actually in. It also keeps the failure mode honest: the day the first exemption
+    is written is the day this arm starts doing work, and it must already be green when that happens.
+
+    Args:
+        root: the consumer's checkout. NO DEFAULT, and it is resolved HERE rather than inside
+            :mod:`lab_commons.dev.famtests` -- a body that answered against its own checkout would
+            pass every waiver in every repo and report the kit's tree as the repo's.
+        exempt: the exact collection handed to :func:`untimed_waits` as its ``exempt``. NO DEFAULT
+            for the same reason the scan takes none: a default here is a waiver the consumer never
+            wrote, asserted against the wrong tree.
+
+    Raises:
+        VacuousExemption: at least one exempt path is not on disk.
+
+    """
+    missing = sorted(name for name in exempt if not (root / name).exists())
+    if missing:
+        msg = (
+            f'{missing} are exempt from a scan they are no longer part of. An exemption naming a '
+            f'deleted file is a silent widening: the waits it excused are read again -- or the tree '
+            f'it named is read by nobody -- and the entry still reads as a decision somebody made. '
+            f'Delete the row in the same edit that deleted the file.'
+        )
+        raise VacuousExemption(msg)
 
 
 def assert_the_scanner_still_convicts(plant_root: Path, *, roots: Collection[tuple[str, str]]) -> None:

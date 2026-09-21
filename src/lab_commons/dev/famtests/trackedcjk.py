@@ -49,7 +49,9 @@ TEXT taken verbatim, so a backslash-u escape is eight plain ASCII characters and
 This module does not need even that: it builds the planted character with :func:`chr` from a code
 point in :data:`lab_commons.dev.cjk.CJK_RANGES`, so the ranges stay DERIVED -- widening them widens the
 control -- and nothing that looks like CJK appears in the source at all.
-:func:`assert_the_source_is_itself_clean` is the arm that keeps that true rather than asserted.
+:func:`assert_the_source_is_itself_clean` is the arm that keeps that true rather than asserted, and it
+takes the CONSUMER's file through ``also`` because the consumer's file is subject to the same
+obligation and was carrying a hand-written copy of this arm to say so.
 
 WHAT THIS DOES NOT PROVE. It says nothing about which files a repo tracks -- a corpus handed over
 empty clears every arm but the floor, which is exactly what the floor is for -- and nothing about
@@ -226,7 +228,8 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Coll
 
     NO CJK CHARACTER IS WRITTEN INTO THIS FILE. The planted one is built with :func:`chr` from
     :data:`lab_commons.dev.cjk.CJK_RANGES`, so it stays DERIVED from the shared ranges and this
-    module's own source is plain ASCII -- which :func:`assert_the_source_is_itself_clean` then holds.
+    module's own source is plain ASCII -- which :func:`assert_the_source_is_itself_clean` then holds,
+    over this module AND over the consumer file it is handed.
 
     THE AXIS THIS CONTROL IS BLIND TO: it plants a TREE and proves nothing about the CORPUS. A
     consumer whose ``tracked_files`` call answers an empty list, or drops every file under one
@@ -282,23 +285,49 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Coll
         raise AssertionError(msg)
 
 
-def assert_the_source_is_itself_clean() -> None:
-    """The kit's own source carries no CJK -- the one file this guard must never be able to convict.
+def assert_the_source_is_itself_clean(*, also: Collection[Path]) -> None:
+    """The kit's module AND the consumer's file carry no non-ASCII character.
 
-    The control above plants a real CJK character and this file must still pass the scan it publishes.
-    Asserting it here rather than trusting :func:`chr` is the difference between a property and an
-    intention: a later edit pasting the character in as a literal would be caught by a consumer's own
-    tree scan only if the kit happened to be tracked in that consumer's repo, which it is not.
+    THE HALF THIS BODY COULD NOT SEE, and it was the half that mattered. Resolving ``Path(__file__)``
+    inside this module scans THE KIT'S OWN SOURCE and nothing else -- which is a real and necessary
+    property (the control below plants a CJK character, so the module publishing the guard must
+    survive its own scan), but it is not the property either consumer needed. Both wrote the same six
+    lines beside the call to cover THEMSELVES, byte-identically, in two repos. That duplication is the
+    gap: a consumer that has to hand-write an assertion the kit already reasons about is one edit away
+    from writing it differently, and this family measures that drift rather than assuming it away.
+
+    ``also`` IS REQUIRED AND HAS NO DEFAULT, on the rule the whole package runs on: a body that
+    guessed would report the kit's answer as the repo's, and the guess would be silent precisely
+    because the wrong answer (scan the kit) is the one this function produced before.
+
+    ASCII, NOT MERELY OUTSIDE :data:`lab_commons.dev.cjk.CJK_RANGES`, and the consumers' own arm is
+    why. Both asserted ``text.isascii()`` -- strictly stronger than the ranges -- under the reasoning
+    that a guard refusing a character may not be written with one. Applying the ranges here would
+    have left that stronger half in the consumer and closed nothing; the family's tracked-source
+    guards are ASCII-only anyway, so the tightening costs no repo a real character. It is stated
+    because it is a TIGHTENING of what this function checked yesterday, not a restatement.
+
+    Args:
+        also: the consumer's own file(s) -- in practice ``(Path(__file__),)`` from the arm that
+            installs this guard. NO DEFAULT -- see above.
 
     Raises:
-        AssertionError: this module's own source carries a character in the shared ranges.
+        AssertionError: this module's own source, or any file in *also*, carries a character outside
+            ASCII.
 
     """
-    found = cjk.find_cjk(Path(__file__).read_text(encoding='utf-8'))
-    if found:
+    sources = (Path(__file__), *also)
+    offenders: list[str] = []
+    for path in sources:
+        text = path.read_text(encoding='utf-8')
+        if not text.isascii():
+            offenders.append(f'{path.name}: {"".join(sorted({char for char in text if not char.isascii()}))[:8]}')
+    if offenders:
         msg = (
-            f'{__name__} carries CJK at {found[:3]}. The control builds its character with chr() from '
-            f'CJK_RANGES precisely so this file never holds one; a literal pasted here would make the '
-            f'guard convict the module that publishes it.'
+            f'a guard that refuses a character may not be written with one, and BOTH bodies are read '
+            f'by the scan it publishes: {offenders}. The first is this kit module; anything after it '
+            f'arrived through ``also``, which is the consumer file installing this guard. Spell the '
+            f'character as a backslash-u ESCAPE -- eight ASCII characters, and the remedy this family '
+            f'recommends -- rather than pasting it in, or the guard reds on the file that publishes it.'
         )
         raise AssertionError(msg)

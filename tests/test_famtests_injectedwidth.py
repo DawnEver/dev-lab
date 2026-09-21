@@ -22,6 +22,8 @@ from lab_commons.dev.famtests.injectedwidth import (
     MisdeclaredSite,
     OverwideDeclaration,
     OverwidthDocument,
+    UnreadDocument,
+    assert_every_document_handed_in_was_read,
     assert_the_declaration_is_the_shape_the_ratchet_keys_on,
     assert_the_scanner_still_convicts,
     assert_widths_are_the_named_set,
@@ -204,3 +206,41 @@ def test_an_undecodable_file_is_named_rather_than_counted_as_compliant(tmp_path:
     scan = _scan(tmp_path)
     assert scan.files_read == 1
     assert scan.undecodable == ('AGENTS.md',)
+
+
+# -- WHAT WAS HANDED IN, against what came back. ----------------------------------------------------
+
+
+def test_a_document_handed_in_that_could_not_be_read_is_refused(tmp_path: Path) -> None:
+    """The arm the field was declared for: a floor counts what was READ and cannot see what was not."""
+    (tmp_path / 'AGENTS.md').write_bytes(b'\xff\xfe\x00broken')
+    _plant(tmp_path, 'CLAUDE.md', 'short\n')
+    handed = sorted(tmp_path.rglob('*.md'))
+    scan = take_scan(handed, root=tmp_path, ceiling=_CEILING)
+    with pytest.raises(UnreadDocument, match=r'AGENTS\.md'):
+        assert_every_document_handed_in_was_read(scan, handed=handed)
+    readable = [path for path in handed if path.name != 'AGENTS.md']
+    assert_every_document_handed_in_was_read(take_scan(readable, root=tmp_path, ceiling=_CEILING), handed=readable)
+
+
+def test_the_arm_falls_silent_only_when_every_document_handed_in_was_read(tmp_path: Path) -> None:
+    """BOTH directions, and an EMPTY hand-in too -- which is the state a corpus that matched nothing is in."""
+    _plant(tmp_path, 'CLAUDE.md', 'short\n')
+    handed = sorted(tmp_path.rglob('*.md'))
+    assert_every_document_handed_in_was_read(take_scan(handed, root=tmp_path, ceiling=_CEILING), handed=handed)
+    with pytest.raises(UnreadDocument, match='handed'):
+        assert_every_document_handed_in_was_read(
+            take_scan(handed, root=tmp_path, ceiling=_CEILING), handed=(*handed, handed[0])
+        )
+
+
+def test_the_arm_refuses_a_short_read_even_when_nothing_was_named_undecodable() -> None:
+    """THE TWO HALVES ARE INDEPENDENT: a reader that skips a file silently reds here and nowhere else.
+
+    Nothing in the shipped scanner reaches this state today -- it records every file it cannot decode.
+    That is exactly why the comparison is asserted rather than derived from `undecodable`: the day a
+    `continue` arrives that neither reads NOR records, this is the only arm that can see it.
+    """
+    short = docwidth.WidthScan(overwidth=(), files_read=1, undecodable=())
+    with pytest.raises(UnreadDocument, match='2 documents were handed'):
+        assert_every_document_handed_in_was_read(short, handed=('a.md', 'b.md'))

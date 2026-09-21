@@ -54,6 +54,33 @@ def test_a_box_that_cannot_start_a_child_is_inconclusive_rather_than_red() -> No
         boundedremedy.spawn_overhead(interpreter=boundedremedy.default_interpreter(), ceiling_seconds=1e-6)
 
 
+def test_the_pool_vars_are_pinned_by_name_and_a_one_for_one_swap_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`NAMED-SETS-NOT-COUNTS` over the one constant in this family pinned by a COUNT.
+
+    Both labs asserted `len(BLAS_THREAD_VARS) >= 4` under a message saying *"by name rather than by
+    count"*. The plants below are why that is a defect rather than a wording slip: each is a
+    one-for-one change a count reads as UNCHANGED, so a bogus runtime could replace a real one and the
+    arm would stay green while its own message claimed to have named the set.
+    """
+    boundedremedy.assert_the_pool_vars_are_the_named_set()
+    swapped = tuple('BOGUS_NUM_THREADS' if name == 'OMP_NUM_THREADS' else name for name in bounded.BLAS_THREAD_VARS)
+    assert len(swapped) >= 4, 'the plant must clear the count pin this replaces, or it proves nothing'
+    monkeypatch.setattr(bounded, 'BLAS_THREAD_VARS', swapped)
+    with pytest.raises(AssertionError, match='BOGUS_NUM_THREADS'):
+        boundedremedy.assert_the_pool_vars_are_the_named_set()
+
+
+def test_a_duplicate_that_inflates_the_count_is_refused_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other half a count is blind to: three real runtimes spelled four times still reads as four."""
+    duped = (*bounded.BLAS_THREAD_VARS[:3], bounded.BLAS_THREAD_VARS[0])
+    assert len(duped) >= 4, 'the plant must clear the count pin this replaces'
+    monkeypatch.setattr(bounded, 'BLAS_THREAD_VARS', duped)
+    with pytest.raises(AssertionError, match='duplicate'):
+        boundedremedy.assert_the_pool_vars_are_the_named_set()
+
+
 def test_the_allowance_grows_with_the_box_and_never_below_the_declared_reap() -> None:
     """The arithmetic, at rest and under load. A slower box gets more slack without an edit."""
     quiet = boundedremedy.allowance(reap_ceiling_seconds=4.0, overhead_seconds=0.1, overhead_multiple=4.0)

@@ -17,6 +17,8 @@ from lab_commons.dev.famtests.untimedwaits import (
     WAITERS,
     UnboundedWait,
     UntimedScan,
+    VacuousExemption,
+    assert_every_exemption_is_real,
     assert_every_wait_is_bounded,
     assert_the_scanner_still_convicts,
     take_scan,
@@ -120,6 +122,29 @@ def test_the_arm_raises_on_an_offender_and_passes_a_bounded_tree(tmp_path: Path)
     _plant(tmp_path, 'tests/test_c.py', 'import subprocess\nsubprocess.run(["x"])\n')
     with pytest.raises(UnboundedWait, match='INCONCLUSIVE'):
         assert_every_wait_is_bounded(take_scan(tmp_path, roots=_ROOTS, exempt=()), floor=2, headroom=4)
+
+
+def test_an_exemption_naming_a_deleted_file_is_refused_and_an_empty_set_is_not(tmp_path: Path) -> None:
+    """THE OTHER SIDE OF THE RATCHET: a waiver nothing uses covers nothing, and does not announce itself.
+
+    The exemption is asserted EMPTY as well as populated, because the two consumer files this arm
+    replaces both declare `EXEMPT` empty -- and an assertion that is only ever driven on a non-empty
+    set has never been shown to pass the state those repos are actually in.
+    """
+    _plant(tmp_path, 'tests/test_guard.py', 'import subprocess\nsubprocess.run(["x"])\n')
+    assert_every_exemption_is_real(tmp_path, exempt=())
+    assert_every_exemption_is_real(tmp_path, exempt=('tests/test_guard.py',))
+    with pytest.raises(VacuousExemption, match='no longer part of'):
+        assert_every_exemption_is_real(tmp_path, exempt=('tests/test_guard.py', 'tests/test_gone.py'))
+
+
+def test_the_exemption_arm_reads_the_tree_it_is_handed_rather_than_the_kits_own(tmp_path: Path) -> None:
+    """A body that resolved `exempt` against its own checkout would pass every waiver in every repo."""
+    _plant(tmp_path, 'src/lab_commons/dev/famtests/untimedwaits.py', 'x = 1\n')
+    with pytest.raises(VacuousExemption, match='untimedwaits'):
+        assert_every_exemption_is_real(
+            tmp_path, exempt=('src/lab_commons/dev/famtests/untimedwaits.py', 'src/lab_commons/dev/bounded.py')
+        )
 
 
 def test_the_planted_control_convicts_through_the_shipped_scanner(tmp_path: Path) -> None:

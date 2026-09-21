@@ -39,6 +39,12 @@ the corpus and wrong about the number: a floor pinned at the exact count reds on
 which is the count-pin failure, and the honest-looking repair is to edit the digit. Routing through
 :mod:`lab_commons.dev.floors` gives a band instead, and a ``what`` that has no default.
 
+AND THE FLOOR IS STILL ONLY A COUNT, which is what
+:func:`assert_every_document_handed_in_was_read` adds. It answers a question no floor can: the floor
+says the scan read ENOUGH files, this says it read THE files it was handed. A consumer wrote that
+comparison by hand because the kit published no body for it, and the ``undecodable`` field it needs
+was declared in :mod:`lab_commons.dev.docwidth` and read by no assertion anywhere.
+
 WHAT THIS DOES NOT PROVE. It says nothing about how many lines a page has --
 :mod:`lab_commons.dev.famtests.rulespages` owns that dimension over an overlapping corpus, with its
 own per-page ratchet and its own total budget, and a repo adopting this body wants that one as well.
@@ -61,6 +67,8 @@ __all__ = [
     'MisdeclaredSite',
     'OverwideDeclaration',
     'OverwidthDocument',
+    'UnreadDocument',
+    'assert_every_document_handed_in_was_read',
     'assert_the_declaration_is_the_shape_the_ratchet_keys_on',
     'assert_the_scanner_still_convicts',
     'assert_widths_are_the_named_set',
@@ -78,6 +86,10 @@ class OverwideDeclaration(AssertionError):
 
 class MisdeclaredSite(AssertionError):
     """A declared waiver is not a ``path:line`` site, so it can only ever orphan."""
+
+
+class UnreadDocument(AssertionError):
+    """A document handed to the scan was not read, so it was never checked for width."""
 
 
 def take_scan(paths: Iterable[Path], *, root: Path, ceiling: int) -> docwidth.WidthScan:
@@ -153,6 +165,53 @@ def assert_widths_are_the_named_set(
             f'ceiling grows one justified line at a time and nobody ever chose its size.'
         )
         raise OverwideDeclaration(msg)
+
+
+def assert_every_document_handed_in_was_read(
+    scan: docwidth.WidthScan,
+    *,
+    handed: Collection[Path | str],
+) -> None:
+    """What was HANDED IN came back READ -- the comparison a floor cannot make.
+
+    THE FLOOR IN :func:`assert_widths_are_the_named_set` COUNTS, and a count is exactly as blind here
+    as it is everywhere else in this family. ``files_read`` answers *did the scan reach a corpus at
+    all*; it cannot answer *did it reach THIS corpus*, because the two questions have the same answer
+    for every file the scanner silently skipped. One consumer wrote this comparison for itself
+    (``scan.files_read == len(docs)``), which is the gap this body closes, and the field it uses was
+    already declared and unused by any assertion: ``undecodable`` on
+    :class:`lab_commons.dev.docwidth.WidthScan` exists so that *"no over-width lines"* and *"the file
+    could not be read"* stay distinguishable facts, and nothing read it.
+
+    A FILE THAT COULD NOT BE READ IS NOT A COMPLIANT ONE, which is the whole claim. A binary or
+    mis-encoded ``AGENTS.md`` under the width ceiling reports zero over-width lines, and a zero it
+    reports for the wrong reason is the vacuous green this package refuses everywhere else.
+
+    THE TWO HALVES ARE ASSERTED SEPARATELY BECAUSE THEY CAN DISAGREE. Today ``files_read`` and
+    ``undecodable`` partition the hand-in, so a short read implies a named file -- and that is a
+    property of the CURRENT reader, not of the interface. A ``continue`` that neither counted nor
+    recorded would leave ``undecodable`` empty with the count short, and only the comparison can see
+    it. That is asserted rather than argued; see the kit's own control for it.
+
+    Args:
+        scan: what :func:`take_scan` returned.
+        handed: the SAME paths handed to :func:`take_scan`. NO DEFAULT, and no re-walk here: a body
+            that collected its own corpus would compare a reading against itself, and would be right
+            by construction on the exact tree it knows least about.
+
+    Raises:
+        UnreadDocument: at least one handed-in document was not read, or is named undecodable.
+
+    """
+    if scan.undecodable or scan.files_read != len(handed):
+        msg = (
+            f'{len(handed)} documents were handed to the width scan and {scan.files_read} were read; '
+            f'unread: {list(scan.undecodable)}. A file the scan could not open is a file it did not '
+            f'check, and no number of files it DID check makes that one compliant. Fix the encoding, '
+            f'or narrow the corpus in the same edit that removes the document -- do not widen the '
+            f'floor, which counts what was read and is silent about what was not.'
+        )
+        raise UnreadDocument(msg)
 
 
 def assert_the_declaration_is_the_shape_the_ratchet_keys_on(declared: Collection[str]) -> None:

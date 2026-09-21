@@ -67,14 +67,17 @@ WHAT IS HERE, one module per shared body:
   ceiling, read off the AST before anything runs. THE SCAN, not the WAIT in
   :mod:`lab_commons.dev.bounded`: no shared name or argument type, the opposite refusal -- a
   pinnable SET against a terminated process tree -- and a floor, because only one of them reads a
-  population at all.
+  population at all. Carries the exemption ratchet too, whose ``citedtests`` counterpart shipped
+  first and left both consumers hand-writing this half.
 
 * :mod:`lab_commons.dev.famtests.boundedremedy` -- a wall terminates the TREE, a reaper never kills
   its own lineage, and a refusal names a DIFFERENT remedy per state. The RUN to ``untimedwaits``'
   SCAN: one live wait on a real process tree against a set read off the AST, empty surface overlap,
   and a CALIBRATION where that one has a floor. The only body here that asserts on ELAPSED TIME, so
   the only one that can be flaky -- priced from this box in the same second, with a ceiling past
-  which it reports INCONCLUSIVE rather than a pass it could not have failed.
+  which it reports INCONCLUSIVE rather than a pass it could not have failed. Also carries the one
+  arm here that reads no clock at all: the pool-spawning runtimes pinned BY NAME, which two labs had
+  each pinned by a count.
 
 * :mod:`lab_commons.dev.famtests.echoedtoken` -- no assertion searches for a token its own producer
   was handed, which is the one shape that cannot fail however green it reads. Found 2026-09-18 in
@@ -96,12 +99,16 @@ WHAT IS HERE, one module per shared body:
   only the low one, and refuses a waiver spelled in a shape the ratchet cannot key on -- the failure
   that reds loudly for the wrong reason. NOT the body the injected-width guard needs: the two
   scanners' surfaces share no name, and the declared set is keyed by FILE here and by site there.
+  Its own-source arm takes the CONSUMER's file as a required argument, because the kit could only
+  ever resolve its own module and both consumers were writing that other half by hand.
 
 * :mod:`lab_commons.dev.famtests.injectedwidth` -- every document an agent is handed fits the width,
   over :mod:`lab_commons.dev.docwidth`'s readings. The PAIR to ``trackedcjk``: each refuses the
   other's ledger shape, a ``path:line`` SITE here against a FILE there, which is what stops a
   consumer copying one declaration into the other guard. Carries the ceiling on the escape hatch,
-  where ``0`` is legal and strongest -- the opposite of a floor, which refuses zero.
+  where ``0`` is legal and strongest -- the opposite of a floor, which refuses zero. Carries the
+  other half of its own floor too: what was HANDED IN came back READ, over an ``undecodable`` field
+  that was declared and read by no assertion.
 
 * :mod:`lab_commons.dev.famtests.upperbounds` -- no requirement carries a ceiling nobody wrote down,
   in TWO dialects that disagree about one spelling: a Cargo ``0.29`` refuses the next minor and

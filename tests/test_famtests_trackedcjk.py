@@ -202,7 +202,31 @@ def test_the_control_leaves_the_escape_sequence_alone(tmp_path: Path) -> None:
 
 
 def test_the_shipped_module_carries_no_cjk_of_its_own() -> None:
-    assert_the_source_is_itself_clean()
+    assert_the_source_is_itself_clean(also=(Path(__file__),))
+
+
+def test_the_consumer_file_handed_in_is_scanned_beside_the_kit_module(tmp_path: Path) -> None:
+    """THE HALF THE KIT COULD NOT SEE, and the reason `also` has no default.
+
+    Resolving `Path(__file__)` inside the kit scans the kit's own module and nothing else, so every
+    consumer wrote the same six lines beside the call to cover ITSELF. A non-ASCII character in the
+    consumer's file is a literal the guard would convict if that file ever sat inside the scanned
+    tree -- and it does not, which is the whole reason this argument exists.
+    """
+    clean = tmp_path / 'test_guard.py'
+    clean.write_text('REJECTED = "\\u4e00"  # the remedy, in eight ASCII characters\n', encoding='utf-8')
+    assert_the_source_is_itself_clean(also=(clean,))
+    dirty = tmp_path / 'test_dirty.py'
+    dirty.write_text(f'REJECTED = "{_CHAR}"\n', encoding='utf-8')
+    assert not dirty.read_text(encoding='utf-8').isascii(), 'the plant must be a real non-ASCII character'
+    with pytest.raises(AssertionError, match=r'test_dirty\.py'):
+        assert_the_source_is_itself_clean(also=(dirty,))
+
+
+def test_the_consumer_path_is_required_and_has_no_default_to_fall_back_on() -> None:
+    """NO DEFAULT: a body that guessed would report the kit's answer as the repo's."""
+    with pytest.raises(TypeError):
+        assert_the_source_is_itself_clean()  # type: ignore[call-arg]
 
 
 def test_this_control_file_carries_no_cjk_either() -> None:
