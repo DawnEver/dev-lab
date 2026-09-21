@@ -70,3 +70,25 @@ tree. `make adoption` done that way reported 5 passed against code that had not 
 invocation with lab-commons' own `.venv/Scripts` (or call
 `.venv/Scripts/python.exe -m lab_commons.dev.verify` directly) or every verdict this repo produces
 is about somebody else's tree.
+
+## What the first verify caught, and how the rest was attributed
+
+Three reds came back attributable to this lane, all in the KIT'S OWN TESTS and none in a body:
+
+* the new exemption control planted the kit's own path INTO the temporary tree and then asserted it
+  missing. It is planted so the arm must fall SILENT on it; the second entry, a kit module that was
+  not planted, is the one that must be refused. The arm passed for neither reason.
+* a new control called the body with no argument under a `# type: ignore[call-arg]`, which the
+  suppression ratchet reported as UNDECLARED. **The call a type checker is right to refuse is the
+  one thing in that file needing a waiver, and a suppression added to prove a default is absent is a
+  waiver nobody asked for** -- the property is read off `inspect.signature` instead, where a default
+  arriving on `also` reds it the same way.
+
+The other thirteen reds are PRE-EXISTING, and that was MEASURED rather than assumed: every one
+appears in `.verify/verify-20260921T132855Z.log`, taken against tree `sha256:83c8ca1b1c47e288`
+before this lane touched anything. After the fixes the red set is **identical 14-for-14** and the
+new-red set is empty. A lane that says "pre-existing" without naming the earlier run it read has
+said nothing, and this repo keeps those logs precisely so that sentence can be checked.
+
+`make verify` on the final tree: `14 failed, 2166 passed in 186.17s`, `tree=sha256:86ed354277f0f55d`.
+`make adoption`: `5 passed`.
