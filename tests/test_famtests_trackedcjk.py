@@ -13,6 +13,7 @@ monkeypatching the reader the shipped arm calls, so what is exercised is the shi
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -224,9 +225,21 @@ def test_the_consumer_file_handed_in_is_scanned_beside_the_kit_module(tmp_path: 
 
 
 def test_the_consumer_path_is_required_and_has_no_default_to_fall_back_on() -> None:
-    """NO DEFAULT: a body that guessed would report the kit's answer as the repo's."""
-    with pytest.raises(TypeError):
-        assert_the_source_is_itself_clean()  # type: ignore[call-arg]
+    """NO DEFAULT: a body that guessed would report the kit's answer as the repo's.
+
+    ASSERTED ON THE SIGNATURE rather than by calling with no argument. The call a type checker is
+    right to refuse is the one thing in this file that would need a suppression, and a suppression
+    added to prove a default is absent is a waiver nobody asked for. Reading the signature states
+    the same property directly, and it reds on the defect either way: a default arriving on ``also``
+    stops that parameter's ``default`` being ``inspect.Parameter.empty``.
+    """
+    parameters = inspect.signature(assert_the_source_is_itself_clean).parameters
+    required = [name for name, parameter in parameters.items() if parameter.default is inspect.Parameter.empty]
+    assert required == ['also'], (
+        f'`also` must be the required keyword and the only one; the signature is {parameters}. A '
+        f'default here hands one repo an answer that belongs to another, and it would let a consumer '
+        f'adopt this body WITHOUT covering its own file -- which is the gap the argument closes.'
+    )
 
 
 def test_this_control_file_carries_no_cjk_either() -> None:

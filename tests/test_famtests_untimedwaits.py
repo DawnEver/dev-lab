@@ -139,9 +139,15 @@ def test_an_exemption_naming_a_deleted_file_is_refused_and_an_empty_set_is_not(t
 
 
 def test_the_exemption_arm_reads_the_tree_it_is_handed_rather_than_the_kits_own(tmp_path: Path) -> None:
-    """A body that resolved `exempt` against its own checkout would pass every waiver in every repo."""
+    """A body resolving `exempt` against its own checkout would pass every waiver in every repo.
+
+    PLANTED with the KIT'S OWN PATH inside the temporary tree: that one exists there, so the arm
+    must fall silent, while the second entry names a kit module that was NOT planted and must be
+    refused. A body that resolved against this module's checkout would find it on disk and pass.
+    """
     _plant(tmp_path, 'src/lab_commons/dev/famtests/untimedwaits.py', 'x = 1\n')
-    with pytest.raises(VacuousExemption, match='untimedwaits'):
+    assert_every_exemption_is_real(tmp_path, exempt=('src/lab_commons/dev/famtests/untimedwaits.py',))
+    with pytest.raises(VacuousExemption, match=r'bounded\.py'):
         assert_every_exemption_is_real(
             tmp_path, exempt=('src/lab_commons/dev/famtests/untimedwaits.py', 'src/lab_commons/dev/bounded.py')
         )
