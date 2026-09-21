@@ -74,6 +74,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'content': ('original',),
     'datedlog': ('supersedes', 'scripts/gate/_dated.py'),
     'dep': ('supersedes', 'scripts/gate/native_install.py'),
+    # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism
+    # is new to the family -- and the two rows that LOOK like candidates are not: `netverb` is the
+    # retry wrapper these transports CALL, and `installdoor` asks whether an install delivers a
+    # declared build, where this asks whether the resolved build is the CURRENT one. Two subjects, no
+    # shared file, so there is no fork to name.
+    'dep_observe': ('original',),
+    'depversions': ('original',),
     'devdocs': ('original',),
     # THREE implementations existed -- motronics `scripts/repo/docs.py`, wdg-lab `scripts/docs.py`,
     # optimi-lab `scripts/pdoc`. The table stayed with each repo, so this is adoption, not a move.
@@ -199,6 +206,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # orphan every entry. Also NOT `famtests.rulespages`: that pins how many LINES a page has and
     # sums the pins; this caps how long a line IS. One page measured 32 lines at 694 columns.
     'injectedwidth': ('supersedes', 'tests/architecture/test_injected_doc_width_ceiling.py'),
+    # ORIGINAL, for `dep_observe`'s reason read the other way round: this is the VERDICT half whose
+    # readings are `depversions`'s, so the consumer file it would supersede is the one this lane
+    # EXISTS to write next -- a per-repo copy of `test_dependencies_take_the_latest.py` that reads a
+    # different question today (a ceiling in the declaration, not a frozen resolution).
+    'latestversions': ('original',),
     # TWO consumers in TWO LANGUAGES and they do not agree on the policy: wdg-lab BANS the bound with
     # an exemption set it asserts is empty, motronics requires it to be DECLARED with its reason
     # because two of its crates are ABI-coupled and unbounding either alone produces a pairing that

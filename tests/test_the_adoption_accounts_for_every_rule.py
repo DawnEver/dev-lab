@@ -21,14 +21,17 @@ rule is ACCOUNTED FOR -- enforced with each named mechanism TRACKED in this tree
 mechanism, selected and not globally ignored -- or declared absent. It does NOT run those mechanisms
 and cannot say they pass; that is the suite's business.
 
-THE TEN ABSENT RULES ARE ABSENT FOR A REASON, AND THE REASONS ARE NOT THE SAME KIND. Four name
-machinery this repo does not have (a gate runner, a hook directory, a network wrapper, a production
-entry point) -- adoptable, and unbuilt. Four are about a SUBJECT this library does not have (an
-accuracy matrix, an acceptance bar, a capability registry, a retired-name registry): a library with
-no solvers has nothing to declare unsupported. One is a shape no file in this tree can reach: the
-push obligation is a fact about origin. And one is CIRCULAR rather than merely unbuilt --
-HOOKS-ARE-WIRED cannot be closed by shipping a hook and a guard in the same edit, because the guard
-would then pass by construction.
+THE ABSENT RULES ARE ABSENT FOR A REASON, AND THE REASONS ARE NOT THE SAME KIND -- and the set is
+NINE rather than the ten it was until 2026-09-21, because NETWORK-RETRY-THEN-REPORT was CLOSED that
+day by the arrival of ``dev.dep_observe``, whose two transports are ``run_network_verb`` calls.
+:data:`_ABSENT_CEILING` came down with it, which is the only direction it has ever moved. Three name
+machinery this repo does not have (a gate runner, a hook directory, a production entry point) --
+adoptable, and unbuilt. Four are about a SUBJECT this library does not have (an accuracy matrix, an
+acceptance bar, a capability registry, a retired-name registry): a library with no solvers has
+nothing to declare unsupported. One is a shape no file in this tree can reach: the push obligation
+is a fact about origin. And one is CIRCULAR rather than merely unbuilt -- HOOKS-ARE-WIRED cannot be
+closed by shipping a hook and a guard in the same edit, because the guard would then pass by
+construction.
 
 WHAT THE 2026-09-15 SECOND RAISE CLOSED, and how, because the CHEAP close was available for both and
 was the wrong one. TOLERANCE-CARRIES-A-UNIT was declared VIOLATED here, not merely unenforced: seven
@@ -82,7 +85,16 @@ _ENFORCED = {
         guard('tests/test_arch_every_scan_binds_a_floor.py'),
         guard('tests/_arch_corpus.py'),
     ),
-    'LATEST-DEPENDENCIES': (guard('tests/test_arch_dependencies.py'),),
+    # THE RESOLVED HALF, added 2026-09-21. The manifest arm above refuses a CEILING in the
+    # declaration, which is the half a reading of the text can answer. This names the half the text
+    # cannot: what a checkout actually RESOLVED, judged against the sources, plus the environment
+    # that a verdict really ran in. MEASURED that day -- three repos, three frozen shas of this same
+    # library, and nothing in any declaration that could have shown it.
+    'LATEST-DEPENDENCIES': (
+        guard('tests/test_arch_dependencies.py'),
+        guard('tests/test_dev_depversions.py'),
+        guard('tests/test_famtests_latestversions.py'),
+    ),
     'MEMORY-SHAPE': (
         guard('tests/test_arch_memory_lives_in_a_dated_directory.py'),
         guard('tests/_arch_corpus.py'),
@@ -92,6 +104,16 @@ _ENFORCED = {
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_arch_skips_are_a_named_set.py'),
         guard('tests/test_the_adoption_accounts_for_every_rule.py'),
+    ),
+    # CLOSED 2026-09-21, and the reason it carried was the thing that had to change rather than the
+    # rule. It read "nothing here calls a network verb, so a retry wrapper would guard nothing", and
+    # that was TRUE of this tree until `dev.dep_observe` gave the kit a refresher that does: both of
+    # its transports are `run_network_verb` calls, and the arm below refuses a transport that reaches
+    # for its source directly. A rule declared absent because its SUBJECT is absent stops being
+    # absent the moment the subject lands -- and the reason is replaced rather than left standing.
+    'NETWORK-RETRY-THEN-REPORT': (
+        guard('tests/test_dev_netverb.py'),
+        guard('tests/test_dev_dep_observe.py'),
     ),
     'INJECTED-DOC-WIDTH-CEILING': (guard('tests/test_dev_docwidth.py'),),
     'NO-CJK-IN-TRACKED-SOURCE': (guard('tests/test_dev_cjk.py'),),
@@ -147,7 +169,6 @@ _ABSENT_REASONS = {
         'over a hook created in the same edit passes by construction rather than by holding'
     ),
     'IMPLEMENT-EVERYTHING': 'no combination matrix and no accuracy tag: the subject is absent',
-    'NETWORK-RETRY-THEN-REPORT': 'nothing here calls a network verb, so a retry wrapper would guard nothing',
     'PRODUCTION-ENTRY-POINT': 'a library with no CLI has no production entry point to reproduce through',
     'RETIRED-NAMES-REGISTERED': 'no retired-spelling registry in this tree yet',
     'SHARED-CHECKOUT': 'the push obligation is a fact about origin, not about any file here',
@@ -162,7 +183,12 @@ _ABSENT = frozenset(_ABSENT_REASONS)
 #: this repo a bounded wait whose refusal names its holder. It may only go DOWN: closing a gap
 #: deletes a name above AND lowers this number, so the number cannot quietly track an absent set
 #: that grew.
-_ABSENT_CEILING = 9
+#:
+#: LOWERED AGAIN TO 8, 2026-09-21, for NETWORK-RETRY-THEN-REPORT and by exactly the same mechanism:
+#: its reason ("nothing here calls a network verb") was true of this tree until ``dev.dep_observe``
+#: gave the kit a refresher that calls two, so the rule moved into ``_ENFORCED`` and the ceiling came
+#: down in the same edit. The number has never gone up, and neither has the reason for it.
+_ABSENT_CEILING = 8
 
 
 def _adoption() -> Adoption:

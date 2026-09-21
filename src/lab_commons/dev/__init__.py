@@ -228,6 +228,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.famtests` -- the shared test BODIES a consumer parametrizes; no fact has a default.
 * :mod:`lab_commons.dev.supersede` -- has the family ALREADY expressed this roster row; overlap GRADES, never detects.
 
+LATEST-DEPENDENCIES, THE RESOLVED HALF (2026-09-21) -- two modules, split where the NETWORK is, so
+"a verdict reaches no network" is an import graph rather than a promise in a docstring.
+
+* :mod:`lab_commons.dev.depversions` -- what a checkout RESOLVED: the lock, the live observation, the environment.
+* :mod:`lab_commons.dev.dep_observe` -- the refresher, the ONE module here that calls out at all.
+
 THE THREE ROWS THAT CLOSE A RULE ARE NOT RE-EXPORTED BELOW, and that is deliberate rather than an omission: each carries
 short status constants whose meaning is local to its own question (``ABSENT``, ``PROTECTED``), and
 flattening them into one namespace beside :data:`lab_commons.dev.content.ABSENT` would leave a

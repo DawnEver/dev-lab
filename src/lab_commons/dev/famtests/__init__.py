@@ -151,6 +151,13 @@ WHAT IS HERE, one module per shared body:
   judge is the private ``_storedreadings_readings`` beside it and is re-exported here, the same
   reading/verdict seam ``configrender``, ``datedmemory``, ``citedtests`` and ``upperbounds`` run on.
 
+* :mod:`lab_commons.dev.famtests.latestversions` -- the resolved lock against a LIVE latest, and a
+  fetch that does not answer is INCONCLUSIVE rather than a pass. Both arms and all three answers: the
+  baseline is the SHARED thing two boxes compare against, the live answer is what the lock is judged
+  by, and "the index was down so we passed" is refused by making it impossible rather than by asking
+  nicely. The VERDICT only; the readings are :mod:`lab_commons.dev.depversions`', because reading a
+  lock is what a repo CALLS and because that is the half that must not reach the network.
+
 * :mod:`lab_commons.dev.famtests.countpins` -- a pin is a NAMED SET; a number may only be a
   THRESHOLD, and its NAME must say so. The row that arrives as a CORRECTION rather than a move:
   optimi-lab claimed ``NAMED-SETS-NOT-COUNTS`` as enforced while citing three modules that merely
