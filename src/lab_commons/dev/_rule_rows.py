@@ -403,12 +403,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'NO-CJK-IN-TRACKED-SOURCE',
         (
-            'No content git tracks may contain a CJK character (Chinese/Japanese/Korean script) -- only '
-            'English letters, digits and symbols, everywhere except `.claude/memory/`, `attic/` and '
-            '`archived/`. A population too large for one commit is a RATCHET, not a reason to loosen the '
-            'rule: an adopting repo declares the files it still carries CJK in as a NAMED SET that may only '
-            'shrink, and a declared file with no CJK left is an ORPHANED waiver, refused exactly like an '
-            'undeclared one.'
+            'No tracked content may contain a CJK character, except under `.claude/memory/`, `attic/`, the '
+            'repo-root `archived/`, and a `<stem>.zh.md` beside its English `<stem>.md` (an orphaned '
+            'translation is refused by name). A population too large for one commit is a RATCHET, not a '
+            'loosened rule: a repo declares its files still carrying CJK as a NAMED SET that may only shrink, '
+            'and a declared file with no CJK left is an ORPHANED waiver, refused like an undeclared one.'
         ),
         ('tests/test_dev_cjk.py',),
     ),

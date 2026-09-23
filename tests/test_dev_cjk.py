@@ -25,12 +25,17 @@ from lab_commons.dev.cjk import (
     Occurrence,
     VacuousScan,
     assert_floor,
+    char_class,
     exempted,
     find_cjk,
     is_cjk,
+    non_ascii_distance,
+    orphaned_translations,
     ratchet,
     remedy,
     scan_files,
+    scan_non_ascii,
+    translation_source,
 )
 from lab_commons.dev.rules import tracked_files
 
@@ -89,7 +94,7 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
     assert exempted('attic/motor_solver/old.py')
     assert exempted('archived/thing.py')
     assert not exempted('src/lab_commons/dev/cjk.py')
-    assert EXEMPT_PREFIXES == ('.claude/memory/', 'attic/', 'archived/')
+    assert EXEMPT_PREFIXES == ('.claude/memory/', 'attic/', '/archived/')
 
 
 def test_exempted_matches_a_nested_directory_and_not_a_nested_lookalike() -> None:
@@ -283,3 +288,71 @@ def test_a_custom_range_set_still_drives_the_derived_pattern() -> None:
     narrow = ((0x4E00, 0x9FFF),)
     assert find_cjk(text, narrow) == _walk_every_character(text, narrow) == ((1, 1, han),)
     assert find_cjk(text, [(0x3040, 0x309F)]) == ((1, 2, hiragana),)
+
+
+def test_archived_is_exempt_only_at_the_repo_root(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for the 2026-09-23 anchoring: `archived/f.py` is exempt, `x/archived/f.py` NOT.
+
+    Driven through the REAL scanner over a real tree, both directions at once, so a regression to the
+    old segment match (which exempted both) reds here rather than opening an island nobody declared.
+    """
+    han = chr(0x4E2D)
+    root_archived = tmp_path / 'archived' / 'f.py'
+    nested_archived = tmp_path / 'x' / 'archived' / 'f.py'
+    for path in (root_archived, nested_archived):
+        path.parent.mkdir(parents=True)
+        path.write_text(f'x = 1  # {han}\n', encoding='utf-8')
+    assert exempted('archived/f.py')
+    assert not exempted('x/archived/f.py')
+    scan = scan_files((root_archived, nested_archived), root=tmp_path)
+    assert scan.exempted == ('archived/f.py',)
+    assert [o.path for o in scan.occurrences] == ['x/archived/f.py']
+
+
+def test_a_translation_is_exempt_only_beside_its_english_source(tmp_path: Path) -> None:
+    """TRANSLATION-HAS-ITS-SOURCE, both directions: a `.zh.md` beside its `.md` is exempt, an orphan is read."""
+    han = chr(0x4E2D)
+    paired = tmp_path / 'docs' / 'page.zh.md'
+    paired.parent.mkdir(parents=True)
+    paired.write_text(f'{han}\n', encoding='utf-8')
+    (tmp_path / 'docs' / 'page.md').write_text('the English source of truth\n', encoding='utf-8')
+    orphan = tmp_path / 'docs' / 'lonely.zh.md'
+    orphan.write_text(f'{han}\n', encoding='utf-8')
+    scan = scan_files(sorted(p for p in tmp_path.rglob('*') if p.is_file()), root=tmp_path)
+    assert scan.exempted == ('docs/page.zh.md',)
+    assert [o.path for o in scan.occurrences] == ['docs/lonely.zh.md']
+    problems = orphaned_translations(('docs/page.md', 'docs/page.zh.md', 'docs/lonely.zh.md'))
+    assert len(problems) == 1
+    assert "'docs/lonely.zh.md'" in problems[0]
+    assert "'docs/lonely.md'" in problems[0], 'the refusal must name the source to add -- the remedy'
+    assert orphaned_translations(('docs/page.md', 'docs/page.zh.md')) == ()
+
+
+def test_translation_source_names_the_sibling_and_ignores_everything_else() -> None:
+    assert translation_source('a/b.zh.md') == 'a/b.md'
+    assert translation_source('b.zh.md') == 'b.md'
+    assert translation_source('a/b.md') is None
+    assert translation_source('a/.zh.md') is None
+    assert translation_source('a/b.zh.txt') is None
+
+
+def test_the_non_ascii_census_counts_per_file_and_per_class_and_reports_the_distance(tmp_path: Path) -> None:
+    """The final-goal reading: every non-ASCII character counted, classed, and the distance printed."""
+    dirty = tmp_path / 'dirty.md'
+    dirty.write_text('a \u2014 b \u00d7 c ' + chr(0x4E2D) + '\n', encoding='utf-8')
+    clean = tmp_path / 'clean.md'
+    clean.write_text('ascii only\n', encoding='utf-8')
+    memory = tmp_path / '.claude' / 'memory' / 'n.md'
+    memory.parent.mkdir(parents=True)
+    memory.write_text('\u2014\n', encoding='utf-8')
+    scan = scan_non_ascii((dirty, clean, memory), root=tmp_path)
+    assert scan.files_read == 2
+    assert scan.total == 3
+    assert dict(scan.by_file['dirty.md']) == {'dash': 1, 'math symbol': 1, 'CJK': 1}
+    report = non_ascii_distance(scan)
+    assert report.startswith('3 non-ASCII character(s) remain in 1 of 2 file(s) read.')
+    assert 'dirty.md' in report
+    assert 'dash 1' in report
+    assert report.isascii()
+    assert char_class(chr(0x4E2D)) == 'CJK'
+    assert char_class('\u2014') == 'dash'

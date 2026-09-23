@@ -70,7 +70,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     'MisdeclaredWaiver',
+    'NonAsciiRemains',
+    'OrphanedTranslation',
     'UndeclaredCjk',
+    'assert_every_translation_has_its_source',
+    'assert_no_tracked_non_ascii',
     'assert_no_undeclared_cjk',
     'assert_the_declaration_is_the_shape_the_ratchet_keys_on',
     'assert_the_exemptions_match_a_path_segment',
@@ -88,6 +92,14 @@ _PLANTED_POINT = cjk.CJK_RANGES[2][0]
 
 class UndeclaredCjk(AssertionError):
     """A tracked, non-exempt file carries CJK that no declaration names, or a waiver outlived its file."""
+
+
+class OrphanedTranslation(AssertionError):
+    """A ``<stem>.zh.md`` translation is tracked without the English ``<stem>.md`` it must render."""
+
+
+class NonAsciiRemains(AssertionError):
+    """The corpus still carries non-ASCII characters; the message is the DISTANCE to the final goal."""
 
 
 class MisdeclaredWaiver(AssertionError):
@@ -192,28 +204,73 @@ def assert_the_declaration_is_the_shape_the_ratchet_keys_on(declared: Collection
 
 
 def assert_the_exemptions_match_a_path_segment(exempt_prefixes: Collection[str]) -> None:
-    """A nested exempt directory is exempt, and a name merely STARTING with one is not.
+    """Nested exempt dirs match, a ROOT-ANCHORED one matches only at the root, a lookalike never.
 
     The measured reason is in :data:`lab_commons.dev.cjk.EXEMPT_PREFIXES`: one repo's memory tree is
     scoped per module and a root-only prefix reported 47,521 CJK characters where the true answer is
     zero. The opposite error is as fatal and is planted beside it -- a substring match would exempt
-    ``notattic/`` and open an island nobody declared.
+    ``notattic/`` and open an island nobody declared. An ANCHORED prefix (leading ``/``, e.g.
+    ``/archived/``) is planted both ways: ``archived/f.py`` exempt and ``x/archived/f.py`` NOT.
 
     Raises:
-        AssertionError: a prefix fails to match nested, or matches a name that merely starts with it.
+        AssertionError: a prefix fails to match where it must, or matches where it must not.
 
     """
     for prefix in exempt_prefixes:
-        stem = prefix.rstrip('/')
-        if not cjk.exempted(f'src/pkg/{prefix}note.md', exempt_prefixes):
+        anchored = prefix.startswith('/')
+        bare = prefix.lstrip('/')
+        stem = bare.rstrip('/')
+        nested = cjk.exempted(f'src/pkg/{bare}note.md', exempt_prefixes)
+        if anchored and nested:
+            msg = f'{prefix!r} is ROOT-ANCHORED yet matched src/pkg/{bare}; a nested {bare} is not exempt'
+            raise AssertionError(msg)
+        if not anchored and not nested:
             msg = f'{prefix!r} is not matched as a nested path SEGMENT; a scoped tree would be scanned wrongly'
             raise AssertionError(msg)
-        if not cjk.exempted(f'{prefix}note.md', exempt_prefixes):
+        if not cjk.exempted(f'{bare}note.md', exempt_prefixes):
             msg = f'{prefix!r} is not matched at the ROOT, where every repo in this family also puts it'
             raise AssertionError(msg)
         if cjk.exempted(f'not{stem}/note.md', exempt_prefixes):
             msg = f'{prefix!r} matched not{stem}/, so the exemption is a substring test and excuses a tree nobody named'
             raise AssertionError(msg)
+
+
+def assert_every_translation_has_its_source(corpus: Collection[str]) -> None:
+    """``TRANSLATION-HAS-ITS-SOURCE``: every tracked ``<stem>.zh.md`` has its English ``<stem>.md``.
+
+    The translation is exempt from the CJK guard only BESIDE its source, and the scan already reads
+    an orphan like any other file -- this arm is what names the orphan AS an orphan, with the remedy,
+    instead of leaving it to surface as one more anonymous CJK hit someone is tempted to declare.
+
+    Args:
+        corpus: the consumer's repo-relative tracked names -- the same corpus its scan reads.
+
+    Raises:
+        OrphanedTranslation: a translation has no English source in *corpus*.
+
+    """
+    problems = cjk.orphaned_translations(corpus)
+    if problems:
+        raise OrphanedTranslation('\n  '.join(('a translation without its source:', *problems)))
+
+
+def assert_no_tracked_non_ascii(scan: cjk.NonAsciiScan, *, floor: int, what: str) -> None:
+    """THE FINAL GOAL: no non-ASCII character in the corpus. FAILS, stating the distance, until it holds.
+
+    The floor comes first for the reason it does everywhere: an unread corpus has no non-ASCII either.
+    The failure message IS :func:`lab_commons.dev.cjk.non_ascii_distance` -- total characters, file
+    count, the per-class breakdown and the top offending files -- because the user asked for the gap
+    to be shown AS a test error, and a red that does not say how far is only a colour.
+
+    Raises:
+        lab_commons.dev.floors.FloorUnmet: fewer files were read than *floor*.
+        NonAsciiRemains: any non-ASCII character remains.
+
+    """
+    floors.assert_floor(scan.files_read, floor=floor, what=what)
+    if scan.total:
+        msg = f'{what}: the corpus is not yet all-ASCII. Distance to the goal:\n{cjk.non_ascii_distance(scan)}'
+        raise NonAsciiRemains(msg)
 
 
 def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Collection[str]) -> None:
@@ -256,7 +313,7 @@ def assert_the_scanner_still_convicts(plant_root: Path, *, exempt_prefixes: Coll
     dirty.write_text(f'first line\nahead {char} behind\n', encoding='utf-8')
     (plant_root / 'clean.md').write_text('plain ASCII prose, and it stays that way\n', encoding='utf-8')
     (plant_root / 'escaped.py').write_text('REJECTED = "\\u4e00"  # the remedy, in eight ASCII characters\n', 'utf-8')
-    exempt = plant_root / prefixes[0] / 'note.md'
+    exempt = plant_root / prefixes[0].lstrip('/') / 'note.md'
     exempt.parent.mkdir(parents=True, exist_ok=True)
     exempt.write_text(f'{char}\n', encoding='utf-8')
 
