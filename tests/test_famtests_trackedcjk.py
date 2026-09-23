@@ -21,7 +21,11 @@ import pytest
 from lab_commons.dev import cjk, floors
 from lab_commons.dev.famtests.trackedcjk import (
     MisdeclaredWaiver,
+    NonAsciiRemains,
+    OrphanedTranslation,
     UndeclaredCjk,
+    assert_every_translation_has_its_source,
+    assert_no_tracked_non_ascii,
     assert_no_undeclared_cjk,
     assert_the_declaration_is_the_shape_the_ratchet_keys_on,
     assert_the_exemptions_match_a_path_segment,
@@ -250,3 +254,36 @@ def test_this_control_file_carries_no_cjk_either() -> None:
 def test_the_planted_character_really_is_in_the_shared_ranges() -> None:
     """A control planting something the ranges do not cover would be green and prove nothing."""
     assert cjk.is_cjk(_CHAR), 'the planted code point must be derived from CJK_RANGES, never typed'
+
+
+# -- THE 2026-09-23 ARMS: root-anchored `archived/`, the translation rule, the non-ASCII distance. ---
+
+
+def test_the_segment_arm_reds_when_an_anchored_prefix_matches_nested(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The anchored arm passes on the shipped matcher and REDS on one that regressed to a segment match."""
+    assert_the_exemptions_match_a_path_segment(('/archived/',))
+
+    def segment_everywhere(name: str, _prefixes: object = ()) -> bool:
+        return name.startswith('archived/') or '/archived/' in name
+
+    monkeypatch.setattr(cjk, 'exempted', segment_everywhere)
+    with pytest.raises(AssertionError, match='ROOT-ANCHORED'):
+        assert_the_exemptions_match_a_path_segment(('/archived/',))
+
+
+def test_an_orphaned_translation_is_refused_and_a_paired_one_is_not() -> None:
+    assert_every_translation_has_its_source(('docs/a.md', 'docs/a.zh.md'))
+    with pytest.raises(OrphanedTranslation, match=r'docs/a\.md'):
+        assert_every_translation_has_its_source(('docs/a.zh.md',))
+
+
+def test_the_non_ascii_arm_fails_with_the_distance_and_passes_on_ascii(tmp_path: Path) -> None:
+    _plant(tmp_path, 'dirty.md', 'x \u2014 y\n')
+    _plant(tmp_path, 'clean.md', 'ascii\n')
+    files = sorted(p for p in tmp_path.rglob('*') if p.is_file())
+    with pytest.raises(NonAsciiRemains, match=r'1 non-ASCII character\(s\) remain in 1 of 2'):
+        assert_no_tracked_non_ascii(cjk.scan_non_ascii(files, root=tmp_path), floor=2, what=_WHAT)
+    clean = [tmp_path / 'clean.md']
+    assert_no_tracked_non_ascii(cjk.scan_non_ascii(clean, root=tmp_path), floor=1, what=_WHAT)
+    with pytest.raises(floors.FloorUnmet):
+        assert_no_tracked_non_ascii(cjk.scan_non_ascii(clean, root=tmp_path), floor=5, what=_WHAT)

@@ -2,7 +2,9 @@
 
 THE USER DIRECTIVE, 2026-09-16, translated rather than quoted: across every repo in this family,
 no content that git tracks may contain CJK (Chinese/Japanese/Korean) characters -- only English
-letters, digits and symbols. Exempt: ``.claude/memory/``, ``attic/``, ``archived/``. It is not kept
+letters, digits and symbols. Exempt: ``.claude/memory/``, ``attic/``, ``archived/`` (the last at the
+repo root only, since 2026-09-23), and a ``<stem>.zh.md`` translation beside its English
+``<stem>.md`` (:data:`TRANSLATION_SUFFIXES`). It is not kept
 here in the source language on purpose: this module is itself tracked, and a literal quotation would
 be the one violation its own guard could never let through.
 
@@ -44,7 +46,7 @@ FLOORS BEFORE ANY VERDICT. :func:`assert_floor` refuses a scan that read fewer f
 declares as a floor, for the reason every scan-style guard in this family gives: a clean tree and an
 unread one produce the same empty result, and only a floor tells them apart.
 
-THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE THREE PATH PREFIXES ABOVE, and this was a real design
+THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE PATH PREFIXES AND THE TRANSLATION NAME ABOVE, and this was a real design
 question rather than an oversight: ``wdg-lab`` has a test that PASSES a CJK literal on purpose, to
 assert a naming guard rejects non-ASCII input (``naming.assert_ascii(...)``, called with the CJK
 character itself). Translating that literal would test a different string and stop testing the
@@ -66,6 +68,8 @@ f-string built from the offending path, line and code point, never from a repeat
 from __future__ import annotations
 
 import re
+import unicodedata
+from collections import Counter
 from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import cache
@@ -75,16 +79,25 @@ from typing import Final, NamedTuple
 __all__ = [
     'CJK_RANGES',
     'EXEMPT_PREFIXES',
+    'SOURCE_SUFFIX',
+    'TRANSLATION_SUFFIXES',
+    'NonAsciiScan',
     'Occurrence',
     'Scan',
     'VacuousScan',
     'assert_floor',
+    'char_class',
     'exempted',
     'find_cjk',
     'is_cjk',
+    'non_ascii_distance',
+    'orphaned_translations',
     'ratchet',
     'remedy',
     'scan_files',
+    'scan_non_ascii',
+    'translation_exempted',
+    'translation_source',
 ]
 
 #: The five CJK blocks the directive refuses. See the module docstring for what each one is and why
@@ -101,16 +114,31 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: Where CJK is permitted without a declaration. DATA, not a literal scattered through the scan, so
 #: an adopting repo can read what it inherited rather than re-deriving it from behaviour.
 #:
-#: MATCHED AS A PATH SEGMENT, ANYWHERE IN THE PATH -- NOT ONLY AT THE ROOT, and this is measured
-#: rather than a stylistic choice: motronics-studio's memory tree is SCOPED per module
-#: (``src/motronics/hamilton/.claude/memory/``, ``src/motronics/core/.claude/memory/``,
-#: ``rust/.claude/memory/``) and its `attic/` holds one subtree per migrated repo
-#: (``attic/motor_solver/``). A root-prefix-only match on that tree reported 47,521 CJK characters
-#: under ``src/motronics/**`` when the real answer is zero -- every one of them was a nested memory
-#: file the prefix test could not see, which would have made ``NO-CJK-IN-TRACKED-SOURCE``
-#: unadoptable there: the declared set would have had to name thousands of memory files, burying any
-#: real violation among them. See :func:`exempted` for the match itself.
-EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('.claude/memory/', 'attic/', 'archived/')
+#: TWO SHAPES, AND THE LEADING ``/`` IS WHAT TELLS THEM APART. A bare prefix matches as a path
+#: SEGMENT ANYWHERE in the path; a prefix spelled with a leading ``/`` is ANCHORED AT THE REPO ROOT
+#: and matches nowhere else. See :func:`exempted` for the match itself.
+#:
+#: ``.claude/memory/`` AND ``attic/`` MATCH AT ANY DEPTH, and this is measured rather than a stylistic
+#: choice: motronics-studio's memory tree is SCOPED per module (``src/motronics/hamilton/.claude/memory/``,
+#: ``rust/.claude/memory/``) and its ``attic/`` holds one subtree per migrated repo. A root-prefix-only
+#: match on that tree reported 47,521 CJK characters under ``src/motronics/**`` when the real answer
+#: is zero -- every one of them a nested memory file the prefix test could not see.
+#:
+#: ``archived/`` IS ROOT-ONLY (user directive, 2026-09-23). It names ONE repo-root directory in every
+#: family repo that has it, and a segment match made ``x/archived/f.py`` exempt too -- a directory of
+#: that name created anywhere in a source tree would have opened a CJK island nobody declared.
+EXEMPT_PREFIXES: Final[tuple[str, ...]] = ('.claude/memory/', 'attic/', '/archived/')
+
+#: THE TRANSLATION MECHANISM (``TRANSLATION-HAS-ITS-SOURCE``, user directive 2026-09-23). A tracked
+#: document named ``<stem>.zh.md`` is a TRANSLATION, and it is exempt from this guard ONLY while its
+#: English SOURCE ``<stem>.md`` sits beside it in the same corpus: the English page is the source of
+#: truth and the translation is a rendering of it. An ORPHANED translation is not exempt -- it is
+#: read like any other file, and :func:`orphaned_translations` refuses it by name, because a
+#: translation with no source is simply non-English documentation under a different suffix.
+TRANSLATION_SUFFIXES: Final[tuple[str, ...]] = ('.zh.md',)
+
+#: What the source of a translation is named with: ``<stem>`` + this suffix.
+SOURCE_SUFFIX: Final = '.md'
 
 
 class VacuousScan(RuntimeError):
@@ -196,16 +224,63 @@ def find_cjk(text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES) -> tup
 
 
 def exempted(name: str, prefixes: Collection[str] = EXEMPT_PREFIXES) -> bool:
-    """Whether *name* (a repo-relative POSIX path) sits under one of *prefixes* ANYWHERE in the path.
+    """Whether *name* (a repo-relative POSIX path) sits under one of *prefixes*.
 
-    Each *prefix* is checked both at the ROOT (``name.startswith(prefix)``) and as a SEGMENT nested
-    deeper (``f'/{prefix}'`` appearing in *name*), because ``attic/`` and ``.claude/memory/`` are not
-    only repo-root directories in this family -- see :data:`EXEMPT_PREFIXES` for the measured tree
-    that made a root-only match wrong. The leading ``/`` in the nested check is what keeps
-    ``notattic/x`` from matching ``attic/``: the prefix must start a path SEGMENT, not merely appear
-    as a substring.
+    A prefix with a leading ``/`` is ANCHORED: it matches only at the repo root, so ``/archived/``
+    exempts ``archived/f.py`` and not ``x/archived/f.py``. Any other prefix is checked both at the
+    ROOT (``name.startswith(prefix)``) and as a SEGMENT nested deeper (``f'/{prefix}'`` appearing in
+    *name*) -- see :data:`EXEMPT_PREFIXES` for the measured tree that made a root-only match wrong for
+    those. The leading ``/`` in the nested check is what keeps ``notattic/x`` from matching
+    ``attic/``: the prefix must start a path SEGMENT, not merely appear as a substring.
     """
-    return any(name.startswith(prefix) or f'/{prefix}' in name for prefix in prefixes)
+    for prefix in prefixes:
+        if prefix.startswith('/'):
+            if name.startswith(prefix[1:]):
+                return True
+        elif name.startswith(prefix) or f'/{prefix}' in name:
+            return True
+    return False
+
+
+def translation_source(name: str) -> str | None:
+    """The English source a translation *name* renders (``a/b.zh.md`` -> ``a/b.md``), or ``None``.
+
+    ``None`` means *name* is not a translation at all, so the translation mechanism has nothing to
+    say about it. The answer is a NAME, not a verdict: whether that source exists is a fact about the
+    corpus, which :func:`translation_exempted` and :func:`orphaned_translations` are handed.
+    """
+    for suffix in TRANSLATION_SUFFIXES:
+        stem = name[: -len(suffix)]
+        if name.endswith(suffix) and stem and not stem.endswith('/'):
+            return stem + SOURCE_SUFFIX
+    return None
+
+
+def translation_exempted(name: str, corpus: Collection[str]) -> bool:
+    """Whether *name* is a translation whose English source is also in *corpus* -- nothing else is."""
+    source = translation_source(name)
+    return source is not None and source in corpus
+
+
+def orphaned_translations(corpus: Iterable[str]) -> tuple[str, ...]:
+    """One refusal per translation in *corpus* with no English source in *corpus*, naming the remedy.
+
+    *corpus* is repo-relative POSIX names -- a repo's tracked files. A translation whose source is
+    absent is not exempt from anything, and saying so by name is the point: without this refusal an
+    orphan would surface only as an anonymous CJK hit, and the cheapest-looking repair would be to
+    declare it rather than to restore the page it was translated from.
+    """
+    names = frozenset(corpus)
+    problems: list[str] = []
+    for name in sorted(names):
+        source = translation_source(name)
+        if source is not None and source not in names:
+            problems.append(
+                f'ORPHANED TRANSLATION {name!r} -- its English source {source!r} is not tracked. The '
+                f'English page is the source of truth and a translation is exempt only beside it: add '
+                f'(or restore) {source!r} with the English text, or delete the translation.'
+            )
+    return tuple(problems)
 
 
 def _named(path: Path, base: Path | None) -> str:
@@ -229,7 +304,9 @@ def scan_files(
 
     *paths* is the caller's own list and is never walked: this function reads exactly the files it
     is handed, which is what lets a control drive it against a planted tree instead of a real
-    checkout. Pair it with :func:`lab_commons.dev.rules.tracked_files` to scan a repo's real corpus.
+    checkout. The paths handed over ARE the corpus the translation mechanism consults: a
+    ``<stem>.zh.md`` is exempted only when ``<stem>.md`` is among them.
+    Pair it with :func:`lab_commons.dev.rules.tracked_files` to scan a repo's real corpus.
 
     Raises:
         ValueError: *root* was declared and a path is not under it.
@@ -240,11 +317,11 @@ def scan_files(
     skipped: list[str] = []
     undecodable: list[str] = []
     base = Path(root).resolve() if root is not None else None
+    named_paths = [(Path(item), _named(Path(item), base)) for item in paths]
+    corpus = frozenset(named for _, named in named_paths)
     read = 0
-    for item in paths:
-        path = Path(item)
-        named = _named(path, base)
-        if exempted(named, exempt_prefixes):
+    for path, named in named_paths:
+        if exempted(named, exempt_prefixes) or translation_exempted(named, corpus):
             skipped.append(named)
             continue
         try:
@@ -287,7 +364,8 @@ def remedy(occurrence: Occurrence) -> str:
         f'asserting that a guard REJECTS non-ASCII input -- write it as a \\uXXXX escape sequence instead: the '
         f'source becomes plain ASCII while the runtime value stays byte-identical, so the test still tests '
         f'what it tested. Otherwise, if it belongs to an exemption this family already grants, move the '
-        f'content under .claude/memory/, attic/ or archived/ instead of declaring it here.'
+        f'content under .claude/memory/, attic/ or the repo-root archived/ instead of declaring it here; '
+        f'a translated document is named <stem>.zh.md beside its English <stem>.md.'
     )
 
 
@@ -310,3 +388,117 @@ def ratchet(occurrences: Sequence[Occurrence], declared: Collection[str]) -> tup
         for path in sorted(pinned - found)
     )
     return tuple(problems)
+
+
+# -- THE FINAL GOAL: no non-ASCII at all, measured as a DISTANCE rather than refused one site at a time.
+#
+# THE CJK RULE ABOVE IS THE RULE AS RULED ON 2026-09-16; THE USER'S FINAL GOAL (2026-09-23) IS WIDER:
+# no non-ASCII character in any tracked file, under the SAME exemptions and the same translation
+# mechanism. The population is far too large for one commit, so this half publishes a READING -- how
+# far a corpus is from that goal, by file and by character class -- and a consumer asserts on it so
+# the distance is shown as a real test failure until it reaches zero.
+
+#: Unicode general categories, spelled for a reader. A character class is its category's name, so a
+#: report groups an em dash with the other dashes and a multiplication sign with the math symbols.
+_CATEGORY_NAMES: Final[dict[str, str]] = {
+    'Lu': 'letter (upper)',
+    'Ll': 'letter (lower)',
+    'Lt': 'letter (title)',
+    'Lm': 'letter (modifier)',
+    'Lo': 'letter (other)',
+    'Mn': 'mark',
+    'Mc': 'mark',
+    'Me': 'mark',
+    'Nd': 'digit',
+    'Nl': 'number',
+    'No': 'number (other)',
+    'Pc': 'punctuation (connector)',
+    'Pd': 'dash',
+    'Ps': 'bracket',
+    'Pe': 'bracket',
+    'Pi': 'quote',
+    'Pf': 'quote',
+    'Po': 'punctuation (other)',
+    'Sm': 'math symbol',
+    'Sc': 'currency symbol',
+    'Sk': 'modifier symbol',
+    'So': 'symbol (other)',
+    'Zs': 'space',
+    'Zl': 'line separator',
+    'Zp': 'paragraph separator',
+    'Cc': 'control',
+    'Cf': 'format',
+    'Co': 'private use',
+    'Cn': 'unassigned',
+}
+
+
+def char_class(char: str) -> str:
+    """The class a non-ASCII *char* is reported under: ``CJK`` for :data:`CJK_RANGES`, else its category."""
+    if is_cjk(char):
+        return 'CJK'
+    return _CATEGORY_NAMES.get(unicodedata.category(char), unicodedata.category(char))
+
+
+@dataclass(frozen=True, slots=True)
+class NonAsciiScan:
+    """Every non-ASCII character in a corpus, counted per FILE and per CLASS. Names, not just totals."""
+
+    by_file: dict[str, Counter[str]]
+    files_read: int
+
+    @property
+    def total(self) -> int:
+        """How many non-ASCII characters remain across the corpus -- the headline distance."""
+        return sum(sum(counts.values()) for counts in self.by_file.values())
+
+
+def scan_non_ascii(
+    paths: Iterable[Path | str],
+    *,
+    exempt_prefixes: Collection[str] = EXEMPT_PREFIXES,
+    root: Path | None = None,
+) -> NonAsciiScan:
+    """Every non-ASCII character in *paths*, under exactly the exemptions :func:`scan_files` grants.
+
+    Undecodable files are skipped exactly as there; a translation beside its source is exempt exactly
+    as there, so the two readings can never disagree about which files are in scope.
+    """
+    base = Path(root).resolve() if root is not None else None
+    named_paths = [(Path(item), _named(Path(item), base)) for item in paths]
+    corpus = frozenset(named for _, named in named_paths)
+    by_file: dict[str, Counter[str]] = {}
+    read = 0
+    for path, named in named_paths:
+        if exempted(named, exempt_prefixes) or translation_exempted(named, corpus):
+            continue
+        try:
+            text = path.read_bytes().decode('utf-8')
+        except UnicodeDecodeError:
+            continue
+        read += 1
+        if not text.isascii():
+            by_file[named] = Counter(char_class(char) for char in text if not char.isascii())
+    return NonAsciiScan(by_file=by_file, files_read=read)
+
+
+def non_ascii_distance(scan: NonAsciiScan, *, top: int = 15) -> str:
+    """The distance to an all-ASCII corpus, as a report a failing test can print verbatim.
+
+    Totals first (characters, files), then the per-class breakdown across the corpus, then the *top*
+    offending files with their own per-class counts -- the order a reader needs to price the work.
+    """
+    classes: Counter[str] = Counter()
+    for counts in scan.by_file.values():
+        classes.update(counts)
+    ranked = sorted(scan.by_file.items(), key=lambda item: (-sum(item[1].values()), item[0]))
+    lines = [
+        f'{scan.total} non-ASCII character(s) remain in {len(scan.by_file)} of {scan.files_read} file(s) read.',
+        'by character class: ' + ', '.join(f'{name} {count}' for name, count in classes.most_common()),
+        f'top {min(top, len(ranked))} file(s):',
+    ]
+    lines.extend(
+        f'  {sum(counts.values()):>6}  {name}  (' + ', '.join(f'{cls} {n}' for cls, n in counts.most_common()) + ')'
+        for name, counts in ranked[:top]
+    )
+    return '\n'.join(lines)
