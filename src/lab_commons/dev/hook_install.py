@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,12 +50,14 @@ __all__ = [
     'PROTECTED',
     'STALE',
     'UNPROTECTED',
+    'HookInstallError',
     'InstallReport',
     'StageReport',
     'declared_stages',
     'generated_hook',
     'hook_installation',
     'hooks_dir',
+    'install',
     'install_command',
     'report_installation',
 ]
@@ -261,6 +264,69 @@ def install_command(repo: Path, *, config_name: str = DEFAULT_CONFIG_NAME) -> li
     return ['-m', 'pre_commit', 'install', '--install-hooks', *[arg for s in stages for arg in ('-t', s)]]
 
 
+class HookInstallError(RuntimeError):
+    """The install act could not leave the checkout protected, and says which stage and why."""
+
+
+def _run_install(argv: list[str], cwd: Path) -> int:
+    return subprocess.run(argv, cwd=cwd, check=False, timeout=600).returncode
+
+
+def install(
+    repo: Path,
+    *,
+    config_name: str = DEFAULT_CONFIG_NAME,
+    run: Callable[[list[str], Path], int] = _run_install,
+) -> InstallReport:
+    """Install every declared stage of *repo*, idempotently -- the ONE act every bootstrap calls.
+
+    THE CHECK STILL NEVER REPAIRS ITSELF; this is the explicit act a bootstrap or seed path asks for
+    (user directive 2026-09-23: hooks are guaranteed by mechanism, not by a human reading a red).
+    Safe to call from every worktree, because a worktree shares its main checkout's hooks directory:
+
+    * a PROTECTED checkout runs nothing, so a second caller never rewrites live files;
+    * a FOREIGN hook (somebody else's) is REFUSED before anything runs, never overwritten;
+    * the returned report is RE-MEASURED after the act, so a runner that exits 0 and installs
+      nothing raises instead of reading as a pass.
+
+    Args:
+        repo: the checkout (main tree or worktree) to install for.
+        config_name: the configuration holding the declaration.
+        run: executes ``argv`` in ``cwd`` and returns its exit code; injected for tests only.
+
+    Returns:
+        The report measured after the act: ``PROTECTED``, or ``NOTHING_DECLARED`` when there is
+        no configuration and so nothing to install.
+
+    Raises:
+        HookInstallError: a foreign hook occupies a declared slot, the installer exited non-zero,
+            or the checkout is still unprotected afterwards.
+
+    """
+    before = hook_installation(repo, config_name=config_name)
+    if before.verdict != UNPROTECTED:
+        return before
+    foreign = [stage for stage in before.failing if stage.status == FOREIGN]
+    if foreign:
+        paths = ', '.join(f'{stage.stage} ({stage.path})' for stage in foreign)
+        msg = (
+            f'refusing to install over a hook pre-commit did not write: {paths}. Move it aside or fold '
+            f'it into {config_name}, then re-run; an install here would displace a hook somebody else wrote.'
+        )
+        raise HookInstallError(msg)
+    argv = [sys.executable, *install_command(repo, config_name=config_name)]
+    code = run(argv, repo)
+    if code != 0:
+        msg = f'{" ".join(argv)} exited {code} in {repo}; the hooks were not installed'
+        raise HookInstallError(msg)
+    after = hook_installation(repo, config_name=config_name)
+    if after.verdict != PROTECTED:
+        listing = ', '.join(f'{stage.stage}={stage.status}' for stage in after.failing)
+        msg = f'{" ".join(argv)} exited 0 and {after.hooks_dir} is still unprotected: {listing}'
+        raise HookInstallError(msg)
+    return after
+
+
 def generated_hook(*, config_name: str, hook_type: str) -> str:
     """The shim pre-commit generates, reduced to the marker and ARGS that carry its identity.
 
@@ -299,9 +365,13 @@ def report_installation(argv: list[str] | None = None) -> int:
     if args.install:
         # THE CHECK STILL NEVER REPAIRS ITSELF. What is refused is a SILENT fix; an explicitly
         # requested install is neither silent nor a repair of somebody else's tree.
-        command = install_command(root, config_name=args.config_name)
-        emit(f'[hooks-installed] installing: {Path(sys.executable).name} {" ".join(command)}')
-        return subprocess.run([sys.executable, *command], cwd=root, check=False, timeout=600).returncode
+        try:
+            done = install(root, config_name=args.config_name)
+        except HookInstallError as exc:
+            emit(f'[hooks-installed] NOT INSTALLED -- {exc}')
+            return 1
+        emit(f'[hooks-installed] {done.verdict} -- {done.hooks_dir}')
+        return 0 if done.verdict == PROTECTED else 2
 
     report = hook_installation(root, config_name=args.config_name)
     emit(f'[hooks-installed] the hooks directory git will use: {report.hooks_dir}')
@@ -314,11 +384,11 @@ def report_installation(argv: list[str] | None = None) -> int:
     if report.verdict == PROTECTED:
         emit('[hooks-installed] OK -- every declared stage has a live hook.')
         return 0
-    install = ' '.join(install_command(root, config_name=args.config_name)[2:])
+    remedy = ' '.join(install_command(root, config_name=args.config_name)[2:])
     emit(
         f'[hooks-installed] UNPROTECTED -- {len(report.failing)} of {len(report.stages)} declared stage(s) '
         f'are not live. Every commit or push through this checkout ran none of them.\n'
-        f'  Install with:  python -m pre_commit {install}'
+        f'  Install with:  python -m pre_commit {remedy}'
     )
     return 1
 

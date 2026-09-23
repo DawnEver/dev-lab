@@ -21,6 +21,7 @@ install:
 .PHONY: install-dev
 install-dev:
 	uv pip install -e ".[dev]"
+	python -m lab_commons.dev.hook_install --install
 
 .PHONY: lint
 lint:

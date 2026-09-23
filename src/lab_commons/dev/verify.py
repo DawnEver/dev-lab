@@ -7,7 +7,8 @@ is not portable to a repo that has none of those). The other three have NOTHING,
 working in one can only type a bare ``pytest`` line -- which the family's hooks deny, and they
 deny it for the reason this module exists: a bare invocation returns an exit code, and an exit
 code cannot say whether the run COVERED what it selected. This module is the portable remainder:
-three steps, a log, and a verdict built out of the algebra in :mod:`lab_commons.dev.verdict`.
+three steps, a log, and a verdict built out of the algebra in :mod:`lab_commons.dev.verdict` --
+plus :data:`HOOKS_STEP`, which fails the run when a hook the repo declares is not installed.
 
 THE POLARITY IS INHERITED, NOT RE-DECIDED. A run starts INCONCLUSIVE and is PROMOTED only on
 proof. The measured case that motivates it is in that module's own docstring, and the parser that
@@ -44,6 +45,7 @@ from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
+from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import MalformedAllowance, StepReport, declared_skips, read_pytest, read_ruff
@@ -53,6 +55,7 @@ from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
 __all__ = [
     'EXIT_CODES',
+    'HOOKS_STEP',
     'LOG_DIRECTORY',
     'MEASURED_TARGETS',
     'PYTEST_ARGS',
@@ -60,6 +63,7 @@ __all__ = [
     'build_verdict',
     'main',
     'project_root',
+    'read_hooks',
     'run_verify',
 ]
 
@@ -234,6 +238,30 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
     return process.returncode
 
 
+#: The step name the hooks-installed check reports under (user directive 2026-09-23). A STEP rather
+#: than a test so that a verify narrowed to one path still runs it: the adoption test only runs when
+#: a suite selects it, and the only path that skips this is one where verify is not run at all.
+HOOKS_STEP: Final = 'hooks-installed'
+
+
+def read_hooks(root: Path, *, handle: IO[str]) -> StepReport:
+    """The hooks-installed step: a named failure when a declared hook is not live, with its remedy.
+
+    It reads and never installs -- the install act is :func:`lab_commons.dev.hook_install.install`,
+    called from each repo's bootstrap. ``nothing-declared`` passes: a repo with no configuration has
+    no hook for this step to find missing.
+    """
+    report = hook_installation(root)
+    handle.write(f'$ {HOOKS_STEP}: {report.verdict} ({report.hooks_dir})\n')
+    for stage in report.failing:
+        handle.write(f'  {stage.stage:<12} {stage.status:<28} {stage.detail}\n')
+    if report.verdict == UNPROTECTED:
+        handle.write(f'  remedy: python {" ".join(install_command(root))}\n')
+    handle.flush()
+    failed = (HOOKS_STEP,) if report.verdict == UNPROTECTED else ()
+    return StepReport(name=HOOKS_STEP, reported=(HOOKS_STEP,), failures=failed)
+
+
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -307,6 +335,7 @@ def run_verify(
     reports: list[StepReport] = []
     with contextlib.ExitStack() as box, path.open('w', encoding='utf-8') as handle:
         hold_the_box(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
+        reports.append(read_hooks(root, handle=handle))
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
         handle.write(_PYTEST_BANNER)
