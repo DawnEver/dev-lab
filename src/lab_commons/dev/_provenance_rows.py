@@ -72,6 +72,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     ),
     'cjk': ('original',),
     'content': ('original',),
+    'codeplace': (
+        'supersedes',
+        'tests/architecture/repo/test_code_lives_only_where_code_belongs.py',
+        'scripts/clean/scratch.py',
+    ),
     'datedlog': ('supersedes', 'scripts/gate/_dated.py'),
     'dep': ('supersedes', 'scripts/gate/native_install.py'),
     # ORIGINAL, and both halves are the reason. No consumer file is being replaced -- the mechanism

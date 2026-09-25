@@ -45,6 +45,7 @@ _IDS = frozenset(
     {
         'AGENT-GUARD',
         'BAR-IS-A-CONSTANT',
+        'CODE-IN-CODE-ROOTS',
         'DECLARATION-LIES',
         'DOCS-SPLIT',
         'ENV-MUTATION-THROUGH-THE-DOOR',
@@ -70,6 +71,7 @@ _IDS = frozenset(
         'REFUSAL-NAMES-THE-REMEDY',
         'REGISTRY-OWNS-THE-DECISION',
         'RETIRED-NAMES-REGISTERED',
+        'SCRATCH-ARCHIVED-OR-PROMOTED',
         'SHARED-CHECKOUT',
         'TOLERANCE-CARRIES-A-UNIT',
         'UNSUPPORTED-RAISES',

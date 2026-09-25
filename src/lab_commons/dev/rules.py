@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.dev._rule_rows import ROWS
+from lab_commons.dev._rule_rows_b import ROWS as _ROWS_B
 from lab_commons.dev.profile import RepoProfile
 from lab_commons.file_io import read_toml
 
@@ -288,7 +289,7 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 #: reason: a table edited through the module that checks it drifts away from what it describes.
 #: Rows are the number -- nothing here states a count, because a count is blind to which row moved
 #: and the honest repair when it disagrees is to edit the digit.
-RULES: Final[tuple[Rule, ...]] = _build(ROWS)
+RULES: Final[tuple[Rule, ...]] = _build(ROWS + _ROWS_B)
 
 
 def tracked_files(root: Path) -> frozenset[str]:
