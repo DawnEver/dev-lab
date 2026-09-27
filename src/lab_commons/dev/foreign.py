@@ -169,9 +169,9 @@ def _docstring_ids(tree: ast.Module) -> set[int]:
     holders = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
     found: set[int] = set()
     for node in ast.walk(tree):
-        body = getattr(node, 'body', None)
-        if not isinstance(node, holders) or not body:
+        if not isinstance(node, holders) or not node.body:
             continue
+        body = node.body
         first = body[0]
         if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
             found.add(id(first.value))

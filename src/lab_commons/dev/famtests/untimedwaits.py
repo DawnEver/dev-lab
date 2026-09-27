@@ -168,7 +168,7 @@ def _bare_waits(tree: ast.AST) -> list[tuple[ast.Call, str]]:
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         name = node.func.attr
-        is_blocking = name in BLOCKING and getattr(node.func.value, 'id', '') == 'subprocess'
+        is_blocking = name in BLOCKING and isinstance(node.func.value, ast.Name) and node.func.value.id == 'subprocess'
         is_waiter = name in WAITERS
         if not (is_blocking or is_waiter):
             continue

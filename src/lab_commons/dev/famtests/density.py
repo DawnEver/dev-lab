@@ -157,9 +157,9 @@ def code_and_delegation(source: str, *, delegation_homes: Collection[str]) -> tu
     tree = ast.parse(source)
     docstrings = set()
     for node in ast.walk(tree):
-        body = getattr(node, 'body', None)
-        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) or not body:
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) or not node.body:
             continue
+        body = node.body
         head = body[0]
         if isinstance(head, ast.Expr) and isinstance(head.value, ast.Constant) and isinstance(head.value.value, str):
             docstrings.add((head.lineno, head.col_offset))
