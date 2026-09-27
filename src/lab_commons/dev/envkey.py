@@ -32,7 +32,7 @@ import contextlib
 import hashlib
 import platform
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from importlib import metadata
 from typing import Final, Protocol, runtime_checkable
 
@@ -50,7 +50,7 @@ class _Described(Protocol):
     """A distribution that carries a metadata mapping, read for its ``Name``."""
 
     @property
-    def metadata(self) -> object:
+    def metadata(self) -> Mapping[str, object]:
         """The distribution's core metadata."""
 
 
@@ -99,7 +99,7 @@ def env_manifest(distributions: Iterable[object] | None = None) -> tuple[str, ..
     for dist in distributions:
         name = None
         with contextlib.suppress(Exception):
-            name = dist.metadata['Name'] if isinstance(dist, _Described) else None  # type: ignore[index]
+            name = dist.metadata['Name'] if isinstance(dist, _Described) else None
         version = dist.version if isinstance(dist, _Versioned) else None
         entries.append(f'{name or UNREADABLE}=={version or UNREADABLE}')
     return (interpreter_identity(), *sorted(entries))

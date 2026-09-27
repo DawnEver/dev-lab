@@ -24,7 +24,7 @@ def _reflection_sites(source: str, filename: str) -> list[int]:
     )
 
 
-def test_the_scan_fires_on_both_forms() -> None:
+def test_a_planted_getattr_and_hook_are_both_found() -> None:
     planted = 'def __getattr__(name):\n    return getattr(object(), name)\n'
     assert _reflection_sites(planted, '<planted>') == [1, 2]
 

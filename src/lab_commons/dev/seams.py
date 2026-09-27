@@ -189,5 +189,9 @@ def install(seams: Iterable[Seam]) -> tuple[str, ...]:
             missing.append(seam.label)
             continue
         owner, attribute = resolved
-        rebind(owner, attribute, _wrap(seam.label, _lookup(owner, attribute)))  # type: ignore[arg-type]
+        target = _lookup(owner, attribute)
+        if not callable(target):  # a non-callable binding has no call to time
+            missing.append(seam.label)
+            continue
+        rebind(owner, attribute, _wrap(seam.label, target))
     return tuple(missing)
