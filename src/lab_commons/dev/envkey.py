@@ -34,7 +34,7 @@ import platform
 import sys
 from collections.abc import Iterable
 from importlib import metadata
-from typing import Final
+from typing import Final, Protocol, runtime_checkable
 
 __all__ = ['UNREADABLE', 'env_key', 'env_manifest', 'interpreter_identity']
 
@@ -43,6 +43,24 @@ __all__ = ['UNREADABLE', 'env_key', 'env_manifest', 'interpreter_identity']
 UNREADABLE: Final = 'UNREADABLE'
 
 _KEY_CHARS: Final = 16
+
+
+@runtime_checkable
+class _Described(Protocol):
+    """A distribution that carries a metadata mapping, read for its ``Name``."""
+
+    @property
+    def metadata(self) -> object:
+        """The distribution's core metadata."""
+
+
+@runtime_checkable
+class _Versioned(Protocol):
+    """A distribution that carries a version string."""
+
+    @property
+    def version(self) -> object:
+        """The distribution's version."""
 
 
 def interpreter_identity() -> str:
@@ -59,8 +77,9 @@ def env_manifest(distributions: Iterable[object] | None = None) -> tuple[str, ..
     """The environment as READABLE lines: interpreter first, then every distribution, SORTED.
 
     ``distributions`` is a bag of UNKNOWN objects on purpose -- ``importlib.metadata`` promises
-    nothing about their type, and a test passes its own doubles -- so the two attributes are read
-    with ``getattr`` and a double has no contract to implement.
+    nothing about their type, and a test passes its own doubles -- so each of the two attributes is
+    an OPTIONAL capability, checked by a ``runtime_checkable`` Protocol, and a double has no contract
+    to implement.
 
     SORTED, because enumeration order cannot be allowed to vary the key: ``importlib.metadata``
     walks ``sys.path`` and promises nothing about the order it yields in, so the same environment
@@ -80,8 +99,8 @@ def env_manifest(distributions: Iterable[object] | None = None) -> tuple[str, ..
     for dist in distributions:
         name = None
         with contextlib.suppress(Exception):
-            name = getattr(dist, 'metadata', {})['Name']
-        version = getattr(dist, 'version', None)
+            name = dist.metadata['Name'] if isinstance(dist, _Described) else None  # type: ignore[index]
+        version = dist.version if isinstance(dist, _Versioned) else None
         entries.append(f'{name or UNREADABLE}=={version or UNREADABLE}')
     return (interpreter_identity(), *sorted(entries))
 

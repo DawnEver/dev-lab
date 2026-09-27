@@ -143,6 +143,7 @@ class PhaseReport(Protocol):
     nodeid: str
     duration: float
     failed: bool
+    longrepr: object
 
 
 class RunConfig(Protocol):
@@ -625,7 +626,7 @@ class Recorder:
         seconds = phase_seconds(
             duration=float(report.duration),
             failed=bool(report.failed),
-            longrepr=str(getattr(report, 'longrepr', '')),
+            longrepr=str(report.longrepr),
             wall=self.wall,
         )
         self.seconds[report.nodeid] = self.seconds.get(report.nodeid, 0.0) + seconds
@@ -640,7 +641,7 @@ class Recorder:
         """
         config = session.config
         selector = str(config.getoption('-m') or '').strip() or 'all'
-        worker = getattr(config, 'workerinput', {}).get('workerid')
+        worker = vars(config).get('workerinput', {}).get('workerid')
         return write(
             self.root,
             (Row(nodeid=nodeid, seconds=value) for nodeid, value in self.seconds.items()),

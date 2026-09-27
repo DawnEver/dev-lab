@@ -100,7 +100,7 @@ def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., A
             f'about the code the repo RUNS; an unimportable entry point is a louder finding still.'
         )
         raise AssertionError(msg)
-    bound = getattr(module, 'hold_the_box', None)
+    bound = vars(module).get('hold_the_box')
     if bound is not hold_the_box:
         msg = (
             f'{entry_point.__module__} bound {bound!r} as `hold_the_box`, not '

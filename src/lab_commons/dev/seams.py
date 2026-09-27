@@ -36,18 +36,42 @@ defect in measurement form. An unresolved label is this scan's floor.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import importlib
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 __all__ = ['Seam', 'Timing', 'install', 'rebind', 'restore_all', 'timings']
 
 #: ``(owner, attr, original)``, appended in install order and unwound in reverse. The owner is held
 #: by this list, which is also what keeps identity comparison honest for the caller checking its undo.
 _ORIGINALS: list[tuple[object, str, object]] = []
+
+#: What :func:`_lookup` returns for a name *owner* does not hold -- ``None`` is a legal binding.
+_ABSENT: Final = object()
+
+
+def _lookup(owner: object, attr: str) -> object:
+    """*owner*'s binding of *attr* read from its namespaces, or :data:`_ABSENT`.
+
+    The instance (or module) namespace first, then the class chain -- a class's own ``__mro__`` when
+    *owner* is a class, else its type's. The RAW binding is returned, so a ``staticmethod`` is put
+    back as the ``staticmethod`` it was rather than as the function it unwraps to.
+    """
+    namespaces = []
+    with contextlib.suppress(TypeError):  # a slotted instance has no own namespace; its class chain does
+        namespaces.append(vars(owner))
+    chain = owner.__mro__ if isinstance(owner, type) else type(owner).__mro__
+    namespaces.extend(vars(klass) for klass in chain)
+    for namespace in namespaces:
+        if attr in namespace:
+            return namespace[attr]
+    return _ABSENT
+
 
 _TOTALS: dict[str, float] = defaultdict(float)
 _CALLS: dict[str, int] = defaultdict(int)
@@ -87,7 +111,10 @@ def rebind(owner: object, attr: str, replacement: object) -> None:
             name that did not exist has nothing to restore and measures a seam nobody calls.
 
     """
-    current = getattr(owner, attr)
+    current = _lookup(owner, attr)
+    if current is _ABSENT:
+        msg = f'{owner!r} has no {attr!r} to rebind'
+        raise AttributeError(msg)
     if not any(held is owner and name == attr for held, name, _ in _ORIGINALS):
         _ORIGINALS.append((owner, attr, current))
     setattr(owner, attr, replacement)
@@ -124,9 +151,9 @@ def _wrap(label: str, func: Callable[..., Any]) -> Callable[..., Any]:
             _TOTALS[label] += time.perf_counter() - started
             _CALLS[label] += 1
 
-    timed.__name__ = getattr(func, '__name__', label)
-    timed.__doc__ = getattr(func, '__doc__', None)
-    return timed
+    timed.__name__ = label
+    timed.__doc__ = None
+    return functools.update_wrapper(timed, func)  # copies each name *func* has, skips the rest
 
 
 def _resolve(seam: Seam) -> tuple[object, str] | None:
@@ -137,10 +164,11 @@ def _resolve(seam: Seam) -> tuple[object, str] | None:
         return None
     parts = seam.path.split('.')
     for part in parts[:-1]:
-        owner = getattr(owner, part, None)
-        if owner is None:
+        owner = _lookup(owner, part)
+        if owner is _ABSENT or owner is None:
             return None
-    return (owner, parts[-1]) if getattr(owner, parts[-1], None) is not None else None
+    leaf = _lookup(owner, parts[-1])
+    return None if leaf is _ABSENT or leaf is None else (owner, parts[-1])
 
 
 def install(seams: Iterable[Seam]) -> tuple[str, ...]:
@@ -161,5 +189,5 @@ def install(seams: Iterable[Seam]) -> tuple[str, ...]:
             missing.append(seam.label)
             continue
         owner, attribute = resolved
-        rebind(owner, attribute, _wrap(seam.label, getattr(owner, attribute)))
+        rebind(owner, attribute, _wrap(seam.label, _lookup(owner, attribute)))  # type: ignore[arg-type]
     return tuple(missing)
