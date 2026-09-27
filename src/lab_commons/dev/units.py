@@ -417,7 +417,7 @@ def _python_signatures(text: str) -> Iterator[_Signature]:  # noqa: C901 -- one 
         node, local = pending.popleft()
         below = local or isinstance(node, _CALLABLES)
         for field in node._fields:  # the children ``ast.iter_child_nodes`` yields, without its frame
-            value = getattr(node, field, None)
+            value = vars(node).get(field)
             children = value if type(value) is list else (value,)
             pending.extend((item, below) for item in children if isinstance(item, ast.AST))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

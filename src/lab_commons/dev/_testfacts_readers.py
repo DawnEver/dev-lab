@@ -268,7 +268,7 @@ def is_assertion(node: ast.AST) -> bool:
             if not isinstance(call, ast.Call):
                 continue
             func = call.func
-            called = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', None)
+            called = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
             if called in FAILING_CONTEXTS:
                 return True
     return False
