@@ -212,14 +212,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MEMORY-SHAPE',
         (
-            'A memory entry lives under a dated YYYY/MM/DD path with frontmatter, the index is generated from '
-            'what is there rather than curated beside it, and a task lands its state file with the commit '
-            'that completes it.'
+            'Memory keeps as much as possible and removes redundancy by MERGING, never by deleting: an entry '
+            'leaves only by being folded into a live entry that names it in `merged_from`, keeping its '
+            'measurements and refuted hypotheses. A memory entry lives under a dated YYYY/MM/DD path with '
+            'frontmatter, the index is generated from what is there rather than curated beside it, and a task '
+            'lands its state file with the commit that completes it.'
         ),
         (
             'tests/architecture/repo/test_memory_lives_in_dated_directories.py',
             'tests/architecture/docs/test_memory_files_live_under_a_dated_directory.py',
             'tests/architecture/docs/test_memory_index_map.py',
+            'tests/architecture/docs/test_memory_leaves_only_by_merging.py',
         ),
     ),
     (
