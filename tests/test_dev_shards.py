@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.shards import Composed, compose, partition, population
+from lab_commons.dev.shards import Composed, compose, member_costs, pack, partition, population
 from lab_commons.dev.testfacts import VacuousScanError
 from lab_commons.dev.verdict import Outcome
 
@@ -167,3 +167,73 @@ def test_a_set_holding_an_INCONCLUSIVE_and_no_FAIL_cannot_be_greener_than_it() -
 def test_the_composed_outcome_is_the_familys_enum_and_not_a_string() -> None:
     """One three-state vocabulary in this family; a second spelling is a fourth state nobody declared."""
     assert isinstance(compose(_rows(Outcome.PASS), 1).result, Outcome)
+
+
+# --- the cost-aware packer, moved from motronics-studio's scripts/gate/_shards.py (2026-09-29) ---
+
+
+def test_pack_puts_the_heaviest_items_in_different_bins_and_ties_break_by_key() -> None:
+    plan = pack([('b', 1.0), ('a', 1.0), ('big', 5.0), ('mid', 3.0)], 2)
+    assert plan == {'big': 0, 'mid': 1, 'a': 1, 'b': 0}
+
+
+def test_pack_is_independent_of_the_order_items_arrive_in() -> None:
+    items = [(f'k{i}', float(i % 7)) for i in range(40)]
+    assert pack(items, 4) == pack(list(reversed(items)), 4)
+
+
+@pytest.mark.parametrize('count', [0, -1])
+def test_pack_refuses_a_non_positive_bin_count(count: int) -> None:
+    with pytest.raises(ValueError, match='must be positive'):
+        pack([('a', 1.0)], count)
+
+
+def test_a_together_group_lands_in_ONE_bin() -> None:
+    items = [(f'k{i}', 1.0) for i in range(12)]
+    seats = frozenset({'k0', 'k5', 'k11'})
+    plan = pack(items, 5, together=[seats])
+    assert len({plan[key] for key in seats}) == 1
+
+
+def test_overlapping_groups_MERGE_and_the_answer_ignores_their_order() -> None:
+    items = [(f'k{i}', 1.0) for i in range(10)]
+    groups = [frozenset({'k1', 'k2'}), frozenset({'k2', 'k7'}), frozenset({'k4', 'k9'})]
+    forwards = pack(items, 4, together=groups)
+    assert pack(items, 4, together=list(reversed(groups))) == forwards
+    assert forwards['k1'] == forwards['k2'] == forwards['k7']
+    assert forwards['k4'] == forwards['k9']
+
+
+def test_a_constraint_over_absent_or_single_keys_is_NO_constraint() -> None:
+    items = [(f'k{i}', float(i)) for i in range(9)]
+    assert pack(items, 3, together=[frozenset({'k3'}), frozenset({'absent', 'k4'})]) == pack(items, 3)
+
+
+def test_member_costs_sums_finer_rows_onto_members_plus_a_floor() -> None:
+    costs = member_costs(('a.py', 'b.py'), {'a.py::t1': 2.0, 'a.py::t2': 3.0, 'gone.py::t': 9.0}, 0.5)
+    assert costs == {'a.py': 5.5, 'b.py': 0.5}
+
+
+def test_member_costs_of_no_table_is_EMPTY_not_zeroes() -> None:
+    assert member_costs(('a.py',), {}, 0.5) == {}
+
+
+def test_a_costed_partition_balances_COST_not_count() -> None:
+    whole = ('a', 'b', 'c', 'd')
+    costs = {'a': 10.0, 'b': 1.0, 'c': 1.0, 'd': 1.0}
+    assert partition(whole, 0, 2, costs=costs) == ('a',)
+    assert partition(whole, 1, 2, costs=costs) == ('b', 'c', 'd')
+
+
+def test_a_costed_partition_honours_together_and_still_covers_the_whole() -> None:
+    whole = tuple(f'k{i}' for i in range(10))
+    costs = dict.fromkeys(whole, 1.0)
+    seats = frozenset({'k0', 'k9'})
+    pieces = [partition(whole, i, 3, costs=costs, together=[seats]) for i in range(3)]
+    assert sorted(m for piece in pieces for m in piece) == sorted(whole)
+    assert any(seats <= set(piece) for piece in pieces)
+
+
+def test_an_empty_cost_table_falls_back_to_the_round_robin() -> None:
+    whole = tuple(f'k{i}' for i in range(7))
+    assert partition(whole, 1, 3, costs={}) == partition(whole, 1, 3)

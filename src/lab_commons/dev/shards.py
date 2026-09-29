@@ -26,13 +26,15 @@ a consumer has one exception to catch rather than two spellings of one idea.
 
 from __future__ import annotations
 
+import heapq
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from lab_commons.dev.testfacts import VacuousScanError
 from lab_commons.dev.verdict import Outcome
 
-__all__ = ['Composed', 'Row', 'compose', 'partition', 'population']
+__all__ = ['Composed', 'Row', 'compose', 'member_costs', 'pack', 'partition', 'population']
 
 #: A row is ``(tree, env, outcome)`` as some reader recovered it, or ``None`` when that piece is
 #: absent or unreadable. The distinction between "absent" and "unreadable" belongs to the reader;
@@ -75,12 +77,113 @@ def population(root: Path, subdir: str, pattern: str, *, floor: int) -> tuple[st
     return found
 
 
-def partition(whole: tuple[str, ...], index: int, count: int) -> tuple[str, ...]:
+def pack(items: Sequence[tuple[str, float]], count: int, *, together: Sequence[frozenset[str]] = ()) -> dict[str, int]:
+    """Longest-processing-time-first bin packing: each key to the bin index it belongs in.
+
+    THE ONE PACKER IN THE FAMILY, moved 2026-09-29 from motronics-studio's gate so a consumer calls
+    it rather than keeping a copy: two copies of a packing rule drift, each keeps passing its own
+    tests, and the two then disagree about what a bin is while both look green.
+
+    LPT, not optimal: O(n log n), deterministic, worst case 4/3 of optimal. What bounds a partition in
+    practice is the single most expensive indivisible item, which no packer can split. Measured on
+    motronics-studio's heavy tier (2026-09-16, 2674 files, 28.73 h): at N=8 round-robin's slowest
+    shard was 6.70 h against LPT's 4.82 h, and with its one 4.42 h item removed LPT hit the perfect
+    split at every width from 2 to 8.
+
+    DETERMINISM IS A HARD REQUIREMENT: packer and reader run in separate processes and must agree. So
+    the order packed is ``(-cost, key)`` and the bin chosen is the least loaded with the LOWEST INDEX,
+    never the order *items* arrived in.
+
+    *together* CO-LOCATES AN INDIVISIBLE RESOURCE -- a licence seat, a machine-global COM
+    registration. Each group becomes ONE composite item in ONE bin, so the resource never crosses a
+    process boundary and needs no cross-process lock. Use one group PER RESOURCE: a seat is
+    indivisible against itself and nothing else, and pooling unrelated seats builds a long pole.
+    OVERLAPPING GROUPS MERGE by connected component, so the answer cannot depend on group order. A
+    named key that is ABSENT is not an error: a constraint over nothing behaves exactly like none.
+
+    Raises:
+        ValueError: *count* is not positive.
+
+    """
+    if count <= 0:
+        msg = f'a bin count must be positive, got {count!r}'
+        raise ValueError(msg)
+    costs = dict(items)
+    groups = _merged_groups([frozenset(group) & costs.keys() for group in together])
+    bound = {key for group in groups for key in group}
+    # EACH COMPOSITE IS KEYED BY ITS LOWEST MEMBER so two processes tie-break identically, and by a
+    # REAL member so it needs no sentinel that could collide with one.
+    packable = [(key, cost) for key, cost in costs.items() if key not in bound]
+    packable += [(min(group), sum(costs[key] for key in group)) for group in groups]
+    bins = [(0.0, i) for i in range(count)]
+    heapq.heapify(bins)
+    plan: dict[str, int] = {}
+    for key, cost in sorted(packable, key=lambda item: (-item[1], item[0])):
+        load, i = heapq.heappop(bins)
+        plan[key] = i
+        heapq.heappush(bins, (load + cost, i))
+    for group in groups:
+        for key in group:
+            plan[key] = plan[min(group)]
+    return plan
+
+
+def _merged_groups(groups: Sequence[frozenset[str]]) -> list[frozenset[str]]:
+    """Connected components of *groups* under overlap, so two resources sharing a key share a bin.
+
+    A group of one constrains NOTHING -- its member is already in exactly one bin -- so it is dropped,
+    which makes ``together=[{x}]`` identical to ``together=()``. Sorted by lowest member.
+    """
+    merged: list[set[str]] = []
+    for group in groups:
+        if not group:
+            continue
+        overlapping = [existing for existing in merged if existing & group]
+        merged = [existing for existing in merged if not (existing & group)]
+        merged.append(set(group).union(*overlapping))
+    return sorted((frozenset(group) for group in merged if len(group) > 1), key=min)
+
+
+def member_costs(whole: Sequence[str], priced: Mapping[str, float], floor: float) -> dict[str, float]:
+    """What each member costs, from a table keyed FINER than a member -- ``<member>::<detail>``.
+
+    A member is priced at the SUM of the rows naming it, plus *floor*. The floor is not decoration: a
+    table that prices only what crosses a threshold has no row for most members, and pricing those at
+    zero would pile the whole cheap tail into whichever bin was momentarily lightest. What the floor
+    MEANS is the caller's to argue, because only the caller knows what its table's silence says.
+
+    EMPTY IN, EMPTY OUT: no table is not a table of zeroes, and :func:`partition` reads an empty
+    mapping as "fall back to the round-robin", never as "everything is free".
+    """
+    if not priced:
+        return {}
+    costs = dict.fromkeys(whole, floor)
+    for key, cost in priced.items():
+        member = key.split('::', 1)[0]
+        if member in costs:
+            costs[member] += cost
+    return costs
+
+
+def partition(
+    whole: tuple[str, ...],
+    index: int,
+    count: int,
+    *,
+    costs: Mapping[str, float] | None = None,
+    together: Sequence[frozenset[str]] = (),
+) -> tuple[str, ...]:
     """The members of piece *index* (0-based) of *count*.
 
-    ROUND-ROBIN over the sorted list rather than contiguous blocks: adjacent files in a directory
-    tend to share fixtures and cost, so contiguous slicing puts the expensive neighbourhood in one
-    piece and leaves another nearly empty -- and a shard set is only as fast as its slowest piece.
+    COST-AWARE when *costs* is given: a shard set's wall clock is its SLOWEST piece, so balancing the
+    member COUNT balances the wrong quantity -- the pieces are :func:`pack`'s bins. *costs* must price
+    EVERY member (see :func:`member_costs`); a missing one is packed at 0.0.
+
+    ROUND-ROBIN when *costs* is empty or absent, over the sorted list rather than contiguous blocks:
+    adjacent files tend to share fixtures and cost, so contiguous slicing puts the expensive
+    neighbourhood in one piece. *together* is IGNORED by that fallback deliberately: a set with no
+    prices is not one anybody should run CONCURRENTLY, and honouring the constraint there would make
+    an unbalanced set look safe to fan out.
 
     Raises:
         ValueError: *index* is outside ``0..count-1``, or *count* is not positive. An out-of-range
@@ -94,7 +197,10 @@ def partition(whole: tuple[str, ...], index: int, count: int) -> tuple[str, ...]
     if not 0 <= index < count:
         msg = f'shard index {index} is outside 0..{count - 1}'
         raise ValueError(msg)
-    return tuple(member for i, member in enumerate(whole) if i % count == index)
+    if not costs:
+        return tuple(member for i, member in enumerate(whole) if i % count == index)
+    plan = pack([(member, costs.get(member, 0.0)) for member in whole], count, together=together)
+    return tuple(member for member in whole if plan[member] == index)
 
 
 @dataclass(frozen=True, slots=True)
