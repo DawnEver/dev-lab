@@ -19,6 +19,7 @@ shadowed too, an error that reads as speed.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import os
 import subprocess
 import sys
@@ -259,7 +260,7 @@ class TestTheComparison:
         have the data it needs -- which is the shape that produced "+3.07 % end to end against a
         1.8 % bound", a figure that exceeded its own ceiling and therefore measured the box.
         """
-        assert not hasattr(Comparison(installed_s=(1.0,), shadow_s=(1.0,)), 'end_to_end')
+        assert 'end_to_end' not in {f.name for f in dataclasses.fields(Comparison)}
 
 
 class TestInterleaving:

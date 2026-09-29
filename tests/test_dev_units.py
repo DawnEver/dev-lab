@@ -630,7 +630,7 @@ def test_the_module_declares_its_public_surface() -> None:
         'trailing_token',
     }
     for name in units.__all__:
-        assert hasattr(units, name), f'{name} is exported and does not exist'
+        assert name in vars(units), f'{name} is exported and does not exist'
 
 
 def _subtract_enclosing_scopes(text: str) -> tuple[units._Signature, ...]:

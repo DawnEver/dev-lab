@@ -49,7 +49,8 @@ def surface_problems(paths: tuple[Path, ...]) -> tuple[str, ...]:
             elif isinstance(node, ast.AnnAssign):
                 targets = [node.target]
             if any(isinstance(t, ast.Name) and t.id == '__all__' for t in targets):
-                declared = [e.value for e in getattr(node.value, 'elts', []) if isinstance(e, ast.Constant)]
+                elts = node.value.elts if isinstance(node.value, ast.List | ast.Tuple) else []
+                declared = [e.value for e in elts if isinstance(e, ast.Constant)]
         if declared is None:
             out.append(f'{path.name} declares no __all__, so its public surface is whatever happens to be defined')
             continue
@@ -87,9 +88,10 @@ def _defined_names(body: list[ast.stmt]) -> set[str]:
         elif isinstance(node, ast.If | ast.Try):
             names |= _defined_names(node.body)
             names |= _defined_names(node.orelse)
-            names |= _defined_names(getattr(node, 'finalbody', []))
-            for handler in getattr(node, 'handlers', []):
-                names |= _defined_names(handler.body)
+            if isinstance(node, ast.Try):
+                names |= _defined_names(node.finalbody)
+                for handler in node.handlers:
+                    names |= _defined_names(handler.body)
     return names
 
 

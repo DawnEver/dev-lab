@@ -52,7 +52,7 @@ def _clean_process_state() -> Iterator[None]:
 
 def _ledger() -> list[str]:
     """Every execution the planted modules have recorded so far."""
-    return getattr(builtins, _LEDGER)
+    return vars(builtins)[_LEDGER]
 
 
 def _plant(directory: Path, stem: str, body: str = '') -> Path:
