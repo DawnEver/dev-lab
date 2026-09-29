@@ -174,7 +174,7 @@ def test_the_composed_outcome_is_the_familys_enum_and_not_a_string() -> None:
 
 def test_pack_puts_the_heaviest_items_in_different_bins_and_ties_break_by_key() -> None:
     plan = pack([('b', 1.0), ('a', 1.0), ('big', 5.0), ('mid', 3.0)], 2)
-    assert plan == {'big': 0, 'mid': 1, 'a': 1, 'b': 0}
+    assert plan == {'big': 0, 'mid': 1, 'a': 1, 'b': 1}
 
 
 def test_pack_is_independent_of_the_order_items_arrive_in() -> None:
