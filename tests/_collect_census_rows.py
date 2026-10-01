@@ -145,11 +145,16 @@ ROWS: tuple[CollectRow, ...] = (
 #: Per repo, the fewest test files a run must have READ before its answer means anything. MEASURED
 #: 2026-09-19 at 108 / 192 / 28 / 2632 and set below them, because a tree that was not read reports
 #: the same empty stranded set as a tree whose every import survives.
+#:
+#: wdg-lab RE-TAKEN 150 -> 120 on 2026-10-01, at the measured value, for a DATED CAUSE: wdg-lab
+#: c406ade3 (2026-09-28, `refactor(wdg_3d)!: one 3D construction -- delete the old tree`) deleted
+#: the superseded wdg_3d test tree on purpose. The tree shrank by decision, not because a scan
+#: stopped reading it, so this is a floor re-taken for a deliberate deletion -- not a widening.
 FILE_FLOORS: dict[str, int] = {
     'lab-commons': 90,
     'motronics-studio': 2000,
     'optimi-lab': 20,
-    'wdg-lab': 150,
+    'wdg-lab': 120,
 }
 
 #: The floor under how many repos a run reached. A census of one tree is not a census, and every
