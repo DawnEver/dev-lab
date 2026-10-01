@@ -32,6 +32,9 @@ dependencies = [
 # why the name is spelled after the shell wrapper it replaces: a consumer's entry reads
 # `lab-with-venv ruff check` where it used to read `bash scripts/hooks/with-venv.sh ruff check`.
 lab-with-venv = "lab_commons.dev.githooks.bootstrap:main"
+# The commit-msg issue-reference check, run in pre-commit's managed environment on purpose: it must
+# never block, and `lab-with-venv` exits 1 where no venv exists (see `lab_commons.dev.issueref`).
+lab-issue-ref = "lab_commons.dev.issueref:main"
 
 [project.urls]
 Homepage = "https://github.com/DawnEver/lab-commons"

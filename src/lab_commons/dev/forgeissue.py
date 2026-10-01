@@ -38,6 +38,7 @@ from typing import Final
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgestatus import GATE_CONTEXT, Status, status_list
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, client_for
+from lab_commons.dev.issueref import CLOSING_VERBS, REF_VERBS
 from lab_commons.log import emit
 
 __all__ = [
@@ -98,7 +99,7 @@ class IssueState:
 
 
 def _mentions(number: int, *, closing: bool) -> re.Pattern[str]:
-    verbs = 'closes|close|closed|fixes|fix|fixed|resolves|resolve|resolved' + ('' if closing else '|refs')
+    verbs = '|'.join(CLOSING_VERBS if closing else REF_VERBS)
     return re.compile(rf'\b(?:{verbs})\s+#{number}\b', re.IGNORECASE)
 
 

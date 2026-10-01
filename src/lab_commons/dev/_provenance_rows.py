@@ -115,6 +115,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgework': ('original',),
     'forgestatus': ('original',),
     'forgeissue': ('original',),
+    'issueref': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),
