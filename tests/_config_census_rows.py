@@ -529,7 +529,10 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         '`src/lab_commons/__version__.py`, the file hatch-vcs writes -- the consumers spell the same '
         'idea `**/__version__.py`, and neither spelling is portable to the other because one repo has '
         'one package and the others have several. What breaks if that line moved: a generated version '
-        'file gets committed and the build stops being reproducible from the tag.',
+        'file gets committed and the build stops being reproducible from the tag.'
+        ' ADDED 2026-10-01, locally: `.claude/.rem-state.json`, the rem plugin`s device-local state. '
+        'It is NOT a base line -- optimi-lab names it literally, wdg-lab and motronics reach it through '
+        '`**/.claude/**` -- so it is outside the three-way core and the share above does not move.',
     ),
     'lab-commons::Makefile': Placement(
         SPLITS,

@@ -10,3 +10,6 @@ src/lab_commons/__version__.py
 .verify/
 
 uv.lock
+# The rem plugin's device-local state. Kept LOCAL, not promoted to the family base: wdg-lab and
+# motronics cover it with `**/.claude/**`, so the literal line is not in the three-way core.
+.claude/.rem-state.json
