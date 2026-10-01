@@ -71,7 +71,7 @@ ROWS: tuple[CollectRow, ...] = (
         selected=('dev',),
         errors=frozenset({'cadquery-ocp', 'diskcache', 'fastapi', 'httpx', 'pandas'}),
         degrades=frozenset({'psutil', 'uvicorn'}),
-        unresolved=frozenset({'pydantic_core', 'scipy'}),
+        unresolved=frozenset({'pydantic_core'}),
         why=(
             'THE CONTROL THE FAMILY SUPPLIES ITSELF, in both directions at once and over the same '
             'repo. The web tier hard-imports fastapi, httpx, diskcache and pandas at module scope, '
@@ -79,7 +79,8 @@ ROWS: tuple[CollectRow, ...] = (
             'reach the SAME tree through `pytest.importorskip`, so they skip. RE-TAKEN 2026-10-01: '
             'cadquery-ocp moved to ERRORS on purpose -- a weld test dropped its guard so an absent '
             '[cad3d] REDS rather than skips -- while the files that importorskip OCP first still '
-            'degrade. `scipy` and `pydantic_core` are transitive: NAMED, not guessed.'
+            'degrade. `pydantic_core` is transitive: NAMED, not guessed. `scipy` LEFT the residue '
+            '2026-10-01 with the wdg_3d tree wdg-lab c406ade3 deleted, its only module-scope importer.'
         ),
     ),
     CollectRow(
@@ -187,12 +188,6 @@ UNRESOLVED_WHY: dict[str, str] = {
         'depends on it and pins its version, so it arrives through the lock graph. No spelling rule '
         'relates a declared name to a name that merely starts with it, and inventing one would read '
         'every `foo-bar` in a manifest as the supplier of `foo`.'
-    ),
-    'scipy': (
-        'GENUINELY UNDECLARED: `scipy` appears nowhere in the wdg-lab manifest -- not in the base, not '
-        'in an extra -- and it is imported at module scope in its test tree anyway, so it is reaching '
-        'that environment through the requirements of some other distribution. Whether a prune keeps it '
-        'is a property of the LOCK, which no reading of a manifest can answer.'
     ),
     'tomlkit': (
         'UNDECLARED IN MOTRONICS, and unlike `yaml` it needs no alias either: the import name IS the '
