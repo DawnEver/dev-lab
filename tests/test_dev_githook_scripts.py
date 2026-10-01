@@ -53,6 +53,8 @@ def _git(root: Path, *args: str) -> str:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         timeout=120,
         check=True,
     )
@@ -65,6 +67,8 @@ def _run(script: str, args: list[str], cwd: Path, env: dict[str, str]) -> subpro
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         # THE TIMEOUT IS AN ASSERTION: a hook that waits on a prompt must fail rather than take the
         # worker down with it.
@@ -163,6 +167,8 @@ def test_the_script_set_is_listable_by_kind() -> None:
         [sys.executable, '-m', 'lab_commons.dev.githooks', '--list', '--kind', 'fragment'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
         timeout=120,
     ).stdout.split()
@@ -194,6 +200,8 @@ def test_an_incomplete_git_config_set_really_does_break_git(repo: Path, tmp_path
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=120,
         env={**os.environ, **_POISON},
@@ -210,6 +218,8 @@ def test_the_fragment_drops_an_incomplete_set_and_git_runs(repo: Path, tmp_path:
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=120,
         env={**os.environ, **_POISON},
@@ -228,6 +238,8 @@ def test_a_COMPLETE_git_config_set_reaches_git_untouched(repo: Path, tmp_path: P
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=120,
         env={
@@ -246,7 +258,15 @@ def test_no_git_config_in_the_environment_is_silent(repo: Path, tmp_path: Path) 
     probe = _probe(tmp_path, f'{_source_line()}\necho ok')
     env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_CONFIG_')}
     done = subprocess.run(
-        [BASH, sh(probe)], cwd=repo, capture_output=True, text=True, check=False, timeout=120, env=env
+        [BASH, sh(probe)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+        timeout=120,
+        env=env,
     )
     assert done.stdout.strip() == 'ok'
     assert '[git-env]' not in done.stderr
@@ -458,6 +478,8 @@ def test_no_remote_ref_in_the_environment_RUNS(repo: Path, tmp_path: Path) -> No
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=180,
         env={**env, **DECLARED_NONE},
@@ -533,6 +555,8 @@ def test_an_UNANSWERED_repo_fact_refuses_and_names_it(
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=180,
         env={**ambient, 'PRE_COMMIT_REMOTE_BRANCH': 'refs/heads/main', **env},

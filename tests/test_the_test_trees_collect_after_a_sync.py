@@ -46,20 +46,25 @@ def test_every_recorded_selection_still_leaves_the_tree_what_the_table_records()
     assert HERE in seen, 'the census did not even read the tree it runs in'
 
 
-def test_the_family_disagrees_with_itself_about_one_import_name() -> None:
-    """THE CONTROL THE FAMILY SUPPLIES: ``OCP`` degrades in wdg-lab and errors in motronics.
+def test_the_guard_and_not_the_name_decides_within_one_selection() -> None:
+    """THE CONTROL THE FAMILY SUPPLIES: one reader, one selection, a guarded and a bare optional extra.
 
-    Two repos, one import name, one reader, opposite answers -- and the only difference is the
-    GUARD. A reader that convicted every optional integration would strand it twice; one that
-    trusted the scope would strand it never. This is the row that makes both impossible.
+    Until 2026-10-01 this was ``OCP`` degrading in wdg-lab and erroring in motronics. wdg-lab then
+    dropped its OCP guard ON PURPOSE (an absent ``[cad3d]`` must red, not skip), so OCP errors in
+    both and that pair no longer disagrees. The property survives inside motronics' sanctioned
+    selection: ``OCP`` is a bare import there and strands, while ``cv2`` is imported only after a
+    module-scope ``importorskip`` and degrades. A reader that convicted every optional integration
+    would strand both; one that trusted the scope would strand neither.
     """
     by_key = {row.key: row for row in ROWS}
-    guarded = by_key['wdg-lab[dev]']
-    bare = by_key['motronics-studio[pareto,dev]']
-    assert 'cadquery-ocp' in guarded.degrades
-    assert 'cadquery-ocp' not in guarded.errors
-    assert 'cadquery-ocp-novtk' in bare.errors
-    assert 'cadquery-ocp-novtk' not in bare.degrades
+    lab = by_key['wdg-lab[dev]']
+    selection = by_key['motronics-studio[pareto,dev]']
+    assert 'cadquery-ocp-novtk' in selection.errors
+    assert 'cadquery-ocp-novtk' not in selection.degrades
+    assert 'opencv-python-headless' in selection.degrades
+    assert 'opencv-python-headless' not in selection.errors
+    assert 'cadquery-ocp' in lab.errors
+    assert {'psutil', 'uvicorn'} <= lab.degrades
 
 
 def test_the_sanctioned_selection_cannot_collect_the_tree_it_is_sanctioned_for() -> None:
@@ -71,7 +76,9 @@ def test_the_sanctioned_selection_cannot_collect_the_tree_it_is_sanctioned_for()
     the repair has to be recorded, not absorbed.
     """
     row = next(row for row in ROWS if row.key == 'motronics-studio[pareto,dev]')
-    assert len(row.errors) == 7, sorted(row.errors)
+    # Six since 2026-10-01: the seventh, `opencv-python-headless`, was the reader convicting an import
+    # placed after its own module-scope `importorskip` -- an instrument fix, not a manifest repair.
+    assert len(row.errors) == 6, sorted(row.errors)
     assert 'pillow' in row.errors
 
 

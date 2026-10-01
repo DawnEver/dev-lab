@@ -105,7 +105,9 @@ def spawn_overhead(*, interpreter: str, ceiling_seconds: float) -> float:
     """
     started = time.monotonic()
     try:
-        bounded.run_bounded([interpreter, '-c', 'pass'], timeout=ceiling_seconds, text=True)
+        bounded.run_bounded(
+            [interpreter, '-c', 'pass'], timeout=ceiling_seconds, text=True, encoding='utf-8', errors='replace'
+        )
     except subprocess.TimeoutExpired as exc:
         msg = (
             f'this box did not start and finish an EMPTY Python child inside {ceiling_seconds}s. That is a '

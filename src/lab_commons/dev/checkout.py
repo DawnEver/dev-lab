@@ -134,7 +134,14 @@ def git_out(root: Path, *args: str) -> str | None:
     """
     try:
         done = subprocess.run(
-            [_GIT, *args], cwd=root, capture_output=True, text=True, check=False, timeout=_GIT_TIMEOUT_S
+            [_GIT, *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            timeout=_GIT_TIMEOUT_S,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

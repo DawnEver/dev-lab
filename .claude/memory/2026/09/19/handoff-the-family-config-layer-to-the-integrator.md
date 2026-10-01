@@ -1,6 +1,12 @@
-# Handoff: the family config layer to the integrator
+---
+name: handoff-the-family-config-layer-to-the-integrator
+description: User ruling 2026-09-19 - the remaining family config-layer refactor goes to the integrator. The handover - published state of all four repos (answered by merge-base, not memory), the seven kit modules added and the one build all four environments run, the consumer adoptions still open, and the branch merges deliberately left to the integrator.
+metadata:
+  type: project
+created: 2026-09-19
+---
 
-`created: 2026-09-19`
+# Handoff: the family config layer to the integrator
 
 USER RULING 2026-09-19: the remaining refactor goes to the integrator. This entry is the handover.
 It exists because the work spans four repositories, two forges and three consumer adoptions, and

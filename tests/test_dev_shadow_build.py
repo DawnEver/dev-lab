@@ -203,6 +203,8 @@ class TestTheTwoArms:
             env=shadow_env(shadow),
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=120,
         )
         # `ast.literal_eval` rather than `eval`: the child prints a list literal and nothing else.

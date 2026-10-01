@@ -267,8 +267,8 @@ def test_the_three_consumers_agree_on_the_select_and_diverge_by_five_codes_in_to
     )
 
 
-def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_three_of_it() -> None:
-    """The consumer core, as an EQUALITY, and the three patterns of it the kit happens to share.
+def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_its_named_share() -> None:
+    """The consumer core, as an EQUALITY, and the four patterns of it the kit happens to share.
 
     IT ASSERTED A SUBSET UNTIL 2026-09-19 AND THAT IS WHY IT WAS WRONG. `SHARED_GITIGNORE_CORE` read
     12 while the live three-way intersection was 14, and `core <= consumer` is satisfied by every
@@ -279,7 +279,8 @@ def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_three_of_it() -> 
     reached = reachable_repos(REPO_PATHS)
     kit = gitignore_patterns(reached['lab-commons'])
     assert len(kit) >= 8, f'{len(kit)} patterns read from lab-commons/.gitignore; the reader found nothing'
-    assert kit & set(SHARED_GITIGNORE_CORE) == {'*.egg-info/', '.pytest_cache/', '.ruff_cache/'}, sorted(
+    # FOUR since 2026-10-01, when the kit adopted `uv.lock` (b2ac445).
+    assert kit & set(SHARED_GITIGNORE_CORE) == {'*.egg-info/', '.pytest_cache/', '.ruff_cache/', 'uv.lock'}, sorted(
         kit & set(SHARED_GITIGNORE_CORE)
     )
     present = [repo for repo in CONSUMERS if repo in reached]

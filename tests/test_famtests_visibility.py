@@ -54,7 +54,13 @@ def test_the_planted_checkout_is_a_real_clone_of_a_real_bare_origin(tmp_path: Pa
     assert planted.bare.is_dir()
     assert (planted.work / '.git').is_dir()
     listed = subprocess.run(
-        [_GIT, 'ls-remote', '--heads', str(planted.bare)], capture_output=True, text=True, check=True, timeout=60
+        [_GIT, 'ls-remote', '--heads', str(planted.bare)],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=True,
+        timeout=60,
     ).stdout
     assert 'refs/heads/main' in listed, listed
 
@@ -67,6 +73,8 @@ def test_the_planted_checkout_honours_the_trunk_it_is_given(tmp_path: Path) -> N
         cwd=planted.work,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
         timeout=60,
     ).stdout.strip()

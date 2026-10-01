@@ -30,7 +30,16 @@ _GIT = shutil.which('git') or 'git'
 
 def _git(root: Path, *args: str) -> str:
     """One git command in *root*, failing loudly -- a broken fixture must not read as a finding."""
-    done = subprocess.run([_GIT, *args], cwd=root, capture_output=True, text=True, check=True, timeout=60)
+    done = subprocess.run(
+        [_GIT, *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=True,
+        timeout=60,
+    )
     return done.stdout.strip()
 
 

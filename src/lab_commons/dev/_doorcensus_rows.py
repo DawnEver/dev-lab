@@ -44,14 +44,15 @@ DOORS: tuple[DoorRow, ...] = (
     DoorRow(
         repo='lab-commons',
         path='Makefile',
-        commands=13,
+        commands=14,
         deliveries=frozenset({'INERT'}),
         why=(
             'The kit declares no floating requirement -- it IS the kit -- so every command here is '
             'INERT by the SUBJECT being absent rather than by the commands being safe. This row is '
             'the one that acquires teeth on the day a bare `git+` requirement lands in this '
             'manifest, which is why the guard is pointed here rather than waived: a waiver would '
-            'have had to be noticed and removed by hand.'
+            'have had to be noticed and removed by hand. 14 since 2026-10-01: `install-dev` now also '
+            'runs `hook_install --install`, a door added, not a delivery changed.'
         ),
     ),
     DoorRow(
@@ -83,14 +84,15 @@ DOORS: tuple[DoorRow, ...] = (
     DoorRow(
         repo='wdg-lab',
         path='Makefile',
-        commands=16,
+        commands=18,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
         why=(
             'The door everybody suspected of the three reverts on 2026-09-17 and the one that was '
             'never the defect: it installs through `uv pip install -e .[...]`, which re-resolves a '
             'bare git URL every time and therefore cannot serve a lock. Pinned RESOLVES rather than '
             'left alone, because the one-character change from `uv pip install` to `uv sync` is the '
-            'edit a reader makes when a sync looks tidier, and it would revert the kit silently.'
+            'edit a reader makes when a sync looks tidier, and it would revert the kit silently. '
+            'Re-measured 2026-10-01 at 18 commands, the delivery set unchanged.'
         ),
     ),
     DoorRow(
@@ -122,14 +124,15 @@ DOORS: tuple[DoorRow, ...] = (
     DoorRow(
         repo='wdg-lab',
         path='scripts/githooks/generate-changelog.sh',
-        commands=1,
+        commands=2,
         deliveries=frozenset({'INERT'}),
         why=(
             'The second measured reverting door, and the one that hid inside a shell function body '
             '-- `cmd() { uv run python -m commitizen changelog; }`, which the first cut of the '
             'scanner read as arguments to `cmd()` and found no door in at all. It ran on every '
             'commit. INERT today by the same `--no-sync` remedy, and pinned here so the repair '
-            'cannot be undone by a reformat.'
+            'cannot be undone by a reformat. Two since 2026-10-01: an ASCII fold of the changelog '
+            'joined it, under the same `--no-sync`.'
         ),
     ),
     DoorRow(

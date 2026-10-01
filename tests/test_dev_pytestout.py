@@ -186,6 +186,8 @@ def test_a_real_pytest_subprocess_is_read_by_every_reader(tmp_path: Path, flag: 
         [sys.executable, '-m', 'pytest', '-p', 'no:cacheprovider', '-p', 'no:xdist', flag, str(tmp_path)],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         cwd=tmp_path,
         check=False,
     )

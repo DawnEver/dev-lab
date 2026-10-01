@@ -89,6 +89,8 @@ def test_the_hooks_directory_is_the_one_git_names(tmp_path: Path) -> None:
         [_GIT, '-C', str(repo), 'rev-parse', '--git-path', 'hooks'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
         timeout=60,
     ).stdout.strip()

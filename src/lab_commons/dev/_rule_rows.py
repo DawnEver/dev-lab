@@ -68,9 +68,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ESCAPE-HATCH-CEILING',
         (
-            'An escape hatch needs a CEILING, not just a reason: pin the RATIO between two operating points, '
-            'never the value at one. A waiver that no one must justify is how a check reaches zero without '
-            'anything being fixed.'
+            'An escape hatch needs a CEILING, not just a reason: pin the RATIO between two operating points, never the '
+            'value at one. A waiver that no one must justify is how a check reaches zero without anything being fixed.'
         ),
         (
             'tests/architecture/ratchets/test_suppression_ratchet.py',
@@ -121,10 +120,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'RETIRED-NAMES-REGISTERED',
         (
-            'A retired spelling is REGISTERED with its replacement and its reason in the same commit, and it '
-            'survives longest in PROSE: name the REPLACEMENT and point at the registry, and prefer naming the '
-            'SHAPE of a thing over naming an example of it, because an example is a spelling waiting to be '
-            'retired.'
+            'A retired spelling is REGISTERED with its replacement and its reason in the same commit, and it survives '
+            'longest in PROSE: name the REPLACEMENT and point at the registry, and prefer naming the SHAPE of a thing '
+            'over naming an example of it, because an example is a spelling waiting to be retired.'
         ),
         (
             'tests/architecture/docs/test_retired.py',
@@ -266,7 +264,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         (
             # THE SHARED MECHANISM FIRST, and that ordering is the correction of 2026-09-16: the
-            # three rows this replaces named motronics paths, which resolve in exactly one checkout
+            # three rows this replaces named one consumer's paths, which resolve in exactly one checkout
             # on earth, so the registry's own docstring already called it "a shared row that grades
             # every repo against one repo's paths". `dev.checkout` asks git the question in any of
             # them.

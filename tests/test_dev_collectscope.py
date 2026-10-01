@@ -82,6 +82,21 @@ def test_a_conditional_import_of_the_same_distribution_never_errors(body: str) -
     assert degrades <= frozenset({'opencv-python'}), degrades
 
 
+def test_an_import_after_a_module_scope_importorskip_of_it_degrades() -> None:
+    """MEASURED in a consumer 2026-10-01: ``importorskip('cv2')`` then ``from cv2 import x``.
+
+    Collection raises the skip at the first statement, so the later bare import never runs on a box
+    without the distribution. Only an import AFTER the skip is covered; one before it still errors.
+    """
+    after = "import pytest\n\npytest.importorskip('cv2')\n\nfrom cv2 import imread\n"
+    errors, degrades, _ = _reach(**{'tests/test_after.py': after})
+    assert errors == frozenset(), errors
+    assert degrades == frozenset({'opencv-python'}), degrades
+    before = "import pytest\nfrom cv2 import imread\n\npytest.importorskip('cv2')\n"
+    errors, _, _ = _reach(**{'tests/test_before.py': before})
+    assert errors == frozenset({'opencv-python'}), errors
+
+
 def test_a_skip_mark_is_not_a_guard_and_the_import_beside_it_still_errors() -> None:
     """THE BRIEF SAID A SKIP MARK DEGRADES. It does not: the module body must run to CREATE the mark."""
     body = "import cv2\nimport pytest\n\npytestmark = pytest.mark.skipif(True, reason='no vision')\n"
@@ -111,6 +126,11 @@ def test_an_unresolvable_name_is_named_and_never_guessed_in_either_direction() -
     assert unresolved == frozenset({'tomlkit'}), unresolved
     assert errors == frozenset()
     assert degrades == frozenset()
+
+
+def test_pytests_implementation_package_resolves_to_pytest() -> None:
+    """``from _pytest.mark.expression import Expression`` is pytest, not a transitive unknown."""
+    assert resolve('_pytest', _DECLARED, frozenset()) == frozenset({'pytest'})
 
 
 def test_stdlib_and_local_names_resolve_to_nothing_prunable() -> None:
@@ -152,8 +172,12 @@ def test_every_alias_row_is_reached_by_the_family_scan() -> None:
     the ``img-to-cad`` extra, ``pywintypes`` and ``win32com`` -> ``pywin32`` in BOTH ``femm`` and
     ``tooldrivers`` -- and each had been sitting in the UNRESOLVED residue being reported as a
     transitive dependency no manifest declares. The table was short, not blind.
+
+    RE-TAKEN 2026-10-01: ``_pytest`` -> ``pytest``, reached by wdg-lab's tier-partition test importing
+    pytest's expression parser, which the residue had been reporting as an undeclared transitive.
     """
-    assert set(ALIASES) == {'OCP', 'PIL', 'cv2', 'pdfminer', 'pywintypes', 'win32com', 'yaml'}, sorted(ALIASES)
+    expected = {'OCP', 'PIL', '_pytest', 'cv2', 'pdfminer', 'pywintypes', 'win32com', 'yaml'}
+    assert set(ALIASES) == expected, sorted(ALIASES)
     for name, suppliers in ALIASES.items():
         assert name not in suppliers, f'{name} needs no alias: it already spells its own distribution'
         assert suppliers, f'{name} maps to no supplier, so the row can never resolve anything'

@@ -165,7 +165,13 @@ def assert_the_wall_terminates_the_tree(
         raise refusal
     started = time.monotonic()
     try:
-        bounded.run_bounded([interpreter, '-c', PARENT_HOLDING_A_GRANDCHILD], timeout=wall_seconds, text=True)
+        bounded.run_bounded(
+            [interpreter, '-c', PARENT_HOLDING_A_GRANDCHILD],
+            timeout=wall_seconds,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+        )
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - started
     else:
@@ -195,7 +201,9 @@ def assert_a_run_inside_the_wall_is_left_alone(*, interpreter: str, wall_seconds
         AssertionError: the child did not succeed, or its output did not come back through the bound.
 
     """
-    done = bounded.run_bounded([interpreter, '-c', 'print("ok")'], timeout=wall_seconds, text=True)
+    done = bounded.run_bounded(
+        [interpreter, '-c', 'print("ok")'], timeout=wall_seconds, text=True, encoding='utf-8', errors='replace'
+    )
     if done.returncode != 0:
         msg = f'a trivial child exited {done.returncode} inside a {wall_seconds}s wall; the bound broke the pass case'
         raise AssertionError(msg)

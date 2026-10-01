@@ -308,7 +308,15 @@ def tracked_files(root: Path) -> frozenset[str]:
             'that passes here would be a green over a tree it never read.'
         )
         raise UnenforceableRule(msg)
-    done = subprocess.run([git, '-C', str(root), 'ls-files'], capture_output=True, text=True, timeout=120, check=False)
+    done = subprocess.run(
+        [git, '-C', str(root), 'ls-files'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        timeout=120,
+        check=False,
+    )
     if done.returncode != 0:
         msg = f'git ls-files failed in {root}: {done.stderr.strip() or done.returncode}'
         raise UnenforceableRule(msg)

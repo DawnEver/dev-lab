@@ -70,8 +70,10 @@ REPOS: tuple[str, ...] = ('lab-commons', 'wdg-lab', 'optimi-lab', 'motronics-stu
 #: a lane worktree (`.claude/worktrees/feat/optimi-lab`) that had since been disposed of, so every
 #: census here silently measured three repos while saying four. A census only READS, and only at
 #: HEAD (`read_at_head`), so reading the integrator's checkout touches nothing in it.
+#: wdg-lab is NOT a direct sibling: the family root groups it with its winding-design neighbours, and
+#: until 2026-10-01 this map said `wdg-lab` and every census silently measured three repos again.
 REPO_PATHS: dict[str, str] = {
-    'wdg-lab': 'wdg-lab',
+    'wdg-lab': 'WindingDesign/wdg-lab',
     'optimi-lab': 'optimi-lab',
     'motronics-studio': 'motronics-studio',
 }
@@ -297,7 +299,8 @@ COUNTER_DIRECTION_CODES: tuple[str, ...] = (
 #: census and the base are two independent readings and that they agree is a FINDING rather than a
 #: reason to derive one from the other.
 #:
-#: lab-commons shares THREE of them (`*.egg-info/`, `.pytest_cache/`, `.ruff_cache/`) and is a SUBSET
+#: lab-commons shares FOUR of them (`*.egg-info/`, `.pytest_cache/`, `.ruff_cache/`, and since
+#: 2026-10-01 `uv.lock`) and is a SUBSET
 #: OF NONE of the other three, none of which is a subset of it -- measured, not assumed, in both
 #: directions, and pinned by `test_the_kit_declines_the_gitignore_base.py`.
 SHARED_GITIGNORE_CORE: tuple[str, ...] = (
@@ -410,7 +413,7 @@ PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
 #:     motronics-studio           87           7                12.4
 #:
 #: By lines motronics is the largest delta in the family by a factor of two, and `Delta.ceiling`'s own
-#: words -- "the point at which this repo's delta has stopped being a delta" -- read 87-against-21 as
+#: words -- "the point at which this repo's delta has stopped being a delta" -- read 88-against-21 as
 #: a fork. By HOOKS it is the SMALLEST of the three consumers. Nothing about its relationship to the
 #: base differs between the readings: all 11 core ids are present and 19 of the 21 base lines match
 #: literally. The unit moved, not the repo. A pre-commit hook is a YAML MAPPING costing one line when
@@ -422,11 +425,14 @@ PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
 #: FREE -- the 2 base lines it does not match are `rev:` pins (`v5.0.0` -> `v6.0.0`, `v4.6.0` ->
 #: `v4.13.9`), a real upstream version bump changing what runs on every commit there, which belongs in
 #: its own commit saying so. Neither this repo nor that test performs it.
+#: RE-TAKEN 2026-10-01 for motronics-studio: 88, with its own-hook set unchanged. 87 was read from the
+#: retired lane worktree `REPO_PATHS` used to name; the primary checkout's file is byte-identical to
+#: its 2026-09-18 adoption commit and measures 88 there too.
 PRECOMMIT_LINE_DELTA: dict[str, int] = {
     'lab-commons': 0,
     'wdg-lab': 38,
     'optimi-lab': 8,
-    'motronics-studio': 87,
+    'motronics-studio': 88,
 }
 
 #: Git hooks actually INSTALLED, per repo, measured 2026-09-17 -- the ratchet's other side for the

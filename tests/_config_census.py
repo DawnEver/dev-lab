@@ -115,6 +115,8 @@ def head_sha(root: Path) -> str | None:
         [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=_GIT_TIMEOUT_S,
     )
@@ -141,6 +143,8 @@ def read_at_head(root: Path, relpath: str) -> str | None:
         [_GIT, '-C', str(root), 'show', f'HEAD:{relpath}'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=_GIT_TIMEOUT_S,
     )
@@ -153,6 +157,8 @@ def names_at_head(root: Path, directory: str, suffix: str) -> frozenset[str]:
         [_GIT, '-C', str(root), 'ls-tree', '--name-only', f'HEAD:{directory}'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=_GIT_TIMEOUT_S,
     )

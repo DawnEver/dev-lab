@@ -153,6 +153,8 @@ def hooks_dir(repo: Path) -> Path:
         [_GIT, '-C', str(repo), 'rev-parse', '--git-path', 'hooks'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
         timeout=_GIT_TIMEOUT_S,
     ).stdout.strip()

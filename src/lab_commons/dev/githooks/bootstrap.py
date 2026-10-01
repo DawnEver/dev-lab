@@ -183,6 +183,8 @@ def _git(args: Sequence[str], cwd: Path, env: Mapping[str, str]) -> str:
         env=dict(env),
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
     )
     return done.stdout.strip()

@@ -16,11 +16,13 @@ rows have to be the SAME selections or the two answers are about different comma
 
 THE FINDING, and it is two COMPLETE rows and one documented repair:
 
-* motronics' SANCTIONED `--extra pareto --extra dev` strands SEVEN distributions at collection.
-  `_synccensus_rows.py` calls it "the sanctioned spelling" and is right at its own question.
-* wdg-lab's CI `extras: 'dev'` strands four, and the SAME import name that degrades safely there
-  (`OCP`, behind `pytest.importorskip`) is a bare module-scope import in motronics. One reader, two
-  answers, from the guard and not from the name -- which is the control this table exists to hold.
+* motronics' SANCTIONED `--extra pareto --extra dev` strands SIX distributions at collection
+  (seven as first read: `cv2` imported AFTER a module-scope `importorskip('cv2')` was convicted until
+  2026-10-01, and it cannot strand -- the skip runs first). `_synccensus_rows.py` calls it "the
+  sanctioned spelling" and is right at its own question.
+* wdg-lab's CI `extras: 'dev'` strands five. Inside that ONE selection of motronics, `OCP` is a bare
+  import and strands while `cv2` is behind `importorskip` and degrades: one reader, two answers, from
+  the guard and not from the name -- which is the control this table exists to hold.
 * `--extra all --extra dev --extra img-to-cad`, recorded by the sibling table as "the incantation
   that actually restored the box", leaves the runner whole and STILL strands `pillow`: motronics
   declares it only in a `tooldrivers` extra no recorded incantation names. That row is here
@@ -67,16 +69,17 @@ ROWS: tuple[CollectRow, ...] = (
     CollectRow(
         repo='wdg-lab',
         selected=('dev',),
-        errors=frozenset({'diskcache', 'fastapi', 'httpx', 'pandas'}),
-        degrades=frozenset({'cadquery-ocp', 'uvicorn'}),
+        errors=frozenset({'cadquery-ocp', 'diskcache', 'fastapi', 'httpx', 'pandas'}),
+        degrades=frozenset({'psutil', 'uvicorn'}),
         unresolved=frozenset({'pydantic_core', 'scipy'}),
         why=(
             'THE CONTROL THE FAMILY SUPPLIES ITSELF, in both directions at once and over the same '
             'repo. The web tier hard-imports fastapi, httpx, diskcache and pandas at module scope, '
-            'so the CI selection that scores COMPLETE cannot collect those files; and cadquery-ocp '
-            'and uvicorn reach the SAME tree through `pytest.importorskip`, so they skip. A reader '
-            'that convicted every optional integration would report six, and one that trusted the '
-            'scope would report none. `scipy` and `pydantic_core` are transitive: NAMED, not guessed.'
+            'so the CI selection that scores COMPLETE cannot collect those files; uvicorn and psutil '
+            'reach the SAME tree through `pytest.importorskip`, so they skip. RE-TAKEN 2026-10-01: '
+            'cadquery-ocp moved to ERRORS on purpose -- a weld test dropped its guard so an absent '
+            '[cad3d] REDS rather than skips -- while the files that importorskip OCP first still '
+            'degrade. `scipy` and `pydantic_core` are transitive: NAMED, not guessed.'
         ),
     ),
     CollectRow(
@@ -102,17 +105,16 @@ ROWS: tuple[CollectRow, ...] = (
                 'ezdxf',
                 'meshio',
                 'motronics-native',
-                'opencv-python-headless',
                 'pillow',
                 'wdg-lab',
             }
         ),
-        degrades=frozenset({'gmsh', 'pdfminer-six', 'pywin32'}),
+        degrades=frozenset({'gmsh', 'opencv-python-headless', 'pdfminer-six', 'pywin32'}),
         unresolved=frozenset({'tomlkit', 'yaml'}),
         why=(
             'THE FINDING. This is the selection `_synccensus_rows.py` scores COMPLETE and calls the '
             'sanctioned spelling, and it is right: the runner survives it. The tree it leaves cannot '
-            'be collected -- seven distributions are hard module-scope imports under `tests/` and '
+            'be collected -- six distributions are hard module-scope imports under `tests/` and '
             'none of them is in `pareto` or `dev`. The scope and the reach disagree because they are '
             'different questions, which is the entire argument for this module existing. `pdfminer-six` and '
             '`pywin32` sit in DEGRADES rather than in the residue as first recorded: both are '

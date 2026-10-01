@@ -118,6 +118,8 @@ def status_paths(root: Path) -> tuple[str, ...] | None:
             cwd=root,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             check=False,
             timeout=_GIT_TIMEOUT_S,
         )

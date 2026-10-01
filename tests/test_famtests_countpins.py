@@ -248,10 +248,11 @@ def test_a_planted_offender_reaches_the_refusal_with_its_number(tmp_path: Path) 
 #: has not made one, which is the point of the comment block.
 _MEASURING_SUFFIXES = _SUFFIXES
 
-#: MEASURED 2026-09-19: 347 constants over 115 test modules. Set below it with room for ordinary
-#: deletion, and paired with a headroom so a tree that grows past it must RE-MEASURE rather than
-#: keep a number that would refuse only a total collapse.
-CONSTANT_FLOOR = 280
+#: MEASURED 2026-10-01: 390 constants over 141 test modules (2026-09-19: 347 over 115, floor 280).
+#: Set below it with room for ordinary deletion -- the same ~80% the first reading used -- and paired
+#: with a headroom so a tree that grows past it must RE-MEASURE rather than keep a number that would
+#: refuse only a total collapse.
+CONSTANT_FLOOR = 315
 CONSTANT_HEADROOM = 90
 
 

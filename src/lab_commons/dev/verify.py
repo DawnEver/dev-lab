@@ -139,6 +139,8 @@ def project_root(start: Path | None = None) -> Path:
             cwd=start or Path.cwd(),
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             check=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:

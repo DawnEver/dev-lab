@@ -158,6 +158,8 @@ def assert_hooks_dir_is_the_one_git_consults(*, root: Path) -> None:
         [_GIT, '-C', str(root), 'rev-parse', '--git-path', 'hooks'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
         timeout=_GIT_TIMEOUT_S,
     ).stdout.strip()

@@ -12,10 +12,11 @@ rather than as UNEQUIPPED -- survives one layer in, past a scope that scored ``C
 
 WHAT THIS CONVICTED, 2026-09-19, and it is the census's own COMPLETE rows rather than a hypothetical.
 motronics' SANCTIONED ``--extra pareto --extra dev`` -- the row `_synccensus_rows.py` calls "the
-sanctioned spelling" -- strands SEVEN distributions at collection: cadquery-ocp-novtk, ezdxf,
-meshio, motronics-native, opencv-python-headless, pillow, wdg-lab. wdg-lab's CI ``extras: 'dev'``
-strands diskcache, fastapi, httpx and pandas. Both scores are RIGHT at their own question: the
-runner survives both, and neither repo can collect.
+sanctioned spelling" -- strands SIX distributions at collection: cadquery-ocp-novtk, ezdxf,
+meshio, motronics-native, pillow, wdg-lab (SEVEN as first read; ``opencv-python-headless`` was a
+false conviction of an import placed after its own module-scope ``importorskip``, corrected
+2026-10-01). wdg-lab's CI ``extras: 'dev'`` strands diskcache, fastapi, httpx and pandas. Both
+scores are RIGHT at their own question: the runner survives both, and neither repo can collect.
 
 SHARPEST OF ALL, AND IT IS A CORRECTION TO THE SIBLING ROW: that row names
 ``--extra all --extra dev --extra img-to-cad`` as "the incantation that actually restored the box".
@@ -103,6 +104,8 @@ __all__ = [
 ALIASES: Final[dict[str, frozenset[str]]] = {
     'OCP': frozenset({'cadquery-ocp', 'cadquery-ocp-novtk'}),
     'PIL': frozenset({'pillow'}),
+    # pytest's implementation package, imported directly for its expression parser.
+    '_pytest': frozenset({'pytest'}),
     'cv2': frozenset({'opencv-contrib-python', 'opencv-python', 'opencv-python-headless'}),
     'pdfminer': frozenset({'pdfminer-six'}),
     'pywintypes': frozenset({'pywin32'}),
@@ -235,6 +238,8 @@ def _git(root: Path, *args: str) -> str:
         ['git', '-C', str(root), *args],  # noqa: S607
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
     ).stdout
 
@@ -272,31 +277,44 @@ def read_imports(name: str, text: str) -> FileReading:
     except (SyntaxError, ValueError):
         return FileReading(name=name, uses=(), parse_error=True)
     uses: list[Use] = []
-    _walk(tree.body, uses, guarded=False)
+    _walk(tree.body, uses, guarded=False, skipped=frozenset())
     return FileReading(name=name, uses=tuple(uses))
 
 
-def _walk(body: list[ast.stmt], out: list[Use], *, guarded: bool) -> None:
+def _walk(body: list[ast.stmt], out: list[Use], *, guarded: bool, skipped: frozenset[str]) -> None:
+    """Record every module-scope import in *body*, in execution order.
+
+    *skipped* holds names an EARLIER module-scope ``importorskip`` already asked for: collection stops
+    at the skip on a box without them, so a later bare import of the same name cannot strand. A skip
+    inside a nested block covers only what follows it in that block.
+    """
     for node in body:
         if isinstance(node, ast.Import):
-            out += [Use(alias.name.split('.')[0], node.lineno, guarded) for alias in node.names]
+            out += [_use(alias.name, node.lineno, guarded=guarded, skipped=skipped) for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             if not node.level and node.module:
-                out.append(Use(node.module.split('.')[0], node.lineno, guarded))
+                out.append(_use(node.module, node.lineno, guarded=guarded, skipped=skipped))
         elif isinstance(node, ast.Try):
             inner = guarded or any(_catches_import(handler) for handler in node.handlers)
-            _walk(node.body, out, guarded=inner)
-            _walk(node.orelse, out, guarded=inner)
+            _walk(node.body, out, guarded=inner, skipped=skipped)
+            _walk(node.orelse, out, guarded=inner, skipped=skipped)
             for handler in node.handlers:
-                _walk(handler.body, out, guarded=True)
-            _walk(node.finalbody, out, guarded=guarded)
+                _walk(handler.body, out, guarded=True, skipped=skipped)
+            _walk(node.finalbody, out, guarded=guarded, skipped=skipped)
         elif isinstance(node, ast.If):
-            _walk(node.body, out, guarded=guarded or _is_type_checking(node.test))
-            _walk(node.orelse, out, guarded=guarded)
+            _walk(node.body, out, guarded=guarded or _is_type_checking(node.test), skipped=skipped)
+            _walk(node.orelse, out, guarded=guarded, skipped=skipped)
         elif isinstance(node, ast.With):
-            _walk(node.body, out, guarded=guarded)
+            _walk(node.body, out, guarded=guarded, skipped=skipped)
         else:
-            out += [Use(found, node.lineno, guarded=True) for found in _importorskips(node)]
+            found = _importorskips(node)
+            out += [Use(name, node.lineno, guarded=True) for name in found]
+            skipped |= frozenset(found)
+
+
+def _use(dotted: str, lineno: int, *, guarded: bool, skipped: frozenset[str]) -> Use:
+    root = dotted.split('.', maxsplit=1)[0]
+    return Use(root, lineno, guarded or root in skipped)
 
 
 def _catches_import(handler: ast.ExceptHandler) -> bool:

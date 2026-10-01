@@ -54,6 +54,8 @@ class TestTheOptInGate:
             [sys.executable, '-c', probe],
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             check=True,
         )
         assert result.stdout.strip() == 'False', 'importing lab_commons pulled lab_commons.dev in'

@@ -190,6 +190,8 @@ def run_engine(engine: Path, command: str, rules: Path, *, cwd: Path | None = No
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=_ENGINE_TIMEOUT_S,
     )

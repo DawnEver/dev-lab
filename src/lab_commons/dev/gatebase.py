@@ -58,7 +58,14 @@ def _git_out(root: Path, *args: str) -> str:
     """One git read, or the empty string when git could not answer."""
     try:
         probe = subprocess.run(
-            [_GIT, *args], cwd=root, capture_output=True, text=True, check=False, timeout=_GIT_TIMEOUT_S
+            [_GIT, *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            timeout=_GIT_TIMEOUT_S,
         )
     except (OSError, subprocess.TimeoutExpired):
         return ''
@@ -75,6 +82,8 @@ def _is_ancestor(root: Path, ref: str) -> bool:
             cwd=root,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             check=False,
             timeout=_GIT_TIMEOUT_S,
         )

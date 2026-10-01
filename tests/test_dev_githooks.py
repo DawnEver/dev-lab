@@ -37,6 +37,8 @@ def _git(root: Path, *args: str) -> str:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         timeout=120,
         check=True,
     )
@@ -65,6 +67,8 @@ def _run(repo: Path, **env_overrides: str) -> subprocess.CompletedProcess[str]:
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         # THE TIMEOUT IS THE ASSERTION for the hang arm: if the hook waits on a credential prompt
         # this must fail rather than take the worker down with it.
@@ -83,6 +87,8 @@ def test_the_hook_resolves_through_the_installed_package() -> None:
         [sys.executable, '-m', 'lab_commons.dev.githooks', '--path', 'bump-version'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=True,
         timeout=120,
     ).stdout.strip()

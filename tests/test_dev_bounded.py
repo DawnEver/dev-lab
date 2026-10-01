@@ -58,7 +58,7 @@ def test_the_wall_terminates_a_tree_and_returns_near_its_wall() -> None:
     """
     started = time.monotonic()
     with pytest.raises(subprocess.TimeoutExpired):
-        run_bounded([sys.executable, '-c', _PARENT], timeout=_WALL_S, text=True)
+        run_bounded([sys.executable, '-c', _PARENT], timeout=_WALL_S, text=True, encoding='utf-8', errors='replace')
     elapsed = time.monotonic() - started
     assert elapsed < _WALL_S + _REAP_CEILING, (
         f'the bounded call took {elapsed:.1f}s against a {_WALL_S}s wall. A hang detector that hangs '
@@ -68,7 +68,7 @@ def test_the_wall_terminates_a_tree_and_returns_near_its_wall() -> None:
 
 def test_a_run_that_finishes_inside_the_wall_is_not_disturbed() -> None:
     """THE OTHER SIDE. A wall that also breaks the passing case is not a wall, it is a fault."""
-    done = run_bounded([sys.executable, '-c', 'print("ok")'], timeout=60, text=True)
+    done = run_bounded([sys.executable, '-c', 'print("ok")'], timeout=60, text=True, encoding='utf-8', errors='replace')
     assert done.returncode == 0
     assert done.stdout.strip() == 'ok'
     assert done.args[0] == sys.executable

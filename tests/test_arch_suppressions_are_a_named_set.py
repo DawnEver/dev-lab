@@ -65,6 +65,12 @@ Site = tuple[str, str, str]
 #: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
     (
+        'src/lab_commons/dev/forgework.py',
+        'ANN401',
+        'def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:',
+    ): 'the ONE door every REST verb goes through returns parsed JSON, whose shape is the endpoint; each '
+    'verb normalizes it into a typed Issue/Comment/PullRequest immediately',
+    (
         'src/lab_commons/dev/docsite.py',
         'arg-type',
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',

@@ -80,13 +80,13 @@ def population(root: Path, subdir: str, pattern: str, *, floor: int) -> tuple[st
 def pack(items: Sequence[tuple[str, float]], count: int, *, together: Sequence[frozenset[str]] = ()) -> dict[str, int]:
     """Longest-processing-time-first bin packing: each key to the bin index it belongs in.
 
-    THE ONE PACKER IN THE FAMILY, moved 2026-09-29 from motronics-studio's gate so a consumer calls
+    THE ONE PACKER IN THE FAMILY, moved 2026-09-29 out of a consumer's gate so every consumer calls
     it rather than keeping a copy: two copies of a packing rule drift, each keeps passing its own
     tests, and the two then disagree about what a bin is while both look green.
 
     LPT, not optimal: O(n log n), deterministic, worst case 4/3 of optimal. What bounds a partition in
     practice is the single most expensive indivisible item, which no packer can split. Measured on
-    motronics-studio's heavy tier (2026-09-16, 2674 files, 28.73 h): at N=8 round-robin's slowest
+    the largest heavy tier in the family (2026-09-16, 2674 files, 28.73 h): at N=8 round-robin's slowest
     shard was 6.70 h against LPT's 4.82 h, and with its one 4.42 h item removed LPT hit the perfect
     split at every width from 2 to 8.
 

@@ -250,5 +250,7 @@ def test_the_arms_are_bounded_even_when_they_fail() -> None:
             [boundedremedy.default_interpreter(), '-c', boundedremedy.PARENT_HOLDING_A_GRANDCHILD],
             timeout=WALL_SECONDS,
             text=True,
+            encoding='utf-8',
+            errors='replace',
         )
     assert time.monotonic() - started < boundedremedy.CHILD_LIFETIME_SECONDS / SEPARATION_FACTOR

@@ -27,8 +27,10 @@ this repo's own test suite: a row naming a file that is not on disk is a citatio
 
 WHAT IS NOT HERE. Any BUILD of these pages. :mod:`lab_commons.dev.docsite` is the family's docs
 driver, and the rendered portal for this tree is a sub-site row in the repo that wants one -- today
-motronics-studio's ``family`` row in ``scripts/repo/docs.py``, which renders this directory from a
-lab-commons CHECKOUT beside its primary one (``docs-src/`` is not in the wheel). A box with only the
+one consumer's ``family`` row in its docs build script, which renders this directory from a
+lab-commons CHECKOUT beside its primary one (``docs-src/`` is not in the wheel). The script is not
+named here on purpose: a path in this docstring is read as a SUPERSEDES claim by
+:mod:`lab_commons.dev.supersede`, and that script delegates rather than being replaced. A box with only the
 installed package gets that row's announced skip naming the clone, never a portal with a hole in it.
 """
 

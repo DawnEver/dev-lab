@@ -267,6 +267,8 @@ def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_pa
         [sys.executable, '-m', 'lab_commons.dev.netverb', '--attempts', '3', '--backoff', '0', '--json', '--', *argv],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         timeout=120,
         check=False,
     )

@@ -173,6 +173,8 @@ def _ask(repo: Path, wired: list[str], command: str) -> str | None:
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=60,
     )

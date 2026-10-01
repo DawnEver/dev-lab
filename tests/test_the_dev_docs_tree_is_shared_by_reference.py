@@ -62,13 +62,16 @@ INDEX: Final = 'index.md'
 INDEX_PATH: Final = f'{CANONICAL_TREE}/{INDEX}'
 
 #: How each repo REACHES the shared tree, which is the only input `pointer_table` takes. The kit's
-#: is `.` because the pages are beside its index; a consumer's is the sibling checkout. Declared as
-#: data so the four tables cannot become four hand-typed tables that agree for a while.
+#: is `.` because the pages are beside its index; a consumer's climbs out of its own
+#: `docs-src/dev/` and then out of however deep `REPO_PATHS` places it under the family root, so the
+#: layout is declared ONCE. Until 2026-10-01 these were typed as siblings, and wdg-lab -- one level
+#: deeper, and already rendering `../../../../` -- read as a stale table it was not.
 POINTER_BASES: Final[dict[str, str]] = {
     'lab-commons': '.',
-    'wdg-lab': '../../../lab-commons/docs-src/dev',
-    'optimi-lab': '../../../lab-commons/docs-src/dev',
-    'motronics-studio': '../../../lab-commons/docs-src/dev',
+    **{
+        repo: '../' * (CANONICAL_TREE.count('/') + 1 + path.count('/') + 1) + f'lab-commons/{CANONICAL_TREE}'
+        for repo, path in REPO_PATHS.items()
+    },
 }
 
 #: The two consumers that kept NOTHING of their own under this tree. Their row in the census reads
