@@ -60,6 +60,7 @@ __all__ = [
     'Issue',
     'PullRequest',
     'backend_for',
+    'client_for',
     'main',
     'provenance',
     'token_route',
@@ -272,10 +273,15 @@ class Client:
             conn.close()
 
     @property
-    def _repo(self) -> str:
+    def repo(self) -> str:
+        """The repository's API collection path, which every verb's path starts with."""
         return self.backend.repo_path(self.forge)
 
-    def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
+    def call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
+        """One REST call, retried then reported: the door every verb -- here and in the sibling modules -- uses.
+
+        *landed* is a create's read-back, run before each retry (see :mod:`lab_commons.dev._forge_landed`).
+        """
         data = json.dumps(dict(body)).encode() if body is not None else None
         made: list[Attempt] = []
         for index in range(1, DEFAULT_ATTEMPTS + 1):
@@ -302,53 +308,53 @@ class Client:
 
     def _landed(self, path: str, **fields: str) -> Callable[[], Any]:
         """The read a create runs before each retry: its own object, if the lost attempt landed."""
-        return lambda: find_landed(self._call('GET', path), login=self.whoami(), fields=fields, now=self.clock())
+        return lambda: find_landed(self.call('GET', path), login=self.whoami(), fields=fields, now=self.clock())
 
     def _recent(self, collection: str) -> str:
-        return f'{self._repo}/{collection}?state=all&{self.backend.page_param}={LOOKBACK}'
+        return f'{self.repo}/{collection}?state=all&{self.backend.page_param}={LOOKBACK}'
 
     def _stamped(self, text: str) -> str:
         return text if self.stamp is None else f'{self.stamp}\n\n{text}'
 
     def whoami(self) -> str:
         """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub."""
-        return self._call('GET', f'{self.backend.api_root}/user')['login']
+        return self.call('GET', f'{self.backend.api_root}/user')['login']
 
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
         """Issues in *state*, pull requests excluded (GitHub lists both under ``issues``)."""
         query = self.backend.list_query.format(state=state, limit=limit)
-        listed = self._call('GET', f'{self._repo}/issues?{query}')
+        listed = self.call('GET', f'{self.repo}/issues?{query}')
         return tuple(_issue(raw) for raw in listed if 'pull_request' not in raw)
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""
-        return _issue(self._call('GET', f'{self._repo}/issues/{number}'))
+        return _issue(self.call('GET', f'{self.repo}/issues/{number}'))
 
     def issue_create(self, title: str, body: str) -> Issue:
         """A new issue; the body carries the provenance line."""
         payload = {'title': title, 'body': self._stamped(body)}
         recent = self._landed(self._recent('issues'), **payload)
-        return _issue(self._call('POST', f'{self._repo}/issues', payload, recent))
+        return _issue(self.call('POST', f'{self.repo}/issues', payload, recent))
 
     def issue_comment(self, number: int, body: str) -> Comment:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
-        path, payload = f'{self._repo}/issues/{number}/comments', {'body': self._stamped(body)}
+        path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
         recent = self._landed(f'{path}?since={since(self.clock())}', **payload)
-        return _comment(self._call('POST', path, payload, recent))
+        return _comment(self.call('POST', path, payload, recent))
 
     def issue_close(self, number: int) -> Issue:
         """Close an issue; nothing is written but the state."""
-        return _issue(self._call('PATCH', f'{self._repo}/issues/{number}', {'state': 'closed'}))
+        return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'state': 'closed'}))
 
     def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
         """A new pull request from *head* into *base*."""
         payload = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
         recent = self._landed(self._recent('pulls'), title=title, body=payload['body'])
-        return _pull(self._call('POST', f'{self._repo}/pulls', payload, recent))
+        return _pull(self.call('POST', f'{self.repo}/pulls', payload, recent))
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""
-        return _pull(self._call('GET', f'{self._repo}/pulls/{number}'))
+        return _pull(self.call('GET', f'{self.repo}/pulls/{number}'))
 
 
 def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
@@ -361,7 +367,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='lab_commons.dev.forge',
         description='issue and PR verbs on the forge',
-        epilog='token setup: python -m lab_commons.dev.forge auth login|status',
+        epilog='also: issue claim|status N, status post|list SHA; token: auth login|status',
     )
     nouns = parser.add_subparsers(dest='noun', required=True)
     issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)
@@ -405,6 +411,13 @@ def _render(item: Issue | PullRequest | Comment) -> str:
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
+def client_for(root: Path, *, env: Mapping[str, str] | None = None, transport: Transport = https_transport) -> Client:
+    """The client for *root*'s ``origin``, its token and its provenance stamp -- what every CLI verb builds."""
+    forge = forge_from_remote(root)
+    stamp = provenance(root, os.environ if env is None else env)
+    return Client(forge, token_route(forge, cwd=root, env=env), transport=transport, stamp=stamp)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -414,11 +427,7 @@ def main(
 ) -> int:
     """``python -m lab_commons.dev.forge <noun> <verb> ...``; exit 1 with netverb's remedy on failure."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = Path.cwd() if cwd is None else cwd
-    source = os.environ if env is None else env
-    forge = forge_from_remote(root)
-    token = token_route(forge, cwd=root, env=env)
-    client = Client(forge, token, transport=transport, stamp=provenance(root, source))
+    client = client_for(Path.cwd() if cwd is None else cwd, env=env, transport=transport)
     try:
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:

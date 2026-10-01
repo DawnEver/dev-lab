@@ -11,25 +11,27 @@ and the normalized results are identical across backends; only the request shape
 
 from __future__ import annotations
 
-import http.client
 import json
-import shutil
 import subprocess
 import sys
-import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, ClassVar
 
 import pytest
+from _forge_fake import Loopback as _Loopback
+from _forge_fake import Recorder as _Recorder
+from _forge_fake import answer as _answer
+from _forge_fake import client as _client
+from _forge_fake import make_repo as _repo
+from _forge_fake import run_git as _run
+from _forge_fake import serve
 
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgework import (
     GITEA,
     GITHUB,
-    Client,
     Comment,
     ForgeCallFailed,
     Issue,
@@ -41,86 +43,10 @@ from lab_commons.dev.forgework import (
 )
 from lab_commons.dev.netverb import Diagnosis, Disposition
 
-_GIT = shutil.which('git') or 'git'
-
-
-def _run(cwd: Path, *args: str) -> None:
-    subprocess.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, timeout=60)
-
-
-def _repo(tmp_path: Path, remote: str, *, branch: str = 'feature') -> Path:
-    repo = tmp_path / 'repo'
-    repo.mkdir()
-    _run(repo, 'init', '-q', '-b', branch)
-    _run(repo, 'remote', 'add', 'origin', remote)
-    return repo
-
-
-class _Recorder(BaseHTTPRequestHandler):
-    """Records every request and answers from a table of ``(method, path) -> (status, payload)``."""
-
-    received: ClassVar[list[dict[str, Any]]] = []
-    answers: ClassVar[dict[tuple[str, str], list[tuple[int | None, Any]]]] = {}
-
-    def _serve(self, method: str) -> None:
-        length = int(self.headers.get('Content-Length') or 0)
-        body = json.loads(self.rfile.read(length)) if length else None
-        type(self).received.append({'method': method, 'path': self.path, 'body': body, 'headers': dict(self.headers)})
-        answers = type(self).answers
-        found = answers.get((method, self.path)) or answers.get((method, self.path.split('?')[0]))
-        queue = found or [(404, {'message': 'not found'})]
-        status, payload = queue.pop(0) if len(queue) > 1 else queue[0]
-        if status is None:  # APPLIED, then the response is lost: the connection drops unanswered
-            self.close_connection = True
-            return
-        encoded = json.dumps(payload).encode()
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
-
-    def do_GET(self) -> None:
-        """Recorded then answered."""
-        self._serve('GET')
-
-    def do_POST(self) -> None:
-        """Recorded then answered."""
-        self._serve('POST')
-
-    def do_PATCH(self) -> None:
-        """Recorded then answered."""
-        self._serve('PATCH')
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        """Silent: the recording IS the log."""
-
 
 @pytest.fixture
 def server() -> Iterator[ThreadingHTTPServer]:
-    _Recorder.received = []
-    _Recorder.answers = {}
-    httpd = ThreadingHTTPServer(('127.0.0.1', 0), _Recorder)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield httpd
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
-        thread.join(timeout=10)
-
-
-class _Loopback:
-    """A REAL connection to the test server, recording which API host the backend asked for."""
-
-    def __init__(self, httpd: ThreadingHTTPServer) -> None:
-        self.address = f'{httpd.server_address[0]}:{httpd.server_address[1]}'
-        self.asked: list[str] = []
-
-    def __call__(self, host: str, timeout: float) -> http.client.HTTPConnection:
-        self.asked.append(host)
-        return http.client.HTTPConnection(self.address, timeout=timeout)
+    yield from serve()
 
 
 #: (forge, API host, path prefix, Authorization header) -- the only things that differ per backend.
@@ -148,14 +74,6 @@ _PR = {
     'base': {'ref': 'main'},
 }
 _NORMAL_ISSUE = Issue(7, 'a bug', 'open', 'it broke', 'https://x/o/r/issues/7', 'alice')
-
-
-def _client(forge: Forge, transport: _Loopback, *, stamp: str | None = None) -> Client:
-    return Client(forge, 'T', transport=transport, stamp=stamp, sleep=lambda _s: None)
-
-
-def _answer(method: str, path: str, *replies: tuple[int | None, Any]) -> None:
-    _Recorder.answers[(method, path)] = list(replies)
 
 
 # --------------------------------------------------------------------------------------------
