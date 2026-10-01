@@ -13,6 +13,8 @@ literal never finds out whether the reading that feeds it counts lines the same 
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,12 +27,22 @@ from lab_commons.dev.famtests.rulespages import (
     ratchet_breaks,
 )
 
+_GIT = shutil.which('git') or 'git'
+
+
+def _track(root: Path) -> None:
+    """Make *root* a git checkout and track everything in it: the body measures TRACKED pages only."""
+    if not (root / '.git').exists():
+        subprocess.run([_GIT, 'init', '-q'], cwd=root, check=True, capture_output=True, timeout=60)
+    subprocess.run([_GIT, 'add', '-A'], cwd=root, check=True, capture_output=True, timeout=60)
+
 
 def _plant(root: Path, **pages: int) -> tuple[Path, ...]:
-    """Write each named page with that many lines under *root*, and return them in sorted order."""
+    """Write each named page with that many lines under *root*, track them, and return them sorted."""
     for name, lines in pages.items():
         path = root / f'{name}.md'
         path.write_text('- a hard constraint.\n' * lines, encoding='utf-8')
+    _track(root)
     return tuple(sorted(root.glob('*.md')))
 
 
@@ -41,7 +53,25 @@ def test_the_reading_counts_lines_and_names_pages_relative_to_the_root(tmp_path:
     (tmp_path / 'one.md').write_text('a\nb\nc\n', encoding='utf-8')
     (nested / 'two.md').write_text('', encoding='utf-8')
     pages = (tmp_path / 'one.md', nested / 'two.md')
+    _track(tmp_path)
     assert page_lines(pages, root=tmp_path) == {'one.md': 3, 'rem/two.md': 0}
+
+
+def test_an_untracked_or_gitignored_page_is_not_measured(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL for tracked-only: an untracked page in the walk is not measured.
+
+    A device-local generated index (the rem plugin's gitignored ``MEMORY.md``) and a stray untracked
+    page are on disk and in the walk, and neither may count: a pin on either would make the verdict
+    a property of the box that ran it.
+    """
+    (tmp_path / '.gitignore').write_text('MEMORY.md\n', encoding='utf-8')
+    tracked = _plant(tmp_path, a=10, b=10)
+    (tmp_path / 'MEMORY.md').write_text('- hot entry\n' * 61, encoding='utf-8')
+    (tmp_path / 'stray.md').write_text('- untracked\n' * 5, encoding='utf-8')
+    walked = tuple(sorted(tmp_path.glob('*.md')))
+    assert len(walked) == len(tracked) + 2, 'the floor: both planted pages are really in the walk'
+    measured = assert_rules_ratchet(pages=walked, root=tmp_path, pinned={'a.md': 10, 'b.md': 10}, ceiling=20, floor=2)
+    assert measured == {'a.md': 10, 'b.md': 10}
 
 
 def test_a_page_that_grows_inside_a_siblings_shrink_is_refused(tmp_path: Path) -> None:

@@ -37,9 +37,13 @@ adopting this body wants the docwidth guard as well; it does not want it twice.
 EVERY REPO-SHAPED FACT ARRIVES AS A KEYWORD WITH NO DEFAULT -- the pages, the root they are named
 relative to, the pins, the ceiling, the floor. optimi-lab is the only repo with a measurement today
 and wdg-lab has none, so a default would hand three repos one repo's answer and then report it as
-measured. Even WHICH FILES ARE PAGES is the consumer's: this repo takes them from git (a file in one
-working copy is not a file the fleet has), optimi-lab walks the directory, and neither is wrong for
-the other.
+measured. WHICH FILES ARE PAGES is the consumer's corpus -- a walk or ``git ls-files`` -- but WHAT
+IS MEASURED IS ONLY WHAT GIT TRACKS, and that is decided here, once (2026-10-01). A ratchet is a
+claim every checkout of the repo must agree on; a gitignored, device-local page -- the rem plugin
+writes ``.claude/rules/MEMORY.md`` as a generated index of up to 60 hot entries -- differs per box
+and per day, so pinning it made the suite's verdict a property of the machine that ran it.
+:func:`page_lines` drops every page under *root* that git does not track; a page outside *root*
+keeps its own spelling, as before.
 """
 
 from __future__ import annotations
@@ -47,12 +51,15 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from lab_commons.dev.rules import tracked_files
+
 __all__ = [
     'VacuousPageScan',
     'assert_rules_ratchet',
     'budget_overrun',
     'page_lines',
     'ratchet_breaks',
+    'tracked_only',
 ]
 
 
@@ -60,8 +67,26 @@ class VacuousPageScan(AssertionError):
     """A scan reached fewer pages than its floor, so finding nothing proves nothing."""
 
 
+def tracked_only(paths: Iterable[Path], *, root: Path) -> tuple[Path, ...]:
+    """*paths* without the pages under *root* that git does not track -- the device-local, generated ones.
+
+    Raises:
+        lab_commons.dev.rules.UnenforceableRule: a page is under *root* and *root* is not a readable
+            git checkout, so whether it is tracked cannot be answered.
+
+    """
+    listed = tuple(paths)
+    inside = [path for path in listed if path.is_relative_to(root)]
+    tracked = tracked_files(root) if inside else frozenset()
+    return tuple(
+        path for path in listed if not path.is_relative_to(root) or path.relative_to(root).as_posix() in tracked
+    )
+
+
 def page_lines(paths: Iterable[Path], *, root: Path) -> dict[str, int]:
     """THE READING: ``{repo-relative POSIX path: line count}`` for every page in *paths*.
+
+    Only TRACKED pages are read -- see :func:`tracked_only` and the module docstring.
 
     Args:
         paths: the pages to read -- the consumer's corpus, from git or from a walk.
@@ -76,7 +101,7 @@ def page_lines(paths: Iterable[Path], *, root: Path) -> dict[str, int]:
         (path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()): len(
             path.read_text(encoding='utf-8').splitlines()
         )
-        for path in paths
+        for path in tracked_only(paths, root=root)
     }
     return dict(sorted(out.items()))
 
