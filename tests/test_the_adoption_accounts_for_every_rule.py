@@ -83,6 +83,14 @@ _ENFORCED = {
     # reds. A rule whose subject can arrive without anyone noticing is the one to enforce before it does.
     'INSTALL-DOOR-DELIVERS-THE-DECLARATION': (guard('tests/test_dev_installdoor.py'),),
     'FIX-THE-CAUSE': (guard('tests/test_arch_one_name_one_definition.py'),),
+    # The door stamps provenance (forgework), and the rows refusing every OTHER write client are
+    # proved row by row and through the real engine. Installing that engine here is AGENT-GUARD's
+    # open half, so this tree proves the refusal exists; a consumer with the guard wired runs it.
+    'FORGE-THROUGH-THE-DOOR': (
+        guard('tests/test_dev_forgework.py'),
+        guard('tests/test_dev_hooks.py'),
+        guard('tests/test_dev_agenthooks.py'),
+    ),
     'FLOOR-ON-EVERY-SCAN': (
         guard('tests/test_arch_every_scan_binds_a_floor.py'),
         guard('tests/_arch_corpus.py'),

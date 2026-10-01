@@ -52,6 +52,7 @@ _IDS = frozenset(
         'ESCAPE-HATCH-CEILING',
         'FIX-THE-CAUSE',
         'FLOOR-ON-EVERY-SCAN',
+        'FORGE-THROUGH-THE-DOOR',
         'HOOKS-ARE-WIRED',
         'IMPLEMENT-EVERYTHING',
         'INJECTED-DOC-WIDTH-CEILING',

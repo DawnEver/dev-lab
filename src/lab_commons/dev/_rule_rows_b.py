@@ -27,4 +27,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
     ),
+    (
+        'FORGE-THROUGH-THE-DOOR',
+        (
+            'Issue and pull-request reads and writes go through `python -m lab_commons.dev.forge` -- '
+            '`issue list|view|create|comment|close`, `pr create|view`, the token through `auth login|status` -- '
+            'never `gh`, `tea` or a raw API call, so every write the forge receives says which machine and which '
+            'agent wrote it. A write the door has no verb for is reported to the integrator, not routed around.'
+        ),
+        ('tests/test_dev_forgework.py', 'tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
+    ),
 )
