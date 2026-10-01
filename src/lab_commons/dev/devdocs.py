@@ -121,7 +121,10 @@ PAGES: Final[tuple[Page, ...]] = (
     Page(
         'issues',
         'Issues',
-        'An issue is intent; todo/in-progress/ready/done are derived from origin refs and `lab/gate`, claims are comments',
+        (
+            'An issue is intent; todo/in-progress/ready/done are derived from origin refs and `lab/gate`, '
+            'claims are comments'
+        ),
     ),
     Page(
         'retirement',
