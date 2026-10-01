@@ -26,9 +26,10 @@ tables that agree for a while. :func:`missing_pages` is the other half of the sa
 this repo's own test suite: a row naming a file that is not on disk is a citation pointing at nothing.
 
 WHAT IS NOT HERE. Any BUILD of these pages. :mod:`lab_commons.dev.docsite` is the family's docs
-driver and a rendered portal for this tree would be a sub-site row in whichever repo wants one. No
-such row exists today, and saying so is the point: "the docs are built" would be the declaration that
-lies, and a reader who expects a portal and finds markdown has been told something false.
+driver, and the rendered portal for this tree is a sub-site row in the repo that wants one -- today
+motronics-studio's ``family`` row in ``scripts/repo/docs.py``, which renders this directory from a
+lab-commons CHECKOUT beside its primary one (``docs-src/`` is not in the wheel). A box with only the
+installed package gets that row's announced skip naming the clone, never a portal with a hole in it.
 """
 
 from __future__ import annotations
@@ -124,6 +125,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'docs-pipeline',
         'The docs pipeline',
         'The three properties a docs builder must hold, and why an unbuilt sub-site is announced rather than silent',
+    ),
+    Page(
+        'translations',
+        'Translations',
+        'Why a `<stem>.zh.md` beside its `<stem>.md` escapes the CJK guard, and the non-ASCII goal',
     ),
 )
 

@@ -175,6 +175,11 @@ WHAT IS HERE, one module per shared body:
   the wrong directory gives. ``threshold_suffixes`` is the argument the kit must never guess: it IS
   the exemption mechanism, so a default would be a waiver the consumer never wrote.
 
+* :mod:`lab_commons.dev.famtests.devdocs` -- a consumer's local dev page under a family page's name
+  is a RESIDUE: it links the family page in its lead and repeats under the copy ceiling by 6-word
+  shingles; and no other local page takes a ``lab_commons.dev`` module as its subject unless the
+  consumer allowlists it WITH A REASON. The consumer-side half of :mod:`lab_commons.dev.devdocs`.
+
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the
 tree it is handed -- and the wheel's copy of anything is only ever the DECLARATION those files are

@@ -48,11 +48,12 @@ from pathlib import Path
 from typing import Final
 
 from _config_census import dev_pages, reachable_repos, read_at_head
-from _config_census_rows import REPO_PATHS, SHARED_DEV_PAGES
+from _config_census_rows import REPO_PATHS
 from _famconfig_delta import DELTAS
 
 from lab_commons.dev.devdocs import CANONICAL_TREE, PAGES, Page, pointer_table, slugs
 from lab_commons.dev.famconfig import BASES, STAMP, ForkedDelta, artefact_base
+from lab_commons.dev.famtests.devdocs import COPY_CEILING, copied_fraction, residue_problems
 
 #: The dev index, spelled once. Every repo in the family keeps one and only this one is generated.
 INDEX: Final = 'index.md'
@@ -77,26 +78,11 @@ LAB_REPOS: Final[tuple[str, ...]] = ('wdg-lab', 'optimi-lab')
 #: The consumer whose row reads SPLITS: it keeps pages of its own AND pointers to the family's.
 MOTRONICS: Final = 'motronics-studio'
 
-#: The five motronics pages with no upstream twin, NAMED. Their subject is the tiered gate runner,
-#: the case library and the live vendor engines -- three things no other repo in the family has.
-MOTRONICS_OWN_PAGES: Final[frozenset[str]] = frozenset(
-    {'compute-resources.md', 'gate.md', 'integration.md', 'testing.md', 'user-flow.md'}
-)
-
-#: The fraction of a kit page's substantial lines a consumer file may repeat before it stops being a
-#: pointer and becomes a copy. MEASURED 2026-09-19 over the eight shared filenames in the motronics
-#: lane: seven are at 0.0% and the highest is `alignment.md` at 1.7%, so this ceiling has a factor
-#: of five in hand. A verbatim copy reads 100%, which is what the planted control drives.
-COPY_CEILING: Final = 0.10
-
-#: A line short enough to be punctuation, a heading marker or a table rule is shared by accident.
-#: Only lines above this length count toward :func:`copied_fraction`.
-SUBSTANTIAL_LINE_CHARS: Final = 20
-
-#: Floors. `PAGE_FLOOR` is an equality against `PAGES` at the call site; these are the readings that
-#: would otherwise be vacuous if a reader found nothing.
+#: Floors: the readings that would otherwise be vacuous if a reader found nothing. The copy reader and
+#: its ceiling are :mod:`lab_commons.dev.famtests.devdocs`' -- the same body a consumer's own suite
+#: runs, so the census and the consumer cannot disagree about what a copy is.
 REPO_FLOOR: Final = 3
-UPSTREAM_LINE_FLOOR: Final = 15
+RESIDUE_FLOOR: Final = 5
 
 #: The header every dev-index table starts with. Motronics has TWO tables under it -- the family's
 #: and its own -- so a reader keyed on this line alone would compare the wrong one.
@@ -134,25 +120,6 @@ def family_blocks(text: str) -> tuple[str, ...]:
         if stems == declared:
             out.append(block)
     return tuple(out)
-
-
-def substantial_lines(text: str) -> frozenset[str]:
-    """The lines of *text* long enough that two documents sharing one did not do so by accident."""
-    stripped = (line.strip() for line in text.splitlines())
-    return frozenset(line for line in stripped if len(line) > SUBSTANTIAL_LINE_CHARS)
-
-
-def copied_fraction(upstream: str, local: str) -> float:
-    """What share of *upstream*'s substantial lines *local* repeats. A pointer reads ~0, a copy 1.0.
-
-    Raises rather than returning 0.0 for an upstream with nothing to copy: "no overlap with an empty
-    page" is the vacuous green this family has convicted five one-sided floors for.
-    """
-    source = substantial_lines(upstream)
-    if len(source) < UPSTREAM_LINE_FLOOR:
-        msg = f'{len(source)} substantial lines upstream, below the floor of {UPSTREAM_LINE_FLOOR}: nothing to copy'
-        raise AssertionError(msg)
-    return len(source & substantial_lines(local)) / len(source)
 
 
 def copies_of_page(page_text: str, held: dict[str, str | None]) -> tuple[str, ...]:
@@ -303,53 +270,27 @@ class TestTheConsumersKeepPointersAndNotCopies:
                 f'is one pointer page, so either a page came back or one of its own was written'
             )
 
-    def test_the_motronics_pointer_pages_are_exactly_the_shared_names(self) -> None:
-        """EQUALITY against the live intersection -- the shape `SHARED_GITIGNORE_CORE` did not have."""
-        reached = _reached()
-        if MOTRONICS not in reached:
-            return
-        shared = dev_pages(reached['lab-commons']) & dev_pages(reached[MOTRONICS])
-        assert shared == set(SHARED_DEV_PAGES), (
-            f'the shared filenames are now {sorted(shared)} against the declared '
-            f'{sorted(SHARED_DEV_PAGES)}. A name that joined is a page motronics started keeping; one '
-            f'that left is a pointer it dropped, and those are different edits.'
-        )
-        assert len(shared) >= 5, f'{len(shared)} shared names is below anything worth calling a family tree'
+    def test_every_motronics_page_under_a_family_name_is_a_residue(self) -> None:
+        """The SPLITS row's own claim, read off the live trees and `slugs()` -- no hand-held name set.
 
-    def test_each_shared_motronics_page_points_upstream_and_repeats_almost_nothing(self) -> None:
-        """The SPLITS row's own claim: a pointer plus a local delta, never a copy of the page."""
+        Through the consumer-side famtest's own pure reader, so the census and motronics' suite judge
+        a copy by ONE instrument. Only the stems the family declares are passed: which of motronics'
+        OTHER pages may name a family module is motronics' allowlist, asserted in its own suite.
+        """
         reached = _reached()
-        if MOTRONICS not in reached:
-            return
-        checked = 0
-        for name in sorted(set(SHARED_DEV_PAGES) - {INDEX}):
-            slug = name.removesuffix('.md')
-            local = read_at_head(reached[MOTRONICS], f'{CANONICAL_TREE}/{name}')
-            assert local is not None, f'{name} is in the shared set and not committed in motronics'
-            assert f'../../../lab-commons/{CANONICAL_TREE}/' in local, (
-                f'{name} in motronics no longer links upstream, so it is a document standing alone '
-                f'under a name the kit also owns'
-            )
-            fraction = copied_fraction(_kit_page(reached['lab-commons'], slug), local)
-            assert fraction <= COPY_CEILING, (
-                f'{name} repeats {fraction:.1%} of the upstream page, over {COPY_CEILING:.0%}'
-            )
-            checked += 1
-        assert checked == len(SHARED_DEV_PAGES) - 1, (
-            f'{checked} pages checked against {len(SHARED_DEV_PAGES) - 1} shared'
+        assert MOTRONICS in reached, (
+            f'{MOTRONICS} is not checked out beside lab-commons, so the one SPLITS consumer is unmeasured'
         )
-
-    def test_the_motronics_own_pages_are_exactly_the_five_with_no_upstream_twin(self) -> None:
-        """The other half of SPLITS, as an equality: what STAYS is named, not counted."""
-        reached = _reached()
-        if MOTRONICS not in reached:
-            return
-        own = dev_pages(reached[MOTRONICS]) - dev_pages(reached['lab-commons'])
-        assert own == MOTRONICS_OWN_PAGES, (
-            f'motronics` own dev pages are now {sorted(own)} against the recorded '
-            f'{sorted(MOTRONICS_OWN_PAGES)}. A page that gained an upstream twin has become a '
-            f'candidate MOVE; one that appeared is a new local subject.'
-        )
+        declared = set(slugs())
+        local = {
+            name.removesuffix('.md'): read_at_head(reached[MOTRONICS], f'{CANONICAL_TREE}/{name}') or ''
+            for name in dev_pages(reached[MOTRONICS])
+            if name.removesuffix('.md') in declared
+        }
+        assert len(local) >= RESIDUE_FLOOR, f'{sorted(local)}: below anything worth calling a split tree'
+        family = {slug: _kit_page(reached['lab-commons'], slug) for slug in slugs()}
+        problems = residue_problems(local, family, subject_allowlist={})
+        assert problems == (), 'motronics pages under a family name that are not residues:\n  ' + '\n  '.join(problems)
 
 
 class TestNobodyDeclaresABaseWhileTheMeasurementHolds:

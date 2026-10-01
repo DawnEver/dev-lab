@@ -11,6 +11,10 @@
 - **The heavy partition is DECLARED as data** — a test is heavy by PATH or by an explicit marker, and a collection hook makes the classification visible to the marker expression. A test that lives in a heavy subtree but drives nothing heavy is carved back out by name, so a lightweight tier does not go blind to the exact module being refactored.
 - Live vendor tools run only in the heavy tier.
 
+## One file, one module object
+
+- A script tree that is not an importable package is loaded by its tests from a PATH. **Every loader must use one `sys.modules` key per file** — the bare name the script itself resolves under — because two keys for one file are two module objects: the runner and the test session then hold separate copies of every module-level table and class, an `isinstance` across them is false, and a patch applied to one is invisible to the other. A repo pins that by IDENTITY, not by name.
+
 ## xfail, never skip
 
 - A known-failing combination is recorded as an xfail with the MEASURED residual in its reason.

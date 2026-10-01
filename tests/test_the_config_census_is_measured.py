@@ -42,6 +42,7 @@ from _config_census import (
     installed_hook_names,
     make_targets,
     reachable_repos,
+    read_at_head,
     ruff_config,
     ruff_ignore,
     ruff_scalars,
@@ -64,7 +65,6 @@ from _config_census_rows import (
     PARTITIONS,
     REPO_PATHS,
     REPOS,
-    SHARED_DEV_PAGES,
     SHARED_GITIGNORE_CORE,
 )
 
@@ -399,11 +399,9 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
     reached = reachable_repos(REPO_PATHS)
     kit_pages = dev_pages(reached['lab-commons'])
     assert len(kit_pages) >= 10, f'{len(kit_pages)} pages under lab-commons/docs-src/dev; the reader found nothing'
-    assert set(SHARED_DEV_PAGES) <= kit_pages, sorted(set(SHARED_DEV_PAGES) - kit_pages)
-    # The subset above says the kit still HOLDS the shared names; it cannot see the constant drifting
-    # DOWN, which is how `SHARED_GITIGNORE_CORE` sat two short and green. The equality is below, on
-    # the live intersection, and `test_the_dev_docs_tree_is_shared_by_reference.py` asserts the same
-    # one from the other side.
+    # Which kit pages exist is `devdocs.missing_pages`' equality against `PAGES`; which motronics pages
+    # sit under a family name, and that each is a residue, is asserted from the live trees by
+    # `test_the_dev_docs_tree_is_shared_by_reference.py` -- no hand-held name set is kept here.
     for repo in ('wdg-lab', 'optimi-lab'):
         if repo not in reached:
             continue
@@ -413,20 +411,11 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         assert '../../../lab-commons/docs-src/dev/' in text, f'{repo} index.md stopped pointing at the shared tree'
         assert 'pointer_table' in text, f'{repo} index.md no longer names the generator that keeps it honest'
     if 'motronics-studio' in reached:
-        pages = dev_pages(reached['motronics-studio'])
-        assert pages & kit_pages == set(SHARED_DEV_PAGES), (
-            f'the kit/motronics shared page names are now {sorted(pages & kit_pages)} against the '
-            f'declared {sorted(SHARED_DEV_PAGES)}. Asserted as an EQUALITY on purpose: a subset is '
-            f'satisfied by every shorter declaration, so the constant could be edited down forever '
-            f'and stay green.'
-        )
-        own = pages - kit_pages
+        own = dev_pages(reached['motronics-studio']) - kit_pages
         assert own >= {'gate.md', 'testing.md', 'integration.md', 'user-flow.md', 'compute-resources.md'}, sorted(own)
-        stub = (reached['motronics-studio'] / 'docs-src' / 'dev' / 'the-three-participants.md').read_text(
-            encoding='utf-8'
-        )
-        assert '../../../lab-commons/docs-src/dev/' in stub, (
-            'the motronics stub stopped pointing upstream, so its SPLITS row describes a former shape'
+        index = read_at_head(reached['motronics-studio'], 'docs-src/dev/index.md') or ''
+        assert '../../../lab-commons/docs-src/dev/' in index, (
+            'the motronics dev index stopped pointing upstream, so its SPLITS row describes a former shape'
         )
 
 
@@ -454,11 +443,6 @@ def test_a_planted_short_core_is_convicted_by_the_equality_and_not_by_the_subset
         ),
         'HOOK_ID_CORE': (set(HOOK_ID_CORE), set.intersection(*(set(hook_ids(r)) for r in reached.values()))),
     }
-    if 'motronics-studio' in reached:
-        cores['SHARED_DEV_PAGES'] = (
-            set(SHARED_DEV_PAGES),
-            dev_pages(reached['lab-commons']) & dev_pages(reached['motronics-studio']),
-        )
     assert len(cores) >= 3, 'the control lost the cores it exists to drive'
     for name, (declared, live) in cores.items():
         assert declared, f'{name} is empty, so both shapes below are vacuous'

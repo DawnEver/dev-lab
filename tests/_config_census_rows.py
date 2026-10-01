@@ -5,7 +5,7 @@ a lane owns. The machinery that reads it, and the three sides it may use, are `_
 this file computes nothing, exactly as `_rule_rows.py` computes nothing for `rules.py`.
 
 MEASURED 2026-09-17 against four checkouts: `lab-commons`, `wdg-lab`, `optimi-lab`, and the
-motronics-studio LANE at `.claude/worktrees/feat/optimi-lab` (never the main checkout). Every
+motronics-studio LANE at `.claude/worktrees/feat/optimi-lab` (since retired; see `REPO_PATHS`). Every
 quantity a row cites is re-derived by the test beside it; the constants below are what it compares
 against, so a number that stops being true reds rather than ageing quietly into prose.
 
@@ -58,7 +58,6 @@ __all__ = [
     'PRECOMMIT_OWN_HOOKS',
     'REPOS',
     'REPO_PATHS',
-    'SHARED_DEV_PAGES',
     'SHARED_GITIGNORE_CORE',
     'TREE_EXCLUDES',
 ]
@@ -66,13 +65,15 @@ __all__ = [
 #: The four repos of the family, in dependency order: the kit first, then what it ships to.
 REPOS: tuple[str, ...] = ('lab-commons', 'wdg-lab', 'optimi-lab', 'motronics-studio')
 
-#: Where each consumer is checked out, RELATIVE TO LAB-COMMONS' PARENT. The motronics entry names a
-#: WORKTREE and that is the whole point: the main checkout is the integrator's and is not read here,
-#: so a census run against it would be measuring a tree this lane was told not to touch.
+#: Where each consumer is checked out, RELATIVE TO LAB-COMMONS' PARENT: the PRIMARY checkout, by the
+#: same sibling convention `lab-commons/` itself sits under. Until 2026-09-30 the motronics entry named
+#: a lane worktree (`.claude/worktrees/feat/optimi-lab`) that had since been disposed of, so every
+#: census here silently measured three repos while saying four. A census only READS, and only at
+#: HEAD (`read_at_head`), so reading the integrator's checkout touches nothing in it.
 REPO_PATHS: dict[str, str] = {
     'wdg-lab': 'wdg-lab',
     'optimi-lab': 'optimi-lab',
-    'motronics-studio': 'motronics-studio/.claude/worktrees/feat/optimi-lab',
+    'motronics-studio': 'motronics-studio',
 }
 
 #: The config artefacts under census. ``ruff-config`` is an ARTEFACT rather than a FILE on purpose:
@@ -476,20 +477,6 @@ INSTALLED_HOOKS: dict[str, tuple[str, ...]] = {
     'optimi-lab': ('commit-msg', 'pre-commit'),
     'motronics-studio': ('commit-msg', 'pre-commit', 'pre-push'),
 }
-
-#: Page names lab-commons' `docs-src/dev/` and motronics' both carry. Nine of 13 and 14 -- and in
-#: motronics every one of the nine is already a POINTER plus a local delta, not a copy.
-SHARED_DEV_PAGES: tuple[str, ...] = (
-    'alignment.md',
-    'docs-pipeline.md',
-    'fanout.md',
-    'forge.md',
-    'index.md',
-    'orphans.md',
-    'retirement.md',
-    'shared-checkout.md',
-    'the-three-participants.md',
-)
 
 
 # ------------------------------------------------------------------ lab-commons: the kit itself

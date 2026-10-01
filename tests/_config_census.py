@@ -208,7 +208,7 @@ def repo_root(repo: str, paths: dict[str, str]) -> Path | None:
     """The checkout for *repo*, or ``None`` when it is not beside this one.
 
     *paths* are relative to lab-commons' PARENT, so the census reads siblings rather than climbing
-    into a checkout it was told to leave alone -- the motronics entry names a worktree on purpose.
+    into a checkout -- every entry is a primary checkout beside this one.
     """
     if repo == 'lab-commons':
         return ROOT

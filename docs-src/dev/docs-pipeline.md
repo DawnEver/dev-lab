@@ -28,7 +28,13 @@
 - The portal links each built sub-site's index page, so **a build that produces no index ships a dead front-page link.** Measured: generating documentation for a single crate writes no root index, unlike generating it for the whole workspace.
 - The builder checks that contract itself, and a test keeps it green.
 
+## A sub-site whose source is ANOTHER repo's tree
+
+- **Its requirement is a CHECKOUT, not a tool.** An installed dependency makes the code reachable, but a package's `docs-src/` is not in its wheel. The driver's `Tree` requirement kind exists for this, so the reader is told "not present" (clone it) rather than "not on PATH" — a remedy that would send them to fix their `PATH` for a repository nobody cloned.
+- **Resolve the sibling off the PRIMARY checkout**, by asking git for `--git-common-dir`. `repo_root().parent` is wrong in a worktree — a lane under the checkout sits levels deeper — and was measured reporting the sibling ABSENT on a box that has it.
+- **One renderer, two trees.** The markdown renderer takes its source root as an argument, so a local guide row and a sibling-tree row differ only in which directory they read. A second copy of that function would be the fork the shared documentation exists to remove.
+
 ## Where the family's own pages stand today
 
-- The pages in this directory are read as MARKDOWN, from this repo's checkout or from its page on the forge. There is no rendered portal for them yet.
-- **That is stated rather than implied**: a sub-site row that renders this tree is a change to whichever repo wants it rendered, and until one exists, "the docs are built" would be a declaration that lies.
+- The pages in this directory are RENDERED as motronics-studio's `family` sub-site (a row in its `scripts/repo/docs.py`), which reads them from a lab-commons checkout beside its primary one, per the section above. They are equally read as markdown from this repo's checkout or from its page on the forge.
+- **A box without the sibling checkout gets that row's announced skip naming the clone**, never a portal that silently omits the family half.

@@ -129,8 +129,9 @@ family's process are the family's; a repo's own domain stays home.
 A consuming repo POINTS at these pages and never copies one. `lab_commons.dev.devdocs` ships the
 table of contents as data, and `pointer_table(base)` renders the markdown table that repo puts in
 its own dev index, so a page added or renamed here does not leave four hand-typed tables that
-agree for a while. There is no rendered portal for this tree yet — the pages are read as markdown
-from a checkout or from the forge — and that is stated rather than implied.
+agree for a while. The tree is rendered as motronics-studio's `family` docs sub-site
+(`scripts/repo/docs.py`), which requires this repo checked out beside that one; otherwise the pages
+are read as markdown from a checkout or from the forge.
 
 ## Consumers
 

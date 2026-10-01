@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from _config_census_rows import REPO_PATHS
 
 from lab_commons.dev._doorcensus_rows import DOORS
 from lab_commons.dev._synccensus_rows import REPO_FLOOR, ROW_FLOOR, ROWS, SITE_COMMAND_FLOOR, SITES
@@ -35,14 +36,9 @@ _BASE: Final = Path(__file__).resolve().parents[2]
 #: is read at `HEAD`, so a lane's half-finished edit over there cannot turn this repo red.
 _HERE: Final = 'lab-commons'
 
-#: Where each repo is checked out relative to `_BASE`. The motronics entry names a WORKTREE: the
-#: main checkout is the integrator's and is never read here.
-_PATHS: Final[dict[str, str]] = {
-    'lab-commons': 'lab-commons',
-    'wdg-lab': 'wdg-lab',
-    'optimi-lab': 'optimi-lab',
-    'motronics-studio': 'motronics-studio/.claude/worktrees/feat/optimi-lab',
-}
+#: Where each repo is checked out relative to `_BASE`, taken from the config census rather than
+#: retyped, so a path the family moves is moved once.
+_PATHS: Final[dict[str, str]] = {'lab-commons': 'lab-commons', **REPO_PATHS}
 
 
 def _door_texts() -> dict[tuple[str, str], str]:

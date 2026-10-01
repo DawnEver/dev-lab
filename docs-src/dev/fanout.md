@@ -38,6 +38,7 @@ git worktree add --detach <path> <sha>
 - **Give it the sha, never a branch name**: the integration branch moves under a long-running agent, and two agents on "the same branch" can be on two trees.
 - The coordinator may create the worktree instead, but only for a NON-isolated agent; for an isolated one the tree is unreachable and the work is lost.
 - One shared hazard bites subagents harder: if a long run holds the box lock, an agent invoking the runner gets a refusal rather than a result. Tell it that is EXPECTED, and tell it explicitly **not to kill processes or delete the lock file** — an agent trying to be helpful can destroy a four-hour verdict in one command.
+- **Do not ask a subagent for the push-tier verdict; ask for a MEASUREMENT of the paths its diff reaches**, naming any failure so inventory can be told from the increment. Measured 2026-09-15: a subagent's gate launched as a background task is reaped by the agent harness during collection and leaves an EMPTY log — it proves nothing in either direction, and costs the box lock while it lives.
 
 ## Concurrency — one test session at a time
 

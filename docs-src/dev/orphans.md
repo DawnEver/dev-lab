@@ -10,6 +10,7 @@
 - The workers stop advancing once the controller dies, because nothing dispatches to them — but they do not EXIT, and **they keep their memory**.
 - That memory is not cosmetic: worker width for the NEXT run is sized from available memory, so an unreaped fleet quietly narrows every later tier.
 - **Kill a process TREE by its ROOT pid.** Stopping a wrapper leaves its children running, which is this whole page in one sentence.
+- **A killed PUSH is the same shape one level up.** The `git push` dies and the gate it spawned survives REPARENTED, along with the pre-push hook shells between them — still holding the memory and the box lock. Sweep by the ROOT pid and then **RE-LIST**: measured 2026-09-15, one sweep of a push tree left a 1269 MB gate runner alive, because a reparented child is no longer under the root it was swept by.
 
 ## The lock does not time out, by design
 

@@ -24,6 +24,7 @@
 
 - A registry large enough to be split into siblings needs two things pinned, and it is easy to pin only one.
 - **Self-exclusion is necessary**: every sibling contains every one of its own entries' spellings by construction, so the scan must exclude it or each entry would match itself. That exclusion set gets pinned, because forgetting it reds immediately.
+- **The line-count band that caused the split is INCIDENTAL, and that is what makes the siblings grow unbounded.** The first split happened because one file crossed the size band; every later migration then added its own sibling by convention, never because a seam asked for it — one migration, one more module, forever. Measured in motronics-studio: one table, 31 sibling files.
 - **The CONCATENATION is the half nobody pins.** If the whole is built by hand-summing each sibling's entries, this sequence is possible and nothing catches it: add a sibling with its entries; import it and add it to the exclusion set, which passes; forget to add its entries to the whole.
 - **The result is worse than never registering the entries**: those spellings are now excluded from the scan AND never scanned for, so the registry reports success while covering less than it claims.
 - A ratchet has two sides — a capability that disappears, or a waiver nothing uses, is as wrong as its opposite. Here one side is pinned and the other is not.
