@@ -30,6 +30,7 @@ import json
 import re
 import subprocess
 import sys
+import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,11 +48,14 @@ __all__ = [
     'READY',
     'TODO',
     'Claim',
+    'IssueComment',
     'IssueState',
     'Lane',
     'claim',
     'claims_of',
+    'comments_since',
     'derive',
+    'issue_comments',
     'issue_status',
     'lanes_for',
     'main',
@@ -66,6 +70,8 @@ _REMOTE: Final = 'origin'
 _TRACKING: Final = f'refs/remotes/{_REMOTE}/'
 _CLAIM: Final = re.compile(r'^claim\s+(\S+)\s*$', re.MULTILINE)
 _COMMENT_PAGE: Final = 50
+_COMMENT_PAGES: Final = 20
+_ISSUE_OF: Final = re.compile(r'/issues/(\d+)/?$')
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,17 @@ class Claim:
     branch: str
     by: str
     url: str
+
+
+@dataclass(frozen=True)
+class IssueComment:
+    """One comment, normalized across forges: which issue, its id, who, what, and when (ISO 8601)."""
+
+    issue: int
+    id: int
+    author: str
+    body: str
+    created: str
 
 
 @dataclass(frozen=True)
@@ -185,6 +202,31 @@ def _comments(client: Client, number: int) -> tuple[Comment, ...]:
     return tuple(Comment(raw['id'], raw.get('body') or '', raw['html_url']) for raw in listed)
 
 
+def _listed(client: Client, collection: str, since: str | None) -> tuple[IssueComment, ...]:
+    query = {client.backend.page_param: str(_COMMENT_PAGE)} | ({'since': since} if since else {})
+    found: list[IssueComment] = []
+    for page in range(1, _COMMENT_PAGES + 1):
+        listed = client.call('GET', f'{client.repo}/{collection}?{urllib.parse.urlencode(query | {"page": page})}')
+        for raw in listed:
+            matched = _ISSUE_OF.search(raw.get('issue_url') or '')
+            author = (raw.get('user') or {}).get('login') or ''
+            issue = int(matched.group(1)) if matched else 0
+            found.append(IssueComment(issue, raw['id'], author, raw.get('body') or '', raw.get('created_at') or ''))
+        if len(listed) < _COMMENT_PAGE:
+            break
+    return tuple(found)
+
+
+def issue_comments(client: Client, number: int, *, since: str | None = None) -> tuple[IssueComment, ...]:
+    """Issue *number*'s comments, oldest first, optionally only those updated at or after *since*."""
+    return tuple(dataclasses.replace(one, issue=number) for one in _listed(client, f'issues/{number}/comments', since))
+
+
+def comments_since(client: Client, since: str) -> tuple[IssueComment, ...]:
+    """Every comment on every issue updated at or after *since* (ISO 8601): the repo-wide listing."""
+    return _listed(client, 'issues/comments', since)
+
+
 def _gate(statuses: Sequence[Status]) -> str:
     return next((status.state for status in statuses if status.context == GATE_CONTEXT), '')
 
@@ -240,10 +282,25 @@ def _parser() -> argparse.ArgumentParser:
     claiming = verbs.add_parser('claim')
     claiming.add_argument('--branch', default=None)
     status = verbs.add_parser('status')
-    for sub in (claiming, status):
+    listing = verbs.add_parser('comments')
+    listing.add_argument('--since', default=None)
+    for sub in (claiming, status, listing):
         sub.add_argument('number', type=int)
+    wide = verbs.add_parser('comments-since')
+    wide.add_argument('since')
+    for sub in (claiming, status, listing, wide):
         sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
     return parser
+
+
+def _run(client: Client, root: Path, args: argparse.Namespace) -> Comment | IssueState | tuple[IssueComment, ...]:
+    if args.verb == 'comments':
+        return issue_comments(client, args.number, since=args.since)
+    if args.verb == 'comments-since':
+        return comments_since(client, args.since)
+    if args.verb == 'claim':
+        return claim(client, root, args.number, branch=args.branch)
+    return issue_status(client, root, args.number)
 
 
 def main(
@@ -253,15 +310,15 @@ def main(
     env: Mapping[str, str] | None = None,
     transport: Transport = https_transport,
 ) -> int:
-    """``python -m lab_commons.dev.forge issue claim|status <N>``; exit 1 on a forge failure, 2 on a refusal."""
+    """``python -m lab_commons.dev.forge issue claim|status|comments <N>`` | ``comments-since <ISO>``.
+
+    Exit 1 on a forge failure, 2 on a refusal.
+    """
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     client = client_for(root, env=env, transport=transport)
     try:
-        if args.verb == 'claim':
-            result: Comment | IssueState = claim(client, root, args.number, branch=args.branch)
-        else:
-            result = issue_status(client, root, args.number)
+        result = _run(client, root, args)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed.report.remedy}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
@@ -269,7 +326,11 @@ def main(
     except ValueError as exc:
         emit(f'[forge] {exc}', err=True)
         return 2
-    if args.json:
+    if isinstance(result, tuple):
+        rows = [dataclasses.asdict(one) for one in result]
+        lines = [f'#{row["issue"]} {row["author"]}: {row["body"]}' for row in rows]
+        emit(json.dumps(rows, indent=2) if args.json else '\n'.join(lines))
+    elif args.json:
         emit(json.dumps(dataclasses.asdict(result), indent=2))
     else:
         emit(result.url if isinstance(result, Comment) else _render(result))

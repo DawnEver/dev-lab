@@ -22,10 +22,13 @@ from lab_commons.dev.forgeissue import (
     READY,
     TODO,
     Claim,
+    IssueComment,
     Lane,
     claim,
     claims_of,
+    comments_since,
     derive,
+    issue_comments,
     issue_status,
     lanes_for,
     main,
@@ -148,3 +151,43 @@ def test_the_cli_prints_status_as_json(server, tmp_path: Path, capsys) -> None:
     answer('GET', f'{_ROOT}/issues/9/comments', (200, []))
     assert main(['status', '9', '--json'], cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out)['state'] == TODO
+
+
+def _raw(cid: int, issue: str, body: str) -> dict[str, object]:
+    return {'id': cid, 'body': body, 'user': {'login': 'bot'}, 'created_at': '2026-10-01T10:00:00Z', 'issue_url': issue}
+
+
+def test_comments_since_reads_the_repo_wide_listing_and_names_each_issue(server) -> None:
+    answer(
+        'GET',
+        f'{_ROOT}/issues/comments',
+        (200, [_raw(4, 'https://forge.example.org/o/r/issues/12', 'hi'), _raw(5, 'https://x/repos/o/r/issues/3', '')]),
+    )
+    found = comments_since(client(_FORGE, Loopback(server)), '2026-10-01T09:00:00Z')
+    assert found == (
+        IssueComment(12, 4, 'bot', 'hi', '2026-10-01T10:00:00Z'),
+        IssueComment(3, 5, 'bot', '', '2026-10-01T10:00:00Z'),
+    )
+    assert 'since=2026-10-01T09%3A00%3A00Z' in Recorder.received[-1]['path']
+
+
+def test_issue_comments_passes_since_only_when_given(server) -> None:
+    answer('GET', f'{_ROOT}/issues/7/comments', (200, [_raw(1, 'https://forge.example.org/o/r/issues/7', 'b')]))
+    assert issue_comments(client(_FORGE, Loopback(server)), 7) == (
+        IssueComment(7, 1, 'bot', 'b', '2026-10-01T10:00:00Z'),
+    )
+    assert 'since=' not in Recorder.received[-1]['path']
+
+
+def test_the_cli_prints_comments_since_as_json(server, tmp_path: Path, capsys) -> None:
+    repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
+    answer('GET', f'{_ROOT}/issues/comments', (200, [_raw(4, 'https://forge.example.org/o/r/issues/12', 'hi')]))
+    argv = ['comments-since', '2026-10-01T09:00:00Z', '--json']
+    assert main(argv, cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert json.loads(capsys.readouterr().out) == [
+        {'issue': 12, 'id': 4, 'author': 'bot', 'body': 'hi', 'created': '2026-10-01T10:00:00Z'}
+    ]
+    argv = ['comments', '12', '--since', '2026-10-01T09:00:00Z', '--json']
+    answer('GET', f'{_ROOT}/issues/12/comments', (200, []))
+    assert main(argv, cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert json.loads(capsys.readouterr().out) == []
