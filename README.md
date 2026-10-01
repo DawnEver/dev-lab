@@ -138,14 +138,15 @@ from a checkout or from the forge — and that is stated rather than implied.
   at this package (see that repo's `plan-lab-commons-standalone.md` for the swap runbook).
 - **optimi-lab**, **wdg-lab** (+ its forks) — planned, per the same plan doc.
 
-## Installing (git-URL pin)
+## Installing (git URL)
 
-Not yet published to PyPI — pin by git URL + a REV (a tag or commit), never a bare
-branch (an unpinned branch reintroduces exactly the drift this package exists to end):
+Not yet published to PyPI. Consumers depend on it by git URL and track the latest
+`main` — the family takes the newest version of every dependency, so drift is closed by
+upgrading, not by pinning:
 
 ```toml
 dependencies = [
-    "lab-commons @ git+https://github.com/DawnEver/lab-commons.git@<tag-or-commit>",
+    "lab-commons @ git+https://github.com/DawnEver/lab-commons.git",
 ]
 ```
 
