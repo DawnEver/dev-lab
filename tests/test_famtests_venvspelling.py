@@ -34,9 +34,11 @@ from lab_commons.dev.venvpath import (
 #: This repo's kit source, the population the guard judges here.
 SOURCE = Path(__file__).resolve().parent.parent / 'src'
 
-#: MEASURED 2026-09-19 at 114 files under ``src``. The floor is on FILES READ: a walk that lost its
-#: root reports exactly what a clean tree reports, and this scan's whole value is its silence.
-FILE_FLOOR = 90
+#: MEASURED 2026-09-19 at 114 files under ``src``; RE-MEASURED 2026-10-01 at 131, when the forge
+#: status/issue doors outgrew it -- the floor is raised rather than the margin widened. The floor is
+#: on FILES READ: a walk that lost its root reports exactly what a clean tree reports, and this
+#: scan's whole value is its silence.
+FILE_FLOOR = 120
 
 
 def _tree() -> dict[str, str]:

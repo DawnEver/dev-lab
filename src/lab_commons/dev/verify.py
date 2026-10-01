@@ -45,10 +45,12 @@ from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
+from lab_commons.dev.forgestatus import GATE_CONTEXT, head_sha, publish, verdict_commit
 from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import MalformedAllowance, StepReport, declared_skips, read_pytest, read_ruff
+from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
 from lab_commons.log import emit
 from lab_commons.resources import DEFAULT_POLL_S, Exhausted
@@ -375,6 +377,11 @@ def main(argv: list[str] | None = None) -> int:
     same exit code: another run holds this box, nothing was measured, and INCONCLUSIVE is what a run
     that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
     sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
+
+    A JUDGED RUN IS THEN PUBLISHED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
+    :mod:`lab_commons.dev.forgestatus`) -- on HEAD only when the tree was clean before and after the
+    run and HEAD did not move, and never for INCONCLUSIVE. ``--no-status`` opts out. The publish
+    prints one line and can neither raise nor change the exit code: the verdict is the run's.
     """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',
@@ -388,10 +395,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar='SECONDS',
         help=f'ceiling on the wait for this box (default {WAIT_S:.0f}s); 0 checks once and refuses',
     )
+    parser.add_argument('--no-status', action='store_true', help='do not post the verdict as a lab/gate status')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     parsed = parser.parse_args(argv)
+    root = project_root()
+    head, start = head_sha(root), status_paths(root)
     try:
-        verdict = run_verify(project_root(), tuple(parsed.pytest_args), wait_s=parsed.lock_wait_s)
+        verdict = run_verify(root, tuple(parsed.pytest_args), wait_s=parsed.lock_wait_s)
     except MalformedAllowance as exc:
         emit(f'verify refuses to run: {exc}', err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE]
@@ -409,6 +419,9 @@ def main(argv: list[str] | None = None) -> int:
     emit(f'verify: {verdict.result.render()}')
     for failure in verdict.result.failures:
         emit(f'  failed: {failure}')
+    if not parsed.no_status:
+        commit = verdict_commit(head, head_sha(root), start, status_paths(root))
+        emit(publish(root, verdict, context=GATE_CONTEXT, commit=commit))
     return EXIT_CODES[verdict.result.outcome]
 
 

@@ -422,13 +422,21 @@ def apply_protection(
 
 
 if __name__ == '__main__':
-    # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, plus ``auth`` for the
-    # token. The verbs live in :mod:`lab_commons.dev.forgework` and :mod:`lab_commons.dev.forgeauth`,
-    # which import THIS module, so the imports are deferred to the entry point: at the top they would
-    # be circular (NO-LAZY-IMPORT's written exception).
+    # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, ``status`` for commit
+    # statuses, ``issue claim|status`` for derived issue state, and ``auth`` for the token. The verbs
+    # live in :mod:`lab_commons.dev.forgework`, :mod:`lab_commons.dev.forgestatus`,
+    # :mod:`lab_commons.dev.forgeissue` and :mod:`lab_commons.dev.forgeauth`, which import THIS module,
+    # so the imports are deferred to the entry point: at the top they would be circular
+    # (NO-LAZY-IMPORT's written exception).
     import sys
 
-    from lab_commons.dev import forgeauth, forgework
+    from lab_commons.dev import forgeauth, forgeissue, forgestatus, forgework
 
     argv = sys.argv[1:]
-    raise SystemExit(forgeauth.main(argv[1:]) if argv[:1] == ['auth'] else forgework.main(argv))
+    if argv[:1] == ['auth']:
+        raise SystemExit(forgeauth.main(argv[1:]))
+    if argv[:1] == ['status']:
+        raise SystemExit(forgestatus.main(argv[1:]))
+    if argv[:1] == ['issue'] and argv[1:2] in (['claim'], ['status']):
+        raise SystemExit(forgeissue.main(argv[1:]))
+    raise SystemExit(forgework.main(argv))

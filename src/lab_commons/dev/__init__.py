@@ -216,6 +216,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``; ``HARNESS_*`` stamp.
+* :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status: PASS/FAIL only, on a clean HEAD.
+* :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, no labels.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
 * :mod:`lab_commons.dev.floors` -- a scan that read NOTHING is not a clean scan; both sides, no default.
 * :mod:`lab_commons.dev.foreign` -- the leaf's own tier-1 rule, made refusable: which string

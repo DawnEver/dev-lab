@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from lab_commons.dev import verify
 from lab_commons.dev.logref import LogRef, verify_log
 from lab_commons.dev.reports import (
     SKIP_CEILING,
@@ -582,3 +583,36 @@ class TestTheTeeOnAColouredStep:
         assert 'progress 1' in teed, 'a bare CR still splits into lines rather than being swallowed'
         assert 'progress 2' in teed
         assert 'done' in teed
+
+
+def _judged(tmp_path: Path) -> Verdict:
+    log = tmp_path / 'judged.log'
+    log.write_text('ran\n', encoding='utf-8')
+    report = StepReport(name='hooks', reported=('hooks',), failures=())
+    return build_verdict((report,), tree='sha256:' + 'b' * 64, env='env:1', spec='verify', log=LogRef.of(log))
+
+
+def _patched_main(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, heads: list[str], dirt: list[tuple[str, ...]]
+) -> list:
+    """Drive ``main`` with the run and the git readings replaced, recording what reaches ``publish``."""
+    posted: list = []
+    monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
+    monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
+    monkeypatch.setattr(
+        verify, 'publish', lambda _root, v, *, context, commit: posted.append((v, context, commit)) or 'status: x'
+    )
+    assert verify.main([]) == EXIT_CODES[Outcome.PASS]
+    return posted
+
+
+def test_a_judged_run_on_a_clean_unmoved_tree_publishes_lab_gate_on_head(monkeypatch, tmp_path: Path) -> None:
+    posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[(), ()])
+    assert [(context, commit) for _v, context, commit in posted] == [('lab/gate', 'a' * 40)]
+
+
+def test_a_dirty_tree_publishes_on_no_commit_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
+    posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[('M src/x.py',), ('M src/x.py',)])
+    assert [commit for _v, _c, commit in posted] == [None]

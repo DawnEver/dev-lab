@@ -113,6 +113,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # browser. Checked 2026-10-01 against every consumer's tracked files.
     'forgeauth': ('original',),
     'forgework': ('original',),
+    'forgestatus': ('original',),
+    'forgeissue': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),

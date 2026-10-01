@@ -35,9 +35,10 @@ ROOTS: Final[tuple[tuple[str, str], ...]] = (('src/lab_commons', '*.py'), ('test
 #: The scanner's own module carries the shape as DATA, in the planted source its control writes.
 EXEMPT: Final[tuple[str, ...]] = ('src/lab_commons/dev/famtests/echoedtoken.py',)
 
-#: MEASURED 2026-09-18 over :data:`ROOTS`: 2338 function bodies. Set below the population with room,
-#: and re-measured rather than widened when :data:`HEADROOM` stops covering the gap.
-FUNCTION_FLOOR: Final = 2000
+#: MEASURED 2026-09-18 over :data:`ROOTS`: 2338 function bodies; RE-MEASURED 2026-10-01 at 3228 when
+#: the forge status/issue doors outgrew the headroom. Set below the population with room, and
+#: re-measured rather than widened when :data:`HEADROOM` stops covering the gap.
+FUNCTION_FLOOR: Final = 2900
 
 #: How far past the floor the population may grow before the floor is re-measured.
 HEADROOM: Final = 1200
