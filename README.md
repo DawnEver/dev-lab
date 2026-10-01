@@ -79,7 +79,8 @@ source repo's `plan-lab-commons-standalone.md` for the full plan.
 
 `lab_commons.dev.hooks` holds one row per UNIVERSAL denied command shape — a hand-written test
 line, a bare `git push`, a stash, a force push, a `--no-verify` push, a raw process kill, a
-worktree with no commit named. Each row states the hazard and **names its remedy**: a rule that
+worktree with no commit named, an issue/PR write through `gh`, `tea` or a raw API call instead of
+`python -m lab_commons.dev.forge` (the one client that stamps which machine and agent wrote). Each row states the hazard and **names its remedy**: a rule that
 seals a road with no exit gets routed around rather than obeyed, so a rule whose remedy does not
 exist in your repo is **not shipped to it at all**.
 
@@ -111,10 +112,11 @@ engine with the file as `argv[2]`, and have your suite call
 `assert_shippable(ADOPTION, tracked_files(root))` plus a comparison of the committed file against
 `render(ADOPTION)`, so the two halves cannot drift.
 
-The ENGINE — the JavaScript that decides what a shell line will actually execute — is not shipped
-from here: a hook is executed from the repo tree by the agent harness, not imported from a wheel.
-motronics-studio's `.claude/hooks/deny-commands.js` is the reference implementation, and it reads
-exactly the field names `render` emits (`name`, `pattern`, `matches`, `allow`, `reason`).
+The ENGINE — the JavaScript that decides what a shell line will actually execute — ships in
+`lab_commons.dev.agenthooks` (`deny-commands.js`, stamped). A hook is executed from the repo tree
+by the agent harness, not imported from a wheel, so `lab_commons.dev.agent_guard` INSTALLS a copy
+into `.claude/hooks/` and checks that engine, rules and wiring are all live; it reads exactly the
+field names `render` emits (`name`, `pattern`, `matches`, `allow`, `reason`).
 
 ## The family's mechanism docs
 
@@ -137,7 +139,11 @@ are read as markdown from a checkout or from the forge.
 
 - **motronics-studio** — the origin of this code; re-points `core/utils/{config,logger}.py`
   at this package (see that repo's `plan-lab-commons-standalone.md` for the swap runbook).
-- **optimi-lab**, **wdg-lab** (+ its forks) — planned, per the same plan doc.
+- **optimi-lab** — consumes the runtime package and the `[dev]` kit (shared rules registry,
+  deny rules and agent guard, famconfig-rendered config, `lab_commons.dev.verify`).
+- **wdg-lab** — consumes the runtime package (logging, paths, file_io, exceptions, units, em) and
+  the `[dev]` kit the same way. Its forks (HairpinWindingDesign, wdg-lab-webui) do NOT depend on
+  lab-commons.
 
 ## Installing (git URL)
 
