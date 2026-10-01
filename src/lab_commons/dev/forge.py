@@ -394,3 +394,12 @@ def apply_protection(
             transport=transport,
         )
     return assess(read_rule(forge, token, target, transport=transport), target)
+
+
+if __name__ == '__main__':
+    # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door. The verbs live in
+    # :mod:`lab_commons.dev.forgework`, which imports THIS module, so the import is deferred to the
+    # entry point: at the top it would be a circular import (NO-LAZY-IMPORT's written exception).
+    from lab_commons.dev.forgework import main
+
+    raise SystemExit(main())

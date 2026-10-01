@@ -38,6 +38,14 @@
 - **`main` here means the REMOTE one, never the local**, and the distinction is load-bearing. Measured 2026-08-27: two branches showed **0** unmerged commits against local `main` and **352** and **162** against the remote, because local `main` was 380 commits ahead and unpushed. Deleting on the local reading would have removed the only published copy of that work.
 - The question is "is this CHANGE on the remote main", so the instrument is `git cherry` against the remote — **not the ancestor test**, which asks whether a COMMIT is an ancestor and answers no for anything cherry-picked or rebased.
 
+## Issues and pull requests — `python -m lab_commons.dev.forge`
+
+- **Agents collaborate through these verbs and nothing else; no `gh` or `tea` binary is needed.** `lab_commons.dev.forgework` speaks the REST API directly: `issue list [--state open|closed|all] [--limit N]`, `issue view N`, `issue create --title T [--body B]`, `issue comment N --body B`, `issue close N`, `pr create --title T --head H --base B [--body B]`, `pr view N`. Every verb takes `--json`; the result is the same `Issue` / `Comment` / `PullRequest` shape whichever forge answered.
+- **The backend is read off `origin`**: host `github.com` is GitHub REST (`api.github.com`), every other host is the Gitea-shaped forge this page configures (`<host>/api/v1`). Nothing is configured per repo.
+- **Auth, per machine, never on disk in a repo**: the forge's environment variable first — `GITEA_TOKEN` for Gitea, `GH_TOKEN` then `GITHUB_TOKEN` for GitHub — else the credential the git transport already holds for that host (`git credential fill`, the layer-A route). A stored account password authenticates the transport but newer Gitea refuses it for the API, so a machine that gets a 401 sets `GITEA_TOKEN` to a personal access token.
+- **Every call is retry-then-report in netverb's vocabulary**: three attempts, an answered 4xx (other than 401/408/429) is REFUSED at once, a 5xx or dropped connection is retried, and a failure exits 1 with the remedy. A create whose response was lost may still have landed — read before re-running.
+- **Provenance contract**: when `HARNESS_MACHINE` and `HARNESS_AGENT` are both set (an agent launcher exports them), every created issue body, PR body and comment opens with one line `[<machine> · <agent> · <branch>]`, the branch omitted on a detached HEAD. With either unset nothing is added, so a human's text is never marked.
+
 ## What is needed from a human
 
 | # | need | blocks | notes |
