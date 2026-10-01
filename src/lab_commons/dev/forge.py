@@ -68,6 +68,7 @@ __all__ = [
     'https_transport',
     'protection_body',
     'read_rule',
+    'store_credential',
 ]
 
 #: The clause matches the declaration.
@@ -190,6 +191,8 @@ def forge_from_remote(root: Path, *, remote: str = 'origin') -> Forge:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         timeout=_GIT_TIMEOUT_S,
         check=False,
     )
@@ -224,22 +227,44 @@ def token_for(host: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> 
     An EMPTY password is refused rather than returned: a header would carry it, the forge would
     reject it, and a missing credential would be reported as a forge problem.
     """
-    done = subprocess.run(
-        [_GIT, 'credential', 'fill'],
-        input=f'protocol=https\nhost={host}\n\n',
-        cwd=cwd,
-        env=None if env is None else {**dict(env), 'PATH': ''},
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT_S,
-        check=False,
-    )
+    done = _credential('fill', {'host': host}, cwd=cwd, env=env)
     for line in done.stdout.splitlines():
         key, _, value = line.partition('=')
         if key == 'password' and value:
             return value
     msg = f'no stored credential for {host}: the git transport must be able to authenticate first'
     raise NoCredential(msg)
+
+
+def store_credential(host: str, username: str, secret: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> None:
+    """Hand *secret* to the configured git credential helper for ``https://<host>``; nothing touches disk here.
+
+    The SAME store :func:`token_for` reads, so the forge verbs and ``git push`` over https use it alike.
+    Where it is persisted is the helper's decision (Git Credential Manager, the OS keychain, ...).
+    """
+    done = _credential('approve', {'host': host, 'username': username, 'password': secret}, cwd=cwd, env=env)
+    if done.returncode != 0:
+        msg = f'git credential approve failed for {host} (exit {done.returncode}); is a credential.helper configured?'
+        raise NoCredential(msg)
+
+
+def _credential(
+    verb: str, fields: Mapping[str, str], *, cwd: Path, env: Mapping[str, str] | None
+) -> subprocess.CompletedProcess[str]:
+    """One ``git credential <verb>`` over https; the secret travels on stdin, never in argv."""
+    payload = ''.join(f'{key}={value}\n' for key, value in {'protocol': 'https', **fields}.items())
+    return subprocess.run(
+        [_GIT, 'credential', verb],
+        input=payload + '\n',
+        cwd=cwd,
+        env=None if env is None else {**dict(env), 'PATH': ''},
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        timeout=_GIT_TIMEOUT_S,
+        check=False,
+    )
 
 
 def _read(rule: Mapping[str, Any], key: str) -> object:
@@ -397,9 +422,13 @@ def apply_protection(
 
 
 if __name__ == '__main__':
-    # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door. The verbs live in
-    # :mod:`lab_commons.dev.forgework`, which imports THIS module, so the import is deferred to the
-    # entry point: at the top it would be a circular import (NO-LAZY-IMPORT's written exception).
-    from lab_commons.dev.forgework import main
+    # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, plus ``auth`` for the
+    # token. The verbs live in :mod:`lab_commons.dev.forgework` and :mod:`lab_commons.dev.forgeauth`,
+    # which import THIS module, so the imports are deferred to the entry point: at the top they would
+    # be circular (NO-LAZY-IMPORT's written exception).
+    import sys
 
-    raise SystemExit(main())
+    from lab_commons.dev import forgeauth, forgework
+
+    argv = sys.argv[1:]
+    raise SystemExit(forgeauth.main(argv[1:]) if argv[:1] == ['auth'] else forgework.main(argv))

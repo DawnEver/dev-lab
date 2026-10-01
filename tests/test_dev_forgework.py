@@ -345,6 +345,8 @@ def test_the_forge_module_is_the_cli_door() -> None:
         [sys.executable, '-m', 'lab_commons.dev.forge', 'issue', '--help'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         timeout=60,
         check=False,
     )

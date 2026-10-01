@@ -109,6 +109,10 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'floors': ('supersedes', 'tests/architecture/_corpus.py'),
     # See the module docstring above: declared original against a measured 2-name overlap.
     'forge': ('original',),
+    # No consumer had issue/PR verbs or a token installer to fork: each box ran ``gh``/``tea`` or a
+    # browser. Checked 2026-10-01 against every consumer's tracked files.
+    'forgeauth': ('original',),
+    'forgework': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),

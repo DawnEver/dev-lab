@@ -46,6 +46,7 @@ from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt
 from lab_commons.log import emit
 
 __all__ = [
+    'CREDENTIAL_SOURCE',
     'GITEA',
     'GITHUB',
     'Backend',
@@ -58,6 +59,7 @@ __all__ = [
     'main',
     'provenance',
     'token_route',
+    'token_source',
 ]
 
 #: The one host that is GitHub. Every other host is treated as the Gitea-shaped forge.
@@ -134,13 +136,26 @@ def backend_for(forge: Forge) -> Backend:
     return GITHUB if forge.host.lower() == GITHUB_HOST else GITEA
 
 
-def token_route(forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
-    """The backend's environment variable when set, else the git transport's stored credential."""
+#: How :func:`token_source` names the fallback, so ``auth status`` can say where a token came from.
+CREDENTIAL_SOURCE: Final = 'git credential'
+
+
+def token_source(forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None) -> tuple[str, str]:
+    """``(where, token)``: the backend's environment variable when set, else the git transport's credential.
+
+    The credential is sent as a TOKEN header whichever helper stored it, so it must be a personal
+    access token -- which is what ``python -m lab_commons.dev.forge auth login`` stores.
+    """
     source = os.environ if env is None else env
     for name in backend_for(forge).token_vars:
         if source.get(name):
-            return source[name]
-    return token_for(forge.host, cwd=cwd, env=env)
+            return name, source[name]
+    return CREDENTIAL_SOURCE, token_for(forge.host, cwd=cwd, env=env)
+
+
+def token_route(forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
+    """The token :func:`token_source` finds, without its provenance."""
+    return token_source(forge, cwd=cwd, env=env)[1]
 
 
 @dataclass(frozen=True)
@@ -203,6 +218,8 @@ def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         timeout=_GIT_TIMEOUT_S,
         check=False,
     )
@@ -244,8 +261,11 @@ class Client:
         finally:
             conn.close()
 
-    def _call(self, method: str, tail: str, body: Mapping[str, Any] | None = None) -> Any:  # noqa: ANN401 -- JSON
-        path = self.backend.repo_path(self.forge) + tail
+    @property
+    def _repo(self) -> str:
+        return self.backend.repo_path(self.forge)
+
+    def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:  # noqa: ANN401 -- JSON
         data = json.dumps(dict(body)).encode() if body is not None else None
         made: list[Attempt] = []
         for index in range(1, DEFAULT_ATTEMPTS + 1):
@@ -266,35 +286,40 @@ class Client:
     def _stamped(self, text: str) -> str:
         return text if self.stamp is None else f'{self.stamp}\n\n{text}'
 
+    def whoami(self) -> str:
+        """The login the token authenticates as -- ``GET /api/v1/user`` on Gitea, ``GET /user`` on GitHub."""
+        return self._call('GET', f'{self.backend.api_root}/user')['login']
+
     def issue_list(self, *, state: str = 'open', limit: int = 30) -> tuple[Issue, ...]:
         """Issues in *state*, pull requests excluded (GitHub lists both under ``issues``)."""
         query = self.backend.list_query.format(state=state, limit=limit)
-        return tuple(_issue(raw) for raw in self._call('GET', f'/issues?{query}') if 'pull_request' not in raw)
+        listed = self._call('GET', f'{self._repo}/issues?{query}')
+        return tuple(_issue(raw) for raw in listed if 'pull_request' not in raw)
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""
-        return _issue(self._call('GET', f'/issues/{number}'))
+        return _issue(self._call('GET', f'{self._repo}/issues/{number}'))
 
     def issue_create(self, title: str, body: str) -> Issue:
         """A new issue; the body carries the provenance line."""
-        return _issue(self._call('POST', '/issues', {'title': title, 'body': self._stamped(body)}))
+        return _issue(self._call('POST', f'{self._repo}/issues', {'title': title, 'body': self._stamped(body)}))
 
     def issue_comment(self, number: int, body: str) -> Comment:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
-        return _comment(self._call('POST', f'/issues/{number}/comments', {'body': self._stamped(body)}))
+        return _comment(self._call('POST', f'{self._repo}/issues/{number}/comments', {'body': self._stamped(body)}))
 
     def issue_close(self, number: int) -> Issue:
         """Close an issue; nothing is written but the state."""
-        return _issue(self._call('PATCH', f'/issues/{number}', {'state': 'closed'}))
+        return _issue(self._call('PATCH', f'{self._repo}/issues/{number}', {'state': 'closed'}))
 
     def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
         """A new pull request from *head* into *base*."""
         payload = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
-        return _pull(self._call('POST', '/pulls', payload))
+        return _pull(self._call('POST', f'{self._repo}/pulls', payload))
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""
-        return _pull(self._call('GET', f'/pulls/{number}'))
+        return _pull(self._call('GET', f'{self._repo}/pulls/{number}'))
 
 
 def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
@@ -304,7 +329,11 @@ def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentPars
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog='lab_commons.dev.forge', description='issue and PR verbs on the forge')
+    parser = argparse.ArgumentParser(
+        prog='lab_commons.dev.forge',
+        description='issue and PR verbs on the forge',
+        epilog='token setup: python -m lab_commons.dev.forge auth login|status',
+    )
     nouns = parser.add_subparsers(dest='noun', required=True)
     issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)
     listing = _verb(issue, 'list')

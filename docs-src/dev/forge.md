@@ -42,7 +42,23 @@
 
 - **Agents collaborate through these verbs and nothing else; no `gh` or `tea` binary is needed.** `lab_commons.dev.forgework` speaks the REST API directly: `issue list [--state open|closed|all] [--limit N]`, `issue view N`, `issue create --title T [--body B]`, `issue comment N --body B`, `issue close N`, `pr create --title T --head H --base B [--body B]`, `pr view N`. Every verb takes `--json`; the result is the same `Issue` / `Comment` / `PullRequest` shape whichever forge answered.
 - **The backend is read off `origin`**: host `github.com` is GitHub REST (`api.github.com`), every other host is the Gitea-shaped forge this page configures (`<host>/api/v1`). Nothing is configured per repo.
-- **Auth, per machine, never on disk in a repo**: the forge's environment variable first — `GITEA_TOKEN` for Gitea, `GH_TOKEN` then `GITHUB_TOKEN` for GitHub — else the credential the git transport already holds for that host (`git credential fill`, the layer-A route). A stored account password authenticates the transport but newer Gitea refuses it for the API, so a machine that gets a 401 sets `GITEA_TOKEN` to a personal access token.
+- **Auth, per machine, never on disk in a repo**: the forge's environment variable first — `GITEA_TOKEN` for Gitea, `GH_TOKEN` then `GITHUB_TOKEN` for GitHub — else the credential the git transport already holds for that host (`git credential fill`, the layer-A route). That credential is sent as a TOKEN header, so it must be a personal access token: a stored account password authenticates the transport but newer Gitea refuses it for the API. `auth login` below is how it becomes one.
+
+## Set up a token on a new machine
+
+One command per forge host, run from any checkout whose `origin` is on that host (or pass `--host`):
+
+```
+python -m lab_commons.dev.forge auth login      # prompts for the token, input hidden
+python -m lab_commons.dev.forge auth status     # where the token comes from, and who it is
+```
+
+- **What `login` does**: reads the token without echo (or from stdin with `--token-stdin`, for scripts), sends it to `GET /api/v1/user` (Gitea) or `GET /user` (GitHub), and **only if the forge accepts it** stores it with `git credential approve` as `https://<host>`, username = the login the forge returned. A rejected token is reported with the forge's answer and is NOT stored, so a typo never replaces a credential that worked.
+- **Where it lives**: wherever the machine's `credential.helper` keeps secrets — Git Credential Manager on Windows, the keychain on macOS. Nothing is written to any file in a repo and the token is never printed; `status` shows the source (`GITEA_TOKEN`, or `git credential`) and the login only.
+- **What else uses it**: the same stored credential is what `git push` / `git fetch` over https present to that host, so after `login` the transport and the forge verbs authenticate with one token. An environment variable, if set, still wins for the verbs (`login` says so when one is).
+- **Gitea** — create the token at **User Settings → Applications → Manage Access Tokens → Generate Token**. Scopes: `write:issue` (issues and comments), `write:repository` (pull requests, and git push over https), `read:user` (so `login`/`status` can ask who the token is). Copy it once; Gitea does not show it again.
+- **GitHub** — either a **fine-grained token** (Settings → Developer settings → Personal access tokens → Fine-grained) scoped to the repositories, with *Issues* and *Pull requests* read/write and *Contents* read/write for pushing, then `auth login --host github.com`; or let **Git Credential Manager's OAuth** sign-in store the credential on the first `git push`, after which `auth status --host github.com` should name `git credential` and your login with no `login` step at all.
+- **Rotating or revoking**: generate a new token and run `auth login` again — it overwrites the stored one for that host and login. A revoked token shows up as a failing `auth status`.
 - **Every call is retry-then-report in netverb's vocabulary**: three attempts, an answered 4xx (other than 401/408/429) is REFUSED at once, a 5xx or dropped connection is retried, and a failure exits 1 with the remedy. A create whose response was lost may still have landed — read before re-running.
 - **Provenance contract**: when `HARNESS_MACHINE` and `HARNESS_AGENT` are both set (an agent launcher exports them), every created issue body, PR body and comment opens with one line `[<machine> · <agent> · <branch>]`, the branch omitted on a detached HEAD. With either unset nothing is added, so a human's text is never marked.
 
@@ -52,7 +68,7 @@
 |---|---|---|---|
 | 1 | the layer-A whitelist | every update of `main` | done 2026-08-27 |
 | 2 | the status check DISABLED until layer C is wired | `main` updates, if it was enabled | done 2026-08-27 |
-| 3 | a write-scoped personal access token for the integrator | layer C only | hand it over as an environment variable; **it is never written to a log, a commit, or a memory file — this family records secrets as hashes only** |
+| 3 | a write-scoped personal access token for the integrator | layer C only | store it with `auth login` (see *Set up a token on a new machine*); **it is never written to a log, a commit, or a memory file — this family records secrets as hashes only** |
 | 4 | confirmation that the token is a token, not the account password | layer C only | newer forge versions reject password basic-auth for the API, so a stored password authenticates the transport and fails the API |
 
 - Reading the OS credential store to reuse the existing credential was attempted and refused by the sandbox, **and that refusal is correct**: extracting a secret is a decision for the human, not a convenience for the agent.
