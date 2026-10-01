@@ -29,7 +29,9 @@ def run_git(cwd: Path, *args: str) -> None:
 
 def git_out(cwd: Path, *args: str) -> str:
     """One git read in *cwd*, stripped."""
-    done = subprocess.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True, timeout=60)
+    done = subprocess.run(
+        [_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True, encoding='utf-8', timeout=60
+    )
     return done.stdout.strip()
 
 
