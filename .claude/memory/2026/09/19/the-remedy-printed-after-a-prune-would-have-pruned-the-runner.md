@@ -1,6 +1,6 @@
 ---
 name: the-remedy-printed-after-a-prune-would-have-pruned-the-runner
-description: The install-door census could see which BUILD a command delivers and not which EXTRAS survive it, and the gap is what took one box from 113 distributions to 30. syncscope + synccensus close it by joining a command's selection with the repo's own optional-dependencies table. The finding - motronics' dep_sync prints "re-run naming every extra you need (--extra all where the project declares it)" to an operator mid-incident, and --extra all there is motronics[euclid,maxwell,pareto,femm,gui,native] with no dev, so following the advice removes pytest, pytest-xdist, pytest-timeout and ruff. Also measured - optimi-lab's CI hangs three of its four verdict-critical distributions on one word.
+description: The install-door census could see which BUILD a command delivers and not which EXTRAS survive it, and the gap is what took one box from 113 distributions to 30. syncscope + synccensus close it by joining a command's selection with the repo's own optional-dependencies table. The finding - consumer-a' dep_sync prints "re-run naming every extra you need (--extra all where the project declares it)" to an operator mid-incident, and --extra all there is consumer-a[euclid,maxwell,pareto,femm,gui,native] with no dev, so following the advice removes pytest, pytest-xdist, pytest-timeout and ruff. Also measured - consumer-c's CI hangs three of its four verdict-critical distributions on one word.
 metadata:
   type: project
 created: 2026-09-19
@@ -25,9 +25,9 @@ The two questions fail differently, and that is why they are two modules:
 
 ## An extras name is a fact about the MANIFEST
 
-This is the whole design constraint. `--extra all` is not a property of the command: in motronics
-`all` is `motronics[euclid,maxwell,pareto,femm,gui,native]`, in lab-commons and optimi-lab there is
-no such extra at all, and in wdg-lab there is not either. So the reader REFUSES an extras name the
+This is the whole design constraint. `--extra all` is not a property of the command: in consumer-a
+`all` is `consumer-a[euclid,maxwell,pareto,femm,gui,native]`, in lab-commons and consumer-c there is
+no such extra at all, and in consumer-b there is not either. So the reader REFUSES an extras name the
 manifest does not declare rather than scoring it as an empty selection, and it EXPANDS a
 self-reference, because read literally `all` contains one distribution -- the project.
 
@@ -38,12 +38,12 @@ each repo's own table is read and one portable question is asked of it.
 
 ## The findings, all from TEXT -- nothing was installed, synced or pruned
 
-* **motronics `scripts/gate/dep_sync.py:458`**, running code that prints AFTER a prune has removed
+* **consumer-a `scripts/gate/dep_sync.py:458`**, running code that prints AFTER a prune has removed
   distributions: *"re-run naming every extra you need (`--extra all` where the project declares
   it)"*. That project declares it, and it carries no `dev`: following the advice strands `pytest`,
   `pytest-xdist`, `pytest-timeout` and `ruff`. The remedy for the 2026-09-18 incident is the
   2026-09-18 incident.
-* **optimi-lab `.github/workflows/ci.yml:38`**, `extras: 'dev'`. Its `addopts` carries `--cov`, so
+* **consumer-c `.github/workflows/ci.yml:38`**, `extras: 'dev'`. Its `addopts` carries `--cov`, so
   `pytest-cov` is as load-bearing as pytest -- pytest exits 4, no verdict, on an unrecognised
   option -- and it declares `lab-commons` ONLY inside the `dev` extra. Three of its four critical
   distributions hang on that one word.
@@ -55,7 +55,7 @@ each repo's own table is read and one portable question is asked of it.
 The half that is easy to miss: `addopts = "... -n auto ..."` and `timeout = 300` make xdist and
 pytest-timeout verdict-critical, because pytest treats an unrecognised option as a USAGE ERROR. So
 the verdict set is DERIVED from each repo's own pytest configuration rather than typed out, and it
-differs per repo: lab-commons needs 2 distributions, optimi-lab and wdg-lab 4, motronics 5.
+differs per repo: lab-commons needs 2 distributions, consumer-c and consumer-b 4, consumer-a 5.
 
 ## What it cannot see, and the refusals
 

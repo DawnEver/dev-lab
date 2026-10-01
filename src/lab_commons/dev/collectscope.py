@@ -11,17 +11,17 @@ non-zero having judged nothing. So the failure mode of 2026-09-18 -- a tree that
 rather than as UNEQUIPPED -- survives one layer in, past a scope that scored ``COMPLETE``.
 
 WHAT THIS CONVICTED, 2026-09-19, and it is the census's own COMPLETE rows rather than a hypothetical.
-motronics' SANCTIONED ``--extra pareto --extra dev`` -- the row `_synccensus_rows.py` calls "the
+consumer-a' SANCTIONED ``--extra pareto --extra dev`` -- the row `_synccensus_rows.py` calls "the
 sanctioned spelling" -- strands SIX distributions at collection: cadquery-ocp-novtk, ezdxf,
-meshio, motronics-native, pillow, wdg-lab (SEVEN as first read; ``opencv-python-headless`` was a
+meshio, consumer-a-native, pillow, consumer-b (SEVEN as first read; ``opencv-python-headless`` was a
 false conviction of an import placed after its own module-scope ``importorskip``, corrected
-2026-10-01). wdg-lab's CI ``extras: 'dev'`` strands diskcache, fastapi, httpx and pandas. Both
+2026-10-01). consumer-b's CI ``extras: 'dev'`` strands diskcache, fastapi, httpx and pandas. Both
 scores are RIGHT at their own question: the runner survives both, and neither repo can collect.
 
 SHARPEST OF ALL, AND IT IS A CORRECTION TO THE SIBLING ROW: that row names
 ``--extra all --extra dev --extra img-to-cad`` as "the incantation that actually restored the box".
 It leaves the runner whole and STILL strands ``pillow`` -- declared only in a ``tooldrivers`` extra
-that no recorded incantation names. There is no selection in motronics that collects its own tests.
+that no recorded incantation names. There is no selection in consumer-a that collects its own tests.
 
 THE JOIN IS IMPORT NAME TO DISTRIBUTION NAME, AND THEY DIFFER. ``cv2`` is ``opencv-python``, ``OCP``
 is ``cadquery-ocp``, ``PIL`` is ``pillow``, ``yaml`` is ``pyyaml``, and all four are live here.
@@ -34,7 +34,7 @@ TEXT, in a fixed order, and the residue is REPORTED rather than dropped:
 
 1. DECLARED -- :func:`~lab_commons.dev.syncscope.canon` of the import name is a distribution this
    manifest names. Covers numpy, pytest, pydantic, matplotlib, structlog and the family's own
-   underscore/hyphen pairs (``wdg_lab`` / ``wdg-lab``, ``motronics_native`` / ``motronics-native``).
+   underscore/hyphen pairs (``consumer_b`` / ``consumer-b``, ``consumer_a_native`` / ``consumer-a-native``).
 2. :data:`ALIASES` -- the NAMED SET where neither name can be derived from the other. Every row is
    reached by the live family scan; an alias nothing uses is a waiver nothing uses.
 3. LOCAL -- a ``<name>.py`` or ``<name>/`` exists in the checkout, so the import resolves off
@@ -48,7 +48,7 @@ TEXT, in a fixed order, and the residue is REPORTED rather than dropped:
 A CONDITIONAL IMPORT DEGRADES AND IS NOT A STRAND. A ``try/except ImportError``, an
 ``if TYPE_CHECKING:`` and a module-scope ``pytest.importorskip`` all leave the module collectable,
 and convicting them would red every optional integration here -- measured: it is the difference
-between ``OCP`` in wdg-lab (guarded, DEGRADES) and in motronics (bare, ERRORS). An import inside a
+between ``OCP`` in consumer-b (guarded, DEGRADES) and in consumer-a (bare, ERRORS). An import inside a
 function or class body does not execute at collection and is not this module's subject.
 
 **A SKIP MARK IS NOT A GUARD, AND THE BRIEF THAT COMMISSIONED THIS SAID IT WAS.** ``pytestmark =
@@ -94,7 +94,7 @@ __all__ = [
 
 #: Import names whose distribution cannot be derived from the spelling, with EVERY distribution that
 #: can supply each. A SET per name and not a single answer, and that is a MEASUREMENT rather than
-#: caution: motronics declares ``cadquery-ocp-novtk`` and ``opencv-python-headless``, so a one-to-one
+#: caution: consumer-a declares ``cadquery-ocp-novtk`` and ``opencv-python-headless``, so a one-to-one
 #: ``cv2 -> opencv-python`` map read that repo as stranding two distributions it never declared. A
 #: build variant is a different distribution supplying the same import.
 #:
@@ -192,7 +192,7 @@ class Reach:
 def tree_texts(root: Path, prefix: str, *, at_head: bool) -> dict[str, str]:
     """Every ``test_*.py`` under *prefix*, keyed by repo-relative path. One git call, not one per file.
 
-    MEASURED 2026-09-19 against motronics' 2632 test files: ``ls-tree`` plus a single
+    MEASURED 2026-09-19 against consumer-a' 2632 test files: ``ls-tree`` plus a single
     ``cat-file --batch`` reads 26 MB in 0.93 s, where a per-file ``git show`` is 2632 processes. A
     sibling repo is read at ``HEAD`` for the same reason the door census does it -- a lane's
     half-finished edit over there must not turn THIS repo red.

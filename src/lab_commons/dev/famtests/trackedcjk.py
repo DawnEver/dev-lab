@@ -7,7 +7,7 @@ The scan, the ranges, the exemption match and the two-sided ratchet are all
 still had to write around them, and the three copies of it measure as near-twins.
 
 THREE CONSUMERS, and the two labs' copies share their test-function NAMES line for line -- the same
-nine, in the same order. The third is motronics' under ``tests/architecture/docs/``. What differs
+nine, in the same order. The third is consumer-a' under ``tests/architecture/docs/``. What differs
 between them is four repo-shaped facts and nothing else: the corpus, the floor, its headroom, and the
 declared set. Every one of them arrives as a keyword argument with NO DEFAULT.
 

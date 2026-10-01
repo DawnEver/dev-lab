@@ -38,7 +38,7 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
     ),
     (
         # THE REF ITSELF IS STALE OR PROTECTED -- git's own vocabulary for "your input is wrong".
-        # Inherited from motronics-studio's `with-retry.sh`, whose own comment records that its
+        # Inherited from consumer-a's `with-retry.sh`, whose own comment records that its
         # `[rejected]` row could not fire while the classifier read only the first line, so a
         # rejected ref burned all three attempts the check existed to skip.
         'ref-rejected',

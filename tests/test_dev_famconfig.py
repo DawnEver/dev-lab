@@ -301,7 +301,7 @@ def test_a_makefile_holding_every_base_target_installs(tmp_path: Path) -> None:
 
 
 def test_planted_a_missing_required_target_reds(tmp_path: Path) -> None:
-    """PLANTED: `verify` dropped from the Makefile -- the exact state motronics is in today."""
+    """PLANTED: `verify` dropped from the Makefile -- the exact state consumer-a is in today."""
     base = artefact_base('Makefile')
     path = tmp_path / 'Makefile'
     path.write_text(_makefile(('lint:', 'fmt:', 'test:')), encoding='utf-8')
@@ -370,7 +370,7 @@ def test_rendered_lines_and_render_agree() -> None:
 
 # ------------------------------------------ the nested addition, and what it did NOT turn out to be
 
-#: wdg-lab's seven extra `pre-commit-hooks` ids, MEASURED 2026-09-17 from that repo's own
+#: consumer-b's seven extra `pre-commit-hooks` ids, MEASURED 2026-09-17 from that repo's own
 #: `tests/architecture/_famconfig.py::EXTRA_HOOK_IDS`. They are the real subject: every one of them
 #: belongs INSIDE the entry the base renders, which is the position an append cannot reach.
 _EXTRA_HOOK_IDS: Final = (
@@ -383,7 +383,7 @@ _EXTRA_HOOK_IDS: Final = (
     'requirements-txt-fixer',
 )
 
-#: The `exclude:` wdg-lab must hang on `trailing-whitespace` -- a CHILD of a base line rather than a
+#: The `exclude:` consumer-b must hang on `trailing-whitespace` -- a CHILD of a base line rather than a
 #: sibling of the block, and the second shape an append cannot express.
 _EXCLUDE = r'        exclude: ^tests/architecture/_suppressions\.tsv$'
 
@@ -398,9 +398,9 @@ def _precommit() -> Base:
 
 
 def _nested() -> Delta:
-    """wdg-lab's blocked delta, expressed as anchored additions rather than as an append."""
+    """consumer-b's blocked delta, expressed as anchored additions rather than as an append."""
     return Delta(
-        repo='wdg-lab',
+        repo='consumer-b',
         added=(),
         dropped={},
         ceiling=8,

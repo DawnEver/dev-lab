@@ -215,8 +215,8 @@ def package_modules(directory: Path) -> tuple[Path, ...]:
     has one, so a package whose ENTIRE public surface lives in its ``__init__`` was invisible to
     :func:`kit_modules` and to :func:`kit_subpackages` alike. ``lab_commons.dev.agenthooks`` is the
     live instance: it holds an ``__init__.py``, a ``__main__.py`` and a ``.js``, publishes eleven
-    names, and appeared in NEITHER reading. A motronics roster row graded ``untouched`` purely
-    because its one kit import is ``dev.agenthooks``, while being 98.0% identical to optimi-lab's
+    names, and appeared in NEITHER reading. A consumer-a roster row graded ``untouched`` purely
+    because its one kit import is ``dev.agenthooks``, while being 98.0% identical to consumer-c's
     file of the same name.
 
     THIS IS NOT A SPELLING GAP AND A NEW ``IMPORT_SPELLINGS`` ROW CANNOT FIX IT. The consumer's

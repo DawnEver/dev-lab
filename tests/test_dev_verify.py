@@ -4,7 +4,7 @@ ONE SUITE FOR TWO MODULES, because they are one mechanism split at a seam rather
 ``reports`` decides what a step's output MEANS and ``verify`` runs the processes that produce it,
 and every test below drives the pair the way the entry point does.
 
-THE DECISIVE TEST IS THE MEASURED ONE. 2026-09-15, ``optimi_lab`` as configured collected 307 tests,
+THE DECISIVE TEST IS THE MEASURED ONE. 2026-09-15, ``consumer_c`` as configured collected 307 tests,
 hit 3 collection errors, printed ``Interrupted`` and ran ZERO of them -- and the same invocation
 printed a ``307 passed``-shaped line. ``INTERRUPTED`` below is that output, with BOTH halves in it
 on purpose: a parser that looks for the good news finds it there. So the assertion is not merely
@@ -57,7 +57,7 @@ FAILED tests/test_log.py::test_emit_writes_one_line - AssertionError
 #: THE MEASURED CASE: a collection error, an ``Interrupted`` banner, and a clean-looking count line
 #: in ONE output. Anything that reads the last line and stops calls this a pass.
 INTERRUPTED = """==================================== ERRORS ====================================
-ERROR tests/test_optimiser.py - ModuleNotFoundError: No module named 'optimi'
+ERROR tests/test_optimiser.py - ModuleNotFoundError: No module named 'consumer-c'
 !!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
 collected 307 items / 3 errors
 307 passed in 0.44s
@@ -348,7 +348,7 @@ class TestTheRoot:
 
 class TestTheTee:
     def test_the_first_line_reaches_the_log_before_the_slow_step_exits(self, tmp_path: Path) -> None:
-        """THE CONTROL FOR THE STREAMING DEFECT, MEASURED 2026-09-16 on wdg-lab.
+        """THE CONTROL FOR THE STREAMING DEFECT, MEASURED 2026-09-16 on consumer-b.
 
         A run sat 26+ minutes with nothing in its log but the two ruff lines while pytest was
         genuinely working the whole time -- the log's mtime was frozen, and settling whether the run
@@ -448,7 +448,7 @@ class TestThePlantedControl:
         that decides whether pytest emits those lines lives in `verify.py` and was never asserted --
         so `PYTEST_ARGS` could ask for skips alone, and did, and every red run in every repo came
         back INCONCLUSIVE ("nobody knows") instead of FAIL ("these tests failed"). MEASURED on
-        optimi-lab before the fix: `2 failed, 130 passed` read as `the summary names 2 failure(s)
+        consumer-c before the fix: `2 failed, 130 passed` read as `the summary names 2 failure(s)
         and the output names 0 node id(s)`.
 
         The lesson is narrow and worth keeping: a parser tested only on synthetic input asserts the
@@ -482,7 +482,7 @@ class TestThePlantedControl:
 class TestTheTeeOnAConsoleThatCannotCarryTheCharacter:
     """THE WHOLE CHAIN, planted: a child's character must not cost the run its verdict.
 
-    THE REPRODUCTION, 2026-09-18. A wdg-lab verify died with
+    THE REPRODUCTION, 2026-09-18. A consumer-b verify died with
     ``UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'`` inside
     ``_tee -> lab_commons.log.emit``, on a cp1252 stdout. The run then had no verdict AND no log --
     the one state ``workflow.md`` says proves nothing. ``TestEmitOnAConsoleThatCannotCarryTheCharacter``

@@ -264,22 +264,22 @@ def test_a_lost_create_that_cannot_be_checked_is_reported_not_blindly_retried(se
 
 def test_provenance_names_machine_agent_and_branch_when_both_vars_are_set(tmp_path: Path) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git', branch='lane-x')
-    env = {'HARNESS_MACHINE': 'ws1', 'HARNESS_AGENT': 'claude'}
-    assert provenance(repo, env) == '[ws1 · claude · lane-x]'
+    env = {'HARNESS_MACHINE': 'host-a', 'HARNESS_AGENT': 'claude'}
+    assert provenance(repo, env) == '[host-a · claude · lane-x]'
 
 
 def test_no_provenance_without_both_vars(tmp_path: Path) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     assert provenance(repo, {}) is None
-    assert provenance(repo, {'HARNESS_MACHINE': 'ws1'}) is None
-    assert provenance(repo, {'HARNESS_MACHINE': 'ws1', 'HARNESS_AGENT': ''}) is None
+    assert provenance(repo, {'HARNESS_MACHINE': 'host-a'}) is None
+    assert provenance(repo, {'HARNESS_MACHINE': 'host-a', 'HARNESS_AGENT': ''}) is None
 
 
 def test_a_detached_head_omits_the_branch(tmp_path: Path) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     _run(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x')
     _run(repo, 'checkout', '-q', '--detach')
-    assert provenance(repo, {'HARNESS_MACHINE': 'ws1', 'HARNESS_AGENT': 'codex'}) == '[ws1 · codex]'
+    assert provenance(repo, {'HARNESS_MACHINE': 'host-a', 'HARNESS_AGENT': 'codex'}) == '[host-a · codex]'
 
 
 def test_the_stamp_prefixes_every_created_body_and_comment_and_nothing_else(server) -> None:

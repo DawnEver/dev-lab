@@ -3,20 +3,20 @@
 THE RULE HAS THREE HALVES AND A REPO NEEDS ALL THREE. "Bound every wait, because a budget is a
 ceiling on the WAIT -- split or parallelise, never raise it -- and kill a process TREE by its ROOT
 pid, since stopping a wrapper leaves its children running." Stated as prose in four trees; readable
-by code in one. What follows is the readable half, migrated 2026-09-16 from motronics-studio's
+by code in one. What follows is the readable half, migrated 2026-09-16 from consumer-a's
 ``scripts/gate/bounded.py``, ``wall_reason.py``, ``width.py`` and ``_box.py``.
 
 WHAT ``subprocess.run(timeout=...)`` DOES NOT DO, and it is the whole reason this module exists. It
 kills only the DIRECT child on timeout and then, on Windows specifically, reaps with an UNBOUNDED
 ``communicate()``. Every grandchild inherits the stdout write handle, so that pipe stays open while
-any of them lives -- and a worker pool's workers ARE grandchildren. Measured in motronics-studio on
+any of them lives -- and a worker pool's workers ARE grandchildren. Measured in consumer-a on
 2026-09-07: a bounded run started at 15:50:29 with a 1800 s wall, whose six worker ledgers all stop
 between 16:20:32 and 16:20:36 (so the wall DID fire), whose process tree was still alive at
 16:50:20, and which never wrote a verdict at all. It held a shared lock until a human killed it.
 **A hang detector that hangs** -- raising the wall makes it strictly worse.
 
 THE SAME SHAPE, WRITTEN OUT BY HAND, IS ALREADY IN A SIBLING'S PROSE.
-``wdg-lab/.claude/rules/rem/one-heavy-run-at-a-time.md`` records the identical incident in its own
+``consumer-b/.claude/rules/rem/one-heavy-run-at-a-time.md`` records the identical incident in its own
 words -- "``timeout 600 cargo test ...`` killed only the cargo wrapper while the release test
 executable kept running at full core count for 40+ minutes" -- and asks a HUMAN to run
 ``Get-Process | Where-Object ... | Stop-Process`` afterwards. The kill it asks for is
@@ -26,7 +26,7 @@ here.
 
 WHY THE WIDTH IS IN THIS MODULE AND NOT BESIDE IT. The refusal is not allowed to say "this is a
 different TIER" without having measured how wide the run was, and that is not a stylistic point: the
-single sentence motronics printed for years refused a push from a run its own ledger records as
+single sentence consumer-a printed for years refused a push from a run its own ledger records as
 having ONE worker, on a box whose three earlier runs that day ran at 7, 7 and 6 workers inside the
 same wall. The diagnosis had never been computed, and its remedy sent the reader to a tier that
 would run the same narrowed box for longer. A refusal that names the WRONG remedy is worse than one
@@ -118,7 +118,7 @@ def worker_width(*, gb_per_worker: float, max_width: int, floor: int, reserve_co
 def blas_threads(workers: int) -> int:
     """Threads each WORKER may give its BLAS pool, so N workers do not claim N x cores.
 
-    MEASURED in motronics-studio 2026-09-07, and both ends of the cost came from one cause: nothing
+    MEASURED in consumer-a 2026-09-07, and both ends of the cost came from one cause: nothing
     set any of :data:`BLAS_THREAD_VARS`, so every worker built a pool sized to the WHOLE box -- 53
     threads per worker on 24 logical cores with two workers running, 106 threads competing for 24
     cores, and ~318 in the six-worker run before it. One test took 23x its isolated time and killed
@@ -139,7 +139,7 @@ def reap_tree(pid: int) -> frozenset[int]:
     """End the tree rooted at *pid*, and REFUSE outright when this process is inside it.
 
     THE SELF-MATCH, AND WHY IT IS A REFUSAL RATHER THAN A FILTER. A sweep that reads the process
-    table matches ITSELF: ``wdg-lab/.claude/rules/rem/thirty-minute-run-limit.md`` asks a human to
+    table matches ITSELF: ``consumer-b/.claude/rules/rem/thirty-minute-run-limit.md`` asks a human to
     census survivors and then warns, in its own words, that *"the verification command itself
     matches its own command line, so expect one self-match and ignore it"*. Ignoring is a HUMAN
     step, and a human step is the one missing at 2am. Filtering ourselves out of the kill list

@@ -3,7 +3,7 @@
 A roster row's side comes from a DENSITY bar, which answers *is this file mostly generic?*. That is
 a good question and a DIFFERENT one from *has this already landed upstream?*, and nothing read a
 roster against what :mod:`lab_commons.dev` publishes. MEASURED 2026-09-17 across three tranches of
-motronics-studio's roster: **17 rows declared MOVES, 7 were real** -- the rest were 5 SPLITS and 5
+consumer-a's roster: **17 rows declared MOVES, 7 were real** -- the rest were 5 SPLITS and 5
 rows whose subject was already in the kit. The error ran one way every time, because a row goes
 stale silently: nothing re-reads it after its subject lands.
 

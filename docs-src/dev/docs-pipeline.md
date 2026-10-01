@@ -36,5 +36,5 @@
 
 ## Where the family's own pages stand today
 
-- The pages in this directory are RENDERED as motronics-studio's `family` sub-site (a row in its `scripts/repo/docs.py`), which reads them from a lab-commons checkout beside its primary one, per the section above. They are equally read as markdown from this repo's checkout or from its page on the forge.
+- The pages in this directory are RENDERED as consumer-a's `family` sub-site (a row in its `scripts/repo/docs.py`), which reads them from a lab-commons checkout beside its primary one, per the section above. They are equally read as markdown from this repo's checkout or from its page on the forge.
 - **A box without the sibling checkout gets that row's announced skip naming the clone**, never a portal that silently omits the family half.

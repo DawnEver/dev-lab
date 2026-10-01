@@ -32,7 +32,7 @@ blocklist is still caught at verdict time by the key, so the blocklist stops bei
 CORRECTNESS and becomes a signpost pointing here.
 
 RESOLUTION IS ALLOWED, AND THAT IS THE ONE PLACE THIS DIFFERS FROM THE PRIOR ART IT GENERALISES.
-``motronics-studio``'s ``scripts/gate/native_install.py`` installs with ``--no-index --no-deps``,
+``consumer-a``'s ``scripts/gate/native_install.py`` installs with ``--no-index --no-deps``,
 because its subject is "this must be OUR OWN wheel, built from this checkout, and not a dependency at
 all" -- there, resolving is the hazard. For genuine dependency work resolving is the entire POINT, so
 :attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behaviour available for
@@ -43,7 +43,7 @@ four. The prefix is MEASURED here, identically everywhere. The key is COMPUTED h
 everywhere, because :mod:`lab_commons.dev.envkey` is a function of the interpreter's own
 environment and of nothing repo-shaped. What is left -- where exclusion is RECORDED, and where
 verdicts are STORED -- is genuinely per repo, and those are the two callables :class:`Port` takes.
-A repo that supplies neither (optimi-lab today) still gets steps 1 and 3; steps 2 and 4 then degrade
+A repo that supplies neither (consumer-c today) still gets steps 1 and 3; steps 2 and 4 then degrade
 HONESTLY, with :data:`LOCK_UNDECLARED` / :data:`NO_ANCHORS_DECLARED` rendered in the report. A silent
 skip is the vacuous-green shape this family refuses, so the gap is printed rather than assumed.
 

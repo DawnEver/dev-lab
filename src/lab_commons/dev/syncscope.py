@@ -6,9 +6,9 @@ at. Both are about ONE distribution's version. Neither can see the other half of
 and that half is the one that took a working box apart -- the census says so in its own docstring
 and names this ratchet as ABSENT rather than implying it covers it.
 
-THE INCIDENT, MEASURED 2026-09-18 in the motronics ``feat/optimi-lab`` worktree. ``dep_sync --sync``
+THE INCIDENT, MEASURED 2026-09-18 in the consumer-a ``feat/consumer-c`` worktree. ``dep_sync --sync``
 with NO ``--extra`` SUCCEEDED and took the environment from **113 distributions to 30**: pytest,
-ruff, pre-commit, motronics_native, optimi_lab and wdg-lab among the 83 removed, and the warning
+ruff, pre-commit, consumer_a_native, consumer_c and consumer-b among the 83 removed, and the warning
 printed AFTER the prune. Restoring took two passes, because ``--extra all`` in that repo does NOT
 include ``img-to-cad``. That command classifies ``RESOLVES`` under ``installdoor`` and it is RIGHT:
 the kit build it delivered was the declared one. The environment it delivered could not run a test.
@@ -18,8 +18,8 @@ repo with no pytest cannot produce ANY verdict, so the failure reads as a BROKEN
 broken ENVIRONMENT and the reader is sent to debug the wrong thing. A stale build at least runs.
 
 **AN EXTRAS NAME IS NOT A FACT ABOUT THE COMMAND, IT IS A FACT ABOUT THE MANIFEST.** That is what
-made the incident expensive: ``all`` is a name a reader assumes means everything, and in motronics
-it means ``motronics[euclid,maxwell,pareto,femm,gui,native]`` -- no ``dev`` and no ``img-to-cad``.
+made the incident expensive: ``all`` is a name a reader assumes means everything, and in consumer-a
+it means ``consumer-a[euclid,maxwell,pareto,femm,gui,native]`` -- no ``dev`` and no ``img-to-cad``.
 So every answer here is a JOIN of a command's selection with a repo's ``[project.optional-
 dependencies]``, and a selection naming an extra the manifest does not declare is REFUSED rather
 than scored as empty. ``[project.optional-dependencies]`` is DECLINED as a family base in
@@ -35,7 +35,7 @@ command                                            population
 =================================================  ===========================================
 ``uv sync`` (no ``--extra``)                       base dependencies + project. 113 -> 30.
 ``uv sync --extra pareto --extra dev``             base + those two. MEASURED 2026-09-15 in
-                                                   ``dep_sync``: removed cadquery-ocp, wdg-lab.
+                                                   ``dep_sync``: removed cadquery-ocp, consumer-b.
 ``uv run <anything>`` without ``--no-sync``        the implicit sync, carrying NO extras
 ``uv run --no-sync`` / ``uv sync --inexact``       unchanged -- not a population door
 ``uv pip install`` / ``pip install``               ADDS; pip has no prune verb
@@ -128,7 +128,7 @@ _NAME: Final = re.compile(r'^\s*(?P<name>[A-Za-z0-9._-]+)')
 #: ``uv run --python 3.12 pytest`` as running ``3.12``.
 _VALUE_FLAGS: Final = frozenset({'--directory', '--extra', '--group', '--project', '--python', '--with', '-p'})
 
-#: How a spec names extras of the distribution it references: ``motronics[euclid,maxwell]``.
+#: How a spec names extras of the distribution it references: ``consumer-a[euclid,maxwell]``.
 _EXTRAS_OF: Final = re.compile(r'^\s*[A-Za-z0-9._-]+\s*\[(?P<extras>[^\]]*)\]')
 
 
@@ -136,7 +136,7 @@ class UnknownExtraError(ValueError):
     """A command selects an extra the manifest does not declare, so what it would install is unreadable.
 
     REFUSED RATHER THAN SCORED AS EMPTY, and this is the incident's own shape pointed at the other
-    repo: ``--extra all`` is correct in motronics and names nothing in lab-commons. Treating an
+    repo: ``--extra all`` is correct in consumer-a and names nothing in lab-commons. Treating an
     unknown name as "no extra" would answer the question as if the flag had not been typed.
     """
 
@@ -174,8 +174,8 @@ class Selection:
 def canon(name: str) -> str:
     """The PEP 503 normalised distribution name: case-folded, with runs of ``-_.`` as one ``-``.
 
-    ``img-to-cad`` and ``img_to_cad`` are one extra and ``motronics_native`` and
-    ``motronics-native`` are one distribution; a reader comparing raw spellings scores either pair
+    ``img-to-cad`` and ``img_to_cad`` are one extra and ``consumer_a_native`` and
+    ``consumer-a-native`` are one distribution; a reader comparing raw spellings scores either pair
     as two things and reports a strand that is not there.
     """
     return re.sub(r'[-_.]+', '-', name.strip()).lower()
@@ -207,7 +207,7 @@ def declares_groups(text: str) -> bool:
 def extras(text: str) -> dict[str, frozenset[str]]:
     """Every declared extra of this manifest, as normalised distribution names, SELF-REFERENCES EXPANDED.
 
-    ``all = ["motronics[euclid,maxwell,pareto,femm,gui,native]"]`` is the shape that hid the
+    ``all = ["consumer-a[euclid,maxwell,pareto,femm,gui,native]"]`` is the shape that hid the
     incident: read literally the extra contains one distribution -- the project -- and what it
     actually installs is six other extras that a reader has to go and look up. Expanded here, once,
     so no caller has to know the trick. A reference to a FOREIGN distribution's extras
@@ -280,7 +280,7 @@ def verdict_set(text: str) -> frozenset[str]:
 
     * :data:`RUNNER` -- no pytest, no verdict of any kind.
     * every plugin this repo's own ``[tool.pytest.ini_options]`` NAMES. pytest exits 4 on an
-      unrecognised option, so motronics' ``-n auto`` and ``timeout = 300`` make xdist and timeout
+      unrecognised option, so consumer-a' ``-n auto`` and ``timeout = 300`` make xdist and timeout
       load-bearing, and the two repos whose ``addopts`` carry ``--cov`` require pytest-cov.
     * ``ruff`` -- ``verify`` runs ``ruff format --check`` tree-wide before it promotes anything.
     * ``lab-commons`` when the manifest declares it, because the family's one verify entry point

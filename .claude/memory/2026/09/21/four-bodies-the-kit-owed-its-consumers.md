@@ -1,6 +1,6 @@
 ---
 name: four-bodies-the-kit-owed-its-consumers
-description: A lane audited all seven famtests bodies as adopted by wdg-lab and optimi-lab, found the adoption itself correct and four places where a consumer still had to hand-write an assertion the kit publishes no body for, plus one count pin whose own message claimed to name its members. All five are closed here, and ONE of the closes is a breaking signature change that reds both consumer repos until they pass the new argument.
+description: A lane audited all seven famtests bodies as adopted by consumer-b and consumer-c, found the adoption itself correct and four places where a consumer still had to hand-write an assertion the kit publishes no body for, plus one count pin whose own message claimed to name its members. All five are closed here, and ONE of the closes is a breaking signature change that reds both consumer repos until they pass the new argument.
 metadata:
   type: project
 created: 2026-09-21
@@ -9,7 +9,7 @@ accessed: 2026-09-21
 
 # The adoption was done; the kit still owed four bodies
 
-Measured 2026-09-21 by an audit lane over `wdg-lab` and `optimi-lab`: every consumer file is a thin
+Measured 2026-09-21 by an audit lane over `consumer-b` and `consumer-c`: every consumer file is a thin
 body passing keyword arguments, no forks remain, `FLOOR-ON-EVERY-SCAN` and `PLANTED-CONTROL` are
 intact everywhere. What the audit found instead is the shape one layer in -- **the kit never
 published a body for the thing both consumers were writing by hand**, so the duplication that the
@@ -26,7 +26,7 @@ this family has already paid for that once.
 |---|---|---|
 | `untimedwaits` stated the exemption obligation and published no assertion for it, while its sibling `citedtests` published `assert_every_exemption_is_real` | `untimedwaits.assert_every_exemption_is_real(root, *, exempt)` + `VacuousExemption` | both labs' `test_every_blocking_wait_declares_a_ceiling.py`, 6 identical lines each |
 | `assert_the_source_is_itself_clean()` resolved `Path(__file__)` INSIDE the kit, so the consumer file's own half was uncovered | the body now takes `*, also: Collection[Path]` -- **required, no default** | both labs' `test_no_cjk_in_tracked_source.py`, 2 lines each |
-| `assert_widths_are_the_named_set` merely FLOORED `files_read`, and `WidthScan.undecodable` was declared and read by no assertion anywhere | `injectedwidth.assert_every_document_handed_in_was_read(scan, *, handed)` + `UnreadDocument` | optimi-lab's `test_the_scan_reads_every_doc_handed_to_it` |
+| `assert_widths_are_the_named_set` merely FLOORED `files_read`, and `WidthScan.undecodable` was declared and read by no assertion anywhere | `injectedwidth.assert_every_document_handed_in_was_read(scan, *, handed)` + `UnreadDocument` | consumer-c's `test_the_scan_reads_every_doc_handed_to_it` |
 | `len(BLAS_THREAD_VARS) >= 4` under the message *"by name rather than by count"* | `boundedremedy.assert_the_pool_vars_are_the_named_set()` | both labs' `test_a_bounded_wait_names_its_remedy.py`, 1 line each |
 
 `countpins` explicitly permits a NUMBER as a THRESHOLD, so every other numeric assertion in those
@@ -64,8 +64,8 @@ rather than argued in a docstring.
 ## Environment trap, measured here
 
 `make verify` from lab-commons with the ambient `python` runs
-`D:\Documents\MingyangBao\motronics-studio\.venv\Scripts\python.exe` and imports
-`motronics-studio\.venv\Lib\site-packages\lab_commons\` -- a FROZEN INSTALLED COPY, not the working
+`<home>/consumer-a\.venv\Scripts\python.exe` and imports
+`consumer-a\.venv\Lib\site-packages\lab_commons\` -- a FROZEN INSTALLED COPY, not the working
 tree. `make adoption` done that way reported 5 passed against code that had not changed. Prefix the
 invocation with lab-commons' own `.venv/Scripts` (or call
 `.venv/Scripts/python.exe -m lab_commons.dev.verify` directly) or every verdict this repo produces

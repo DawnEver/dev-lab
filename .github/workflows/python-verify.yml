@@ -3,11 +3,11 @@ name: Python verify (reusable)
 # ============================================================================================
 # THIS FILE IS LOAD-BEARING FOR MORE THAN THIS REPOSITORY.
 #
-# lab-commons is the shared development system for the motronics / optimi-lab / wdg-lab family,
+# lab-commons is the shared development system for the consumer-a / consumer-c / consumer-b family,
 # so it is the natural host for the family's ONE CI definition. This workflow is called by:
 #
 #   * lab-commons itself   -> .github/workflows/ci.yml
-#   * DawnEver/optimi-lab  -> .github/workflows/ci.yml
+#   * DawnEver/consumer-c  -> .github/workflows/ci.yml
 #
 # Editing it changes CI in every caller. That is the point: a second copy of these steps is a
 # second thing to keep in step, and it does not stay in step.
@@ -39,7 +39,7 @@ on:
           ran; a default that must be typed over to shrink is the strongest guard this file holds.
 
           COST, MEASURED 2026-09-19: both consuming repositories (DawnEver/lab-commons,
-          DawnEver/optimi-lab) answer the UNAUTHENTICATED GitHub API with 200, so both are PUBLIC
+          DawnEver/consumer-c) answer the UNAUTHENTICATED GitHub API with 200, so both are PUBLIC
           and GitHub-hosted minutes on all three platforms are FREE -- the 2x Windows and 10x macOS
           multipliers apply to PRIVATE repositories only and are not being paid here. The real
           budget is WALL CLOCK, and the legs run in parallel, so 6 legs cost the slowest one rather
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Both repos derive their version from git (hatch-vcs here, setuptools-scm in
-          # optimi-lab). A shallow clone has no tags, so the BUILD fails before a test runs.
+          # consumer-c). A shallow clone has no tags, so the BUILD fails before a test runs.
           fetch-depth: 0
 
       # Third-party actions ARE pinned, by major version. The floating-first-party argument below
@@ -173,8 +173,8 @@ jobs:
         with:
           script: |
             // `github.repository` and GITHUB_TOKEN resolve to the CALLER's repository: a reusable
-            // workflow runs in the caller's context, so optimi-lab's red opens an issue in
-            // optimi-lab, not here.
+            // workflow runs in the caller's context, so consumer-c's red opens an issue in
+            // consumer-c, not here.
             const {owner, repo} = context.repo;
             const branch = context.ref.replace('refs/heads/', '');
             const title = `CI failing on ${branch}`;

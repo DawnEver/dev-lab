@@ -1,6 +1,6 @@
 """A PARTITION of a population, and the rule that says when partial answers may answer for the whole.
 
-Migrated 2026-09-17 from motronics-studio's ``scripts/gate/_shards.py``. Nothing repo-shaped was
+Migrated 2026-09-17 from consumer-a's ``scripts/gate/_shards.py``. Nothing repo-shaped was
 left behind to strip: the population's directory and filename pattern already arrived as arguments
 there, and :func:`compose` is handed rows somebody else read and parsed. What changed in the move is
 the VOCABULARY -- the outcome is :class:`lab_commons.dev.verdict.Outcome` rather than three bare

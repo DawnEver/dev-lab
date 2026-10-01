@@ -3,7 +3,7 @@
 WHY STATIC, AND IT IS NOT A PERFORMANCE ARGUMENT. The question "which tests need a live engine, and
 which are slow for a reason somebody wrote down" cannot be answered by collecting the suite:
 collection IMPORTS every test module, and a module that discovers a live engine at import time
-starts one. Measured in motronics-studio 2026-08-21: ``_MATLAB_READY`` is evaluated at module scope
+starts one. Measured in consumer-a 2026-08-21: ``_MATLAB_READY`` is evaluated at module scope
 under ``tests/unit/laplace/adapters/matlab/``, so a census that collects starts MATLAB to find out
 whether a test starts MATLAB. That is not an instrument. So everything here comes from the AST and
 NOTHING under the scanned tree is imported -- which also means the reading is safe to take from a

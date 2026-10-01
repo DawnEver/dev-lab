@@ -79,7 +79,7 @@ NOTHING_DECLARED: Final = 'nothing-declared'
 
 #: Repo-relative locations. RELATIVE on purpose: ``.claude/settings.json`` is committed and read on
 #: other boxes, so an absolute ``site-packages`` path in the hook command would be true on exactly
-#: one machine. These are the spellings motronics-studio already uses, so the one repo that was
+#: one machine. These are the spellings consumer-a already uses, so the one repo that was
 #: guarded before this module existed verifies as installed rather than as a variant.
 ENGINE_REL: Final = '.claude/hooks/deny-commands.js'
 RULES_REL: Final = '.claude/hooks/deny-rules.json'

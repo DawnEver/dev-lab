@@ -49,16 +49,16 @@ def test_every_recorded_selection_still_leaves_the_tree_what_the_table_records()
 def test_the_guard_and_not_the_name_decides_within_one_selection() -> None:
     """THE CONTROL THE FAMILY SUPPLIES: one reader, one selection, a guarded and a bare optional extra.
 
-    Until 2026-10-01 this was ``OCP`` degrading in wdg-lab and erroring in motronics. wdg-lab then
+    Until 2026-10-01 this was ``OCP`` degrading in consumer-b and erroring in consumer-a. consumer-b then
     dropped its OCP guard ON PURPOSE (an absent ``[cad3d]`` must red, not skip), so OCP errors in
-    both and that pair no longer disagrees. The property survives inside motronics' sanctioned
+    both and that pair no longer disagrees. The property survives inside consumer-a' sanctioned
     selection: ``OCP`` is a bare import there and strands, while ``cv2`` is imported only after a
     module-scope ``importorskip`` and degrades. A reader that convicted every optional integration
     would strand both; one that trusted the scope would strand neither.
     """
     by_key = {row.key: row for row in ROWS}
-    lab = by_key['wdg-lab[dev]']
-    selection = by_key['motronics-studio[pareto,dev]']
+    lab = by_key['consumer-b[dev]']
+    selection = by_key['consumer-a[pareto,dev]']
     assert 'cadquery-ocp-novtk' in selection.errors
     assert 'cadquery-ocp-novtk' not in selection.degrades
     assert 'opencv-python-headless' in selection.degrades
@@ -75,7 +75,7 @@ def test_the_sanctioned_selection_cannot_collect_the_tree_it_is_sanctioned_for()
     day somebody repairs that manifest this assertion fails, which is the ratchet's second side --
     the repair has to be recorded, not absorbed.
     """
-    row = next(row for row in ROWS if row.key == 'motronics-studio[pareto,dev]')
+    row = next(row for row in ROWS if row.key == 'consumer-a[pareto,dev]')
     # Six since 2026-10-01: the seventh, `opencv-python-headless`, was the reader convicting an import
     # placed after its own module-scope `importorskip` -- an instrument fix, not a manifest repair.
     assert len(row.errors) == 6, sorted(row.errors)
@@ -84,7 +84,7 @@ def test_the_sanctioned_selection_cannot_collect_the_tree_it_is_sanctioned_for()
 
 def test_the_recorded_repair_is_still_one_extra_short() -> None:
     """The incantation the sibling table calls the one that restored the box still strands `pillow`."""
-    row = next(row for row in ROWS if row.key == 'motronics-studio[all,dev,img-to-cad]')
+    row = next(row for row in ROWS if row.key == 'consumer-a[all,dev,img-to-cad]')
     assert row.errors == frozenset({'pillow'}), sorted(row.errors)
 
 
@@ -179,8 +179,8 @@ def test_the_derivation_refuses_to_force_the_half_a_spelling_cannot_reach() -> N
     """
     checked = 0
     for repo, derived, refused in (
-        ('motronics-studio', {'pdfminer': 'pdfminer-six'}, ('win32com', 'pywintypes', 'tomlkit')),
-        ('wdg-lab', {'OCP': 'cadquery-ocp'}, ('pydantic_core', 'scipy')),
+        ('consumer-a', {'pdfminer': 'pdfminer-six'}, ('win32com', 'pywintypes', 'tomlkit')),
+        ('consumer-b', {'OCP': 'cadquery-ocp'}, ('pydantic_core', 'scipy')),
     ):
         if not present(repo):
             continue

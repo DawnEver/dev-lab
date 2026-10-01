@@ -8,7 +8,7 @@ incompletely that nobody had thought of read as a PASS. Here a result STARTS ``I
 PROMOTED only on PROOF that the run covered what it selected. A proof that fails to arrive leaves
 the result exactly where it began, so a new way of running incompletely -- one nobody has thought of
 yet -- degrades to "we do not know" instead of to "it passed". That is measured, not preferred:
-2026-09-15, `optimi_lab` as configured collected 307 tests, hit 3 collection errors, printed
+2026-09-15, `consumer_c` as configured collected 307 tests, hit 3 collection errors, printed
 "Interrupted" and ran ZERO of them -- and nothing in the repo told that apart from the same
 invocation printing "307 passed".
 

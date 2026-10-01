@@ -4,8 +4,8 @@ A row is ``<repo>::<artefact> -> Placement(side, why)``, partitioned by REPO bec
 a lane owns. The machinery that reads it, and the three sides it may use, are `_config_census.py`;
 this file computes nothing, exactly as `_rule_rows.py` computes nothing for `rules.py`.
 
-MEASURED 2026-09-17 against four checkouts: `lab-commons`, `wdg-lab`, `optimi-lab`, and the
-motronics-studio LANE at `.claude/worktrees/feat/optimi-lab` (since retired; see `REPO_PATHS`). Every
+MEASURED 2026-09-17 against four checkouts: `lab-commons`, `consumer-b`, `consumer-c`, and the
+consumer-a LANE at `.claude/worktrees/feat/consumer-c` (since retired; see `REPO_PATHS`). Every
 quantity a row cites is re-derived by the test beside it; the constants below are what it compares
 against, so a number that stops being true reds rather than ageing quietly into prose.
 
@@ -26,7 +26,7 @@ THE TWO HEADLINE FINDINGS, both confirmed and both sharper than the line counts 
    globally ignores B018 B904 E501 RUF012 RUF043 SIM108 SIM113 UP017, which lab-commons enforces.
    So the kit is blind to 50 groups and stricter on 8 codes, and neither half of that is a subset.
 
-2. MOTRONICS' TWO RUFF CONFIGS ARE NOT TWO DECISIONS. `ruff check --show-settings` prints
+2. CONSUMER_A' TWO RUFF CONFIGS ARE NOT TWO DECISIONS. `ruff check --show-settings` prints
    ``Settings path: ...\\ruff.toml``, so `ruff.toml` WINS and `pyproject.toml`'s `[tool.ruff]` is
    never read. What the loser holds is exactly one key -- ``extend = 'ruff.toml'`` -- which names the
    winner and nothing else, so the loser contains nothing the winner does not. It is a dead
@@ -63,19 +63,22 @@ __all__ = [
 ]
 
 #: The four repos of the family, in dependency order: the kit first, then what it ships to.
-REPOS: tuple[str, ...] = ('lab-commons', 'wdg-lab', 'optimi-lab', 'motronics-studio')
+REPOS: tuple[str, ...] = ('lab-commons', 'consumer-b', 'consumer-c', 'consumer-a')
 
 #: Where each consumer is checked out, RELATIVE TO LAB-COMMONS' PARENT: the PRIMARY checkout, by the
-#: same sibling convention `lab-commons/` itself sits under. Until 2026-09-30 the motronics entry named
-#: a lane worktree (`.claude/worktrees/feat/optimi-lab`) that had since been disposed of, so every
+#: same sibling convention `lab-commons/` itself sits under. Until 2026-09-30 the consumer-a entry named
+#: a lane worktree (`.claude/worktrees/feat/consumer-c`) that had since been disposed of, so every
 #: census here silently measured three repos while saying four. A census only READS, and only at
 #: HEAD (`read_at_head`), so reading the integrator's checkout touches nothing in it.
-#: wdg-lab is NOT a direct sibling: the family root groups it with its winding-design neighbours, and
-#: until 2026-10-01 this map said `wdg-lab` and every census silently measured three repos again.
+#: consumer-b is NOT a direct sibling: the family root groups it under an org directory, and until
+#: 2026-10-01 this map said `consumer-b` and every census silently measured three repos again.
+#: THESE ARE NEUTRAL DEFAULTS: this tree is published and names no consumer. A box that has the
+#: siblings maps each name to its real checkout through `LAB_COMMONS_SIBLINGS`
+#: (`lab_commons.dev.doorcensus.sibling_paths`).
 REPO_PATHS: dict[str, str] = {
-    'wdg-lab': 'WindingDesign/wdg-lab',
-    'optimi-lab': 'optimi-lab',
-    'motronics-studio': 'motronics-studio',
+    'consumer-b': 'example-org/consumer-b',
+    'consumer-c': 'consumer-c',
+    'consumer-a': 'consumer-a',
 }
 
 #: The config artefacts under census. ``ruff-config`` is an ARTEFACT rather than a FILE on purpose:
@@ -271,9 +274,9 @@ CONSUMER_IGNORE_CORE: tuple[str, ...] = (
 #: it is five codes across three repos. This is the measurement the SPLITS rows rest on: a seam is
 #: worth naming when the shared side is 62 rows and the private side is one, four and zero.
 CONSUMER_IGNORE_DELTA: dict[str, tuple[str, ...]] = {
-    'wdg-lab': ('ANN205',),
-    'optimi-lab': (),
-    'motronics-studio': ('B023', 'PLR0917', 'RUF002', 'RUF003'),
+    'consumer-b': ('ANN205',),
+    'consumer-c': (),
+    'consumer-a': ('B023', 'PLR0917', 'RUF002', 'RUF003'),
 }
 
 #: Codes lab-commons ENFORCES and every consumer disables. The other direction of finding 1, and the
@@ -372,7 +375,7 @@ HOOK_ID_CORE: tuple[str, ...] = (
 #: while the config still reads as guarded, and no other constant in this file would notice.
 PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
     'lab-commons': (),
-    'wdg-lab': (
+    'consumer-b': (
         'bump-api-version',
         'check-builtin-literals',
         'check-illegal-windows-names',
@@ -385,7 +388,7 @@ PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
         'lint-python',
         'requirements-txt-fixer',
     ),
-    'optimi-lab': (
+    'consumer-c': (
         'check-builtin-literals',
         'check-illegal-windows-names',
         'check-shebang-scripts-are-executable',
@@ -395,7 +398,7 @@ PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
         'fix-byte-order-marker',
         'requirements-txt-fixer',
     ),
-    'motronics-studio': (
+    'consumer-a': (
         'bump-version',
         'commitizen-branch',
         'gate',
@@ -410,11 +413,11 @@ PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
 #: 2026-09-18. It is recorded so the two units can be COMPARED rather than so either is trusted:
 #:
 #:     repo               line delta   own hooks   lines per own hook
-#:     wdg-lab                    38          11                 3.5
-#:     optimi-lab                  8           8                 1.0
-#:     motronics-studio           87           7                12.4
+#:     consumer-b                    38          11                 3.5
+#:     consumer-c                  8           8                 1.0
+#:     consumer-a           87           7                12.4
 #:
-#: By lines motronics is the largest delta in the family by a factor of two, and `Delta.ceiling`'s own
+#: By lines consumer-a is the largest delta in the family by a factor of two, and `Delta.ceiling`'s own
 #: words -- "the point at which this repo's delta has stopped being a delta" -- read 88-against-21 as
 #: a fork. By HOOKS it is the SMALLEST of the three consumers. Nothing about its relationship to the
 #: base differs between the readings: all 11 core ids are present and 19 of the 21 base lines match
@@ -423,18 +426,18 @@ PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
 #: scores hook SOURCING and not distance from the base.
 #:
 #: THE VERDICT THIS SETTLES, recorded here because a conclusion in a report is not a deliverable:
-#: `.pre-commit-config.yaml` IS adoptable for motronics-studio and is NOT past the ceiling. It is not
+#: `.pre-commit-config.yaml` IS adoptable for consumer-a and is NOT past the ceiling. It is not
 #: FREE -- the 2 base lines it does not match are `rev:` pins (`v5.0.0` -> `v6.0.0`, `v4.6.0` ->
 #: `v4.13.9`), a real upstream version bump changing what runs on every commit there, which belongs in
 #: its own commit saying so. Neither this repo nor that test performs it.
-#: RE-TAKEN 2026-10-01 for motronics-studio: 88, with its own-hook set unchanged. 87 was read from the
+#: RE-TAKEN 2026-10-01 for consumer-a: 88, with its own-hook set unchanged. 87 was read from the
 #: retired lane worktree `REPO_PATHS` used to name; the primary checkout's file is byte-identical to
 #: its 2026-09-18 adoption commit and measures 88 there too.
 PRECOMMIT_LINE_DELTA: dict[str, int] = {
     'lab-commons': 0,
-    'wdg-lab': 38,
-    'optimi-lab': 8,
-    'motronics-studio': 88,
+    'consumer-b': 38,
+    'consumer-c': 8,
+    'consumer-a': 88,
 }
 
 #: Git hooks actually INSTALLED, per repo, measured 2026-09-17 -- the ratchet's other side for the
@@ -446,7 +449,7 @@ PRECOMMIT_LINE_DELTA: dict[str, int] = {
 #: git (`--absolute-git-dir`, and for a WORKTREE the common dir one level up), which is exactly the
 #: mechanism `lab_commons.dev.hook_install` exists to supply and which a shell one-liner does not
 #: have. The second is upstream's: `hook_install`'s docstring records ZERO installed hooks in
-#: wdg-lab and optimi-lab on 2026-09-16, and a day later both have them, so that measurement is now
+#: consumer-b and consumer-c on 2026-09-16, and a day later both have them, so that measurement is now
 #: historical and this table is the live one.
 #:
 #: THE MISSING STAGE WAS CLOSED THE SAME DAY IT WAS RECORDED, and how it was found is the part worth
@@ -481,9 +484,9 @@ PRECOMMIT_LINE_DELTA: dict[str, int] = {
 #: to have on PATH.
 INSTALLED_HOOKS: dict[str, tuple[str, ...]] = {
     'lab-commons': ('commit-msg', 'pre-commit'),
-    'wdg-lab': ('commit-msg', 'pre-commit', 'pre-push'),
-    'optimi-lab': ('commit-msg', 'pre-commit'),
-    'motronics-studio': ('commit-msg', 'pre-commit', 'pre-push'),
+    'consumer-b': ('commit-msg', 'pre-commit', 'pre-push'),
+    'consumer-c': ('commit-msg', 'pre-commit'),
+    'consumer-a': ('commit-msg', 'pre-commit', 'pre-push'),
 }
 
 
@@ -533,7 +536,7 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         'one package and the others have several. What breaks if that line moved: a generated version '
         'file gets committed and the build stops being reproducible from the tag.'
         ' ADDED 2026-10-01, locally: `.claude/.rem-state.json`, the rem plugin`s device-local state. '
-        'It is NOT a base line -- optimi-lab names it literally, wdg-lab and motronics reach it through '
+        'It is NOT a base line -- consumer-c names it literally, consumer-b and consumer-a reach it through '
         '`**/.claude/**` -- so it is outside the three-way core and the share above does not move.',
     ),
     'lab-commons::Makefile': Placement(
@@ -553,7 +556,7 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         'ABSENT UNTIL 2026-09-17, AND THE ABSENCE WAS THE ROW. This repo SHIPS the hook machinery -- '
         '`dev.hook_install` (is a declared hook actually in the directory git consults), `dev.hooks` '
         'and `dev.hook_adoption` (the denied shapes and their remedies), `dev.githooks` (the '
-        'bump-version payload wdg-lab now calls BY NAME rather than by copy), the `lab-with-venv` '
+        'bump-version payload consumer-b now calls BY NAME rather than by copy), the `lab-with-venv` '
         'bootstrap -- and ran none of it on itself: no config, no installed hook, no commit-time check '
         'of any kind. It was finding 1 one layer out, the kit held to less than what it ships. IT IS '
         'NOW A SPLIT WHOSE REPO HALF IS EMPTY, and that is the whole repair: the artefact is the '
@@ -575,7 +578,7 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         'THE ORIGIN OF THE SHARED TREE, so "stays" here is a statement about the other three. Thirteen '
         'pages, and the split measured across the family is not 13/1/1/14 as a line count suggests: the '
         'labs` single page is a POINTER TABLE generated by `lab_commons.dev.devdocs.pointer_table` and '
-        'motronics` 14 share nine FILENAMES with this tree, every one of them already reduced to a '
+        'consumer-a` 14 share nine FILENAMES with this tree, every one of them already reduced to a '
         'pointer plus a local delta. So this is the only tree in the family holding the family`s '
         'mechanism as prose, which is what makes it the one that may not move. What breaks if it moved: '
         'the pointer tables in all three consumers resolve to nothing, and `devdocs.PAGES` -- the data '
@@ -584,10 +587,10 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
 }
 
 
-# ------------------------------------------------------------------ wdg-lab
+# ------------------------------------------------------------------ consumer-b
 
-ROWS_WDG_LAB: dict[str, Placement] = {
-    'wdg-lab::pyproject.toml': Placement(
+ROWS_CONSUMER_B: dict[str, Placement] = {
+    'consumer-b::pyproject.toml': Placement(
         STAYS,
         'THE LARGEST OF THE FOUR AT 344 LINES, and the size is its subject: a maturin/Rust build, a web '
         'backend, and a dependency set that names this repo`s own domain. The packaging half of a '
@@ -596,19 +599,19 @@ ROWS_WDG_LAB: dict[str, Placement] = {
         'question inside it is `[tool.ruff]`, which this census keys separately because it is the half '
         'that is byte-identical to two other repos.',
     ),
-    'wdg-lab::ruff-config': Placement(
+    'consumer-b::ruff-config': Placement(
         SPLITS,
-        'SHARED WITH OPTIMI-LAB AND MOTRONICS TO WITHIN ONE CODE. Measured: the 58-selector `select` is '
+        'SHARED WITH CONSUMER_C AND CONSUMER_A TO WITHIN ONE CODE. Measured: the 58-selector `select` is '
         'IDENTICAL across all three (symmetric difference EMPTY, all three pairs); line-length 120, '
         'target py313, unsafe-fixes true, quote-style single, preview false are identical too; and this '
         'repo`s ignore list is the 62-code core plus exactly ONE code, ANN205. THE SEAM is therefore '
         'sharp: select + the 62 ignores are the base, and the delta is `ANN205`, `exclude` (which names '
         '`experiment/`, `ignore/`, `input/`, `scripts/setup.py` -- trees only this repo has) and 7 '
-        '`per-file-ignores` paths into `src/wdg_lab/wdg_viz/`, which is legacy code being brought up '
+        '`per-file-ignores` paths into `src/consumer_b/consumer_b_viz/`, which is legacy code being brought up '
         'rather than a policy. What breaks if the base moved: nothing here -- it would move to a file '
         'this repo already depends on, and the 7 viz paths stay because a path is a fact about a tree.',
     ),
-    'wdg-lab::.gitignore': Placement(
+    'consumer-b::.gitignore': Placement(
         SPLITS,
         '61 LIVE PATTERNS OVER A 12-PATTERN CONSUMER CORE. THE SEAM is that core -- the caches, '
         '`.venv*`, `.coverage*`, `**/.env`, `**/log/*.log`, `uv.lock`, `*.c`, `*.spec` -- which is a '
@@ -619,7 +622,7 @@ ROWS_WDG_LAB: dict[str, Placement] = {
         'repo might have, which is how an ignore file acquires patterns nobody can attribute -- the '
         'exact failure mode a SPLITS seam exists to avoid.',
     ),
-    'wdg-lab::Makefile': Placement(
+    'consumer-b::Makefile': Placement(
         SPLITS,
         'NINETEEN TARGETS, THE MOST OF THE FOUR, AND EIGHT OF THEM ARE THE CONSUMER CORE (`all`, '
         '`clean`, `fmt`, `install`, `install-dev`, `lint`, `test`, `test-parallel` -- measured as the '
@@ -630,7 +633,7 @@ ROWS_WDG_LAB: dict[str, Placement] = {
         'moved: nothing, provided `verify` keeps its meaning; what breaks if `serve` moved is that a '
         'shared Makefile would reference a backend three of the four repos do not have.',
     ),
-    'wdg-lab::.pre-commit-config.yaml': Placement(
+    'consumer-b::.pre-commit-config.yaml': Placement(
         SPLITS,
         'THE SEAM IS ALREADY HALF-CUT HERE, AND IT IS THE PROOF THE OTHER ROWS REST ON: `bump-api-version` '
         'runs `python -m lab_commons.dev.githooks bump-version` -- the payload reached BY NAME after a '
@@ -644,7 +647,7 @@ ROWS_WDG_LAB: dict[str, Placement] = {
         '2026-09-17), but no `commit-msg` hook is, and `commitizen` runs at that stage -- so the '
         'message-format half of this 98-line file governs nothing while the rest of it works.',
     ),
-    'wdg-lab::docs-src/dev/': Placement(
+    'consumer-b::docs-src/dev/': Placement(
         MOVES,
         'ALREADY MOVED, AND THE "1" IS THE EVIDENCE RATHER THAN THE GAP. The single page is 30 lines and '
         'is a POINTER TABLE into `../../../lab-commons/docs-src/dev/`, listing all 12 family pages and '
@@ -658,10 +661,10 @@ ROWS_WDG_LAB: dict[str, Placement] = {
 }
 
 
-# ------------------------------------------------------------------ optimi-lab
+# ------------------------------------------------------------------ consumer-c
 
-ROWS_OPTIMI_LAB: dict[str, Placement] = {
-    'optimi-lab::pyproject.toml': Placement(
+ROWS_CONSUMER_C: dict[str, Placement] = {
+    'consumer-c::pyproject.toml': Placement(
         STAYS,
         '225 LINES WHOSE SUBJECT IS THIS DISTRIBUTION: the package name, the optimiser dependencies and '
         'the extras a consumer installs. A pyproject is the one artefact per repo that is repo-shaped '
@@ -670,7 +673,7 @@ ROWS_OPTIMI_LAB: dict[str, Placement] = {
         'shared question inside it and is keyed as its own artefact, which is what lets this row be a '
         'clean STAYS instead of a SPLITS that never names its seam.',
     ),
-    'optimi-lab::ruff-config': Placement(
+    'consumer-c::ruff-config': Placement(
         SPLITS,
         'THE PUREST CASE IN THE CENSUS, AND THE ONE THAT MAKES "NEAR-IDENTICAL" A MEASUREMENT RATHER '
         'THAN AN IMPRESSION: this repo`s ignore list IS the 62-code consumer core with NOTHING added '
@@ -681,7 +684,7 @@ ROWS_OPTIMI_LAB: dict[str, Placement] = {
         'claim a SPLITS row has to survive -- there is no code in this file the other two do not also '
         'have, so the repo-shaped delta here is a five-entry path list and nothing else.',
     ),
-    'optimi-lab::.gitignore': Placement(
+    'consumer-c::.gitignore': Placement(
         SPLITS,
         'THIRTY LIVE PATTERNS, THE SMALLEST CONSUMER, AND 12 OF THEM ARE THE SHARED CORE -- so 40 per '
         'cent of this file is the family`s and the rest is this repo`s trees (`archived/`, `output/`, '
@@ -692,7 +695,7 @@ ROWS_OPTIMI_LAB: dict[str, Placement] = {
         'nobody can attribute to a tree is one nobody dares delete -- which is how an ignore file '
         'reaches 61 lines, as the sibling repo`s already has.',
     ),
-    'optimi-lab::Makefile': Placement(
+    'consumer-c::Makefile': Placement(
         SPLITS,
         'FIFTEEN TARGETS, AND THE CLOSEST OF THE THREE CONSUMERS TO THE KIT`S OWN: it is the only one '
         'besides lab-commons carrying BOTH `fmt-check` and `adoption`, and it has `verify` as well -- so '
@@ -703,7 +706,7 @@ ROWS_OPTIMI_LAB: dict[str, Placement] = {
         'moved: nothing -- it would become one line calling the module this repo already depends on, '
         'and the three-repo drift in what `verify` MEANS would stop being possible.',
     ),
-    'optimi-lab::.pre-commit-config.yaml': Placement(
+    'consumer-c::.pre-commit-config.yaml': Placement(
         SPLITS,
         'THE THINNEST LIVE CONFIG OF THE THREE, AND ALMOST ALL OF IT IS THE SHARED HALF: 19 declared '
         'hooks, of which 11 are the consumer core and the rest are the remainder of the same upstream '
@@ -715,9 +718,9 @@ ROWS_OPTIMI_LAB: dict[str, Placement] = {
         '`commitizen` -- the one hook here that is not from that whitelist -- runs at that stage. So '
         'the only repo-specific thing this file declares is the one part of it nothing executes.',
     ),
-    'optimi-lab::docs-src/dev/': Placement(
+    'consumer-c::docs-src/dev/': Placement(
         MOVES,
-        'ALREADY MOVED, SAME DAY AND SAME SHAPE AS WDG-LAB: one 30-line page, a pointer table into '
+        'ALREADY MOVED, SAME DAY AND SAME SHAPE AS CONSUMER_B: one 30-line page, a pointer table into '
         '`../../../lab-commons/docs-src/dev/` generated by `lab_commons.dev.devdocs.pointer_table`, '
         'listing the same 12 family pages. Its text is sharper than its sibling`s on one point worth '
         'keeping: it says this repo had no `docs-src/` tree AT ALL before that day, so the "1" is a '
@@ -729,10 +732,10 @@ ROWS_OPTIMI_LAB: dict[str, Placement] = {
 }
 
 
-# ------------------------------------------------------------------ motronics-studio (the LANE)
+# ------------------------------------------------------------------ consumer-a (the LANE)
 
-ROWS_MOTRONICS: dict[str, Placement] = {
-    'motronics-studio::pyproject.toml': Placement(
+ROWS_CONSUMER_A: dict[str, Placement] = {
+    'consumer-a::pyproject.toml': Placement(
         SPLITS,
         'STAYS ON ITS PACKAGING HALF for the reason every pyproject does -- the distribution name, the '
         'Rust/maturin build, the `[tool.pyright]` include list that a pre-push hook reads as its own '
@@ -744,7 +747,7 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         'reports it loaded. What breaks if it is LEFT: the next reader edits the file ruff does not '
         'read, and the edit passes every test in this repo.',
     ),
-    'motronics-studio::ruff-config': Placement(
+    'consumer-a::ruff-config': Placement(
         SPLITS,
         'THE ONLY REPO WITH A STANDALONE `ruff.toml`, AND IT IS THE WINNER -- verified by '
         '`ruff check --show-settings`, not by reading ruff`s documentation. Its content is the family`s: '
@@ -757,7 +760,7 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         'now bans CJK in tracked files outright. What breaks if the base moved: nothing -- the three '
         'consumers already agree on it to within five codes in total.',
     ),
-    'motronics-studio::.gitignore': Placement(
+    'consumer-a::.gitignore': Placement(
         SPLITS,
         '73 LIVE PATTERNS, THE LARGEST, AND THE SHARED CORE IS THE SAME 12 the other consumers hold. '
         'THE SEAM is that core. What STAYS is everything that names a tree only this repo has: `attic/` '
@@ -768,7 +771,7 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         'suffixes three of the four repos have never seen, and nobody deleting one could tell whether '
         'some other repo still needed it -- the un-attributable-pattern failure mode again.',
     ),
-    'motronics-studio::Makefile': Placement(
+    'consumer-a::Makefile': Placement(
         SPLITS,
         'SIXTEEN TARGETS, AND THE GAP THIS ROW WAS WRITTEN AROUND IS CLOSED. It used to read "the only '
         'one of the four with no `verify` target at all", and said the move could not be mistaken for '
@@ -787,9 +790,9 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         'two lines that refute it. What DOES diverge is the VERDICT -- `scripts/gate/runner.py '
         '{measure|gate|heavy}` knows cases, solvers and the live vendor engines and separates '
         'INCONCLUSIVE from PASS/FAIL, none of which the kit`s portable remainder models or should. '
-        'That divergence is correct and motronics now declares it with a test.',
+        'That divergence is correct and consumer-a now declares it with a test.',
     ),
-    'motronics-studio::.pre-commit-config.yaml': Placement(
+    'consumer-a::.pre-commit-config.yaml': Placement(
         SPLITS,
         'THE ONLY CONFIG IN THE FAMILY WHOSE EVERY DECLARED STAGE IS WIRED -- `commit-msg`, `pre-commit` '
         'and `pre-push` are all present in the checkout`s hooks directory (measured 2026-09-17, through '
@@ -812,7 +815,7 @@ ROWS_MOTRONICS: dict[str, Placement] = {
         'against `v6.0.0`, `v4.13.9`), so adoption is a real upstream version bump that changes what '
         'runs on every commit here and belongs in its own commit stating that.',
     ),
-    'motronics-studio::docs-src/dev/': Placement(
+    'consumer-a::docs-src/dev/': Placement(
         SPLITS,
         'THE SEAM IS CUT AND EXECUTED, AND THE 14 IS NOT A COPY OF THE KIT`S 13. Nine filenames are '
         'shared with lab-commons and every one of them has already been reduced to a POINTER plus this '
@@ -831,9 +834,9 @@ ROWS_MOTRONICS: dict[str, Placement] = {
 #: repo its partition names, so a row that drifts into the wrong table is an import-time failure.
 PARTITIONS: tuple[tuple[str, dict[str, Placement]], ...] = (
     ('lab-commons', ROWS_LAB_COMMONS),
-    ('wdg-lab', ROWS_WDG_LAB),
-    ('optimi-lab', ROWS_OPTIMI_LAB),
-    ('motronics-studio', ROWS_MOTRONICS),
+    ('consumer-b', ROWS_CONSUMER_B),
+    ('consumer-c', ROWS_CONSUMER_C),
+    ('consumer-a', ROWS_CONSUMER_A),
 )
 
 
@@ -848,15 +851,15 @@ PARTITIONS: tuple[tuple[str, dict[str, Placement]], ...] = (
 MACHINE_EXCLUDES: tuple[str, ...] = ('**/__version__.py', '.git', '.venv*')
 
 #: EVERY EXCLUDE THAT HIDES REAL SOURCE, per repo, RE-MEASURED 2026-09-18 from the live config ruff
-#: resolves (so the motronics row is read from `ruff.toml`, which wins there, and the other three from
-#: `[tool.ruff]`), each repo read at HEAD: lab-commons `069ce2b`, wdg-lab `ef5fa9fc`, optimi-lab
-#: `e3502ec`, the motronics lane `bc8ca7cc`.
+#: resolves (so the consumer-a row is read from `ruff.toml`, which wins there, and the other three from
+#: `[tool.ruff]`), each repo read at HEAD: lab-commons `069ce2b`, consumer-b `ef5fa9fc`, consumer-c
+#: `e3502ec`, the consumer-a lane `bc8ca7cc`.
 #:
 #: WHY THIS IS A CEILING AND NOT A VERDICT. An exclude is the WIDEST waiver a ruff config can write --
 #: it drops all 58 selectors over a subtree and names no code at all -- and until this table existed
 #: nothing in the family read one, so the rows below had never been counted, let alone judged.
 #: Judging them is not this table's to do: `attic` and `.claude/memory` are declared read-only archives
-#: in motronics' own AGENTS.md, and wdg-lab's `output` and `ignore` are that repo`s scratch trees.
+#: in consumer-a' own AGENTS.md, and consumer-b's `output` and `ignore` are that repo`s scratch trees.
 #: What the table buys is that the NEXT one arrives as an edit to a named set with a reason, rather
 #: than as a line in a file nothing reads. It may only SHRINK.
 #:
@@ -864,8 +867,8 @@ MACHINE_EXCLUDES: tuple[str, ...] = ('**/__version__.py', '.git', '.venv*')
 #: A lane in each lab spent them at the source and the deletion here is the compulsory other half --
 #: a declared waiver whose config line is gone asserts a constraint on code that no longer exists.
 #: Two were ARGUED rather than assumed, and both arguments are facts about the tree rather than
-#: judgements: wdg-lab's `scripts/setup.py` is not a tracked path at `ef5fa9fc` at all, and
-#: optimi-lab's `archived` at `e3502ec` holds exactly one tracked file, a ZERO-BYTE `README.md`, with
+#: judgements: consumer-b's `scripts/setup.py` is not a tracked path at `ef5fa9fc` at all, and
+#: consumer-c's `archived` at `e3502ec` holds exactly one tracked file, a ZERO-BYTE `README.md`, with
 #: no Python anywhere under it. An exclude over an empty tree hides nothing and reads as if it hid
 #: something, which is the widest waiver in the config spent on nothing at all.
 #:
@@ -873,9 +876,9 @@ MACHINE_EXCLUDES: tuple[str, ...] = ('**/__version__.py', '.git', '.venv*')
 #: ships the standard opens every file it tracks.
 TREE_EXCLUDES: dict[str, tuple[str, ...]] = {
     'lab-commons': (),
-    'wdg-lab': ('.claude', 'archived', 'ignore', 'output'),
-    'optimi-lab': ('ignore', 'output'),
-    'motronics-studio': ('.claude/memory', 'attic'),
+    'consumer-b': ('.claude', 'archived', 'ignore', 'output'),
+    'consumer-c': ('ignore', 'output'),
+    'consumer-a': ('.claude/memory', 'attic'),
 }
 
 #: EVERY PER-FILE WAIVER IN THE FAMILY as ``'<glob>::<code>'``, MEASURED 2026-09-18. A glob carrying
@@ -883,19 +886,19 @@ TREE_EXCLUDES: dict[str, tuple[str, ...]] = {
 #:
 #: THE THREE POSITIONS HERE ARE ALL DIFFERENT AND THE TABLE IS WHERE THAT BECOMES VISIBLE. lab-commons
 #: waives ten codes over `tests/**`, each line in its own `pyproject.toml` naming the property of a
-#: test tree that makes the rule inapplicable. wdg-lab waives two codes over FIVE globs, three of them
-#: `PLR0917` over a visualisation subtree -- down from seven and five, because `wdg_viz/backend/**`
-#: and `wdg_viz/utils.py` were SPENT at the source on 2026-09-18 rather than defended, and the two
-#: rows here went with them in the same ratchet. 17 -> 15. motronics waives NOTHING, by a 2026-08-02
+#: test tree that makes the rule inapplicable. consumer-b waives two codes over FIVE globs, three of them
+#: `PLR0917` over a visualisation subtree -- down from seven and five, because `consumer_b_viz/backend/**`
+#: and `consumer_b_viz/utils.py` were SPENT at the source on 2026-09-18 rather than defended, and the two
+#: rows here went with them in the same ratchet. 17 -> 15. consumer-a waives NOTHING, by a 2026-08-02
 #: user directive its `ruff.toml` states in full -- a waiver belongs in the file it governs, as an
 #: inline suppression comment carrying a reason, never in a central table -- and
 #: `tests/architecture/ratchets/test_suppression_ratchet.py` pins that repo's table at zero pairs.
-#: optimi-lab has none either, and declares nothing about it.
+#: consumer-c has none either, and declares nothing about it.
 #:
 #: SO THE FAMILY HOLDS ONE REPO'S PRINCIPLE, ONE REPO'S ZERO AND TWO REPOS' LISTS, and which of those
 #: is the family answer is a decision nobody has taken. It is recorded as a ceiling rather than
-#: legislated from here, for the same reason the eight-code waiver set is: the remedy for a wdg-lab row
-#: is in wdg-lab.
+#: legislated from here, for the same reason the eight-code waiver set is: the remedy for a consumer-b row
+#: is in consumer-b.
 PER_FILE_WAIVERS: dict[str, tuple[str, ...]] = {
     'lab-commons': (
         'tests/**::ANN001',
@@ -909,13 +912,13 @@ PER_FILE_WAIVERS: dict[str, tuple[str, ...]] = {
         'tests/**::S101',
         'tests/**::SLF001',
     ),
-    'wdg-lab': (
+    'consumer-b': (
         'examples/tasks/**::T201',
         'scripts/*.py::T201',
-        'src/wdg_lab/wdg_viz/backend3d/**::PLR0917',
-        'src/wdg_lab/wdg_viz/connection/**::PLR0917',
-        'src/wdg_lab/wdg_viz/visualize_2d.py::PLR0917',
+        'src/consumer_b/consumer_b_viz/backend3d/**::PLR0917',
+        'src/consumer_b/consumer_b_viz/connection/**::PLR0917',
+        'src/consumer_b/consumer_b_viz/visualize_2d.py::PLR0917',
     ),
-    'optimi-lab': (),
-    'motronics-studio': (),
+    'consumer-c': (),
+    'consumer-a': (),
 }

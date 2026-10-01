@@ -140,7 +140,7 @@ def test_uv_run_is_a_wrapper_but_uv_itself_is_still_a_command(tmp_path: Path) ->
 
     `uv run X` unwraps to X, but `uv sync`/`uv add`/`uv pip` are commands in their own right:
     stripping a bare `uv` would leave the segment reading `sync`, and a
-    rule naming `uv sync` -- motronics-studio ships one, this registry does not -- would go quiet.
+    rule naming `uv sync` -- consumer-a ships one, this registry does not -- would go quiet.
 
     Driven through a rule this test writes, because the property belongs to the ENGINE and no
     shipped row depends on it yet. A consumer's rule must not be the only thing that notices.

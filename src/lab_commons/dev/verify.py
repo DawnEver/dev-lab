@@ -1,7 +1,7 @@
 """The family's ONE verify entry point: ``python -m lab_commons.dev.verify``.
 
 WHY IT IS HERE AND NOT IN A REPO. Four repos share this library, and exactly one of them --
-motronics-studio -- has an entry point that produces a :class:`~lab_commons.dev.verdict.Verdict`
+consumer-a -- has an entry point that produces a :class:`~lab_commons.dev.verdict.Verdict`
 (a 1770-line ``scripts/gate/runner.py`` that knows about cases, solvers and vendor engines, and
 is not portable to a repo that has none of those). The other three have NOTHING, so an agent
 working in one can only type a bare ``pytest`` line -- which the family's hooks deny, and they
@@ -100,7 +100,7 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 #:          ZERO named node ids, fired its own disagreement check, and reported INCONCLUSIVE. Every
 #:          red run in every repo would have come back "nobody knows" instead of "these tests
 #:          failed" -- which is precisely the merge this module's docstring says must never happen,
-#:          committed by the module that forbids it. MEASURED on optimi-lab: `2 failed, 130 passed`
+#:          committed by the module that forbids it. MEASURED on consumer-c: `2 failed, 130 passed`
 #:          read as `inconclusive ... the summary names 2 failure(s) and the output names 0 node
 #:          id(s)`.
 #:   ``E``  ERRORS, for the same reason one letter over: an errored test is not a failed one, and a
@@ -163,7 +163,7 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
     log what it had printed when somebody killed it -- and so a step that is merely SLOW shows
     progress while it runs, which is the property this function is measured against.
 
-    MEASURED 2026-09-16, on wdg-lab: a run sat 26+ minutes with nothing in its log but the two ruff
+    MEASURED 2026-09-16, on consumer-b: a run sat 26+ minutes with nothing in its log but the two ruff
     lines while pytest was genuinely working the whole time, and the log's mtime was frozen. Two
     defects stacked to produce that, and both are fixed here rather than one:
 

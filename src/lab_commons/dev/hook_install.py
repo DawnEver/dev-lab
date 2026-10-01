@@ -2,12 +2,12 @@
 
 THE GAP THIS CLOSES, AND IT IS NOT HYPOTHETICAL IN ANY OF THESE TREES. A
 ``.pre-commit-config.yaml`` is a DECLARATION; ``pre-commit install`` is a separate act on a separate
-machine; nothing links the two. Measured in motronics-studio on 2026-08-12: two checkouts declared
+machine; nothing links the two. Measured in consumer-a on 2026-08-12: two checkouts declared
 pre-push hooks and ZERO hook files existed on disk in either -- every push had run none of them,
-while the tree read as guarded. Measured again on 2026-09-16, one level out: ``wdg-lab`` and
-``optimi-lab`` each declare a full ``.pre-commit-config.yaml`` and each have ZERO hooks installed.
+while the tree read as guarded. Measured again on 2026-09-16, one level out: ``consumer-b`` and
+``consumer-c`` each declare a full ``.pre-commit-config.yaml`` and each have ZERO hooks installed.
 Three repos, one defect, and the mechanism that could see it lived in exactly one of them
-(``motronics-studio/scripts/repo/_hooks.py``), which is why it is here now.
+(``consumer-a/scripts/repo/_hooks.py``), which is why it is here now.
 
 THIS IS THE FAMILY HALF ONLY. What stays with a repo is the configuration's NAME and the tree it
 asks about; what is universal is resolving the hooks directory THROUGH GIT rather than string-
@@ -23,7 +23,7 @@ SPELLED: :func:`install_command` builds it from the configuration, because a sta
 configuration must not leave a restatement quietly wrong -- the half-configured state this module
 exists to make visible, one level up.
 
-Provenance: the installation half of motronics-studio's ``scripts/repo/_hooks.py``, migrated
+Provenance: the installation half of consumer-a's ``scripts/repo/_hooks.py``, migrated
 2026-09-16. The formatting half (format-before-staging) stayed: its subject is that repo's commit
 loop, not the family's.
 """
@@ -251,7 +251,7 @@ def install_command(repo: Path, *, config_name: str = DEFAULT_CONFIG_NAME) -> li
     """The exact ``pre-commit install`` argv that satisfies THIS repository, from its own config.
 
     THE STAGE LIST HAS ONE SOURCE, and it is the configuration. Restating it costs what a
-    restatement always costs: motronics-studio's ``Makefile`` named two of the three stages
+    restatement always costs: consumer-a's ``Makefile`` named two of the three stages
     (measured 2026-09-02 on a fresh box), so every ``stages: [pre-commit]`` hook was declared and
     never installed while the hooks directory looked populated. Callers that need the command ASK
     for it; nobody spells it.

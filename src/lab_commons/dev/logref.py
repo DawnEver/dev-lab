@@ -37,7 +37,7 @@ MARKER: Final = 'VERDICT '
 #: beside it, and living in the same module as its producer. It used to spell ``^VERDICT `` as a
 #: regex literal while :meth:`lab_commons.dev.verdict.Verdict.line` pasted :data:`MARKER` into an
 #: f-string of its own -- two spellings of one grammar in two modules, neither obliged to follow
-#: the other when either moved. That is not hypothetical: motronics measured it on 2026-08-21,
+#: the other when either moved. That is not hypothetical: consumer-a measured it on 2026-08-21,
 #: when a consumer still grepping the previous stamp matched NOTHING and reported "no verdict" for
 #: every commit, which is indistinguishable from a box where no gate had ever run. The READER
 #: MOVES NEXT TO THE WRITER, so the two cannot drift even in principle.

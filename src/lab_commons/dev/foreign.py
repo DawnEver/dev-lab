@@ -73,7 +73,7 @@ PROSE: Final = 'prose'
 #: PROSE IS DECIDED BY LENGTH, NOT BY POSITION, and this constant is that claim. A row`s ``why=``
 #: field is a paragraph explaining a decision -- it sits in executable position and is prose by
 #: SUBJECT, and reading it as a live value would report 22 sentences as data about a sibling while
-#: the four values that really are data (`'wdg-lab'`, `'pareto'`) drowned in them. A string long
+#: the four values that really are data (`'consumer-b'`, `'pareto'`) drowned in them. A string long
 #: enough to be a sentence is prose wherever it lives; a short one is a VALUE. MEASURED: every real
 #: datum found in this package is under 20 characters and every justification over 200.
 _SENTENCE: Final = 120
@@ -129,7 +129,7 @@ def classify_text(text: str, siblings: tuple[str, ...]) -> str | None:
     Args:
         text: the string to read.
         siblings: the repo names, LONGEST FIRST. Order is the caller's because the data half owns
-            it: ``motronics`` is a prefix of ``motronics-studio``, and a finding that misnames its
+            it: ``consumer-a`` is a prefix of ``consumer-a``, and a finding that misnames its
             subject sends the reader to the wrong tree.
 
     Returns:

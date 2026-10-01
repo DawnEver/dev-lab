@@ -81,7 +81,7 @@ def test_a_unit_that_cannot_convert_to_the_declaration_is_refused(tmp_path: Path
 
 
 def test_the_walk_descends_arrays_of_tables(tmp_path: Path) -> None:
-    """THE MEASURED MISS. Six of motronics' 49 keys live only under `[[...]]` rows.
+    """THE MEASURED MISS. Six of consumer-a' 49 keys live only under `[[...]]` rows.
 
     A dict-only walk reports this tree clean, which is the same answer a clean tree gives.
     """

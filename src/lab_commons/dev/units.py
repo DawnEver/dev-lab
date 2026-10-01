@@ -35,10 +35,10 @@ two things are exempt, and both are PROOFS rather than guesses:
 * a PARAMETER or a DECLARED FIELD whose ANNOTATION is a quantity spelling, taken as the terminal name ending in
   ``Quantity`` or ``Type``. ``Type`` is in the set on measurement rather than on taste: the family declares its
   quantity types as ``LengthType``/``TorqueType`` via ``lab_commons.units.get_quantity_type``, and MEASURED 2026-09-15
-  in motronics, of the annotations written on a unit-suffixed name, 822 are ``float`` and 181 are absent -- all of
+  in consumer-a, of the annotations written on a unit-suffixed name, 822 are ``float`` and 181 are absent -- all of
   them still violations -- while ``LengthType`` appears ONCE and that one IS a quantity.
 
-NOTHING WIDER, and the boundary is a measurement: 120 assignments in motronics have a unit-suffixed name and a
+NOTHING WIDER, and the boundary is a measurement: 120 assignments in consumer-a have a unit-suffixed name and a
 ``BinOp`` right-hand side, and NONE of them contains a quantity constructor, so exempting ``depth_mm = float(depth_m)
 * 1000.0`` would be a guess about a type the AST cannot see -- which is what "provably" exists to exclude. Everything
 else is unchanged: a bare ``float``, ``int`` or unannotated name ending in a unit token is still a violation.
@@ -351,7 +351,7 @@ def _exempt_assignment(node: ast.Assign | ast.AnnAssign) -> bool:
     Both halves are proofs of the same kind and neither is a heuristic: the annotation is a declared quantity type,
     and the right-hand side is a call that RETURNS one whatever it was passed. A ``BinOp`` is deliberately not a proof
     even when one operand is a quantity -- it is a computation whose result type the AST cannot see, and no assignment
-    in motronics with a unit-suffixed name and a ``BinOp`` right-hand side contains a quantity constructor at all.
+    in consumer-a with a unit-suffixed name and a ``BinOp`` right-hand side contains a quantity constructor at all.
     """
     if isinstance(node, ast.AnnAssign) and _exempt_annotation(node.annotation):
         return True

@@ -1,11 +1,11 @@
 """NETWORK-RETRY-THEN-REPORT: a bounded retry around a network verb, and a REPORT the caller reads.
 
 THE FAMILY VACUUM THIS CLOSES, MEASURED 2026-09-17. The rule has been in the shared registry since
-it was written, and its only mechanism anywhere is ``motronics-studio/scripts/hooks/with-retry.sh``
--- which stamps a ``MOTRONICS_PUSH_ID`` and hands it to that repo's ``push_lock.py``, so it is that
-repo's gate machinery rather than a family capability and was never portable. ``wdg-lab`` has the
+it was written, and its only mechanism anywhere is ``consumer-a/scripts/hooks/with-retry.sh``
+-- which stamps a ``CONSUMER_A_PUSH_ID`` and hands it to that repo's ``push_lock.py``, so it is that
+repo's gate machinery rather than a family capability and was never portable. ``consumer-b`` has the
 SUBJECT and no mechanism at all: ``scripts/pull_all.py`` calls ``git clone``/``git pull`` with a
-timeout and ZERO retries, and ``scripts/wdg-lab-update.sh`` exits on the first failed ``fetch`` --
+timeout and ZERO retries, and ``scripts/consumer-b-update.sh`` exits on the first failed ``fetch`` --
 so a five-minute timer turns one DNS blip into ``FETCH FAILED`` and a skipped deploy. That repo had
 to leave the rule ABSENT with the reason "a guard would demand a file that cannot exist". This is
 the file.
@@ -16,7 +16,7 @@ WHAT IS UNIVERSAL AND WHAT WAS LOCAL, read off the shell wrapper rather than gue
   being what the classification reads; the PERMANENT/TRANSIENT split and the refusal to spend the
   remaining attempts on a permanent; capturing the exit code immediately; and reporting with a
   diagnosis instead of the word "blocked".
-* LOCAL -- ``MOTRONICS_PUSH_ID``, ``push_lock.py``, the interpreter search that finds a worktree's
+* LOCAL -- ``CONSUMER_A_PUSH_ID``, ``push_lock.py``, the interpreter search that finds a worktree's
   shared ``.venv``, and "is this push blocked by MY OWN previous attempt's gate". That last one is
   genuinely universal in SHAPE and has no portable answer: it needs a repo's own lock. It is reached
   here through *before_retry*, so an adopter supplies the answer without forking the loop.
@@ -262,7 +262,7 @@ def _child_env(env: Mapping[str, str] | None, *, no_prompt: bool) -> dict[str, s
     """The environment the verb runs in, with the interactive prompt closed off by default.
 
     A CREDENTIAL PROMPT IS A HANG, not a failure, and a hang defeats the whole module: the wall
-    fires, the attempt is diagnosed ``TIMED_OUT``, and the next attempt prompts again. ``wdg-lab``'s
+    fires, the attempt is diagnosed ``TIMED_OUT``, and the next attempt prompts again. ``consumer-b``'s
     ``pull_all.py`` already sets this by hand with the comment "a hung prompt blocks the
     auto-puller"; hoisting it here is why that caller can delete the line rather than keep it.
     """
@@ -301,7 +301,7 @@ def run_network_verb(
             REPORTED refusal rather than a hang nobody can see.
         before_retry: an adopter's own veto, consulted after a retryable failure and BEFORE the
             backoff. Returning ``False`` stops the loop with :attr:`Diagnosis.STOPPED_BY_CALLER`.
-            This is the seam motronics-studio's ``push_lock.py`` fits: "my own previous attempt's
+            This is the seam consumer-a's ``push_lock.py`` fits: "my own previous attempt's
             gate still holds the box" is a real stop no shared table can recognise, because the
             evidence for it is a repo's own lock file.
         sleep: the backoff, injected so a test can drive the REAL loop at full speed. The command

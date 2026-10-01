@@ -12,8 +12,8 @@ is a claim about four trees, and a claim nobody re-derives ages fastest. `PRECOM
 `CONSUMER_IGNORE_DELTA` in `_config_census_rows.py` are the precedent, and the suite beside this file
 re-measures every entry here against the live checkouts rather than trusting it.
 
-WHAT WAS MEASURED, by parsing the live ruff config of `lab-commons`, `wdg-lab`, `optimi-lab` and the
-motronics-studio LANE at ``.claude/worktrees/feat/optimi-lab`` -- never the main checkout:
+WHAT WAS MEASURED, by parsing the live ruff config of `lab-commons`, `consumer-b`, `consumer-c` and the
+consumer-a LANE at ``.claude/worktrees/feat/consumer-c`` -- never the main checkout:
 
 * ``select`` -- 58 in all four, four-way symmetric difference EMPTY. Nobody adds and nobody drops, so
   every absent ``added['select']`` below is a stated answer rather than an omission.
@@ -131,22 +131,22 @@ SECTION_DELTAS: Final[dict[str, dict[str, SectionDelta]]] = {
         RUFF_LINT: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),
         RUFF_FORMAT: SectionDelta(repo='lab-commons', added={}, dropped={}, ceiling=0),
     },
-    'wdg-lab': {
-        RUFF_ROOT: SectionDelta(repo='wdg-lab', added={}, dropped={}, ceiling=0),
+    'consumer-b': {
+        RUFF_ROOT: SectionDelta(repo='consumer-b', added={}, dropped={}, ceiling=0),
         RUFF_LINT: SectionDelta(
-            repo='wdg-lab',
+            repo='consumer-b',
             #: 53 = the 52 shared with the other two consumers, plus `ANN205`. That single code is
             #: this lab's own and `CONSUMER_IGNORE_DELTA` records it as such.
             added={'ignore': (*CONSUMER_IGNORE_TAIL, 'ANN205')},
             dropped={},
             ceiling=53,
         ),
-        RUFF_FORMAT: SectionDelta(repo='wdg-lab', added={}, dropped={}, ceiling=0),
+        RUFF_FORMAT: SectionDelta(repo='consumer-b', added={}, dropped={}, ceiling=0),
     },
-    'optimi-lab': {
-        RUFF_ROOT: SectionDelta(repo='optimi-lab', added={}, dropped={}, ceiling=0),
+    'consumer-c': {
+        RUFF_ROOT: SectionDelta(repo='consumer-c', added={}, dropped={}, ceiling=0),
         RUFF_LINT: SectionDelta(
-            repo='optimi-lab',
+            repo='consumer-c',
             #: 52 and NOTHING OF ITS OWN -- the only consumer whose waiver list is exactly the shared
             #: tail. Worth recording, because it is the evidence that the tail is a genuine three-way
             #: agreement rather than one repo's list the other two happen to sit near.
@@ -154,12 +154,12 @@ SECTION_DELTAS: Final[dict[str, dict[str, SectionDelta]]] = {
             dropped={},
             ceiling=52,
         ),
-        RUFF_FORMAT: SectionDelta(repo='optimi-lab', added={}, dropped={}, ceiling=0),
+        RUFF_FORMAT: SectionDelta(repo='consumer-c', added={}, dropped={}, ceiling=0),
     },
-    'motronics-studio': {
-        RUFF_ROOT: SectionDelta(repo='motronics-studio', added={}, dropped={}, ceiling=0),
+    'consumer-a': {
+        RUFF_ROOT: SectionDelta(repo='consumer-a', added={}, dropped={}, ceiling=0),
         RUFF_LINT: SectionDelta(
-            repo='motronics-studio',
+            repo='consumer-a',
             #: 56 = the shared 52 plus four of its own: `B023` (loop-variable capture in closures),
             #: `PLR0917` (positional-argument count, a physics-signature shape), and
             #: `RUF002`/`RUF003` (ambiguous unicode in docstrings and comments -- that tree writes
@@ -169,6 +169,6 @@ SECTION_DELTAS: Final[dict[str, dict[str, SectionDelta]]] = {
             dropped={},
             ceiling=56,
         ),
-        RUFF_FORMAT: SectionDelta(repo='motronics-studio', added={}, dropped={}, ceiling=0),
+        RUFF_FORMAT: SectionDelta(repo='consumer-a', added={}, dropped={}, ceiling=0),
     },
 }

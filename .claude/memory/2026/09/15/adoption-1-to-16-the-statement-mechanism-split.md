@@ -15,7 +15,7 @@ not an oversight anybody could have seen from the registry: the registry looked 
 every row already named the files that enforce it.
 
 They named files in ANOTHER repo. Every mechanism path a row carried -- `tests/architecture/...`,
-`scripts/gate/runner.py`, `.claude/hooks/deny-commands.js` -- is a path in motronics-studio. The
+`scripts/gate/runner.py`, `.claude/hooks/deny-commands.js` -- is a path in consumer-a. The
 module's own docstring promised that "a second adopter inherits the statements and must supply the
 mechanism for its own tree" and then offered no way to supply one. Measured 2026-09-15: driven
 against its own tree, lab-commons refused its OWN registry with 70 failures.

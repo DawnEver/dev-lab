@@ -6,7 +6,7 @@ module that checks it drifts away from what it describes, because the same edit 
 relax the check that would have refused it, and the diff looks like one change.
 
 WHAT A ROW IS, and it is the shape ``tests/architecture/layering/_placement_*.py`` in
-motronics-studio already runs: a key (``<repo>::<artefact>``), a SIDE, and a REASON -- and the
+consumer-a already runs: a key (``<repo>::<artefact>``), a SIDE, and a REASON -- and the
 reason is the deliverable, not the label. A side with a one-line reason is a label wearing a
 table's clothes, so :class:`Placement` refuses one AT CONSTRUCTION.
 
@@ -38,6 +38,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+from lab_commons.dev.doorcensus import sibling_paths
 
 __all__ = [
     'MOVES',
@@ -76,7 +78,7 @@ SPLITS: Final = 'splits'
 SIDES: Final = (STAYS, MOVES, SPLITS)
 
 #: The shortest a REASON may be. Not a style rule: every side above demands a named fact and a
-#: stated consequence, and neither fits in a caption. MEASURED against the motronics roster this is
+#: stated consequence, and neither fits in a caption. MEASURED against the consumer-a roster this is
 #: modelled on -- its shortest live reason is well over this -- so the bar is a floor under prose,
 #: not a pin on it.
 REASON_FLOOR: Final = 240
@@ -218,7 +220,7 @@ def repo_root(repo: str, paths: dict[str, str]) -> Path | None:
     """
     if repo == 'lab-commons':
         return ROOT
-    candidate = ROOT.parent / paths[repo]
+    candidate = ROOT.parent / sibling_paths(paths)[repo]
     return candidate if (candidate / '.git').exists() else None
 
 
@@ -414,7 +416,7 @@ def installed_hook_names(root: Path) -> frozenset[str]:
     A worktree's ``.git`` is a FILE pointing at the parent checkout's git dir, and the hooks it runs
     are that checkout's. Resolving it is not a detail: reading ``<worktree>/.git/hooks`` as a
     directory reports every worktree in the family as having zero hooks, which is the opposite of
-    what the motronics lane measured.
+    what the consumer-a lane measured.
     """
     marker = root / '.git'
     if marker.is_dir():

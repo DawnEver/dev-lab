@@ -104,7 +104,7 @@ def test_a_free_lock_permits_and_the_command_runs() -> None:
 
 
 def test_a_repo_with_no_lock_is_permitted_and_the_gap_is_rendered() -> None:
-    """Honest degradation: optimi-lab today. Steps 1 and 3 run; step 2 is VISIBLY absent."""
+    """Honest degradation: consumer-c today. Steps 1 and 3 run; step 2 is VISIBLY absent."""
     run = _Run()
     report = mutate(_REQS, port=Port(name='no-lock-repo'), run=run)
     assert len(run.calls) == 1

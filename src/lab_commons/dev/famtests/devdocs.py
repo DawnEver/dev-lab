@@ -7,7 +7,7 @@ none of it. Two drifts re-open the fork the sharing removed, and both had happen
 
 * **A re-copy.** A local page that restates the family page is a second version of one document.
   It agrees for a while, and then the two are two documents.
-* **A family subject written locally under a NEW name.** Motronics' ``translations.md`` documented
+* **A family subject written locally under a NEW name.** ConsumerA' ``translations.md`` documented
   :mod:`lab_commons.dev.cjk` and :mod:`lab_commons.dev.famtests.trackedcjk` -- family modules -- as a
   local page with no family twin. A residue check keyed on the family's stems cannot see that, so the
   second arm asks what the page is ABOUT: a local page whose LEAD names a ``lab_commons.dev`` module
@@ -15,7 +15,7 @@ none of it. Two drifts re-open the fork the sharing removed, and both had happen
 
 WHY 6-WORD SHINGLES AND NOT LINES. A line-equality reader is blind to a copy re-wrapped, re-bulleted
 or lightly re-worded at its edges, which is how prose is actually copied. A 6-word shingle survives
-re-wrapping and still does not fire on a shared PHRASE -- the same instrument motronics'
+re-wrapping and still does not fire on a shared PHRASE -- the same instrument consumer-a'
 ``test_rules_line_ratchet.py`` used to measure its rules pages against ``docs-src/dev/``.
 
 EVERY REPO-SHAPED FACT IS AN ARGUMENT WITH NO DEFAULT (see :mod:`lab_commons.dev.famtests`): where the

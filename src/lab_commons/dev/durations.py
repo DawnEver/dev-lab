@@ -1,7 +1,7 @@
 """THE LEDGER THE WALL WRITES, and the two readings a ``slow`` marker set is judged by.
 
 WHY THIS IS FAMILY. ``pytest.mark.slow`` is a hand-maintained set and, until this module, nothing in
-any of the four repos checked it was COMPLETE. On 2026-09-19 that cost wdg-lab a full day: three
+any of the four repos checked it was COMPLETE. On 2026-09-19 that cost consumer-b a full day: three
 runs wedged and produced no verdict at all, two of the three carried the marker and were selected
 anyway, and THE THIRD CARRIED NO MARKER, ran for twenty-nine minutes inside a narrowed
 ``-m 'not slow'`` tier, and was killed by hand. A declaration asserting a property the code does not
@@ -56,7 +56,7 @@ WHOLE SESSION DIES -- a stack dump naming the test, no summary, no verdict line,
 pytest at all. So on Windows a wall alone converts a wedge into an abrupt process death, and what
 makes it RECOVERABLE is SHARDING: under ``-n`` the process the wall kills is a WORKER, xdist reports
 the crash against the test and restarts it, and the session survives to a verdict. Every verdict
-wdg-lab got on 2026-09-19 required ``-n 4``. "Run it sharded" is therefore not a performance
+consumer-b got on 2026-09-19 required ``-n 4``. "Run it sharded" is therefore not a performance
 preference for a consumer of this module; it is the condition under which the ledger gets written at
 all, and a reader who assumes otherwise is surprised exactly once, at the worst moment.
 

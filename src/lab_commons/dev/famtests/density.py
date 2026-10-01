@@ -7,13 +7,13 @@ mostly wiring is a BINDER and belongs here too, on size; anything else is a mech
 name.
 
 WHY IT IS FAMILY. Measured across the four rosters listed in
-:mod:`lab_commons.dev.famtests._placement_readings` -- two labs and motronics' two -- this half is the
+:mod:`lab_commons.dev.famtests._placement_readings` -- two labs and consumer-a' two -- this half is the
 one that is IDENTICAL. Same AST-and-token prose blanker, same delegation subtraction, same count, same
-percentage. The labs carry ONE delegation home where motronics carries a SET, and ONE hit signal where
-motronics carries TWO; both differences are in the signatures here rather than in a branch.
+percentage. The labs carry ONE delegation home where consumer-a carries a SET, and ONE hit signal where
+consumer-a carries TWO; both differences are in the signatures here rather than in a branch.
 
 ``Density.justified`` IS DELETED ON PURPOSE, AND A CONSUMER ALREADY PAID FOR IT. All four rosters wrote
-``justified`` as a property closing over their own module-level bars -- and motronics' tests roster had
+``justified`` as a property closing over their own module-level bars -- and consumer-a' tests roster had
 to write the function out by hand, because the inherited property closed over the ``scripts/`` roster's
 ceiling of 40 while the tests module DECLARED 50, so tests-tree rows were judged by a bar bounded on a
 different tree. Two rows read between the two ceilings and caught it. Here the bars are ARGUMENTS to
@@ -93,8 +93,8 @@ def noun_pattern(nouns: Sequence[str], *, match_identifier_parts: bool) -> re.Pa
             would read the whole tree as saturated with one repo's nouns.
         match_identifier_parts: whether a noun may match a PART of an identifier. NO DEFAULT, because
             the family does not agree and both answers are defended in writing. Both labs and one
-            motronics roster match WHOLE identifiers (underscore is a letter), so ``xdist`` does not
-            fire inside ``xdist_width``; motronics' scripts roster widened to identifier PARTS on
+            consumer-a roster match WHOLE identifiers (underscore is a letter), so ``xdist`` does not
+            fire inside ``xdist_width``; consumer-a' scripts roster widened to identifier PARTS on
             2026-09-17 after measuring ``scripts/gate/width.py`` at 0.00% with ``xdist`` sitting
             inside ``xdist_width`` -- a noun is a part of an identifier at least as often as the
             whole. Under BOTH answers letters and digits are never separators, so ``delegate`` never
@@ -142,7 +142,7 @@ def code_and_delegation(source: str, *, delegation_homes: Collection[str]) -> tu
         source: Python source.
         delegation_homes: top-level names whose imports are delegation rather than this file's own
             mechanism -- the family package, plus any local mechanism siblings the repo declares. NO
-            DEFAULT, and the defect it closes was measured 2026-09-17: motronics'
+            DEFAULT, and the defect it closes was measured 2026-09-17: consumer-a'
             ``scripts/gate/_anchors.py`` re-pointed at ``lab_commons.dev.shards`` and its ``own`` count
             went 39 -> 40 across that one commit with no new mechanism in it, because the family import
             read as the file's own. Read as delegation the same two revisions measure 39 -> 31. The
@@ -210,7 +210,7 @@ def nouns_in(text: str, *, noun: re.Pattern[str]) -> set[str]:
     of :func:`code_only` it is the strict reading a ``MOVES`` claim must survive.
 
     THE ASYMMETRY IS DELIBERATE AND MEASURED ON BOTH SIDES. Reading prose for the converse refused
-    three CORRECT ``MOVES`` rows on wdg-lab's first run, and in motronics' tests tree it would make
+    three CORRECT ``MOVES`` rows on consumer-b's first run, and in consumer-a' tests tree it would make
     ``MOVES`` unsayable for the whole tree, because every guard there explains the defect it pins and
     so names the project in prose while its mechanism names nothing. Reading code for the HIT test
     would refuse files whose claim really is carried by a sentence. Which reading a property takes is
@@ -226,7 +226,7 @@ def measure_density(source: str, *, signals: Sequence[re.Pattern[str]], delegati
         source: Python source. A non-Python row has no AST and cannot be measured here at all; the
             consumer NAMES those rows, and that named set is the ceiling on the exemption.
         signals: the patterns whose match makes a line THIS repo's. A line carrying ANY of them counts
-            once. Both labs pass one, the noun alternation; motronics passes two, the second being an
+            once. Both labs pass one, the noun alternation; consumer-a passes two, the second being an
             alternation over the BASENAMES its own manifest declares ours -- a path is the shape a noun
             cannot be, and four measured witnesses drove it. NO DEFAULT.
         delegation_homes: see :func:`code_and_delegation`.

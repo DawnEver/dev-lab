@@ -6,7 +6,7 @@
 ## The lightweight / heavy partition
 
 - **Opt-in groups are GONE, and tiers replaced them.** A tier that needs a flag to be run has nothing to opt into, and a group nothing runs rots into a false green — a skip is green.
-- Measured in motronics-studio: 24 files sat hidden behind an unset variable; of the three old opt-in groups, two had never been run, and both first runs found real defects — one a plain type error that could only survive because the line had never executed.
+- Measured in consumer-a: 24 files sat hidden behind an unset variable; of the three old opt-in groups, two had never been run, and both first runs found real defects — one a plain type error that could only survive because the line had never executed.
 - The runner selects by MARKER, not by flag: the lightweight tiers deselect the heavy marker and the heavy tier deselects nothing.
 - **The heavy partition is DECLARED as data** — a test is heavy by PATH or by an explicit marker, and a collection hook makes the classification visible to the marker expression. A test that lives in a heavy subtree but drives nothing heavy is carved back out by name, so a lightweight tier does not go blind to the exact module being refactored.
 - Live vendor tools run only in the heavy tier.

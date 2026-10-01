@@ -18,7 +18,7 @@ door. The import runs ONE WAY. Why these readers are not bolted onto
 the readings module, because it is a fact about the readers.
 
 WHAT THE TWO CONSUMERS MEASURED, because the diff between them IS the repo boundary rather than a
-guess. ``wdg-lab`` walks FIVE memory trees holding 352 entries; ``optimi-lab`` reads ONE holding a
+guess. ``consumer-b`` walks FIVE memory trees holding 352 entries; ``consumer-c`` reads ONE holding a
 handful, and the kit's own ``tests/test_arch_memory_lives_in_a_dated_directory.py`` reads a third
 shape again. So the TREES are a named set the repo declares, the FLOOR is the repo's measurement, and
 the two exclusion sets differ concretely. Every one of those arrives as a KEYWORD ARGUMENT WITH NO
@@ -26,7 +26,7 @@ DEFAULT, here and in the readings module alike.
 
 ``silent`` AND ``undated`` ARE DIFFERENT QUESTIONS AND THE THIRD IS NEITHER. An entry can be in the
 right directory and decline to date itself; a file can be dated in its header and sit outside every
-date. ``optimi-lab`` folded the first into ``date_disagreements`` as a string reason, ``wdg-lab``
+date. ``consumer-c`` folded the first into ``date_disagreements`` as a string reason, ``consumer-b``
 split it out, and the split is what this publishes -- not because one repo was right but because
 folding them makes the pinned set a mixture of two populations, and a ratchet over a mixture cannot
 say which half moved.

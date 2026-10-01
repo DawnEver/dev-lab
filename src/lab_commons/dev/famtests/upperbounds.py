@@ -27,10 +27,10 @@ operators is blind to the whole class, which is the invisible half rather than t
 **TWO CONSUMERS, TWO POLICIES, AND NEITHER IS THE OTHER'S DEFAULT.** Verified 2026-09-18 at each
 repo's own tree before this module was written:
 
-* ``wdg-lab/tests/architecture/test_dependencies_take_the_latest.py`` BANS the bound outright and
+* ``consumer-b/tests/architecture/test_dependencies_take_the_latest.py`` BANS the bound outright and
   carries an exemption set it asserts is EMPTY -- a waiver nothing uses being as wrong as a bound
   nothing refuses.
-* ``motronics-studio/tests/architecture/repo/test_no_rust_dependency_carries_an_undeclared_upper_bound.py``
+* ``consumer-a/tests/architecture/repo/test_no_rust_dependency_carries_an_undeclared_upper_bound.py``
   does NOT ban it, on a measured reason: two of its crates are ABI-coupled, so unbounding either
   alone lets a resolution pair versions that do not compile. It requires the bound to be DECLARED
   with its reason and its partner, so the pair moves together.

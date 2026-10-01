@@ -38,11 +38,11 @@ __all__ = [
     'SYNTHETIC',
 ]
 
-#: The repos this one is the leaf of. LONGEST SPELLING FIRST, because ``motronics`` is a prefix of
-#: ``motronics-studio`` and a scan that matched the short one first would report the wrong name in
-#: its finding -- and a refusal that misnames its subject sends the reader to the wrong tree.
+#: The repos this one is the leaf of, under the neutral names this public tree uses for them. If one
+#: spelling ever becomes a prefix of another, the LONGER goes first, so a finding never misnames its
+#: subject.
 #: A NAMED SET rather than a pattern: a fifth lab joins by being typed here, which is a decision.
-SIBLINGS: Final[tuple[str, ...]] = ('motronics-studio', 'wdg-lab', 'optimi-lab', 'motronics')
+SIBLINGS: Final[tuple[str, ...]] = ('consumer-a', 'consumer-b', 'consumer-c')
 
 #: The one module that may name a sibling in executable data, and the exclusion is itself a claim
 #: so it is stated rather than left to a reader: this file IS the registry of the violation, and it
@@ -60,52 +60,54 @@ SCAN_FLOOR: Final = 80
 #: enforces it, against **183** read the same day by a line-based grep -- both numbers on record,
 #: because the scan is the one that can refuse and a reader who finds the other number deserves to
 #: know which instrument took it. The difference is two lines carrying two mentions each.
+#: RE-MEASURED 2026-10-01 at **177** after the neutral renaming, which folded two spellings of one
+#: sibling into one and turned identifier-embedded mentions into identifiers the scan does not read.
 #:
 #: PROSE IS NOT EVICTED ROW BY ROW, because a docstring naming the repo a finding came from is
 #: EVIDENCE rather than a mechanism, and rewriting all of them to name the SHAPE instead is the LAST
 #: step of this migration rather than the first. The ceiling is what stops the number growing while
 #: the other two kinds are being emptied.
-PROSE_CEILING: Final = 181
+PROSE_CEILING: Final = 177
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
 #:
 #: EVERY ONE OF THEM NEEDS A CONSUMER EDIT FIRST, and the first draft of this table claimed two did
 #: not -- `agent_guard.py::path` and `rostercensus.py::path`, on the reasoning that a hardcode in
-#: MACHINERY is this repo's to fix alone. MEASURED: wdg-lab and optimi-lab both import
+#: MACHINERY is this repo's to fix alone. MEASURED: consumer-b and consumer-c both import
 #: `famtests.rostercensus` and both name `agent_guard` in their placement rosters, so turning either
 #: hardcode into a no-default argument reds two trees. The claim was the exact defect this registry
 #: exists to refuse, one layer up, and it is left on record rather than quietly corrected.
 EVICTED: Final[dict[str, str]] = {
     'src/lab_commons/dev/_doorcensus_rows.py::data': (
         '20 `DoorRow(repo=...)` values for the three consumers, over 15 rows. Read only by this repo`s own tests -- '
-        'wdg-lab`s single mention of `DOORS` is in a COMMENT, measured -- so the deletion reds only '
+        'consumer-b`s single mention of `DOORS` is in a COMMENT, measured -- so the deletion reds only '
         'this repo`s floors, and those must be RE-MEASURED by executing the scan rather than '
         'lowered. Blocked on each consumer holding its own census.'
     ),
     'src/lab_commons/dev/_doorcensus_rows.py::path': (
-        '7 consumer `scripts/` paths, one of them `scripts/wdg-lab-update.sh`, which hardcodes a '
+        '7 consumer `scripts/` paths, one of them `scripts/consumer-b-update.sh`, which hardcodes a '
         'repo NAME into a path. They travel with the rows above and are deleted with them.'
     ),
     'src/lab_commons/dev/_synccensus_rows.py::data': (
         '3 `ScopeRow(repo=...)` rows, and the sharper miss inside them: `selected=(`pareto`, `dev`)` '
-        'is a motronics EXTRA as a live value rather than as prose -- a domain noun the README`s own '
+        'is a consumer-a EXTRA as a live value rather than as prose -- a domain noun the README`s own '
         'test forbids. Same blocker as the door census.'
     ),
     'src/lab_commons/dev/_synccensus_rows.py::path': (
         '2 `scripts/gate/dep_sync.py` literals belonging to the rows above.'
     ),
     'src/lab_commons/dev/_provenance_rows.py::path': (
-        '27 motronics `scripts/` paths -- the largest single block. Provenance is a record of where '
+        '27 consumer-a `scripts/` paths -- the largest single block. Provenance is a record of where '
         'a module CAME FROM, which is the one reading under which naming another tree is honest; '
         'the migration is to carry the origin REPO beside the path instead of implying it.'
     ),
     'src/lab_commons/dev/_rule_rows.py::path': (
         'THE HEADLINE. 60 of the 78 mechanism paths this registry ships resolve in a consumer and '
-        'not here; 58 are motronics-studio alone and 2 name a motronics-only layer outright. They '
+        'not here; 58 are consumer-a alone and 2 name a consumer-a-only layer outright. They '
         'may NOT simply be deleted: `Rule` refuses a row with no mechanism, so deleting the paths '
         'deletes the rules. The next step is a mechanism that NAMES its proving repo, which changes '
-        'the shape `RULES` exposes -- and both wdg-lab and optimi-lab build `Adoption` against it, '
+        'the shape `RULES` exposes -- and both consumer-b and consumer-c build `Adoption` against it, '
         'so their adoption tests move WITH it in one push train. No `_compat` alias.'
     ),
     'src/lab_commons/dev/_famconfig_ruff_rows.py::data': (
@@ -120,7 +122,7 @@ EVICTED: Final[dict[str, str]] = {
         'roster holds its own.'
     ),
     'src/lab_commons/dev/famtests/_placement_readings.py::path': (
-        '4 roster paths (`tests/architecture/_placement.py` and motronics` two layering helpers) '
+        '4 roster paths (`tests/architecture/_placement.py` and consumer-a` two layering helpers) '
         'that travel with the readings above.'
     ),
     'src/lab_commons/dev/agent_guard.py::path': (

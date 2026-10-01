@@ -167,8 +167,8 @@ WHAT IS HERE, one module per shared body:
 
 * :mod:`lab_commons.dev.famtests.countpins` -- a pin is a NAMED SET; a number may only be a
   THRESHOLD, and its NAME must say so. The row that arrives as a CORRECTION rather than a move:
-  optimi-lab claimed ``NAMED-SETS-NOT-COUNTS`` as enforced while citing three modules that merely
-  USE named sets, and wdg-lab cites the same rule at six and holds no such guard at all. NOT
+  consumer-c claimed ``NAMED-SETS-NOT-COUNTS`` as enforced while citing three modules that merely
+  USE named sets, and consumer-b cites the same rule at six and holds no such guard at all. NOT
   ``density``, which also parses constants: this reads a NAME against a declared suffix vocabulary
   where that one counts LINES against two bars, and the floor here is on CONSTANTS READ because the
   offender population is a lower bound whose clean value is the empty set -- the same answer walking

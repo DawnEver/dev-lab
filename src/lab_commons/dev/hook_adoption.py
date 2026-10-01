@@ -24,7 +24,7 @@ and is deliberately not performed from here::
     PYTHON = venv_interpreter(os_name=current_os_name())
     VERIFY = Remedy('verdict-entry-point', f'{PYTHON} -m lab_commons.dev.verify')
     ADOPTION = HookAdoption(
-        app_name='wdg-lab',
+        app_name='consumer-b',
         remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
         declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
     )

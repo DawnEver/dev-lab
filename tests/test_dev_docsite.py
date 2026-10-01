@@ -56,7 +56,7 @@ def _site(slug: str, *, requires=PRESENT, build=None, **kw: object) -> docsite.S
 
 
 def test_a_failed_command_RAISES_rather_than_reporting_success(tmp_path: Path) -> None:
-    """THE defect this module was extracted to end: optimi-lab ran pdoc with ``check=False``.
+    """THE defect this module was extracted to end: consumer-c ran pdoc with ``check=False``.
 
     An errored build produced an empty output directory and exit 0 -- indistinguishable from a real
     build at every downstream point.
@@ -115,7 +115,7 @@ def test_a_builder_that_raises_is_NOT_swallowed(tmp_path: Path) -> None:
 def test_a_build_that_writes_no_entry_page_is_REFUSED(tmp_path: Path) -> None:
     """The portal links ``<slug>/<entry>``; a build that does not write it ships a dead link.
 
-    MEASURED in motronics-studio 2026-07-29: ``cargo doc -p <crate>`` writes no root index, unlike
+    MEASURED in consumer-a 2026-07-29: ``cargo doc -p <crate>`` writes no root index, unlike
     ``--workspace``, so the front page's first link 404'd.
     """
     with pytest.raises(FileNotFoundError, match=r'wrote no index\.html'):
@@ -142,7 +142,7 @@ def test_pdoc_runs_through_THIS_interpreter_and_never_a_bare_name() -> None:
 
 
 def test_pdoc_is_never_asked_for_two_mutually_exclusive_modes() -> None:
-    """``-o`` writes files and exits; ``-h``/``-p`` serve. optimi-lab passed both, under check=False."""
+    """``-o`` writes files and exits; ``-h``/``-p`` serve. consumer-c passed both, under check=False."""
     argv = docsite.pdoc_argv(['pkg'], 'out')
     assert '-o' in argv
     assert '-h' not in argv

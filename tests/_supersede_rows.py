@@ -9,7 +9,7 @@ tranche concluded BY READING (`hand`) and what the instrument must conclude from
 source (`expected`), and the two are kept as separate fields precisely so a disagreement has
 somewhere to live instead of being tuned away.
 
-WHY THE ROWS ARE FACTS AND NOT PATHS. The consumer is motronics-studio's LANE worktree, which this
+WHY THE ROWS ARE FACTS AND NOT PATHS. The consumer is consumer-a's LANE worktree, which this
 repo's suite cannot read and must not depend on. So each row carries the derived facts -- its
 declared side, its public surface, the kit modules it imports -- captured from that tree on
 2026-09-17. The KIT side is NOT captured: it is read live off `src/lab_commons/dev/`, so deleting a
@@ -25,7 +25,7 @@ convicts it against the wrong module. It is here so that the instrument's refusa
 as a detector is EXERCISED by the same run that validates the positives.
 
 THE FIFTEENTH ROW IS THE ONE THAT FOUND THE INSTRUMENT'S BLIND SPOT -- TWICE, and it comes from a
-different repo on purpose. optimi-lab's `tests/architecture/test_the_rules_pages_are_a_ratchet.py`
+different repo on purpose. consumer-c's `tests/architecture/test_the_rules_pages_are_a_ratchet.py`
 is declared MOVES by its own roster and graded UNTOUCHED by the first census ever run against it --
 while `lab_commons.dev.famtests.rulespages`, landed hours earlier, already published its whole
 subject and more. Both detectors were silent: the kit module named no consumer, and a test file that
@@ -33,10 +33,10 @@ has not adopted a shared body yet imports nothing from the kit BY DEFINITION. Th
 row the provenance registry exists for, so it is pinned here by the case that found it rather than
 by a plant alone.
 
-RE-MEASURED 2026-09-18 against optimi-lab `aab4074c`, WHICH EXECUTED THE MOVE the row predicted. The
+RE-MEASURED 2026-09-18 against consumer-c `aab4074c`, WHICH EXECUTED THE MOVE the row predicted. The
 local `rule_pages`/`ratchet_breaks` mechanism and both its controls are gone upstream, the file
 imports `rulespages` and calls `assert_rules_ratchet`, and what is left is FOUR declarations that
-are about optimi-lab and nothing else. So the grade is STILL PARTIAL and for the opposite reason:
+are about consumer-c and nothing else. So the grade is STILL PARTIAL and for the opposite reason:
 it was PARTIAL because a whole local mechanism had not left, and it is PARTIAL now because what
 remains is the repo's own half of a finished split. THE REMAINDER IS THE ANSWER, so it is named in
 the row itself -- the two pins, the scan floor and the one surviving test -- and `covered` is EMPTY:
@@ -55,13 +55,13 @@ anywhere, because a blind detector reports what a clean tree reports.
 THE BLIND SPOT WAS CLOSED TWICE AND THE SECOND CLOSING WAS SWEPT, 2026-09-18. `1aa2738` taught the
 reader `from lab_commons.dev.famtests import x`; `from lab_commons.dev.famtests.x import y` stayed
 unresolved, so the round trip that was supposed to hold the two halves together passed over the two
-spellings the fix had just added. Re-driving both readers over all three consumer trees -- motronics
-`497dfb7b5`, wdg-lab `71e184a1`, optimi-lab `e66a32e`, 173 files that mention the kit -- moves SEVEN
-import sets and exactly TWO grades, both in motronics: `tests/architecture/layering/_tests_placement.py`
+spellings the fix had just added. Re-driving both readers over all three consumer trees -- consumer-a
+`497dfb7b5`, consumer-b `71e184a1`, consumer-c `e66a32e`, 173 files that mention the kit -- moves SEVEN
+import sets and exactly TWO grades, both in consumer-a: `tests/architecture/layering/_tests_placement.py`
 NAMED_ONLY -> PARTIAL against `density`, and `tests/architecture/gate/test_an_empty_venv_stub_does_
 not_win_the_interpreter.py` UNTOUCHED -> CONSULTS against `githooks.bootstrap`, which is the same
 defect in the OTHER sub-package. NO ROW HELD HERE MOVES: these fifteen were captured from `scripts/`
-and from one optimi test, none of which adopts a sub-package module in the deep form. That is the
+and from one consumer-c test, none of which adopts a sub-package module in the deep form. That is the
 re-measurement, not a re-labelling, and a row that did not move is not thereby certified fresh.
 
 WHY THE ROW WENT STALE THE DAY IT WAS WRITTEN, which is the half worth more than the row. Its
@@ -329,7 +329,7 @@ MEASURED_ROWS: Final[tuple[MeasuredRow, ...]] = (
         hand=STILL_LOCAL,
         expected=UNTOUCHED,
     ),
-    # RE-MEASURED off optimi-lab `aab4074c` on 2026-09-18 -- see the module docstring. The move the
+    # RE-MEASURED off consumer-c `aab4074c` on 2026-09-18 -- see the module docstring. The move the
     # row predicted has happened, so the surface is the four LOCAL declarations that survive it and
     # `covered` is empty: PARTIAL naming a finished split, not PARTIAL naming an unstarted one.
     MeasuredRow(

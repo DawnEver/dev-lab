@@ -1,14 +1,14 @@
 [project]
 name = "lab-commons"
 dynamic = ["version"]
-description = "Project-agnostic shared infrastructure (logging, paths) for the motronics/optimi-lab/wdg-lab family of labs."
+description = "Project-agnostic shared infrastructure (logging, paths) for the consumer-a/consumer-c/consumer-b family of labs."
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "Mingyang Bao", email = "edcgghedcgg@gmail.com" }]
+authors = [{ name = "The lab-commons authors" }]
 requires-python = ">=3.12"
 dependencies = [
     # Tier 1 core deps only -- structured logging, platform-standard path resolution,
-    # TOML read/write, and the generic pint<->pydantic quantity machinery. No motronics,
+    # TOML read/write, and the generic pint<->pydantic quantity machinery. No consumer-a,
     # no EM/solver vocabulary: a consumer that wants only logging installs nothing
     # heavier than this. pint is a hard dep of tier 1 (lab_commons.units); tier 2
     # (lab_commons.em) needs no additional dependency, so it ships in the wheel --
@@ -84,7 +84,7 @@ line-length = 120
 # SHIPS A WHEEL to the family; a py313 target lets the UP group rewrite shipped code into syntax a
 # 3.12 interpreter cannot parse, and the 3.12 half of this repo's own declared support would break
 # at import rather than at lint. Two of the three consumers ALSO declare `>=3.12` while targeting
-# py313, so their scalar is the one that disagrees with its own metadata; only motronics
+# py313, so their scalar is the one that disagrees with its own metadata; only consumer-a
 # (`>=3.13,<3.14`) has earned it. This repo's venv is CPython 3.12.14.
 target-version = "py312"
 
@@ -93,7 +93,7 @@ quote-style = "single"
 
 [tool.ruff.lint]
 # THE FAMILY'S SELECT, ADOPTED VERBATIM (R1, 2026-09-17). These 58 selectors are byte-identical in
-# wdg-lab, optimi-lab and motronics -- pairwise symmetric difference EMPTY, measured by
+# consumer-b, consumer-c and consumer-a -- pairwise symmetric difference EMPTY, measured by
 # `tests/_config_census_rows.py::CONSUMER_SELECT` -- so this is not a negotiation but the family's
 # answer, already held three times. Until today this repo selected 12 and was therefore blind to 50
 # groups it lints everything it ships to for; `tests/test_the_kit_is_not_linted_less_than_what_it_ships.py`

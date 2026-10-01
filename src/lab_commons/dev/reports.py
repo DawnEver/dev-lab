@@ -4,7 +4,7 @@ SPLIT OUT OF :mod:`lab_commons.dev.verify` at a real seam rather than at a line 
 here is a pure function of a string and an integer; everything there launches a process, writes a
 log or stamps a verdict. The consequence is the one that matters: the measured pytest output that
 motivates this whole layer can be tested as a STRING CONSTANT, and the case that produced it --
-``optimi_lab``, 2026-09-15, 307 collected, 3 collection errors, ZERO run, and a ``307 passed``-shaped
+``consumer_c``, 2026-09-15, 307 collected, 3 collection errors, ZERO run, and a ``307 passed``-shaped
 line in the same output -- cannot be produced on demand by any live run, which is exactly why it
 went unnoticed for as long as it did.
 
@@ -251,7 +251,7 @@ def read_pytest(text: str, *, returncode: int, allowed_skips: tuple[str, ...] = 
 
     THE ORDER OF THE QUESTIONS IS THE DESIGN. It does not ask "did something pass"; it asks what
     could have cut the run short, and only a text with no such reason is allowed to settle. That
-    is what catches the measured ``optimi_lab`` case, where a clean-looking ``307 passed`` line and
+    is what catches the measured ``consumer_c`` case, where a clean-looking ``307 passed`` line and
     ``!!!! Interrupted: 3 errors during collection !!!!`` were in the SAME output -- a parser
     looking for the good news finds it, and the good news was about a run that executed nothing.
 

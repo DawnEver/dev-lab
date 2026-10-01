@@ -13,8 +13,8 @@ and `artefact_base('pyproject.toml')` both raise `ForkedDelta`, and pointing the
 at `pyproject.toml` is not the workaround: `RENDERED` would then demand the base own
 `[build-system]`, `[project]`, `[tool.pytest.ini_options]` and `[tool.pyright]` as well.
 
-MEASURED 2026-09-18 by parsing the live config of all four checkouts -- `lab-commons`, `wdg-lab`,
-`optimi-lab` and the motronics-studio LANE at `.claude/worktrees/feat/optimi-lab` -- and taking set
+MEASURED 2026-09-18 by parsing the live config of all four checkouts -- `lab-commons`, `consumer-b`,
+`consumer-c` and the consumer-a LANE at `.claude/worktrees/feat/consumer-c` -- and taking set
 intersections, never line counts:
 
 * ``select`` -- 58 selectors, and the four-way symmetric difference is EMPTY. Not a shared core with
@@ -31,7 +31,7 @@ intersections, never line counts:
   would be legislating a floor that is a fact about each repo's own interpreter, and one of the
   consumers derives it from its own ``requires-python`` under its own test.
 
-THE ARTEFACT IS NOT A FILE, and this table is keyed accordingly. motronics keeps these tables in
+THE ARTEFACT IS NOT A FILE, and this table is keyed accordingly. consumer-a keeps these tables in
 ``ruff.toml`` (where they lose the ``tool.ruff`` prefix and the root table is the file itself); the
 other three keep them in ``pyproject.toml``. The kit already ruled that the PATH is per-repo data --
 :data:`lab_commons.dev.profile.DEFAULT_LINT_CONFIG` says so, and
@@ -39,7 +39,7 @@ other three keep them in ``pyproject.toml``. The kit already ruled that the PATH
 FILENAME would be the third place this family re-decided a question it had already answered twice.
 
 WHY THE SECTION BASE IS KEYED BY TABLE AND NOT BY FILE, and why that is a fact about THIS repo's
-data rather than about the machinery that reads it. motronics keeps the ruff tables in
+data rather than about the machinery that reads it. consumer-a keeps the ruff tables in
 ``ruff.toml``; the other three keep them in ``pyproject.toml``. The kit had already ruled the path
 is per-repo data twice (`profile.DEFAULT_LINT_CONFIG`, `rules.lint_selection`); converging the lone
 dissenter onto one filename would re-decide it a third time, and MEASURED 2026-09-18 it is not the
@@ -167,14 +167,14 @@ RUFF_QUOTE_STYLE: Final = 'single'
 
 #: WHAT IS MEASURED AND DELIBERATELY NOT IN ANY BASE. Recorded rather than omitted, because an absent
 #: key and a key nobody looked at read the same. The kit is one minor version behind its consumers
-#: and that is a fact about the interpreters each repo runs on, not a family decision; motronics
+#: and that is a fact about the interpreters each repo runs on, not a family decision; consumer-a
 #: additionally DERIVES its value from `requires-python` under its own test, so a family base
 #: carrying a literal here would be a second source for a number that repo already single-sources.
 RUFF_TARGET_VERSIONS: Final[dict[str, str]] = {
     'lab-commons': 'py312',
-    'wdg-lab': 'py313',
-    'optimi-lab': 'py313',
-    'motronics-studio': 'py313',
+    'consumer-b': 'py313',
+    'consumer-c': 'py313',
+    'consumer-a': 'py313',
 }
 
 #: The filenames a ruff config may live in, in RUFF'S OWN PRECEDENCE. A ``ruff.toml`` beside a

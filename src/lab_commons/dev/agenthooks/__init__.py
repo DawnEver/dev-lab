@@ -3,7 +3,7 @@
 THE GAP THIS CLOSES, MEASURED 2026-09-17. :mod:`lab_commons.dev.hooks` authors the deny REGISTRY and
 :mod:`lab_commons.dev.hook_adoption` renders it into the engine's own JSON -- its docstring even
 carries the wiring recipe -- but the ENGINE the recipe points at lived in exactly ONE repo
-(``motronics-studio/.claude/hooks/deny-commands.js``, wired by a ``PreToolUse`` matcher in that
+(``consumer-a/.claude/hooks/deny-commands.js``, wired by a ``PreToolUse`` matcher in that
 repo's ``.claude/settings.json``). A ``find`` over the installed ``lab_commons`` returned no ``.js``
 at all. So a repo could render a perfectly correct ``deny-rules.json`` and be left with AN INERT
 DECLARATION THAT READS AS A GUARD -- precisely the defect the registry exists to remove, arriving

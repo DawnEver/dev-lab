@@ -55,7 +55,7 @@ COMPLETE = (
 #: The conftest incident, 2026-09-02, in the shape it actually arrived in: the suite exits having
 #: printed neither a summary nor a collection line. Every reader must answer an ABSENCE here.
 NO_SUMMARY = (
-    "ImportError while loading conftest 'tests/conftest.py'.\nModuleNotFoundError: No module named 'motronics'\n"
+    "ImportError while loading conftest 'tests/conftest.py'.\nModuleNotFoundError: No module named 'consumer-a'\n"
 )
 
 #: A run that finished over an EMPTY selection. It is the reading ``NO_SUMMARY`` must never be

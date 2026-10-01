@@ -25,10 +25,10 @@ supplies only what is a fact about THIS repo: the root, the name, the delta tabl
 
 `REQUIRED` IS THIS ARTEFACT'S TERMINAL MODE, AND THE LAST CLASS DRIVES THE MEASUREMENT THAT SAYS SO.
 The question was reopened on 2026-09-18 on the ground that the stated reason had expired: the base
-reads REQUIRED because motronics had no `verify:`, that gap closed, so the Makefile can now be
+reads REQUIRED because consumer-a had no `verify:`, that gap closed, so the Makefile can now be
 RENDERED. BOTH HALVES OF THAT ARE WRONG and re-measuring is what says which:
 
-* The recorded reason was never motronics' missing target. `_famconfig_rows` says it is that the four
+* The recorded reason was never consumer-a' missing target. `_famconfig_rows` says it is that the four
   repos share target NAMES and NO recipe, so a rendered family Makefile would be a declaration that
   lies. Re-measured over all four today, SEVEN of the nine shared targets still carry a different
   recipe in more than one repo, and `install:` and `install-dev:` carry four distinct ones apiece.
@@ -147,7 +147,7 @@ class TestTheMakefileIsTheFamilyContractPlusThisReposRecipes:
         """PLANTED CONTROL, both directions, through the same arm the property uses.
 
         `verify:` is the bent line because it is the one this repo did not have: it is the base line
-        motronics is still missing and the one whose recipe the base owns outright. A guard green on
+        consumer-a is still missing and the one whose recipe the base owns outright. A guard green on
         the real tree could be asserting a constant, so the same file with that target deleted must
         red, and the refusal must NAME it or the guard reported a failure it never located.
         """

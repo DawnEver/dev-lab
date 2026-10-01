@@ -4,7 +4,7 @@ Every control here is the edit somebody actually made or would make, run through
 Nothing installs, syncs or prunes -- the defect under study is a prune, and re-running it would
 destroy a working box, so the whole suite is a statement about TEXT and declared config.
 
-The manifest below is motronics' shape reduced to what decides the answer: an `all` extra that is a
+The manifest below is consumer-a' shape reduced to what decides the answer: an `all` extra that is a
 SELF-REFERENCE to six other extras and carries no `dev`, a `dev` extra holding the runner, an
 `addopts` naming two plugins, and an extra deliberately outside `all`. That is the incident of
 2026-09-18 in fourteen lines.
@@ -28,17 +28,17 @@ from lab_commons.dev.syncscope import (
     verdict_set,
 )
 
-#: The motronics shape: `all` expands through the project's own name and does NOT include `dev`.
+#: The consumer-a shape: `all` expands through the project's own name and does NOT include `dev`.
 MANIFEST = """
 [project]
-name = "motronics"
+name = "consumer-a"
 dependencies = ["numpy", "lab-commons @ git+https://github.com/DawnEver/lab-commons.git"]
 
 [project.optional-dependencies]
-euclid = ["gmsh", "wdg-lab[web] @ git+https://example.invalid/wdg-lab.git"]
-pareto = ["optimi-lab @ git+https://example.invalid/optimi-lab"]
+euclid = ["gmsh", "consumer-b[web] @ git+https://example.invalid/consumer-b.git"]
+pareto = ["consumer-c @ git+https://example.invalid/consumer-c"]
 femm = ["pywin32; sys_platform == 'win32'"]
-all = ["motronics[euclid,pareto,femm]"]
+all = ["consumer-a[euclid,pareto,femm]"]
 img-to-cad = ["opencv-python-headless"]
 dev = ["pytest", "pytest-xdist", "pytest-timeout", "ruff"]
 
@@ -56,8 +56,8 @@ def _selecting(*names: str) -> Selection:
 def test_an_extra_that_references_its_own_project_is_expanded() -> None:
     """THE FACT THAT MADE THE INCIDENT EXPENSIVE: `all` reads as one distribution and installs six."""
     table = extras(MANIFEST)
-    assert table['all'] == {'gmsh', 'wdg-lab', 'optimi-lab', 'pywin32'}
-    assert 'motronics' not in table['all'], 'the self-reference was counted as a distribution rather than followed'
+    assert table['all'] == {'gmsh', 'consumer-b', 'consumer-c', 'pywin32'}
+    assert 'consumer-a' not in table['all'], 'the self-reference was counted as a distribution rather than followed'
     assert table['img-to-cad'] == {'opencv-python-headless'}, 'the extra outside `all` is still declared'
 
 

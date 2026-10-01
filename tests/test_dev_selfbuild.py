@@ -33,12 +33,12 @@ from lab_commons.dev.selfbuild import (
 
 #: A real wheel filename. The version carries a `-` in neither field on purpose: the grammar's one
 #: unambiguous field is the first, and that is the claim being relied on.
-_WHEEL = 'motronics_native-0.4.1-cp312-cp312-win_amd64.whl'
+_WHEEL = 'consumer_a_native-0.4.1-cp312-cp312-win_amd64.whl'
 
 #: The SAME project with an ILLEGAL filename: PEP 427 escapes `-` to `_` in the distribution field,
 #: so this is a hand-renamed file rather than a second spelling. It must refuse -- fail-closed on a
 #: malformed name is the only outcome that cannot install the wrong thing.
-_WHEEL_RENAMED = 'motronics-native-0.4.1-cp312-cp312-win_amd64.whl'
+_WHEEL_RENAMED = 'consumera-native-0.4.1-cp312-cp312-win_amd64.whl'
 
 
 def _manifest(directory: Path, name: str) -> Path:
@@ -51,7 +51,7 @@ def _manifest(directory: Path, name: str) -> Path:
 
 def _workspace(root: Path) -> tuple[Path, ...]:
     """A PyO3-shaped workspace: two crates under `rust/pybind/`, plus one manifest with no name."""
-    _manifest(root / 'rust' / 'pybind' / 'euclid', 'motronics-native')
+    _manifest(root / 'rust' / 'pybind' / 'euclid', 'consumer-a-native')
     _manifest(root / 'rust' / 'pybind' / 'other', 'other_native')
     nameless = root / 'rust' / 'pybind' / 'nameless'
     nameless.mkdir(parents=True)
@@ -81,17 +81,17 @@ def test_the_names_are_read_from_the_tree_and_folded(tmp_path: Path) -> None:
     """Read from real manifests, so a renamed crate cannot leave a stale allowlist behind."""
     manifests = _workspace(tmp_path)
     assert len(manifests) == 3, "the plant is this case's floor: three manifests, one of them nameless"
-    assert declared_distributions(manifests) == frozenset({'motronics_native', 'other_native'})
+    assert declared_distributions(manifests) == frozenset({'consumer_a_native', 'other_native'})
     assert declared_distributions(()) == frozenset()
-    assert normalise_distribution(' Motronics-Native ') == 'motronics_native'
-    assert wheel_distribution(Path(_WHEEL)) == 'motronics_native'
-    assert wheel_distribution(Path(_WHEEL_RENAMED)) == 'motronics', 'the first field, read as written'
+    assert normalise_distribution(' Consumer-A-Native ') == 'consumer_a_native'
+    assert wheel_distribution(Path(_WHEEL)) == 'consumer_a_native'
+    assert wheel_distribution(Path(_WHEEL_RENAMED)) == 'consumera', 'the first field, read as written'
 
 
 def test_a_manifest_that_is_not_there_is_skipped_rather_than_raising(tmp_path: Path) -> None:
     """A caller's glob is a snapshot; a path that vanished must not take the whole reading down."""
     manifests = (*_workspace(tmp_path), tmp_path / 'rust' / 'pybind' / 'gone' / 'pyproject.toml')
-    assert declared_distributions(manifests) == frozenset({'motronics_native', 'other_native'})
+    assert declared_distributions(manifests) == frozenset({'consumer_a_native', 'other_native'})
 
 
 def test_a_foreign_wheel_is_refused_and_our_own_is_not(tmp_path: Path) -> None:
@@ -196,8 +196,8 @@ def test_a_dry_run_checks_everything_and_retires_nothing(tmp_path: Path) -> None
 
 def test_the_workspace_label_defaults_to_the_port_name(tmp_path: Path) -> None:
     """A refusal a reader cannot place is a refusal they route around."""
-    port = Port(name='motronics-studio', holders=lambda: ())
-    with pytest.raises(ForeignDistributionError, match='motronics-studio'):
+    port = Port(name='consumer-a', holders=lambda: ())
+    with pytest.raises(ForeignDistributionError, match='consumer-a'):
         install_self_build(
             _wheel(tmp_path, 'scipy-1.14.0-cp312-cp312-win_amd64.whl'),
             manifests=_workspace(tmp_path),

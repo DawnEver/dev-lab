@@ -72,15 +72,19 @@ def test_the_family_ceiling_is_two_values_and_each_is_refused_by_the_others_inte
     which is the silent one. Read from the declaration rather than typed here, so a re-measurement
     that dissolved the disagreement would red this arm instead of leaving it describing a past tree.
     """
-    scripts_value, *_ = CEILINGS['motronics scripts']
-    wdg_value, wdg_admits, wdg_refuses = CEILINGS['wdg-lab']
-    _, scripts_admits, scripts_refuses = CEILINGS['motronics scripts']
-    assert scripts_value != wdg_value, 'the disagreement is the subject; if it closed, delete this arm'
+    scripts_value, *_ = CEILINGS['consumer-a scripts']
+    consumer_b_value, consumer_b_admits, consumer_b_refuses = CEILINGS['consumer-b']
+    _, scripts_admits, scripts_refuses = CEILINGS['consumer-a scripts']
+    assert scripts_value != consumer_b_value, 'the disagreement is the subject; if it closed, delete this arm'
 
     with pytest.raises(BarMisbounded, match='exclude each other'):
-        assert_ceiling_is_bounded(wdg_value, admits=scripts_admits, refuses=scripts_refuses, what='scripts, handed 50')
+        assert_ceiling_is_bounded(
+            consumer_b_value, admits=scripts_admits, refuses=scripts_refuses, what='scripts, handed 50'
+        )
     with pytest.raises(BarMisbounded, match='exclude each other'):
-        assert_ceiling_is_bounded(scripts_value, admits=wdg_admits, refuses=wdg_refuses, what='wdg-lab, handed 40')
+        assert_ceiling_is_bounded(
+            scripts_value, admits=consumer_b_admits, refuses=consumer_b_refuses, what='consumer-b, handed 40'
+        )
 
 
 def test_the_family_minimum_agrees_four_ways_and_the_intersection_still_contains_it() -> None:
@@ -159,7 +163,7 @@ def test_a_wrong_exclusion_set_shrinks_the_population_silently(tmp_path: Path) -
 
 
 def test_a_narrow_suffix_set_leaves_a_whole_language_unclassified(tmp_path: Path) -> None:
-    """THE NO-DEFAULT COUNTER-CONTROL FOR `suffixes`, and it is motronics' measured 2026-09-16 defect."""
+    """THE NO-DEFAULT COUNTER-CONTROL FOR `suffixes`, and it is consumer-a' measured 2026-09-16 defect."""
     a_tree(tmp_path)
     narrow = placed_files(tmp_path, trees=('scripts',), suffixes=('.py',), not_placed=('__pycache__',))
     wide = placed_files(tmp_path, trees=('scripts',), suffixes=('.py', '.sh'), not_placed=('__pycache__',))

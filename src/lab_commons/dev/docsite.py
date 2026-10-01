@@ -4,7 +4,7 @@ THREE IMPLEMENTATIONS EXISTED, and the properties were distributed across them r
 MEASURED 2026-09-16, by reading all three:
 
 ======================  ====================  ===================  =======================
-property                motronics repo/docs   wdg-lab scripts/docs  optimi-lab scripts/pdoc
+property                consumer-a repo/docs   consumer-b scripts/docs  consumer-c scripts/pdoc
 ======================  ====================  ===================  =======================
 ``check=True``          yes, via one helper   yes, at 3 call sites  **NO** (``check=False``)
 skip-and-SAY-SO         yes, a report row     partial (webui only)  **no skip concept**
@@ -16,7 +16,7 @@ mutually-exclusive      no                    no                    **yes** -- p
 
 The ``check=False`` row is the one that justifies this module existing. It is the ``dict.get(k, 0.0)``
 shape: a pdoc that errored produced an empty ``docs/`` and exit 0, indistinguishable from a real
-build at every downstream point -- and combined with the mutually-exclusive-modes row, optimi-lab's
+build at every downstream point -- and combined with the mutually-exclusive-modes row, consumer-c's
 build was invoking pdoc in a way pdoc rejects and reporting success for it.
 
 THE SPLIT THIS MODULE MAKES. The DRIVER is the family's: what a requirement is, what a skip means,
@@ -245,7 +245,7 @@ def pdoc_argv(
     the venv is ACTIVATED, so it worked from an activated shell and on CI (which activates) and
     raised ``FileNotFoundError`` under every invocation that calls the interpreter by absolute path
     -- which is how the family's verify entry point runs, and how an agent runs anything. MEASURED
-    2026-09-16 in optimi-lab: ``pdoc.exe`` was present in ``.venv/Scripts/`` the whole time, so the
+    2026-09-16 in consumer-c: ``pdoc.exe`` was present in ``.venv/Scripts/`` the whole time, so the
     failure read as a missing dependency while the dependency was installed. ``-m`` resolves through
     the interpreter already running and cannot disagree with it.
     """

@@ -1,6 +1,6 @@
 """REBINDING a name for measurement, and the UNDO that makes the rebinding safe to do in-process.
 
-Migrated 2026-09-17 from motronics-studio's ``scripts/gate/seam_install.py``. A profiling harness
+Migrated 2026-09-17 from consumer-a's ``scripts/gate/seam_install.py``. A profiling harness
 instruments production by rebinding a name in the module that CALLS it, because ``from x import y``
 binds ``y`` into the importer's namespace at IMPORT time -- so wrapping the DEFINITION site instead
 lands on a name nobody reads and the seam measures ``0.000 s``. That direction is well known and

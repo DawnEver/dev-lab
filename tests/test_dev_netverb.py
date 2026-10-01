@@ -194,7 +194,7 @@ def test_the_wall_terminates_an_attempt_and_the_next_one_still_runs(tmp_path: Pa
 
 
 def test_a_callers_veto_stops_the_loop_and_is_named_in_the_report(tmp_path: Path) -> None:
-    """THE LOCAL HALF'S SEAM. motronics' "my own gate holds the box" fits here without a fork."""
+    """THE LOCAL HALF'S SEAM. consumer-a' "my own gate holds the box" fits here without a fork."""
     seen: list[Attempt] = []
 
     def veto(attempt: Attempt) -> bool:
@@ -258,7 +258,7 @@ def test_attempts_below_one_is_refused() -> None:
 def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_path: Path) -> None:
     """THE SHELL CONSUMER'S DOOR, driven as the real process a shell would start.
 
-    ``wdg-lab-update.sh`` is a shell caller, so the reachability being claimed is exactly this: an
+    ``consumer-b-update.sh`` is a shell caller, so the reachability being claimed is exactly this: an
     interpreter, a module name, and a JSON report on stdout while the command's own output stays on
     stderr. Nothing is imported here -- the test runs the module the way the consumer will.
     """

@@ -35,18 +35,18 @@ from lab_commons.dev.famtests.storedreadings import (
 #: four keys and nothing else carry a ``key=value`` reading.
 _SPELLINGS = frozenset({'own', 'repo', 'project', 'hits', PERCENT})
 
-#: VERBATIM from ``optimi-lab/tests/architecture/_placement.py`` at 2026-09-19. One current reading and
+#: VERBATIM from ``consumer-c/tests/architecture/_placement.py`` at 2026-09-19. One current reading and
 #: one former one, marked the way that author marks it.
 _A_REAL_ROW = (
     'MEASURED 2026-09-19: own=21 hits=0, down from own=87, admitted by the binder ceiling. Its '
     '`BELOW_THE_BAR` entry was deleted on 2026-09-18 when its shortfall went away.'
 )
 
-#: VERBATIM from ``motronics`` scripts roster at 2026-09-19 -- the DELTA spelling, where the change is
+#: VERBATIM from ``consumer-a`` scripts roster at 2026-09-19 -- the DELTA spelling, where the change is
 #: an arrow rather than a marker word. Five rows in the family write a reading this way.
 _AN_ARROW_ROW = 'MEASURED 2026-09-17 with `measure_density`: own=86 -> 39, ADMITTED on the second.'
 
-#: VERBATIM from ``wdg-lab`` at 2026-09-19 -- two dated readings of the same spelling in one row, the
+#: VERBATIM from ``consumer-b`` at 2026-09-19 -- two dated readings of the same spelling in one row, the
 #: older of which is history by SUPERSESSION and carries no marker word at all.
 _A_SUPERSEDED_ROW = 'Measured 2026-09-17: own=103 repo=0. RE-MEASURED 2026-09-18 after the adoption: own=20 repo=0.'
 

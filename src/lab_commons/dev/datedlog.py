@@ -1,15 +1,15 @@
 """ONE CALENDAR for everything a dev harness writes -- ``<base>/<yy>/<mm>/<dd>/<kind>/<name>``.
 
-Migrated 2026-09-17 from motronics-studio's ``scripts/gate/_dated.py``, where FOUR harnesses had
+Migrated 2026-09-17 from consumer-a's ``scripts/gate/_dated.py``, where FOUR harnesses had
 implemented the same layout independently (a gate runner, a pre-push gate, a measurement harness and
 an output-hygiene sweeper). Four calendars that can drift apart, and four docstrings asserting the
 same layout, is the duplication this module ends.
 
 **THE BASE IS THE REPO'S ANSWER AND HAS NO DEFAULT**, and that is a MEASUREMENT rather than caution.
-motronics writes under ``output/logs/`` because a user directive said so on 2026-09-03; this very
+consumer-a writes under ``output/logs/`` because a user directive said so on 2026-09-03; this very
 package writes its own verify log to ``.verify/`` (:data:`lab_commons.dev.verify.LOG_DIRECTORY`) and
 the two labs have no dated tree at all. So the family holds four answers to "where", and a default
-here would hand any of the other three motronics' directive while looking like a shared convention.
+here would hand any of the other three consumer-a' directive while looking like a shared convention.
 What IS universal is the partition -- a date taken once, a kind beneath it, and a NAME that may not
 escape either.
 

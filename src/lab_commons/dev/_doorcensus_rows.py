@@ -19,9 +19,9 @@ to turn this repo red for a change that exists in no commit.
   repo              HEAD       floating requirements declared
   ----------------  ---------  ------------------------------------------
   lab-commons       73c13e0    () -- it IS the kit
-  wdg-lab           2c0b5f2c   ('lab-commons',)
-  optimi-lab        6753e31    ('lab-commons',)
-  motronics-studio  899778231  ('lab-commons', 'optimi-lab', 'wdg-lab')
+  consumer-b           2c0b5f2c   ('lab-commons',)
+  consumer-c        6753e31    ('lab-commons',)
+  consumer-a  899778231  ('lab-commons', 'consumer-c', 'consumer-b')
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ __all__ = [
 
 #: One row per repo per door file. ``commands`` and ``deliveries`` are compared by EQUALITY, never as
 #: a floor: a floor is ``declared <= live`` and is satisfied by every shorter declaration, which is
-#: exactly how ``lab-commons`` recorded 9 while delivering 16 and ``wdg-lab`` recorded 28 while
+#: exactly how ``lab-commons`` recorded 9 while delivering 16 and ``consumer-b`` recorded 28 while
 #: delivering 30, both green.
 DOORS: tuple[DoorRow, ...] = (
     DoorRow(
@@ -82,7 +82,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='wdg-lab',
+        repo='consumer-b',
         path='Makefile',
         commands=17,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
@@ -100,7 +100,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='wdg-lab',
+        repo='consumer-b',
         path='README.md',
         commands=8,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
@@ -113,7 +113,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='wdg-lab',
+        repo='consumer-b',
         path='.pre-commit-config.yaml',
         commands=3,
         deliveries=frozenset({'INERT'}),
@@ -126,7 +126,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='wdg-lab',
+        repo='consumer-b',
         path='scripts/githooks/generate-changelog.sh',
         commands=2,
         deliveries=frozenset({'INERT'}),
@@ -140,8 +140,8 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='wdg-lab',
-        path='scripts/wdg-lab-update.sh',
+        repo='consumer-b',
+        path='scripts/consumer-b-update.sh',
         commands=2,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
         why=(
@@ -153,7 +153,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         path='Makefile',
         commands=16,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
@@ -166,32 +166,32 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         path='README.md',
         commands=6,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
         why=(
-            'The human-in-the-middle door again, and six commands here against eight in wdg-lab is '
+            'The human-in-the-middle door again, and six commands here against eight in consumer-b is '
             'the kind of difference a family-wide count would average away. Pinned per repo per file '
             'for that reason: the census axis is the repo because the repo is what a lane owns, and '
             'a drift has to name the tree it happened in before anyone can go and look.'
         ),
     ),
     DoorRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         path='.pre-commit-config.yaml',
         commands=0,
         deliveries=frozenset(),
         why=(
-            'ZERO, AND THIS IS THE SIBLING OF THE FILE THAT CARRIED THE DEFECT. wdg-lab reverted the '
-            'kit on every push through a hook entry in the file of this exact name; optimi-lab has '
+            'ZERO, AND THIS IS THE SIBLING OF THE FILE THAT CARRIED THE DEFECT. consumer-b reverted the '
+            'kit on every push through a hook entry in the file of this exact name; consumer-c has '
             'no such entry, and that is a measurement worth a row rather than an omission worth '
             'nothing. The day a `uv run` hook is added here, this count moves off zero and the '
             'census says so before the first push does.'
         ),
     ),
     DoorRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         path='.github/workflows/ci.yml',
         commands=0,
         deliveries=frozenset(),
@@ -204,7 +204,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         path='scripts/dep.py',
         commands=0,
         deliveries=frozenset(),
@@ -217,7 +217,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='Makefile',
         commands=15,
         deliveries=frozenset({'INERT'}),
@@ -230,7 +230,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='.pre-commit-config.yaml',
         commands=0,
         deliveries=frozenset(),
@@ -243,7 +243,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='scripts/hooks/with-retry.sh',
         commands=2,
         deliveries=frozenset({'INERT'}),
@@ -261,9 +261,9 @@ DOORS: tuple[DoorRow, ...] = (
 #: door and a considered one look identical in a list of paths; they do not look identical here.
 DECLINED: tuple[Declined, ...] = (
     Declined(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='scripts/gate/dep_sync.py',
-        covered_by='motronics-studio tests/unit/scripts/test_the_install_doors_deliver_the_declared_kit.py',
+        covered_by='consumer-a tests/unit/scripts/test_the_install_doors_deliver_the_declared_kit.py',
         why=(
             'THIS REPO`S REAL DOORS ARE ARGV BUILDERS, and a text scan of this file reads four '
             'command-shaped literals while being unable to say which branch composes the argv that '
@@ -273,9 +273,9 @@ DECLINED: tuple[Declined, ...] = (
         ),
     ),
     Declined(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='scripts/install/install.py',
-        covered_by='motronics-studio tests/unit/scripts/test_the_install_doors_deliver_the_declared_kit.py',
+        covered_by='consumer-a tests/unit/scripts/test_the_install_doors_deliver_the_declared_kit.py',
         why=(
             'Declined for the same reason and worth naming separately because it is the door that '
             'was SUSPECTED and was never the defect: it spells `uv pip install -e ".[all,dev]"` as a '
@@ -285,13 +285,13 @@ DECLINED: tuple[Declined, ...] = (
         ),
     ),
     Declined(
-        repo='wdg-lab',
+        repo='consumer-b',
         path='scripts/dep.py',
         covered_by='lab_commons.dev.dep, exercised by tests/test_dev_dep.py',
         why=(
             'Reads zero commands because it delegates to `lab_commons.dev.dep`, which builds '
             '`sys.executable -m pip install` and is tested in this repo. Recorded as declined rather '
-            'than simply left out of the list, because optimi-lab DOES list its own `scripts/dep.py` '
+            'than simply left out of the list, because consumer-c DOES list its own `scripts/dep.py` '
             'with a zero reading -- two repos treating the same file differently is exactly the '
             'asymmetry a census exists to make visible instead of inferable.'
         ),
@@ -304,7 +304,7 @@ SHARED: tuple[SharedDoor, ...] = (
     SharedDoor(
         repo='lab-commons',
         path='.github/workflows/python-verify.yml',
-        ran_by=('optimi-lab', 'wdg-lab'),
+        ran_by=('consumer-c', 'consumer-b'),
         deliveries=frozenset({'INERT', 'REVERTS'}),
         why=(
             'THE FINDING. This reusable workflow holds `uv sync --python X $extra_flags` and two '

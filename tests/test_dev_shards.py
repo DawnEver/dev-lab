@@ -169,7 +169,7 @@ def test_the_composed_outcome_is_the_familys_enum_and_not_a_string() -> None:
     assert isinstance(compose(_rows(Outcome.PASS), 1).result, Outcome)
 
 
-# --- the cost-aware packer, moved from motronics-studio's scripts/gate/_shards.py (2026-09-29) ---
+# --- the cost-aware packer, moved from consumer-a's scripts/gate/_shards.py (2026-09-29) ---
 
 
 def test_pack_puts_the_heaviest_items_in_different_bins_and_ties_break_by_key() -> None:

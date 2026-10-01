@@ -9,12 +9,12 @@ MEASURED 2026-09-19 against four checkouts, at the commits `_doorcensus_rows.py`
 each selection with its repo's own `[project.optional-dependencies]`. Every scope and every stranded
 name below is re-derived by `assert_scopes`, so a row that stops being true REDS.
 
-THE FINDING, AND IT IS NOW CLOSED, WITH BOTH NUMBERS ON RECORD. motronics'
+THE FINDING, AND IT IS NOW CLOSED, WITH BOTH NUMBERS ON RECORD. consumer-a'
 `scripts/gate/dep_sync.py` printed, immediately AFTER a prune had removed distributions, "re-run
 naming every extra you need (`--extra all` where the project declares it)". That project DOES
-declare `all`, and `all` there is `motronics[euclid,maxwell,pareto,femm,gui,native]` -- no `dev` --
+declare `all`, and `all` there is `consumer-a[euclid,maxwell,pareto,femm,gui,native]` -- no `dev` --
 so following the advice left the tree with no pytest, no xdist, no timeout plugin and no ruff: the
-incident of 2026-09-18 a second time, arriving through the remedy for the first. motronics commit
+incident of 2026-09-18 a second time, arriving through the remedy for the first. consumer-a commit
 1a50949 rewrote that text on 2026-09-19 and the row below is REPOINTED to the line that makes the
 selection today, STRANDS -> COMPLETE. The evidence pin is what forced the visit; without it the row
 would still be describing a sentence nobody prints.
@@ -26,7 +26,7 @@ caller. `SITES` records that file as the one pruning command in the family's dec
 rows below record the two callers that decide what it syncs. That is the `SharedDoor` finding one
 axis over: the selection and the command live in different repositories.
 
-WDG-LAB HAS NO ROW AND THAT IS A MEASUREMENT. Its only lock-consuming doors carry `--no-sync`, so no
+CONSUMER_B HAS NO ROW AND THAT IS A MEASUREMENT. Its only lock-consuming doors carry `--no-sync`, so no
 command in its declared door set chooses a population at all. `SITES` is compared by EQUALITY, so
 the day a `uv sync` lands in any of the four, it reds as uncensused rather than joining quietly.
 """
@@ -71,7 +71,7 @@ ROWS: tuple[ScopeRow, ...] = (
         ),
     ),
     ScopeRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         path='.github/workflows/ci.yml',
         line=38,
         evidence="extras: 'dev'",
@@ -88,7 +88,7 @@ ROWS: tuple[ScopeRow, ...] = (
         ),
     ),
     ScopeRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='scripts/gate/dep_sync.py',
         line=4,
         evidence='--sync --extra pareto --extra dev',
@@ -100,12 +100,12 @@ ROWS: tuple[ScopeRow, ...] = (
             'It survives because `dev` carries pytest, pytest-xdist, pytest-timeout and ruff and '
             'because lab-commons is a REQUIRED dependency there, not because the author enumerated '
             'the environment. What it does remove is real -- measured 2026-09-15, cadquery-ocp and '
-            'wdg-lab -- so COMPLETE here means the tree can still report a verdict, never that the '
+            'consumer-b -- so COMPLETE here means the tree can still report a verdict, never that the '
             'environment is whole. That distinction is the module docstring of `syncscope`.'
         ),
     ),
     ScopeRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         path='scripts/gate/dep_sync.py',
         line=475,
         evidence='--extra all --extra dev --extra img-to-cad',
@@ -116,7 +116,7 @@ ROWS: tuple[ScopeRow, ...] = (
             'THE FINDING, RE-MEASURED 2026-09-19 AFTER IT WAS FIXED, AND BOTH NUMBERS STAY ON RECORD. '
             'At `dep_sync.py:458` this row read `--extra all`, scope STRANDS, stranded pytest, '
             'pytest-xdist, pytest-timeout and ruff: the REMEDY the tool printed to an operator who '
-            'had just watched it remove distributions. motronics commit 1a50949 rewrote that text -- '
+            'had just watched it remove distributions. consumer-a commit 1a50949 rewrote that text -- '
             'it now says `all` is not all of them and names the whole set -- so the row is repointed '
             'to the line that makes the selection today, and the scope moved STRANDS -> COMPLETE. '
             'That is a ratchet closing, not a band loosening; the evidence pin is what forced the '

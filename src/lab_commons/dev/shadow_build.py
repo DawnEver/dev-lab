@@ -10,7 +10,7 @@ SO NOTHING HERE INSTALLS. It BUILDS a wheel (``maturin build``, which only write
 directory), UNPACKS it -- a wheel is a zip, so no package manager is involved at all -- and puts the
 unpack directory on ``PYTHONPATH``, where it SHADOWS the installed copy. ``PYTHONPATH`` precedes
 site-packages, so the fresh build wins while every other dependency still resolves from the shared
-venv, which is only ever READ. Measured in motronics-studio 2026-09-04: under the shadow the
+venv, which is only ever READ. Measured in consumer-a 2026-09-04: under the shadow the
 extension resolved to the shadow directory and ``numpy`` still imported at 2.5.2 from the venv.
 
 THE REGION GUARD IS DERIVED, NEVER SPELLED. :func:`shared_venv_root` reads ``sys.prefix``, so the
@@ -28,10 +28,10 @@ that ratio weighted by the kernel's measured share of wall clock, and that share
 the CASE and of the consuming repo -- so :class:`Comparison` carries ``speedup`` and has no
 ``end_to_end`` at all. Stating a kernel speedup as a wall-clock one is the declaration-that-lies
 defect; the ceiling also tells you when a measurement is NOT ATTRIBUTABLE, since an end-to-end gain
-EXCEEDING its own bound means the box moved rather than the code. Measured in motronics-studio
+EXCEEDING its own bound means the box moved rather than the code. Measured in consumer-a
 2026-09-04: a port measured +3.07 % end to end against a 1.8 % bound.
 
-WHY IT IS HERE. motronics-studio held the only copy (``scripts/gate/native_ab.py``), and ``wdg-lab``
+WHY IT IS HERE. consumer-a held the only copy (``scripts/gate/native_ab.py``), and ``consumer-b``
 has ``rust/``, a PyO3 extension and a recorded ``LNK1104`` from overlapping ``maturin`` invocations
 -- which is the linker refusing a write to an output file another build already holds, the exact
 collision a build into a private directory does not have.

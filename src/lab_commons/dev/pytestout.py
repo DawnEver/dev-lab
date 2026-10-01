@@ -11,12 +11,12 @@ READINGS it judges.
 
 MEASURED 2026-09-19 BEFORE IT WAS BUILT, because a kit module with one consumer is a fork wearing a
 kit's clothes. ALL FOUR REPOS OF THE FAMILY READ A TEST RUNNER'S TRANSCRIPT, and the first reading of
-that census was wrong in the safe direction: ``wdg-lab`` and ``optimi-lab`` hold no parser of their
+that census was wrong in the safe direction: ``consumer-b`` and ``consumer-c`` hold no parser of their
 own, which reads as "they do not do this" until their Makefiles are opened -- both run ``python -m
 lab_commons.dev.verify``, so they have been reading pytest's stdout THROUGH this package all along
 and simply never forked it. So the population is four consumers, of which TWO HELD A COPY: this
 package in ``verify._CSI`` plus ``reports._COUNT``/``_COLLECTED``/``_summary_counts``, and
-motronics-studio in ``scripts/gate/_transcript.py``. The two copies had SPLIT ON EVERY READING, each
+consumer-a in ``scripts/gate/_transcript.py``. The two copies had SPLIT ON EVERY READING, each
 side stronger somewhere, and the two repos with no copy silently inherited whichever half this
 package happened to hold:
 

@@ -232,7 +232,7 @@ class TestCrossover:
         assert 'bracketed from below' in got.reason
 
     def test_a_winner_that_changes_back_forbids_a_threshold_and_the_pairs_are_named(self) -> None:
-        """The motronics shape: three points within 11 % of each other, ratios 0.81 / 1.70 / 0.78.
+        """The consumer-a shape: three points within 11 % of each other, ratios 0.81 / 1.70 / 0.78.
 
         Its control is the test above -- the SAME function over a monotone set returns a threshold --
         so an implementation that always refused would fail there.

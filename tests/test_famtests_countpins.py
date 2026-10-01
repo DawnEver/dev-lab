@@ -39,7 +39,7 @@ from lab_commons.dev.famtests.countpins import (
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-#: optimi-lab's declared vocabulary, used here as the ARGUMENT this body takes rather than as a
+#: consumer-c's declared vocabulary, used here as the ARGUMENT this body takes rather than as a
 #: constant it closes over. A consumer is free to declare fewer; it may not omit the declaration.
 _SUFFIXES = ('_FLOOR', '_CEILING', '_BAND', '_DEPTH', '_MAX', '_MIN', '_LIMIT', '_HEADROOM')
 _NAMES = frozenset(suffix.lstrip('_') for suffix in _SUFFIXES)
@@ -226,7 +226,7 @@ def test_a_planted_offender_reaches_the_refusal_with_its_number(tmp_path: Path) 
 # -- the walk on a REAL tree, and why this repo does not yet take the VERDICT --------------------
 #
 # THIS REPO DOES NOT ADOPT THE RATCHET IN THIS COMMIT, AND THE REASON IS A MEASUREMENT RATHER THAN
-# AN INTENTION. Driven over `tests/` on 2026-09-19 with optimi-lab's eight suffixes, the scan reads
+# AN INTENTION. Driven over `tests/` on 2026-09-19 with consumer-c's eight suffixes, the scan reads
 # 115 modules and 347 constants and convicts 21 names in 14 files. Hand-read, ALMOST ALL OF THEM ARE
 # GENUINE MAGNITUDES spelled with an ending this tree uses and that vocabulary does not carry --
 # `SLOW_S`, `_POLL_S`, `_WAIT_S`, `NOISE_LINES`, `SUBSTANTIAL_LINE_CHARS`, `SEPARATION_FACTOR`,
@@ -244,7 +244,7 @@ def test_a_planted_offender_reaches_the_refusal_with_its_number(tmp_path: Path) 
 # an adopter will bind -- on CONSTANTS READ, never on offenders, because the offender population is
 # a lower bound whose clean value is the empty set.
 
-#: optimi-lab's vocabulary, used to take the reading above. Not this repo's declaration -- this repo
+#: consumer-c's vocabulary, used to take the reading above. Not this repo's declaration -- this repo
 #: has not made one, which is the point of the comment block.
 _MEASURING_SUFFIXES = _SUFFIXES
 

@@ -1,6 +1,6 @@
 # Four repos install this one, and none of them can see this history
 
-`lab-commons` is the leaf: motronics-studio, wdg-lab and optimi-lab import it, and nothing here
+`lab-commons` is the leaf: consumer-a, consumer-b and consumer-c import it, and nothing here
 imports them. Every constraint below follows from that one fact.
 
 - **A consumer inherits every runtime dependency**, including the ones it never uses. A new entry

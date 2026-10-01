@@ -1,9 +1,9 @@
 """``lab_commons.log`` — named, isolated stdlib logger factory + free-function helpers.
 
-Ported from motronics-studio's ``tests/unit/core/test_mylab_logging.py`` (the ``TestLogger``
+Ported from consumer-a's ``tests/unit/core/test_mylab_logging.py`` (the ``TestLogger``
 class), renamed to this package's import path. The old ``TestReExport`` class (proving
-motronics' OLD import paths still resolved to the shared implementation) is dropped here --
-that assertion belongs in the CONSUMER's tree (motronics-studio), not this package's.
+consumer-a' OLD import paths still resolved to the shared implementation) is dropped here --
+that assertion belongs in the CONSUMER's tree (consumer-a), not this package's.
 """
 
 import io
@@ -64,7 +64,7 @@ class TestEmit:
 class TestEmitOnAConsoleThatCannotCarryTheCharacter:
     """THE CONSOLE DEGRADES; IT DOES NOT KILL THE RUN -- both directions, planted.
 
-    MEASURED 2026-09-18 on wdg-lab: a test printed U+2713, ``lab_commons.dev.verify._tee`` handed it
+    MEASURED 2026-09-18 on consumer-b: a test printed U+2713, ``lab_commons.dev.verify._tee`` handed it
     to ``emit``, and a cp1252 stdout -- the Windows DEFAULT whenever nothing overrides it -- raised
     ``UnicodeEncodeError`` out through the verdict runner, which produced an INCONCLUSIVE WITH NO
     LOG. The crash reproduces in four lines, so the fix is controlled in four.

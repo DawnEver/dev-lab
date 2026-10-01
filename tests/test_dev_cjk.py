@@ -98,7 +98,7 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
 
 
 def test_exempted_matches_a_nested_directory_and_not_a_nested_lookalike() -> None:
-    assert exempted('src/motronics/hamilton/.claude/memory/x.md')
+    assert exempted('src/consumer_a/hamilton/.claude/memory/x.md')
     assert exempted('src/pkg/attic/old.py')
     assert exempted('rust/.claude/memory/note.md')
     assert not exempted('src/pkg/notattic/x.py')
@@ -126,14 +126,14 @@ def test_a_planted_violation_and_a_planted_clean_file_are_told_apart(tmp_path: P
 
 
 def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_not(tmp_path: Path) -> None:
-    """MEASURED on motronics-studio: `.claude/memory/` and `attic/` are not only root directories.
+    """MEASURED on consumer-a: `.claude/memory/` and `attic/` are not only root directories.
 
-    A root-prefix-only match reported 47,521 CJK characters under `src/motronics/**` that were all
-    inside NESTED memory files (`src/motronics/hamilton/.claude/memory/x.md`). Both directions are
+    A root-prefix-only match reported 47,521 CJK characters under `src/consumer_a/**` that were all
+    inside NESTED memory files (`src/consumer_a/hamilton/.claude/memory/x.md`). Both directions are
     planted here: a nested memory file and a nested `attic/` file are exempt, while a nested file
     that merely starts with the same letters (`notattic/`) is still caught.
     """
-    nested_memory = tmp_path / 'src' / 'motronics' / 'hamilton' / '.claude' / 'memory' / 'note.md'
+    nested_memory = tmp_path / 'src' / 'consumer_a' / 'hamilton' / '.claude' / 'memory' / 'note.md'
     nested_memory.parent.mkdir(parents=True)
     nested_memory.write_text(chr(0x4E2D) + chr(0x6587) + ' nested and exempt\n', encoding='utf-8')
 
@@ -147,7 +147,7 @@ def test_a_nested_exemption_directory_is_recognised_and_a_nested_lookalike_is_no
 
     scan = scan_files((nested_memory, nested_attic, lookalike), root=tmp_path)
     assert scan.exempted == (
-        'src/motronics/hamilton/.claude/memory/note.md',
+        'src/consumer_a/hamilton/.claude/memory/note.md',
         'src/pkg/attic/old.py',
     )
     assert [o.path for o in scan.occurrences] == ['src/pkg/notattic/x.py']

@@ -2,8 +2,8 @@
 
 THE DEFECT THIS EXISTS TO CLOSE, MEASURED 2026-09-16. The family's goal doc asks that "a hand-written
 pytest line or a bare ``git push`` is refused identically everywhere". Only one repo of four has any
-of the machinery -- motronics-studio carries `.claude/hooks/deny-rules.json` and a 228-line engine;
-`lab-commons`, `optimi-lab` and `wdg-lab` carry none. So a rule this family states in prose four
+of the machinery -- consumer-a carries `.claude/hooks/deny-rules.json` and a 228-line engine;
+`lab-commons`, `consumer-c` and `consumer-b` carry none. So a rule this family states in prose four
 times is refused once, and the three quiet repos are where an agent's habit actually forms.
 
 THE SEAM, and it is the one :mod:`lab_commons.dev.rules` already chose rather than a second scheme.
@@ -17,7 +17,7 @@ A rule has two halves with two different owners:
   between the two modules IS the split the design turns on.
 
 EVERY RULE NAMES ITS REMEDY. This is the hardest-won lesson in the family this week -- a rule that
-seals a road with no exit gets ROUTED AROUND rather than obeyed, and motronics' ``uv`` rule had no
+seals a road with no exit gets ROUTED AROUND rather than obeyed, and consumer-a' ``uv`` rule had no
 exit for months and cost a full day before its reason was made to name ``dep_sync.py``. So
 :class:`DenyRule` refuses AT CONSTRUCTION a row with an empty remedy, and refuses a row that
 declares ``needs`` without leaving the ``{remedy}`` placeholder for it, or the reverse. The other
@@ -92,7 +92,7 @@ class Remedy:
 
     *allow* is the regex that OPENS the rule for this command. Optional, because most remedies do
     not resemble the shape they replace and so are never matched by the pattern in the first place.
-    It is compiled HERE, at construction, and that is not defensive tidiness: motronics once shipped
+    It is compiled HERE, at construction, and that is not defensive tidiness: consumer-a once shipped
     ``[/\\]`` as an ``allow`` -- an unterminated character class -- and the engine, which fails open
     by construction, skipped the rule in silence.
 

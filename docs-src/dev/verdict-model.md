@@ -1,6 +1,6 @@
 # The verdict model — one entry, one measurement, two verdicts
 
-- **One entry point produces a verdict, and a hand-written test-runner line never does** — only the entry distinguishes INCONCLUSIVE from PASS/FAIL. In this family the portable one is `python -m lab_commons.dev.verify`; `motronics-studio` additionally has a case-library and vendor-engine aware driver under its own `scripts/gate/`, which the other three repos do not have and do not need.
+- **One entry point produces a verdict, and a hand-written test-runner line never does** — only the entry distinguishes INCONCLUSIVE from PASS/FAIL. In this family the portable one is `python -m lab_commons.dev.verify`; `consumer-a` additionally has a case-library and vendor-engine aware driver under its own `scripts/gate/`, which the other three repos do not have and do not need.
 - A MEASUREMENT and a VERDICT are different acts. A verdict answers "may this land" and needs a tree it can name, so a dirty one disqualifies it; a measurement answers "where am I" and runs on a dirty tree because that is what development is. A measurement never speaks PASS/FAIL/INCONCLUSIVE.
 - **The stdout line is the verdict, never the evidence.** The run writes a full log and the summary line does not name it, so a reader who only has the line cannot see WHICH test failed. Two runs of the same tier on the same day overwrite each other unless one is given its own log name, which is why a run whose failures you intend to read gets one.
 
@@ -12,7 +12,7 @@
 | gate | the push increment's reach (last-pushed sha to HEAD, else the integration branch, else `main`), lightweight only | 30 min HARD, blocking | pre-push, and anyone before committing |
 | heavy | everything, including every LOCAL live engine the repo declares | unbounded, NEVER blocking | the agent that owns the push, by hand |
 
-- **An engine is enabled by the TIER, never by the shell.** The heavy tier sets the live-engine environment itself, so a heavy verdict always covers the engines this box has. Do not re-copy the engine list into prose: measured in motronics-studio, a prose row promised an engine whose variable was never set, and 27 plus 13 tests skipped as "opt-in" on a machine where both were installed.
+- **An engine is enabled by the TIER, never by the shell.** The heavy tier sets the live-engine environment itself, so a heavy verdict always covers the engines this box has. Do not re-copy the engine list into prose: measured in consumer-a, a prose row promised an engine whose variable was never set, and 27 plus 13 tests skipped as "opt-in" on a machine where both were installed.
 - **A skip says WHICH fact stopped it.** "Not installed on this box" is about the machine and no variable fixes it; "installed but not enabled" is about the caller. Conflating those makes every skipped line read as a choice when it is a gap.
 - **A resource on ANOTHER host is never part of a verdict about this tree.** Reachability of someone else's machine is not a property of your tree and may not gate a judgement about it — it reddened a blocking tier that way once already.
 - The 30-minute wall is ONE AGENT RESPONSE, not a taste in test duration: past it the prompt cache is gone and the agent reading the answer is no longer the agent that asked.

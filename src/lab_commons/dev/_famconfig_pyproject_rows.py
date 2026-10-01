@@ -1,8 +1,8 @@
 r"""The `pyproject.toml` tables the family OWNS, and every table it measured and DECLINED.
 
 THE GAP THIS CLOSES, MEASURED 2026-09-19 over the four live checkouts. ``pyproject.toml`` is the
-biggest config file in the family -- 169 lines in lab-commons, 377 in wdg-lab, 223 in optimi-lab,
-293 in the motronics lane -- and NOTHING owned a single key of it. The census scored the whole file
+biggest config file in the family -- 169 lines in lab-commons, 377 in consumer-b, 223 in consumer-c,
+293 in the consumer-a lane -- and NOTHING owned a single key of it. The census scored the whole file
 as one placement and stopped there, which is the state where four repos drift a shared convention
 apart and no mechanism can say they did.
 
@@ -92,7 +92,7 @@ PYPROJECT_TABLE_FLOOR: Final = 7
 PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
     ('build-system',): (
         'GENUINELY PER-REPO, and it is a 2-2 split rather than a near-miss. lab-commons and '
-        'motronics-studio build with `hatchling` + `hatch-vcs`; wdg-lab and optimi-lab build with '
+        'consumer-a build with `hatchling` + `hatch-vcs`; consumer-b and consumer-c build with '
         '`setuptools` + `setuptools-scm`. Neither `requires` nor `build-backend` has a value more '
         'than two repos share, so there is no four-way agreement to promote and no majority that '
         'would not be one pair legislating for the other. The build backend is also the one setting '
@@ -106,23 +106,23 @@ PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
         'consumers and ABSENT in lab-commons, which mints versions from tags through hatch-vcs and '
         'publishes no changelog at all. Promoting them would make the publishing repo adopt a '
         'release workflow it deliberately does not run, on the strength of three other repos '
-        'agreeing with each other. `allowed_prefixes` is motronics-only and would be its delta.'
+        'agreeing with each other. `allowed_prefixes` is consumer-a-only and would be its delta.'
     ),
     ('tool', 'coverage'): (
         'THE SAME SHAPE, AND WEAKER. No table in the kit, which measures no coverage; and among the '
         'three consumers only `run.branch`, `report.precision` and `html.directory` agree. The keys '
-        'that carry the content do NOT: `run.source` is `src/wdg_lab` / `src` / `src/motronics`, and '
+        'that carry the content do NOT: `run.source` is `src/consumer_b` / `src` / `src/consumer_a`, and '
         '`report.omit` and `report.exclude_lines` each differ in two of the three. So this is not '
         'even a consumer agreement worth arguing about -- it is three repos naming their own package.'
     ),
     ('tool', 'pyright'): (
-        'ONE REPO. Only motronics-studio declares it, over six keys, three of which name paths into '
-        'that tree (`include = ["src/motronics/contracts", "src/motronics/core"]`, `exclude` naming '
+        'ONE REPO. Only consumer-a declares it, over six keys, three of which name paths into '
+        'that tree (`include = ["src/consumer_a/contracts", "src/consumer_a/core"]`, `exclude` naming '
         'its `attic/`). A base over one repo agrees with everything it reads and refuses nothing, '
         'which is the vacuous green every floor in this package exists to stop.'
     ),
     ('tool', 'lab_commons'): (
-        'ONE REPO, AND THE KIT ALREADY OWNS IT IN CODE. Only wdg-lab declares '
+        'ONE REPO, AND THE KIT ALREADY OWNS IT IN CODE. Only consumer-b declares '
         '`[tool.lab_commons.verify]`, and its schema is defined by `lab_commons.dev.verify` in this '
         'package. A section base restating that schema would be a SECOND source for it, and the one '
         'key it holds (`allowed_skips`) is eight paths into one lab`s test tree.'

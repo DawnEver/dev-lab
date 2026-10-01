@@ -4,12 +4,12 @@ THE DEFECT, MEASURED 2026-09-16, by the user, across four repos' injected docs (
 ``CLAUDE.md``, ``.claude/rules/**``, memory excluded)::
 
     repo          docs   lines>100  lines>120   max column
-    motronics       26      79         68          786
-    wdg-lab         25      30         19          223
+    consumer-a       26      79         68          786
+    consumer-b         25      30         19          223
     lab-commons      2       0          0           99
-    optimi-lab       2       0          0           99
+    consumer-c       2       0          0           99
 
-An existing LINE-COUNT ratchet (motronics' own) pins how many lines a page may have and sums the
+An existing LINE-COUNT ratchet (consumer-a' own) pins how many lines a page may have and sums the
 pins into one ceiling -- and a line is one unit of that pin NO MATTER HOW LONG IT IS. One page there
 is 32 lines with a maximum column of 694; a rewrite could double that page's width while LOWERING
 its line count, and a line-count ratchet would read the change as an improvement. **The pin counts
@@ -20,7 +20,7 @@ This module is the missing dimension: it caps the LENGTH of each line, alongside
 THE THRESHOLD IS 120, and the reason is that it is not a new number. Every repo in this family
 already sets ``line-length = 120`` in its ``[tool.ruff]`` config for CODE; using the same number for
 PROSE gives the family one width constant instead of two. It is not chosen to just miss today's
-worst case either -- lab-commons and optimi-lab already sit at a measured maximum of 99 columns,
+worst case either -- lab-commons and consumer-c already sit at a measured maximum of 99 columns,
 comfortably inside 120, so the ceiling refuses real over-width prose rather than rubber-stamping
 whatever a repo currently contains.
 
@@ -116,9 +116,9 @@ def _under(name: str, prefixes: Collection[str]) -> bool:
 
     Checked both at the root (``name.startswith(prefix)``) and as a nested SEGMENT
     (``f'/{prefix}'`` in *name*), for the same measured reason as
-    :func:`lab_commons.dev.cjk.exempted`: motronics-studio's ``.claude/rules/`` pages are SCOPED per
-    module (``src/motronics/hamilton/.claude/rules/femm.md``, ``scripts/.claude/rules/scripts.md``,
-    every ``src/motronics/*/.claude/rules/MEMORY.md``), and a root-only prefix would silently miss
+    :func:`lab_commons.dev.cjk.exempted`: consumer-a's ``.claude/rules/`` pages are SCOPED per
+    module (``src/consumer_a/hamilton/.claude/rules/femm.md``, ``scripts/.claude/rules/scripts.md``,
+    every ``src/consumer_a/*/.claude/rules/MEMORY.md``), and a root-only prefix would silently miss
     every one of them -- the width ceiling would then cover nothing that repo actually injects. The
     leading ``/`` is what keeps ``notrules/x`` from matching ``rules/``: the prefix must start a path
     SEGMENT.

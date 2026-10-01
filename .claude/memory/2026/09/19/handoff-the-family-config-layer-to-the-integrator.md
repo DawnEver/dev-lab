@@ -15,14 +15,14 @@ none of that can be read out of a single working copy.
 ## PUBLISHED STATE — every claim answered by `git merge-base --is-ancestor`, not from memory
 
     lab-commons      main             7b7661b    23 commits landed, 0 unpublished
-    optimi-lab       main             8285928    0 unpublished
-    wdg-lab          main             f497717c   0 unpublished
-    motronics        feat/optimi-lab  c4610dbce  0 unpublished
+    consumer-c       main             8285928    0 unpublished
+    consumer-b          main             f497717c   0 unpublished
+    consumer-a        feat/consumer-c  c4610dbce  0 unpublished
 
 `lab-commons/main` contains all three of `feat/ci-os-matrix`, `feat/famtests-durations-countpins`
 and `feat/stored-readings` as ancestors.
 
-wdg-lab's work is spread over FIVE origin branches because its `main` is 140 behind a divergent
+consumer-b's work is spread over FIVE origin branches because its `main` is 140 behind a divergent
 `origin/main` and cannot be fast-forwarded: `feat/kit-adoptions`, `fix/door-count-30`,
 `fix/roster-reread-2026-09-19`, `feat/the-wall-and-the-marker`, `fix/stale-readings-zero`.
 **How those meet `origin/main` is the integrator's decision and was deliberately not attempted.**
@@ -68,7 +68,7 @@ and it does not discriminate between people:
 ## INSTRUMENT GAPS — the meter cannot see these, and that is the finding
 
 1. **`supersede`'s OPPORTUNITY detector exists only for `MOVES` rows.** CORRECTED after first
-   writing: wdg-lab's `test_the_roster_is_re_read_against_the_kit.py:126` is
+   writing: consumer-b's `test_the_roster_is_re_read_against_the_kit.py:126` is
    `test_no_row_whose_subject_the_kit_already_holds_is_still_declared_moves`, and it had ALREADY
    convicted `scripts/durations.py` by path before the adoption lane touched it — *"a move with an
    occupant is a duplicate running today"*. So the narrow case is guarded.
@@ -77,27 +77,27 @@ and it does not discriminate between people:
    an intent the kit has since satisfied". None of them asks "could this kit module replace a file
    that never declared anything", so a module published independently of a repo's fork is still
    structurally invisible.
-   **MEASURED: 18-19 of 71 published modules are unreferenced in motronics** — 18 by a per-module
+   **MEASURED: 18-19 of 71 published modules are unreferenced in consumer-a** — 18 by a per-module
    grep, 19 by a dotted-path set difference; the two judgements differ on `reports`, and that
    difference IS the unfixed definition of "claimed". It was 13 before today. **Every adoption step
    makes this pile bigger.** A full specification is in `_placement_gate.py`'s rows: two-sided
    floor, a CEILING that refuses when the scorer degenerates rather than emitting N*M noise, and
    `OPPORTUNITY` as a REPORT not a raise.
 2. **`storedreadings` reads `Placement.why` only**, so the `BELOW_THE_BAR` dict is invisible to it —
-   row-keyed prose, same file, same derivable readings. Two of optimi-lab's five entries were stale
+   row-keyed prose, same file, same derivable readings. Two of consumer-c's five entries were stale
    in exactly the way the guard refuses.
 3. **`'was own='` in `HISTORICAL_MARKERS` can never fire.** `_marker_in` is asked about
    `why[max(previous_end, start - MARKER_WINDOW) : start]`, a window ENDING where the reading
    begins, so the marker's own `own=` is always outside it. `_marker_in` is used a SECOND time in
    `_grouped` with the same shape, so any repair changes grouping too. **Corpus cost measured: 2
-   occurrences family-wide, both in motronics `_tests_placement_docs.py`.** Proposed spelling is
+   occurrences family-wide, both in consumer-a `_tests_placement_docs.py`.** Proposed spelling is
    the parenthesised form, since the corpus writes it inside brackets — measure against the corpus
    first. **The durable fix is the missing arm that drives EVERY member of `HISTORICAL_MARKERS`
    through the real reader and asserts each one actually marks**; a named set whose members are
    never individually exercised is the same shape as a `declared <= live` guard.
 4. **A self-referential row's reading is a FIXPOINT, not a value.** `_placement.py` holds a row
-   describing the file it lives in, so writing the correction changes the count: optimi-lab
-   converged 453 -> 459 -> 461 over three passes; motronics had to sequence its 165-row fix
+   describing the file it lives in, so writing the correction changes the count: consumer-c
+   converged 453 -> 459 -> 461 over three passes; consumer-a had to sequence its 165-row fix
    (scripts first, self-referential rows last) because naive parallel editing oscillates.
    **No refusal message says this**, so an adopter handed "live reads 453" writes a number that is
    wrong the moment it lands.
@@ -113,7 +113,7 @@ refuted it with the roster's own text and with property 2, which refuses a STAYS
 names nothing the repo owns — and `_anchors.py`'s only project facts are PATHS, which `nouns_in`
 structurally cannot spell. **The check I mandated is what kills the conclusion I drew.**
 
-Re-audited, motronics' 21 open rows are really:
+Re-audited, consumer-a' 21 open rows are really:
 
     9   split EXECUTED, kit half imported by name — correctly SPLITS, not backlog
     6   demand measured and REFUTED — no second consumer across all four repos
@@ -142,24 +142,24 @@ one MORE gap than named (`install/install.py`'s locked-install-door half).
 
     lab-commons  result=fail          1 failed, 2109 passed in 672.78s
                                       (3 failed at the merge base; the survivor is the 88-vs-87 pin)
-    optimi-lab   result=pass          402 passed, 5 xfailed in 82.06s
-    wdg-lab      result=inconclusive  4 failed, 3036 passed, 13 skipped in 229.60s
+    consumer-c   result=pass          402 passed, 5 xfailed in 82.06s
+    consumer-b      result=inconclusive  4 failed, 3036 passed, 13 skipped in 229.60s
 
 **lab-commons is ADOPTABLE despite the `fail`, and those are different facts.** `src/lab_commons/`
 is entirely green; the single red is a cross-repo census pin under `tests/` that cannot affect a
 consumer's import, install or collection.
 
-**wdg-lab CANNOT REACH A PASS TODAY and it is nobody's fault.** `allowed_skips = []` is deliberate
+**consumer-b CANNOT REACH A PASS TODAY and it is nobody's fault.** `allowed_skips = []` is deliberate
 and documented; 13 skips all point at ONE untracked fixture,
-`lib/winding/hairpin/wave/hairpin-3Ph-72S6P10L-6B-spiral-2S_shift.wdg.toml`. Every verdict
+`lib/winding/hairpin/wave/hairpin-3Ph-72S6P10L-6B-spiral-2S_shift.consumer-b.toml`. Every verdict
 truncates to INCONCLUSIVE regardless of the wall.
 
-## WDG-LAB WENT FROM NO VERDICT IN A DAY TO 3:42, AND THE MECHANISM MATTERS
+## CONSUMER_B WENT FROM NO VERDICT IN A DAY TO 3:42, AND THE MECHANISM MATTERS
 
 Three runs wedged (90 min, 29 min, 158 min) before a wall and sharding landed.
 
 * `pytest-timeout`, `timeout = 300`, `timeout_method = "thread"`.
-* **`-n 4` IS LOAD-BEARING, NOT AN OPTIMISATION.** `pytest-timeout` raises inside the test only
+* **`-n 4` IS LOAD-BEARING, NOT AN CONSUMER_CSATION.** `pytest-timeout` raises inside the test only
   where `SIGALRM` exists. Windows has none (verified: `hasattr(signal,'SIGALRM') is False`), so it
   falls back to `os._exit(1)` and **the wall kills the SESSION**. Under `-n` the victim is a worker
   and xdist restarts it. **A wall alone delivers a process death with no summary and zero
@@ -175,7 +175,7 @@ Three runs wedged (90 min, 29 min, 158 min) before a wall and sharding landed.
 at 13:44Z already carried the filter and wedged on an UNMARKED module. `Makefile:115` is the
 `verify-fast` target, not `verify`, and the Makefile defends that split at length.
 
-## OPEN BLOCKER FOR THE wdg-lab DURATIONS ADOPTION
+## OPEN BLOCKER FOR THE consumer-b DURATIONS ADOPTION
 
 `assert_the_ledger_is_evidence` demands a `headroom` this repo does not have, and
 `assert_floor_still_binds` raises `SlackFloor` against `LEDGER_FLOOR=200` on a live ledger of
@@ -185,7 +185,7 @@ the headroom, which is giving up the guard to keep the arm.
 
 ## CI: THREE PLATFORMS, NEVER EXECUTED
 
-`python-verify.yml` is a REUSABLE workflow (`on: workflow_call`) consumed by optimi-lab, so it is
+`python-verify.yml` is a REUSABLE workflow (`on: workflow_call`) consumed by consumer-c, so it is
 already the one source of truth for CI. It now carries a `runner-os` axis defaulting to all three
 platforms, crossed with `python-versions`. Both repos are PUBLIC (verified by unauthenticated API,
 HTTP 200), so the 2x Windows / 10x macOS multipliers do not apply and the full 3x2 matrix is free.
@@ -201,7 +201,7 @@ Expect reds on the first run — `boxlock`, `githooks`, process/signal tests are
 image manifest, not a measurement, and no fallback was added on purpose (an escape hatch would be a
 second definition of the gate).
 
-Gitea repos (wdg-lab, motronics) cannot use GitHub runners. Recommendation on record: accept
+Gitea repos (consumer-b, consumer-a) cannot use GitHub runners. Recommendation on record: accept
 Windows-verified-only for those two, because the cross-platform risk lives in `lab_commons`, which
 is now covered on three platforms, and a self-hosted runner would be a SECOND CI definition, which
 `python-verify.yml`'s header exists to forbid.
@@ -212,7 +212,7 @@ is now covered on three platforms, and a self-hosted runner would be a SECOND CI
   already satisfied" against a `@git+` requirement. The only thing that told the truth was
   `env_key` NOT MOVING. Use the full PEP 508 spelling.
 * **That is necessary and not sufficient.** `uv sync` PRUNES to exactly the extras named:
-  `--extra dev` alone dropped 36 distributions (113 -> 77) including `motronics_native`, `gmsh`,
+  `--extra dev` alone dropped 36 distributions (113 -> 77) including `consumer_a_native`, `gmsh`,
   `cadquery`. The door's own remedy is `--extra all --extra dev --extra img-to-cad
   --extra tooldrivers`, and **`all` is not all of them**. ALWAYS capture the package count before
   and after.
@@ -252,8 +252,8 @@ missed. **Instruct "run the full baseline", never "here is the list".**
 
 ## HUMAN RULINGS STILL OPEN
 
-1. **The untracked winding fixture** (above). Blocks every wdg-lab PASS.
-2. **`ORIGIN_BRANCHES` is pinned to `{'deploy'}`** while origin now carries five more wdg-lab
+1. **The untracked winding fixture** (above). Blocks every consumer-b PASS.
+2. **`ORIGIN_BRANCHES` is pinned to `{'deploy'}`** while origin now carries five more consumer-b
    branches. It reds correctly; moving the pin is a decision about whether those branches land.
 3. **`_placement.py`'s calibration block** (~line 683) records `own=67` where two measurements read
    68. It declares itself a dated calibration kept as evidence, so correcting it would erase the
@@ -265,13 +265,13 @@ missed. **Instruct "run the full baseline", never "here is the list".**
 
 ## THE TWO ADOPTION LANES LANDED AFTER THIS WAS FIRST WRITTEN
 
-    optimi-lab  a20b55c   adopt famtests.countpins, the last forked body in this roster
-    wdg-lab     22884b67  adopt lab_commons.dev.durations and re-take two floors
+    consumer-c  a20b55c   adopt famtests.countpins, the last forked body in this roster
+    consumer-b     22884b67  adopt lab_commons.dev.durations and re-take two floors
 
-**optimi-lab is DONE: 30 rows, 30 stays, 0 open.** The first repo in the family to close its
+**consumer-c is DONE: 30 rows, 30 stays, 0 open.** The first repo in the family to close its
 roster. Its verdict was still being taken when this line was written and is NOT recorded here.
 
-wdg-lab went 40 rows -> 39 / 9 open. `scripts/durations.py` is GONE (125 lines deleted) and its
+consumer-b went 40 rows -> 39 / 9 open. `scripts/durations.py` is GONE (125 lines deleted) and its
 roster row left with the file. **This is the one time today a row going to zero was correct**, and
 the distinction matters: the file actually MOVED into the kit, it was not deleted to tidy a row —
 which is exactly the confusion `_helpers.py:38-44` warns about. Net -79 lines across six files;
@@ -298,7 +298,7 @@ Three further corrections to what I first wrote here:
   which is `RATCHET-TWO-SIDES` done correctly. The one surviving `exitstatus` occurrence in that
   file is a COMMENT stating the absence is deliberate (`tests/conftest.py:204`).
 
-### Three findings the optimi-lab lane handed back, and one is an UPSTREAM DEFECT
+### Three findings the consumer-c lane handed back, and one is an UPSTREAM DEFECT
 
 1. **`famtests.storedreadings`'s PROVENANCE detector fires on a NAMED EXAMPLE.** Its own line 82
    names `scripts/dep.py` as a worked example of the calibration comment it deliberately does NOT

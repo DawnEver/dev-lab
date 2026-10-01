@@ -8,7 +8,7 @@ spells a unit (``slot_pitch_mm``). It is complete about what it does and blind t
 next, and the blindness has a direction: the cheapest way to make that scan green is to delete the
 suffix. ``slot_pitch_mm = 12.5`` becomes ``slot_pitch = 12.5``, the scan goes quiet, and the unit
 is now recorded NOWHERE -- not in the name it just left, not in the value it never reached. The
-name check alone therefore REWARDS the lossy repair, and motronics' own waiver says so in prose
+name check alone therefore REWARDS the lossy repair, and consumer-a' own waiver says so in prose
 (``tests/architecture/docs/_units_gap.py``: "renaming a unit-suffixed name WITHOUT typing it
 DELETES the unit rather than moving it, which is worse than leaving it") while nothing enforces the
 sentence. This module is that enforcement.
@@ -28,7 +28,7 @@ is dimensionless::
     Q_('1.6').is_compatible_with('rad')     is True      # <-- the defect, accepted
 
 So a check written the obvious way -- "parse it and confirm the dimensionality matches" -- PASSES
-the bare float it exists to catch, for every angular key. Measured 2026-09-16 against motronics'
+the bare float it exists to catch, for every angular key. Measured 2026-09-16 against consumer-a'
 declared set: of its 49 unconverted TOML keys, 15 are angular, so a dimensionality check would have
 been blind on 31% of its own subject while reporting green. The test is therefore on the UNITS:
 :func:`carries_a_unit` asks whether ``q.units`` is anything other than ``dimensionless``, and the
@@ -37,7 +37,7 @@ defect is the `DECLARATION-LIES` shape, and it is recorded here because the natu
 what the next person will reach for.
 
 WHAT IS SCANNED: TOML values, at every depth INCLUDING arrays of tables. The depth matters and is
-not a detail -- a walk that descends dicts but not lists reported 43 of motronics' 49 keys as
+not a detail -- a walk that descends dicts but not lists reported 43 of consumer-a' 49 keys as
 absent from a tree that contains all 49, because six of them live only under ``[[...]]`` rows
 (measured 2026-09-16; ``intra_slot_pitch_deg`` was one of the six). A scan that silently cannot see
 a surface reports the same empty result as a clean one, which is the failure this module's floor

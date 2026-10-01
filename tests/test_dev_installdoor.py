@@ -45,11 +45,11 @@ _KIT: tuple[str, ...] = ('lab-commons',)
 #: THE MEASURED ROWS, verbatim. Left column: the command as it was written. Right: what it delivered
 #: against a venv holding dev40 with the remote at dev42, measured 2026-09-17 with uv 0.12.5.
 _MEASURED: tuple[tuple[str, Delivery], ...] = (
-    # wdg-lab/.pre-commit-config.yaml, pre-push. Reverted the kit on every push.
+    # consumer-b/.pre-commit-config.yaml, pre-push. Reverted the kit on every push.
     ('uv run python -m lab_commons.dev.githooks bump-version', Delivery.REVERTS),
-    # wdg-lab/scripts/githooks/generate-changelog.sh. Reverted it on every commit.
+    # consumer-b/scripts/githooks/generate-changelog.sh. Reverted it on every commit.
     ('uv run python -m commitizen changelog', Delivery.REVERTS),
-    # wdg-lab/Makefile install-dev -- the door everyone suspected, and it was never the defect.
+    # consumer-b/Makefile install-dev -- the door everyone suspected, and it was never the defect.
     ('uv pip install -e ".[dev,web,rust,cad3d,full]"', Delivery.RESOLVES),
 )
 
@@ -101,9 +101,9 @@ def test_a_repo_with_no_floating_requirement_has_no_door_to_get_wrong() -> None:
 
 def test_naming_only_one_of_two_floating_requirements_still_reverts_the_other() -> None:
     """`-P` is per package, so a partial upgrade delivers the unnamed one stale."""
-    two = ('lab-commons', 'optimi-lab')
+    two = ('lab-commons', 'consumer-c')
     assert classify(_argv('uv sync -P lab-commons'), two) is Delivery.REVERTS
-    assert classify(_argv('uv sync -P lab-commons -P optimi-lab'), two) is Delivery.RESOLVES
+    assert classify(_argv('uv sync -P lab-commons -P consumer-c'), two) is Delivery.RESOLVES
 
 
 def test_a_command_quoted_inside_another_is_not_a_door() -> None:
@@ -152,10 +152,10 @@ def test_floating_requirements_reads_both_tables_and_ignores_every_pinned_shape(
         '  "pinned-tag @ git+https://example.invalid/b.git?tag=v1",\n'
         ']\n'
         '[project.optional-dependencies]\n'
-        'dev = ["optimi-lab[dev] @ git+https://example.invalid/optimi-lab"]\n',
+        'dev = ["consumer-c[dev] @ git+https://example.invalid/consumer-c"]\n',
         encoding='utf-8',
     )
-    assert floating_requirements(manifest) == ('lab-commons', 'optimi-lab')
+    assert floating_requirements(manifest) == ('consumer-c', 'lab-commons')
 
 
 def test_a_missing_manifest_raises_rather_than_answering_none(tmp_path: Path) -> None:
@@ -181,7 +181,7 @@ _OWN_DOORS: tuple[str, ...] = ('Makefile', '.github/workflows/ci.yml', '.github/
 #: THIS COMMENT READ 9 UNTIL TODAY AND NOTHING COULD SAY SO, which is the reason `doorcensus` exists
 #: one module over. A floor is `declared <= live`, satisfied by every shorter declaration, so a
 #: recorded number drifts in either direction under a green floor -- by seven here and by two in
-#: wdg-lab, both for two days. The floor STAYS, because its job is the other failure, a scan that
+#: consumer-b, both for two days. The floor STAYS, because its job is the other failure, a scan that
 #: read nothing; the EQUALITY that catches this one is in `_doorcensus_rows.py`.
 _OWN_DOOR_FLOOR = 5
 

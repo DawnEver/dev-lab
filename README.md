@@ -1,9 +1,9 @@
 # lab-commons
 
-Project-agnostic shared infrastructure for the motronics-studio / optimi-lab / wdg-lab
+Project-agnostic shared infrastructure for the consumer-a / consumer-c / consumer-b
 family of labs. Extracted because the same utils layer had drifted into **six
 near-identical, silently-diverging copies** across those repos (see
-`finding-shared-lab-infra-extraction.md` in motronics-studio's memory).
+`finding-shared-lab-infra-extraction.md` in consumer-a's memory).
 
 ## The two-tier rule
 
@@ -100,7 +100,7 @@ VERIFY = Remedy(
     path='src/lab_commons/dev/verify.py',  # resolved against YOUR tracked files
 )
 ADOPTION = HookAdoption(
-    app_name='wdg-lab',
+    app_name='consumer-b',
     remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
     declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),  # no wrapper, no killer
 )
@@ -131,18 +131,18 @@ family's process are the family's; a repo's own domain stays home.
 A consuming repo POINTS at these pages and never copies one. `lab_commons.dev.devdocs` ships the
 table of contents as data, and `pointer_table(base)` renders the markdown table that repo puts in
 its own dev index, so a page added or renamed here does not leave four hand-typed tables that
-agree for a while. The tree is rendered as motronics-studio's `family` docs sub-site
+agree for a while. The tree is rendered as consumer-a's `family` docs sub-site
 (`scripts/repo/docs.py`), which requires this repo checked out beside that one; otherwise the pages
 are read as markdown from a checkout or from the forge.
 
 ## Consumers
 
-- **motronics-studio** — the origin of this code; re-points `core/utils/{config,logger}.py`
+- **consumer-a** — the origin of this code; re-points `core/utils/{config,logger}.py`
   at this package (see that repo's `plan-lab-commons-standalone.md` for the swap runbook).
-- **optimi-lab** — consumes the runtime package and the `[dev]` kit (shared rules registry,
+- **consumer-c** — consumes the runtime package and the `[dev]` kit (shared rules registry,
   deny rules and agent guard, famconfig-rendered config, `lab_commons.dev.verify`).
-- **wdg-lab** — consumes the runtime package (logging, paths, file_io, exceptions, units, em) and
-  the `[dev]` kit the same way. Its forks (HairpinWindingDesign, wdg-lab-webui) do NOT depend on
+- **consumer-b** — consumes the runtime package (logging, paths, file_io, exceptions, units, em) and
+  the `[dev]` kit the same way. Its forks (Hairpinexample-org, consumer-b-webui) do NOT depend on
   lab-commons.
 
 ## Installing (git URL)

@@ -18,7 +18,7 @@ asserts PRESENCE, so it is blind in both directions that matter here:
 Both drive `inspect_section` over a planted file, and the clean control beside them
 (`test_a_declared_delta_is_owned`) proves the same function can still pass, so neither is vacuous.
 
-THE FILE IS NOT THE ARTEFACT, which is the second decision this arm carries. motronics keeps its
+THE FILE IS NOT THE ARTEFACT, which is the second decision this arm carries. consumer-a keeps its
 rules in `ruff.toml`; the other three keep `[tool.ruff]*` inside `pyproject.toml`. A base keyed by
 filename cannot serve both, and the kit already declared that the PATH is per-repo data twice --
 `lab_commons.dev.profile.DEFAULT_LINT_CONFIG` and `lab_commons.dev.rules.lint_selection`, which reads

@@ -7,7 +7,7 @@ produce is therefore planted into a real git repository here and pushed through 
 including the two real drifts, reproduced at the numbers they actually held.
 
 THE TWO DRIFTS, both green for two days under a floor that could not see them: `lab-commons`
-recorded 9 installer commands and delivered 16; `wdg-lab` recorded 28 and delivered 30. One drifted
+recorded 9 installer commands and delivered 16; `consumer-b` recorded 28 and delivered 30. One drifted
 UP by seven and the other by two, and a `declared <= live` floor is satisfied by both. Both
 directions are planted below, because a ratchet with one side is half a ratchet: a count that falls
 is a door that stopped being read, and that is the more dangerous of the two.
@@ -41,6 +41,7 @@ from lab_commons.dev.doorcensus import (
     reachable,
     read,
     rows_for,
+    sibling_paths,
 )
 
 #: A reason long enough to clear `WHY_FLOOR`, for rows whose SUBJECT is something other than prose.
@@ -227,6 +228,18 @@ def test_an_absent_sibling_is_absent_rather_than_failing(tmp_path: Path) -> None
     """Repos are cloned per box; demanding all four would make the census unrunnable on most of them."""
     _repo(tmp_path / 'here', {'pyproject.toml': _MANIFEST})
     assert set(reachable(tmp_path, {'here': 'here', 'elsewhere': 'elsewhere'})) == {'here'}
+
+
+def test_a_consumer_supplies_where_its_neutrally_named_siblings_live(tmp_path: Path) -> None:
+    """The published tree names siblings neutrally; the box that has them says where, off the tree."""
+    _repo(tmp_path / 'org' / 'real-b', {'pyproject.toml': _MANIFEST})
+    paths = {'consumer-a': 'consumer-a', 'consumer-b': 'consumer-b'}
+    env = {'LAB_COMMONS_SIBLINGS': 'consumer-b=org/real-b, unknown=x'}
+    assert sibling_paths(paths, env) == {'consumer-a': 'consumer-a', 'consumer-b': 'org/real-b'}
+    assert sibling_paths(paths, {}) == paths
+    assert set(reachable(tmp_path, paths, env)) == {'consumer-b'}
+    with pytest.raises(ValueError, match='name=path'):
+        sibling_paths(paths, {'LAB_COMMONS_SIBLINGS': 'no-equals-sign'})
 
 
 def test_the_guard_passes_and_refuses_over_the_same_planted_family(tmp_path: Path) -> None:

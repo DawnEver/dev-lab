@@ -8,7 +8,7 @@ repo root only, since 2026-09-23), and a ``<stem>.zh.md`` translation beside its
 here in the source language on purpose: this module is itself tracked, and a literal quotation would
 be the one violation its own guard could never let through.
 
-THE RULE AS RULED IS CJK, NOT NON-ASCII. Measured 2026-09-16, over ``motronics-studio``: refusing
+THE RULE AS RULED IS CJK, NOT NON-ASCII. Measured 2026-09-16, over ``consumer-a``: refusing
 CJK touches 287 tracked files; refusing every non-ASCII character touches 732, because this family
 writes em dashes, ``~=``, a multiplication sign and other ordinary symbols constantly in its prose. The
 user's own wording names the CJK script family, not the ASCII table, so :data:`CJK_RANGES` matches
@@ -24,7 +24,7 @@ THE RANGES, and each is a real CJK block rather than a guess:
   full-width punctuation mark used inside CJK prose lives, and which plain "is this Han" tests miss.
 
 THIS CANNOT BE A FLAT ASSERTION ON DAY ONE, and the ratchet shape is not a stylistic choice: measured
-population at authoring time was 287 files / 22162 characters in motronics-studio alone, and a single
+population at authoring time was 287 files / 22162 characters in consumer-a alone, and a single
 commit cannot clear that. So this module supplies the SCAN, the EXEMPTION LIST and the FLOOR; each
 adopting repo supplies its own DECLARATION -- a named set of files still carrying CJK, exactly the
 shape ``tests/test_arch_suppressions_are_a_named_set.py`` already uses for a suppression ratchet.
@@ -47,7 +47,7 @@ declares as a floor, for the reason every scan-style guard in this family gives:
 unread one produce the same empty result, and only a floor tells them apart.
 
 THERE IS NO CONTENT-BASED EXEMPTION, ONLY THE PATH PREFIXES AND THE TRANSLATION NAME ABOVE, and this was a real design
-question rather than an oversight: ``wdg-lab`` has a test that PASSES a CJK literal on purpose, to
+question rather than an oversight: ``consumer-b`` has a test that PASSES a CJK literal on purpose, to
 assert a naming guard rejects non-ASCII input (``naming.assert_ascii(...)``, called with the CJK
 character itself). Translating that literal would test a different string and stop testing the
 rejection; waiving the file would open a permanent CJK island. Asked directly, the user's answer was
@@ -119,9 +119,9 @@ CJK_RANGES: Final[tuple[tuple[int, int], ...]] = (
 #: and matches nowhere else. See :func:`exempted` for the match itself.
 #:
 #: ``.claude/memory/`` AND ``attic/`` MATCH AT ANY DEPTH, and this is measured rather than a stylistic
-#: choice: motronics-studio's memory tree is SCOPED per module (``src/motronics/hamilton/.claude/memory/``,
+#: choice: consumer-a's memory tree is SCOPED per module (``src/consumer_a/hamilton/.claude/memory/``,
 #: ``rust/.claude/memory/``) and its ``attic/`` holds one subtree per migrated repo. A root-prefix-only
-#: match on that tree reported 47,521 CJK characters under ``src/motronics/**`` when the real answer
+#: match on that tree reported 47,521 CJK characters under ``src/consumer_a/**`` when the real answer
 #: is zero -- every one of them a nested memory file the prefix test could not see.
 #:
 #: ``archived/`` IS ROOT-ONLY (user directive, 2026-09-23). It names ONE repo-root directory in every
@@ -202,7 +202,7 @@ def _pattern(ranges: tuple[tuple[int, int], ...]) -> re.Pattern[str]:
 def find_cjk(text: str, ranges: Collection[tuple[int, int]] = CJK_RANGES) -> tuple[tuple[int, int, str], ...]:
     r"""Every ``(line, col, char)`` in *text* where a character falls in *ranges*. Both 1-based.
 
-    THE PREFILTER SKIPS WORK, NEVER SOFTENS A VERDICT. Measured 2026-09-17 over motronics-studio
+    THE PREFILTER SKIPS WORK, NEVER SOFTENS A VERDICT. Measured 2026-09-17 over consumer-a
     (8489 tracked files, 93.9 M characters): the per-character walk cost 193.52 s and answering
     "does this text contain any CJK at all?" with the same class costs 0.66 s, because 7686 of
     those files contain none and the walk was proving that one character at a time. A text the

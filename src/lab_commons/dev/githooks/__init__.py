@@ -1,7 +1,7 @@
 """The git hook SCRIPTS the family ships, and the mechanism that makes them reachable without a copy.
 
 WHY A PAYLOAD AND NOT A DOCUMENTED FILE TO COPY. ``bump-version.sh`` existed twice -- once in
-motronics-studio, once in wdg-lab -- and the two had drifted for months in one direction only: every
+consumer-a, once in consumer-b -- and the two had drifted for months in one direction only: every
 fix landed in the copy whose author hit the defect. A "shared" script each repo copies is the fork
 it claims to remove, wearing a new name, so the shared thing here is an INSTALLED FILE. A consumer
 declares ``lab-commons[dev]`` and names a MODULE:
@@ -127,7 +127,7 @@ class NotRunnable(TypeError):
 class NoBash(RuntimeError):
     """No bash interpreter could be resolved on this box.
 
-    ASSERTED RATHER THAN SKIPPED, for the reason motronics' own tag-hook guard gives: every hook
+    ASSERTED RATHER THAN SKIPPED, for the reason consumer-a' own tag-hook guard gives: every hook
     entry in this family starts with ``bash``, so a box without one runs no hooks at all. That is a
     finding, not a reason to report success.
     """

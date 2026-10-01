@@ -33,7 +33,7 @@ proved that this workspace builds NOTHING, and an allowlist of nothing must refu
 than be compared against vacuously. That is the floor: finding no manifest cannot read as "no
 problem found".
 
-MOTRONICS-STUDIO HELD THE ONLY COPY (``scripts/gate/native_install.py``); ``wdg-lab`` has ``rust/``
+CONSUMER_A-STUDIO HELD THE ONLY COPY (``scripts/gate/native_install.py``); ``consumer-b`` has ``rust/``
 and a PyO3 extension. The half that repo cannot share is which distributions it builds, and that half
 never enters this file.
 """
@@ -75,7 +75,7 @@ class NothingBuiltError(ForeignDistributionError):
 def normalise_distribution(name: str) -> str:
     """PEP 503-ish folding, so one project has one spelling.
 
-    ``motronics-native`` and ``motronics_native`` are ONE project, and a comparison that says
+    ``consumer-a-native`` and ``consumer_a_native`` are ONE project, and a comparison that says
     otherwise refuses the very install this module exists to permit.
     """
     return name.strip().lower().replace('-', '_').replace('.', '_')
@@ -91,11 +91,11 @@ def wheel_distribution(wheel: Path) -> str:
     stronger: pip installs under the name the filename claims either way, and a file whose name
     disagrees with its own metadata is refused by pip itself.
 
-    A HAND-RENAMED FILE THEREFORE REFUSES, and that is the correct direction. ``motronics-native-0.4.1
-    -...whl`` is not a legal wheel name; this reads ``motronics`` from it, no manifest declares that,
+    A HAND-RENAMED FILE THEREFORE REFUSES, and that is the correct direction. ``consumer-a-native-0.4.1
+    -...whl`` is not a legal wheel name; this reads ``consumer-a`` from it, no manifest declares that,
     and the install is refused. Fail-closed on a malformed filename is the one outcome that cannot
     install the wrong thing -- so the folding below exists for the MANIFEST side, where
-    ``name = "motronics-native"`` is both legal and idiomatic.
+    ``name = "consumer-a-native"`` is both legal and idiomatic.
     """
     return normalise_distribution(wheel.name.split('-')[0])
 

@@ -254,17 +254,17 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/lab_commons/em.py',
         'N802',
         'def Q_list2array(',
-    ): "pint's own Q_ spelling, and wdg-lab imports this name; a rename is a cross-repo move",
+    ): "pint's own Q_ spelling, and consumer-b imports this name; a rename is a cross-repo move",
     (
         'src/lab_commons/em.py',
         'N802',
         'def array2list_2Dpoint(',
-    ): 'the same: 2D is the domain spelling and wdg-lab imports this name',
+    ): 'the same: 2D is the domain spelling and consumer-b imports this name',
     (
         'src/lab_commons/em.py',
         'N802',
         'def is_equal_2DPoint(',
-    ): 'the same: 2DPoint is the domain spelling and wdg-lab imports this name',
+    ): 'the same: 2DPoint is the domain spelling and consumer-b imports this name',
     (
         'src/lab_commons/em.py',
         'N803',
@@ -344,7 +344,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'src/lab_commons/units.py',
         'N801',
         'class BaseModel_with_q(BaseModel):',
-    ): 'imported BY NAME in wdg-lab; a rename is a cross-repo move, not a lint fix',
+    ): 'imported BY NAME in consumer-b; a rename is a cross-repo move, not a lint fix',
     (
         'tests/test_dev_shadow_build.py',
         'ARG001',
@@ -364,7 +364,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'tests/test_em.py',
         'N806',
         "Q_0m = Q_(0, 'm')",
-    ): "pint's Q_<magnitude><unit> spelling for a quantity literal, which wdg-lab also imports by name",
+    ): "pint's Q_<magnitude><unit> spelling for a quantity literal, which consumer-b also imports by name",
     (
         'tests/test_em.py',
         'N806',

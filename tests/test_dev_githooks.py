@@ -1,7 +1,7 @@
-"""The shipped hook payload, and the properties the wdg-lab fork did not have.
+"""The shipped hook payload, and the properties the consumer-b fork did not have.
 
 WHY THESE ARMS AND NOT OTHERS. Every arm below is a difference MEASURED between the two copies of
-``bump-version.sh`` that existed on 2026-09-16 (motronics-studio's 134-line version and wdg-lab's
+``bump-version.sh`` that existed on 2026-09-16 (consumer-a's 134-line version and consumer-b's
 27-line one), plus the one property that makes the shared file shareable -- that it takes its
 repo-specific decisions from the environment. A test that only proved "the script runs" would pass
 over every one of them.
@@ -127,7 +127,7 @@ def test_a_topic_branch_mints_no_tag(repo: Path) -> None:
 def test_the_collision_scan_walks_CONSECUTIVE_versions(repo: Path) -> None:
     """The measured fork defect: one taken tag cost two version numbers.
 
-    wdg-lab's copy incremented ``PATCH`` in the loop body AND computed ``PATCH + 1`` in the
+    consumer-b's copy incremented ``PATCH`` in the loop body AND computed ``PATCH + 1`` in the
     candidate, so a single collision skipped a version. Two tags are planted so the scan must walk
     twice; the honest answer is the next FREE number, not the next-but-two.
     """

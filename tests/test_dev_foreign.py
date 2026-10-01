@@ -30,7 +30,7 @@ from lab_commons.dev.foreign import (
     scan,
 )
 
-SIBLINGS = ('motronics-studio', 'wdg-lab', 'optimi-lab', 'motronics')
+SIBLINGS = ('consumer-a', 'consumer-b', 'consumer-c', 'consumer-a')
 
 
 def _tree(root: Path, name: str, body: str) -> Path:
@@ -45,9 +45,9 @@ def _scan(root: Path, src: Path) -> tuple:
 
 
 def test_the_longest_spelling_wins_so_a_finding_names_the_right_tree() -> None:
-    """``motronics`` is a prefix of ``motronics-studio``; a misnamed finding sends a reader wrong."""
-    assert classify_text('rows for motronics-studio', SIBLINGS) == 'motronics-studio'
-    assert classify_text('motronics only', SIBLINGS) == 'motronics'
+    """``consumer-a`` is a prefix of ``consumer-a``; a misnamed finding sends a reader wrong."""
+    assert classify_text('rows for consumer-a', SIBLINGS) == 'consumer-a'
+    assert classify_text('consumer-a only', SIBLINGS) == 'consumer-a'
     assert classify_text('nothing here', SIBLINGS) is None
 
 
@@ -81,50 +81,50 @@ def test_the_three_kinds_are_told_apart(tmp_path: Path) -> None:
     src = _tree(
         tmp_path,
         'm.py',
-        '"""A docstring naming wdg-lab."""\n\nREPO = "optimi-lab"\nMECH = "tests/architecture/gone.py"\n',
+        '"""A docstring naming consumer-b."""\n\nREPO = "consumer-c"\nMECH = "tests/architecture/gone.py"\n',
     )
     found = _scan(tmp_path, src)
     assert [f.kind for f in found] == [PROSE, DATA, PATH]
-    assert kinds(found, DATA)[0].sibling == 'optimi-lab'
-    assert kinds(found, PROSE)[0].sibling == 'wdg-lab'
+    assert kinds(found, DATA)[0].sibling == 'consumer-c'
+    assert kinds(found, PROSE)[0].sibling == 'consumer-b'
 
 
 def test_a_sentence_in_executable_position_is_prose(tmp_path: Path) -> None:
     """A row's ``why=`` is a paragraph explaining a decision -- prose by SUBJECT, wherever it sits."""
-    sentence = 'x' * 130 + ' motronics-studio'
+    sentence = 'x' * 130 + ' consumer-a'
     src = _tree(tmp_path, 'm.py', f'WHY = {sentence!r}\n')
     assert [f.kind for f in _scan(tmp_path, src)] == [PROSE]
 
 
 def test_a_comment_is_prose(tmp_path: Path) -> None:
     """Comments are read too, or the cheapest place to hide a sibling name would be unscanned."""
-    src = _tree(tmp_path, 'm.py', '# a note about wdg-lab\nX = 1\n')
+    src = _tree(tmp_path, 'm.py', '# a note about consumer-b\nX = 1\n')
     assert [f.kind for f in _scan(tmp_path, src)] == [PROSE]
 
 
 def test_an_excluded_module_is_not_read(tmp_path: Path) -> None:
     """The registry of the violation cannot record who the siblings are without spelling them."""
-    src = _tree(tmp_path, 'rows.py', 'REPO = "wdg-lab"\n')
+    src = _tree(tmp_path, 'rows.py', 'REPO = "consumer-b"\n')
     assert scan(src, repo_root=tmp_path, siblings=SIBLINGS, exclude=('src/pkg/rows.py',)) == ()
     assert modules_read(src, ('src/pkg/rows.py',), tmp_path) == 0
 
 
 def test_the_handle_is_module_and_kind(tmp_path: Path) -> None:
     """One waiver per module per kind: a line number moves, and a module alone admits a new kind."""
-    src = _tree(tmp_path, 'm.py', 'REPO = "wdg-lab"\n')
+    src = _tree(tmp_path, 'm.py', 'REPO = "consumer-b"\n')
     assert _scan(tmp_path, src)[0].handle == 'src/pkg/m.py::data'
 
 
 def test_an_unwaived_finding_reds(tmp_path: Path) -> None:
     """THE HIGH SIDE: nothing new arrives under the waiver set."""
-    src = _tree(tmp_path, 'm.py', 'REPO = "wdg-lab"\n')
+    src = _tree(tmp_path, 'm.py', 'REPO = "consumer-b"\n')
     with pytest.raises(ForeignData, match='nothing has evicted'):
         assert_no_foreign_data(_scan(tmp_path, src), evicted={}, synthetic={}, read=99, floor=1)
 
 
 def test_a_waived_finding_passes(tmp_path: Path) -> None:
     """The waiver is what makes this pass non-breaking: the row still runs, and it is NAMED."""
-    src = _tree(tmp_path, 'm.py', 'REPO = "wdg-lab"\n')
+    src = _tree(tmp_path, 'm.py', 'REPO = "consumer-b"\n')
     assert_no_foreign_data(
         _scan(tmp_path, src),
         evicted={'src/pkg/m.py::data': 'blocked on the consumer'},

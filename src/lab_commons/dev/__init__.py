@@ -31,7 +31,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   the shortfalls, and the two-sided skip ratchet a project declares in ``allowed_skips``.
 * :mod:`lab_commons.dev.verify` — the family's ONE entry point that PRODUCES one:
   ``python -m lab_commons.dev.verify`` runs ruff, ruff format and pytest, tees them into a log under
-  ``.verify/``, and prints a stamped verdict -- the portable half of motronics-studio's 1770-line
+  ``.verify/``, and prints a stamped verdict -- the portable half of consumer-a's 1770-line
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
@@ -72,8 +72,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   named-set declaration as :mod:`lab_commons.dev.cjk`.
 * :mod:`lab_commons.dev.hook_install` — HOOKS-ARE-WIRED, and the half a ``.pre-commit-config.yaml``
   cannot answer for itself: a configuration DECLARES hooks, ``pre-commit install`` is a separate act
-  on a separate machine, and nothing links the two. Measured 2026-09-16: ``wdg-lab`` and
-  ``optimi-lab`` each declared a full configuration and had ZERO hooks installed. It reports and
+  on a separate machine, and nothing links the two. Measured 2026-09-16: ``consumer-b`` and
+  ``consumer-c`` each declared a full configuration and had ZERO hooks installed. It reports and
   never repairs itself -- a hooks directory is shared by every worktree of a checkout -- and its
   refusal names a remedy DERIVED from the configuration rather than restated beside it.
 * :mod:`lab_commons.dev.bounded` — REFUSAL-NAMES-THE-REMEDY, all three halves of it: a wall that
@@ -145,7 +145,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   left behind, after ``uv sync`` with no ``--extra`` took a box from 113 to 30 distributions while
   delivering the declared build. A tree with no pytest reads as BROKEN, not as UNEQUIPPED, and the
   answer is a JOIN never a property of the command: ``--extra all`` means whatever that repo's own
-  manifest says, which in motronics is six extras and neither ``dev`` nor ``img-to-cad``.
+  manifest says, which in consumer-a is six extras and neither ``dev`` nor ``img-to-cad``.
 * :mod:`lab_commons.dev.collectscope` -- the half ``syncscope`` names as UNMEASURABLE in its own
   docstring, which needs a second text to answer: the TEST TREE. A scope that scored COMPLETE still
   leaves a repo with NO VERDICT when a module-scope import is gone, because pytest IMPORTS what it

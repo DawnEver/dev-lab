@@ -13,7 +13,7 @@ THREE KINDS, AND ONLY THE FIRST IS A PROVENANCE CLAIM.
   reasons at once, which is how `verify`'s mention of `scripts/gate/runner.py` (carved FROM, 0 of 51
   names shared) became the false positive that `named_only` exists to hold.
 * `original` -- no consumer fork behind it. It is a DECLARATION, refusable by a reader: `forge` is
-  the row to look at first, because motronics-studio's `scripts/repo/forge_protect.py` shares `Forge`
+  the row to look at first, because consumer-a's `scripts/repo/forge_protect.py` shares `Forge`
   and `token_for` with it, and three tranches still read that file BY HAND as still local. Overlap is
   not provenance here for the same reason it is not a detector next door.
 
@@ -33,7 +33,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'agent_guard': ('original',),
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
-    # derives or admits. The row motronics added by hand on 2026-09-18 is the first thing it subsumes.
+    # derives or admits. The row consumer-a added by hand on 2026-09-18 is the first thing it subsumes.
     'allow_adoption': ('original',),
     # THE TWO ROWS THE `__init__`-ONLY BLINDNESS HID, added 2026-09-18 in the commit that closed it.
     # Neither is new; both were published, imported and unreadable to the ratchet, because
@@ -43,14 +43,14 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     #
     # `agenthooks` SUPERSEDES the engine that lived in exactly ONE repo. `hooks` authored the deny
     # registry and `hook_adoption` rendered it into the engine's JSON, while the engine itself was
-    # motronics' file alone -- so a repo could render a correct `deny-rules.json` and be left with an
+    # consumer-a' file alone -- so a repo could render a correct `deny-rules.json` and be left with an
     # inert declaration that reads as a guard.
     'agenthooks': ('supersedes', '.claude/hooks/deny-commands.js'),
     # `githooks` SUPERSEDES the copies, and the drift is the measurement rather than the argument:
-    # `bump-version.sh` existed in motronics-studio and in wdg-lab, and the two had diverged in ONE
+    # `bump-version.sh` existed in consumer-a and in consumer-b, and the two had diverged in ONE
     # direction for months, every fix landing in whichever copy its author's defect hit. ONE path is
-    # named, not two: `scripts/hooks/bump-version.sh` is live at the motronics lane `bc8ca7cc6`, and
-    # wdg-lab has no copy at `ef5fa9fc` -- checked before writing, because a row naming a path that
+    # named, not two: `scripts/hooks/bump-version.sh` is live at the consumer-a lane `bc8ca7cc6`, and
+    # consumer-b has no copy at `ef5fa9fc` -- checked before writing, because a row naming a path that
     # does not exist downgrades a live fork to no finding at all, silently and in the flattering
     # direction. That happened here on 2026-09-18 and is why the check is now the habit.
     'githooks': ('supersedes', 'scripts/hooks/bump-version.sh'),
@@ -87,25 +87,25 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'dep_observe': ('original',),
     'depversions': ('original',),
     'devdocs': ('original',),
-    # THREE implementations existed -- motronics `scripts/repo/docs.py`, wdg-lab `scripts/docs.py`,
-    # optimi-lab `scripts/pdoc`. The table stayed with each repo, so this is adoption, not a move.
+    # THREE implementations existed -- consumer-a `scripts/repo/docs.py`, consumer-b `scripts/docs.py`,
+    # consumer-c `scripts/pdoc`. The table stayed with each repo, so this is adoption, not a move.
     'docsite': ('adopted_by', 'scripts/repo/docs.py'),
     'docwidth': ('original',),
-    # SUPERSEDES wdg-lab's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
+    # SUPERSEDES consumer-b's `scripts/durations.py`, which is the LEDGER half and nothing else -- the
     # verdict taken on it stays in that repo's `test_slow_is_discovered_by_the_wall.py`, which is
     # therefore NOT named here: it holds `WALL_SECONDS`, `SLOW_BAR`, `FAST_CEILING`, the ledger floor
     # and the marked NAME set, all five of them repo facts. The two readings that file wrote --
     # `unmarked_but_slow` and `marked_but_fast` -- DO move, which is why this is a supersession of one
     # file and an adoption of nothing: the consumer deletes its `scripts/durations.py` and keeps its
-    # own bars. Checked before writing: that path is live in wdg-lab today.
+    # own bars. Checked before writing: that path is live in consumer-b today.
     'durations': ('supersedes', 'scripts/durations.py'),
     'envkey': ('original',),
     'famconfig': ('original',),
     # The floor refusal was written EIGHT times across this family and no two copies agreed -- four
     # standalone bodies raising four different exception types, three of them here in `src/`; three
-    # more inlined at the top of a larger arm; and wdg-lab's `bind_floor`. TWO of the four are both
+    # more inlined at the top of a larger arm; and consumer-b's `bind_floor`. TWO of the four are both
     # named `VacuousScan` over DIFFERENT base classes, in this one repo. The consumer path named is
-    # the one that PUBLISHED the helper; optimi-lab's EIGHT inline copies have no path to name.
+    # the one that PUBLISHED the helper; consumer-c's EIGHT inline copies have no path to name.
     'floors': ('supersedes', 'tests/architecture/_corpus.py'),
     # See the module docstring above: declared original against a measured 2-name overlap.
     'forge': ('original',),
@@ -137,8 +137,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'installdoor': ('original',),
     'logref': ('original',),
     # Both named by `netverb`'s docstring as the vacuum it closes, and both ADOPTED it on 2026-09-17
-    # while staying: wdg-lab's roster carries one as SPLITS and the other as STAYS.
-    'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/wdg-lab-update.sh'),
+    # while staying: consumer-b's roster carries one as SPLITS and the other as STAYS.
+    'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/consumer-b-update.sh'),
     'profile': ('original',),
     'quantity_values': ('original',),
     # `supersedes` AND NOT `adopted_by`, and the distinction is load-bearing here: the whole of
@@ -154,7 +154,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'shards': ('supersedes', 'scripts/gate/_shards.py'),
     'supersede': ('original',),
     'symcov': ('supersedes', 'scripts/repo/_symbol_coverage.py'),
-    # ORIGINAL rather than superseding motronics' `scripts/gate/dep_sync.py`, and the distinction is
+    # ORIGINAL rather than superseding consumer-a' `scripts/gate/dep_sync.py`, and the distinction is
     # the pair's whole point. That script MUTATES an environment and reports what it removed
     # AFTERWARDS; these two never touch one and answer BEFOREHAND, from command text joined to a
     # manifest. Nothing in the family answered "which extras survive" -- `_doorcensus_rows` names it
@@ -185,7 +185,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # consumer of the kit like any other. They do not agree on the BAR: `test_arch_every_approx...`
     # requires `abs=` unconditionally, the other two only under a stated `rel=`, and the two convict
     # different sets. That disagreement is what made `bar` a member of a published set rather than a
-    # constant. NOT wdg-lab's `test_absolute_tolerances_state_their_unit.py`, which reads the VALUE of
+    # constant. NOT consumer-b's `test_absolute_tolerances_state_their_unit.py`, which reads the VALUE of
     # an `abs=` and asks whether it is spelled as a named unit -- the adjacent question, and naming it
     # here would be the over-conviction `named_only` exists to hold.
     'approxfloors': (
@@ -223,8 +223,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # EXISTS to write next -- a per-repo copy of `test_dependencies_take_the_latest.py` that reads a
     # different question today (a ceiling in the declaration, not a frozen resolution).
     'latestversions': ('original',),
-    # TWO consumers in TWO LANGUAGES and they do not agree on the policy: wdg-lab BANS the bound with
-    # an exemption set it asserts is empty, motronics requires it to be DECLARED with its reason
+    # TWO consumers in TWO LANGUAGES and they do not agree on the policy: consumer-b BANS the bound with
+    # an exemption set it asserts is empty, consumer-a requires it to be DECLARED with its reason
     # because two of its crates are ABI-coupled and unbounding either alone produces a pairing that
     # does not compile. Both right for their repo, so `policy` is a member of a published set.
     # NOT `installdoor`, which reads the same `optional-dependencies` table and asks whether the door
@@ -285,10 +285,10 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # either, the nearest neighbour BY SUBJECT -- a declaration that lies -- which reads PROSE
     # against the whole tree where this cannot see across a single function boundary.
     'echoedtoken': ('original',),
-    # FOUR consumer rosters, not three: motronics holds TWO, one for `scripts/` and one for
+    # FOUR consumer rosters, not three: consumer-a holds TWO, one for `scripts/` and one for
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why
-    # both motronics paths are named -- a single row would have read as one repo, one answer.
+    # both consumer-a paths are named -- a single row would have read as one repo, one answer.
     #
     # THE CONSUMER TEST FILES ARE NAMED AS WELL AS THE HELPERS, ADDED 2026-09-18, and the reason is
     # that leaving them out made the instrument lie in the FLATTERING direction. Both rows listed only
@@ -297,11 +297,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # `test_the_migration_boundary_is_declared.py` as CONSULTS -- a row that HAS done the work reading
     # as not-done, which is the one error nobody goes looking for. VERIFIED before being written, at
     # each repo's own tree: both labs' file imports `famtests.placement` AND `famtests.density`, and
-    # motronics' `test_migration_boundary_density.py` imports both at b44bc330c. Its three siblings
+    # consumer-a' `test_migration_boundary_density.py` imports both at b44bc330c. Its three siblings
     # there do NOT and are deliberately absent -- naming an unadopted file would be the same lie
     # pointing the other way.
     # A PATH THAT DOES NOT EXIST DOWNGRADES A FINDING TO NO FINDING, added 2026-09-18. Both rows named
-    # `tests/architecture/_placement.py`, which is the LABS' spelling; motronics' file is one segment
+    # `tests/architecture/_placement.py`, which is the LABS' spelling; consumer-a' file is one segment
     # deeper at `tests/architecture/layering/_placement.py`, and matching is by SUFFIX, so the row
     # reached neither. That file imports nothing from the kit while `famtests.placement` says adopting
     # it "is an import rather than a rewrite" -- a LIVE FORK, and it graded `untouched` rather than
@@ -351,11 +351,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # `supersedes` would name files that keep every line they have. Not `adopted_by` either: no
     # consumer delegates to it yet, and recording an adoption that has not happened is the
     # declaration-that-lies this registry exists to refuse.
-    # SUPERSEDES optimi-lab's file whole. ONE consumer path and not two, and the second repo is the
-    # evidence for the row rather than a member of it: wdg-lab cites `NAMED-SETS-NOT-COUNTS` at six
+    # SUPERSEDES consumer-c's file whole. ONE consumer path and not two, and the second repo is the
+    # evidence for the row rather than a member of it: consumer-b cites `NAMED-SETS-NOT-COUNTS` at six
     # modules that merely USE named sets and has NO count-pin guard, so there is no file of its to
     # supersede -- naming one would be the over-conviction `named_only` exists to hold. Checked
-    # before writing: `tests/architecture/test_a_pin_is_a_named_set.py` is live in optimi-lab today,
+    # before writing: `tests/architecture/test_a_pin_is_a_named_set.py` is live in consumer-c today,
     # and it is that repo's last open roster row.
     'countpins': ('supersedes', 'tests/architecture/test_a_pin_is_a_named_set.py'),
     'venvspelling': ('original',),

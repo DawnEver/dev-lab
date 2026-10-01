@@ -16,15 +16,15 @@ rows have to be the SAME selections or the two answers are about different comma
 
 THE FINDING, and it is two COMPLETE rows and one documented repair:
 
-* motronics' SANCTIONED `--extra pareto --extra dev` strands SIX distributions at collection
+* consumer-a' SANCTIONED `--extra pareto --extra dev` strands SIX distributions at collection
   (seven as first read: `cv2` imported AFTER a module-scope `importorskip('cv2')` was convicted until
   2026-10-01, and it cannot strand -- the skip runs first). `_synccensus_rows.py` calls it "the
   sanctioned spelling" and is right at its own question.
-* wdg-lab's CI `extras: 'dev'` strands five. Inside that ONE selection of motronics, `OCP` is a bare
+* consumer-b's CI `extras: 'dev'` strands five. Inside that ONE selection of consumer-a, `OCP` is a bare
   import and strands while `cv2` is behind `importorskip` and degrades: one reader, two answers, from
   the guard and not from the name -- which is the control this table exists to hold.
 * `--extra all --extra dev --extra img-to-cad`, recorded by the sibling table as "the incantation
-  that actually restored the box", leaves the runner whole and STILL strands `pillow`: motronics
+  that actually restored the box", leaves the runner whole and STILL strands `pillow`: consumer-a
   declares it only in a `tooldrivers` extra no recorded incantation names. That row is here
   precisely because it is the closest thing the family has to a correct answer.
 
@@ -67,7 +67,7 @@ ROWS: tuple[CollectRow, ...] = (
         ),
     ),
     CollectRow(
-        repo='wdg-lab',
+        repo='consumer-b',
         selected=('dev',),
         errors=frozenset({'cadquery-ocp', 'diskcache', 'fastapi', 'httpx', 'pandas'}),
         degrades=frozenset({'psutil', 'uvicorn'}),
@@ -80,11 +80,11 @@ ROWS: tuple[CollectRow, ...] = (
             'cadquery-ocp moved to ERRORS on purpose -- a weld test dropped its guard so an absent '
             '[cad3d] REDS rather than skips -- while the files that importorskip OCP first still '
             'degrade. `pydantic_core` is transitive: NAMED, not guessed. `scipy` LEFT the residue '
-            '2026-10-01 with the wdg_3d tree wdg-lab c406ade3 deleted, its only module-scope importer.'
+            '2026-10-01 with the consumer_b_3d tree consumer-b c406ade3 deleted, its only module-scope importer.'
         ),
     ),
     CollectRow(
-        repo='optimi-lab',
+        repo='consumer-c',
         selected=('dev',),
         errors=frozenset(),
         degrades=frozenset(),
@@ -98,16 +98,16 @@ ROWS: tuple[CollectRow, ...] = (
         ),
     ),
     CollectRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         selected=('pareto', 'dev'),
         errors=frozenset(
             {
                 'cadquery-ocp-novtk',
                 'ezdxf',
                 'meshio',
-                'motronics-native',
+                'consumer-a-native',
                 'pillow',
-                'wdg-lab',
+                'consumer-b',
             }
         ),
         degrades=frozenset({'gmsh', 'opencv-python-headless', 'pdfminer-six', 'pywin32'}),
@@ -126,7 +126,7 @@ ROWS: tuple[CollectRow, ...] = (
         ),
     ),
     CollectRow(
-        repo='motronics-studio',
+        repo='consumer-a',
         selected=('all', 'dev', 'img-to-cad'),
         errors=frozenset({'pillow'}),
         degrades=frozenset(),
@@ -135,9 +135,9 @@ ROWS: tuple[CollectRow, ...] = (
             'THE RECORDED REPAIR, STILL ONE EXTRA SHORT. The sibling table names this as "the '
             'incantation that actually restored the box" and it is the best selection the family has '
             'written down: it carries the runner, the plugins, the linter and every vendor extra. It '
-            'still strands `pillow`, which motronics declares ONLY in a `tooldrivers` extra that no '
+            'still strands `pillow`, which consumer-a declares ONLY in a `tooldrivers` extra that no '
             'incantation, no document and no running code in that repo names. So there is no recorded '
-            'selection in motronics that collects its own test tree, and this row is where that '
+            'selection in consumer-a that collects its own test tree, and this row is where that '
             'stops being an opinion -- a repair that reaches empty here is the ratchet closing.'
         ),
     ),
@@ -147,15 +147,15 @@ ROWS: tuple[CollectRow, ...] = (
 #: 2026-09-19 at 108 / 192 / 28 / 2632 and set below them, because a tree that was not read reports
 #: the same empty stranded set as a tree whose every import survives.
 #:
-#: wdg-lab RE-TAKEN 150 -> 120 on 2026-10-01, at the measured value, for a DATED CAUSE: wdg-lab
-#: c406ade3 (2026-09-28, `refactor(wdg_3d)!: one 3D construction -- delete the old tree`) deleted
-#: the superseded wdg_3d test tree on purpose. The tree shrank by decision, not because a scan
+#: consumer-b RE-TAKEN 150 -> 120 on 2026-10-01, at the measured value, for a DATED CAUSE: consumer-b
+#: c406ade3 (2026-09-28, `refactor(consumer_b_3d)!: one 3D construction -- delete the old tree`) deleted
+#: the superseded consumer_b_3d test tree on purpose. The tree shrank by decision, not because a scan
 #: stopped reading it, so this is a floor re-taken for a deliberate deletion -- not a widening.
 FILE_FLOORS: dict[str, int] = {
     'lab-commons': 90,
-    'motronics-studio': 2000,
-    'optimi-lab': 20,
-    'wdg-lab': 120,
+    'consumer-a': 2000,
+    'consumer-c': 20,
+    'consumer-b': 120,
 }
 
 #: The floor under how many repos a run reached. A census of one tree is not a census, and every
@@ -184,20 +184,20 @@ WHY_FLOOR_PER_NAME: int = 160
 UNRESOLVED_WHY: dict[str, str] = {
     'pydantic_core': (
         'THE ONE THAT REALLY IS TRANSITIVE, and it is the near-miss the derivation must NOT force: '
-        'wdg-lab declares `pydantic`, and `pydantic-core` is a DIFFERENT distribution -- pydantic '
+        'consumer-b declares `pydantic`, and `pydantic-core` is a DIFFERENT distribution -- pydantic '
         'depends on it and pins its version, so it arrives through the lock graph. No spelling rule '
         'relates a declared name to a name that merely starts with it, and inventing one would read '
         'every `foo-bar` in a manifest as the supplier of `foo`.'
     ),
     'tomlkit': (
-        'UNDECLARED IN MOTRONICS, and unlike `yaml` it needs no alias either: the import name IS the '
+        'UNDECLARED IN CONSUMER_A, and unlike `yaml` it needs no alias either: the import name IS the '
         'distribution name, so `resolve` rule 1 would have claimed it the moment any manifest in that '
         'repo declared it. None does. It arrives transitively -- commitizen and pdoc-class tooling '
         'both carry it -- and a manifest cannot say whether a prune keeps it.'
     ),
     'yaml': (
         'AN ALIAS WITH NO DECLARED SUPPLIER TO POINT AT. `yaml` is `pyyaml` and the ALIASES row says '
-        'so, but ALIASES only ever narrows to distributions the manifest DECLARES, and motronics '
+        'so, but ALIASES only ever narrows to distributions the manifest DECLARES, and consumer-a '
         'declares no pyyaml anywhere. So the row resolves nothing here and the name falls to the '
         'residue, which is the rule working: an alias must never convict a manifest on a guess.'
     ),

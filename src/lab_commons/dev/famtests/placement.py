@@ -9,7 +9,7 @@ what is not are DATA in :mod:`lab_commons.dev.famtests._placement_readings`; the
 :mod:`lab_commons.dev.famtests.density`.
 
 THE CEILING IS NOT A FAMILY CONSTANT, AND THAT IS THE FINDING THIS MODULE EXISTS TO CARRY. Both labs
-and motronics' tests roster bound ``OWN_MECHANISM_CEILING`` at 50; motronics' ``scripts/`` roster bounds
+and consumer-a' tests roster bound ``OWN_MECHANISM_CEILING`` at 50; consumer-a' ``scripts/`` roster bounds
 it at 40, and the intervals are not merely different -- TWO PAIRS OF THEM ARE DISJOINT. ``(35, 42)``
 excludes 50 and ``(49, 55)`` excludes 40, so a family module shipping one value would be wrong for one
 of its four consumers ON THAT CONSUMER'S OWN MEASUREMENT, and wrong in the ADMITTING direction, which
@@ -176,7 +176,7 @@ def placed_files(
         trees: the trees this roster answers for, repo-relative. NO DEFAULT: the scope claim is the
             roster's, and a guessed one walks the wrong tree and then reports it clean.
         suffixes: what counts as a runnable file. NO DEFAULT, and the widening is a measured correction
-            rather than a preference -- motronics walked ``*.py`` only until 2026-09-16, so eight shell
+            rather than a preference -- consumer-a walked ``*.py`` only until 2026-09-16, so eight shell
             and PowerShell files in its ``scripts/`` tree had never been classified by anything. A
             language is as poor a boundary as a tree.
         not_placed: path PARTS that are never placed -- build output, agent memory. NO DEFAULT: a wrong
@@ -190,7 +190,7 @@ def placed_files(
             name is in this set excluded ITS ENTIRE TREE, for any commit, with a correct set and no
             refusal. MEASURED -- this family fans lanes out into ``<repo>/.claude/worktrees/<branch>``
             and ``.claude`` is in both labs' exclusion sets, so a worktree cut there collapsed every
-            population scanner in that repo at once; motronics had already hit the identical shape in
+            population scanner in that repo at once; consumer-a had already hit the identical shape in
             four of its own scanners, where one of them "found 0 offenders among 19 and the test
             passed". A caller's set can therefore be right and its answer still empty, which is why
             the floor in :func:`assert_every_file_is_placed` is a separate assertion and not a

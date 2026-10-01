@@ -153,7 +153,7 @@ def satisfies(required: str, live: Sequence[str]) -> bool:
     """Whether *required* is met by one of *live* -- a TARGET HEADER matching by its name only.
 
     MEASURED, AND THIS IS WHY THE FUNCTION EXISTS RATHER THAN AN ``in``. A first cut compared headers
-    literally and called `all:` absent from all three consumers, `install-dev:` absent from wdg-lab
+    literally and called `all:` absent from all three consumers, `install-dev:` absent from consumer-b
     and `verify:` absent from two -- every one a false positive, because a Makefile target carries its
     prerequisites on the same line (`all: install-dev lint test`), and a contract over target NAMES
     that reds on that is a contract about punctuation. So a base line ending in a colon matches by
@@ -258,7 +258,7 @@ def measured_delta(path: Path, base: Base, repo: str) -> Delta:
 
 #: How a pre-commit config spells the one unit it is edited in. A hook is a YAML MAPPING ITEM, and
 #: `- id:` is the only key every one of them carries -- `repo:` is a property of the BLOCK, and
-#: MEASURED 2026-09-18 wdg-lab writes it AFTER its own `hooks:` list, so a reader that tracked the
+#: MEASURED 2026-09-18 consumer-b writes it AFTER its own `hooks:` list, so a reader that tracked the
 #: enclosing repo by position reported that lab's four local hooks as zero.
 _HOOK_ID: Final = re.compile(r'^\s*-\s*id:\s*(\S+)', re.MULTILINE)
 
@@ -277,8 +277,8 @@ def hook_delta(text: str, core: Sequence[str], *, floor: int) -> tuple[str, ...]
     """The hook ids *text* declares beyond *core*, sorted -- THE UNIT THIS ARTEFACT'S CEILING TAKES.
 
     MEASURED 2026-09-18, and this function exists because of it: sized in LINES by
-    :func:`measured_delta`, the three consumers' pre-commit deltas rank 87 / 38 / 8 and motronics is
-    the largest in the family; sized in HOOKS they rank 7 / 11 / 8 and motronics is the SMALLEST.
+    :func:`measured_delta`, the three consumers' pre-commit deltas rank 87 / 38 / 8 and consumer-a is
+    the largest in the family; sized in HOOKS they rank 7 / 11 / 8 and consumer-a is the SMALLEST.
     Nothing about any repo's relationship to the base differs between the two readings. A `.gitignore`
     pattern is one line per decision, so a line count IS a decision count there; a pre-commit hook is
     a mapping costing one line or twelve depending only on whether it is pulled from an upstream repo

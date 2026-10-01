@@ -15,7 +15,7 @@ A GIT INSTALL'S COMMIT RIDES IN THE VERSION STRING, so nothing here reads ``dire
 derives ``<declared>+<sha>`` as the installed version of a VCS install, which means the manifest
 line below already distinguishes two checkouts of one declared version, and a second reader over
 the install metadata would be a second description of one fact -- free to disagree with the first,
-with nothing to say which won. This is the one property that kept motronics' own 59-line
+with nothing to say which won. This is the one property that kept consumer-a' own 59-line
 reimplementation of this module alive; it is written down here because a property nobody records
 is one the next reader adds a file to recover.
 

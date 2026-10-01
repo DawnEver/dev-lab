@@ -1,6 +1,6 @@
 ---
 name: the-leaf-ships-its-consumers-data-and-60-of-78-mechanisms-are-one-repos-paths
-description: lab-commons is the family's leaf and its dev layer had absorbed per-consumer data and per-consumer tree paths as shipped source, against its own README tier-1 rule and its own statement-and-mechanism page. Measured by ast over src/lab_commons - 38 executable data values naming a sibling, 153 path constants this checkout cannot resolve (60 of them in the rules registry, 58 resolving only in motronics-studio), and 181 prose mentions across 119 modules. motronics-studio does not import lab_commons.dev at all, so the largest block is data about a repo that never reads it. Designs the parametrized seam, names per module what stays and what moves, and records the eviction order.
+description: lab-commons is the family's leaf and its dev layer had absorbed per-consumer data and per-consumer tree paths as shipped source, against its own README tier-1 rule and its own statement-and-mechanism page. Measured by ast over src/lab_commons - 38 executable data values naming a sibling, 153 path constants this checkout cannot resolve (60 of them in the rules registry, 58 resolving only in consumer-a), and 181 prose mentions across 119 modules. consumer-a does not import lab_commons.dev at all, so the largest block is data about a repo that never reads it. Designs the parametrized seam, names per module what stays and what moves, and records the eviction order.
 metadata:
   type: project
 created: 2026-09-19
@@ -30,13 +30,13 @@ repo. 36 occurrences over 4 files:
 
 | file | count | shape |
 |---|---|---|
-| `dev/_doorcensus_rows.py` | 18 | `DoorRow(repo='wdg-lab', ...)`, one per repo per door |
+| `dev/_doorcensus_rows.py` | 18 | `DoorRow(repo='consumer-b', ...)`, one per repo per door |
 | `dev/famtests/_placement_readings.py` | 12 | `ROSTERS`/`CEILINGS`/`MINIMUMS` keyed by repo name |
 | `dev/_famconfig_ruff_rows.py` | 3 | repo names in a row |
-| `dev/_synccensus_rows.py` | 3 | `ScopeRow(repo='motronics-studio', ...)` |
+| `dev/_synccensus_rows.py` | 3 | `ScopeRow(repo='consumer-a', ...)` |
 
 Plus two executable DOMAIN nouns that are not repo names and are the sharper miss:
-`_synccensus_rows.py:94-95` carries `selected=('pareto', 'dev')` -- `pareto` is a motronics extra,
+`_synccensus_rows.py:94-95` carries `selected=('pareto', 'dev')` -- `pareto` is a consumer-a extra,
 a domain noun in live data, not in prose.
 
 **(b) A consumer TREE PATH used as a mechanism** -- a path literal that resolves in a sibling
@@ -46,20 +46,20 @@ mechanism against the four checkouts on this box:
 ```
 78  mechanism path literals in _rule_rows.py
 18  resolve in lab-commons
-58  resolve ONLY in motronics-studio
+58  resolve ONLY in consumer-a
  2  resolve in all three consumers but NOT here (.claude/hooks/deny-commands.js, deny-rules.json)
 ```
 
 **60 of 78 (77%) of the shipped registry's existence proofs are a tree this repo does not have.**
-Two of them name a motronics-only layer outright:
+Two of them name a consumer-a-only layer outright:
 `tests/unit/hamilton/registry/test_solver_capabilities.py` (IMPLEMENT-EVERYTHING,
-UNSUPPORTED-RAISES). Two more are motronics `scripts/` paths
+UNSUPPORTED-RAISES). Two more are consumer-a `scripts/` paths
 (`scripts/gate/prepush_gate.py`, `scripts/hooks/with-retry.sh`).
 
 Outside the registry, 39 further consumer-tree path literals: `_provenance_rows.py` 27,
 `_doorcensus_rows.py` 7, `famtests/rostercensus.py` 3 (`scripts/repo/worktree_debris.py`),
 `_synccensus_rows.py` 2. One hardcodes a repo name INTO the path:
-`scripts/wdg-lab-update.sh` (`_doorcensus_rows.py:137`, `_provenance_rows.py:116`).
+`scripts/consumer-b-update.sh` (`_doorcensus_rows.py:137`, `_provenance_rows.py:116`).
 
 **(c) Prose / provenance naming a sibling** -- docstrings, comments, and `why=` justification
 text. 183 occurrences over 80 files (134 docstring, 49 comment), plus 45 vendor/domain nouns in
@@ -89,12 +89,12 @@ Three deliberate differences, each a decision rather than a discrepancy:
 
 ## The fact that reframes all of it
 
-**motronics-studio does not import `lab_commons.dev` at all.** Measured: its 106 `lab_commons`
+**consumer-a does not import `lab_commons.dev` at all.** Measured: its 106 `lab_commons`
 references are `em`, `paths`, `file_io`, `log`, `exceptions`, `units` -- tier 1 only. The only
-`.dev` consumers are wdg-lab and optimi-lab.
+`.dev` consumers are consumer-b and consumer-c.
 
-So the 58 motronics mechanism paths and the motronics door/sync/provenance rows are data ABOUT a
-repo that never reads it, shipped in the wheel that wdg-lab and optimi-lab install. That is not a
+So the 58 consumer-a mechanism paths and the consumer-a door/sync/provenance rows are data ABOUT a
+repo that never reads it, shipped in the wheel that consumer-b and consumer-c install. That is not a
 convenience anybody depends on; it is inventory.
 
 ## What the seam must be, from first principles
@@ -117,7 +117,7 @@ Per module, what moves out and what stays:
 | `rules.py` | `Rule`, `Adoption`, `assert_adopted`, `assert_enforceable`, `tracked_files` | nothing -- this half is already right |
 | `_doorcensus_rows.py` | `DoorRow`/`Declined`/`SharedDoor` types, `assert_census` | all 18 consumer rows + 7 consumer paths, to each repo's own arch suite |
 | `_synccensus_rows.py` | `ScopeRow`, the scorer | 3 consumer rows, 2 paths, and `('pareto', 'dev')` |
-| `_provenance_rows.py` | the provenance kinds and the reader | 27 motronics `scripts/` paths and 23 commentary lines |
+| `_provenance_rows.py` | the provenance kinds and the reader | 27 consumer-a `scripts/` paths and 23 commentary lines |
 | `famtests/_placement_readings.py` | the finding's shape | the per-repo readings, which are EVIDENCE for a published finding, not a bar -- lowest priority, nothing can fall back to them |
 | `famtests/_datedmemory_readings.py`, `_storedreadings_readings.py` | reading/verdict seam | per-repo readings, same treatment as placement |
 | `_famconfig_*_rows.py` | the base/delta renderer | the 3 repo-keyed ruff rows |
@@ -160,12 +160,12 @@ DEFERRED, in this order, each blocked on a consumer edit this pass may not make:
 
 1. **`_rule_rows.py` mechanisms.** The 60 foreign paths cannot simply be deleted: `Rule` refuses a
    row with no mechanism, so deleting them deletes the rows. The correct next step is to give a
-   mechanism its PROVING REPO (`('motronics-studio', 'tests/...')`), which changes the row shape
-   that `RULES` exposes -- and wdg-lab/optimi-lab both build `Adoption` against it. So: land the
+   mechanism its PROVING REPO (`('consumer-a', 'tests/...')`), which changes the row shape
+   that `RULES` exposes -- and consumer-b/consumer-c both build `Adoption` against it. So: land the
    pair-shaped mechanism here, then both consumers' `test_*_adopts_the_shared_registry.py` move
    WITH it in the same push train. No `_compat` alias; the break is deliberate and chosen.
 2. **`_doorcensus_rows` / `_synccensus_rows` / `_provenance_rows` consumer rows.** Read only by
-   lab-commons' own tests (wdg-lab's single mention of `_doorcensus_rows.DOORS` is in a COMMENT,
+   lab-commons' own tests (consumer-b's single mention of `_doorcensus_rows.DOORS` is in a COMMENT,
    measured). Deleting the consumer rows here therefore reds only this repo's floors, which must be
    RE-MEASURED by executing the scan -- not lowered -- once each consumer holds its own census.
 3. **`_unit_tokens.EXCLUDED_TOKENS` to tier 2.** It is re-exported from `lab_commons.dev.__init__`,

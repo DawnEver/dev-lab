@@ -8,11 +8,11 @@ while the release executable ran forty more minutes at full core count and froze
 twice. The second is the self-match a rules page asks a HUMAN to notice and ignore, which is exactly
 the step that is missing at 2am.
 
-WHY THIS IS A SHARED BODY. Measured 2026-09-18 at each lab's HEAD -- wdg-lab ``ef5fa9fc`` (165 lines)
-and optimi-lab ``e3502ec`` (138) -- ``test_a_bounded_wait_names_its_remedy.py`` is a near-twin:
+WHY THIS IS A SHARED BODY. Measured 2026-09-18 at each lab's HEAD -- consumer-b ``ef5fa9fc`` (165 lines)
+and consumer-c ``e3502ec`` (138) -- ``test_a_bounded_wait_names_its_remedy.py`` is a near-twin:
 identical ``WALL_SECONDS_LIMIT = 3.0`` and ``REAP_SECONDS_CEILING = 4.0``, a BYTE-IDENTICAL parent
 snippet, and 6 of 7 arm names shared. What differs is each repo's own answer -- its ``WIDER_TIER``
-wording, the capacity it prices the remedy arm at, the width it calls narrowed, and wdg-lab's extra
+wording, the capacity it prices the remedy arm at, the width it calls narrowed, and consumer-b's extra
 arm asserting that the two rule pages this file answers for are still on disk. Those are the keyword
 arguments below, with no defaults: a default is one repo's answer handed silently to another.
 

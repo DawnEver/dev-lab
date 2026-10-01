@@ -18,10 +18,10 @@ DERIVED VERSUS DECLARED, and the boundary is MEASURED rather than chosen. Of the
 live in the three consuming repos on 2026-09-18, THREE are a remedy this package already holds and
 SIX are that repo's own road:
 
-    wdg-lab      Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)   <- DERIVED
-    optimi-lab   Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)   <- DERIVED
-    motronics    Bash(*scripts/gate/stop_sweep.py *)                            <- DERIVED, by hand
-    wdg-lab      uv run python -m wdg_lab / uv sync --extra * / *yarn preview* /
+    consumer-b      Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)   <- DERIVED
+    consumer-c   Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)   <- DERIVED
+    consumer-a    Bash(*scripts/gate/stop_sweep.py *)                            <- DERIVED, by hand
+    consumer-b      uv run python -m consumer_b / uv sync --extra * / *yarn preview* /
                  python *kill-server.py* / *yarn test* / node **/scripts/post-review.js*
 
 The first two were hand-written in two repos by two hands and were CHARACTER-IDENTICAL to what

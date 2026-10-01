@@ -334,6 +334,6 @@ def test_the_scanner_knows_no_project_and_its_own_docstrings_name_none() -> None
     names out in order to disclaim them. A sentence cannot fire; this reads the shipped file.
     """
     text = Path(symcov_module.__file__ or '').read_text(encoding='utf-8')
-    forbidden = ('motronics', 'motor_jmag', 'ferrari', 'wdg_lab', 'optimi')
+    forbidden = ('consumer-a', 'motor_jmag', 'ferrari', 'consumer_b', 'consumer-c')
     assert [token for token in forbidden if token in text.lower()] == []
     assert len(text) > 1000, 'a vendor-neutrality scan over an empty read is vacuously clean'

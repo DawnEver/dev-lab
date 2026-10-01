@@ -12,11 +12,11 @@ built by a shell loop from the CALLER's ``extras:`` line, and the same file is r
 repo. So a row names WHERE the selection is written and pins the evidence line, and the reader is
 handed the names rather than the argv. Two facts, two homes, joined here and nowhere else.
 
-WHAT THE ROWS CONVICTED THE DAY THIS WAS WRITTEN, 2026-09-19: motronics' ``dep_sync`` advises, in
+WHAT THE ROWS CONVICTED THE DAY THIS WAS WRITTEN, 2026-09-19: consumer-a' ``dep_sync`` advises, in
 running code that prints to an operator mid-incident, "re-run naming every extra you need (``--extra
 all`` where the project declares it)" -- and ``--extra all`` in that repo STRANDS pytest,
 pytest-xdist, pytest-timeout and ruff, because ``all`` is
-``motronics[euclid,maxwell,pareto,femm,gui,native]`` and carries no ``dev``. The remedy printed
+``consumer-a[euclid,maxwell,pareto,femm,gui,native]`` and carries no ``dev``. The remedy printed
 after a prune would have left the tree unable to report that it was broken.
 
 Nothing here installs, syncs or prunes. Every answer is a join of committed TEXT with declared

@@ -10,7 +10,7 @@ from a path that holds nothing.
 WHAT THIS CENSUS CONVICTED THE DAY IT WAS WRITTEN, 2026-09-19, and both had been green for two days:
 
 1. TWO RECORDED COUNTS WERE WRONG AND NEITHER COULD RED. ``lab-commons`` recorded "9 installer
-   commands" and delivered 16; ``wdg-lab`` recorded 28 and delivered 30. Both sat above a floor
+   commands" and delivered 16; ``consumer-b`` recorded 28 and delivered 30. Both sat above a floor
    (``5``, ``18``), and a floor is ``DECLARED <= live`` -- satisfied by every shorter declaration,
    blind to a constant drifting either way. These rows assert EQUALITY per file, so a number that
    moves names the file it moved in.
@@ -32,7 +32,7 @@ resolution there is fresh. Commit a lock and that step starts serving it, so
 
 WHAT THIS CANNOT SEE, stated so the next reader does not over-read a green:
 
-* A DOOR THAT IS NOT A COMMAND IN A FILE. ``motronics-studio`` builds its ``uv`` invocations as
+* A DOOR THAT IS NOT A COMMAND IN A FILE. ``consumer-a`` builds its ``uv`` invocations as
   Python lists, and a text scan cannot tell which branch composes the live argv. Those are DECLINED,
   naming the mechanism that covers them: a census quietly omitting a door is indistinguishable from
   a census nobody ran.
@@ -46,6 +46,8 @@ WHAT THIS CANNOT SEE, stated so the next reader does not over-read a green:
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -74,6 +76,7 @@ __all__ = [
     'reachable',
     'read',
     'rows_for',
+    'sibling_paths',
 ]
 
 #: The delivery names a row may carry. Taken from the enum rather than typed out, so a value that
@@ -269,14 +272,37 @@ def door_text(root: Path, relpath: str, *, at_head: bool) -> str | None:
     return path.read_text(encoding='utf-8', errors='replace') if path.is_file() else None
 
 
-def reachable(base: Path, paths: dict[str, str]) -> dict[str, Path]:
+#: The environment variable through which a box names where its siblings are checked out.
+SIBLINGS_ENV: Final = 'LAB_COMMONS_SIBLINGS'
+
+
+def sibling_paths(paths: Mapping[str, str], env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """*paths* with each entry overridden by :data:`SIBLINGS_ENV` (``name=path,name=path``).
+
+    This tree is published, so it names its consumers neutrally and cannot know where a given box
+    keeps them. The box supplies that, outside the tree; a name the map does not declare is ignored,
+    and an absolute path wins over the base it would otherwise be joined to.
+    """
+    raw = (os.environ if env is None else env).get(SIBLINGS_ENV, '')
+    out = dict(paths)
+    for item in filter(None, (part.strip() for part in raw.split(','))):
+        name, sep, where = item.partition('=')
+        if not sep or not name.strip() or not where.strip():
+            msg = f'{SIBLINGS_ENV} entry {item!r} is not name=path'
+            raise ValueError(msg)
+        if name.strip() in out:
+            out[name.strip()] = where.strip()
+    return out
+
+
+def reachable(base: Path, paths: dict[str, str], env: Mapping[str, str] | None = None) -> dict[str, Path]:
     """Every declared repo actually checked out under *base*, keyed by repo name.
 
     A sibling not on this box is ABSENT rather than failing -- repos are cloned per box and a census
     demanding all four would be unrunnable on three. The repo floor in :func:`assert_census` is what
-    stops that being a free pass.
+    stops that being a free pass. Locations come through :func:`sibling_paths`.
     """
-    found = {repo: base / relative for repo, relative in paths.items()}
+    found = {repo: base / relative for repo, relative in sibling_paths(paths, env).items()}
     return {repo: root for repo, root in found.items() if (root / 'pyproject.toml').is_file()}
 
 

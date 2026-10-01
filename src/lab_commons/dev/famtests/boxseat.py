@@ -2,8 +2,8 @@
 
 :mod:`lab_commons.dev.boxlock` publishes the EXCLUSION and :mod:`lab_commons.dev.boxwait` publishes
 the bounded, narrated WAIT on it. What stayed forked was the eight-arm test that drives them.
-MEASURED 2026-09-19 by two independent audit lanes that did not know of each other: wdg-lab's and
-optimi-lab's ``tests/architecture/test_the_verdict_run_takes_the_box.py`` are **84.6% identical**,
+MEASURED 2026-09-19 by two independent audit lanes that did not know of each other: consumer-b's and
+consumer-c's ``tests/architecture/test_the_verdict_run_takes_the_box.py`` are **84.6% identical**,
 and a byte diff says what the 15.4% is --
 
 * a docstring, narrating each repo's own refuted "no runner, so the rule has no subject here";

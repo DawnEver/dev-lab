@@ -9,8 +9,8 @@ accessed: 2026-09-17
 
 # Plan — one source of truth for the family, and the config layer is the last tree nobody measured
 
-Measured 2026-09-17 across the four repos. `motronics` below always means the LANE worktree
-`.claude/worktrees/feat/optimi-lab`, never the main checkout.
+Measured 2026-09-17 across the four repos. `consumer-a` below always means the LANE worktree
+`.claude/worktrees/feat/consumer-c`, never the main checkout.
 
 ## Where the migration actually stands
 
@@ -19,10 +19,10 @@ this file over-counted SPLITS by 1.4-2.6x and read 30 MOVES where the true count
 every partition's PROSE explains past reclassifications):
 
     roster                rows   STAYS   SPLITS   MOVES
-    motronics scripts       70      54       16       0
-    motronics tests        254     225       26       3
-    wdg-lab                 38      18       19       1
-    optimi-lab              29      13       16       0
+    consumer-a scripts       70      54       16       0
+    consumer-a tests        254     225       26       3
+    consumer-b                 38      18       19       1
+    consumer-c              29      13       16       0
     TOTAL                  391     310       77       4
 
 **MOVES is down to 4 and two rosters are at zero. SPLITS is the whole remaining bucket at 77.**
@@ -34,38 +34,38 @@ the kit module DOCSTRINGS rather than the module names.
 The counts below are the 2026-09-17 reading, kept for the shape of the argument they support.
 
 
-`scripts/` is the only tree with a DECLARED answer, and it is motronics' alone:
+`scripts/` is the only tree with a DECLARED answer, and it is consumer-a' alone:
 `tests/architecture/layering/_placement_*.py` composes 77 rows — **48 STAYS, 17 MOVES, 12 SPLITS**.
 29 rows are judged-to-move and not yet moved.
 
 CLOSED 2026-09-17 (R0): both labs now have one too.
 
-    wdg-lab      31 rows — 14 STAYS,  5 MOVES, 12 SPLITS   (8 scripts + 21 modules + its own 2)
-    optimi-lab   23 rows —  9 STAYS,  6 MOVES,  8 SPLITS   (3 scripts + 18 modules + its own 2)
+    consumer-b      31 rows — 14 STAYS,  5 MOVES, 12 SPLITS   (8 scripts + 21 modules + its own 2)
+    consumer-c   23 rows —  9 STAYS,  6 MOVES,  8 SPLITS   (3 scripts + 18 modules + its own 2)
 
-Both landed independently on motronics' two bars — binder ceiling 50 own lines, density bar 3.0% —
-each BOUNDED in its own tree rather than copied: wdg-lab's ceiling must exceed 49 and fall below
-55, optimi-lab's exceed 43 and fall below 67; density above 1.41% / at-or-below 4.79% in wdg-lab,
-above 0.65% / at-or-below 3.06% in optimi-lab. The second interval is tight and says so.
+Both landed independently on consumer-a' two bars — binder ceiling 50 own lines, density bar 3.0% —
+each BOUNDED in its own tree rather than copied: consumer-b's ceiling must exceed 49 and fall below
+55, consumer-c's exceed 43 and fall below 67; density above 1.41% / at-or-below 4.79% in consumer-b,
+above 0.65% / at-or-below 3.06% in consumer-c. The second interval is tight and says so.
 
-A NUMBER IN DISPUTE: the roster agent reported motronics' PLACEMENT as 71 rows (44/13/14). Composed
+A NUMBER IN DISPUTE: the roster agent reported consumer-a' PLACEMENT as 71 rows (44/13/14). Composed
 live from the six partitions in the LANE worktree at HEAD it reads 77 (48 STAYS, 17 MOVES, 12
 SPLITS), reproduced twice. The likeliest explanation is the same one that bit the engine comparison
-today — reading `D:\MingyangBao\motronics-studio` (the main checkout, `integrate/main`, which has
+today — reading `<home>/consumer-a` (the main checkout, `integrate/main`, which has
 older placement data) instead of the lane. NOT RESOLVED; whoever picks this up should say which
 tree they read before quoting either number.
 
 `lab_commons.dev` publishes 30 public modules. CONSUMPTION, and my first number was wrong: I
 grepped for the string `lab_commons.dev.<name>`, which counts prose and docstrings, and got 28
-(wdg-lab) / 33 (optimi-lab, motronics). Measured by DIRECT IMPORT across `scripts/`, `tests/` and
-`src/`: **wdg-lab 17, optimi-lab 16.** The import reading is the one to trust — a module named in a
+(consumer-b) / 33 (consumer-c, consumer-a). Measured by DIRECT IMPORT across `scripts/`, `tests/` and
+`src/`: **consumer-b 17, consumer-c 16.** The import reading is the one to trust — a module named in a
 comment is not consumed. Neither lab imports `ab_bench netverb selfbuild shadow_build testfacts
 content envkey logref verdict reports units quantity_values devdocs`.
 
 The five that were asked about, each ANSWERED rather than counted:
 
 * `netverb` — SUBJECT PRESENT, no mechanism. `scripts/pull_all.py` drives clone/pull with a 120 s
-  timeout and ZERO retries; `wdg-lab-update.sh` exits on its first failed fetch. SPLITS.
+  timeout and ZERO retries; `consumer-b-update.sh` exits on its first failed fetch. SPLITS.
 * `shadow_build` / `selfbuild` — SUBJECT PRESENT, hand-rolled. `scripts/build_rust.py` runs
   `maturin develop --release` into the shared venv, the exact mutation `shadow_build` removes.
 * `testfacts` — SUBJECT PRESENT, hand-rolled and WEAKER: `test_skips_are_a_named_set.py` reads a
@@ -79,7 +79,7 @@ CORRECTED 2026-09-17 by the census in `tests/_config_census_rows.py`. The first 
 called the relation a subset. **It is not a subset in either direction**, and that matters to R1.
 
     lab-commons   E W F I UP B SIM RUF  +  ARG001 PLC0415 PLW0603 TRY301     12 selectors
-    wdg-lab / optimi-lab / motronics    BYTE-IDENTICAL, 58 selectors each
+    consumer-b / consumer-c / consumer-a    BYTE-IDENTICAL, 58 selectors each
                                         (pairwise symmetric difference EMPTY)
                                         ignore lists agree on 62 of 63/62/66
 
@@ -104,24 +104,24 @@ Two more in the same class:
 * `lab-commons` has **no `.pre-commit-config.yaml`** while all three consumers do. This is the same
   finding one layer out: the repo that ships `dev.hook_install`, `dev.hooks`, `dev.hook_adoption`
   and `dev.githooks` runs NONE of it on itself and has no commit-time enforcement at all.
-* `motronics` carries BOTH `ruff.toml` and `[tool.ruff]`. MEASURED via `ruff check --show-settings`:
+* `consumer-a` carries BOTH `ruff.toml` and `[tool.ruff]`. MEASURED via `ruff check --show-settings`:
   `ruff.toml` wins outright, and the loser holds exactly one key, `extend = "ruff.toml"`, naming the
   winner. So it is **DEAD, NOT LYING** — deleting it changes nothing, but leaving it invites the
   next reader to edit the file ruff never reads.
 
 Installed git hooks, measured 2026-09-17 by resolving the hooks dir THROUGH git (a first hand
 reading with `ls .git/hooks` from the wrong directory reported zero everywhere and was refused by
-the census reader): lab-commons `()`, wdg-lab `(pre-commit, pre-push)`, optimi-lab `(pre-commit,)`,
-motronics `(commit-msg, pre-commit, pre-push)`. `dev.hook_install`'s docstring claim of zero
+the census reader): lab-commons `()`, consumer-b `(pre-commit, pre-push)`, consumer-c `(pre-commit,)`,
+consumer-a `(commit-msg, pre-commit, pre-push)`. `dev.hook_install`'s docstring claim of zero
 everywhere is now HISTORICAL and needs updating. What is still unwired is a STAGE, not a repo: both
 labs declare `commitizen`, whose stage is `commit-msg`, and neither has a `commit-msg` hook — so
-the one non-whitelist hook optimi-lab declares is the one part of its config nothing executes.
+the one non-whitelist hook consumer-c declares is the one part of its config nothing executes.
 
 ## What the config layer actually shares, measured by CONTENT
 
 Line counts are not evidence; these are set intersections.
 
-    artefact        lab-commons  wdg-lab  optimi-lab  motronics
+    artefact        lab-commons  consumer-b  consumer-c  consumer-a
     pyproject.toml      69         344       225        299
     .gitignore          10         103        73        150
     ruff.toml          absent     absent    absent      123
@@ -132,15 +132,15 @@ Line counts are not evidence; these are set intersections.
 `.gitignore` — CORRECTED 2026-09-17, and the correction is not cosmetic. The first reading here
 normalised trailing slashes away with `sed 's:/*$::'`. **A trailing slash matches a DIRECTORY ONLY,
 so `**/__pycache__/` and `**/__pycache__` are different rules, not different spellings**, and
-motronics' own `.gitignore` carries a comment recording the incident that proves it: a `.pyc` under
+consumer-a' own `.gitignore` carries a comment recording the incident that proves it: a `.pyc` under
 `.claude/memory/` was TRACKED, because gitignore is last-match-wins per path and
 `!**/.claude/memory/**` re-included what the `__pycache__` rule had excluded.
 
     intersection over all three consumers:   12 LITERAL    14 normalised
-    pairwise  wdg/opt  wdg/motr  opt/motr:   27/31/14      27/33/16
+    pairwise  consumer-b/opt  consumer-b/motr  opt/motr:   27/31/14      27/33/16
 
 The five that differ only by a trailing slash — `**/__pycache__`, `*.egg-info`, `.mypy_cache`,
-`.pytest_cache`, `.ruff_cache` — are slashed in motronics and bare in both labs. All five name
+`.pytest_cache`, `.ruff_cache` — are slashed in consumer-a and bare in both labs. All five name
 directories, so the slashed spelling is the correct base, and adopting it is a REAL BEHAVIOUR
 CHANGE for the two labs that belongs in their adoption commit rather than being slipped in as
 formatting. Twelve is the number to quote when the question is what the three repos literally
@@ -158,7 +158,7 @@ three times.
 
 `Makefile` targets: `lint`, `test`, `fmt` in all four; `clean install install-dev test-parallel
 verify` in three. The repo-shaped remainder is small and NAMED: `build-rust* test-femm typecheck`
-(motronics), `serve schema install-web pull docs` (wdg-lab), `purity adoption` (optimi-lab).
+(consumer-a), `serve schema install-web pull docs` (consumer-b), `purity adoption` (consumer-c).
 
 **Every one of these is a shared base plus a named delta. None is a coin-flip.**
 
@@ -176,11 +176,11 @@ gets**, so an integrator on another box cannot attribute a single red.
 
 ### THE MECHANISM — and the first diagnosis in this file was WRONG
 
-wdg-lab reverted to dev26 THREE times on 2026-09-17, twice after being explicitly upgraded. It was
+consumer-b reverted to dev26 THREE times on 2026-09-17, twice after being explicitly upgraded. It was
 read as contention between agents twice, and then written up here as uv re-resolving `make
 install-dev` from its cache. **Both readings are wrong.** Measured:
 
-    wdg-lab/uv.lock:  name = "lab-commons"
+    consumer-b/uv.lock:  name = "lab-commons"
                       version = "0.2.2.dev26+gba3bf6dee"
 
 **There IS a lockfile. It pins dev26 — the exact version the repo kept returning to — and it is
@@ -211,7 +211,7 @@ intentional local copy from an unmigrated one — which is exactly the state the
 
 ### R0 — make the two unmeasured trees measured  (DONE 2026-09-17)
 
-Landed: wdg-lab `6d7a6c8b`, optimi-lab `f69f22e`, lab-commons config census `2048b37`.
+Landed: consumer-b `6d7a6c8b`, consumer-c `f69f22e`, lab-commons config census `2048b37`.
 Declaration only; no file moved.
 
 What the rosters proved beyond their own rows — similarity is EVIDENCE, not a verdict:
@@ -224,16 +224,16 @@ What the rosters proved beyond their own rows — similarity is EVIDENCE, not a 
 The last row is the counter-evidence that makes the other two mean something: a shared FILENAME is
 not shared code, and a census that only ever finds MOVES is measuring its own expectation.
 
-The guard corrected its author on first run, which is the part worth keeping: wdg-lab's
+The guard corrected its author on first run, which is the part worth keeping: consumer-b's
 repo-noun property refused three MOVES rows over the English word "slot" and over prose naming the
 repo. Property 3 now reads CODE with docstrings and comments blanked while property 2 keeps reading
 prose, and the asymmetry is pinned by its own test on live rows. One row survived the refusal
-correctly — `test_memory_lives_under_a_date.py` really does hold `src/wdg_lab/...` paths as data —
+correctly — `test_memory_lives_under_a_date.py` really does hold `src/consumer_b/...` paths as data —
 and moved to SPLITS.
 
-Debt carried honestly: 5 `BELOW_THE_BAR` rows in wdg-lab, 4 in optimi-lab, each strict-xfailed with
+Debt carried honestly: 5 `BELOW_THE_BAR` rows in consumer-b, 4 in consumer-c, each strict-xfailed with
 its measurement, date and the seam it owes. SPLITS answers the SAME bar as STAYS, with a planted
-control proving the SPLITS arm cannot be deleted. One self-row in optimi-lab predicted 0.00% and
+control proving the SPLITS arm cannot be deleted. One self-row in consumer-c predicted 0.00% and
 XPASSED at 3.90% — recorded WITH the caveat that all six hits are planted-control fixtures rather
 than real assertions about the repo.
 
@@ -241,9 +241,9 @@ than real assertions about the repo.
 
 **Measured live in all four repos today. The 50-group blindness is CLOSED.**
 
-    motronics(ruff.toml)   select=58 ignore=66 line-length=120 target=py313
-    wdg-lab                select=58 ignore=63 line-length=120 target=py313
-    optimi-lab             select=58 ignore=62 line-length=120 target=py313
+    consumer-a(ruff.toml)   select=58 ignore=66 line-length=120 target=py313
+    consumer-b                select=58 ignore=63 line-length=120 target=py313
+    consumer-c             select=58 ignore=62 line-length=120 target=py313
     lab-commons            select=58 ignore=10 line-length=120 target=py312
 
 lab-commons is at 58 selectors and **the pairwise symmetric difference with every consumer is
@@ -304,7 +304,7 @@ The reconnaissance that follows is kept as originally written.
 to delta lines rendered immediately after it. **There is no expression for "this BASE line must come
 after that DELTA line."**
 
-motronics' `.gitignore` is a three-stage ordered argument, and the file says so itself:
+consumer-a' `.gitignore` is a three-stage ordered argument, and the file says so itself:
 
     line   8   **/__pycache__/                <- BASE line
     line  84   !**/.claude/memory/            <- delta negation, re-includes that directory
@@ -316,7 +316,7 @@ to win."*
 
 Rendering today is SAFE BY LUCK and nothing checks it: the base block renders first, then the 59
 delta lines in file order, so the three stages survive. **The moment anyone promotes
-`**/.claude/**/__pycache__/` into the base — a plausible family line, since wdg-lab has the same
+`**/.claude/**/__pycache__/` into the base — a plausible family line, since consumer-b has the same
 `.claude` allow-list shape — the renderer places it BEFORE the negations and silently re-tracks the
 `.pyc`, reinstating the exact defect. And `fork_signals` would have argued FOR that promotion.**
 
@@ -329,60 +329,60 @@ planted test that a re-ignore promoted into the base REDS.
 #### The four artefacts, LITERAL counts (no normalisation anywhere)
 
                         .gitignore   .pre-commit   Makefile    pyproject   ruff.toml
-    motronics(lane)     150 / 73     153 / 109     81 / 54     293 / 162   123 / 91
-    wdg-lab              90 / 61      93 /  59    130 / 69     344 / 233   ABSENT
-    optimi-lab           49 / 30      36 /  29    114 / 58     225 / 172   ABSENT
+    consumer-a(lane)     150 / 73     153 / 109     81 / 54     293 / 162   123 / 91
+    consumer-b              90 / 61      93 /  59    130 / 69     344 / 233   ABSENT
+    consumer-c           49 / 30      36 /  29    114 / 58     225 / 172   ABSENT
     lab-commons          10 / 10      27 /  21     30 / 19     169 /  76   ABSENT
 
 (`total / meaningful`, the second being what `famconfig` compares.) Both labs SHRANK since
-2026-09-17: wdg gitignore 103->90, optimi 73->49, optimi pre-commit 72->36.
+2026-09-17: consumer-b gitignore 103->90, consumer-c 73->49, consumer-c pre-commit 72->36.
 
 **`.gitignore` — the 12-vs-14 trap is CLOSED and the literal number is 14.** All three consumers
 now write the slashed spelling of all five contested patterns; the labs adopted it since 09-17. So
 the base is 14/14 literally present in all three, **adoptable with no behaviour change for anybody**
-— the one flagged behaviour-change cost of this stage, now paid. Of motronics' 73 meaningful
+— the one flagged behaviour-change cost of this stage, now paid. Of consumer-a' 73 meaningful
 lines, 59 are its own (38 in neither lab); `fork_signals` reports 0 shared delta lines.
 
 **`.pre-commit-config.yaml` — ANSWERED 2026-09-18, and the answer was none of the three offered.**
-The arm was asked whether 87-against-21 is past the ceiling, with "the base is too thin", "motronics
+The arm was asked whether 87-against-21 is past the ceiling, with "the base is too thin", "consumer-a
 is genuinely a fork" and "`measured_delta` counts the wrong thing" on the table. **The third, and
 the evidence is a RANK INVERSION in the same three deltas under two units:**
 
     repo               line delta   own hooks   lines per own hook
-    wdg-lab                    38          11                 3.5
-    optimi-lab                  8           8                 1.0
-    motronics-studio           87           7                12.4
+    consumer-b                    38          11                 3.5
+    consumer-c                  8           8                 1.0
+    consumer-a           87           7                12.4
 
-By lines motronics is the family's largest delta by a factor of two; **by hooks it is the smallest
+By lines consumer-a is the family's largest delta by a factor of two; **by hooks it is the smallest
 of the three consumers**, with all 11 core ids present, 19/21 base lines literal and 0 fork signals.
 The cause: a `.gitignore` pattern or a Makefile recipe is ONE LINE PER DECISION, so a line ceiling
 there IS a decision ceiling and `Delta.ceiling` means what its docstring says. A pre-commit hook is
 a YAML MAPPING -- the labs' extra hooks come from an upstream repo and cost ~1 line each, while
-motronics' seven are `- repo: local` and cost 10-12. **A line ceiling on this artefact scores hook
+consumer-a' seven are `- repo: local` and cost 10-12. **A line ceiling on this artefact scores hook
 SOURCING, not distance from the base.** Of the 87: 2 `rev` pins, ~14 attribute lines hanging on
 BASE-OWNED hook ids (exactly what `Delta.anchored` exists for, and not additions at all), ~71 across
 7 local hooks. **Verdict: ADOPT** -- `anchored` for the attributes, `added` for the 7 local hooks.
-The 2 `rev:` pins remain a real upstream bump owed its own commit in the motronics lane. Landed as
+The 2 `rev:` pins remain a real upstream bump owed its own commit in the consumer-a lane. Landed as
 `declared_hooks`/`hook_delta` plus `PRECOMMIT_OWN_HOOKS`/`PRECOMMIT_LINE_DELTA`, with the two units
 kept SO THEY CAN BE COMPARED -- the test is phrased so that the two units AGREEING is a failure.
 
 The original paragraph, whose every number re-measured true:
 
 **`.pre-commit-config.yaml` — expressible via `anchored`, at a price to state out loud.** The
-plan's "eleven stock hooks are the first base" CHECKS OUT: all 11 present in all three. motronics
+plan's "eleven stock hooks are the first base" CHECKS OUT: all 11 present in all three. consumer-a
 declares 18 hook ids. **19 of 21 base lines match literally; the 2 that do not are both `rev:` pins**
-— base pins `v6.0.0`/`v4.13.9`, motronics runs `v5.0.0`/`v4.6.0`, so adoption is a real upstream
+— base pins `v6.0.0`/`v4.13.9`, consumer-a runs `v5.0.0`/`v4.6.0`, so adoption is a real upstream
 version bump and belongs stated in its commit. The strain is the ceiling: `measured_delta` sizes
-motronics' delta at **87 added lines against a 21-line base**. `Delta.ceiling` has no default
+consumer-a' delta at **87 added lines against a 21-line base**. `Delta.ceiling` has no default
 because "the number is the point at which this repo's delta has stopped being a delta", and 87/21
 is arguably past it by the mechanism's own words. `fork_signals` reports 0, so those 87 really are
-motronics'.
+consumer-a'.
 
 **`Makefile` — the gap this arm named is CLOSED (2026-09-18, `7e7e0ee`).** The plan's delta prior
-holds and UNDERCOUNTS motronics (`build-rust*`, `fmt-rust`, `test-femm`, `test-full`, `typecheck`).
-This paragraph used to read "`verify:` is ABSENT from motronics' Makefile -- the only repo with no
+holds and UNDERCOUNTS consumer-a (`build-rust*`, `fmt-rust`, `test-femm`, `test-full`, `typecheck`).
+This paragraph used to read "`verify:` is ABSENT from consumer-a' Makefile -- the only repo with no
 `verify` target and the only one whose Makefile never mentions its own verdict path. Adopt rather
-than write a drop reason." A lane edit did exactly that, giving motronics a `verify` naming
+than write a drop reason." A lane edit did exactly that, giving consumer-a a `verify` naming
 `scripts/gate/runner.py`, and the census guard written around the absence went red FOR THE RIGHT
 REASON: the tree had moved past the prose.
 
@@ -394,7 +394,7 @@ which makes them EQUAL: the kit has adopted its own base with an empty delta, th
 `HOOK_ID_CORE` reached on 2026-09-17. 36 planted single-drops (4 repos x 9 targets) all convicted.
 
 **A RESIDUAL WAS CLAIMED HERE AND IT WAS FALSE, corrected 2026-09-18.** This paragraph said the
-four repos share the target NAME and not the CONTRACT, because motronics' `verify` shells its own
+four repos share the target NAME and not the CONTRACT, because consumer-a' `verify` shells its own
 1770-line runner. Measured off the live Makefile at line 91: the recipe is `python -m
 lab_commons.dev.verify`, the family base line verbatim. **The target AND the contract are shared.**
 The claim was written from an assumption about what a repo owning its own runner must do, and never
@@ -403,7 +403,7 @@ names it, and repeated three times before a lane measured it.
 
 What actually diverges is the VERDICT, and that divergence is CORRECT: `scripts/gate/runner.py
 {measure|gate|heavy}` knows cases, solvers and the live vendor engines, and separates INCONCLUSIVE
-from PASS/FAIL -- none of which the kit's portable remainder models or should. motronics declares it
+from PASS/FAIL -- none of which the kit's portable remainder models or should. consumer-a declares it
 as a test rather than leaving it to prose. Separately, `fork_signals` fires 8 (`.DEFAULT_GOAL` + seven `.PHONY:`)
 which `MAKEFILE_RESIDUAL_SIGNALS` already declines to promote — **R2 must not read those 8 as work.**
 
@@ -429,28 +429,28 @@ ratchet's other side. Measured base: `select` 58 with an EMPTY four-way symmetri
 py313) and is recorded rather than dropped.
 
 **CORRECTION 3 of 3 — THE FILE DECISION BELOW IS WRONG, and the cheap direction is the other one.**
-The paragraph that follows calls motronics "the lone dissenter, which is the cheap direction to
-resolve". Measured: motronics names `ruff.toml` in **15 tracked files, seven of them live
+The paragraph that follows calls consumer-a "the lone dissenter, which is the cheap direction to
+resolve". Measured: consumer-a names `ruff.toml` in **15 tracked files, seven of them live
 mechanisms** -- five open it by path (`test_one_python_version_source.py`,
 `test_a_cited_test_file_exists.py::ROOT_CONFIGS`, `test_enforced_registry.py`,
-`test_motronics_adopts_the_shared_registry.py`, `test_disabled_rule_ratchet.py`) and two pin it by
+`test_consumer_a_adopts_the_shared_registry.py`, `test_disabled_rule_ratchet.py`) and two pin it by
 name (`test_config_line_ratchet.py` pins `'ruff.toml': 123`; `test_suppression_ratchet.py` keys
 `_RUFF_CONFIG`). **Keying the base by TABLE instead costs zero**, because this kit had already ruled
 the path is per-repo data TWICE -- `profile.DEFAULT_LINT_CONFIG` ("one tree in this family has no
 `ruff.toml` at all") and `rules.lint_selection`, which reads both shapes deliberately. Converging
 the filename would be the family re-deciding the same question a third time, against its own two
-standing answers. **Resolution: keep `ruff.toml` in motronics; key by table.**
+standing answers. **Resolution: keep `ruff.toml` in consumer-a; key by table.**
 
-Second, smaller: **the artefact is a different FILE in different repos.** motronics keeps
+Second, smaller: **the artefact is a different FILE in different repos.** consumer-a keeps
 `ruff.toml`; the other three keep `[tool.ruff]*` tables in `pyproject.toml` and have no `ruff.toml`
 at all. A base keyed by filename cannot serve both, so the ruff arm decides the FILE as well as the
-content — and motronics is the lone dissenter, which is the cheap direction to resolve.
+content — and consumer-a is the lone dissenter, which is the cheap direction to resolve.
 
 `famconfig`'s own docstring declares `[tool.ruff]` deliberately out of scope because the stage
 widening the kit's select was mid-sweep. **That stage has landed (see R1), so the stated reason for
 the absence has expired.**
 
-### R3 — delete motronics' dead `[tool.ruff]` block  (DONE 2026-09-17, `093d1b307`)
+### R3 — delete consumer-a' dead `[tool.ruff]` block  (DONE 2026-09-17, `093d1b307`)
 
 Executed by this plan's own session before any lane was dispatched for it, and re-measured
 2026-09-18: `ruff check --show-settings` names `ruff.toml`, and `grep -n ruff pyproject.toml`
@@ -497,24 +497,24 @@ that reads "should move" is indistinguishable from one that reads "is a duplicat
 The cheap repair, for whoever takes the next tranche: before pricing a row, read the kit's module
 DOCSTRINGS for its subject, not just the module names. Three of these five say where they came from.
 
-### R4 — the 29 declared-but-unmoved motronics rows
+### R4 — the 29 declared-but-unmoved consumer-a rows
 
 17 MOVES and 12 SPLITS, executed against the two-phase split rule: a SPLIT whose family half is NEW
 cannot land in one lane — write in lab-commons, push, reinstall through the dependency door,
 re-point. Take `scripts/hooks/*.sh` first: four MOVES in one mechanism, and `with-retry.sh` is
-already being borrowed cross-repo today (wdg-lab has no copy and reaches into motronics' tree for
+already being borrowed cross-repo today (consumer-b has no copy and reaches into consumer-a' tree for
 it), which is the seam arguing for itself.
 
-### R5 — wdg-lab's five unconsumed modules  (DONE 2026-09-18, wdg-lab `e3c54631`)
+### R5 — consumer-b's five unconsumed modules  (DONE 2026-09-18, consumer-b `e3c54631`)
 
 `ab_bench netverb selfbuild shadow_build testfacts`. **All five have the subject. ZERO
 `declared_absent` rows were owed, and this stage's own reading of the fifth was WRONG.**
 
 Four were already adopted 2026-09-17, before this stage was written — `netverb` (`pull_all.py`
-imports `run_network_verb`; `wdg-lab-update.sh` routes every fetch through it and `deny_rules.py`
+imports `run_network_verb`; `consumer-b-update.sh` routes every fetch through it and `deny_rules.py`
 ships GIT-NETWORK-VERB naming it as the remedy), `selfbuild` and `shadow_build` (both in
 `build_rust.py`), `testfacts` (`test_skips_are_a_named_set.py`). Checked for leftovers: no shim, no
-re-export, no local copy. The substantive half of `netverb` DID land — `wdg-lab-update.sh` still
+re-export, no local copy. The substantive half of `netverb` DID land — `consumer-b-update.sh` still
 exits 1, but only AFTER three bounded attempts and a written remedy, which is the opposite of the
 first-failed-fetch exit this stage was written about.
 
@@ -523,7 +523,7 @@ reports a median" — and that reading was TRUE AND SCOPE-LIMITED.** It covered 
 `tests/architecture/`. The subject lives in
 `examples/tasks/winding_design/benchmarks/benchmark_matching_split_depth.py`, in exactly the weaker
 form `ab_bench` exists to fix: five split depths run in a BLOCK, one sample each, winner taken as
-`max(nodes_per_second)` — and that winner then set as the production `WDG_MATCHING_SPLIT_DEPTH`.
+`max(nodes_per_second)` — and that winner then set as the production `CONSUMER_B_MATCHING_SPLIT_DEPTH`.
 The roster's own row said the subject was "somewhere in this repo"; nobody followed the sentence.
 
 **THE LESSON IS ABOUT THE INSTRUMENT, AND IT IS THE THIRD INSTANCE THIS WEEK: a scope-limited scan
@@ -544,12 +544,12 @@ the one recommended.
 Measured, and it refutes the line-count reading that produced this stage. Both labs' single page is
 a 30-line POINTER TABLE into `lab-commons/docs-src/dev/`, generated by
 `lab_commons.dev.devdocs.pointer_table` and listing 12 family pages — the MOVES already executed
-2026-09-16. motronics' 14 shares nine filenames with the kit's 13, every one already a pointer plus
+2026-09-16. consumer-a' 14 shares nine filenames with the kit's 13, every one already a pointer plus
 a local delta (`the-three-participants.md` is 6 lines against 38 upstream); the five with no
 upstream twin (`gate.md testing.md integration.md user-flow.md compute-resources.md`) are the gate
-runner, the case library and the vendor engines, which are motronics facts.
+runner, the case library and the vendor engines, which are consumer-a facts.
 
-Labs = MOVES, motronics = SPLITS, **both already executed**. Nothing to do. Kept as a numbered
+Labs = MOVES, consumer-a = SPLITS, **both already executed**. Nothing to do. Kept as a numbered
 stage so the 13/1/1 asymmetry is not re-opened by the next reader who sees only the line counts.
 
 ## THE DECISION, ANSWERED — and it moves the fix rather than removing it
@@ -558,7 +558,7 @@ stage so the 13/1/1 asymmetry is not re-opened by the next reader who sees only 
 on the requirement either. "The latest from that URL" is the family's deliberate declaration.
 
 CORRECTED after the ruling: the ruling is about what GIT holds, and the defect was never about
-that. An untracked `uv.lock` pinning dev26 exists on disk in wdg-lab and `uv run` syncs against it
+that. An untracked `uv.lock` pinning dev26 exists on disk in consumer-b and `uv run` syncs against it
 (see the mechanism section above). So "no lockfile in git" was being read as "no lockfile", and the
 repo has been running against an invisible pin all along.
 
@@ -572,9 +572,9 @@ The repair therefore has two halves, and only the first is about the ruling:
   it addresses a real second-order gap, not the cause. NOT a global `--refresh`: a fix wider than
   its cause is how the next reader loses the reason.
 
-The asymmetry this also explains: motronics never reverted because its verdict path does not run
-through `uv run` against a stale lock the way wdg-lab's hooks do, and because `dep_sync.py` already
-passes `--upgrade-package`. wdg-lab's `scripts/dep.py` escapes for a THIRD reason — it shells to
+The asymmetry this also explains: consumer-a never reverted because its verdict path does not run
+through `uv run` against a stale lock the way consumer-b's hooks do, and because `dep_sync.py` already
+passes `--upgrade-package`. consumer-b's `scripts/dep.py` escapes for a THIRD reason — it shells to
 `pip`, which re-clones a direct-URL requirement rather than treating it as satisfied. Three doors,
 three different behaviours on the identical requirement string, **and the reverting one is the one
 that runs automatically on every commit.** That is why "read the command text" was not a
@@ -589,11 +589,11 @@ different defect and the one that was built.
 
 **Claim by claim, against this file's own text:**
 
-* **"`make install-dev` reverts the kit"** -- REFUTED. wdg-lab's target is `uv pip install -U` then
+* **"`make install-dev` reverts the kit"** -- REFUTED. consumer-b's target is `uv pip install -U` then
   `uv pip install -e ".[...]"`, and `uv pip install` RE-RESOLVES a bare git URL. It was suspected on
   2026-09-17, recorded here as measured, and was never the defect. The two doors that really did
   revert were a pre-push hook and a changelog hook, both already remedied with `--no-sync`.
-* **"wdg-lab's `scripts/dep.py` re-clones"** -- confirmed in shape and NOT a defect: it delegates to
+* **"consumer-b's `scripts/dep.py` re-clones"** -- confirmed in shape and NOT a defect: it delegates to
   `lab_commons.dev.dep`, which spells `sys.executable -m pip install`, and pip re-cloning a direct
   URL is correct there. Recorded as DECLINED with its covering mechanism named.
 * **"`dep_sync` prunes"** -- the revert half was ALREADY fixed (`--upgrade-package` per floating
@@ -605,7 +605,7 @@ different defect and the one that was built.
 `lab-commons/.github/workflows/python-verify.yml` is a REUSABLE workflow that runs in every
 CALLER's checkout and holds three lock-consuming commands. Classified against lab-commons' own
 floating names it reads INERT three times over -- because the kit IS the kit. Classified against a
-caller's names, all three are REVERTS. No caller could see it: optimi-lab's `ci.yml` is a thin
+caller's names, all three are REVERTS. No caller could see it: consumer-c's `ci.yml` is a thin
 caller with zero commands of its own.
 
 lab-commons' own test docstring CLAIMED this file was a door of every caller, and the claim was
@@ -617,11 +617,11 @@ mechanism rather than a sentence.
 ### THE REMEDY PRINTED AFTER A PRUNE RE-CAUSED THE PRUNE, and then once more one layer down
 
 `dep_sync` printed, immediately after removing 83 distributions: *"re-run naming every extra you
-need (`--extra all` where the project declares it)"*. motronics DOES declare `all`, and `all` is
-`motronics[euclid,maxwell,pareto,femm,gui,native]` -- no `dev`, which is where pytest and ruff
+need (`--extra all` where the project declares it)"*. consumer-a DOES declare `all`, and `all` is
+`consumer-a[euclid,maxwell,pareto,femm,gui,native]` -- no `dev`, which is where pytest and ruff
 live. **A refusal that names its remedy is this family's rule; a refusal whose remedy reproduces
 the failure is that rule inverted**, and nothing caught it because the advice is PROSE the code
-never consults. Fixed in motronics with a mechanism that expands every named extra through the
+never consults. Fixed in consumer-a with a mechanism that expands every named extra through the
 repo's own manifest (`1a5094982`).
 
 **That fix was still not enough, and the second reading is the more general lesson.** A
@@ -629,7 +629,7 @@ runner-shaped question cannot see a collection-shaped hazard: `--extra all --ext
 img-to-cad`, recorded as "the incantation that actually restored the box", leaves the runner whole
 and still strands `pillow` -- declared only in `tooldrivers`, a group named by no incantation, no
 document and no running line of code in that repo. **There was no selection on record that could
-collect motronics' own test tree.** Corrected in `d1ff1d78c`, whose guard now accounts for EVERY
+collect consumer-a' own test tree.** Corrected in `d1ff1d78c`, whose guard now accounts for EVERY
 declared group, with an omission requiring a written reason.
 
 ### What the family can now answer, and what it still cannot
@@ -646,18 +646,18 @@ installed, synced or pruned to measure it):
 **Named blind spots, and they are the honest ceiling of a text-only answer:** `conftest.py`
 `collect_ignore`, `importlib`/string imports, a distribution that installs but fails to LOAD (ABI),
 and whether an UNRESOLVED name survives. That last residue is pinned by equality rather than waved
-at -- `pdfminer, pywintypes, tomlkit, win32com, yaml` in motronics, `pydantic_core, scipy` in
-wdg-lab, all transitive and declared by no manifest, so no text settles them.
+at -- `pdfminer, pywintypes, tomlkit, win32com, yaml` in consumer-a, `pydantic_core, scipy` in
+consumer-b, all transitive and declared by no manifest, so no text settles them.
 
 **AND A CORRECTION THAT COST THE MOST TO LEARN:** a module behind `pytest.mark.skipif` is NOT
 guarded. `pytestmark` is created BY the module body, so a module-scope import runs before pytest
 can read the mark. Treating marks as guards scores the loudest real hazard in the family as safe.
 
-**A FOURTH BEHAVIOUR, measured 2026-09-18 in the motronics lane, and it is DESTRUCTIVE rather than
+**A FOURTH BEHAVIOUR, measured 2026-09-18 in the consumer-a lane, and it is DESTRUCTIVE rather than
 merely divergent.** The risk this file anticipated at that door was a credential failure. What
 happened is the opposite: `dep_sync --sync` SUCCEEDED, and with no `--extra` it PRUNED the
-environment from 113 distributions to 30 -- removing pytest, ruff, pre-commit, motronics_native,
-optimi_lab and wdg-lab among 83 others. **It printed its warning AFTER doing it.** Restoring took
+environment from 113 distributions to 30 -- removing pytest, ruff, pre-commit, consumer_a_native,
+consumer_c and consumer-b among 83 others. **It printed its warning AFTER doing it.** Restoring took
 two passes, and `--extra all` does NOT include `img-to-cad`, so the sanctioned incantation in that
 tree is `--sync --extra all --extra dev --extra img-to-cad`.
 
@@ -702,10 +702,10 @@ beside the live ones so a reader can tell drift from a misreading.
   0, because every partition explains its past reclassifications). Say which tree you read.
 
         roster                rows   STAYS   SPLITS   MOVES     was 2026-09-17
-        motronics scripts       70      54       16       0     77 -- 48/17/12
-        motronics tests        254     225       26       3     not in this section
-        wdg-lab                 38      18       19       1     31 -- 14/5/12
-        optimi-lab              29      13       16       0     23 -- 9/6/8
+        consumer-a scripts       70      54       16       0     77 -- 48/17/12
+        consumer-a tests        254     225       26       3     not in this section
+        consumer-b                 38      18       19       1     31 -- 14/5/12
+        consumer-c              29      13       16       0     23 -- 9/6/8
         TOTAL                  391     310       77       4
 
   **MOVES fell from 28 declared to 4; two rosters are at zero. SPLITS at 77 is the whole remaining
@@ -713,8 +713,8 @@ beside the live ones so a reader can tell drift from a misreading.
 
 * **Makefile targets: NINE in all four** (over 11/18/14/16), and nine in all three consumers -- the
   two readings are now EQUAL. Was "3 in all four (over 6/18/14/15), 8 in all three consumers,
-  `verify` in three of four and motronics the exception". **That exception is closed**: all four
-  carry `verify`. The four repos share the target AND the contract: motronics'
+  `verify` in three of four and consumer-a the exception". **That exception is closed**: all four
+  carry `verify`. The four repos share the target AND the contract: consumer-a'
   `verify` recipe is `python -m lab_commons.dev.verify`, measured off the live Makefile 2026-09-18
   after this bullet had claimed the opposite. What diverges is the VERDICT tier, correctly so, and
   it is declared with a test.
@@ -728,15 +728,15 @@ beside the live ones so a reader can tell drift from a misreading.
 * **pre-commit: 11 ids in all three consumers**, over 22/19/18 -- unchanged, and the only floor in
   this section that re-measured true. The three still disagree on BOTH pins (`pre-commit-hooks`
   v6.0.0/v5.0.0/v5.0.0, `commitizen` v4.13.9/v4.6.0/v4.6.0), which is a real upstream bump owed its
-  own commit. Own hooks beyond the core: wdg-lab 11, optimi-lab 8, motronics 7. **Size this artefact
-  in HOOKS, never in lines** -- by lines motronics is the family's largest delta (87 against a
+  own commit. Own hooks beyond the core: consumer-b 11, consumer-c 8, consumer-a 7. **Size this artefact
+  in HOOKS, never in lines** -- by lines consumer-a is the family's largest delta (87 against a
   21-line base) and by hooks it is the smallest of the three, because a line ceiling on a YAML
   mapping scores hook SOURCING rather than distance from the base.
 
 * **`.gitignore`: 14 LITERAL in all three** -- the 12-vs-14 trap is CLOSED, both numbers now agree
   because all three consumers write the slashed spelling of all five contested patterns. Adoption
-  costs nobody a behaviour change. R2 sizing, added/dropped per repo: wdg-lab 49/2, optimi-lab 18/2,
-  motronics 59/0.
+  costs nobody a behaviour change. R2 sizing, added/dropped per repo: consumer-b 49/2, consumer-c 18/2,
+  consumer-a 59/0.
 
 * **`famconfig.py` is at 357 lines against the 400 band.** Was "exactly 400, and the next addition
   must split it" -- the split HAPPENED, into `_famconfig_survey` (read), `_famconfig_rows` (data),
@@ -751,7 +751,7 @@ beside the live ones so a reader can tell drift from a misreading.
 * **THE FLOOR THIS SECTION DID NOT HAVE, and it is why it drifted.** Nothing re-reads these
   numbers; they are prose in a memory file, and every one of them is a claim the tree could refute.
   Two guards now exist for the roster half -- `test_the_scripts_roster_is_re_read_against_the_kit.py`
-  and `test_the_tests_roster_is_re_read_against_the_kit.py` in motronics -- and the config half is
+  and `test_the_tests_roster_is_re_read_against_the_kit.py` in consumer-a -- and the config half is
   covered by `test_the_config_census_is_measured.py` here. **Neither reads THIS file.** A later
   reader should treat every bullet above as a hypothesis with a date on it, not as a floor.
 
@@ -768,8 +768,8 @@ still open.
 `tests/test_the_pyproject_sections_are_owned_in_all_four_repos.py`. Owned:
 
 * `[project]` — `readme = "README.md"` (scalar) and `dynamic = ["version"]` (set). Four-way verbatim.
-* `[tool.pytest.ini_options]` — `testpaths` (set), `tests` in all four; wdg-lab adds `src/wdg_lab`
-  and optimi-lab adds `src`, each ceiling 1. The only real delta in the whole base.
+* `[tool.pytest.ini_options]` — `testpaths` (set), `tests` in all four; consumer-b adds `src/consumer_b`
+  and consumer-c adds `src`, each ceiling 1. The only real delta in the whole base.
 
 **THE BAR IS FOUR-WAY AND NOT THREE, and applying it is what kept this base small.** Three of the
 biggest candidates — `[tool.commitizen]` (6 keys verbatim in all three consumers),
@@ -815,7 +815,7 @@ one DECLINED.
 argument is no longer a line count against prose. A `famconfig.Base` exists to keep N COPIES of one
 file agreeing; this tree has none to keep. Measured over the four live checkouts: each of the twelve
 family pages exists exactly ONCE (`copies_of_page` finds zero outside the kit), both labs hold
-`index.md` and nothing else, and motronics' eight shared filenames each link upstream and repeat
+`index.md` and nothing else, and consumer-a' eight shared filenames each link upstream and repeat
 **0.0%–1.7%** of the page they name (ceiling 10%, planted verbatim copy reads 100%). Rendering a page
 into four repos is precisely the fork the reference removed, so a base here would UNDO the migration.
 
@@ -838,7 +838,7 @@ outside the contract it publishes was the one whose copy had drifted.** Third in
 
 Also closed: the census arm read `SHARED_DEV_PAGES <= pages` in both directions it checked — the
 downward-drift shape that hid a two-short `SHARED_GITIGNORE_CORE`. It is an EQUALITY against the
-live kit∩motronics intersection now (nine names), asserted from both modules.
+live kit∩consumer-a intersection now (nine names), asserted from both modules.
 
 ### The `DECLARED <= live` shape, swept: four cores, none short
 
@@ -850,7 +850,7 @@ each naming in its message WHOSE drift it accuses.
     CONSUMER_IGNORE_CORE      62        62  one of the three CONSUMERS (kit ignore is 10, its own delta)
     MAKE_TARGET_CORE           9         9  any of the four, kit included
     HOOK_ID_CORE              11        11  any of the four
-    SHARED_DEV_PAGES           9         9  kit or motronics
+    SHARED_DEV_PAGES           9         9  kit or consumer-a
 
 **NONE was short**, which is the useful half of the result: unlike `SHARED_GITIGNORE_CORE` (12
 declared / 14 live) the constants were right and only the assertion SHAPE was wrong. So the fix was

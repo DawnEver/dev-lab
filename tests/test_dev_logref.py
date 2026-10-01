@@ -103,7 +103,7 @@ class TestTheGrammarHasONEspelling:
 
     ``_STAMPED`` used to spell ``^VERDICT `` as a regex literal while ``Verdict.line`` pasted
     ``MARKER`` into an f-string of its own. Both were correct, and nothing obliged either to follow
-    the other -- the shape motronics measured on 2026-08-21, when a consumer still grepping the
+    the other -- the shape consumer-a measured on 2026-08-21, when a consumer still grepping the
     previous stamp matched NOTHING and reported "no verdict" for every commit.
     """
 

@@ -3,7 +3,7 @@
 - This page is the CONFIGURATION of the forge side; the local half is [the verdict model](verdict-model.md) (what a verdict is) and [branch layers](branch-layers.md) (how a lane lands).
 - **The forge is a REMOTE, cloud-hosted service: nothing in any repo here starts, stops or restarts it.** Everything below is configuration applied THROUGH its API or web UI, and a forge-side failure is diagnosed and REPORTED, never waited on for a restart that nobody here can perform.
 - **A network verb goes through the retry wrapper, three times, and a write that still fails is REPORTED with its diagnosis rather than hammered** — three retries of a server-side failure is an hour of CPU for the same answer.
-- Everything below was measured against this family's self-hosted forge on 2026-08-27, using `motronics-studio` as the repo under protection. The other repos in the family have the same forge and the same accounts, so the configuration transfers; only the repo name changes.
+- Everything below was measured against this family's self-hosted forge on 2026-08-27, using `consumer-a` as the repo under protection. The other repos in the family have the same forge and the same accounts, so the configuration transfers; only the repo name changes.
 
 ## The rule being enforced
 

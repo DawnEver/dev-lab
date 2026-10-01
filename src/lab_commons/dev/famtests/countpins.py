@@ -1,11 +1,11 @@
 """A PIN IS A NAMED SET; a number may only be a THRESHOLD, and its NAME must say so.
 
 WHY THIS IS FAMILY, AND IT ARRIVES AS A CORRECTION. ``NAMED-SETS-NOT-COUNTS`` was claimed as
-enforced by optimi-lab on 2026-09-15 while citing three modules that merely HAPPEN to use named
+enforced by consumer-c on 2026-09-15 while citing three modules that merely HAPPEN to use named
 sets. That is the declaration-that-lies shape one level up: nothing refused the edit replacing
 ``OVERSIZE_PINS = frozenset()`` with ``OVERSIZE_COUNT = 0``, so the rule was EXEMPLIFIED rather than
 enforced, and exemplifying a rule and enforcing it are different facts of which only one is a
-mechanism. Measured 2026-09-19 one repo over: wdg-lab cites the same rule at SIX modules that use
+mechanism. Measured 2026-09-19 one repo over: consumer-b cites the same rule at SIX modules that use
 named sets and holds no count-pin guard at all -- the identical defect, still live, which is what
 makes this a family body rather than one repo's tidiness.
 
@@ -23,7 +23,7 @@ a SET: a frozenset, a dict, a tuple of names.
 WHAT THE KIT KEEPS AND WHAT THE REPO RULES ON. The grader is here; every word it grades by is an
 ARGUMENT WITH NO DEFAULT. ``threshold_suffixes`` is the one this module must never guess, because it
 IS THE EXEMPTION MECHANISM -- a default suffix set is a waiver the consumer never wrote, shipped
-into its tree by a library it imported for something else. optimi-lab declares eight; a repo with
+into its tree by a library it imported for something else. consumer-c declares eight; a repo with
 none is making a stricter claim and is entitled to.
 
 WHAT IT CANNOT SEE, AND WHY THE FLOOR COUNTS CONSTANTS RATHER THAN OFFENDERS. This reads NAMES.

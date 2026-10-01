@@ -1,7 +1,7 @@
 r"""`docs-src/dev/` DECLINES A FAMILY-CONFIG BASE, because it is shared by REFERENCE and not by COPY.
 
 WHY THIS MODULE EXISTS. `docs-src/dev/` is the last artefact of the config census with no base at
-all, and its raw line counts -- 13 / 1 / 1 / 14 across kit, wdg-lab, optimi-lab and the motronics
+all, and its raw line counts -- 13 / 1 / 1 / 14 across kit, consumer-b, consumer-c and the consumer-a
 lane -- read like the largest fork in the family. R6 of
 `.claude/memory/2026/09/17/plan-one-source-of-truth-for-the-family-config-layer.md` dissolved that
 reading once, in PROSE, and this family has watched prose go stale three times. It is re-measured
@@ -64,7 +64,7 @@ INDEX_PATH: Final = f'{CANONICAL_TREE}/{INDEX}'
 #: How each repo REACHES the shared tree, which is the only input `pointer_table` takes. The kit's
 #: is `.` because the pages are beside its index; a consumer's climbs out of its own
 #: `docs-src/dev/` and then out of however deep `REPO_PATHS` places it under the family root, so the
-#: layout is declared ONCE. Until 2026-10-01 these were typed as siblings, and wdg-lab -- one level
+#: layout is declared ONCE. Until 2026-10-01 these were typed as siblings, and consumer-b -- one level
 #: deeper, and already rendering `../../../../` -- read as a stale table it was not.
 POINTER_BASES: Final[dict[str, str]] = {
     'lab-commons': '.',
@@ -76,10 +76,10 @@ POINTER_BASES: Final[dict[str, str]] = {
 
 #: The two consumers that kept NOTHING of their own under this tree. Their row in the census reads
 #: MOVES, and the claim being measured is that the "1" is the move already executed.
-LAB_REPOS: Final[tuple[str, ...]] = ('wdg-lab', 'optimi-lab')
+LAB_REPOS: Final[tuple[str, ...]] = ('consumer-b', 'consumer-c')
 
 #: The consumer whose row reads SPLITS: it keeps pages of its own AND pointers to the family's.
-MOTRONICS: Final = 'motronics-studio'
+CONSUMER_A: Final = 'consumer-a'
 
 #: Floors: the readings that would otherwise be vacuous if a reader found nothing. The copy reader and
 #: its ceiling are :mod:`lab_commons.dev.famtests.devdocs`' -- the same body a consumer's own suite
@@ -87,7 +87,7 @@ MOTRONICS: Final = 'motronics-studio'
 REPO_FLOOR: Final = 3
 RESIDUE_FLOOR: Final = 5
 
-#: The header every dev-index table starts with. Motronics has TWO tables under it -- the family's
+#: The header every dev-index table starts with. ConsumerA has TWO tables under it -- the family's
 #: and its own -- so a reader keyed on this line alone would compare the wrong one.
 TABLE_HEADER: Final = '| page | what it covers |'
 
@@ -112,7 +112,7 @@ def family_blocks(text: str) -> tuple[str, ...]:
 
     Pure over TEXT so the planted controls drive this exact function rather than a second reading of
     the same idea. The identifying property is the ROW SET, not the position or the heading above it:
-    motronics' second table has the identical header and links to pages of its own, and a reader
+    consumer-a' second table has the identical header and links to pages of its own, and a reader
     keyed on the header would have compared that one and called the tree forked.
     """
     declared = set(slugs())
@@ -205,12 +205,12 @@ class TestEveryDevIndexIsOneRenderOfOneRegistry:
             )
 
     def test_a_planted_local_table_is_not_read_as_the_family_one(self) -> None:
-        """PLANTED CONTROL for the reader. motronics' own table has the identical header."""
+        """PLANTED CONTROL for the reader. consumer-a' own table has the identical header."""
         local = f'{TABLE_HEADER}\n|---|---|\n| [The gate](gate.md) | THIS repo`s runner |'
         assert table_blocks(local), 'the control planted no table at all'
         assert family_blocks(local) == (), 'a table of the repo`s OWN pages reads as the family table'
         both = f'{pointer_table(".")}\n\nsome prose\n\n{local}'
-        assert len(family_blocks(both)) == 1, 'the reader cannot separate the two tables motronics holds'
+        assert len(family_blocks(both)) == 1, 'the reader cannot separate the two tables consumer-a holds'
 
 
 class TestTheTwoReadersAgreeOnThisRepo:
@@ -273,27 +273,27 @@ class TestTheConsumersKeepPointersAndNotCopies:
                 f'is one pointer page, so either a page came back or one of its own was written'
             )
 
-    def test_every_motronics_page_under_a_family_name_is_a_residue(self) -> None:
+    def test_every_consumer_a_page_under_a_family_name_is_a_residue(self) -> None:
         """The SPLITS row's own claim, read off the live trees and `slugs()` -- no hand-held name set.
 
-        Through the consumer-side famtest's own pure reader, so the census and motronics' suite judge
-        a copy by ONE instrument. Only the stems the family declares are passed: which of motronics'
-        OTHER pages may name a family module is motronics' allowlist, asserted in its own suite.
+        Through the consumer-side famtest's own pure reader, so the census and consumer-a' suite judge
+        a copy by ONE instrument. Only the stems the family declares are passed: which of consumer-a'
+        OTHER pages may name a family module is consumer-a' allowlist, asserted in its own suite.
         """
         reached = _reached()
-        assert MOTRONICS in reached, (
-            f'{MOTRONICS} is not checked out beside lab-commons, so the one SPLITS consumer is unmeasured'
+        assert CONSUMER_A in reached, (
+            f'{CONSUMER_A} is not checked out beside lab-commons, so the one SPLITS consumer is unmeasured'
         )
         declared = set(slugs())
         local = {
-            name.removesuffix('.md'): read_at_head(reached[MOTRONICS], f'{CANONICAL_TREE}/{name}') or ''
-            for name in dev_pages(reached[MOTRONICS])
+            name.removesuffix('.md'): read_at_head(reached[CONSUMER_A], f'{CANONICAL_TREE}/{name}') or ''
+            for name in dev_pages(reached[CONSUMER_A])
             if name.removesuffix('.md') in declared
         }
         assert len(local) >= RESIDUE_FLOOR, f'{sorted(local)}: below anything worth calling a split tree'
         family = {slug: _kit_page(reached['lab-commons'], slug) for slug in slugs()}
         problems = residue_problems(local, family, subject_allowlist={})
-        assert problems == (), 'motronics pages under a family name that are not residues:\n  ' + '\n  '.join(problems)
+        assert problems == (), 'consumer-a pages under a family name that are not residues:\n  ' + '\n  '.join(problems)
 
 
 class TestNobodyDeclaresABaseWhileTheMeasurementHolds:

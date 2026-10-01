@@ -236,7 +236,7 @@ def test_the_declared_checkout_is_the_one_that_was_read(tmp_path: Path) -> None:
 #
 # This section exists because of a measured defect in the first version of this module. A row then
 # carried ONE mechanism tuple that every adopter was graded against, and all 70 mechanisms named
-# motronics paths -- so lab-commons, the repo that AUTHORED the registry, refused its own registry
+# consumer-a paths -- so lab-commons, the repo that AUTHORED the registry, refused its own registry
 # with 70 failures. A rule's statement is universal; its mechanism is a file in one tree.
 # ---------------------------------------------------------------------------------------------
 
@@ -298,7 +298,7 @@ def test_the_adoption_path_runs_over_a_real_tree_in_both_directions(tmp_path: Pa
     """
     profile = _scratch_checkout(tmp_path, 'PLC')
     # A SHARED row: its mechanisms are the AUTHORING repo's paths, none of which exist here.
-    shared = (Rule(id='SHARED', statement='x', mechanisms=(guard('motronics/only/test.py'),)),)
+    shared = (Rule(id='SHARED', statement='x', mechanisms=(guard('consumer-a/only/test.py'),)),)
 
     with pytest.raises(UnenforceableRule, match='neither enforces nor declares absent'):
         assert_adopted(profile, Adoption(app_name='scratch'), shared)

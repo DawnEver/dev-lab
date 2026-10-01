@@ -3,7 +3,7 @@
 WHY THIS FILE MATTERS MORE THAN IT LOOKS. The registry was authored here, and the authoring repo is
 the one with the least reason to notice that its rows lean on another repo's tree. The rules
 registry learned that the hard way: driven against its own checkout it refused itself with 70
-failures, all of them motronics paths. So the deny half is driven against THIS tree from the day it
+failures, all of them consumer-a paths. So the deny half is driven against THIS tree from the day it
 lands, with remedies that resolve here and NOTHING borrowed from the repo the rules came from.
 
 WHAT THIS REPO CAN HONESTLY SHIP TODAY, and the asymmetry is the point rather than an embarrassment:

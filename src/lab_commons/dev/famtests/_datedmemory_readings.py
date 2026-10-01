@@ -33,10 +33,10 @@ measured differences are:
   through :mod:`lab_commons.dev.floors` first and the floor is the consumer's own measured number.
 
 EVERY REPO-SHAPED FACT ARRIVES AS A KEYWORD ARGUMENT WITH NO DEFAULT, because the diff between the
-two consumers IS the repo boundary rather than a guess. ``wdg-lab`` walks FIVE memory trees holding
-352 entries; ``optimi-lab`` reads ONE holding a handful, and the kit's own tests read a third shape
-again. ``wdg-lab`` drops ``_meta.json`` AND ``.gitkeep`` and never descends into ``node_modules``,
-``target`` or a sibling checkout, where ``optimi-lab`` has neither problem. A guessed exclusion set
+two consumers IS the repo boundary rather than a guess. ``consumer-b`` walks FIVE memory trees holding
+352 entries; ``consumer-c`` reads ONE holding a handful, and the kit's own tests read a third shape
+again. ``consumer-b`` drops ``_meta.json`` AND ``.gitkeep`` and never descends into ``node_modules``,
+``target`` or a sibling checkout, where ``consumer-c`` has neither problem. A guessed exclusion set
 is the worst of them: it does not raise, it removes files from the population, and the scan then
 reports clean over a tree it stopped reading.
 """

@@ -41,7 +41,7 @@ from _config_census import reachable_repos, ruff_ignore, ruff_select, selector_c
 from _config_census_rows import CONSUMER_SELECT, COUNTER_DIRECTION_CODES, KIT_SELECT, REPO_PATHS
 
 #: The consumers, in census order. lab-commons is the kit and is never its own consumer.
-CONSUMERS: Final[tuple[str, ...]] = ('wdg-lab', 'optimi-lab', 'motronics-studio')
+CONSUMERS: Final[tuple[str, ...]] = ('consumer-b', 'consumer-c', 'consumer-a')
 
 #: THE WAIVER SET, AND THE ONLY ONE. Eight codes this repo enforces that all three consumers disable
 #: globally. Each row says which side should move; none of them says "lower the count".
@@ -113,8 +113,8 @@ REACH_FLOOR: Final[int] = 1
 #: number, not the standard. So the kit's own ignore list was built from what this repo MEASURED --
 #: ten entries, each naming why the rule is wrong HERE -- and the gap is recorded rather than copied.
 #:
-#: MEASURED 2026-09-17: 56 codes in total across the three consumers (wdg-lab 52, optimi-lab 51,
-#: motronics 55), of which 8 are the decided rows above. The ceiling is the union; it may only
+#: MEASURED 2026-09-17: 56 codes in total across the three consumers (consumer-b 52, consumer-c 51,
+#: consumer-a 55), of which 8 are the decided rows above. The ceiling is the union; it may only
 #: SHRINK, and it shrinks from either end -- a consumer dropping an ignore, or the kit deciding a
 #: rule is wrong for it too.
 ADOPTION_DEBT: Final[tuple[str, ...]] = (

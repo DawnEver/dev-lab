@@ -31,7 +31,7 @@ AND THE VERDICT IT REFUSES TO FAKE. A seam faster on one input and slower on ano
 not a port, and a dispatch needs a threshold. :func:`crossover` asks whether one exists -- whether
 some size separates every loss from every win -- and when the winner changes BACK as size grows it
 returns no threshold and NAMES the pairs that forbid one. That negative is the expensive finding:
-measured in motronics-studio 2026-09-04 over three sparse systems within 11 % of each other in
+measured in consumer-a 2026-09-04 over three sparse systems within 11 % of each other in
 order, the ratios ran 0.81, 1.70, 0.78, so the two points a migration had reasoned from were two
 different inputs rather than two points on a curve.
 

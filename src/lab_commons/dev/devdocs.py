@@ -3,9 +3,9 @@
 THE DEFECT THIS CLOSES, MEASURED 2026-09-16. The universal rule STATEMENTS were unified into
 :mod:`lab_commons.dev.rules` on 2026-09-15, each row carrying its ID, its statement and the
 mechanism that refuses a violation. **The MECHANISM DOCS were not.** So the four repos cited rules
-by ID and had nothing that explained how the mechanism works: ``motronics-studio`` held 14 dev
-documents totalling roughly 1300 lines, of which ten were not about motors at all; ``wdg-lab`` held
-one document and it was its own architecture; ``optimi-lab`` and this repo held none. Three of four
+by ID and had nothing that explained how the mechanism works: ``consumer-a`` held 14 dev
+documents totalling roughly 1300 lines, of which ten were not about motors at all; ``consumer-b`` held
+one document and it was its own architecture; ``consumer-c`` and this repo held none. Three of four
 repos had no written mechanism, while one held all of it under a name that made it look local.
 
 THE SUBJECT TEST decides what is here, and it is the same shape as the noun test in

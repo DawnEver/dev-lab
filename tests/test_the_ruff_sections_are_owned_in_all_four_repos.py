@@ -19,7 +19,7 @@ each repo's table is what the live base and that repo's DECLARATION produce, and
 edit to a declaration rather than a re-measurement. The two answer different questions about one
 artefact, which is the same reason the Makefile contract and the pre-commit rendering are two files.
 
-THE MOTRONICS ROW IS THE ONE THAT MAKES THE `prefix` RULE NON-VACUOUS. Three repos keep these tables
+THE CONSUMER_A ROW IS THE ONE THAT MAKES THE `prefix` RULE NON-VACUOUS. Three repos keep these tables
 in ``pyproject.toml`` and that repo keeps them in ``ruff.toml``, where they lose the ``tool.ruff``
 prefix and the root table IS the file. Both spellings are read here by the same base, against real
 files, which is what the planted tests could assert about the resolver but not about the tree.
@@ -143,7 +143,7 @@ def test_no_declared_delta_is_a_fork_of_the_base_it_declares_against() -> None:
 
 def test_every_ceiling_is_its_measurement_and_no_delta_carries_headroom() -> None:
     """THE RATCHET'S OTHER SIDE. Headroom nobody chose is how a waiver list stops being a delta."""
-    measured = {'lab-commons': 0, 'wdg-lab': 53, 'optimi-lab': 52, 'motronics-studio': 56}
+    measured = {'lab-commons': 0, 'consumer-b': 53, 'consumer-c': 52, 'consumer-a': 56}
     for repo, table in sorted(SECTION_DELTAS.items()):
         for artefact, delta in sorted(table.items()):
             added = sum(len(entries) for entries in delta.added.values())
@@ -192,9 +192,9 @@ def test_the_two_config_spellings_are_both_exercised_against_a_real_file() -> No
     reached = reachable_repos(REPO_PATHS)
     names = {repo: ruff_config_path(root).name for repo, root in sorted(reached.items())}
     assert names['lab-commons'] == 'pyproject.toml', names
-    motronics = names.get('motronics-studio')
-    assert motronics is None or motronics == 'ruff.toml', (
-        f'motronics-studio now keeps its ruff tables in {motronics!r}. The base is keyed by TABLE and '
+    consumer_a = names.get('consumer-a')
+    assert consumer_a is None or consumer_a == 'ruff.toml', (
+        f'consumer-a now keeps its ruff tables in {consumer_a!r}. The base is keyed by TABLE and '
         f'not by FILE precisely so this may move -- but the `prefix` branch then has no live subject, '
         f'so say so here rather than letting the resolver go unexercised.'
     )

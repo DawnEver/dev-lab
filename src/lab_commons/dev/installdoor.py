@@ -7,12 +7,12 @@ that URL holds now", and a repo held at anything older stops being told when a s
 That is a declaration, and this module is the mechanism that makes it true.
 
 THE DEFECT, MEASURED 2026-09-17 ACROSS FOUR CHECKOUTS. Three reverts in one session, twice misread
-as two agents fighting over one venv. ``wdg-lab`` went dev35 -> dev26 -> dev40 -> dev26 while the
+as two agents fighting over one venv. ``consumer-b`` went dev35 -> dev26 -> dev40 -> dev26 while the
 declared build was dev42, and a consumer's import vanished under a running agent twice. The cause is
 not the package cache and not the install command everybody suspected -- it is the untracked
 ``uv.lock``, which pins a git requirement to the sha of whenever that lock was FIRST written, and
-which every lock-consuming command then serves. Measured the same day: ``wdg-lab/uv.lock`` and
-``optimi-lab/uv.lock`` both pinned ``0.2.2.dev26+gba3bf6de``, the exact build the revert landed on.
+which every lock-consuming command then serves. Measured the same day: ``consumer-b/uv.lock`` and
+``consumer-c/uv.lock`` both pinned ``0.2.2.dev26+gba3bf6de``, the exact build the revert landed on.
 
 SO THE CLASSIFICATION IS MEASURED RATHER THAN ASSUMED, and that matters because the two tools
 disagree on the same requirement string -- which is precisely why the defect hid behind a command

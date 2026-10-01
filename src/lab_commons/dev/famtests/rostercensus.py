@@ -9,8 +9,8 @@ WAY every time -- 17 rows declared MOVES, 7 were real, 5 were splits and 5 were 
 
 WHY THIS IS A SHARED BODY, and it is the cheapest case this package has. :mod:`lab_commons.dev.
 supersede` already holds the detectors, the grades, the ruler and the two floors; what sat on top of
-it was a consumer-side file of ARMS, and it was written by hand TWICE on the same day -- wdg-lab
-`cc8d8c11` at 190 lines and optimi-lab `4c5b1cd` at 198. Diffed with each repo's own name blanked,
+it was a consumer-side file of ARMS, and it was written by hand TWICE on the same day -- consumer-b
+`cc8d8c11` at 190 lines and consumer-c `4c5b1cd` at 198. Diffed with each repo's own name blanked,
 the two files are IDENTICAL IN CODE: every line that differs is a docstring, and the row counts and
 the extra paragraphs each one carries are exactly the repo's own measurement. A 100%-identical body
 under two names is not a shared convention, it is the fork this package exists to remove, and it had

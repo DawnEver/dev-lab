@@ -7,7 +7,7 @@ the change as an improvement. The scan, the corpus definition, the ceiling and t
 belong to :mod:`lab_commons.dev.docwidth` and are not restated here. What was missing is everything a
 consumer had to write around them, and the three copies of it are near-twins.
 
-THREE CONSUMERS: both labs' ``tests/architecture/test_injected_doc_width_ceiling.py`` and motronics'
+THREE CONSUMERS: both labs' ``tests/architecture/test_injected_doc_width_ceiling.py`` and consumer-a'
 under ``tests/architecture/docs/``. The labs' two share their arm names in order and differ in four
 values -- the corpus, the floor, the declared set, and whether there is a CEILING on that declaration
 at all. Every one arrives as a keyword argument with NO DEFAULT.

@@ -1,6 +1,6 @@
 """ONE WRITER OWNS THE CONSOLE, so one fix can own its encoding.
 
-WHY THIS GUARD EXISTS, MEASURED 2026-09-18 on wdg-lab. ``lab_commons.dev.verify._tee`` streamed a
+WHY THIS GUARD EXISTS, MEASURED 2026-09-18 on consumer-b. ``lab_commons.dev.verify._tee`` streamed a
 test's U+2713 to a cp1252 stdout -- the Windows DEFAULT whenever nothing overrides it -- and
 :func:`lab_commons.log.emit` raised ``UnicodeEncodeError`` out through the verdict runner. The run
 then produced AN INCONCLUSIVE WITH NO LOG: the one state that proves nothing and carries no verdict.

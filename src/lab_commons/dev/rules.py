@@ -1,10 +1,10 @@
 """The shared rules registry -- one row per universal development rule, with its remedy.
 
 THE DEFECT THIS EXISTS TO CLOSE, MEASURED. Every repo in this family carries its own copy of the
-rules that are not about its subject: `wdg-lab`'s rules and `motronics-studio`'s share **zero
+rules that are not about its subject: `consumer-b`'s rules and `consumer-a`'s share **zero
 verbatim 4-gram runs** -- each was independently authored, with its own incident and its own dated
-user quote -- and yet **5 of wdg-lab's 7 rules are the SAME RULE** as one motronics already states.
-The copy in `wdg-lab` is unenforced prose; the copy in motronics has a ratchet. Sharing the rule
+user quote -- and yet **5 of consumer-b's 7 rules are the SAME RULE** as one consumer-a already states.
+The copy in `consumer-b` is unenforced prose; the copy in consumer-a has a ratchet. Sharing the rule
 TEXT buys nothing (merging two wordings destroys the incident evidence each carries). Sharing rule
 **IDENTITY plus the mechanism that refuses a violation** is the thing that works: one canonical
 registry, adopted by ID, each repo supplying its own evidence and thresholds.
@@ -216,7 +216,7 @@ class Adoption:
 
     THE DEFECT THIS EXISTS TO CLOSE, MEASURED 2026-09-15 -- by the repo that AUTHORED the registry.
     Before this class existed, a row carried one mechanism tuple that every adopter was checked
-    against, and all 70 mechanisms named motronics paths. Driven against its own tree, lab-commons
+    against, and all 70 mechanisms named consumer-a paths. Driven against its own tree, lab-commons
     refused its own registry with **70 failures** -- the module docstring promised "a second adopter
     inherits the statements and must supply the mechanism for its own tree", and there was no way to
     supply one. A promise the code does not honour is exactly the defect the registry exists to
@@ -425,7 +425,7 @@ def _rebound(rules: Sequence[Rule], adoption: Adoption) -> tuple[Rule, ...]:
     """*rules* with each adopted row carrying THIS repo's mechanisms, and unadopted rows dropped.
 
     Dropping rather than passing through is the point: a row left holding its authoring repo's
-    mechanisms is the motronics-path failure that made lab-commons refuse its own registry.
+    mechanisms is the consumer-a-path failure that made lab-commons refuse its own registry.
     """
     return tuple(
         Rule(id=rule.id, statement=rule.statement, mechanisms=adoption.mechanisms[rule.id])

@@ -6,8 +6,8 @@ density reading that decided the side: ``MEASURED 2026-09-19: own=29 hits=0 -> 0
 are DERIVABLE -- :func:`lab_commons.dev.famtests.density.measure_density` re-computes every one of
 them from the file the row names -- and they are STORED, so they go stale the moment the file changes
 and nothing anywhere notices. Pointed at all four rosters, this reader finds **210 stored readings
-across 96 rows that disagree with re-deriving them** -- 14 in optimi-lab, 31 in wdg-lab, 83 in
-motronics' tests roster and 82 in its scripts roster -- in four repos that were all GREEN. Measured
+across 96 rows that disagree with re-deriving them** -- 14 in consumer-c, 31 in consumer-b, 83 in
+consumer-a' tests roster and 82 in its scripts roster -- in four repos that were all GREEN. Measured
 examples, stored against live: ``own=402`` against 453, ``own=107`` against 183, ``own=95`` against
 69, ``-> 2.11%`` against 8.70%.
 

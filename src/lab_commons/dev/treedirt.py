@@ -1,6 +1,6 @@
 """Did the tree MOVE while it was being judged -- and WHICH paths made it so.
 
-Migrated 2026-09-17 from motronics-studio's ``scripts/gate/tree_state.py``, and it is a SPLIT in two
+Migrated 2026-09-17 from consumer-a's ``scripts/gate/tree_state.py``, and it is a SPLIT in two
 independent ways, which is why it does not carry that module's name.
 
 **THE IDENTITY HALF DID NOT COME.** That module answered ``(sha, dirty, paths)``, and the ``sha``
@@ -17,7 +17,7 @@ measured property of one suite -- it is the set of paths NO TEST READS, and the 
 "count the test files that reference each candidate". It arrives as an argument with NO DEFAULT. An
 empty declaration is the correct, FAIL-CLOSED starting point for a repo that has not measured, and
 it is spelled by passing an empty tuple rather than by omitting the argument, so "we measured and
-found none" and "we never asked" are different acts. The measurement that produced motronics'
+found none" and "we never asked" are different acts. The measurement that produced consumer-a'
 one-entry set is worth quoting for whoever repeats it there: ``.claude/tasks/`` was the only
 candidate at ZERO, while ``.claude/memory/`` (168 test files), ``output/`` (126), ``.claude/rules/``
 (136) and ``docs-src/`` (31) are live test INPUTS. "It is only markdown" is false wherever a

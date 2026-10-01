@@ -141,7 +141,7 @@ def test_stdlib_and_local_names_resolve_to_nothing_prunable() -> None:
 
 
 def test_an_alias_offers_every_declared_supplier_and_only_declared_ones() -> None:
-    """THE BUILD-VARIANT CASE motronics forced: `cv2` is whichever opencv THIS manifest declares."""
+    """THE BUILD-VARIANT CASE consumer-a forced: `cv2` is whichever opencv THIS manifest declares."""
     assert resolve('cv2', _DECLARED, frozenset()) == frozenset({'opencv-python'})
     headless = frozenset({'opencv-python-headless'})
     assert resolve('cv2', headless, frozenset()) == headless
@@ -168,12 +168,12 @@ def test_every_alias_row_is_reached_by_the_family_scan() -> None:
     RE-TAKEN 2026-09-19 with BOTH READINGS QUOTED, because the pin went UP and a pin that goes up is
     where a bar gets quietly widened. It read ``{OCP, PIL, cv2, yaml}`` and now reads
     ``{OCP, PIL, cv2, pdfminer, pywintypes, win32com, yaml}``. Nothing was widened: the three new
-    rows were each measured against motronics' live manifest -- ``pdfminer`` -> ``pdfminer.six`` in
+    rows were each measured against consumer-a' live manifest -- ``pdfminer`` -> ``pdfminer.six`` in
     the ``img-to-cad`` extra, ``pywintypes`` and ``win32com`` -> ``pywin32`` in BOTH ``femm`` and
     ``tooldrivers`` -- and each had been sitting in the UNRESOLVED residue being reported as a
     transitive dependency no manifest declares. The table was short, not blind.
 
-    RE-TAKEN 2026-10-01: ``_pytest`` -> ``pytest``, reached by wdg-lab's tier-partition test importing
+    RE-TAKEN 2026-10-01: ``_pytest`` -> ``pytest``, reached by consumer-b's tier-partition test importing
     pytest's expression parser, which the residue had been reporting as an undeclared transitive.
     """
     expected = {'OCP', 'PIL', '_pytest', 'cv2', 'pdfminer', 'pywintypes', 'win32com', 'yaml'}

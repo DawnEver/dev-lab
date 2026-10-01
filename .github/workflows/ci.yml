@@ -1,7 +1,7 @@
 name: CI
 
 # The thin caller. Everything of substance is in `python-verify.yml` beside this file -- the same
-# reusable workflow DawnEver/optimi-lab calls -- and the checks it runs are `make verify` in this
+# reusable workflow DawnEver/consumer-c calls -- and the checks it runs are `make verify` in this
 # repo's Makefile. Three files, one definition each, no copy.
 
 on:

@@ -15,9 +15,9 @@ different exception types -- two ``RuntimeError``, two ``AssertionError``, and T
 BOTH NAMED ``VacuousScan`` over different base classes -- so a consumer cannot catch *the floor
 failing* without naming which module's floor it was, and the one name it would reach for is
 ambiguous inside this repo alone. Three more are inlined at the top of a larger arm
-(``famtests.rulespages``, ``famtests.rostercensus``, ``installdoor``). Outside the kit, ``wdg-lab``
+(``famtests.rulespages``, ``famtests.rostercensus``, ``installdoor``). Outside the kit, ``consumer-b``
 publishes ``tests/architecture/_corpus.bind_floor`` and calls it from SEVEN guards, while
-``optimi-lab`` inlines the same ``assert len(x) >= FLOOR`` with its own prose in EIGHT.
+``consumer-c`` inlines the same ``assert len(x) >= FLOOR`` with its own prose in EIGHT.
 
 THE FLOOR HAS TWO SIDES AND ONLY ONE OF THEM WAS EVER WRITTEN, which is the substantive addition
 here rather than de-duplication. Every copy above guards the LOW side: the scan fell below its

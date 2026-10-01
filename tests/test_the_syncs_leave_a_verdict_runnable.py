@@ -3,7 +3,7 @@
 `test_dev_syncscope.py` proves the reader can fail, over planted manifests. THIS file is a
 MEASUREMENT of the family -- which selections exist, and what each of them would leave behind -- so
 a recorded scope cannot age quietly into prose. On the day it was written one of them was already a
-finding: motronics' `dep_sync` advises `--extra all`, and that selection removes its whole runner.
+finding: consumer-a' `dep_sync` advises `--extra all`, and that selection removes its whole runner.
 
 Nothing here installs, syncs or prunes. A sibling not on this box is ABSENT rather than failing,
 because repos are cloned per box; the repo floor is what stops that being a free pass.

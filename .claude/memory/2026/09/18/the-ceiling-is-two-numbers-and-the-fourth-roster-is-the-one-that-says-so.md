@@ -1,6 +1,6 @@
 ---
 name: the-ceiling-is-two-numbers-and-the-fourth-roster-is-the-one-that-says-so
-description: Half 4 of the family config tranche landed as lab_commons.dev.famtests.placement, measured across all FOUR rosters rather than the two the previous session could read. The reading that changes the design - three rosters bound their own-mechanism ceiling at 50 and motronics' scripts roster bounds it at 40, over intervals that EXCLUDE each other's value - so neither bar ships as a constant and what ships is the arm that holds a bar inside its own evidence.
+description: Half 4 of the family config tranche landed as lab_commons.dev.famtests.placement, measured across all FOUR rosters rather than the two the previous session could read. The reading that changes the design - three rosters bound their own-mechanism ceiling at 50 and consumer-a' scripts roster bounds it at 40, over intervals that EXCLUDE each other's value - so neither bar ships as a constant and what ships is the arm that holds a bar inside its own evidence.
 created: 2026-09-18
 accessed: 2026-09-18
 ---
@@ -23,20 +23,20 @@ Closes `2026/09/17/plan-one-source-of-truth-for-the-family-config-layer.md` stag
 
 That session read two of the four rosters, found them to be the same module under two names, and
 STOPPED rather than design from half its subject. It was right to. The two it could not read were
-motronics-studio's, at `3befb376b` in the `feat/optimi-lab` worktree -- the tree that roster's own
+consumer-a's, at `3befb376b` in the `feat/consumer-c` worktree -- the tree that roster's own
 prose quotes -- and the larger of the two is 77 rows.
 
 **THE TWO LABS AGREED ON A NUMBER THAT IS NOT A FAMILY NUMBER.** Both bound
 `OWN_MECHANISM_CEILING = 50` independently, and the write-up read that agreement as evidence the
-value was family and only the interval was the repo's. motronics' `tests/` roster agrees (50, over
-47 < c < 56). motronics' `scripts/` roster bounds the SAME bar at **40**, over 35 < c < 42 --
+value was family and only the interval was the repo's. consumer-a' `tests/` roster agrees (50, over
+47 < c < 56). consumer-a' `scripts/` roster bounds the SAME bar at **40**, over 35 < c < 42 --
 and the intervals are not merely different, TWO PAIRS OF THEM ARE DISJOINT:
 
     roster              value   must EXCEED   must fall BELOW
-    wdg-lab               50       49            55
-    optimi-lab            50       43            67
-    motronics tests       50       47            56
-    motronics scripts     40       35            42
+    consumer-b               50       49            55
+    consumer-c            50       43            67
+    consumer-a tests       50       47            56
+    consumer-a scripts     40       35            42
 
 `(35, 42)` excludes 50. `(49, 55)` excludes 40. A family half shipping `CEILING = 50` would have
 been wrong for one of its four consumers ON THAT CONSUMER'S OWN MEASUREMENT, and wrong in the
@@ -58,33 +58,33 @@ it. All four rosters wrote that bracket as a pair of rows in a COMMENT, where no
 
 Family, 4 of 4 and verbatim: the AST+token prose blanker, the delegation reading that makes a binder
 legible, `own`/`hits` and its percentage, the walk, and the completeness comparison in both
-directions. The labs' bodies differ from motronics' only by carrying ONE delegation home where
-motronics carries a SET, and ONE hit signal where motronics carries TWO. Both generalisations went
+directions. The labs' bodies differ from consumer-a' only by carrying ONE delegation home where
+consumer-a carries a SET, and ONE hit signal where consumer-a carries TWO. Both generalisations went
 into the signatures rather than into a branch.
 
 NOT family, each with the count that decided it:
 
 * **The partition composer** (merge per-subdirectory manifests, raise on a collision and on a row
-  outside its partition). 2 of 4, and both are motronics. One repo's answer written twice is not a
+  outside its partition). 2 of 4, and both are consumer-a. One repo's answer written twice is not a
   family fact.
-* **The non-Python reading.** Three answers in four rosters: wdg-lab reads a shell file WHOLE,
-  motronics strips whole-line comments and calls that its code-only reading, optimi-lab has none.
+* **The non-Python reading.** Three answers in four rosters: consumer-b reads a shell file WHOLE,
+  consumer-a strips whole-line comments and calls that its code-only reading, consumer-c has none.
 * **The `pytest.param` construction.** 4 of 4, and four lines over a mapping the repo owns. This
   package publishes assertion BODIES, never a parametrize helper.
 * **The bars, the nouns, the trees, the floor, the debt rows.** Data, 4 of 4 different.
 
 ## Three defects the four-way read found that a two-way read could not
 
-* **`Density.justified` closes over whichever module it was imported from**, and motronics already
+* **`Density.justified` closes over whichever module it was imported from**, and consumer-a already
   paid for it: its tests roster had to write `is_justified` out by hand because the inherited
   property closed over the `scripts/` roster's 40 while the tests module DECLARED 50, so tests-tree
   rows were judged by a bar bounded on a different tree. Two rows read between the two ceilings and
   caught it. The published `Density` has no `justified`; `justified(density, *, ceiling, minimum_pct)`
   takes them.
-* **optimi-lab declares `.sh` runnable, holds zero of them, and has no shell arm.** The day one
+* **consumer-c declares `.sh` runnable, holds zero of them, and has no shell arm.** The day one
   arrives its `stays_rows` hands it to `ast.parse` and the guard ERRORS rather than fails -- an
-  error carries no measurement at all. wdg-lab closed this with the named set `SHELL_ROWS` and
-  motronics with `is_python`; optimi-lab is the 1 of 4 with a live latent hole.
+  error carries no measurement at all. consumer-b closed this with the named set `SHELL_ROWS` and
+  consumer-a with `is_python`; consumer-c is the 1 of 4 with a live latent hole.
 * **No roster checks its DEBT mapping against its own manifest.** Every one records below-the-bar
   rows as a named set and strict-xfails them, so a row that starts passing must be deleted. None
   checks the other direction: a debt row whose FILE is gone describes nothing, still reads as a live

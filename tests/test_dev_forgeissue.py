@@ -93,15 +93,15 @@ def test_lanes_are_found_by_commit_reference_and_by_fix_branch_name(tmp_path: Pa
 
 def test_claims_keep_the_latest_per_claimant_and_read_the_provenance_line() -> None:
     comments = (
-        Comment(1, '[WS1 · codex · feat/x]\n\nclaim feat/x', 'u1'),
+        Comment(1, '[host-a · codex · feat/x]\n\nclaim feat/x', 'u1'),
         Comment(2, 'looks good', 'u2'),
-        Comment(3, '[WS1 · codex · feat/x2]\n\nclaim feat/x2', 'u3'),
+        Comment(3, '[host-a · codex · feat/x2]\n\nclaim feat/x2', 'u3'),
         Comment(4, '[G · claude · fix/7-a]\n\nclaim fix/7-a', 'u4'),
     )
     assert claims_of(comments) == (
-        Claim('feat/x2', '[WS1 · codex · feat/x2]', 'u3'),
+        Claim('feat/x2', '[host-a · codex · feat/x2]', 'u3'),
         Claim('fix/7-a', '[G · claude · fix/7-a]', 'u4'),
-    ), 'WS1/codex re-claimed, so only its latest counts; the provenance line is per branch, the claimant per agent'
+    ), 'host-a/codex re-claimed, so only its latest counts; the provenance line is per branch, the claimant per agent'
 
 
 def test_issue_status_derives_ready_from_a_green_gate_and_reports_conflicting_claims(server, tmp_path: Path) -> None:
@@ -132,8 +132,8 @@ def test_issue_status_derives_ready_from_a_green_gate_and_reports_conflicting_cl
 def test_claim_comments_claim_branch_with_the_provenance_stamp(server, tmp_path: Path) -> None:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='feat/x')
     answer('POST', f'{_ROOT}/issues/7/comments', (201, {'id': 5, 'body': 'b', 'html_url': 'c5'}))
-    claim(client(_FORGE, Loopback(server), stamp='[WS1 · codex · feat/x]'), repo, 7)
-    assert Recorder.received[-1]['body'] == {'body': '[WS1 · codex · feat/x]\n\nclaim feat/x'}
+    claim(client(_FORGE, Loopback(server), stamp='[host-a · codex · feat/x]'), repo, 7)
+    assert Recorder.received[-1]['body'] == {'body': '[host-a · codex · feat/x]\n\nclaim feat/x'}
 
 
 def test_a_detached_claim_with_no_branch_is_refused(tmp_path: Path) -> None:

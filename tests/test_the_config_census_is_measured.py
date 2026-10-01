@@ -112,13 +112,13 @@ def test_a_row_declared_in_two_partitions_raises() -> None:
     """PLANTED. A dict update would take the last one silently, which is the whole hazard."""
     row = Placement(STAYS, 'x' * 400)
     with pytest.raises(CensusError, match='declared in two partitions'):
-        compose((('wdg-lab', {'wdg-lab::Makefile': row}), ('wdg-lab', {'wdg-lab::Makefile': row})))
+        compose((('consumer-b', {'consumer-b::Makefile': row}), ('consumer-b', {'consumer-b::Makefile': row})))
 
 
 def test_a_row_whose_repo_is_not_its_partitions_raises() -> None:
     """PLANTED. A partition whose name stops describing its rows is a declaration that lies."""
     with pytest.raises(CensusError, match='owns exactly one repo'):
-        compose((('wdg-lab', {'optimi-lab::Makefile': Placement(STAYS, 'y' * 400)}),))
+        compose((('consumer-b', {'consumer-c::Makefile': Placement(STAYS, 'y' * 400)}),))
 
 
 def test_a_caption_and_a_fourth_side_are_both_refused_at_construction() -> None:
@@ -217,11 +217,11 @@ def test_selector_covers_resolves_the_linter_before_the_digits() -> None:
     assert not selector_covers('PLC0415', 'PLC0414'), 'the digits match by PREFIX, not by string start'
 
 
-def test_motronics_reads_ruff_toml_and_the_pyproject_block_is_dead() -> None:
+def test_consumer_a_reads_ruff_toml_and_the_pyproject_block_is_dead() -> None:
     """FINDING 2, RE-DERIVED against the lane when it is checked out."""
-    root = reachable_repos(REPO_PATHS).get('motronics-studio')
+    root = reachable_repos(REPO_PATHS).get('consumer-a')
     if root is None:
-        pytest.fail('the motronics lane is not checked out beside this repo, so finding 2 is unmeasured here')
+        pytest.fail('the consumer-a lane is not checked out beside this repo, so finding 2 is unmeasured here')
     assert (root / 'ruff.toml').is_file(), 'the lane no longer carries ruff.toml; finding 2 described that file'
     assert ruff_select(root) == set(CONSUMER_SELECT), 'the winning config drifted from the consumer select'
     project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
@@ -299,8 +299,8 @@ def test_the_makefile_core_is_three_targets_across_all_four() -> None:
     """MAKE_TARGET_CORE both ways, and `verify` in ALL FOUR rather than the gap this used to assert.
 
     THE ARM THAT FLIPPED, 2026-09-18, and the flip is the point. This test used to assert
-    ``'verify' not in per_repo['motronics-studio']`` -- guarding the census row's claim that motronics
-    was the only repo without one. A separate edit in the motronics lane gave that repo a `verify`
+    ``'verify' not in per_repo['consumer-a']`` -- guarding the census row's claim that consumer-a
+    was the only repo without one. A separate edit in the consumer-a lane gave that repo a `verify`
     naming its own runner, so the guard went red for the RIGHT reason: the tree had moved past the
     prose. The honest repair is the ratchet's other side -- a capability ARRIVED, so it is asserted
     rather than the census being edited to say the arrival never happened.
@@ -379,7 +379,7 @@ def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() 
             f'{list(INSTALLED_HOOKS[repo])}. A config nobody installed is a declaration that lies, and '
             f'this line is the only thing in the family that would notice it changing.'
         )
-    for repo in ('lab-commons', 'wdg-lab', 'optimi-lab'):
+    for repo in ('lab-commons', 'consumer-b', 'consumer-c'):
         if repo not in reached:
             continue
         assert 'commitizen' in declared[repo], f'{repo} stopped declaring commitizen'
@@ -389,9 +389,9 @@ def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() 
             f'open in both labs until 2026-09-17 and nothing was looking for it; this line is what '
             f'looks. Re-wire it (`pre-commit install -t commit-msg`) rather than relaxing this arm.'
         )
-    if 'motronics-studio' in reached:
-        assert 'commit-msg' in installed_hook_names(reached['motronics-studio']), (
-            'motronics is the row that says every declared stage is wired; its commit-msg hook is gone'
+    if 'consumer-a' in reached:
+        assert 'commit-msg' in installed_hook_names(reached['consumer-a']), (
+            'consumer-a is the row that says every declared stage is wired; its commit-msg hook is gone'
         )
 
 
@@ -400,10 +400,10 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
     reached = reachable_repos(REPO_PATHS)
     kit_pages = dev_pages(reached['lab-commons'])
     assert len(kit_pages) >= 10, f'{len(kit_pages)} pages under lab-commons/docs-src/dev; the reader found nothing'
-    # Which kit pages exist is `devdocs.missing_pages`' equality against `PAGES`; which motronics pages
+    # Which kit pages exist is `devdocs.missing_pages`' equality against `PAGES`; which consumer-a pages
     # sit under a family name, and that each is a residue, is asserted from the live trees by
     # `test_the_dev_docs_tree_is_shared_by_reference.py` -- no hand-held name set is kept here.
-    for repo in ('wdg-lab', 'optimi-lab'):
+    for repo in ('consumer-b', 'consumer-c'):
         if repo not in reached:
             continue
         pages = dev_pages(reached[repo])
@@ -411,12 +411,12 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         text = (reached[repo] / 'docs-src' / 'dev' / 'index.md').read_text(encoding='utf-8')
         assert '../../../lab-commons/docs-src/dev/' in text, f'{repo} index.md stopped pointing at the shared tree'
         assert 'pointer_table' in text, f'{repo} index.md no longer names the generator that keeps it honest'
-    if 'motronics-studio' in reached:
-        own = dev_pages(reached['motronics-studio']) - kit_pages
+    if 'consumer-a' in reached:
+        own = dev_pages(reached['consumer-a']) - kit_pages
         assert own >= {'gate.md', 'testing.md', 'integration.md', 'user-flow.md', 'compute-resources.md'}, sorted(own)
-        index = read_at_head(reached['motronics-studio'], 'docs-src/dev/index.md') or ''
+        index = read_at_head(reached['consumer-a'], 'docs-src/dev/index.md') or ''
         assert '../../../lab-commons/docs-src/dev/' in index, (
-            'the motronics dev index stopped pointing upstream, so its SPLITS row describes a former shape'
+            'the consumer-a dev index stopped pointing upstream, so its SPLITS row describes a former shape'
         )
 
 

@@ -35,7 +35,7 @@ from lab_commons.dev.venvpath import VENV_LAYOUTS, venv_interpreter
 #: files AND in their own `scripts/deny_rules.py`. The agreement is the evidence for `glob_for`.
 VERIFY = Remedy('verdict-entry-point', './.venv/Scripts/python.exe -m lab_commons.dev.verify')
 
-#: wdg-lab's network remedy. It SPELLS the shape its own rule matches, so it carries an opening --
+#: consumer-b's network remedy. It SPELLS the shape its own rule matches, so it carries an opening --
 #: the one case `self_refused` exists for.
 NETVERB = Remedy(
     'retry-wrapper',
@@ -43,21 +43,21 @@ NETVERB = Remedy(
     allow=r'lab_commons\.dev\.netverb\b',
 )
 
-#: motronics' process-tree killer, as its own `deny-rules.json` reason spells the command.
+#: consumer-a' process-tree killer, as its own `deny-rules.json` reason spells the command.
 SWEEP = Remedy('process-tree-killer', '.venv/Scripts/python.exe scripts/gate/stop_sweep.py --pid <root-pid>')
 
-OPTIMI = HookAdoption(
-    app_name='optimi_lab',
+CONSUMER_C = HookAdoption(
+    app_name='consumer_c',
     remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
     declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
 )
-WDG = HookAdoption(
-    app_name='wdg_lab',
+CONSUMER_B = HookAdoption(
+    app_name='consumer_b',
     remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY, 'GIT-NETWORK-VERB': NETVERB},
     declared_absent=frozenset({'RAW-PROCESS-KILL'}),
 )
-MOTRONICS = HookAdoption(
-    app_name='motronics_studio',
+CONSUMER_A = HookAdoption(
+    app_name='consumer_a',
     remedies={'RAW-PROCESS-KILL': SWEEP},
     declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'GIT-NETWORK-VERB'}),
 )
@@ -108,20 +108,20 @@ def test_a_remedy_that_is_all_metavariable_derives_nothing() -> None:
 
 def test_one_row_per_remedy_naming_every_rule_it_answers() -> None:
     """A repo with one verdict command gets ONE row, and it says both rules it is the exit from."""
-    assert derived_entries(OPTIMI) == {
+    assert derived_entries(CONSUMER_C) == {
         'Bash(./.venv/*/python* -m lab_commons.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
     }
 
 
 def test_a_rule_declared_absent_derives_no_row() -> None:
-    """THE `needs` RULE ON THIS SIDE: optimi-lab has no process-tree killer, so it promises none."""
-    assert not any('stop_sweep' in entry for entry in derived_entries(OPTIMI))
-    assert 'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)' in derived_entries(MOTRONICS)
+    """THE `needs` RULE ON THIS SIDE: consumer-c has no process-tree killer, so it promises none."""
+    assert not any('stop_sweep' in entry for entry in derived_entries(CONSUMER_C))
+    assert 'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)' in derived_entries(CONSUMER_A)
 
 
 def test_a_needs_none_rule_is_never_derived_from() -> None:
     """GIT-STASH, PUSH-FORCE and WORKTREE-BASE-IS-EXPLICIT have PROSE exits, so nothing is guessed."""
-    assert set(derived_entries(WDG)) == {
+    assert set(derived_entries(CONSUMER_B)) == {
         'Bash(./.venv/*/python* -m lab_commons.dev.verify *)',
         'Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)',
     }
@@ -143,15 +143,15 @@ def test_a_declared_row_may_not_restate_a_derived_one() -> None:
     """THE FORK, refused at construction: a hand copy is where the two halves start to differ."""
     with pytest.raises(UnarguedAllow, match='already derive'):
         AllowAdoption(
-            app_name='wdg_lab',
-            adoption=OPTIMI,
+            app_name='consumer_b',
+            adoption=CONSUMER_C,
             declared=(DeclaredAllow('Bash(./.venv/*/python* -m lab_commons.dev.verify *)', 'the verdict'),),
         )
 
 
 def test_provenance_says_which_population_each_row_came_from() -> None:
     """Derived and declared are different repairs, so they are never merged into one flat list."""
-    allow = AllowAdoption('wdg_lab', WDG, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
+    allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     seen = provenance(allow)
     assert seen['Bash(*yarn preview*)'] == 'declared: the docs preview server'
     assert seen['Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)'] == 'derived from GIT-NETWORK-VERB'
@@ -169,9 +169,9 @@ MISDIRECTED_KILL = Remedy('process-tree-killer', 'Stop-Process -Id <root-pid>', 
 
 
 def _killer(remedy: Remedy) -> HookAdoption:
-    """Motronics' adoption with one substituted process-tree remedy, so the plant is the only change."""
+    """ConsumerA' adoption with one substituted process-tree remedy, so the plant is the only change."""
     return HookAdoption(
-        app_name='motronics_studio',
+        app_name='consumer_a',
         remedies={'RAW-PROCESS-KILL': remedy},
         declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'GIT-NETWORK-VERB'}),
     )
@@ -179,16 +179,16 @@ def _killer(remedy: Remedy) -> HookAdoption:
 
 def test_a_remedy_spelling_its_own_rules_shape_is_caught_where_this_half_can_see_it() -> None:
     """BOTH DIRECTIONS: the real remedies are clean, the planted one reds, the wrong opening does not."""
-    assert self_refused(AllowAdoption('wdg_lab', WDG)) == ()
-    assert self_refused(AllowAdoption('motronics_studio', MOTRONICS)) == ()
-    caught = self_refused(AllowAdoption('motronics_studio', _killer(BLIND_KILL)))
+    assert self_refused(AllowAdoption('consumer_b', CONSUMER_B)) == ()
+    assert self_refused(AllowAdoption('consumer_a', CONSUMER_A)) == ()
+    caught = self_refused(AllowAdoption('consumer_a', _killer(BLIND_KILL)))
     assert any('RAW-PROCESS-KILL refuses' in problem for problem in caught), caught
-    assert self_refused(AllowAdoption('motronics_studio', _killer(MISDIRECTED_KILL))) == caught
+    assert self_refused(AllowAdoption('consumer_a', _killer(MISDIRECTED_KILL))) == caught
 
 
 def test_a_missing_derived_row_is_the_finding_and_a_clean_block_is_not() -> None:
     """THE 2026-09-18 INCIDENT ITSELF, planted in both directions over the same adoption."""
-    allow = AllowAdoption('motronics_studio', MOTRONICS)
+    allow = AllowAdoption('consumer_a', CONSUMER_A)
     rendered = {'permissions': {'allow': list(allow_entries(allow))}}
     assert settings_problems(rendered, allow) == ()
     assert any('missing:' in problem for problem in settings_problems({'permissions': {'allow': []}}, allow))
@@ -196,7 +196,7 @@ def test_a_missing_derived_row_is_the_finding_and_a_clean_block_is_not() -> None
 
 def test_a_hand_written_row_nobody_argued_for_is_the_other_side() -> None:
     """A ratchet has two sides: an undeclared row on disk reds as loudly as a missing derived one."""
-    allow = AllowAdoption('motronics_studio', MOTRONICS)
+    allow = AllowAdoption('consumer_a', CONSUMER_A)
     disk = {'permissions': {'allow': [*allow_entries(allow), 'Bash(*scripts/gate/stop_sweep.py *)']}}
     assert any('undeclared:' in problem for problem in settings_problems(disk, allow))
 
@@ -208,7 +208,7 @@ def test_the_section_merge_keeps_every_block_it_is_not_about() -> None:
         'hooks': {'PreToolUse': [{'matcher': 'Bash'}]},
         'enabledPlugins': ['rem'],
     }
-    after = permissions_block(before, AllowAdoption('motronics_studio', MOTRONICS))
+    after = permissions_block(before, AllowAdoption('consumer_a', CONSUMER_A))
     assert after['hooks'] == before['hooks']
     assert after['enabledPlugins'] == ['rem']
     assert after['permissions']['deny'] == ['Bash(rm -rf *)']
@@ -222,8 +222,8 @@ def test_the_section_merge_keeps_every_block_it_is_not_about() -> None:
 def test_a_declared_road_may_not_name_a_file_the_tree_lacks() -> None:
     """The `needs` rule pointed the other way, planted on both sides of the tracked set."""
     allow = AllowAdoption(
-        'wdg_lab',
-        WDG,
+        'consumer_b',
+        CONSUMER_B,
         (DeclaredAllow('Bash(node **/scripts/post-review.js*)', 'the review poster', needs='scripts/post-review.js'),),
     )
     assert allow_gaps(allow, ['scripts/post-review.js']) == ()
@@ -232,7 +232,7 @@ def test_a_declared_road_may_not_name_a_file_the_tree_lacks() -> None:
 
 def test_the_block_is_bound_on_both_sides_and_neither_number_has_a_default() -> None:
     """A block that silently emptied reads as agreement; a floor it outgrew is a waiver nothing uses."""
-    allow = AllowAdoption('wdg_lab', WDG, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
+    allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     assert len(allow_entries(allow)) == 3
     assert_allow_is_adoptable(allow, [], floor=2, headroom=2)
     with pytest.raises(FloorUnmet):
@@ -246,14 +246,14 @@ def test_the_block_is_bound_on_both_sides_and_neither_number_has_a_default() -> 
 def test_an_adoption_with_no_app_name_cannot_report_which_repo_failed() -> None:
     """The repo-shaped fact arrives as an argument, and a blank one is refused at construction."""
     with pytest.raises(ValueError, match='app_name'):
-        AllowAdoption('  ', OPTIMI)
+        AllowAdoption('  ', CONSUMER_C)
 
 
 def test_a_declared_row_may_not_spell_the_venv_interpreter_either() -> None:
     """THE DOOR `glob_for` CANNOT REACH, and it is live in a consuming repo today.
 
     A DERIVED row is normalised on the way out. A DECLARED row is the repo's own text, VERBATIM, so
-    nothing normalises it -- and optimi-lab's tracked settings file carries
+    nothing normalises it -- and consumer-c's tracked settings file carries
     `Bash(./.venv/Scripts/python.exe scripts/dep.py *)`, which permits nothing at all on macOS. The
     refusal is at CONSTRUCTION rather than in a scan, because that is where the row is authored and
     where the repair costs one character.

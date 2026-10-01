@@ -1,6 +1,6 @@
 ---
 name: the-placement-half-is-shaped-and-two-of-its-four-rosters-i-may-not-read
-description: Halves 2 and 3 of the family config tranche landed (dev.floors, famtests.datedmemory). Half 4, a placement module, is measured as far as this session could legitimately see it - the two lab rosters are the same mechanism with per-repo calibration prose, but the two motronics rosters were out of bounds, so the half is written down rather than landed.
+description: Halves 2 and 3 of the family config tranche landed (dev.floors, famtests.datedmemory). Half 4, a placement module, is measured as far as this session could legitimately see it - the two lab rosters are the same mechanism with per-repo calibration prose, but the two consumer-a rosters were out of bounds, so the half is written down rather than landed.
 created: 2026-09-18
 accessed: 2026-09-18
 ---
@@ -33,7 +33,7 @@ Four standalone bodies -- `cjk.assert_floor`, `docwidth.assert_width_floor`,
 different exception types, and **two of the four are both named `VacuousScan` over different base
 classes inside this one repo** (`cjk`'s is a `RuntimeError`, `_arch_corpus`'s an `AssertionError`).
 Three more are inlined at the top of a larger arm (`rulespages`, `rostercensus`, `installdoor`).
-wdg-lab publishes `bind_floor` and calls it from SEVEN guards; optimi-lab inlines the same assert in
+consumer-b publishes `bind_floor` and calls it from SEVEN guards; consumer-c inlines the same assert in
 EIGHT with its own prose.
 
 **Every one of the eight guards the LOW side only.** A floor of 180 measured against 208 files still
@@ -64,7 +64,7 @@ much is only a direction. The three measured reasons these do not bolt onto `dat
   ratcheted downward.
 * **Only one of them scans**, so only one needs a floor.
 
-optimi-lab folded "no `created:` field" into `date_disagreements` as a reason string; wdg-lab split
+consumer-c folded "no `created:` field" into `date_disagreements` as a reason string; consumer-b split
 it out. The SPLIT ships -- not because one lab was right, but because a pin over a mixture cannot
 say which half moved. An undated entry is named ONCE, by the shape reader, or one fix reds two arms.
 
@@ -76,12 +76,12 @@ adjacent subjects is how a ratchet acquires a side it should not have.
 
 ## HALF 4 -- MEASURED AS FAR AS IT COULD HONESTLY BE, AND NOT LANDED
 
-The session was scoped to read `wdg-lab` and `optimi-lab` and forbidden to touch
-`motronics-studio` or its worktrees. **Two of placement's four rosters live there.** So:
+The session was scoped to read `consumer-b` and `consumer-c` and forbidden to touch
+`consumer-a` or its worktrees. **Two of placement's four rosters live there.** So:
 
-    wdg-lab   tests/architecture/_placement.py   961 lines, 31 rows, PLACEMENT_FLOOR 25
-    optimi    tests/architecture/_placement.py   785 lines, 23 rows, PLACEMENT_FLOOR 18
-    motronics  six partitions, 77 rows            OUT OF BOUNDS THIS SESSION
+    consumer-b   tests/architecture/_placement.py   961 lines, 31 rows, PLACEMENT_FLOOR 25
+    consumer-c    tests/architecture/_placement.py   785 lines, 23 rows, PLACEMENT_FLOOR 18
+    consumer-a  six partitions, 77 rows            OUT OF BOUNDS THIS SESSION
 
 What the two readable ones say, and it is a strong signal: the MECHANISM halves are the same module
 under two names. Same constant names in the same order (`STAYS`/`MOVES`/`SPLITS`, `Placement`,
@@ -92,14 +92,14 @@ only, 243 of 284 lines differ -- **and nearly every one is a docstring or a `#:`
 that repo's own calibration reading.** The code underneath is effectively identical.
 
 The repo-shaped facts are already visible and would be the no-default arguments: `REPO_NOUNS`, the
-`PLACEMENT` roster itself, `PLACEMENT_FLOOR`, `SCANNED`, `BELOW_THE_BAR`, and wdg-lab's `SHELL_ROWS`
-which optimi-lab has no equivalent of.
+`PLACEMENT` roster itself, `PLACEMENT_FLOOR`, `SCANNED`, `BELOW_THE_BAR`, and consumer-b's `SHELL_ROWS`
+which consumer-c has no equivalent of.
 
 **THE INTERESTING PART IS THE TWO BARS, and it is the thing a rushed version would flatten.**
 `OWN_MECHANISM_CEILING = 50` and `MIN_REPO_DENSITY_PCT = 3.0` are IDENTICAL in both labs -- but each
-repo BOUNDED them independently against its own distribution, and the intervals differ: wdg-lab's
-ceiling must exceed 49 and fall below 55, optimi-lab's exceed 43 and fall below 67; density above
-1.41% / at-or-below 4.79% in wdg-lab, above 0.65% / at-or-below 3.06% in optimi-lab. So the VALUE is
+repo BOUNDED them independently against its own distribution, and the intervals differ: consumer-b's
+ceiling must exceed 49 and fall below 55, consumer-c's exceed 43 and fall below 67; density above
+1.41% / at-or-below 4.79% in consumer-b, above 0.65% / at-or-below 3.06% in consumer-c. So the VALUE is
 a family constant and the INTERVAL is the repo's evidence for it. A family half that shipped only
 the value would delete the evidence; one that shipped only the interval would lose the agreement.
 Both have to travel, and the arm is "this repo's measured interval CONTAINS the family value".
@@ -112,7 +112,7 @@ guessed-answer failure this entire tranche is about, one level up: it would not 
 be one pair of repos' answer handed to a third and then reported as measured. `LAB_CZ_BASE_REF`,
 the stray newline on `@{push}`, and the sub-package import token were all that shape.
 
-**Whoever takes it: read motronics' six `_placement_*` partitions in the LANE worktree FIRST, say
+**Whoever takes it: read consumer-a' six `_placement_*` partitions in the LANE worktree FIRST, say
 which tree you read** -- the plan records an unresolved 77-vs-71 dispute caused by reading the main
 checkout instead of the lane -- then diff the mechanism halves across all four with docstrings
 blanked, as above. The two-lab diff is already done and is quoted here so it does not need retaking.

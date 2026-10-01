@@ -27,13 +27,13 @@ against this tree before it was accepted rather than taken because the base hold
   installed here are exactly `pre-commit` and `commit-msg` and `commitizen` names its own.
 
 WHAT WAS CONSIDERED AND REFUSED, because a delta's reasoning is only checkable if the rejected lines
-are named. `check-shebang-scripts-are-executable` (optimi-lab declares it) looks like an obvious fit
+are named. `check-shebang-scripts-are-executable` (consumer-c declares it) looks like an obvious fit
 for a repo shipping five `.sh` payloads -- and it is REFUSED ON MEASUREMENT: all five are mode 100644
 in this index, so the hook would red on the first run against a tree whose `.gitattributes` already
 owns the property that actually matters here (`*.sh text eol=lf`, so bash does not read a `\r`). A
 base line adopted into a red is a hook that gets `--no-verify`'d, which is worse than no hook.
 
-AND NO LOCAL `- repo: local` BLOCK, which is the whole reason this delta is empty where wdg-lab's is
+AND NO LOCAL `- repo: local` BLOCK, which is the whole reason this delta is empty where consumer-b's is
 62 lines. That lab's local hooks are a changelog generator, a version bumper and a ruff pair; this
 repo mints its versions from tags through hatch-vcs, publishes no changelog, and has ONE verdict --
 `make verify`, which is `lint fmt-check test` and which `lab_commons.dev.verify` ships as code. A

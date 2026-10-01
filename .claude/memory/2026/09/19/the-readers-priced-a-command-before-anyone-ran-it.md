@@ -24,7 +24,7 @@ between a published truth and a consumable one is the most dangerous command in 
 ## What was actually done: the readers were pointed at the command
 
 Both readers landed this week for exactly this class, and until now both had only ever been driven
-over planted files and recorded rows. Driven over the live motronics manifest:
+over planted files and recorded rows. Driven over the live consumer-a manifest:
 
     syncscope   uv sync --extra all --extra dev --extra img-to-cad --extra tooldrivers
                 -> Scope.COMPLETE
@@ -46,7 +46,7 @@ a collection reader blind to extras would not have singled out `pillow`.
 `--extra all --extra dev --extra img-to-cad` is the incantation recorded THE SAME DAY as "the one
 that actually restored the box", and it strands `pillow` at collection. `--extra pareto --extra
 dev` is the selection a census row called "the sanctioned spelling", and it strands seven. **Every
-selection this family had written down leaves motronics unable to collect its own test tree.** The
+selection this family had written down leaves consumer-a unable to collect its own test tree.** The
 four-extra form is the first that does not, and it was arrived at by measurement rather than by
 another round of guessing.
 

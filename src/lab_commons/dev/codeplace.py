@@ -1,6 +1,6 @@
 """Where source code may live, and the lifecycle of a one-off script -- one scan, every repo.
 
-Migrated 2026-09-25 from motronics-studio, where a probe, a patch script and 132 one-off drivers had
+Migrated 2026-09-25 from consumer-a, where a probe, a patch script and 132 one-off drivers had
 accumulated under ``output/logs/...``: untracked, untested, and never reaching the entry point the
 repo ships. One of them patched ``src/`` instead of the function it was changing being edited.
 

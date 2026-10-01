@@ -221,7 +221,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             '`--amend` does not act on YOUR last commit, it acts on HEAD -- and on a shared lane HEAD belongs '
             'to whoever committed most recently. This family has NO single-agent mode, so "I just committed" '
             'is not a safety argument; it is the exact condition under which this fires. MEASURED 2026-09-18 '
-            'on `feat/optimi-lab`: agent A committed, agent B committed 40 seconds later, and A amended to fix '
+            'on `feat/consumer-c`: agent A committed, agent B committed 40 seconds later, and A amended to fix '
             "two digits in its OWN message -- rewriting B's commit and replacing B's message with A's. It was "
             'caught inside a minute through `git reflog` and the tree recovered byte-identical, so only the '
             'SHA moved; nothing about the recovery made that outcome likelier than losing the work.'

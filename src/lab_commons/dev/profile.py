@@ -18,13 +18,13 @@ level below where it usually appears -- so this RAISES, and the refusal names bo
 AND THE ANCHOR, which is the half of "adoption is a substitution" that does NOT hold as designed.
 MEASURED 2026-09-15, on this box, with ``lab-commons`` installed non-editable::
 
-    resolve_home('motronics')                                       -> None
-    _detect_repo_root(start=<a file in the motronics checkout>)      -> D:\\...\\motronics-studio
+    resolve_home('consumer-a')                                       -> None
+    _detect_repo_root(start=<a file in the consumer-a checkout>)      -> D:\\...\\consumer-a
 
 ``resolve_home``'s auto-detection anchors its upward search on ``lab_commons/paths.py`` -- ITS OWN
 file -- so under any install where that file lives in ``site-packages`` it never finds a consumer's
 checkout, and it exposes no way to pass a different anchor. The consumer's own ``repo_root()`` was
-therefore NOT a thin wrapper: motronics imports the private ``_detect_repo_root`` and calls it with
+therefore NOT a thin wrapper: consumer-a imports the private ``_detect_repo_root`` and calls it with
 ``start=Path(__file__)``, and that is exactly the workaround :attr:`RepoProfile.anchor` makes
 explicit instead of leaving each adopter to rediscover.
 
@@ -76,7 +76,7 @@ class NotACheckout(RuntimeError):
 class RepoProfile:
     """One repository, as the data every mechanism reads instead of hardcoding.
 
-    *app_name* is what :func:`lab_commons.paths.resolve_home` keys on (``MOTRONICS_HOME`` and the
+    *app_name* is what :func:`lab_commons.paths.resolve_home` keys on (``CONSUMER_A_HOME`` and the
     like); *package* is the importable top-level name, which is a DIFFERENT string in general (a
     repo may be named for its subject and its package for its API). Both are required because
     a mechanism that walked the tree would have to guess the second from the first.

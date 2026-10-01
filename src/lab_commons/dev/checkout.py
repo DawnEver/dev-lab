@@ -3,7 +3,7 @@
 THE RULE, AND WHY IT LOOKED UNCHECKABLE. "A box holds a SHARED, possibly concurrent checkout: there
 is NO single-agent mode, the remote IS the only shared medium, pushing is the obligation rather than
 the last step of landing, and a verdict cannot be delegated to someone who cannot see the code."
-Both siblings declared it absent for the same stated reason -- ``wdg-lab``'s, verbatim: *"the push
+Both siblings declared it absent for the same stated reason -- ``consumer-b``'s, verbatim: *"the push
 obligation is a fact about origin, not about any file in this checkout"*. That reason is true and
 the conclusion drawn from it was wrong. A guard does not have to be about a FILE. ``git`` answers
 "what is here that origin does not have" exactly, cheaply, and without a network call, and this
@@ -18,7 +18,7 @@ module is that question asked three ways:
 
 MEASURED AGAINST THE REMOTE, NEVER AGAINST A LOCAL POINTER, and this is the trap the shared half
 exists to carry. A local trunk ref goes stale the moment another party pushes: MEASURED in
-motronics-studio 2026-09-05, a main checkout sat at ``integrate/main`` 0aa61ec5 while origin was at
+consumer-a 2026-09-05, a main checkout sat at ``integrate/main`` 0aa61ec5 while origin was at
 c043827c, and against that stale ref a fully-integrated lane showed 24 unintegrated commits and was
 reported as a second pushable branch -- the audit that exists to stop debt accumulating was itself
 manufacturing it. The same trap in the other direction was measured on the origin-branch survey:
@@ -33,7 +33,7 @@ AN UNREADABLE REPOSITORY IS ``None``, NEVER AN EMPTY LIST. That is the vacuous-g
 family pays for most often, and it has been paid for here already: a census that returned nothing on
 a box with damaged instrumentation reported "no worker process running" whether or not any existed.
 
-Provenance: motronics-studio's ``scripts/lanes/session_branches.py``,
+Provenance: consumer-a's ``scripts/lanes/session_branches.py``,
 ``scripts/lanes/prune_origin_branches.py`` and ``scripts/repo/worktree_debris.py``, migrated
 2026-09-16. Every repo-shaped fact in them -- where worktrees live, which branch is the trunk, which
 names are protected -- arrives here as an ARGUMENT, because those three differ per repo and the

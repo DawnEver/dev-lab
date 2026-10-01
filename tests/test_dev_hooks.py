@@ -4,7 +4,7 @@ WHAT A GUARD LIKE THIS CAN GET WRONG, and each one is checked below rather than 
 
 * A PATTERN THAT DOES NOT COMPILE. The engine fails OPEN on a bad regex, deliberately, so a typo
   there does not refuse -- it silently stops refusing while the row still reads as protection.
-  motronics shipped exactly that: an ``allow`` of ``[/\\]``, an unterminated character class. Every
+  consumer-a shipped exactly that: an ``allow`` of ``[/\\]``, an unterminated character class. Every
   pattern and every opening in the registry is compiled here, and the constructor compiles them too,
   so a bad one cannot reach a file at all.
 * A PATTERN THAT MATCHES THE WRONG THING. Every row carries its own ``refuses`` and ``permits``

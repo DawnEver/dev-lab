@@ -1,6 +1,6 @@
 """Loading a module BY PATH as a CALL rather than as an import -- once per file, for good.
 
-Migrated 2026-09-17 from motronics-studio's ``scripts/gate/_by_path.py``. It moves whole: every
+Migrated 2026-09-17 from consumer-a's ``scripts/gate/_by_path.py``. It moves whole: every
 sentence below is about ``importlib``, ``sys.modules`` and ``dataclasses``, and not one of them is
 about any repository. The only thing left behind is the guard that scans ONE tree for competing
 loaders, which is that repo's census of its own ``scripts/`` and stays there.

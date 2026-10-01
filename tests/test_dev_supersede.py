@@ -354,9 +354,9 @@ def test_every_published_kit_module_declares_its_provenance() -> None:
 
 
 def test_the_row_that_found_the_miss_is_flagged() -> None:
-    """optimi-lab's rules-page ratchet, against the LIVE kit -- the fifteenth row, named not aggregated.
+    """consumer-c's rules-page ratchet, against the LIVE kit -- the fifteenth row, named not aggregated.
 
-    RE-MEASURED 2026-09-18 after optimi-lab `aab4074c` EXECUTED the move this row predicted. The
+    RE-MEASURED 2026-09-18 after consumer-c `aab4074c` EXECUTED the move this row predicted. The
     grade is unchanged and everything under it moved: both detectors fire now instead of one, and
     the remainder is the repo's own four declarations instead of a local mechanism that had not
     left. It also still measures why OVERLAP was not promoted to a third detector, more sharply
@@ -658,8 +658,8 @@ def test_a_package_whose_whole_surface_is_its_init_is_a_kit_module(tmp_path: Pat
     `_published` drops any path with a private part and `__init__.py` has one, so a package that
     publishes everything from its `__init__` was in NEITHER `kit_modules` nor `kit_subpackages`. The
     live instance is `lab_commons.dev.agenthooks`: eleven public names, seen by nothing, and a
-    motronics roster row graded `untouched` purely because its one kit import names it -- while
-    being 98.0% identical to optimi-lab's file of the same name.
+    consumer-a roster row graded `untouched` purely because its one kit import names it -- while
+    being 98.0% identical to consumer-c's file of the same name.
 
     THE OTHER SIDE IS THE BAR, and it is what stops the repair from manufacturing agreement. An
     `__init__` that declares nothing is an INDEX, not a module: emitting it would let a bare

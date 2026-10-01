@@ -3,8 +3,8 @@
 The rule: every document this family injects into an agent's context (`AGENTS.md`/`CLAUDE.md` by
 basename, `.claude/rules/**`, `.claude/memory/` excluded) is capped at 120 columns PER LINE, on top
 of whatever line-COUNT ratchet a repo already runs -- a line-count pin cannot see a page that grows
-wider while its line count shrinks, and MEASURED 2026-09-16 one motronics page reaches column 786
-while motronics' own line-count ratchet reads only its 32 lines.
+wider while its line count shrinks, and MEASURED 2026-09-16 one consumer-a page reaches column 786
+while consumer-a' own line-count ratchet reads only its 32 lines.
 
 LAB-COMMONS' OWN DECLARATION IS EMPTY. Its two tracked `.claude/rules/*.md` pages measure a maximum
 of 99 columns (MEASURED 2026-09-16), comfortably under the 120 ceiling with no `AGENTS.md` or
@@ -64,15 +64,15 @@ def test_is_injected_doc_matches_the_measured_default_corpus() -> None:
 
 
 def test_a_nested_rules_page_is_recognised_and_a_nested_lookalike_is_not() -> None:
-    """MEASURED on motronics-studio: `.claude/rules/` pages are SCOPED per module, not root-only.
+    """MEASURED on consumer-a: `.claude/rules/` pages are SCOPED per module, not root-only.
 
-    `src/motronics/hamilton/.claude/rules/femm.md`, `scripts/.claude/rules/scripts.md` and every
-    `src/motronics/*/.claude/rules/MEMORY.md` are real injected pages a root-only prefix would miss
+    `src/consumer_a/hamilton/.claude/rules/femm.md`, `scripts/.claude/rules/scripts.md` and every
+    `src/consumer_a/*/.claude/rules/MEMORY.md` are real injected pages a root-only prefix would miss
     entirely -- the width ceiling would then cover nothing that repo actually injects.
     """
-    assert is_injected_doc('src/motronics/hamilton/.claude/rules/femm.md')
+    assert is_injected_doc('src/consumer_a/hamilton/.claude/rules/femm.md')
     assert is_injected_doc('scripts/.claude/rules/scripts.md')
-    assert not is_injected_doc('src/motronics/hamilton/.claude/memory/note.md')
+    assert not is_injected_doc('src/consumer_a/hamilton/.claude/memory/note.md')
     assert not is_injected_doc('src/pkgnot.claude/rules/x.md'), 'the prefix must start a path segment'
 
 

@@ -12,7 +12,7 @@ marker either -- is driven separately, because that is the green this arm would 
 most confidently.
 
 THE ONE THING NO TEST HERE CAN DO is stand up four xdist workers, wedge one past a wall and observe
-the controller file it at ~0.0s. The evidence for that is the consumer's: wdg-lab measured it on
+the controller file it at ~0.0s. The evidence for that is the consumer's: consumer-b measured it on
 2026-09-19 when this mechanism first ran, five tests the wall had just convicted entering the ledger
 as the five fastest in the suite. What IS driven here is the arm that answers it, with the exact
 sentence the installed xdist 3.8.0 writes at ``xdist/dsession.py:436``, quoted from that source.

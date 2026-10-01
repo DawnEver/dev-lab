@@ -91,7 +91,7 @@ const WRAPPERS = /^(?:timeout|nohup|time|env|nice|ionice|stdbuf|command|exec|sud
  *
  * MEASURED 2026-09-17: without this, `uv run python - <<PY ... PY` hid its interpreter behind `uv`
  * and the heredoc body was never scanned. A repo whose rules happen to name `uv run` refused that
- * line for an unrelated reason; one whose rules do not (optimi-lab, wdg-lab) ALLOWED it outright.
+ * line for an unrelated reason; one whose rules do not (consumer-c, consumer-b) ALLOWED it outright.
  */
 const UV_RUN = /^(?:[^\s]*[/\\])?(uvx?)(?:\.exe)?$/i;
 

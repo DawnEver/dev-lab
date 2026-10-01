@@ -6,8 +6,8 @@ disk and refuses a hand edit is :mod:`lab_commons.dev.famconfig`; a base edited 
 that checks it drifts away from what it describes, because the same edit that adds a line can relax
 the check that would have refused it.
 
-MEASURED 2026-09-17 against four checkouts -- `lab-commons`, `wdg-lab`, `optimi-lab` and the
-motronics-studio LANE at `.claude/worktrees/feat/optimi-lab` -- by set intersection over the live
+MEASURED 2026-09-17 against four checkouts -- `lab-commons`, `consumer-b`, `consumer-c` and the
+consumer-a LANE at `.claude/worktrees/feat/consumer-c` -- by set intersection over the live
 files, never by line count. The numbers below are re-derivable with a five-line script and every one
 of them is quoted with what it was measured over, because a base is a claim about three other repos
 and a claim about somebody else's tree ages fastest.
@@ -20,13 +20,13 @@ the three artefacts share LINES at all:
   half renders verbatim. RENDERED.
 * `.pre-commit-config.yaml` -- 11 shared hook ids out of 22/19/18, drawn from exactly two upstream
   repos. The ids are shared and the SPELLING is not: the labs write the `repos:` list unindented and
-  motronics indents it, and the three disagree on both pins (`pre-commit-hooks` v6.0.0 / v5.0.0 /
+  consumer-a indents it, and the three disagree on both pins (`pre-commit-hooks` v6.0.0 / v5.0.0 /
   v5.0.0, `commitizen` v4.13.9 / v4.6.0 / v4.6.0). Three spellings of one whitelist is precisely the
   hand-maintenance this base removes, so the base fixes ONE spelling and ONE pin pair. RENDERED.
 * `Makefile` -- 3 target NAMES in all four repos, 8 in all three CONSUMERS, and NO shared recipe at
-  all. lab-commons and optimi-lab are byte-identical on `fmt`, `lint` and `test`; wdg-lab's `lint`
+  all. lab-commons and consumer-c are byte-identical on `fmt`, `lint` and `test`; consumer-b's `lint`
   also runs `cargo fmt` and `cargo clippy`, and
-  motronics' `test` selects `tests/unit -m "not femm"`. A recipe naming a tree or a vendor mark is a
+  consumer-a' `test` selects `tests/unit -m "not femm"`. A recipe naming a tree or a vendor mark is a
   fact about that tree. **So rendering a family Makefile would be a declaration that lies** -- the
   base here is a target CONTRACT (these names must exist) plus the one recipe that genuinely is the
   family's, `verify`, which `lab_commons.dev.verify` already ships as code. REQUIRED.
@@ -39,7 +39,7 @@ The absence is NAMED rather than silent, which is the whole point of writing it 
 WHY `uv.lock` STAYS IN THE GITIGNORE BASE, since the next reader will ask. It is in the measured
 three-way intersection, and the family ruling of 2026-09-17 is that the lockfile stays OUT of git --
 "the latest from that URL" is a deliberate declaration, not an oversight. What that ruling does NOT
-say is that no lockfile exists: `wdg-lab/uv.lock` is present on disk, untracked, pinning
+say is that no lockfile exists: `consumer-b/uv.lock` is present on disk, untracked, pinning
 `lab-commons 0.2.2.dev26`, and `uv run`'s implicit sync served that pin back three times in one day
 while every review saw nothing, because the file is invisible to git. The line stays; the defect it
 hid is closed elsewhere (`uv run --no-sync` in the hooks, and a refreshing install door), and it is
@@ -81,8 +81,8 @@ REPO_FLOOR: Final = 3
 #: The 14 patterns, MEASURED as the three-way intersection of the consumers' live `.gitignore`
 #: files and then CANONICALISED on the one axis they disagree about.
 #:
-#: THE LITERAL INTERSECTION IS 12, NOT 14, and the two-line gap is worth the sentence. wdg-lab and
-#: optimi-lab write `**/__pycache__` and `*.egg-info`; motronics writes `**/__pycache__/` and
+#: THE LITERAL INTERSECTION IS 12, NOT 14, and the two-line gap is worth the sentence. consumer-b and
+#: consumer-c write `**/__pycache__` and `*.egg-info`; consumer-a writes `**/__pycache__/` and
 #: `*.egg-info/`. Strip the trailing slash and the intersection is 14 and the pairwise overlaps are
 #: 27 / 33 / 16; keep it and they are 12 and 27 / 31 / 14. The two spellings are NOT equivalent to
 #: git -- a trailing slash matches a directory only -- so this is a real disagreement and not
@@ -198,7 +198,7 @@ HOOK_ID_CORE: Final[tuple[str, ...]] = (
 #:
 #: `default_stages` IS DECLARED HERE because leaving it out is not neutral: without it a hook's
 #: stage comes from the UPSTREAM manifest, which is a decision taken in another repository. Only
-#: motronics declares it today. `commitizen` overrides it to `commit-msg` inline, which is the stage
+#: consumer-a declares it today. `commitizen` overrides it to `commit-msg` inline, which is the stage
 #: it must run at -- and MEASURED 2026-09-17 neither lab has a `commit-msg` hook installed, so in
 #: both labs this is the one declaration nothing executes. The base cannot fix that; installation is
 #: `lab_commons.dev.hook_install`'s question and is named here so the two are not confused.
@@ -241,14 +241,14 @@ PRECOMMIT_BASE: Final[tuple[str, ...]] = (
 # ---------------------------------------------------------------------------------- Makefile
 
 #: The three targets present in ALL FOUR repos, MEASURED over 6 / 18 / 14 / 15 declared targets.
-#: `verify` is NOT among them -- it is in three of four and motronics is the exception, which the
+#: `verify` is NOT among them -- it is in three of four and consumer-a is the exception, which the
 #: census records as that repo's own gap rather than as a family absence.
 MAKE_TARGET_CORE: Final[tuple[str, ...]] = ('fmt', 'lint', 'test')
 
 #: The NINE targets present in ALL THREE CONSUMERS, MEASURED over 18 / 14 / 16. It read EIGHT until
 #: 2026-09-18, and both halves of that number have since moved:
 #:
-#: - `verify` joined, because motronics grew one. The old comment for the eight said `clean`,
+#: - `verify` joined, because consumer-a grew one. The old comment for the eight said `clean`,
 #:   `install`, `install-dev` and `test-parallel` were "absent from lab-commons alone -- the kit held
 #:   to less than what it ships". Re-measured, lab-commons carries all four, so that gap closed too.
 #: - The consequence is worth stating rather than leaving for a reader to notice: this tuple is now
@@ -280,13 +280,13 @@ MAKE_TARGET_CONSUMER_CORE: Final[tuple[str, ...]] = (
 #: `verify` carries its recipe because that recipe is portable by construction: `lab_commons.dev.verify`
 #: runs ruff, ruff format and pytest, tees them into a log and prints a stamped verdict, and it takes
 #: no argument naming a tree. It is the one line here that is the family's answer rather than the
-#: family's question. This paragraph used to end "and motronics -- the only repo with no `verify` at
+#: family's question. This paragraph used to end "and consumer-a -- the only repo with no `verify` at
 #: all"; that is no longer true, all four declare one, and the sentence is corrected rather than left
 #: standing, because a base's own prose asserting an absence the tree has filled is the declaration
 #: that lies.
 #:
 #: REQUIRED IS THIS ARTEFACT'S TERMINAL MODE, re-opened and re-closed 2026-09-18 on the ground that
-#: the reason had expired -- that the base only read REQUIRED because motronics had no `verify:`, and
+#: the reason had expired -- that the base only read REQUIRED because consumer-a had no `verify:`, and
 #: that gap closed. It never was that reason, and re-measuring all four live Makefiles says the
 #: recorded one still holds: SEVEN of the nine shared targets carry a different recipe in more than
 #: one repo (`install:` and `install-dev:` four distinct ones apiece), and the two whose bodies DO

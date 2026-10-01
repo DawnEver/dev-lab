@@ -5,7 +5,7 @@
 # creating the next tag.
 #
 # BEST-EFFORT BY DESIGN: tagging must NEVER block the code push, so every path exits 0 and failures
-# are logged rather than fatal. This is a property the wdg-lab fork did not have -- `set -e` plus a
+# are logged rather than fatal. This is a property the consumer-b fork did not have -- `set -e` plus a
 # fatal `git tag -a` made a tagging problem fail a developer's push.
 #
 # EVERY REPO-SPECIFIC DECISION ARRIVES AS AN ENVIRONMENT VARIABLE, because a hook that branched on a
@@ -28,7 +28,7 @@ REMOTE="${1:-${LAB_BUMP_REMOTE:-origin}}"
 GIT_NET="${LAB_BUMP_GIT_NET:-git}"
 PROOF_NAME="${LAB_BUMP_PROOF_NAME:-proof}"
 
-# NEVER WAIT ON A CREDENTIAL PROMPT. Measured 2026-08-17 in motronics-studio: with the forge
+# NEVER WAIT ON A CREDENTIAL PROMPT. Measured 2026-08-17 in consumer-a: with the forge
 # answering 200 but the credential displaced, the tag `git push` below sat forever on a prompt this
 # hook has no stdin to answer, and the whole `git push` the developer typed never returned.
 # "Best-effort" was false in the strongest possible direction -- not a wrong exit code, no exit at
@@ -104,7 +104,7 @@ fi
 MAJOR="${BASH_REMATCH[1]}"; MINOR="${BASH_REMATCH[2]}"; PATCH="${BASH_REMATCH[3]}"
 
 # Increment PATCH ONCE and recompute NEW_TAG from it each iteration, so the collision scan walks
-# CONSECUTIVE candidates and cannot skip a version. The wdg-lab fork incremented twice per round --
+# CONSECUTIVE candidates and cannot skip a version. The consumer-b fork incremented twice per round --
 # once in the loop body and once in the expression -- so one taken tag cost two version numbers.
 PATCH=$((PATCH + 1))
 NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"

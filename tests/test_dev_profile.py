@@ -85,7 +85,7 @@ class TestResolvingTheRoot:
         assert (declared.package_root / 'core.py').is_file()
 
     def test_the_home_variable_is_named_after_the_app(self) -> None:
-        assert RepoProfile(app_name='optimi_lab', package='optimi_lab').home_env_var == 'OPTIMI_LAB_HOME'
+        assert RepoProfile(app_name='consumer_c', package='consumer_c').home_env_var == 'CONSUMER_C_HOME'
 
 
 class TestTheLintConfigLocation:

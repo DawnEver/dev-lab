@@ -2,8 +2,8 @@
 
 :mod:`lab_commons.dev.dep` has published the MECHANISM since it landed: ``Port``, ``mutate``, the two
 gap sentences, the refusal, the retirement. What stayed forked was the eight-arm test that DRIVES it.
-MEASURED 2026-09-19 by two independent audit lanes that did not know of each other, one in wdg-lab
-and one in optimi-lab: their copies of ``tests/architecture/test_the_dependency_door_is_wired.py``
+MEASURED 2026-09-19 by two independent audit lanes that did not know of each other, one in consumer-b
+and one in consumer-c: their copies of ``tests/architecture/test_the_dependency_door_is_wired.py``
 are **91.5% identical**, and a byte diff of the two files says exactly what the 8.5% is --
 
 * a docstring, twice, narrating each repo's own refuted "the rule has no subject here";

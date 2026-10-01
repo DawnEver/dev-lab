@@ -53,7 +53,7 @@ def test_the_empty_vocabulary_is_refused_because_it_would_match_every_line() -> 
 
 
 def test_the_boundary_policy_has_no_default_and_the_two_answers_differ_on_a_real_shape() -> None:
-    """`widget_size` is nothing to three rosters and a hit to motronics' scripts roster."""
+    """`widget_size` is nothing to three rosters and a hit to consumer-a' scripts roster."""
     whole = noun_pattern(NOUNS, match_identifier_parts=False)
     parts = noun_pattern(NOUNS, match_identifier_parts=True)
     assert nouns_in('x = widget_size', noun=whole) == set()
@@ -109,7 +109,7 @@ def test_a_signal_matching_the_empty_string_is_refused_from_the_other_side() -> 
 
 
 def test_a_line_carrying_either_signal_counts_once_and_not_twice() -> None:
-    """The two-signal shape motronics uses: a noun OR an owned basename, never double-counted."""
+    """The two-signal shape consumer-a uses: a noun OR an owned basename, never double-counted."""
     owned = re.compile(r'(?<![A-Za-z0-9_.\-])(runner\.py)(?![A-Za-z0-9_\-])')
     source = "value = widget_of('runner.py')\nother = 2\n"
     one = measure_density(source, signals=(a_noun(),), delegation_homes=())

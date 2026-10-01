@@ -18,7 +18,7 @@ WHY THE SINGLE LETTERS ARE DECLARED RATHER THAN OMITTED, AND THIS IS THE MEASURE
 silently omits metre -- core's own unit -- reads exactly like a scan that found none, so every symbol
 considered and REJECTED is a row below, with the collision that rejected it. The brief this registry
 serves states that a lone ``_s`` "is usually a plural" and a lone ``_a`` "is usually an article".
-MEASURED 2026-09-15, over ``motronics-studio``'s ``src/``+``tests/`` (4046 modules) and over this
+MEASURED 2026-09-15, over ``consumer-a``'s ``src/``+``tests/`` (4046 modules) and over this
 package's own tree, that is FALSE in the direction that matters here: the trailing single-letter
 segments are dominated by REAL units -- ``_a`` 1914 rows (``RATED_PEAK_A``), ``_t`` 1253, ``_n`` 1063
 (``--top-n``), ``_m`` 842 (``PROBE_DEPTH_M``), ``_k`` 674 (``_SAME_TEMPERATURE_K``), ``_v`` 611
@@ -29,7 +29,7 @@ claim of rarity, and the honest repair is the one the machinery already supports
 record rather than silent.
 
 THE OTHER SIDE OF THE SAME MEASUREMENT, which is why the conservative set is the right DEFAULT for a
-shared package: ``ns`` is nanoseconds in motronics (54 rows, ``_SSC_CAP_NS``) and argparse's
+shared package: ``ns`` is nanoseconds in consumer-a (54 rows, ``_SSC_CAP_NS``) and argparse's
 ``Namespace`` in lab-commons (32 rows, every one ``ns = parser.parse_args()``); ``_sec`` is a SECTOR
 (``n_sec`` x102) and a transformer SECONDARY WINDING (``l_sec``) far more often than it is seconds, so
 the plural ``secs`` -- unambiguously a duration -- is the row that stays; ``_kw`` is ``**kwargs``
@@ -46,10 +46,10 @@ COMPLETE FINAL segment (``[_-]`` separated, no prefix matching -- a pattern that
 ``mm2`` once produced a 9,735-hit flood that was pure artifact), over ``.py``. The two AGREE on the
 READING of every row below, which is the verdict this table needs, and they DISAGREE on magnitude
 wherever a collision lives in a function local or in prose -- ``_pm`` is 924 rows and 63 violations in
-motronics, ``_ft`` 78 rows and 1 -- because B counts the whole tree and A counts interfaces. The scope
+consumer-a, ``_ft`` 78 rows and 1 -- because B counts the whole tree and A counts interfaces. The scope
 of the counts quoted in the reasons is every git-tracked ``.py`` in the four repos the table is shared
-by -- ``motronics-studio`` (``src/``, ``tests/``, ``cases/``, ``scripts/``), ``wdg-lab``,
-``optimi-lab`` and this package -- minus the three files that cannot be written without the forbidden
+by -- ``consumer-a`` (``src/``, ``tests/``, ``cases/``, ``scripts/``), ``consumer-b``,
+``consumer-c`` and this package -- minus the three files that cannot be written without the forbidden
 spelling in them (this one, ``dev/units.py``, ``tests/test_dev_units.py``); see the note above
 :data:`EXCLUDED_TOKENS` for why that subtraction is a correction rather than a convenience.
 
@@ -240,7 +240,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'gauss -- the symbol the module docstring used to name as OUT OF SCOPE, now measured and so '
         'declared instead: 72 `_gauss` rows, 11 distinct, and every one is GAUSSIAN QUADRATURE '
         '(`arkkio_torque_quad_gauss` x17, `x2-Gauss` x17, `_GAUSS` x14, `n_gauss`, `stiffness_gauss`). '
-        'In motronics `gauss` is additionally the NUMERICAL RUNTIME module (``gauss.solve_linear_'
+        'In consumer-a `gauss` is additionally the NUMERICAL RUNTIME module (``gauss.solve_linear_'
         'system``), so a `_gauss` name points at the solver far more often than at the field unit.'
     ),
     'h': ('hour -- `_h` is height, a harmonic or a headroom (`_AIR_SEED_WALL_CLEARANCE_H`, `--min-age-h`); 341 rows.'),
@@ -274,7 +274,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     ),
     'kw': (
         'kilowatt -- THE LARGEST false positive measured on this family, and the number that matters is '
-        'the PRODUCTION one: 182 violations in a single repo (motronics, 14 distinct) and every one is '
+        'the PRODUCTION one: 182 violations in a single repo (consumer-a, 14 distinct) and every one is '
         '`**kwargs` plumbing -- `mesh_kw: str` is a mesh KEYWORD, `band_kw`, `BAND_VARIANT_TO_KW` maps a '
         'band variant TO keyword arguments, `_airgap_kw = {...}` is splatted as `**_airgap_kw`. 489 '
         '`_kw` rows in the family, 1,106 in the raw tree, ZERO of them a kilowatt in a name: the real '
@@ -286,7 +286,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     'lb': (
         'pound -- 13 `_lb` rows measured, four distinct, and all four a LOWER BOUND or a handle: '
         '`radius_lb`/`radius_ub` is the declared pair in `euclid/param_model/closed_shape.py`, plus '
-        '`radius_slot_lb`, `r_lb` and `h_Lb` (a Simulink block handle). The one violation, in wdg-lab, '
+        '`radius_slot_lb`, `r_lb` and `h_Lb` (a Simulink block handle). The one violation, in consumer-b, '
         'is `def lb() -> int` -- a bound in a benchmark. Zero pounds: a mass is written in `kg` here.'
     ),
     'm': (
@@ -319,7 +319,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     ),
     'ns': (
         'nanosecond -- the two-sided measurement, and the reason a SHARED default cannot hold it: '
-        "nanoseconds in motronics (54 rows, `_SSC_CAP_NS`, `coarse_ns`) and argparse's `Namespace` "
+        "nanoseconds in consumer-a (54 rows, `_SSC_CAP_NS`, `coarse_ns`) and argparse's `Namespace` "
         'in lab-commons (32 rows, every one `ns = parser.parse_args()`).'
     ),
     'ph': (
@@ -332,15 +332,15 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'picometre IN PHYSICS, PERMANENT MAGNET HERE -- and the family reading is the one a SHARED table '
         'has to hold, because all four repos are motor-design trees. MEASURED 924 `_pm` rows, 48 '
         'distinct, permanent magnet at every one: `psi_pm` x438, `lambda_pm`, `lam_pm`, `nu_pm`, `W_pm`, '
-        '`flux_d_pm`, `surface-PM`, `interior-PM`, `buried-PM`. 63 violations in motronics and every one '
-        'of them a permanent magnet, plus a third reading in wdg-lab where `ArcSeg.pm` is the arc MID '
+        '`flux_d_pm`, `surface-PM`, `interior-PM`, `buried-PM`. 63 violations in consumer-a and every one '
+        'of them a permanent magnet, plus a third reading in consumer-b where `ArcSeg.pm` is the arc MID '
         'POINT. Picometre is real physics and is not what any of these repos writes; a repo that wants '
         "it opts in per repo with tokens=UNIT_TOKENS | {'pm'}."
     ),
     'ps': (
         'picosecond -- 43 `_ps` rows measured, five distinct, and the reading is the Simulink-PS '
         'CONVERTER: `Simulink-PS` x35 is the BLOCK NAME the vendor ships and not ours to rename, and '
-        '`_PS` is the generated handle (`h_{name}_PS`, `add_block(..._PS)`). `motronics_ps` is a circuit '
+        '`_PS` is the generated handle (`h_{name}_PS`, `add_block(..._PS)`). `consumer_a_ps` is a circuit '
         'builder and `h_M1_PS` a generated signal. Zero violations and zero picoseconds.'
     ),
     'psi': (
@@ -353,7 +353,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
     'rev': 'revolution -- `_rev` is a revision (`_rev`, `a_rev`, `d_rev`), 15 rows.',
     's': (
         "second -- and the brief's reason for excluding it does NOT survive the measurement: 608 "
-        'rows in motronics (`DEAD_TIME_S`, `CEILING_S`, `--max-age-s`) and 14 in this package '
+        'rows in consumer-a (`DEAD_TIME_S`, `CEILING_S`, `--max-age-s`) and 14 in this package '
         '(`waited_s`, `interval_s`, `poll_s`) are seconds, and NOT ONE is a plural. It stays out '
         'because a lone letter is a weak anchor for a SHARED default and the family also uses `_s` '
         "on plural-style names; a domain repo should opt in with tokens=UNIT_TOKENS | {'s'}."
@@ -388,7 +388,7 @@ EXCLUDED_TOKENS: Final[Mapping[str, str]] = {
         'zero microvolts.'
     ),
     'v': (
-        'volt -- 611 rows, and in motronics they are volts (`BUS_V`, `LOSS_V`); excluded because '
+        'volt -- 611 rows, and in consumer-a they are volts (`BUS_V`, `LOSS_V`); excluded because '
         '`v` is also the conventional name of a validated VALUE -- `def validate(cls, v)` in '
         '`lab_commons.units` -- where flagging it would red on every pydantic validator in the family.'
     ),

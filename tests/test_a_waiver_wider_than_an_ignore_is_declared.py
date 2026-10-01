@@ -178,33 +178,33 @@ def test_the_kits_own_per_file_waivers_still_bind_their_floor() -> None:
     assert_floor_still_binds(found, floor=KIT_WAIVER_FLOOR, headroom=KIT_WAIVER_HEADROOM, what=what)
 
 
-def test_motronics_holds_the_zero_and_it_is_a_principle_rather_than_an_accident() -> None:
+def test_consumer_a_holds_the_zero_and_it_is_a_principle_rather_than_an_accident() -> None:
     """The row that makes the family's disagreement legible instead of averaging it away.
 
-    motronics waives nothing per file under a 2026-08-02 user directive its own `ruff.toml` states in
-    full, and its `test_suppression_ratchet.py` pins the table at zero pairs. optimi-lab also holds
+    consumer-a waives nothing per file under a 2026-08-02 user directive its own `ruff.toml` states in
+    full, and its `test_suppression_ratchet.py` pins the table at zero pairs. consumer-c also holds
     zero and declares nothing about it. Two zeros, one of them load-bearing.
     """
     reached = _reached()
-    lane = reached.get('motronics-studio')
+    lane = reached.get('consumer-a')
     if lane is None:
         # NOT A SKIP, under this repo's XFAIL-NOT-SKIP rule and its EMPTY `ALLOWED_SKIPS`: a skip
         # records nothing, and "the lane was not there" is a fact worth stating rather than
         # swallowing. The reach floor above already permits a sibling to be absent, so what is owed
         # here is that the absence is NAMED -- which is exactly what a reader meeting a green suite
         # needs in order to know this row was not judged.
-        assert 'motronics-studio' in _absent(reached), (
-            f'the motronics lane is neither reached nor absent: {sorted(reached)} against '
+        assert 'consumer-a' in _absent(reached), (
+            f'the consumer-a lane is neither reached nor absent: {sorted(reached)} against '
             f'{sorted(REPO_PATHS)}. One of the two readers is wrong, and a row in neither set is '
             f'judged by nothing.'
         )
         return
     assert ruff_per_file_waivers(lane) == frozenset(), (
-        'the motronics lane grew a per-file ignore. That table is EMPTY BY PRINCIPLE there and the '
+        'the consumer-a lane grew a per-file ignore. That table is EMPTY BY PRINCIPLE there and the '
         'principle is written in the file: a waiver belongs in the file it governs as a noqa comment carrying '
         'a measured reason. A row here is that directive being reversed somewhere else.'
     )
-    assert PER_FILE_WAIVERS['motronics-studio'] == ()
+    assert PER_FILE_WAIVERS['consumer-a'] == ()
 
 
 # ------------------------------------------------------------------------------ planted controls
@@ -249,7 +249,7 @@ def test_a_key_that_is_not_a_waiver_is_not_read_as_one(key: str) -> None:
 
     `force-exclude` is the trap: it sits beside `exclude`, contains the word, and is a BOOLEAN about
     how exclusion applies to explicitly-passed paths. Reading it as an exclude would add a phantom row
-    to wdg-lab's ceiling, and a ratchet with a phantom row cannot be spent.
+    to consumer-b's ceiling, and a ratchet with a phantom row cannot be spent.
     """
     assert waiver_entries({key: True, 'lint': {}}, 'exclude') == frozenset()
     assert waiver_entries({key: True, 'lint': {}}, 'per-file-ignores') == frozenset()
@@ -259,7 +259,7 @@ def test_an_undeclared_waiver_is_NAMED_by_the_arm_and_not_merely_counted() -> No
     """THE ARM'S OWN REFUSAL, PLANTED, against a config that cannot exist in any checkout here."""
     planted = {'exclude': ['attic', '.git', 'src/secret_tree'], 'lint': {'per-file-ignores': {'src/**': ['S101']}}}
     live_excludes = waiver_entries(planted, 'exclude') - set(MACHINE_EXCLUDES)
-    undeclared = sorted(live_excludes - set(TREE_EXCLUDES['motronics-studio']))
+    undeclared = sorted(live_excludes - set(TREE_EXCLUDES['consumer-a']))
     assert undeclared == ['src/secret_tree'], (
         f'the refusal reported {undeclared}. It must NAME the row -- a count cannot say which exclude '
         f'appeared, and the honest-looking repair when a digit disagrees is to edit the digit.'
@@ -283,12 +283,12 @@ def test_a_declared_row_no_live_config_needs_is_NAMED_by_the_other_side_of_the_r
     """
     give_up = {'exclude': ['ignore'], 'lint': {'per-file-ignores': {'examples/tasks/**': ['T201']}}}
     live_excludes = waiver_entries(give_up, 'exclude') - set(MACHINE_EXCLUDES)
-    stale = sorted(set(TREE_EXCLUDES['wdg-lab']) - live_excludes)
+    stale = sorted(set(TREE_EXCLUDES['consumer-b']) - live_excludes)
     assert stale == ['.claude', 'archived', 'output'], (
         f'the stale side reported {stale}. It must NAME the rows whose config line is gone, because '
         f'the edit it asks for is a DELETION and a count cannot say which line to delete.'
     )
-    stale_waivers = sorted(set(PER_FILE_WAIVERS['wdg-lab']) - waiver_entries(give_up, 'per-file-ignores'))
+    stale_waivers = sorted(set(PER_FILE_WAIVERS['consumer-b']) - waiver_entries(give_up, 'per-file-ignores'))
     assert 'scripts/*.py::T201' in stale_waivers
     assert 'examples/tasks/**::T201' not in stale_waivers
 
@@ -332,7 +332,7 @@ def test_a_waiver_kind_the_table_does_not_declare_is_refused_rather_than_read_em
 def test_the_resolved_config_is_what_is_read_so_the_arms_do_not_care_which_file_holds_it() -> None:
     """WHY NO SECTION-SCOPED BASE IS NEEDED HERE: every arm reads the config ruff RESOLVES.
 
-    motronics keeps its table in `ruff.toml` and the other three in `[tool.ruff]`. `ruff_config`
+    consumer-a keeps its table in `ruff.toml` and the other three in `[tool.ruff]`. `ruff_config`
     applies ruff's own precedence, so relocating that table between the two files moves nothing any
     arm in this family measures -- which is the measurement that turns the FILE question from a
     prerequisite into a free choice.

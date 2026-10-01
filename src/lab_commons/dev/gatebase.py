@@ -1,6 +1,6 @@
 """Which commit a gate diffs FROM -- one question, several candidates, and the NARROWEST honest one.
 
-Migrated 2026-09-17 from motronics-studio's ``scripts/gate/base.py``, and it is a SPLIT rather than a
+Migrated 2026-09-17 from consumer-a's ``scripts/gate/base.py``, and it is a SPLIT rather than a
 move: the arithmetic and the admission rule are universal, the CANDIDATE REFS are not. That file
 named ``origin/integrate/main`` and ``origin/main`` as literals, which is one repo's branching model
 written into a mechanism. Both arrive here as arguments with NO DEFAULT, for the reason

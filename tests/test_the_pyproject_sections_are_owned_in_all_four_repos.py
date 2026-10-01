@@ -19,7 +19,7 @@ declares is a decision nothing consults, and a table promoted while still declin
 halves contradicting each other.
 
 THE EMPTY-PREFIX ROW IS WHAT MAKES `locate_section`'s OTHER BRANCH NON-VACUOUS. The ruff bases carry
-``prefix=('tool','ruff')`` and exercise the dedicated-file spelling against motronics' ``ruff.toml``.
+``prefix=('tool','ruff')`` and exercise the dedicated-file spelling against consumer-a' ``ruff.toml``.
 These carry an EMPTY prefix, so they take the branch that says a file is dedicated when it does not
 declare the prefix at all -- the branch whose first cut made every ``pyproject.toml`` on earth
 "declare" its table twice. Both branches now have a live subject.
@@ -133,7 +133,7 @@ def test_no_declared_delta_is_a_fork_of_the_base_it_declares_against() -> None:
 
 def test_every_ceiling_is_its_measurement_and_no_delta_carries_headroom() -> None:
     """THE RATCHET'S OTHER SIDE. Headroom nobody chose is how a waiver list stops being a delta."""
-    measured = {'lab-commons': 0, 'wdg-lab': 1, 'optimi-lab': 1, 'motronics-studio': 0}
+    measured = {'lab-commons': 0, 'consumer-b': 1, 'consumer-c': 1, 'consumer-a': 0}
     for repo, table in sorted(PYPROJECT_SECTION_DELTAS.items()):
         for artefact, delta in sorted(table.items()):
             added = sum(len(entries) for entries in delta.added.values())

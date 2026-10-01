@@ -14,7 +14,7 @@ refusal it makes at all is the vacuous one, an empty vocabulary that would repor
 the family clean.
 
 THE SPELLINGS ARE DERIVED FROM THE CORPUS, NOT GUESSED. Measured 2026-09-19 over the two labs' and
-motronics' four rosters: a labelled reading is written ``key=value`` in exactly four keys
+consumer-a' four rosters: a labelled reading is written ``key=value`` in exactly four keys
 (``own``, ``repo``, ``project``, ``hits``), a derived percentage as ``-> 7.46%``, and a change as
 either ``down from``/``up from`` or as the arrow delta ``own=86 -> 39``. A regex invented in the
 abstract finds none of that, and a scan that finds nothing reports a clean tree.

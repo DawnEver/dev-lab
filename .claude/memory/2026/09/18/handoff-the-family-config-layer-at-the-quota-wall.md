@@ -19,16 +19,16 @@ Plan: `.claude/memory/2026/09/17/plan-one-source-of-truth-for-the-family-config-
 | repo | HEAD | pushed |
 |---|---|---|
 | lab-commons | `a177ba6` + one live agent | yes |
-| wdg-lab | `7329b1c1`, then `cc8d8c11` | `7329b1c1` pushed; `cc8d8c11` NOT |
-| optimi-lab | `aab4074` pushed, then `4c5b1cd` | `4c5b1cd` NOT |
-| motronics lane `feat/optimi-lab` | `cb810816e` + live agent | push in flight at write time |
+| consumer-b | `7329b1c1`, then `cc8d8c11` | `7329b1c1` pushed; `cc8d8c11` NOT |
+| consumer-c | `aab4074` pushed, then `4c5b1cd` | `4c5b1cd` NOT |
+| consumer-a lane `feat/consumer-c` | `cb810816e` + live agent | push in flight at write time |
 
-NEVER `D:\MingyangBao\motronics-studio` itself.
+NEVER `<home>/consumer-a` itself.
 
 ## THE FINDING THAT CHANGES THE PRIOR
 
 The standing prior — the roster OVER-reports, three tranches declared 17 MOVES and measured 7 — did
-NOT reproduce in the labs. Neither lab holds a stale MOVES row; optimi-lab has ZERO. The error is
+NOT reproduce in the labs. Neither lab holds a stale MOVES row; consumer-c has ZERO. The error is
 the opposite one and it is in the INSTRUMENT:
 
 **`supersede.imported_kit_modules(package='lab_commons.dev')` resolves
@@ -49,7 +49,7 @@ retire `_refuse_mismatch` -- a repair that switches off the guard it repairs. Th
 unchanged; keep it.
 
 The re-measured row is `PARTIAL`, not `SUPERSEDED`, and for the opposite reason to before: it was
-PARTIAL because a local mechanism had not left, it is PARTIAL now because what remains is optimi's
+PARTIAL because a local mechanism had not left, it is PARTIAL now because what remains is consumer-c's
 own half of a FINISHED split. `covered` is EMPTY -- after the move the file shares zero names with
 its superseder, which is a sharper restatement of why surface overlap is a RULER and never a
 detector. New round-trip arm: what `kit_modules` PUBLISHES, `imported_kit_modules` must NAME, with
@@ -79,10 +79,10 @@ two consumers already waiting:
 ## INVENTORY, caused by the `rulespages` adoption, one red per lab
 
 Both in `test_the_rules_pages_are_a_ratchet.py`, both refused by each repo's OWN guards:
-- wdg-lab: the suppression scanner reads a PROSE LINE ABOUT `noqa` as a `noqa`.
-- optimi-lab: a count pin named `CEILING` without the `_CEILING` suffix its ratchet requires.
+- consumer-b: the suppression scanner reads a PROSE LINE ABOUT `noqa` as a `noqa`.
+- consumer-c: a count pin named `CEILING` without the `_CEILING` suffix its ratchet requires.
 
-## optimi-lab `.claude/settings.json` — RESOLVED, and how it nearly unresolved itself
+## consumer-c `.claude/settings.json` — RESOLVED, and how it nearly unresolved itself
 
 The user ruled 2026-09-18: add the block. Added, one row —
 `Bash(./.venv/Scripts/python.exe -m lab_commons.dev.verify *)` — and the `strict=True` xfail on
@@ -97,11 +97,11 @@ The shape worth keeping: **a two-file change made by two parties is a torn write
 can only see one half will revert the half it can see.** The agent's restraint on the half it could
 not attribute is what kept this cheap.
 
-**UNCOMMITTED AND UNVERIFIED at hand-off.** Both halves sit in optimi-lab's working tree; the
+**UNCOMMITTED AND UNVERIFIED at hand-off.** Both halves sit in consumer-c's working tree; the
 verify run was queued behind the box CPU lock (the lane's push was holding it) and never
 returned, so nothing was committed on an unread verdict. FIRST ACTION NEXT WINDOW: re-run
 `./.venv/Scripts/python.exe -m lab_commons.dev.verify tests/architecture/test_no_allow_entry_names_a_denied_shape.py`
-in optimi-lab, and commit the two files together or not at all -- the torn write above is
+in consumer-c, and commit the two files together or not at all -- the torn write above is
 exactly what splitting them produces.
 
 ## RETRACTED: `verify` DOES refuse a held box. The defect was in my instrument.
@@ -149,9 +149,9 @@ a stray newline that turned a resolved push base into a silent fall-through to t
 failed pre-commit hook that destroyed staged work and left `git status` clean. Both were found by
 driving the thing rather than reading it, which is the same method that just refuted the third.
 
-## THE MOTRONICS LANE, and two findings of the same family as the one above
+## THE CONSUMER_A LANE, and two findings of the same family as the one above
 
-Lane `feat/optimi-lab`, four commits, **NOT pushed and correctly so** -- its pre-push gate could not
+Lane `feat/consumer-c`, four commits, **NOT pushed and correctly so** -- its pre-push gate could not
 acquire the box and answered INCONCLUSIVE. `a5c9d3c31` (the shared-venv guard test), `0c5eb3110`
 (`_dated.py` -> `dev.datedlog`), `68f161358` (a 4th call site), `a4de78caa` (`base.py` ->
 `dev.gatebase`). `tree_state.py` -> `dev.treedirt` is designed and deliberately NOT started:
@@ -175,7 +175,7 @@ of a base is not an error, it is a wider base.**
 
 The ruff hook failed; pre-commit's stash/restore left the working tree **clean at HEAD** with three
 files of finished work gone and `git status` showing nothing. Recovered from
-`C:\Users\ezxmb14\.cache\pre-commit\patch1789689677-17872`.
+`<home>/.cache\pre-commit\patch1789689677-17872`.
 
 **It also produced a false MEASUREMENT**: density was re-read on the silently-reverted file and
 returned `own=20`, which is the ORIGINAL file's number. A measurement taken after a silent revert
