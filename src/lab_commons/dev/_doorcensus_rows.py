@@ -84,7 +84,7 @@ DOORS: tuple[DoorRow, ...] = (
     DoorRow(
         repo='wdg-lab',
         path='Makefile',
-        commands=18,
+        commands=17,
         deliveries=frozenset({'INERT', 'RESOLVES'}),
         why=(
             'The door everybody suspected of the three reverts on 2026-09-17 and the one that was '
@@ -92,7 +92,11 @@ DOORS: tuple[DoorRow, ...] = (
             'bare git URL every time and therefore cannot serve a lock. Pinned RESOLVES rather than '
             'left alone, because the one-character change from `uv pip install` to `uv sync` is the '
             'edit a reader makes when a sync looks tidier, and it would revert the kit silently. '
-            'Re-measured 2026-10-01 at 18 commands, the delivery set unchanged.'
+            'Re-measured 2026-10-01 at 18 commands, the delivery set unchanged. Re-measured again '
+            '2026-10-01 at 17 after this repo`s `1fe77eb4`: the two `uvx pre-commit install` lines and '
+            'their echo became one `python -m lab_commons.dev.hook_install --install`, and '
+            '`setup-hooks` now runs after the deps via `$(MAKE) setup-hooks` -- one fewer command, '
+            'no new door, the delivery set unchanged.'
         ),
     ),
     DoorRow(
