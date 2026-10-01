@@ -234,6 +234,7 @@ def test_two_builds_at_one_version_both_reach_pip_as_a_forced_reinstall(tmp_path
     assert len(argvs) == 2, 'the floor: two builds, or the hazard was never planted'
     assert len({argv[-1] for argv in argvs}) == 1, 'both builds must name ONE wheel path and version'
     for argv in argvs:
-        assert '--force-reinstall' in argv, f'pip would skip this install and exit zero: {argv}'
+        reinstall = '--force-reinstall' if argv[1:3] == ('-m', 'pip') else '--reinstall'  # uv's spelling
+        assert reinstall in argv, f'pip would skip this install and exit zero: {argv}'
         assert '--no-index' in argv, 'forcing must not have loosened the pin'
         assert '--no-deps' in argv, 'forcing must not have loosened the pin'

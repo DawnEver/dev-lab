@@ -158,7 +158,7 @@ def assert_this_repo_supplies_both_halves_of_the_door(
         )
         raise AssertionError(msg)
     rendered = report.render()
-    if repo_name not in rendered or '-m pip install' not in rendered:
+    if repo_name not in rendered or ' pip install ' not in rendered:  # `-m pip` or `uv pip`
         msg = (
             f'the report does not say who changed what -- expected {repo_name!r} and the pip '
             f'command in:\n{rendered}\nA reader deciding whether to stop their own run has only '
