@@ -37,4 +37,24 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_forgework.py', 'tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
     ),
+    (
+        'VERDICT-AS-STATUS',
+        (
+            'A verdict reaches the forge as a commit STATUS on the exact commit it judged, in a named context, '
+            'carrying the verdict line: PASS is success, FAIL is failure, and INCONCLUSIVE publishes nothing. A '
+            'verdict about a dirty or moving tree names no commit and is not posted, and a failed publish never '
+            'changes the verdict or its exit code.'
+        ),
+        ('tests/test_dev_forgestatus.py', 'tests/test_dev_verify.py'),
+    ),
+    (
+        'ISSUE-IS-INTENT',
+        (
+            'An issue records INTENT only. Its state -- todo, in progress, ready, done -- is DERIVED from the '
+            'refs on origin and the gate status of a lane tip, never kept by hand in a label or a field. A claim '
+            'is a stamped comment naming a branch; conflicting claims are reported for the human, and a chat '
+            'message or an @-mention is a hint, never a trigger.'
+        ),
+        ('tests/test_dev_forgeissue.py',),
+    ),
 )

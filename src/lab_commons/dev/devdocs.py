@@ -119,6 +119,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'How `main` is protected on a self-hosted forge: the push whitelist, the status check, branch disposal',
     ),
     Page(
+        'issues',
+        'Issues',
+        'An issue is intent; todo/in-progress/ready/done are derived from origin refs and `lab/gate`, claims are comments',
+    ),
+    Page(
         'retirement',
         'Retirement',
         'An archive and a retired-spelling registry are a PLACE and a RULE, and why the rule cannot live in the place',

@@ -57,6 +57,7 @@ _IDS = frozenset(
         'IMPLEMENT-EVERYTHING',
         'INJECTED-DOC-WIDTH-CEILING',
         'INSTALL-DOOR-DELIVERS-THE-DECLARATION',
+        'ISSUE-IS-INTENT',
         'LATEST-DEPENDENCIES',
         'MEMORY-SHAPE',
         'MODULE-SIZE-ALARM',
@@ -77,6 +78,7 @@ _IDS = frozenset(
         'TOLERANCE-CARRIES-A-UNIT',
         'UNSUPPORTED-RAISES',
         'UNITS-GO-THROUGH-PINT',
+        'VERDICT-AS-STATUS',
         'VERDICT-BAR-IS-THE-INCREMENT',
         'XFAIL-NOT-SKIP',
     }

@@ -91,6 +91,10 @@ _ENFORCED = {
         guard('tests/test_dev_hooks.py'),
         guard('tests/test_dev_agenthooks.py'),
     ),
+    # The two coordination rules are enforced by the doors that implement them: the status door and
+    # verify's publish for VERDICT-AS-STATUS, the derived-state door for ISSUE-IS-INTENT.
+    'VERDICT-AS-STATUS': (guard('tests/test_dev_forgestatus.py'), guard('tests/test_dev_verify.py')),
+    'ISSUE-IS-INTENT': (guard('tests/test_dev_forgeissue.py'),),
     'FLOOR-ON-EVERY-SCAN': (
         guard('tests/test_arch_every_scan_binds_a_floor.py'),
         guard('tests/_arch_corpus.py'),

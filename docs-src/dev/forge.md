@@ -27,10 +27,13 @@
 - **What it does:** the server refuses any `main` update whose commit does not carry a green status in a NAMED context, so the rule stops depending on what each client happens to run.
 - Configuration, in order:
 1. Enable the status check on the branch protection rule for `main`.
-2. Name the required context, one per repo.
+2. Name the required context, one per repo: `lab/heavy`.
 3. Grant the integrator a personal access token with write scope.
 4. After a heavy run, the integrator POSTs the verdict as a commit status against that context, with the verdict line as the description.
-- **Do not enable the status check before steps 3 and 4 exist.** A required context that nothing ever publishes can never go green, which blocks `main` for everyone including the human. Measured hazard, not hypothetical — this is why the check was turned off again on 2026-08-27.
+- **Steps 3 and 4 now exist; steps 1 and 2 are a separate, human-confirmed forge change.** Step 3 is `auth login` below. Step 4 is the door `python -m lab_commons.dev.forge status post <sha> --context <ctx> --state success|failure|pending --description <text>` (and `status list <sha>`, latest per context), on Gitea and GitHub alike. Its writes carry no provenance line: a status description is the machine verdict line, cut to the 140-character forge limit.
+- **The two contexts.** `lab/gate` is a lane's own gate verdict, posted by the dev agent; `lab/heavy` is the integrator's heavy verdict and is the one `main` protection names. PASS posts `success`, FAIL posts `failure`, and **INCONCLUSIVE posts nothing** — an absent status is exactly what an unjudged commit has.
+- **`python -m lab_commons.dev.verify` publishes `lab/gate` by itself** after a judged run, on HEAD, and only when the tree was clean before and after the run and HEAD did not move: a verdict about a dirty tree is about no commit. No credential or no `origin` skips with one line, a refused post prints one line, and neither changes the verdict or the exit code. `--no-status` opts out. A heavy runner publishes `lab/heavy` the same way, by calling `lab_commons.dev.forgestatus.publish` with `context=HEAVY_CONTEXT`.
+- **Do not enable the status check before a real `lab/heavy` status exists on `main`'s tip.** A required context that nothing ever publishes can never go green, which blocks `main` for everyone including the human. Measured hazard, not hypothetical — this is why the check was turned off again on 2026-08-27. Enabling it is a forge setting and is the human's to confirm.
 
 ## Branch deletion after a merge
 
@@ -40,7 +43,7 @@
 
 ## Issues and pull requests — `python -m lab_commons.dev.forge`
 
-- **Agents collaborate through these verbs and nothing else; no `gh` or `tea` binary is needed.** `lab_commons.dev.forgework` speaks the REST API directly: `issue list [--state open|closed|all] [--limit N]`, `issue view N`, `issue create --title T [--body B]`, `issue comment N --body B`, `issue close N`, `pr create --title T --head H --base B [--body B]`, `pr view N`. Every verb takes `--json`; the result is the same `Issue` / `Comment` / `PullRequest` shape whichever forge answered.
+- **Agents collaborate through these verbs and nothing else; no `gh` or `tea` binary is needed.** `lab_commons.dev.forgework` speaks the REST API directly: `issue list [--state open|closed|all] [--limit N]`, `issue view N`, `issue create --title T [--body B]`, `issue comment N --body B`, `issue close N`, `pr create --title T --head H --base B [--body B]`, `pr view N`; plus `issue claim N` / `issue status N` (see [issues](issues.md)) and `status post|list` (layer C above). Every verb takes `--json`; the result is the same `Issue` / `Comment` / `PullRequest` shape whichever forge answered.
 - **The backend is read off `origin`**: host `github.com` is GitHub REST (`api.github.com`), every other host is the Gitea-shaped forge this page configures (`<host>/api/v1`). Nothing is configured per repo.
 - **Auth, per machine, never on disk in a repo**: the forge's environment variable first — `GITEA_TOKEN` for Gitea, `GH_TOKEN` then `GITHUB_TOKEN` for GitHub — else the credential the git transport already holds for that host (`git credential fill`, the layer-A route). That credential is sent as a TOKEN header, so it must be a personal access token: a stored account password authenticates the transport but newer Gitea refuses it for the API. `auth login` below is how it becomes one.
 
