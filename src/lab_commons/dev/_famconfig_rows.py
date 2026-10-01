@@ -164,11 +164,26 @@ HOOK_ID_CORE: Final[tuple[str, ...]] = (
     'commitizen',
     'debug-statements',
     'end-of-file-fixer',
+    'issue-ref',
     'mixed-line-ending',
     'trailing-whitespace',
 )
 
-#: The base as YAML BODY LINES. Two upstream repos, one pin each, the 11 core ids.
+#: The base as YAML BODY LINES. Two upstream repos, one pin each, the 11 measured core ids -- plus
+#: `issue-ref`, the twelfth, which was never measured in a consumer because the family WROTE it
+#: (2026-10-01, the approved issue design): a commit-msg check that WARNS on a malformed
+#: `Refs #N` / `Closes #N` / `Fixes #N` and never blocks. It runs `lab-issue-ref` in pre-commit's own
+#: environment rather than through `lab-with-venv`, because that launcher exits 1 with no venv and
+#: "never blocks" has to hold on a fresh clone -- see :mod:`lab_commons.dev.issueref`. `verbose` is
+#: load-bearing: pre-commit hides a PASSING hook's output, and this hook only ever passes.
+#:
+#: THE BLOCK IS INDENTED TWO LESS THAN EVERY OTHER HOOK ON PURPOSE (a sequence at its key's own
+#: column is valid YAML). At the usual depth its attribute lines -- `language: python`,
+#: `verbose: true`, `stages: [commit-msg]` -- are byte-equal to lines consumer deltas already carry,
+#: so each such delta would read as RE-STATING the base and `stages: [commit-msg]` would stop being a
+#: unique anchor: measured 2026-10-01, three refusals from one consumer's delta. A flow-style one-line
+#: spelling was tried first and rejected, because every hook-id reader in the family matches
+#: `- id: <name>` at the start of a line.
 #:
 #: THE PINS ARE THE NEWEST MEASURED, and choosing is the point: the three consumers hold
 #: `pre-commit-hooks` at v6.0.0 / v5.0.0 / v5.0.0 and `commitizen` at v4.13.9 / v4.6.0 / v4.6.0, and
@@ -211,6 +226,16 @@ PRECOMMIT_BASE: Final[tuple[str, ...]] = (
     '    hooks:',
     '      - id: commitizen',
     '        stages: [commit-msg]',
+    '',
+    '  - repo: local',
+    '    hooks:',
+    '    - id: issue-ref',
+    '      name: issue references are well-formed (warns, never blocks)',
+    '      entry: lab-issue-ref',
+    '      language: python',
+    "      additional_dependencies: ['lab-commons @ git+https://github.com/DawnEver/lab-commons.git']",
+    '      stages: [commit-msg]',
+    '      verbose: true',
 )
 
 # ---------------------------------------------------------------------------------- Makefile

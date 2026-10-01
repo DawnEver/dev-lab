@@ -342,7 +342,8 @@ MAKE_TARGET_CORE: tuple[str, ...] = (
 #: complete set lab-commons declares, because the kit adopted the family base with an EMPTY delta
 #: (`tests/_famconfig_delta.py`). So this tuple is no longer "the shared part of three files"; it is
 #: the shared part of three files and the whole of a fourth, which is what a base looks like once
-#: the repo that publishes it runs it.
+#: the repo that publishes it runs it. TWELVE since 2026-10-01: the base gained `issue-ref`, the
+#: commit-msg issue-reference check, and all four repos render it.
 HOOK_ID_CORE: tuple[str, ...] = (
     'check-added-large-files',
     'check-ast',
@@ -353,6 +354,7 @@ HOOK_ID_CORE: tuple[str, ...] = (
     'commitizen',
     'debug-statements',
     'end-of-file-fixer',
+    'issue-ref',
     'mixed-line-ending',
     'trailing-whitespace',
 )

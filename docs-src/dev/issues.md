@@ -10,6 +10,7 @@
 - **`fix/<N>-<slug>` is ONE issue, by name.** The branch name alone links it; a `Refs #N` commit is still welcome.
 - **`Closes #N` goes on the commit that LANDS the change** — it is what moves the issue to done when it reaches the default branch, and the forge closes the issue itself when that commit is pushed there.
 - Every commit message stays a conventional commit; the reference lives in the body, never in the subject.
+- **A malformed reference is WARNED about at `commit-msg`, never refused.** The family base's `issue-ref` hook (`lab_commons.dev.issueref`) names `Refs#12`, `closes 12` or `#12abc` — spellings the derivation cannot see — and lets the commit through; add a follow-up `Refs #N` if it matters.
 
 ## Claims
 

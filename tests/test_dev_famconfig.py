@@ -414,7 +414,7 @@ def _nested() -> Delta:
 def test_the_precommit_base_really_does_repeat_its_structural_lines() -> None:
     """THE FLOOR UNDER THE WHOLE SECTION. Finding no collision would make every arm below vacuous."""
     base = _precommit()
-    assert base.lines.count('    hooks:') == 2, base.lines
+    assert base.lines.count('    hooks:') == 3, base.lines
     assert base.lines.count('') >= 1, 'no blank base line, so the content_lines distinction has no subject'
     assert base.lines.count(_ID_ANCHOR) == 1, 'the id anchor is not unique, so anchoring on it is ambiguous'
     assert base.lines.count(_TW_ANCHOR) == 1, 'the trailing-whitespace anchor is not unique'
@@ -484,7 +484,7 @@ def test_an_anchor_naming_a_line_the_base_does_not_have_is_refused() -> None:
 def test_an_ambiguous_anchor_is_refused_by_count() -> None:
     """A base line that occurs twice names no position, and silently picking one is a coin flip."""
     delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={'    hooks:': ('      - id: x',)})
-    with pytest.raises(ForkedDelta, match='2 times'):
+    with pytest.raises(ForkedDelta, match='3 times'):
         render(_precommit(), delta)
 
 
