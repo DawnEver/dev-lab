@@ -12,6 +12,7 @@ than skipped.
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +28,7 @@ from lab_commons.dev.dep import (
     Port,
     Version,
     current_env_key,
+    has_pip,
     mutate,
     pip_argv,
     refuse_if_locked,
@@ -162,9 +164,39 @@ def test_a_declared_but_empty_anchor_set_is_not_the_same_as_undeclared() -> None
     assert NO_ANCHORS_DECLARED not in report.render()
 
 
+def _has_pip_stub(_python: str) -> bool:
+    return True
+
+
+def _no_pip_stub(_python: str) -> bool:
+    return False
+
+
+def test_a_venv_without_pip_installs_through_uv_into_that_same_interpreter() -> None:
+    """A uv-created venv has no pip, so `-m pip` cannot install into it; `uv pip --python` can."""
+    argv = pip_argv(_REQS, mode=Mode.PINNED, version=Version.REPEATS, python='venv/py', pip=_no_pip_stub, uv='uv')
+    assert argv[:5] == ('uv', 'pip', 'install', '--python', 'venv/py'), 'the TARGET is still the measured interpreter'
+    assert '--no-index' in argv
+    assert '--no-deps' in argv
+    assert '--reinstall' in argv, "uv spells pip's --force-reinstall as --reinstall"
+    assert '--force-reinstall' not in argv
+    assert pip_argv(_REQS, python='venv/py', pip=_has_pip_stub, uv='uv')[:4] == ('venv/py', '-m', 'pip', 'install')
+
+
+def test_no_pip_and_no_uv_keeps_the_pip_spelling_so_the_failure_is_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('PATH', '')
+    assert pip_argv(_REQS, python='venv/py', pip=_no_pip_stub)[:3] == ('venv/py', '-m', 'pip')
+
+
+def test_the_pip_probe_answers_for_a_real_interpreter() -> None:
+    """The invoking interpreter is answered in-process; a path that is no interpreter has no pip."""
+    assert has_pip(sys.executable) == (importlib.util.find_spec('pip') is not None)
+    assert has_pip('definitely-not-a-python-binary') is False
+
+
 def test_resolution_is_the_default_and_pinned_is_the_narrow_mode() -> None:
-    resolving = pip_argv(_REQS, mode=Mode.RESOLVE, python='py')
-    pinned = pip_argv(_REQS, mode=Mode.PINNED, python='py')
+    resolving = pip_argv(_REQS, mode=Mode.RESOLVE, python='py', pip=_has_pip_stub)
+    pinned = pip_argv(_REQS, mode=Mode.PINNED, python='py', pip=_has_pip_stub)
     assert '--no-index' not in resolving, 'a dependency change that cannot resolve is not a dependency change'
     assert '--no-deps' not in resolving
     assert '--no-index' in pinned
@@ -180,12 +212,14 @@ def test_a_repeating_version_forces_a_reinstall_and_an_identifying_one_never_doe
     so a self-build needs the flag. Every other install must NOT get it: forcing a published
     dependency reinstalls bytes that are already correct, on every call.
     """
-    repeats = pip_argv(_REQS, mode=Mode.PINNED, version=Version.REPEATS, python='py')
+    repeats = pip_argv(_REQS, mode=Mode.PINNED, version=Version.REPEATS, python='py', pip=_has_pip_stub)
     assert '--force-reinstall' in repeats
     for mode in Mode:
-        identifies = pip_argv(_REQS, mode=mode, version=Version.IDENTIFIES, python='py')
+        identifies = pip_argv(_REQS, mode=mode, version=Version.IDENTIFIES, python='py', pip=_has_pip_stub)
         assert '--force-reinstall' not in identifies, f'{mode} forced a reinstall nobody asked for'
-        assert pip_argv(_REQS, mode=mode, python='py') == identifies, 'IDENTIFIES must be the default'
+        assert pip_argv(_REQS, mode=mode, python='py', pip=_has_pip_stub) == identifies, (
+            'IDENTIFIES must be the default'
+        )
     assert len(list(Mode)) == 2, 'the floor: this scan must cover every mode there is'
 
 
@@ -201,7 +235,9 @@ def test_the_argv_the_report_declares_is_the_argv_the_child_was_given() -> None:
     report = mutate(_REQS, port=port, mode=Mode.PINNED, version=Version.REPEATS, run=run)
     assert len(run.calls) == 1, 'the floor: a scan over no call is vacuous'
     assert run.calls[0] == report.argv
-    assert '--force-reinstall' in report.render(), 'a flag absent from the rendered command is unread'
+    reinstall = '--force-reinstall' if report.argv[1:3] == ('-m', 'pip') else '--reinstall'
+    assert reinstall in report.argv, 'pip and uv each get their own spelling of the reinstall'
+    assert reinstall in report.render(), 'a flag absent from the rendered command is unread'
 
 
 def test_a_dry_run_checks_everything_and_mutates_nothing(tmp_path: Path) -> None:

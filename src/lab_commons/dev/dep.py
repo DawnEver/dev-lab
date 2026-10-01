@@ -59,6 +59,8 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 
 from __future__ import annotations
 
+import importlib.util
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -79,6 +81,7 @@ __all__ = [
     'Report',
     'Version',
     'current_env_key',
+    'has_pip',
     'mutate',
     'pip_argv',
     'refuse_if_locked',
@@ -225,26 +228,52 @@ def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
     return tuple(str(path) for path in retired)
 
 
+def has_pip(python: str) -> bool:
+    """Whether *python* can run ``-m pip``. A uv-created venv cannot: uv seeds no pip into it.
+
+    The invoking interpreter is answered in-process; any other is asked, because a venv's packages
+    are a fact about THAT interpreter and not about this one.
+    """
+    if python == sys.executable:
+        return importlib.util.find_spec('pip') is not None
+    try:
+        done = subprocess.run([python, '-c', 'import pip'], capture_output=True, timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0
+
+
 def pip_argv(
     requirements: Sequence[str],
     *,
     mode: Mode = Mode.RESOLVE,
     version: Version = Version.IDENTIFIES,
     python: str | None = None,
+    pip: Callable[[str], bool] = has_pip,
+    uv: str | None = None,
 ) -> tuple[str, ...]:
-    """The command that performs the change, through the INVOKING interpreter's own pip.
+    """The command that performs the change, into the INVOKING interpreter's environment.
 
     ``sys.executable -m pip`` rather than a bare ``pip`` on ``PATH``: the door's whole claim is about
     the environment it measured, and a ``pip`` resolved from ``PATH`` can belong to a different one.
+    WHEN THAT INTERPRETER HAS NO PIP -- every uv-created venv -- the same install goes through
+    ``uv pip install --python <that interpreter>``, which targets the same environment by name; *uv*
+    is the uv binary (default: found on ``PATH``). With neither, the pip spelling is returned and
+    fails loudly, which is the honest report of an environment nothing here can install into.
 
     THIS IS THE ONE PLACE THE ARGV IS DECIDED, and every flag is derived from a DECLARED enum member
     rather than from a caller's opinion -- which is what makes :attr:`Report.argv` able to be the
     whole truth. A caller that wants a flag declares the FACT that implies it; there is no free-text
     extras parameter, because an argv assembled in two places cannot be reported from one.
     """
+    target = python or sys.executable
     flags = ('--no-index', '--no-deps') if mode is Mode.PINNED else ()
+    uv_binary = None if pip(target) else uv or shutil.which('uv')
+    if uv_binary is not None:
+        forced = ('--reinstall',) if version is Version.REPEATS else ()
+        return (uv_binary, 'pip', 'install', '--python', target, *flags, *forced, *requirements)
     forced = ('--force-reinstall',) if version is Version.REPEATS else ()
-    return (python or sys.executable, '-m', 'pip', 'install', *flags, *forced, *requirements)
+    return (target, '-m', 'pip', 'install', *flags, *forced, *requirements)
 
 
 @dataclass(frozen=True, slots=True)
