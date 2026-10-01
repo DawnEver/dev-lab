@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
@@ -59,14 +60,19 @@ class _Recorder(BaseHTTPRequestHandler):
     """Records every request and answers from a table of ``(method, path) -> (status, payload)``."""
 
     received: ClassVar[list[dict[str, Any]]] = []
-    answers: ClassVar[dict[tuple[str, str], list[tuple[int, Any]]]] = {}
+    answers: ClassVar[dict[tuple[str, str], list[tuple[int | None, Any]]]] = {}
 
     def _serve(self, method: str) -> None:
         length = int(self.headers.get('Content-Length') or 0)
         body = json.loads(self.rfile.read(length)) if length else None
         type(self).received.append({'method': method, 'path': self.path, 'body': body, 'headers': dict(self.headers)})
-        queue = type(self).answers.get((method, self.path)) or [(404, {'message': 'not found'})]
+        answers = type(self).answers
+        found = answers.get((method, self.path)) or answers.get((method, self.path.split('?')[0]))
+        queue = found or [(404, {'message': 'not found'})]
         status, payload = queue.pop(0) if len(queue) > 1 else queue[0]
+        if status is None:  # APPLIED, then the response is lost: the connection drops unanswered
+            self.close_connection = True
+            return
         encoded = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
@@ -148,7 +154,7 @@ def _client(forge: Forge, transport: _Loopback, *, stamp: str | None = None) -> 
     return Client(forge, 'T', transport=transport, stamp=stamp, sleep=lambda _s: None)
 
 
-def _answer(method: str, path: str, *replies: tuple[int, Any]) -> None:
+def _answer(method: str, path: str, *replies: tuple[int | None, Any]) -> None:
     _Recorder.answers[(method, path)] = list(replies)
 
 
@@ -266,6 +272,72 @@ def test_a_failure_that_never_clears_stops_at_the_bound(server) -> None:
         _client(Forge('f.example', 'o', 'r'), _Loopback(server)).issue_view(7)
     assert caught.value.report.disposition is Disposition.EXHAUSTED
     assert len(_Recorder.received) == 3
+
+
+# --------------------------------------------------------------------------------------------
+# a create whose response was LOST is not created twice
+
+
+_DROPPED = (None, None)
+_ME = (200, {'login': 'alice'})
+
+
+def _ago(seconds: float) -> str:
+    return (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
+
+
+def _posts(path: str) -> int:
+    return sum(1 for r in _Recorder.received if r['method'] == 'POST' and r['path'] == path)
+
+
+@pytest.mark.parametrize(('forge', 'host', 'root', 'auth'), CASES)
+def test_an_issue_that_landed_before_its_response_was_lost_is_returned_not_recreated(
+    server, forge, host, root, auth
+) -> None:
+    del host, auth  # the shared case table; only the API root differs for this claim
+    landed = {**_ISSUE, 'created_at': _ago(20)}
+    _answer('POST', f'{root}/issues', _DROPPED, (201, {**_ISSUE, 'number': 8}))
+    _answer('GET', f'{root.split("/repos/")[0]}/user', _ME)
+    _answer('GET', f'{root}/issues', (200, [{**landed, 'number': 6, 'title': 'other'}, landed]))
+    assert _client(forge, _Loopback(server)).issue_create('a bug', 'it broke') == _NORMAL_ISSUE
+    assert _posts(f'{root}/issues') == 1, 'the retry re-created an issue the server had already applied'
+
+
+def test_a_comment_and_a_pr_that_landed_are_returned_not_recreated(server) -> None:
+    root = '/api/v1/repos/o/r'
+    comment = {'id': 3, 'body': '[m · a]\n\nhi', 'html_url': 'u', 'user': {'login': 'alice'}, 'created_at': _ago(5)}
+    _answer('POST', f'{root}/issues/7/comments', _DROPPED, (201, {**comment, 'id': 4}))
+    _answer('POST', f'{root}/pulls', _DROPPED, (201, {**_PR, 'number': 10}))
+    _answer('GET', '/api/v1/user', _ME)
+    _answer('GET', f'{root}/issues/7/comments', (200, [comment]))
+    _answer('GET', f'{root}/pulls', (200, [{**_PR, 'body': '[m · a]\n\nfixes it', 'created_at': _ago(5)}]))
+    client = _client(Forge('f.example', 'o', 'r'), _Loopback(server), stamp='[m · a]')
+    assert client.issue_comment(7, 'hi').id == 3
+    assert client.pr_create('a fix', 'fixes it', head='feature', base='main').number == 9
+    assert _posts(f'{root}/issues/7/comments') == 1
+    assert _posts(f'{root}/pulls') == 1
+
+
+def test_a_lost_create_with_no_matching_object_is_retried(server) -> None:
+    """THE CONTROL: an old twin, another author's twin, or a different body is NOT the lost create."""
+    root = '/api/v1/repos/o/r'
+    stale = {**_ISSUE, 'created_at': _ago(3600)}
+    theirs = {**_ISSUE, 'user': {'login': 'bob'}, 'created_at': _ago(5)}
+    edited = {**_ISSUE, 'body': 'it broke badly', 'created_at': _ago(5)}
+    _answer('POST', f'{root}/issues', _DROPPED, (201, _ISSUE))
+    _answer('GET', '/api/v1/user', _ME)
+    _answer('GET', f'{root}/issues', (200, [stale, theirs, edited]))
+    assert _client(Forge('f.example', 'o', 'r'), _Loopback(server)).issue_create('a bug', 'it broke') == _NORMAL_ISSUE
+    assert _posts(f'{root}/issues') == 2
+
+
+def test_a_lost_create_that_cannot_be_checked_is_reported_not_blindly_retried(server) -> None:
+    root = '/api/v1/repos/o/r'
+    _answer('POST', f'{root}/issues', _DROPPED, (201, _ISSUE))
+    _answer('GET', '/api/v1/user', (403, {'message': 'token lacks read:user'}))
+    with pytest.raises(ForgeCallFailed):
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).issue_create('a bug', 'it broke')
+    assert _posts(f'{root}/issues') == 1, 'a create nobody could check for was sent again'
 
 
 # --------------------------------------------------------------------------------------------

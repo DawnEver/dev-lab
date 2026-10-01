@@ -20,7 +20,9 @@ RETRY, THEN REPORT, IN NETVERB'S VOCABULARY. Every call is bounded by
 :class:`~lab_commons.dev.netverb.Report`, so an HTTP failure reads exactly like a failed ``git
 push``. An ANSWERED 4xx is a refusal and is never repeated (a 401, 408 or 429 stays retryable, as the
 table says); a 5xx or a dropped connection is retried. A create whose response was lost may still
-have landed, which is why the attempt count is a ceiling and not a target.
+have landed, so before a create is RETRIED the newest objects are read back and the token's own
+identical one from the last few minutes is returned instead (:mod:`lab_commons.dev._forge_landed`);
+when that read itself fails the create is reported rather than sent blind a second time.
 
 PROVENANCE IS A GENERIC ENVIRONMENT CONTRACT. When ``HARNESS_MACHINE`` and ``HARNESS_AGENT`` are both
 set, every created issue body, PR body and comment opens with ``[<machine> · <agent> · <branch>]``
@@ -38,9 +40,11 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.dev._forge_landed import LOOKBACK, find_landed, since
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Forge, Transport, forge_from_remote, https_transport, token_for
 from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 from lab_commons.log import emit
@@ -74,6 +78,9 @@ _HTTP_SERVER_FLOOR: Final = 500
 #: 4xx statuses that are NOT a refusal of the request itself: timeout and rate limit clear by waiting.
 _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
 
+#: A create's read-back before a retry -- its own landed object, or ``None`` -- or no read-back at all.
+_Found = Callable[[], Any] | None
+
 #: The separator in the provenance line, spelled once.
 _DOT: Final = ' · '
 
@@ -98,6 +105,7 @@ class Backend:
     token_vars: tuple[str, ...]
     fixed_host: str | None = None
     headers: tuple[tuple[str, str], ...] = ()
+    page_param: str = 'limit'
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -123,6 +131,7 @@ GITHUB: Final = Backend(
     list_query='state={state}&per_page={limit}',
     token_vars=('GH_TOKEN', 'GITHUB_TOKEN'),
     fixed_host='api.github.com',
+    page_param='per_page',
     headers=(
         ('Accept', 'application/vnd.github+json'),
         ('X-GitHub-Api-Version', '2022-11-28'),
@@ -244,6 +253,7 @@ class Client:
     stamp: str | None = None
     sleep: Callable[[float], None] = time.sleep
     timeout: float = 30.0
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     @property
     def backend(self) -> Backend:
@@ -265,7 +275,7 @@ class Client:
     def _repo(self) -> str:
         return self.backend.repo_path(self.forge)
 
-    def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:  # noqa: ANN401 -- JSON
+    def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
         data = json.dumps(dict(body)).encode() if body is not None else None
         made: list[Attempt] = []
         for index in range(1, DEFAULT_ATTEMPTS + 1):
@@ -281,7 +291,21 @@ class Client:
                 break
             if index < DEFAULT_ATTEMPTS:
                 self.sleep(DEFAULT_BACKOFF_S)
+                if landed is not None:
+                    try:
+                        found = landed()
+                    except ForgeCallFailed:
+                        break  # whether it landed is unknowable, and a blind retry may duplicate it
+                    if found is not None:
+                        return found
         raise ForgeCallFailed(Report((method, path), tuple(made), DEFAULT_ATTEMPTS))
+
+    def _landed(self, path: str, **fields: str) -> Callable[[], Any]:
+        """The read a create runs before each retry: its own object, if the lost attempt landed."""
+        return lambda: find_landed(self._call('GET', path), login=self.whoami(), fields=fields, now=self.clock())
+
+    def _recent(self, collection: str) -> str:
+        return f'{self._repo}/{collection}?state=all&{self.backend.page_param}={LOOKBACK}'
 
     def _stamped(self, text: str) -> str:
         return text if self.stamp is None else f'{self.stamp}\n\n{text}'
@@ -302,11 +326,15 @@ class Client:
 
     def issue_create(self, title: str, body: str) -> Issue:
         """A new issue; the body carries the provenance line."""
-        return _issue(self._call('POST', f'{self._repo}/issues', {'title': title, 'body': self._stamped(body)}))
+        payload = {'title': title, 'body': self._stamped(body)}
+        recent = self._landed(self._recent('issues'), **payload)
+        return _issue(self._call('POST', f'{self._repo}/issues', payload, recent))
 
     def issue_comment(self, number: int, body: str) -> Comment:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
-        return _comment(self._call('POST', f'{self._repo}/issues/{number}/comments', {'body': self._stamped(body)}))
+        path, payload = f'{self._repo}/issues/{number}/comments', {'body': self._stamped(body)}
+        recent = self._landed(f'{path}?since={since(self.clock())}', **payload)
+        return _comment(self._call('POST', path, payload, recent))
 
     def issue_close(self, number: int) -> Issue:
         """Close an issue; nothing is written but the state."""
@@ -315,7 +343,8 @@ class Client:
     def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
         """A new pull request from *head* into *base*."""
         payload = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
-        return _pull(self._call('POST', f'{self._repo}/pulls', payload))
+        recent = self._landed(self._recent('pulls'), title=title, body=payload['body'])
+        return _pull(self._call('POST', f'{self._repo}/pulls', payload, recent))
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""

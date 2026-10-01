@@ -67,7 +67,7 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
-        'def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:',
+        'def _call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:',
     ): 'the ONE door every REST verb goes through returns parsed JSON, whose shape is the endpoint; each '
     'verb normalizes it into a typed Issue/Comment/PullRequest immediately',
     (
