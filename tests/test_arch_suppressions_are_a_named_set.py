@@ -415,6 +415,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'S607',
         "['git', '-C', str(root), *args],",
     ): 'the same resolution for the ls-tree that lists the blobs that batch then reads',
+    (
+        'src/lab_commons/dev/privatemarkers.py',
+        'S607',
+        "done = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)",
+    ): 'git through PATH listing exactly what a push publishes; an absolute path is wrong on every box',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

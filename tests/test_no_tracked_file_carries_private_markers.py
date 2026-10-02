@@ -1,6 +1,6 @@
 """A published repo: no tracked file may name a machine, a person, a home path or a chat id.
 
-The scan is `tests/_private_markers.py`; it runs under `make verify` (and so in CI) because verify
+The scan is the kit's `lab_commons.dev.privatemarkers`; it runs under `make verify` (and so in CI) because verify
 runs this suite. The machine-local denylist `~/.claude/private-markers` adds this host's private
 values without committing them.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._private_markers import load_markers, scan_text, scan_tree
+from lab_commons.dev.privatemarkers import load_markers, scan_text, scan_tree
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -76,3 +76,35 @@ def test_only_the_declared_authorship_lines_may_name_the_author(tmp_path: Path) 
     assert scan_text('Copyright (c) 2026 Jane Author', compiled, path='README.md')
     assert scan_text('# by Jane Author', compiled, path='pyproject.toml')
     assert scan_text('authors = [{ name = "J", email = "j' + '@uni.ac.uk" }]', (), path='pyproject.toml')
+
+
+def test_the_apache_appendix_copyright_line_is_an_authorship_line(tmp_path: Path) -> None:
+    """Apache-2.0's appendix indents the notice; the shape is the same line, and only in LICENSE."""
+    markers = tmp_path / 'private-markers'
+    markers.write_text('Jane Author\n', encoding='utf-8')
+    compiled = load_markers(markers)
+    assert scan_text('   Copyright (c) 2026 Jane Author', compiled, path='LICENSE') == []
+    assert scan_text('   Copyright (c) 2026 Jane Author', compiled, path='NOTICE.md')
+
+
+def test_a_name_the_repo_publishes_on_purpose_is_masked_and_nothing_else_is(tmp_path: Path) -> None:
+    """A published repo's OWN name cannot be private to it; a marker inside that name still fires elsewhere."""
+    markers = tmp_path / 'private-markers'
+    markers.write_text('some\n/other[-_]repo/\nSecretHost\n', encoding='utf-8')
+    compiled = load_markers(markers)
+    public = ('some-repo', 'other_repo')
+    assert scan_text('some-repo and OTHER_REPO', compiled, public=public) == []
+    assert scan_text('some-repo by some person', compiled, public=public) == [(1, 'private marker', '<redacted>')]
+    assert scan_text('other-repo', compiled, public=public) == [(1, 'private marker', '<redacted>')]
+
+
+def test_a_home_named_after_a_public_name_is_a_service_account_and_not_a_person() -> None:
+    """``/home/<repo>`` is a deploy user named after the published repo; any other home still reds."""
+    assert scan_text('cd /' + 'home/some-repo/lib', public=('some-repo',)) == []
+    assert scan_text('cd /' + 'home/someone/lib', public=('some-repo',))
+
+
+def test_a_diff_marker_before_a_decorator_is_not_an_address() -> None:
+    """A local part needs a letter or digit first: ``+@pytest.mark`` is a diff line, not an e-mail."""
+    assert scan_text('+@pytest' + '.mark.parametrize') == []
+    assert scan_text('x+tag@' + 'uni.ac.uk')

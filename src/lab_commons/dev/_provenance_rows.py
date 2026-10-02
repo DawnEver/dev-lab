@@ -139,6 +139,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # Both named by `netverb`'s docstring as the vacuum it closes, and both ADOPTED it on 2026-09-17
     # while staying: consumer-b's roster carries one as SPLITS and the other as STAYS.
     'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/consumer-b-update.sh'),
+    # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
+    # consumer held a copy, which is why each published one had no guard at all.
+    'privatemarkers': ('original',),
     'profile': ('original',),
     'quantity_values': ('original',),
     # `supersedes` AND NOT `adopted_by`, and the distinction is load-bearing here: the whole of
