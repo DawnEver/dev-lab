@@ -74,6 +74,10 @@ dev = [
     "pre-commit",
 ]
 
+# THE FAMILY PLACEMENT MAP (`lab_commons.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
+[tool.lab_commons.placement]
+code_roots = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

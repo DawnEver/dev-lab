@@ -14,28 +14,54 @@ TWO RULES, ONE MODULE, because the second is the exit from the first:
   time, then is either PROMOTED into the function that owns its behaviour or ARCHIVED as evidence
   beside that day's memory (``<memory>/<yyyy>/<mm>/<dd>/attachments/``) with its reason recorded.
 
-THE ROOTS, THE SCRATCH DIRECTORY AND THE MEMORY ROOT ARE THE REPO'S ANSWER AND HAVE NO DEFAULT --
-the same stance as :mod:`lab_commons.dev.datedlog`: the family's repos lay out differently, and a
-default here would hand one repo's layout to the others while looking like a convention.
+THE PLACEMENT MAP IS THE FAMILY'S, THE EXTRA ROOTS ARE THE REPO'S (user ruling 2026-10-02). Every
+file kind has ONE home, :data:`FAMILY_HOMES`; the homes that hold code are :data:`FAMILY_CODE_ROOTS`.
+A repo declares ONLY what it adds, in ONE place -- ``[tool.lab_commons.placement]`` of its
+``pyproject.toml``, read by :func:`declared_placement`::
+
+    [tool.lab_commons.placement]
+    code_roots = ['rust/', 'attic/']        # the repo's own roots, beyond the family's
+    pruned_paths = ['.claude/worktrees']    # other checkouts inside this one, judged by their own run
+
+ONE TABLE, ONE PREDICATE, TWO CALLERS. The architecture test calls :func:`declared_misplaced` over
+the tree; the ``PreToolUse`` hook (``python -m lab_commons.dev.codeplace``, wired on
+``Write|Edit|MultiEdit``) calls :func:`refuse_write` on the one path about to be written. Both
+decide through :func:`admits` over the same declaration, so the hook cannot refuse what the test
+admits or the reverse -- the second copy of the rule a hand-written hook would be. The scratch
+directory and the memory root stay the repo's answer to the lifecycle functions, with no default.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
+import json
 import os
 import shutil
+import sys
 import time
+import tomllib
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TextIO
 
 __all__ = [
     'ARCHIVE_DIRECTORY',
     'CODE_SUFFIXES',
+    'FAMILY_CODE_ROOTS',
+    'FAMILY_HOMES',
     'PRUNED_NAMES',
+    'Placement',
+    'PlacementNotDeclared',
+    'admits',
     'archive_scratch',
+    'declared_misplaced',
+    'declared_placement',
+    'main',
     'misplaced_code',
     'overdue_scratch',
     'pending_scratch',
+    'refuse_write',
 ]
 
 #: The file suffixes that are SOURCE CODE -- a language a machine executes or compiles.
@@ -50,10 +76,41 @@ PRUNED_NAMES = frozenset({
     '.git', '.venv', 'venv', 'node_modules', 'target', '__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache',
 })  # fmt: skip
 
+#: THE FAMILY PLACEMENT MAP: every file kind and its ONE home, repo-relative POSIX.
+FAMILY_HOMES: dict[str, str] = {
+    'product source': 'src/',
+    'tests': 'tests/',
+    'repo-development mechanism': 'scripts/',
+    'one-off experiment, probe or verification': 'scratch/',
+    'memory, and archived one-offs': '.claude/memory/',
+    'docs': 'docs-src/',
+    'artefacts': 'output/logs/',
+}
+
+#: The family homes that hold CODE; docs and artefacts are homes, but never for a source file.
+FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
+    FAMILY_HOMES[kind]
+    for kind in (
+        'product source',
+        'tests',
+        'repo-development mechanism',
+        'one-off experiment, probe or verification',
+        'memory, and archived one-offs',
+    )
+)
+
 #: The directory under a day's memory that holds archived one-offs, with an ``INDEX.md`` of reasons.
 ARCHIVE_DIRECTORY = 'attachments'
 _INDEX = 'INDEX.md'
 _SECONDS_PER_DAY = 86400.0
+#: Where a repo declares its delta: ``[tool.lab_commons.placement]`` in this file.
+_MANIFEST = 'pyproject.toml'
+_TABLE = '[tool.lab_commons.placement]'
+
+
+def admits(rel: str, code_roots: tuple[str, ...]) -> bool:
+    """THE ONE PREDICATE: may repo-relative POSIX *rel* live where it is? A non-code file always may."""
+    return Path(rel).suffix.lower() not in CODE_SUFFIXES or rel.startswith(code_roots)
 
 
 def misplaced_code(root: Path, *, code_roots: Iterable[str], pruned_paths: Iterable[str] = ()) -> list[str]:
@@ -80,12 +137,125 @@ def misplaced_code(root: Path, *, code_roots: Iterable[str], pruned_paths: Itera
         rel_dir = Path(current).relative_to(root).as_posix()
         dirs[:] = [d for d in dirs if d not in PRUNED_NAMES and (d if rel_dir == '.' else f'{rel_dir}/{d}') not in skip]
         for name in files:
-            if Path(name).suffix.lower() not in CODE_SUFFIXES:
-                continue
             rel = name if rel_dir == '.' else f'{rel_dir}/{name}'
-            if not rel.startswith(roots):
+            if not admits(rel, roots):
                 found.append(rel)
     return sorted(found)
+
+
+class PlacementNotDeclared(LookupError):
+    """A repo's ``[tool.lab_commons.placement]`` is absent or not the declared shape."""
+
+
+@dataclasses.dataclass(frozen=True)
+class Placement:
+    """A repo's placement: the family code roots plus its own, and the paths not walked."""
+
+    code_roots: tuple[str, ...]
+    pruned_paths: tuple[str, ...] = ()
+
+
+def _strings(table: dict, key: str, manifest: Path) -> tuple[str, ...]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        msg = f'{_TABLE} {key} in {manifest} is {value!r}; it must be a list of repo-relative POSIX paths'
+        raise PlacementNotDeclared(msg)
+    return tuple(value)
+
+
+def declared_placement(root: Path) -> Placement:
+    """The placement *root* declares: :data:`FAMILY_CODE_ROOTS` plus its own ``code_roots``.
+
+    Raises:
+        PlacementNotDeclared: no manifest, no table, or a key that is not a list of strings. An
+            adopter's test calls this, so an undeclared repo is a red rather than a vacuous green.
+
+    """
+    manifest = root / _MANIFEST
+    try:
+        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        raise PlacementNotDeclared(msg) from exc
+    table = data.get('tool', {}).get('lab_commons', {}).get('placement')
+    if not isinstance(table, dict):
+        msg = f'{manifest} declares no {_TABLE}; add it, even empty, to adopt the family placement map'
+        raise PlacementNotDeclared(msg)
+    extra = _strings(table, 'code_roots', manifest)
+    return Placement((*FAMILY_CODE_ROOTS, *extra), _strings(table, 'pruned_paths', manifest))
+
+
+def declared_misplaced(root: Path) -> list[str]:
+    """:func:`misplaced_code` over *root* with the placement *root* declares -- the adopter's scan."""
+    placement = declared_placement(root)
+    return misplaced_code(root, code_roots=placement.code_roots, pruned_paths=placement.pruned_paths)
+
+
+def _home_for(rel: str) -> str:
+    path = Path(rel)
+    if path.name.startswith('test_') or path.stem.endswith('_test') or path.name == 'conftest.py':
+        return FAMILY_HOMES['tests']
+    return (
+        f'{FAMILY_HOMES["product source"]} if it is product code, '
+        f'{FAMILY_HOMES["one-off experiment, probe or verification"]} if it is a one-off experiment, '
+        f'probe or verification (archived or promoted later), {FAMILY_HOMES["repo-development mechanism"]} '
+        f'ONLY if it is repo-development mechanism with no business logic'
+    )
+
+
+def _checkout_root(path: Path) -> Path | None:
+    return next((candidate for candidate in path.parents if (candidate / '.git').exists()), None)
+
+
+def refuse_write(path: Path) -> str | None:
+    """The refusal for writing code at *path*, naming its home; ``None`` when the write is admitted.
+
+    The checkout is the nearest ancestor holding ``.git`` -- a linked worktree's own, so a lane inside
+    the checkout is judged by its own declaration. A path in no checkout, or in one that declares no
+    placement, is not this hook's to judge: the adopter's own test reds on a missing declaration.
+    """
+    target = Path(path).resolve()
+    root = _checkout_root(target)
+    if root is None:
+        return None
+    try:
+        placement = declared_placement(root)
+    except PlacementNotDeclared:
+        return None
+    rel = target.relative_to(root).as_posix()
+    pruned = tuple(f'{p.strip("/")}/' for p in placement.pruned_paths)
+    if PRUNED_NAMES.intersection(rel.split('/')[:-1]) or rel.startswith(pruned) or admits(rel, placement.code_roots):
+        return None
+    homes = ', '.join(f'{kind} -> {home}' for kind, home in FAMILY_HOMES.items())
+    return (
+        f'CODE-IN-CODE-ROOTS: {rel} is a code file outside every declared code root '
+        f'{list(placement.code_roots)}. Its home: {_home_for(rel)}. The family map: {homes}. A repo '
+        f'adds a root only in {_TABLE} code_roots of its {_MANIFEST}, never by writing the file first.'
+    )
+
+
+def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
+    """The ``PreToolUse`` hook on Write/Edit/MultiEdit: deny a misplaced code file, else stay silent.
+
+    A payload naming no path is allowed: the hook judges a PATH, and such a payload names none.
+    """
+    del argv
+    try:
+        payload = json.load(stdin or sys.stdin)
+    except ValueError:
+        return 0
+    tool_input = payload.get('tool_input') if isinstance(payload, dict) else None
+    target = tool_input.get('file_path') if isinstance(tool_input, dict) else None
+    if not isinstance(target, str) or not target:
+        return 0
+    path = Path(target)
+    if not path.is_absolute():
+        path = Path(payload.get('cwd') or Path.cwd()) / path
+    reason = refuse_write(path)
+    if reason is not None:
+        decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}
+        sys.stdout.write(json.dumps({'hookSpecificOutput': decision}) + '\n')
+    return 0
 
 
 def pending_scratch(scratch: Path, *, root: Path, now: float | None = None) -> list[tuple[str, float]]:
@@ -145,3 +315,7 @@ def archive_scratch(
     with index.open('a', encoding='utf-8') as handle:
         handle.write(f'{header}- `{dest.name}` -- {reason} (from `{origin}`)\n')
     return dest
+
+
+if __name__ == '__main__':
+    sys.exit(main())
