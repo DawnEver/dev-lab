@@ -195,7 +195,7 @@ def test_the_marker_check_refuses_source_it_never_read() -> None:
 
 # THE LIVE READING IS THE CONSUMER'S ARM AND IT IS DELIBERATELY NOT HERE, which two of this repo's
 # own guards established rather than an opinion. An `importorskip('xdist.dsession')` was written at
-# this point and the verify run refused it twice over: `_collect_census` measured
+# this point and the verify run refused it twice over: `collectcensus` measured
 # `unresolved={'xdist'}` for the `dev` extra -- "a test grew an import its selection cannot supply,
 # which is a repo that reports no verdict rather than a failing one" -- and the skip it produced took
 # the whole verdict to INCONCLUSIVE. Both are correct. A kit that promises `pip install lab-commons`

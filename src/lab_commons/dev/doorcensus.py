@@ -215,18 +215,23 @@ class SharedDoor:
     command must be judged against are the names of the repo it RUNS in, and for a reusable CI
     workflow that is never the repo it is stored in. Judged at home it is vacuous; judged where it
     runs it was three reverting doors.
+
+    *caller_floats* is what every caller of the door DECLARES floating -- for a reusable kit workflow,
+    the kit itself, because calling it is consuming it. It is a fact about the DOOR, not a list of
+    which repos call it: the home repo cannot know its callers, and a table naming them would be
+    facts about other repos stored in this one.
     """
 
     repo: str
     path: str
-    ran_by: tuple[str, ...]
+    caller_floats: tuple[str, ...]
     deliveries: frozenset[str]
     why: str
 
     def __post_init__(self) -> None:
         """Refuse the row AT CONSTRUCTION, so an unmeasured one cannot enter the table at all."""
         _check_why(self.why, f'{self.repo}::{self.path}')
-        if not self.ran_by:
+        if not self.caller_floats:
             msg = f'{self.repo}::{self.path} is shared with nobody, which makes it an ordinary door row'
             raise CensusRowError(msg)
 

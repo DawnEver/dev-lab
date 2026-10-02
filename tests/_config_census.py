@@ -34,12 +34,13 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.doorcensus import sibling_paths
+from lab_commons.dev.ruffwaivers import ruff_config as kit_ruff_config
+from lab_commons.dev.ruffwaivers import ruff_waivers
 
 __all__ = [
     'MOVES',
@@ -231,109 +232,26 @@ def reachable_repos(paths: dict[str, str]) -> dict[str, Path]:
 
 
 def ruff_config(root: Path) -> dict:
-    """Ruff's RESOLVED config for *root*, taking its own precedence rules.
-
-    A ``ruff.toml`` beside a ``pyproject.toml`` WINS -- verified against `ruff check --show-settings`,
-    which prints the settings path it used. So a repo carrying both has one live config and one dead
-    one, and reading ``[tool.ruff]`` unconditionally would report the dead one as current.
-    """
-    own = read_at_head(root, 'ruff.toml')
-    if own is not None:
-        return tomllib.loads(own)
-    project_text = read_at_head(root, 'pyproject.toml')
-    if project_text is None:
-        msg = f'{root} declares no committed pyproject.toml at {head_sha(root)}, so its ruff config cannot be read'
-        raise UnreadableTree(msg)
-    return tomllib.loads(project_text).get('tool', {}).get('ruff', {})
-
-
-#: EVERY SPELLING RUFF ACCEPTS FOR EACH WAIVER KIND, as a table rather than four `.get` chains.
-#:
-#: THE AXIS THIS TABLE EXISTS FOR IS SPELLING, and the reader it replaced was blind to it. A census
-#: reading only ``lint.ignore`` measures the one spelling the four repos happen to use today: ruff
-#: also honours ``lint.extend-ignore`` and the DEPRECATED top-level ``ignore``, so a consumer moving
-#: an entry to either would empty the census's reading without changing one thing ruff does. A
-#: control parametrized over REPOS cannot see that; only one parametrized over SPELLINGS can, which
-#: is why the planted control in `test_a_waiver_wider_than_an_ignore_is_declared.py` drives THIS
-#: table and not the four checkouts.
-#:
-#: MEASURED 2026-09-18: every ``extend-`` and every deprecated top-level spelling reads EMPTY in all
-#: four repos, so unioning them moves no live number today. That is exactly when a blindness is cheap
-#: to close, and it is why this lands as a reader change with no recorded value changing.
-WAIVER_SPELLINGS: Final[dict[str, tuple[tuple[str, ...], ...]]] = {
-    'select': (('lint', 'select'), ('lint', 'extend-select'), ('select',), ('extend-select',)),
-    'ignore': (('lint', 'ignore'), ('lint', 'extend-ignore'), ('ignore',), ('extend-ignore',)),
-    'exclude': (
-        ('exclude',),
-        ('extend-exclude',),
-        ('lint', 'exclude'),
-        ('lint', 'extend-exclude'),
-        ('format', 'exclude'),
-        ('format', 'extend-exclude'),
-    ),
-    'per-file-ignores': (
-        ('lint', 'per-file-ignores'),
-        ('lint', 'extend-per-file-ignores'),
-        ('per-file-ignores',),
-        ('extend-per-file-ignores',),
-    ),
-}
-
-
-def _dig(config: dict, path: tuple[str, ...]) -> object:
-    """*config* walked down *path*, or ``None`` the moment a level is missing or is not a table."""
-    node: object = config
-    for key in path:
-        if not isinstance(node, dict):
-            return None
-        node = node.get(key)
-    return node
-
-
-def waiver_entries(config: dict, kind: str) -> frozenset[str]:
-    """Every entry of *kind* in *config*, across ALL of ruff's spellings for it. PURE.
-
-    A ``per-file-ignores`` entry is flattened to ``'<glob>::<code>'`` so both kinds compare as one
-    sort of thing -- a set of strings each naming ONE waiver, which is what a named set has to be to
-    be one. A glob carrying three codes is three rows, so dropping one of them moves the ratchet.
-    """
-    if kind not in WAIVER_SPELLINGS:
-        msg = f'{kind!r} is not a declared waiver kind; the table names {sorted(WAIVER_SPELLINGS)}'
-        raise CensusError(msg)
-    out: set[str] = set()
-    for path in WAIVER_SPELLINGS[kind]:
-        value = _dig(config, path)
-        if isinstance(value, dict):
-            out |= {f'{glob}::{code}' for glob, codes in value.items() for code in codes}
-        elif isinstance(value, list):
-            out |= {str(entry) for entry in value}
-        elif value is not None:
-            msg = f'{".".join(path)} holds a {type(value).__name__}, which is neither a list nor a table of waivers'
-            raise CensusError(msg)
-    return frozenset(out)
+    """Ruff's RESOLVED config for *root* as COMMITTED -- the kit's reader, read at ``HEAD``."""
+    return kit_ruff_config(root, at_head=True)
 
 
 def ruff_select(root: Path) -> frozenset[str]:
-    return waiver_entries(ruff_config(root), 'select')
+    return ruff_waivers(root, 'select', at_head=True)
 
 
 def ruff_ignore(root: Path) -> frozenset[str]:
-    return waiver_entries(ruff_config(root), 'ignore')
+    return ruff_waivers(root, 'ignore', at_head=True)
 
 
 def ruff_excludes(root: Path) -> frozenset[str]:
-    """The paths ruff never opens in *root* -- the widest waiver a config can write.
-
-    AN EXCLUDE IS NOT AN IGNORE AND IS STRICTLY STRONGER: an ignore drops ONE named code everywhere,
-    an exclude drops ALL 58 selectors over a whole subtree and names no code at all. Nothing in this
-    family read one until 2026-09-18.
-    """
-    return waiver_entries(ruff_config(root), 'exclude')
+    """The paths ruff never opens in *root* -- the widest waiver a config can write."""
+    return ruff_waivers(root, 'exclude', at_head=True)
 
 
 def ruff_per_file_waivers(root: Path) -> frozenset[str]:
     """``'<glob>::<code>'`` for every per-file waiver in *root*, across every spelling."""
-    return waiver_entries(ruff_config(root), 'per-file-ignores')
+    return ruff_waivers(root, 'per-file-ignores', at_head=True)
 
 
 def ruff_scalars(root: Path) -> dict[str, object]:

@@ -1,113 +1,74 @@
-"""THE LIVE HALF: every recorded selection re-measured against the four test trees beside this one.
+"""THE LIVE HALF: the kit's recorded selection re-measured against its own test tree, plus the kit's controls.
 
-`test_dev_collectscope.py` proves the reader can fail, over planted files. THIS file is a
-MEASUREMENT of the family -- would the selections it actually makes leave each repo able to COLLECT
-its tests -- and on the day it was written three of its five rows were findings, two of them
-against selections `_synccensus_rows.py` had already scored COMPLETE at the runner.
+`test_dev_collectscope.py` proves the reader can fail, over planted files. THIS file proves the CENSUS
+can -- every refusal of `lab_commons.dev.collectcensus` driven through the real function -- and
+measures the one selection this repo makes. Each consumer declares its own selections and residue in
+its own tests and calls the same `assert_reaches` over its own checkout.
 
-Nothing here installs, syncs or prunes, and nothing imports a scanned file. A sibling not on this
-box is ABSENT rather than failing; the repo and row floors are what stop that being a free pass.
+ONE ARM STILL READS THE FAMILY, AND IT HOLDS NO CONSUMER FACT: the alias table is the KIT's, and
+whether each of its rows is needed by SOME real tree is a question only the union of the trees can
+answer. It reads whatever siblings the box has and names no row of theirs.
+
+Nothing here installs, syncs or prunes, and nothing imports a scanned file.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Final
+
 import pytest
-from _collect_census import (
-    BASE,
-    HERE,
-    PATHS,
+from _collect_census_rows import FILE_FLOORS, REPO_FLOOR, ROW_FLOOR, ROWS
+from _config_census import reachable_repos
+from _config_census_rows import REPO_PATHS
+
+from lab_commons.dev.collectcensus import (
     CollectRow,
     CollectRowError,
+    ReachDriftError,
     UnresolvedSupplierError,
     VacuousTreeScanError,
     assert_no_unresolved_has_a_declared_supplier,
     assert_reaches,
     derivable_suppliers,
     measure,
-    present,
     readings_of,
 )
-from _collect_census_rows import (
-    FILE_FLOORS,
-    PAIR_FLOOR,
-    REPO_FLOOR,
-    ROW_FLOOR,
-    ROWS,
-    UNRESOLVED_WHY,
-    WHY_FLOOR_PER_NAME,
-)
-
 from lab_commons.dev.collectscope import ALIASES, STDLIB
+
+#: The repo under verification, read from its WORKING TREE.
+HERE: Final = 'lab-commons'
+ROOT: Final = Path(__file__).resolve().parents[1]
+ROOTS: Final = {HERE: ROOT}
 
 
 def test_every_recorded_selection_still_leaves_the_tree_what_the_table_records() -> None:
     """THE CENSUS. Equality on errors, degrades AND unresolved, in both directions, per row."""
-    seen = assert_reaches(ROWS, FILE_FLOORS, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR)
-    assert HERE in seen, 'the census did not even read the tree it runs in'
+    seen = assert_reaches(ROWS, ROOTS, FILE_FLOORS, here=HERE, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR)
+    assert seen == {HERE}
 
 
-def test_the_guard_and_not_the_name_decides_within_one_selection() -> None:
-    """THE CONTROL THE FAMILY SUPPLIES: one reader, one selection, a guarded and a bare optional extra.
-
-    Until 2026-10-01 this was ``OCP`` degrading in consumer-b and erroring in consumer-a. consumer-b then
-    dropped its OCP guard ON PURPOSE (an absent ``[cad3d]`` must red, not skip), so OCP errors in
-    both and that pair no longer disagrees. The property survives inside consumer-a' sanctioned
-    selection: ``OCP`` is a bare import there and strands, while ``cv2`` is imported only after a
-    module-scope ``importorskip`` and degrades. A reader that convicted every optional integration
-    would strand both; one that trusted the scope would strand neither.
-    """
-    by_key = {row.key: row for row in ROWS}
-    lab = by_key['consumer-b[dev]']
-    selection = by_key['consumer-a[pareto,dev]']
-    assert 'cadquery-ocp-novtk' in selection.errors
-    assert 'cadquery-ocp-novtk' not in selection.degrades
-    assert 'opencv-python-headless' in selection.degrades
-    assert 'opencv-python-headless' not in selection.errors
-    assert 'cadquery-ocp' in lab.errors
-    assert {'psutil', 'uvicorn'} <= lab.degrades
+def test_the_measurement_is_the_real_join_and_not_a_recorded_number() -> None:
+    """`measure` is what the census calls; asserting it here stops the table being self-referential."""
+    found = measure(ROOT, ('dev',), at_head=False)
+    assert found.files >= FILE_FLOORS[HERE], found.files
+    assert (found.errors, found.degrades, found.unresolved) == (frozenset(), frozenset(), frozenset())
 
 
-def test_the_sanctioned_selection_cannot_collect_the_tree_it_is_sanctioned_for() -> None:
-    """THE FINDING, pinned so closing it reds as loudly as opening it did.
-
-    `_synccensus_rows.py` scores `--extra pareto --extra dev` COMPLETE, and is right at its own
-    question. The row below is the other half: the runner starts and the tree does not collect. The
-    day somebody repairs that manifest this assertion fails, which is the ratchet's second side --
-    the repair has to be recorded, not absorbed.
-    """
-    row = next(row for row in ROWS if row.key == 'consumer-a[pareto,dev]')
-    # Six since 2026-10-01: the seventh, `opencv-python-headless`, was the reader convicting an import
-    # placed after its own module-scope `importorskip` -- an instrument fix, not a manifest repair.
-    assert len(row.errors) == 6, sorted(row.errors)
-    assert 'pillow' in row.errors
+def test_the_census_refuses_a_drift_planted_into_the_real_row() -> None:
+    """THE PLANTED CONTROL ON THE LIVE HALF: the real row, one name wrong, through the real guard."""
+    row = ROWS[0]
+    broken = CollectRow(row.repo, row.selected, frozenset({'planted'}), row.degrades, row.unresolved, row.why)
+    with pytest.raises(ReachDriftError, match='now measures'):
+        assert_reaches((broken,), ROOTS, FILE_FLOORS, here=HERE, repo_floor=1, row_floor=1)
 
 
-def test_the_recorded_repair_is_still_one_extra_short() -> None:
-    """The incantation the sibling table calls the one that restored the box still strands `pillow`."""
-    row = next(row for row in ROWS if row.key == 'consumer-a[all,dev,img-to-cad]')
-    assert row.errors == frozenset({'pillow'}), sorted(row.errors)
-
-
-def test_every_alias_row_is_needed_by_a_real_tree_and_no_needed_one_is_missing() -> None:
-    """BOTH SIDES OF THE ALIAS TABLE, DERIVED: an unused row is a waiver nothing uses.
-
-    Reached means the import name appears at module scope in some repo the box has. The set is
-    computed from the live readings rather than listed, so an alias that stops being imported
-    anywhere reds exactly as loudly as an import nothing can resolve.
-    """
-    reached: set[str] = set()
-    seen_names: set[str] = set()
-    for repo in sorted(PATHS):
-        if not present(repo):
-            continue
-        readings, _, _, _ = readings_of(repo)
-        for reading in readings.values():
-            names = {use.name for use in reading.uses if use.name not in STDLIB}
-            reached |= names & set(ALIASES)
-            seen_names |= names
-    assert len(seen_names) > 30, f'the alias scan read {len(seen_names)} import names, which is no corpus'
-    assert reached >= {'OCP', 'cv2'}, sorted(reached)
-    assert set(ALIASES) - reached == set(), sorted(set(ALIASES) - reached)
+def test_a_census_that_read_too_little_is_refused() -> None:
+    """THE FLOORS' OWN CONTROLS: a file floor above the tree, and a repo floor above what was read."""
+    with pytest.raises(VacuousTreeScanError, match='test files'):
+        assert_reaches(ROWS, ROOTS, {HERE: 10**6}, here=HERE, repo_floor=1, row_floor=1)
+    with pytest.raises(VacuousTreeScanError, match='below the floors'):
+        assert_reaches(ROWS, ROOTS, FILE_FLOORS, here=HERE, repo_floor=2, row_floor=1)
 
 
 def test_a_row_refuses_a_caption_and_an_empty_selection() -> None:
@@ -127,13 +88,6 @@ def test_a_row_refuses_a_caption_and_an_empty_selection() -> None:
         CollectRow(**{**good, 'selected': ()})
 
 
-def test_the_measurement_is_the_real_join_and_not_a_recorded_number() -> None:
-    """`measure` is what the census calls; asserting it here stops the table being self-referential."""
-    found = measure(HERE, BASE / PATHS[HERE], ('dev',))
-    assert found.files >= FILE_FLOORS['lab-commons'], found.files
-    assert (found.errors, found.degrades, found.unresolved) == (frozenset(), frozenset(), frozenset())
-
-
 def _planted(unresolved: frozenset[str]) -> CollectRow:
     """One row over the repo this file runs in, so a planted control drives the REAL declared set."""
     return CollectRow(
@@ -146,70 +100,59 @@ def _planted(unresolved: frozenset[str]) -> CollectRow:
     )
 
 
-def test_no_residue_name_has_a_declared_supplier_in_its_own_manifest() -> None:
-    """THE MISSING DIRECTION, and the defect it was written for was live when it arrived.
-
-    The alias table already had the arm that refuses a row no tree reaches. This is its other side:
-    a name reported UNRESOLVED while the SAME manifest declares something its spelling derives as a
-    supplier. Run against the residue as first recorded it convicts `pdfminer` -> `pdfminer.six`
-    immediately, which is why the table above no longer says five names.
-    """
-    pairs = assert_no_unresolved_has_a_declared_supplier(ROWS, pair_floor=PAIR_FLOOR)
-    assert pairs >= PAIR_FLOOR, pairs
-
-
 def test_a_residue_name_its_own_manifest_declares_is_convicted() -> None:
     """THE PLANTED CONTROL, through the real guard and over lab-commons' REAL declared set.
 
     `pytest` is planted as residue; the manifest declares `pytest-cov` and `pytest-mock`, so the
-    derivation fires. Revert the guard and this row passes silently -- which is precisely what the
-    five-name residue did.
+    derivation fires. Revert the guard and this row passes silently.
     """
     with pytest.raises(UnresolvedSupplierError, match='not a transitive dependency'):
-        assert_no_unresolved_has_a_declared_supplier((_planted(frozenset({'pytest'})),), pair_floor=1)
-
-
-def test_the_derivation_refuses_to_force_the_half_a_spelling_cannot_reach() -> None:
-    """BOTH FAILURE DIRECTIONS OF THE DERIVATION, and the second is the one that keeps it honest.
-
-    `pdfminer` and `OCP` are derived from real declared sets with no table consulted. `win32com`,
-    `pywintypes` and `pydantic_core` are NOT, and must not be: nothing in `pywin32`'s spelling
-    reaches either import name, and `pydantic-core` is a distribution distinct from the declared
-    `pydantic`. A rule loose enough to catch those would read every `foo-bar` as supplying `foo`.
-    """
-    checked = 0
-    for repo, derived, refused in (
-        ('consumer-a', {'pdfminer': 'pdfminer-six'}, ('win32com', 'pywintypes', 'tomlkit')),
-        ('consumer-b', {'OCP': 'cadquery-ocp'}, ('pydantic_core', 'scipy')),
-    ):
-        if not present(repo):
-            continue
-        _, _, declared, _ = readings_of(repo)
-        for name, supplier in derived.items():
-            assert derivable_suppliers(name, declared) == frozenset({supplier}), name
-        for name in refused:
-            assert derivable_suppliers(name, declared) == frozenset(), name
-        checked += 1
-    assert checked >= 1, 'the derivation control read no sibling manifest, so it proved nothing'
+        assert_no_unresolved_has_a_declared_supplier((_planted(frozenset({'pytest'})),), ROOTS, here=HERE, pair_floor=1)
 
 
 def test_a_derivation_scan_that_read_nothing_is_refused() -> None:
     """THE FLOOR'S OWN CONTROL: a clean answer over zero pairs is vacuous, not green."""
     with pytest.raises(VacuousTreeScanError, match='below the floor'):
-        assert_no_unresolved_has_a_declared_supplier((), pair_floor=1)
+        assert_no_unresolved_has_a_declared_supplier((), ROOTS, here=HERE, pair_floor=1)
 
 
-def test_every_residue_name_carries_a_reason_and_no_reason_outlives_its_name() -> None:
-    """BOTH SIDES OF THE RESIDUE TABLE. A bare list of names cannot say whether it was checked.
+@pytest.mark.parametrize(
+    ('name', 'declared', 'expected'),
+    [
+        ('pdfminer', frozenset({'pdfminer-six'}), frozenset({'pdfminer-six'})),
+        ('OCP', frozenset({'cadquery-ocp'}), frozenset({'cadquery-ocp'})),
+        ('yaml', frozenset({'pyyaml'}), frozenset({'pyyaml'})),
+        ('win32com', frozenset({'pywin32'}), frozenset()),
+        ('pywintypes', frozenset({'pywin32'}), frozenset()),
+        ('pydantic_core', frozenset({'pydantic'}), frozenset()),
+    ],
+)
+def test_the_derivation_reaches_what_a_spelling_settles_and_refuses_the_rest(
+    name: str, declared: frozenset[str], expected: frozenset[str]
+) -> None:
+    """BOTH FAILURE DIRECTIONS OF THE DERIVATION, over planted declared sets.
 
-    The live residue is DERIVED from the rows the box can actually read, so a new unsettled import
-    arrives as a reason somebody wrote, and a name that stops being unsettled takes its reason with
-    it rather than leaving a waiver nothing uses.
+    Nothing in `pywin32`'s spelling reaches `win32com` or `pywintypes`, and `pydantic-core` is a
+    distribution distinct from `pydantic`. A rule loose enough to catch those would read every
+    `foo-bar` as supplying `foo`.
     """
-    named = frozenset(name for row in ROWS for name in row.unresolved)
-    assert named, 'the table records no residue at all, so both halves of this assertion are vacuous'
-    assert named == frozenset(UNRESOLVED_WHY), sorted(named ^ frozenset(UNRESOLVED_WHY))
-    live = frozenset(name for row in ROWS if present(row.repo) for name in row.unresolved)
-    assert live, 'no row the box can read reports a residue, so the table above was never re-measured'
-    for name, why in UNRESOLVED_WHY.items():
-        assert len(why) >= WHY_FLOOR_PER_NAME, f'{name}: {len(why)} characters'
+    assert derivable_suppliers(name, declared) == expected
+
+
+def test_every_alias_row_is_needed_by_a_real_tree_and_no_needed_one_is_missing() -> None:
+    """BOTH SIDES OF THE KIT'S ALIAS TABLE, DERIVED from whatever trees this box holds.
+
+    An unused alias row is a waiver nothing uses. The set reached is computed from the live readings
+    rather than listed, so an alias that stops being imported anywhere reds as loudly as an import
+    nothing can resolve. It names no consumer row: the alias table is the kit's.
+    """
+    reached: set[str] = set()
+    seen_names: set[str] = set()
+    for repo, root in sorted(reachable_repos(REPO_PATHS).items()):
+        readings, _, _, _ = readings_of(root, at_head=repo != HERE)
+        for reading in readings.values():
+            names = {use.name for use in reading.uses if use.name not in STDLIB}
+            reached |= names & set(ALIASES)
+            seen_names |= names
+    assert len(seen_names) > 30, f'the alias scan read {len(seen_names)} import names, which is no corpus'
+    assert set(ALIASES) - reached == set(), sorted(set(ALIASES) - reached)

@@ -1,12 +1,9 @@
-"""THE LIVE HALF: every recorded sync selection re-measured against the checkouts beside this one.
+"""THE LIVE HALF: the kit's recorded sync selections re-measured against its own working tree.
 
 `test_dev_syncscope.py` proves the reader can fail, over planted manifests. THIS file is a
-MEASUREMENT of the family -- which selections exist, and what each of them would leave behind -- so
-a recorded scope cannot age quietly into prose. On the day it was written one of them was already a
-finding: consumer-a' `dep_sync` advises `--extra all`, and that selection removes its whole runner.
-
-Nothing here installs, syncs or prunes. A sibling not on this box is ABSENT rather than failing,
-because repos are cloned per box; the repo floor is what stops that being a free pass.
+MEASUREMENT -- which selections this repo makes, and what each would leave behind -- so a recorded
+scope cannot age quietly into prose. It reads no sibling: each consumer declares its own selections
+and calls the same `assert_scopes` over its own checkout. Nothing here installs, syncs or prunes.
 """
 
 from __future__ import annotations
@@ -15,7 +12,6 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from _config_census_rows import REPO_PATHS
 
 from lab_commons.dev._doorcensus_rows import DOORS
 from lab_commons.dev._synccensus_rows import REPO_FLOOR, ROW_FLOOR, ROWS, SITE_COMMAND_FLOOR, SITES
@@ -29,20 +25,18 @@ from lab_commons.dev.synccensus import (
     pruning_sites,
 )
 
-#: This file is `<lab-commons>/tests/`, so the family sits one level above the repo root.
-_BASE: Final = Path(__file__).resolve().parents[2]
+#: This repo's checkout, and the directory it sits in -- the census API joins the two.
+_ROOT: Final = Path(__file__).resolve().parents[1]
+_BASE: Final = _ROOT.parent
 
-#: The repo under verification, whose WORKING TREE is the authority for its own rows; every sibling
-#: is read at `HEAD`, so a lane's half-finished edit over there cannot turn this repo red.
+#: The repo under verification, read from its WORKING TREE.
 _HERE: Final = 'lab-commons'
 
-#: Where each repo is checked out relative to `_BASE`, taken from the config census rather than
-#: retyped, so a path the family moves is moved once.
-_PATHS: Final[dict[str, str]] = {'lab-commons': 'lab-commons', **REPO_PATHS}
+_PATHS: Final[dict[str, str]] = {_HERE: _ROOT.name}
 
 
 def _door_texts() -> dict[tuple[str, str], str]:
-    """Every declared door file in the family, keyed by ``(repo, path)``. Missing repos are absent."""
+    """Every declared door file of this repo, keyed by ``(repo, path)``."""
     roots = reachable(_BASE, _PATHS)
     out: dict[tuple[str, str], str] = {}
     for row in DOORS:
@@ -61,7 +55,7 @@ def test_every_recorded_selection_still_leaves_what_the_table_records() -> None:
     assert _HERE in seen, 'the census did not even read the tree it runs in'
 
 
-def test_the_family_has_no_pruning_command_no_row_accounts_for() -> None:
+def test_this_repo_has_no_pruning_command_no_row_accounts_for() -> None:
     """THE OTHER SIDE OF THE RATCHET: a new `uv sync` in a declared door must red, not join quietly.
 
     EQUALITY, not containment: a declared site that stops pruning is as wrong as an undeclared one
@@ -130,7 +124,7 @@ def test_a_pruning_command_planted_into_a_real_door_is_found() -> None:
     of THIS census, so removing it must make the file appear as a pruning site. No environment is
     touched; the plant is a string replacement on a copy of the text.
     """
-    home = Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'python-verify.yml'
+    home = _ROOT / '.github' / 'workflows' / 'python-verify.yml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
     planted = {('lab-commons', 'planted'): text.replace('uv run --no-sync', 'uv run')}

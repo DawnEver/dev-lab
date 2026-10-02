@@ -1,14 +1,12 @@
-"""THE LIVE HALF: the declared census re-measured against the checkouts standing beside this one.
+"""THE LIVE HALF: the kit's declared doors re-measured against the kit's own working tree.
 
-This is a MEASUREMENT of the family, not a proof that the guard works -- that is
-`test_dev_doorcensus.py`, where every refusal is planted into a real repository and driven through
-the real function. What this file buys is that a recorded number cannot age quietly into prose: on
-the day it was written, two of them already had.
+This is a MEASUREMENT, not a proof that the guard works -- that is `test_dev_doorcensus.py`, where
+every refusal is planted into a real repository and driven through the real function. What this file
+buys is that a recorded number cannot age quietly into prose.
 
-IT IS ALSO THE HALF THAT NEEDS AN HONEST ABSENCE. The family's repos are cloned per box and no box
-is required to hold all four, so an unreachable sibling is ABSENT rather than failing -- and what
-stops that being a free pass is the repo floor, which refuses a run that reached lab-commons alone.
-A census of one tree is not a census.
+IT READS NO SIBLING. Each consumer declares its own doors in its own tests and calls the same
+`assert_census` over its own checkout; a census of other repos run from here would be facts about
+them stored in this tree, judged against names that are not theirs.
 """
 
 from __future__ import annotations
@@ -17,31 +15,25 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from _config_census_rows import REPO_PATHS
 
-from lab_commons.dev._doorcensus_rows import DECLINED, DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
+from lab_commons.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
 from lab_commons.dev.doorcensus import (
     DoorDriftError,
     assert_census,
     assert_no_tracked_lock,
-    committed,
     door_text,
-    floating_at_head,
     reachable,
     read,
 )
 
-#: This file is `<lab-commons>/tests/`, so the family sits one level above the repo root.
-_BASE: Final = Path(__file__).resolve().parents[2]
+#: This repo's checkout, and the directory it sits in -- the census API joins the two.
+_ROOT: Final = Path(__file__).resolve().parents[1]
+_BASE: Final = _ROOT.parent
 
-#: The repo this suite is verifying, whose WORKING TREE is the authority for its own rows. Every
-#: sibling is read at `HEAD` instead. Without the split a door repair here is unverifiable until
-#: after it is committed, which asks for the row and the fix in one unchecked commit.
+#: The repo this suite is verifying, read from its WORKING TREE.
 _HERE: Final = 'lab-commons'
 
-#: Where each repo is checked out relative to `_BASE`, taken from the config census rather than
-#: retyped, so a path the family moves is moved once.
-_PATHS: Final[dict[str, str]] = {'lab-commons': 'lab-commons', **REPO_PATHS}
+_PATHS: Final[dict[str, str]] = {_HERE: _ROOT.name}
 
 
 def _roots() -> dict[str, Path]:
@@ -54,51 +46,27 @@ def test_every_declared_door_still_measures_what_the_table_records() -> None:
     assert 'lab-commons' in seen, 'the census did not even read the tree it runs in'
 
 
-def test_no_repo_in_the_family_tracks_the_lock() -> None:
+def test_this_repo_does_not_track_the_lock() -> None:
     """The condition every surviving lock-consuming door rests on, asserted rather than assumed."""
     assert_no_tracked_lock(_roots())
 
 
-def test_the_shared_ci_door_is_judged_against_the_names_of_the_repos_that_run_it() -> None:
+def test_the_shared_ci_door_is_judged_against_what_its_callers_float() -> None:
     """THE FINDING, kept live: at home it reads INERT, and at home is not where it runs.
 
     Both classifications of the one file are asserted, because the row's whole content is that they
     DIFFER. If the home reading ever stops being vacuous -- the day lab-commons declares a floating
     requirement of its own -- this reds, and that is the day the ordinary row acquires teeth.
     """
-    roots = _roots()
     for shared in SHARED:
-        home = roots.get(shared.repo)
-        if home is None:
-            pytest.fail(f'{shared.repo} holds a shared door and is not reachable, so this claim is unchecked')
-        text = door_text(home, shared.path, at_head=shared.repo != _HERE)
-        assert text is not None, f'{shared.path} is declared shared and is not committed in {shared.repo}'
+        assert shared.repo == _HERE, f'{shared.repo} is not this repo, and only this repo`s doors are read here'
+        text = door_text(_ROOT, shared.path, at_head=False)
+        assert text is not None, f'{shared.path} is declared shared and is not in this tree'
         assert read(text, ()).deliveries <= {'INERT'}, 'the home reading is no longer vacuous'
-        for caller in shared.ran_by:
-            root = roots.get(caller)
-            if root is None:
-                continue
-            names = floating_at_head(root)
-            assert names, f'{caller} declares nothing floating, so running this door there is inert'
-            assert read(text, names).deliveries == shared.deliveries, (
-                f'{shared.path} run inside {caller} no longer delivers {sorted(shared.deliveries)}'
-            )
-
-
-def test_every_declined_door_is_still_a_file_in_the_repo_that_declined_it() -> None:
-    """A decline whose subject no longer exists is a reason nobody will delete, protecting nothing."""
-    roots = _roots()
-    checked = 0
-    for row in DECLINED:
-        root = roots.get(row.repo)
-        if root is None:
-            continue
-        assert committed(root, row.path) is not None, (
-            f'{row.key} is recorded as a declined door and is not committed there. Either it moved -- '
-            f'repoint the row -- or the door is gone and the decline outlived its subject.'
+        assert read(text, shared.caller_floats).deliveries == shared.deliveries, (
+            f'{shared.path} run by a caller floating {shared.caller_floats} no longer delivers '
+            f'{sorted(shared.deliveries)}'
         )
-        checked += 1
-    assert checked, 'no declined row was checkable on this box, so this test proved nothing'
 
 
 def test_a_reverting_door_planted_into_a_live_repo_is_refused() -> None:
@@ -109,7 +77,7 @@ def test_a_reverting_door_planted_into_a_live_repo_is_refused() -> None:
     caller's real floating names. No environment is touched and nothing is installed; this is a
     statement about command text, which is the only kind this layer ever makes.
     """
-    home = Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'python-verify.yml'
+    home = _ROOT / '.github' / 'workflows' / 'python-verify.yml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
     assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'REVERTS'}

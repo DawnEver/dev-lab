@@ -62,12 +62,14 @@ SCAN_FLOOR: Final = 80
 #: know which instrument took it. The difference is two lines carrying two mentions each.
 #: RE-MEASURED 2026-10-01 at **177** after the neutral renaming, which folded two spellings of one
 #: sibling into one and turned identifier-embedded mentions into identifiers the scan does not read.
+#: RE-MEASURED 2026-10-02 at **169** after the door and sync censuses dropped their consumer rows --
+#: each consumer now declares its own -- taking their prose with them.
 #:
 #: PROSE IS NOT EVICTED ROW BY ROW, because a docstring naming the repo a finding came from is
 #: EVIDENCE rather than a mechanism, and rewriting all of them to name the SHAPE instead is the LAST
 #: step of this migration rather than the first. The ceiling is what stops the number growing while
 #: the other two kinds are being emptied.
-PROSE_CEILING: Final = 177
+PROSE_CEILING: Final = 169
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
@@ -79,24 +81,6 @@ PROSE_CEILING: Final = 177
 #: hardcode into a no-default argument reds two trees. The claim was the exact defect this registry
 #: exists to refuse, one layer up, and it is left on record rather than quietly corrected.
 EVICTED: Final[dict[str, str]] = {
-    'src/lab_commons/dev/_doorcensus_rows.py::data': (
-        '20 `DoorRow(repo=...)` values for the three consumers, over 15 rows. Read only by this repo`s own tests -- '
-        'consumer-b`s single mention of `DOORS` is in a COMMENT, measured -- so the deletion reds only '
-        'this repo`s floors, and those must be RE-MEASURED by executing the scan rather than '
-        'lowered. Blocked on each consumer holding its own census.'
-    ),
-    'src/lab_commons/dev/_doorcensus_rows.py::path': (
-        '7 consumer `scripts/` paths, one of them `scripts/consumer-b-update.sh`, which hardcodes a '
-        'repo NAME into a path. They travel with the rows above and are deleted with them.'
-    ),
-    'src/lab_commons/dev/_synccensus_rows.py::data': (
-        '3 `ScopeRow(repo=...)` rows, and the sharper miss inside them: `selected=(`pareto`, `dev`)` '
-        'is a consumer-a EXTRA as a live value rather than as prose -- a domain noun the README`s own '
-        'test forbids. Same blocker as the door census.'
-    ),
-    'src/lab_commons/dev/_synccensus_rows.py::path': (
-        '2 `scripts/gate/dep_sync.py` literals belonging to the rows above.'
-    ),
     'src/lab_commons/dev/_provenance_rows.py::path': (
         '27 consumer-a `scripts/` paths -- the largest single block. Provenance is a record of where '
         'a module CAME FROM, which is the one reading under which naming another tree is honest; '

@@ -156,6 +156,15 @@ are too unqualified to survive being flattened into a namespace this wide.
   are mostly in a different repo from the command that syncs: one shared CI workflow builds its
   extras from each caller's ``extras:`` line. EQUALITY on scope and on the stranded set, plus a
   DERIVED scan refusing a pruning command no row accounts for. Not re-exported below.
+* :mod:`lab_commons.dev.collectcensus` -- ``collectscope`` pointed at the selections a repo makes:
+  one row per (repo, selection) recording what its test tree would strand, degrade or leave
+  unresolved, by EQUALITY both ways, plus the audit refusing a residue name the manifest already
+  answers. The kit holds only its own row; each consumer declares its rows and calls
+  ``assert_reaches`` over its own checkout. Not re-exported below.
+* :mod:`lab_commons.dev.ruffwaivers` -- the two ruff waivers WIDER than an ignore, ``exclude`` and
+  ``per-file-ignores``, read across every spelling ruff honours from the config ruff RESOLVES, and
+  ``assert_waivers_declared``, which refuses an undeclared waiver and a stale row alike. A repo
+  declares its own rows; the kit ships the reader and the refusal. Not re-exported below.
 * :mod:`lab_commons.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
   repo's ``docs-src/dev/``, with the pointer table a consuming repo RENDERS instead of copying. The
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under

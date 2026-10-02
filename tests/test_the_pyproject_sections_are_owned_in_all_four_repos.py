@@ -62,9 +62,15 @@ from lab_commons.dev.famconfig import (
 #: here and cannot be judged by a list that stayed behind.
 ARTEFACTS: Final = tuple(sorted(PYPROJECT_SECTIONS))
 
-#: The scan's floor, stated as the PRODUCT rather than as an integer: a run that lost a repo and a
-#: run that lost a table are different failures, and a bare count cannot tell them apart.
-CELL_FLOOR: Final = len(REPOS) * len(ARTEFACTS)
+#: The repo whose delta this suite holds. Every consumer holds its own, with its own name.
+HERE: Final = 'lab-commons'
+
+#: This checkout, read from its WORKING TREE.
+ROOT: Final = Path(__file__).resolve().parents[1]
+
+#: The scan's floor, stated as the PRODUCT rather than as an integer: a run that lost a table is a
+#: different failure from a run that lost the repo, and a bare count cannot tell them apart.
+CELL_FLOOR: Final = len(ARTEFACTS)
 
 #: The SET entry the ADD control plants. No repo collects it, so planting it is a widening that
 #: would really be new -- planting one a repo already has makes the control green against a file
@@ -112,9 +118,9 @@ def plant(path: Path, tables: Mapping[str, Mapping[str, object]]) -> Path:
 
 def test_every_repo_and_table_has_a_declaration_and_none_invents_one() -> None:
     """COMPLETENESS, BOTH SIDES. A missing delta leaves a table unjudged; an extra one names nothing."""
-    expected = {f'{repo}::{artefact}' for repo in REPOS for artefact in ARTEFACTS}
+    expected = {f'{HERE}::{artefact}' for artefact in ARTEFACTS}
     live = {f'{repo}::{artefact}' for repo, table in PYPROJECT_SECTION_DELTAS.items() for artefact in table}
-    assert len(expected) == CELL_FLOOR, f'{len(expected)} cells against {len(REPOS)} repos x {len(ARTEFACTS)} tables'
+    assert len(expected) == CELL_FLOOR, f'{len(expected)} cells against {len(ARTEFACTS)} tables'
     assert live == expected, (
         f'undeclared: {sorted(expected - live)}; invented: {sorted(live - expected)}. A table with no '
         f'declaration is not judged, and a declaration for a table the base does not own judges nothing.'
@@ -133,7 +139,7 @@ def test_no_declared_delta_is_a_fork_of_the_base_it_declares_against() -> None:
 
 def test_every_ceiling_is_its_measurement_and_no_delta_carries_headroom() -> None:
     """THE RATCHET'S OTHER SIDE. Headroom nobody chose is how a waiver list stops being a delta."""
-    measured = {'lab-commons': 0, 'consumer-b': 1, 'consumer-c': 1, 'consumer-a': 0}
+    measured = {HERE: 0}
     for repo, table in sorted(PYPROJECT_SECTION_DELTAS.items()):
         for artefact, delta in sorted(table.items()):
             added = sum(len(entries) for entries in delta.added.values())
@@ -151,23 +157,22 @@ def test_every_ceiling_is_its_measurement_and_no_delta_carries_headroom() -> Non
 # ------------------------------------------------------------------------------ the live measurement
 
 
-def test_every_reached_repo_owns_every_table_the_base_declares() -> None:
-    """THE PROPERTY. Each real file, through the kit's own reader, against the live base and delta."""
-    reached = reachable_repos(REPO_PATHS)
-    assert 'lab-commons' in reached, 'the reader could not find the tree it is running in'
-    absent = sorted(set(REPOS) - set(reached))
-    verdicts: dict[str, str] = {}
-    for repo, root in sorted(reached.items()):
-        path = root / PYPROJECT_FILE
-        for artefact in ARTEFACTS:
-            report = inspect_section(path, section_base(artefact), PYPROJECT_SECTION_DELTAS[repo][artefact])
-            verdicts[f'{repo}::{artefact}'] = report.status
-            assert report.ok, f'{repo}::{artefact} is {report.status}: {report.detail} {report.offending}'
-    assert len(verdicts) == len(reached) * len(ARTEFACTS), (
-        f'{len(verdicts)} cells judged over {len(reached)} reached repo(s) x {len(ARTEFACTS)} '
-        f'table(s); not checked out here and therefore unjudged: {absent}'
-    )
-    assert set(verdicts.values()) == {OWNED}, sorted(verdicts.items())
+def test_this_repo_owns_every_table_the_base_declares() -> None:
+    """THE PROPERTY. The kit's own file, through the kit's own reader, against the live base and delta.
+
+    The same call every consumer makes over its own file with its own delta; a consumer judged from
+    here would be judged against a delta this repo cannot know.
+    """
+    verdicts = {
+        artefact: inspect_section(
+            ROOT / PYPROJECT_FILE, section_base(artefact), PYPROJECT_SECTION_DELTAS[HERE][artefact]
+        )
+        for artefact in ARTEFACTS
+    }
+    for artefact, report in verdicts.items():
+        assert report.ok, f'{HERE}::{artefact} is {report.status}: {report.detail} {report.offending}'
+    assert len(verdicts) == CELL_FLOOR
+    assert {report.status for report in verdicts.values()} == {OWNED}
 
 
 def test_the_promoted_keys_are_a_four_way_agreement_and_not_a_three_way_one() -> None:
@@ -277,7 +282,7 @@ def _tables(document: Mapping[str, object], prefix: tuple[str, ...] = ()) -> lis
 
 def test_an_added_testpath_reds_and_the_refusal_names_it(tmp_path: Path) -> None:
     """PLANTED CONTROL, the widening a presence-only mode could never see, through the REAL reader."""
-    root = reachable_repos(REPO_PATHS)['lab-commons']
+    root = ROOT
     delta = PYPROJECT_SECTION_DELTAS['lab-commons'][PYTEST_INI]
     base = section_base(PYTEST_INI)
     tables = live_tables(root)
@@ -296,7 +301,7 @@ def test_an_added_testpath_reds_and_the_refusal_names_it(tmp_path: Path) -> None
 
 def test_a_changed_readme_reds_and_the_refusal_names_both_values(tmp_path: Path) -> None:
     """PLANTED CONTROL for the SCALAR arm: the direction that says which value the file has."""
-    root = reachable_repos(REPO_PATHS)['lab-commons']
+    root = ROOT
     delta = PYPROJECT_SECTION_DELTAS['lab-commons'][PROJECT]
     base = section_base(PROJECT)
     tables = live_tables(root)
@@ -317,7 +322,7 @@ def test_a_dropped_base_testpath_reds_and_the_same_drop_declared_is_owned(tmp_pa
     Without the second half the first would be satisfied by a base that refuses every change. Only
     the DECLARATION moves between the two readings, which is the whole claim the mechanism makes.
     """
-    root = reachable_repos(REPO_PATHS)['lab-commons']
+    root = ROOT
     base = section_base(PYTEST_INI)
     tables = live_tables(root)
     assert BENT_TESTPATH in tables[PYTEST_INI]['testpaths'], 'this control bends nothing'

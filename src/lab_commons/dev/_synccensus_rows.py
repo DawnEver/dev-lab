@@ -5,30 +5,17 @@ The machinery is `synccensus.py` and the reader under it is `syncscope.py`; the 
 edited through the module that checks it drifts away from what it describes, because the same edit
 that adds a row can relax the check that would have refused it and the diff reads as one change.
 
-MEASURED 2026-09-19 against four checkouts, at the commits `_doorcensus_rows.py` names, by joining
-each selection with its repo's own `[project.optional-dependencies]`. Every scope and every stranded
-name below is re-derived by `assert_scopes`, so a row that stops being true REDS.
+THE KIT'S OWN SELECTIONS ONLY. Every other repo declares the places IT chooses a set of extras, with
+its own name and its own paths, in its own tests, and calls
+:func:`lab_commons.dev.synccensus.assert_scopes` over its own checkout. Every scope and every stranded
+name below is re-derived by `assert_scopes` from this repo's WORKING TREE, so a row that stops being
+true REDS.
 
-THE FINDING, AND IT IS NOW CLOSED, WITH BOTH NUMBERS ON RECORD. consumer-a'
-`scripts/gate/dep_sync.py` printed, immediately AFTER a prune had removed distributions, "re-run
-naming every extra you need (`--extra all` where the project declares it)". That project DOES
-declare `all`, and `all` there is `consumer-a[euclid,maxwell,pareto,femm,gui,native]` -- no `dev` --
-so following the advice left the tree with no pytest, no xdist, no timeout plugin and no ruff: the
-incident of 2026-09-18 a second time, arriving through the remedy for the first. consumer-a commit
-1a50949 rewrote that text on 2026-09-19 and the row below is REPOINTED to the line that makes the
-selection today, STRANDS -> COMPLETE. The evidence pin is what forced the visit; without it the row
-would still be describing a sentence nobody prints.
-
-WHY THE CI ROWS ARE FILED UNDER THE CALLER AND NOT UNDER THE WORKFLOW THAT SYNCS. The `uv sync` is
-in `lab-commons/.github/workflows/python-verify.yml` and its extras come from `$extra_flags`, a
-shell loop over a workflow INPUT -- unreadable at the file that runs it, and different for every
-caller. `SITES` records that file as the one pruning command in the family's declared doors, and the
-rows below record the two callers that decide what it syncs. That is the `SharedDoor` finding one
-axis over: the selection and the command live in different repositories.
-
-CONSUMER_B HAS NO ROW AND THAT IS A MEASUREMENT. Its only lock-consuming doors carry `--no-sync`, so no
-command in its declared door set chooses a population at all. `SITES` is compared by EQUALITY, so
-the day a `uv sync` lands in any of the four, it reds as uncensused rather than joining quietly.
+THE CI ROW IS THE CALLER SIDE OF A SHARED WORKFLOW. The `uv sync` is in
+`.github/workflows/python-verify.yml` and its extras come from `$extra_flags`, a shell loop over a
+workflow INPUT -- unreadable at the file that runs it, and different for every caller. `SITES`
+records that file as the one pruning command in this repo's declared doors, and each caller --
+this repo included -- records the `extras:` line that decides what it syncs.
 """
 
 from __future__ import annotations
@@ -70,73 +57,19 @@ ROWS: tuple[ScopeRow, ...] = (
             'notice a deletion either.'
         ),
     ),
-    ScopeRow(
-        repo='consumer-c',
-        path='.github/workflows/ci.yml',
-        line=38,
-        evidence="extras: 'dev'",
-        selected=('dev',),
-        scope='COMPLETE',
-        stranded=frozenset(),
-        why=(
-            'THE SAME LINE IN THE REPO WITH THE LONGER VERDICT SET, which is why it is worth a second '
-            'row rather than reading as a duplicate. This manifest `addopts` carries `--cov`, so '
-            'pytest-cov is as load-bearing as pytest -- pytest exits 4 on an unrecognised option and '
-            'reports no verdict at all -- and it declares lab-commons only INSIDE the `dev` extra, '
-            'so this selection is the only thing putting the verify entry point in the environment. '
-            'Three of its four critical distributions hang on this one word.'
-        ),
-    ),
-    ScopeRow(
-        repo='consumer-a',
-        path='scripts/gate/dep_sync.py',
-        line=4,
-        evidence='--sync --extra pareto --extra dev',
-        selected=('pareto', 'dev'),
-        scope='COMPLETE',
-        stranded=frozenset(),
-        why=(
-            'THE SANCTIONED SPELLING, and the row that says it is sanctioned for the right reason. '
-            'It survives because `dev` carries pytest, pytest-xdist, pytest-timeout and ruff and '
-            'because lab-commons is a REQUIRED dependency there, not because the author enumerated '
-            'the environment. What it does remove is real -- measured 2026-09-15, cadquery-ocp and '
-            'consumer-b -- so COMPLETE here means the tree can still report a verdict, never that the '
-            'environment is whole. That distinction is the module docstring of `syncscope`.'
-        ),
-    ),
-    ScopeRow(
-        repo='consumer-a',
-        path='scripts/gate/dep_sync.py',
-        line=475,
-        evidence='--extra all --extra dev --extra img-to-cad',
-        selected=('all', 'dev', 'img-to-cad'),
-        scope='COMPLETE',
-        stranded=frozenset(),
-        why=(
-            'THE FINDING, RE-MEASURED 2026-09-19 AFTER IT WAS FIXED, AND BOTH NUMBERS STAY ON RECORD. '
-            'At `dep_sync.py:458` this row read `--extra all`, scope STRANDS, stranded pytest, '
-            'pytest-xdist, pytest-timeout and ruff: the REMEDY the tool printed to an operator who '
-            'had just watched it remove distributions. consumer-a commit 1a50949 rewrote that text -- '
-            'it now says `all` is not all of them and names the whole set -- so the row is repointed '
-            'to the line that makes the selection today, and the scope moved STRANDS -> COMPLETE. '
-            'That is a ratchet closing, not a band loosening; the evidence pin is what forced the '
-            'visit. Note what COMPLETE still does not mean: `test_the_test_trees_collect_after_a_sync` '
-            'measures this same selection stranding `pillow` at COLLECTION.'
-        ),
-    ),
 )
 
-#: EVERY command in the family's declared door files that moves a POPULATION, as
+#: EVERY command in this repo's declared door files that moves a POPULATION, as
 #: ``(repo, path, line)``, with why it is the only one. Compared by EQUALITY against the live scan:
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, int], str] = {
     ('lab-commons', '.github/workflows/python-verify.yml', 119): (
-        'THE FAMILY HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
+        'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '
         'answers UNMEASURED here by construction and the ROWS above carry the judgement, one per '
-        'caller. Every other lock-consuming door in the family takes `--no-sync`, which is what '
+        'caller. Every other lock-consuming door here takes `--no-sync`, which is what '
         'makes this set a singleton rather than a sample. '
         'REPOINTED 2026-09-19 FROM LINE 83: the OS-matrix merge added a `runner-os` input, a matrix '
         'axis and a 30-line comment block above this step, moving the command down 36 lines. The '
@@ -145,13 +78,14 @@ SITES: dict[tuple[str, str, int], str] = {
     ),
 }
 
-#: The floor under how many repos a run must reach before an empty finding means anything. A census
-#: of one tree is not a census, and every finding this table holds is cross-repo.
-REPO_FLOOR: int = 2
+#: The floor under how many repos a run must read: the one it runs in.
+REPO_FLOOR: int = 1
 
-#: The floor under how many ROWS were checked. Below it the run reached repos and read no selection.
-ROW_FLOOR: int = 3
+#: The floor under how many ROWS were checked. The kit makes one selection, and reading none of it
+#: would be a census of nothing.
+ROW_FLOOR: int = 1
 
 #: The floor under how many installer commands the SITES scan read before its equality means
-#: anything. An empty scan finds no uncensused site and reads exactly like a censused family.
-SITE_COMMAND_FLOOR: int = 10
+#: anything. MEASURED 2026-10-02 at 17 across the kit's three door files (14 + 0 + 3); the floor sits
+#: under it so an ordinary door edit does not red, and well above the zero an unread scan returns.
+SITE_COMMAND_FLOOR: int = 12

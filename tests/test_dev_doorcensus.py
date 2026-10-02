@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev._doorcensus_rows import DECLINED, DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
+from lab_commons.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
 from lab_commons.dev.doorcensus import (
     CensusRowError,
     Declined,
@@ -115,7 +115,9 @@ def test_a_row_may_not_name_a_delivery_the_enum_does_not_have() -> None:
 _CAPTIONED: tuple[Callable[[], object], ...] = (
     lambda: DoorRow(repo='r', path='Makefile', commands=1, deliveries=frozenset({'INERT'}), why='it is fine'),
     lambda: Declined(repo='r', path='dep.py', covered_by='some test', why='it is fine'),
-    lambda: SharedDoor(repo='r', path='ci.yml', ran_by=('s',), deliveries=frozenset({'INERT'}), why='it is fine'),
+    lambda: SharedDoor(
+        repo='r', path='ci.yml', caller_floats=('s',), deliveries=frozenset({'INERT'}), why='it is fine'
+    ),
 )
 
 
@@ -135,7 +137,7 @@ def test_a_declined_door_must_name_the_mechanism_that_covers_it_instead() -> Non
 def test_a_shared_door_shared_with_nobody_is_an_ordinary_row() -> None:
     """The kind exists for the caller's names; with no caller there is no second classification."""
     with pytest.raises(CensusRowError, match='shared with nobody'):
-        SharedDoor(repo='r', path='ci.yml', ran_by=(), deliveries=frozenset({'INERT'}), why=_WHY)
+        SharedDoor(repo='r', path='ci.yml', caller_floats=(), deliveries=frozenset({'INERT'}), why=_WHY)
 
 
 def test_the_census_reads_head_and_not_the_working_tree(tmp_path: Path) -> None:
@@ -258,20 +260,18 @@ def test_the_guard_passes_and_refuses_over_the_same_planted_family(tmp_path: Pat
         assert_census(tmp_path, paths, rows, repo_floor=2, door_floor=2)
 
 
-def test_rows_for_partitions_by_repo_and_the_table_covers_more_than_one() -> None:
-    """The axis is the repo because the repo is what a lane owns -- and a one-repo table is a note."""
-    repos = {row.repo for row in DOORS}
-    assert len(repos) >= REPO_FLOOR, repos
+def test_the_kit_table_holds_only_the_kit_and_clears_its_floors() -> None:
+    """The kit declares its OWN doors and nobody else's -- a consumer's row here is a fact stored in the wrong repo."""
+    assert {row.repo for row in DOORS} == {'lab-commons'}
+    assert len({row.repo for row in DOORS}) >= REPO_FLOOR
     assert len(DOORS) >= DOOR_FLOOR, len(DOORS)
-    assert sum(len(rows_for(repo, DOORS)) for repo in repos) == len(DOORS)
+    assert rows_for('lab-commons', DOORS) == DOORS
 
 
-def test_the_table_declares_no_path_twice_and_no_row_is_also_declined() -> None:
+def test_the_table_declares_no_path_twice() -> None:
     """A key in two hands is two answers to one question, and the census would report whichever it met."""
     keys = [row.key for row in DOORS]
     assert sorted(keys) == sorted(set(keys)), 'a door is declared twice'
-    overlap = {row.key for row in DOORS} & {row.key for row in DECLINED}
-    assert overlap == set(), f'{sorted(overlap)} are both censused and declined'
 
 
 def test_every_shared_door_is_also_declared_as_an_ordinary_row_in_its_home_repo() -> None:
@@ -280,4 +280,3 @@ def test_every_shared_door_is_also_declared_as_an_ordinary_row_in_its_home_repo(
     home = {(row.repo, row.path) for row in DOORS}
     for shared in SHARED:
         assert (shared.repo, shared.path) in home, f'{shared.path} is shared but not censused at home'
-        assert shared.repo not in shared.ran_by, 'a repo does not run its own file as somebody else'
