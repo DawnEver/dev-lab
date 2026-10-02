@@ -64,3 +64,15 @@ def test_an_absent_denylist_is_silent(tmp_path: Path) -> None:
 def test_no_tracked_file_carries_a_private_marker() -> None:
     hits = scan_tree(_ROOT, load_markers())
     assert hits == [], 'private values in tracked files:\n' + '\n'.join(hits)
+
+
+def test_only_the_declared_authorship_lines_may_name_the_author(tmp_path: Path) -> None:
+    """The author is named on purpose in LICENSE and pyproject; the same name anywhere else still reds."""
+    markers = tmp_path / 'private-markers'
+    markers.write_text('Jane Author\n', encoding='utf-8')
+    compiled = load_markers(markers)
+    assert scan_text('Copyright (c) 2026 Jane Author', compiled, path='LICENSE') == []
+    assert scan_text('authors = [{ name = "Jane Author" }]', compiled, path='pyproject.toml') == []
+    assert scan_text('Copyright (c) 2026 Jane Author', compiled, path='README.md')
+    assert scan_text('# by Jane Author', compiled, path='pyproject.toml')
+    assert scan_text('authors = [{ name = "J", email = "j' + '@uni.ac.uk" }]', (), path='pyproject.toml')

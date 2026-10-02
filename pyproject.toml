@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Project-agnostic shared infrastructure (logging, paths) for the consumer-a/consumer-c/consumer-b family of labs."
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "The lab-commons authors" }]
+authors = [{ name = "Mingyang Bao" }]
 requires-python = ">=3.12"
 dependencies = [
     # Tier 1 core deps only -- structured logging, platform-standard path resolution,
