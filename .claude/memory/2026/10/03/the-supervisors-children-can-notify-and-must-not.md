@@ -48,13 +48,24 @@ command it spawned, which is not a watchdog at all.
 
 So: `NotifyAccess=main` is load-bearing and must not be widened. That is the finding.
 
-## The hardening this points at, and why it is not in this edit
+## The hardening, and where it went
 
 **Strip `NOTIFY_SOCKET` from the environment handed to every child.** The kit owns every fork
 (`process/systemd.py`), so one place removes the whole class rather than naming one offender -- and
 naming the offender is not something the journal could settle: the message records the pid, and the
 pid is gone by the time anybody looks.
 
-It is left as a named next step rather than a rushed one because the exposure is currently CLOSED by
-the default, and a change to how the supervisor builds child environments deserves its own deploy with
-its own verification, not a tail-end edit.
+**DONE, in its own commit and its own deploy** (`subprocess_runner` now filters the variable out of
+the environment it hands to `subprocess.run`). It was held back from the edit that found the problem
+because the exposure was closed by the default at the time, and because changing how the supervisor
+builds child environments is not a tail-end edit.
+
+Two things about where it landed:
+
+- **The kit's own `systemd-run --scope` calls go through the same runner**, so a candidate build
+  loses the variable too. That is correct -- a candidate is not the supervisor -- and it is the
+  reason the fix belongs in the runner rather than in a caller.
+- **The supervisor's OWN check-in is unaffected, and that is a property of the design rather than a
+  coincidence.** `notify.ready()` and `notify.watchdog()` read `os.environ` in the supervisor's own
+  process; only children go through `subprocess_runner`. A fix that had stripped the variable
+  process-wide would have disarmed the watchdog it exists to protect.
