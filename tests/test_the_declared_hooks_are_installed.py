@@ -16,8 +16,10 @@ from pathlib import Path
 
 from lab_commons.dev.famtests.hookinstall import (
     assert_a_foreign_hook_is_not_installed,
+    assert_a_planted_borrowed_entry_is_convicted,
     assert_declared_hooks_are_installed,
     assert_hooks_dir_is_the_one_git_consults,
+    assert_no_hook_entry_borrows_an_interpreter,
     assert_stages_are_declared,
     assert_the_guard_can_go_both_ways,
     assert_the_remedy_is_derived,
@@ -53,3 +55,11 @@ def test_this_guard_can_go_both_ways(tmp_path: Path) -> None:
 
 def test_somebody_elses_hook_is_its_own_finding(tmp_path: Path) -> None:
     assert_a_foreign_hook_is_not_installed(root=_ROOT, config_name=DEFAULT_CONFIG_NAME, scratch=tmp_path)
+
+
+def test_no_hook_entry_borrows_an_interpreter() -> None:
+    assert_no_hook_entry_borrows_an_interpreter(root=_ROOT, config_name=DEFAULT_CONFIG_NAME)
+
+
+def test_a_planted_borrowed_entry_is_convicted(tmp_path: Path) -> None:
+    assert_a_planted_borrowed_entry_is_convicted(scratch=tmp_path)

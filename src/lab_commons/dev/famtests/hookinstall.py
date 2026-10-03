@@ -48,11 +48,13 @@ box in 2026-09.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 from lab_commons.dev.hook_install import (
+    DEFAULT_CONFIG_NAME,
     FOREIGN,
     PROTECTED,
     declared_stages,
@@ -63,12 +65,16 @@ from lab_commons.dev.hook_install import (
 )
 
 __all__ = [
+    'BORROWED_ENTRY_REMEDY',
     'assert_a_foreign_hook_is_not_installed',
+    'assert_a_planted_borrowed_entry_is_convicted',
     'assert_declared_hooks_are_installed',
     'assert_hooks_dir_is_the_one_git_consults',
+    'assert_no_hook_entry_borrows_an_interpreter',
     'assert_stages_are_declared',
     'assert_the_guard_can_go_both_ways',
     'assert_the_remedy_is_derived',
+    'borrowed_interpreter_entries',
     'remedy_stages',
 ]
 
@@ -263,4 +269,81 @@ def assert_the_remedy_is_derived(*, root: Path, config_name: str) -> None:
             f'the install command names {sorted(named)} for a configuration declaring '
             f'{sorted(declared)}; a restated stage list is how a stage gets declared and never installed'
         )
+        raise AssertionError(msg)
+
+
+#: An ``entry:`` whose COMMAND runs an interpreter somebody else chose: ``uv run`` (which may also
+#: SYNC the shared environment, and inside a venv-less worktree CREATES an empty ``.venv`` and dies
+#: with ``No module named ...`` -- measured in wdg-lab 2026-10-03, ``--no-sync`` or not), ``uvx``, or
+#: a bare ``python``/``py`` that the PATH resolves. Leading ``env VAR=value`` assignments are skipped,
+#: because an ``env`` prefix still runs what follows it. A ``python`` reached through a PATH (any
+#: ``/`` or ``\`` in front of it) is not bare, and a venv path is :mod:`.venvspelling`'s subject.
+_BORROWED_ENTRY = re.compile(
+    r'^\s*(?:-\s+)?entry:\s*["\']?(?:env\s+)?(?:[A-Za-z_]\w*=\S*\s+)*'
+    r'(?P<command>uv(?:\.exe)?\s+run\b|uvx(?:\.exe)?\b|(?:python(?:3(?:\.\d+)?)?|py)(?:\.exe)?(?![\w./\-]))',
+)
+_ENTRY = re.compile(r'^\s*(?:-\s+)?entry:')
+
+#: The exit, named in every refusal: the family's launcher, which resolves THIS checkout's venv,
+#: else MAIN's, with no uv call and no PATH lookup of `python`.
+BORROWED_ENTRY_REMEDY = (
+    'spell the hook `entry: lab-with-venv` with the module and its arguments in `args:` (e.g. '
+    "`args: ['lab_commons.dev.githooks', 'bump-version']`) and `language: python` plus "
+    "`additional_dependencies: ['lab-commons[dev] @ git+https://github.com/DawnEver/lab-commons.git']`, "
+    "which alone puts the launcher on PATH. It resolves this checkout's venv, else the main checkout's."
+)
+
+
+def borrowed_interpreter_entries(config: Path) -> tuple[tuple[int, str], ...]:
+    """Every ``(line number, line)`` whose hook ``entry:`` borrows an interpreter -- PURE, line-based."""
+    lines = config.read_text(encoding='utf-8').splitlines()
+    return tuple((number, line.strip()) for number, line in enumerate(lines, 1) if _BORROWED_ENTRY.match(line))
+
+
+def assert_no_hook_entry_borrows_an_interpreter(*, root: Path, config_name: str) -> None:
+    """BARE-INTERPRETER for hooks: no ``entry:`` runs ``uv run``, ``uvx`` or a bare ``python``."""
+    config = root / config_name
+    read = sum(1 for line in config.read_text(encoding='utf-8').splitlines() if _ENTRY.match(line))
+    if read == 0:
+        msg = f'{config} declares no `entry:` at all, so "no borrowed interpreter" was read over nothing'
+        raise AssertionError(msg)
+    found = borrowed_interpreter_entries(config)
+    if found:
+        listed = '\n'.join(f'  {config_name}:{number}: {line}' for number, line in found)
+        msg = f'a hook entry borrows an interpreter somebody else chose:\n{listed}\nRemedy: {BORROWED_ENTRY_REMEDY}'
+        raise AssertionError(msg)
+
+
+def assert_a_planted_borrowed_entry_is_convicted(*, scratch: Path) -> None:
+    """THE PLANTED CONTROL: the exact spelling that failed in a worktree, beside the remedy's own."""
+    config = scratch / DEFAULT_CONFIG_NAME
+    config.write_text(
+        'repos:\n'
+        '  - repo: local\n'
+        '    hooks:\n'
+        '      - id: bump\n'
+        '        entry: uv run --no-sync python -m lab_commons.dev.githooks bump-version\n'
+        '      - id: tool\n'
+        '        entry: uvx ruff check\n'
+        '      - id: bare\n'
+        '        entry: env LAB_X=1 python -m x\n'
+        '      - id: sanctioned\n'
+        '        entry: lab-with-venv\n'
+        "        args: ['lab_commons.dev.githooks', 'bump-version']\n"
+        '      - id: mentions\n'
+        '        entry: lab-issue-ref --about "uv run python"\n',
+        encoding='utf-8',
+    )
+    convicted = {number for number, _ in borrowed_interpreter_entries(config)}
+    if convicted != {5, 7, 9}:
+        msg = f'the planted borrowed entries are lines {{5, 7, 9}}; the reader convicted {sorted(convicted)}'
+        raise AssertionError(msg)
+    try:
+        assert_no_hook_entry_borrows_an_interpreter(root=scratch, config_name=DEFAULT_CONFIG_NAME)
+    except AssertionError as refusal:
+        if 'lab-with-venv' not in str(refusal):
+            msg = f'the refusal does not name the remedy `lab-with-venv`: {refusal}'
+            raise AssertionError(msg) from refusal
+    else:
+        msg = 'a configuration with three borrowed entries passed the guard'
         raise AssertionError(msg)
