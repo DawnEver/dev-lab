@@ -20,9 +20,11 @@ such a line, because every consumer's delta holds it. These two arms disagree on
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from lab_commons.dev._famconfig_rows import ORDER_SENSITIVE_ARTEFACTS
+from lab_commons.dev._famconfig_rows import GITIGNORE_BANNED, ORDER_SENSITIVE_ARTEFACTS, ORDERED_SECTIONS
 from lab_commons.dev._famconfig_survey import delta_lines, negated_base_lines, positional_base_lines
 
 if TYPE_CHECKING:
@@ -71,6 +73,11 @@ def assert_base_is_order_free(base: Base) -> None:
     floor = ORDER_SENSITIVE_ARTEFACTS.get(base.artefact)
     if floor is None:
         return
+    # The declared ordered block is exempt ONLY where it is what it claims to be: the TRAILING block,
+    # in its own order. Shuffled into the sorted part, its lines are judged like any other.
+    ordered = ORDERED_SECTIONS.get(base.artefact, ())
+    if ordered and base.lines[-len(ordered) :] == ordered:
+        base = replace(base, lines=base.lines[: -len(ordered)])
     negated = negated_base_lines(base)
     if negated:
         msg = (
@@ -122,6 +129,13 @@ def delta_problems(base: Base, delta: Delta) -> tuple[str, ...]:
         for line in sorted(set(delta_lines(delta)) & known)
     ]
     out += _anchor_problems(base, delta, known)
+    if base.artefact == '.gitignore':
+        out += [
+            f'{delta.repo} adds {line!r} to .gitignore, and no repo in the family may: {why}.'
+            for line in sorted(set(delta_lines(delta)))
+            for pattern, why in GITIGNORE_BANNED.items()
+            if re.search(pattern, line)
+        ]
     if len(delta_lines(delta)) > delta.ceiling:
         out.append(
             f'{delta.repo} adds {len(delta_lines(delta))} lines to {base.artefact}, past its ceiling '

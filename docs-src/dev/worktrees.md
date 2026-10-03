@@ -14,7 +14,7 @@ The location is spelled once: `lab_commons.dev.worktreeplace.WORKTREES_REL`.
 |---|---|---|
 | PREVENT | deny row `WORKTREES-STAY-INSIDE` in `lab_commons.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` (needs no remedy, so every adopter ships it) | `git [-C <dir>] worktree add` / `worktree move` / `git clone` (and `sh <retry-wrapper> clone`) whose target is not `.../.claude/worktrees/<name>`; any `..` in the target; a clone with no explicit target. Bare, `"double"` and `'single'` quoted, `/` and `\` separators. The opening holds only if EVERY such verb on the line lands inside, because the engine tests an opening against the whole command. |
 | DETECT | `lab_commons.dev.famtests.worktreeplace.assert_every_worktree_stays_inside(root=...)` | any entry of `git worktree list --porcelain` (main checkout excepted) not inside `<main>/.claude/worktrees/`. The red names `git -C <main> worktree move <tree> <main>/.claude/worktrees/<leaf>` per tree. |
-| IGNORE | `.claude/worktrees/` in the family `.gitignore` base (`_famconfig_rows.GITIGNORE_FAMILY_LINES`) | a worktree showing up as untracked content of its own repository |
+| IGNORE | the family `.gitignore` base's ordered Claude section (`_famconfig_rows.GITIGNORE_CLAUDE_SECTION`): `**/.claude/**` with only the shared directories re-included | a worktree showing up as untracked content of its own repository |
 
 ## What the text guard cannot see
 

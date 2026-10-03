@@ -53,7 +53,9 @@ from typing import Final
 __all__ = [
     'BASES',
     'GITATTRIBUTES_BASE',
+    'GITIGNORE_BANNED',
     'GITIGNORE_BASE',
+    'GITIGNORE_CLAUDE_SECTION',
     'GITIGNORE_CONSUMER_CORE',
     'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
@@ -62,6 +64,7 @@ __all__ = [
     'MAKEFILE_RESIDUAL_SIGNALS',
     'MAKE_TARGET_CONSUMER_CORE',
     'MAKE_TARGET_CORE',
+    'ORDERED_SECTIONS',
     'ORDER_SENSITIVE_ARTEFACTS',
     'PRECOMMIT_BASE',
     'REPO_FLOOR',
@@ -129,8 +132,6 @@ GITIGNORE_CONSUMER_CORE: Final[tuple[str, ...]] = (
 #: every repo uses) writes that path in every checkout -- not because three files happen to spell it.
 #: A consumer delta that restates one of these is refused at render time like any other restatement.
 GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
-    '.claude/worktrees/': 'WORKTREES-STAY-INSIDE: every linked worktree lives here (lab_commons.dev.worktreeplace).',
-    '.claude/.rem-state.json': 'the rem plugin`s device-local state, written in every repo the agents work in.',
     '.verify/': 'the logs lab_commons.dev.verify writes -- the family verdict entry point.',
     '**/__version__.py': 'the version file hatch-vcs / setuptools-scm write at build time, in every repo.',
     '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
@@ -138,10 +139,62 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     'htmlcov/': 'coverage`s HTML report -- `.coverage*` is already base; its report belongs with it.',
     'output/': 'the dated artefact tree (lab_commons.dev.datedlog) every repo writes under output/.',
     '**/.DS_Store': 'macOS Finder state; a platform artefact with no repo to belong to.',
+    'scratch/': 'THE one temporary-script directory of the family (user ruling 2026-10-03); no other name.',
+    '/config/': 'the dev-mode in-repo config root two consumers generate from packaged defaults.',
+    '/dumps/': 'profiler and core dumps -- the reference repos both ignore them.',
+    '/report/': 'test and coverage reports -- the reference repos both ignore them.',
+    '**/ignore/': 'the conventional "never commit" directory the reference repos both carry.',
 }
 
-#: THE BASE: the consumers' measured core plus the mandated lines, sorted so it is re-derivable.
-GITIGNORE_BASE: Final[tuple[str, ...]] = tuple(sorted({*GITIGNORE_CONSUMER_CORE, *GITIGNORE_FAMILY_LINES}))
+#: THE CLAUDE PROJECT STATE SECTION -- ONE ORDERED BLOCK, identical in every repo (user ruling
+#: 2026-10-03, taken from the two reference repos' `# Claude project state` sections). Ignore all of
+#: `.claude/`, re-include the shared, checked-in directories, then re-ignore the generated files the
+#: re-inclusion would otherwise track. ORDER IS THE RULE here (last match wins), so this block is
+#: declared in :data:`ORDERED_SECTIONS`, rendered verbatim AFTER the sorted lines, and exempt from the
+#: order-free refusal that binds the sorted part. It covers `.claude/worktrees/` (WORKTREES-STAY-INSIDE)
+#: and `.claude/.rem-state.json` because `**/.claude/**` does and nothing re-includes them.
+GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
+    '**/.claude/**',
+    '!**/.claude/settings.json',
+    *(
+        line
+        for directory in (
+            'hooks',
+            'agents',
+            'skills',
+            'commands',
+            'workflows',
+            'rules',
+            'memory',
+            'output-styles',
+            'docs',
+        )
+        for line in (f'!**/.claude/{directory}/', f'!**/.claude/{directory}/**')
+    ),
+    '**/.claude/rules/MEMORY.md',
+    '**/_meta.json',
+    '**/.claude/**/__pycache__/',
+    '**/.claude/**/*.py[cod]',
+)
+
+#: Lines NO `.gitignore` in the family may carry, base or delta -- as patterns, with the ruling. A
+#: scratch-like directory under any name but `scratch/` is a second place for temporary scripts, and
+#: a per-tool cache pointer suffix is one repo's tool leaking into its ignore file.
+GITIGNORE_BANNED: Final[dict[str, str]] = {
+    r'(?:^|/)(?:_scratch|scratchpad)(?:/|$)': 'the one temporary-script directory is `scratch/` (ruling 2026-10-03)',
+    r'^\*\.[\w-]+-cache$': 'a tool-specific cache pointer suffix is not ignored family-wide (ruling 2026-10-03)',
+}
+
+#: THE BASE: the sorted measured core plus the mandated lines, then the ordered Claude section.
+GITIGNORE_BASE: Final[tuple[str, ...]] = (
+    *sorted({*GITIGNORE_CONSUMER_CORE, *GITIGNORE_FAMILY_LINES}),
+    *GITIGNORE_CLAUDE_SECTION,
+)
+
+#: Per artefact, the base lines that form ONE ORDERED block: rendered in the order written, and
+#: exempt from :func:`lab_commons.dev.famconfig.assert_base_is_order_free`, whose refusal exists for
+#: lines whose order the sorted table cannot keep.
+ORDERED_SECTIONS: Final[dict[str, tuple[str, ...]]] = {'.gitignore': GITIGNORE_CLAUDE_SECTION}
 
 #: WHICH ARTEFACTS ARE LAST-MATCH-WINS, and the floating-rule floor each scan over one must reach.
 #:

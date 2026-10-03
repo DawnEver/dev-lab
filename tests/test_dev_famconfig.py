@@ -34,6 +34,7 @@ import pytest
 
 from lab_commons.dev._famconfig_rows import (
     GITIGNORE_BASE,
+    GITIGNORE_CLAUDE_SECTION,
     GITIGNORE_CONSUMER_CORE,
     GITIGNORE_FAMILY_LINES,
     MAKE_TARGET_CONSUMER_CORE,
@@ -101,13 +102,14 @@ def _delta(added: tuple[str, ...] = ('target/', 'coverage-html/'), ceiling: int 
 def test_the_gitignore_base_is_the_measured_core_plus_the_mandated_lines() -> None:
     """The consumers' 14 measured patterns plus the family-mandated set, by NAME -- and nothing else."""
     assert len(GITIGNORE_CONSUMER_CORE) == GITIGNORE_LINES
-    assert set(GITIGNORE_BASE) == set(GITIGNORE_CONSUMER_CORE) | set(GITIGNORE_FAMILY_LINES)
+    assert (*_SORTED, *GITIGNORE_CLAUDE_SECTION) == GITIGNORE_BASE, 'the sorted part, then the ordered section'
+    assert set(_SORTED) == set(GITIGNORE_CONSUMER_CORE) | set(GITIGNORE_FAMILY_LINES)
     assert all(why.strip() for why in GITIGNORE_FAMILY_LINES.values()), 'a mandated line carries its reason'
-    assert '.claude/worktrees/' in GITIGNORE_FAMILY_LINES, 'WORKTREES-STAY-INSIDE ships its ignore line'
+    assert '**/.claude/**' in GITIGNORE_CLAUDE_SECTION, 'the Claude section ignores .claude/worktrees/ too'
     assert_base_floor(len(GITIGNORE_BASE), GITIGNORE_FLOOR, '.gitignore')
     assert 'uv.lock' in GITIGNORE_BASE, 'the ruling of 2026-09-17 keeps the lockfile out of git'
     assert '.venv*' in GITIGNORE_BASE
-    assert sorted(GITIGNORE_BASE) == list(GITIGNORE_BASE), 'sorted, so the measurement is re-derivable'
+    assert sorted(_SORTED) == list(_SORTED), 'sorted, so the measurement is re-derivable'
 
 
 def test_every_shared_hook_id_survives_into_the_rendered_precommit_base() -> None:
@@ -545,9 +547,13 @@ _RE_IGNORE: Final = '**/.claude/**/__pycache__/'
 _ORDINARY: Final = '**/.DS_Store'
 
 
+#: The base's SORTED part -- everything but the trailing ordered Claude section.
+_SORTED: Final = tuple(line for line in GITIGNORE_BASE if line not in GITIGNORE_CLAUDE_SECTION)
+
+
 def _promoted(line: str) -> Base:
     """The live `.gitignore` base with *line* promoted into it, sorted exactly as the table is."""
-    return Base('.gitignore', tuple(sorted((*GITIGNORE_BASE, line))), RENDERED)
+    return Base('.gitignore', (*sorted((*_SORTED, line)), *GITIGNORE_CLAUDE_SECTION), RENDERED)
 
 
 def test_planted_a_re_ignore_promoted_into_the_base_is_refused_and_named() -> None:
@@ -577,9 +583,10 @@ def test_an_ordinary_line_is_still_promotable_into_the_same_base() -> None:
 
 def test_the_live_base_is_order_free_today_and_the_scan_was_not_empty() -> None:
     """THE FLOOR. Four floating rules here since 2026-10-03; a reading that found none subsumes nothing, vacuously."""
-    floating = tuple(line for line in _base().content_lines if floating_subject(line))
-    assert floating == ('**/.DS_Store', '**/.env', '**/__pycache__/', '**/__version__.py'), floating
-    assert positional_base_lines(_base(), floating_floor=len(floating)) == ()
+    floating = tuple(line for line in _SORTED if floating_subject(line))
+    assert floating == ('**/.DS_Store', '**/.env', '**/__pycache__/', '**/__version__.py', '**/ignore/'), floating
+    assert positional_base_lines(Base('.gitignore', _SORTED, RENDERED), floating_floor=len(floating)) == ()
+    assert_base_is_order_free(_base())
 
 
 def test_a_base_with_no_floating_rule_is_refused_rather_than_reported_clean() -> None:
@@ -612,7 +619,7 @@ def test_a_negation_in_a_sorted_base_is_defeated_by_the_sort_itself() -> None:
     arm owns no guard; it exists so the refusal below is not a rule nobody can show a victim for.
     """
     dead = '!**/log/keep.log'
-    lines = tuple(sorted((*GITIGNORE_BASE, dead)))
+    lines = tuple(sorted((*_SORTED, dead)))
     assert lines.index(dead) < lines.index('**/log/*.log'), lines
     assert lines.index(dead) == 0, 'a negation sorts to the top of every base this table can hold'
 
@@ -641,7 +648,8 @@ def test_the_live_base_declares_no_negation_and_the_reading_saw_every_line() -> 
     """THE FLOOR. A reading over an empty base finds no negation and reads exactly like a clean one."""
     assert negated_base_lines(_base()) == ()
     assert len(_base().content_lines) >= GITIGNORE_FLOOR, 'a reading over a gutted base is vacuous'
-    assert negated_base_lines(_promoted(_NEGATION)) == (_NEGATION,), 'the reading is not blind'
+    sorted_part = Base('.gitignore', tuple(sorted((*_SORTED, _NEGATION))), RENDERED)
+    assert negated_base_lines(sorted_part) == (_NEGATION,), 'the reading is not blind'
 
 
 def test_the_order_sensitive_set_is_named_rather_than_counted() -> None:
@@ -737,3 +745,11 @@ def test_a_declared_drop_of_the_recipe_is_not_also_reported_as_an_orphan(tmp_pat
     path.write_text(body + '\n', encoding='utf-8')
     delta = Delta(repo='x', added=(), dropped={_VERIFY_RECIPE: 'this repo verifies through its own runner'}, ceiling=0)
     assert inspect_file(path, BASES['Makefile'], delta).status == INSTALLED
+
+
+@pytest.mark.parametrize('banned', ['**/_scratch/', '/scratchpad/', '*.toolname-cache'])
+def test_planted_a_banned_line_in_a_delta_is_refused(banned: str) -> None:
+    """PLANTED: the 2026-10-03 ruling -- `scratch/` is the one temporary directory, no cache suffixes."""
+    problems = delta_problems(_base(), _delta(added=('target/', banned)))
+    assert any('no repo in the family may' in problem and banned in problem for problem in problems), problems
+    assert not delta_problems(_base(), _delta(added=('target/',))), 'the control line itself is clean'
