@@ -53,14 +53,13 @@ own survey reports 26 added lines and ZERO dropped, so every one of the nine bas
 under its own recipe. A drop is the honest alternative for a target this repo genuinely cannot have,
 and there is none.
 
-`.gitignore` IS STILL NOT ADOPTED and its absence stays named rather than silent. This repo's file is
-10 literal lines against the base's 14 patterns; the base writes every cache rule directory-slashed
-and floating (`**/__pycache__/`) where this tree writes them unanchored, and it carries
-`src/lab_commons/__version__.py`, which no other repo has. Adoption is a real behaviour change with
-its own evidence and its own commit. :data:`DELTAS` therefore holds TWO of the kit's three entries,
-and the test modules beside it deliberately do not call the kit's
-`assert_every_base_is_accounted_for`, because that arm asserts a completeness this repo has not yet
-earned.
+`.gitignore` IS ADOPTED AS OF 2026-10-03, on the user's ruling that every project-level file has ONE
+source in this package. The base grew the family-mandated lines (`_famconfig_rows.GITIGNORE_FAMILY_LINES`)
+that made it cover this tree: `.verify/`, `**/__version__.py` (which reaches the hatch-vcs file
+`src/lab_commons/__version__.py`), `/build/`, `/dist/`, `.claude/.rem-state.json` and
+`.claude/worktrees/`. What stays is ONE line, `*.py[cod]` -- a compiled file OUTSIDE a `__pycache__/`,
+which no consumer ignores and this repo always has. :data:`DELTAS` now holds all three artefacts, so
+the completeness arm runs here too.
 """
 
 from __future__ import annotations
@@ -71,6 +70,8 @@ from lab_commons.dev.famconfig import Delta
 
 __all__ = [
     'DELTAS',
+    'GITIGNORE',
+    'GITIGNORE_DELTA',
     'INSTALLED_STAGES',
     'MAKEFILE',
     'MAKEFILE_DELTA',
@@ -148,9 +149,13 @@ MAKEFILE_DELTA: Final = Delta(
 #: second pin on this repo's target list.
 MAKE_TARGET_FLOOR: Final = 9
 
-#: Every artefact this repo declares a delta against. TWO of the kit's three, and see the docstring
-#: for why `.gitignore` is absent rather than adopted.
-DELTAS: Final[dict[str, Delta]] = {PRECOMMIT: PRECOMMIT_DELTA, MAKEFILE: MAKEFILE_DELTA}
+#: This repo's `.gitignore` beyond the family base: one line, see the docstring. The ceiling IS the
+#: measurement, so the next line anybody adds raises it in the same edit and says what it is for.
+GITIGNORE: Final = '.gitignore'
+GITIGNORE_DELTA: Final = Delta(repo=REPO, added=('*.py[cod]',), dropped={}, ceiling=1)
+
+#: Every artefact this repo declares a delta against -- all three of the kit's bases.
+DELTAS: Final[dict[str, Delta]] = {PRECOMMIT: PRECOMMIT_DELTA, MAKEFILE: MAKEFILE_DELTA, GITIGNORE: GITIGNORE_DELTA}
 
 #: The git hook files this repo INSTALLS, which is the half a configuration cannot answer for itself.
 #: Exactly the stages the config declares: `pre-commit` for the default, `commit-msg` for commitizen.

@@ -300,10 +300,8 @@ COUNTER_DIRECTION_CODES: tuple[str, ...] = (
 #: census and the base are two independent readings and that they agree is a FINDING rather than a
 #: reason to derive one from the other.
 #:
-#: lab-commons shares FOUR of them (`*.egg-info/`, `.pytest_cache/`, `.ruff_cache/`, and since
-#: 2026-10-01 `uv.lock`) and is a SUBSET
-#: OF NONE of the other three, none of which is a subset of it -- measured, not assumed, in both
-#: directions, and pinned by `test_the_kit_declines_the_gitignore_base.py`.
+#: lab-commons ADOPTED the rendered base on 2026-10-03 and so holds all fourteen; the base itself is
+#: this core plus the family-mandated lines in `_famconfig_rows.GITIGNORE_FAMILY_LINES`.
 SHARED_GITIGNORE_CORE: tuple[str, ...] = (
     '**/.env',
     '**/__pycache__/',
@@ -519,23 +517,13 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
     ),
     'lab-commons::.gitignore': Placement(
         SPLITS,
-        'TEN PATTERNS, AND ONLY THREE OF THEM ARE THE FAMILY`S. Re-measured 2026-09-19: the three '
-        'consumers share a FOURTEEN-pattern core -- this row said 12, because `SHARED_GITIGNORE_CORE` '
-        'was two patterns short of its own intersection -- and this repo holds `*.egg-info/`, '
-        '`.pytest_cache/` and `.ruff_cache/` of it. THE SUBSET ANSWER IS UNCHANGED AND IS THE POINT: '
-        'it is a SUBSET OF NONE of the other three, and none of them is a subset of it, in all six '
-        'pairwise directions, and `test_the_kit_declines_the_gitignore_base.py` now pins that BOTH '
-        'ways -- it reds if the base ever becomes adoptable here, and it reds if somebody stamps this '
-        'file while the measurement still says they should not. THE SEAM is the '
-        'generated-artefact core (caches, venv, coverage, `**/.env`, `**/log/*.log`), which is a fact '
-        'about the toolchain every repo runs. What STAYS is one line and it names this repo: '
-        '`src/lab_commons/__version__.py`, the file hatch-vcs writes -- the consumers spell the same '
-        'idea `**/__version__.py`, and neither spelling is portable to the other because one repo has '
-        'one package and the others have several. What breaks if that line moved: a generated version '
-        'file gets committed and the build stops being reproducible from the tag.'
-        ' ADDED 2026-10-01, locally: `.claude/.rem-state.json`, the rem plugin`s device-local state. '
-        'It is NOT a base line -- consumer-c names it literally, consumer-b and consumer-a reach it through '
-        '`**/.claude/**` -- so it is outside the three-way core and the share above does not move.',
+        'RENDERED SINCE 2026-10-03, on the user ruling that every project-level file has one source in '
+        'this package. It had been declined: ten patterns, a subset of no consumer in either direction. '
+        'What closed it was the BASE moving rather than this file: the family-mandated lines '
+        '(`.verify/`, `**/__version__.py`, `/build/`, `/dist/`, `.claude/.rem-state.json`, '
+        '`.claude/worktrees/`, `htmlcov/`, `output/`, `**/.DS_Store`) joined the fourteen-pattern '
+        'consumer core, after which this tree`s file is the base plus ONE delta line, `*.py[cod]`. '
+        '`tests/test_the_kit_renders_its_own_gitignore.py` holds the rendering.',
     ),
     'lab-commons::Makefile': Placement(
         SPLITS,

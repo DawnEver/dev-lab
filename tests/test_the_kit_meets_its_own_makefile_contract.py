@@ -13,11 +13,8 @@ and its bytes must equal base-plus-delta, while `Makefile` is REQUIRED and only 
 be present, because the four measured repos share target NAMES and no recipe. Filing both under a
 module named for the rendered one would bury that.
 
-THE COMPLETENESS ARM IS STILL ABSENT, and this module does not quietly close it. `.gitignore` is the
-third kit base and this repo has not adopted it; the row at the end of
-``test_the_kit_renders_its_own_precommit_config.py`` holds that absence and now names one artefact
-where it named two. A suite that called ``assert_every_base_is_accounted_for`` here would be green on
-a completeness that has not happened.
+THE COMPLETENESS ARM is in ``test_the_kit_renders_its_own_gitignore.py``: `.gitignore` was the third
+kit base and was adopted here on 2026-10-03, so all three are now declared.
 
 NOTHING HERE RE-IMPLEMENTS THE KIT. Every assertion is one of the shared bodies in
 :mod:`lab_commons.dev.famtests.configrender` -- the same ones both labs parametrize. This module

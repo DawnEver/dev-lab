@@ -1,15 +1,30 @@
-__pycache__/
-*.py[cod]
+# Rendered by lab_commons.dev.famconfig from the family base for .gitignore.
+# Hand edits RED. The base is data in lab_commons.dev._famconfig_rows;
+# this repo's own lines are its declared delta. Change one, re-render, commit.
+
+**/.DS_Store
+**/.env
+**/__pycache__/
+**/__version__.py
+**/log/*.log
+**/log/*.log.error
+**/temp/**
+*.c
+*.egg-info/
+*.spec
+.claude/.rem-state.json
+.claude/worktrees/
+.coverage*
+.mypy_cache/
 .pytest_cache/
 .ruff_cache/
-*.egg-info/
-dist/
-build/
-.venv/
-src/lab_commons/__version__.py
+.venv*
 .verify/
-
+/build/
+/dist/
+htmlcov/
+output/
 uv.lock
-# The rem plugin's device-local state. Kept LOCAL, not promoted to the family base: consumer-b and
-# consumer-a cover it with `**/.claude/**`, so the literal line is not in the three-way core.
-.claude/.rem-state.json
+
+# --- lab-commons delta, 1 of 1 allowed ---
+*.py[cod]

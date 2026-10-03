@@ -53,6 +53,8 @@ from typing import Final
 __all__ = [
     'BASES',
     'GITIGNORE_BASE',
+    'GITIGNORE_CONSUMER_CORE',
+    'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
     'HOOK_ID_CORE',
     'MAKEFILE_BASE',
@@ -103,7 +105,7 @@ REPO_FLOOR: Final = 3
 #: Promoted into this table it would render ABOVE every delta line, re-tracking the `.pyc` the sibling
 #: repo measured as TRACKED in 2026-08, and `fork_signals` would have argued FOR the promotion. See
 #: :data:`ORDER_SENSITIVE_ARTEFACTS` for the mechanism that now refuses it.
-GITIGNORE_BASE: Final[tuple[str, ...]] = (
+GITIGNORE_CONSUMER_CORE: Final[tuple[str, ...]] = (
     '**/.env',
     '**/__pycache__/',
     '**/log/*.log',
@@ -119,6 +121,26 @@ GITIGNORE_BASE: Final[tuple[str, ...]] = (
     '.venv*',
     'uv.lock',
 )
+
+#: THE LINES THE FAMILY MANDATES rather than measured, each with the mechanism that writes the path.
+#: Added 2026-10-03 on the user's ruling that every repo's `.gitignore` has ONE source here: a line
+#: enters when a FAMILY mechanism (this package, the build backend every repo runs, the agent tooling
+#: every repo uses) writes that path in every checkout -- not because three files happen to spell it.
+#: A consumer delta that restates one of these is refused at render time like any other restatement.
+GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
+    '.claude/worktrees/': 'WORKTREES-STAY-INSIDE: every linked worktree lives here (lab_commons.dev.worktreeplace).',
+    '.claude/.rem-state.json': 'the rem plugin`s device-local state, written in every repo the agents work in.',
+    '.verify/': 'the logs lab_commons.dev.verify writes -- the family verdict entry point.',
+    '**/__version__.py': 'the version file hatch-vcs / setuptools-scm write at build time, in every repo.',
+    '/build/': 'the build backend`s staging directory, at the root of every repo that builds a wheel.',
+    '/dist/': 'the built wheels and sdists, at the root of every repo that builds one.',
+    'htmlcov/': 'coverage`s HTML report -- `.coverage*` is already base; its report belongs with it.',
+    'output/': 'the dated artefact tree (lab_commons.dev.datedlog) every repo writes under output/.',
+    '**/.DS_Store': 'macOS Finder state; a platform artefact with no repo to belong to.',
+}
+
+#: THE BASE: the consumers' measured core plus the mandated lines, sorted so it is re-derivable.
+GITIGNORE_BASE: Final[tuple[str, ...]] = tuple(sorted({*GITIGNORE_CONSUMER_CORE, *GITIGNORE_FAMILY_LINES}))
 
 #: WHICH ARTEFACTS ARE LAST-MATCH-WINS, and the floating-rule floor each scan over one must reach.
 #:

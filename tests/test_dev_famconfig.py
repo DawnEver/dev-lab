@@ -34,6 +34,8 @@ import pytest
 
 from lab_commons.dev._famconfig_rows import (
     GITIGNORE_BASE,
+    GITIGNORE_CONSUMER_CORE,
+    GITIGNORE_FAMILY_LINES,
     MAKE_TARGET_CONSUMER_CORE,
     MAKEFILE_BASE,
     MAKEFILE_RESIDUAL_SIGNALS,
@@ -96,9 +98,12 @@ def _delta(added: tuple[str, ...] = ('target/', 'htmlcov/'), ceiling: int = 4) -
 # ----------------------------------------------------------------- the base is what was measured
 
 
-def test_the_gitignore_base_is_the_measured_intersection() -> None:
-    """The 14 patterns, by NAME and by count -- a count alone cannot say WHICH line left."""
-    assert len(GITIGNORE_BASE) == GITIGNORE_LINES
+def test_the_gitignore_base_is_the_measured_core_plus_the_mandated_lines() -> None:
+    """The consumers' 14 measured patterns plus the family-mandated set, by NAME -- and nothing else."""
+    assert len(GITIGNORE_CONSUMER_CORE) == GITIGNORE_LINES
+    assert set(GITIGNORE_BASE) == set(GITIGNORE_CONSUMER_CORE) | set(GITIGNORE_FAMILY_LINES)
+    assert all(why.strip() for why in GITIGNORE_FAMILY_LINES.values()), 'a mandated line carries its reason'
+    assert '.claude/worktrees/' in GITIGNORE_FAMILY_LINES, 'WORKTREES-STAY-INSIDE ships its ignore line'
     assert_base_floor(len(GITIGNORE_BASE), GITIGNORE_FLOOR, '.gitignore')
     assert 'uv.lock' in GITIGNORE_BASE, 'the ruling of 2026-09-17 keeps the lockfile out of git'
     assert '.venv*' in GITIGNORE_BASE
