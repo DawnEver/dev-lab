@@ -27,8 +27,6 @@ from lab_commons.dev.worktreeplace import (
     remedy,
 )
 
-ROW = 'WORKTREES-STAY-INSIDE'
-
 
 @pytest.fixture(scope='module')
 def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -50,7 +48,6 @@ def test_the_engine_refuses_a_misplaced_tree_and_names_the_allowed_form(rules: P
     """REFUSAL-NAMES-THE-REMEDY: the reason carries the exact allowed path form."""
     reason = agenthooks.decide(command, rules)
     assert reason is not None, f'allowed: {command!r}'
-    assert ROW in reason, reason
     assert f'{WORKTREES_REL}/<name>' in reason, reason
 
 

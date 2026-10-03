@@ -79,6 +79,8 @@ _IDS = frozenset(
         'UNSUPPORTED-RAISES',
         'UNITS-GO-THROUGH-PINT',
         'VERDICT-AS-STATUS',
+        'WORKTREES-STAY-INSIDE',
+        'PROJECT-FILES-HAVE-ONE-SOURCE',
         'VERDICT-BAR-IS-THE-INCREMENT',
         'XFAIL-NOT-SKIP',
     }
