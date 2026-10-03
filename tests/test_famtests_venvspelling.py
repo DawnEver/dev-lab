@@ -25,6 +25,7 @@ from lab_commons.dev.venvpath import (
     VENV_INTERPRETER_GLOB,
     VENV_LAYOUTS,
     UnknownPlatform,
+    checkout_interpreter,
     current_os_name,
     hardcoded_spellings,
     portable,
@@ -149,7 +150,7 @@ def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
     filesystem about a path and nothing else, so neither answer can steer it.
     """
     root = SOURCE.parent
-    resolved = root / venv_interpreter(os_name=current_os_name())
+    resolved = checkout_interpreter(root, os_name=current_os_name())
     assert resolved.is_file(), (
         f'{resolved} does not exist. VENV_LAYOUTS says this platform (os.name='
         f'{current_os_name()!r}) keeps its venv interpreter there, and the filesystem disagrees -- '

@@ -41,6 +41,7 @@ from typing import Final
 from lab_commons.dev.doorcensus import sibling_paths
 from lab_commons.dev.ruffwaivers import ruff_config as kit_ruff_config
 from lab_commons.dev.ruffwaivers import ruff_waivers
+from lab_commons.dev.worktreeplace import family_root
 
 __all__ = [
     'MOVES',
@@ -221,7 +222,7 @@ def repo_root(repo: str, paths: dict[str, str]) -> Path | None:
     """
     if repo == 'lab-commons':
         return ROOT
-    candidate = ROOT.parent / sibling_paths(paths)[repo]
+    candidate = family_root(ROOT) / sibling_paths(paths)[repo]
     return candidate if (candidate / '.git').exists() else None
 
 

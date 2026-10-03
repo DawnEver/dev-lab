@@ -24,10 +24,11 @@ from lab_commons.dev.synccensus import (
     assert_scopes,
     pruning_sites,
 )
+from lab_commons.dev.worktreeplace import family_root
 
 #: This repo's checkout, and the directory it sits in -- the census API joins the two.
 _ROOT: Final = Path(__file__).resolve().parents[1]
-_BASE: Final = _ROOT.parent
+_BASE: Final = family_root(_ROOT)
 
 #: The repo under verification, read from its WORKING TREE.
 _HERE: Final = 'lab-commons'

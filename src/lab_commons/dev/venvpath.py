@@ -66,13 +66,19 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+from lab_commons.dev.worktreeplace import main_checkout
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
     'VENV_INTERPRETER_GLOB',
     'VENV_LAYOUTS',
     'UnknownPlatform',
+    'checkout_interpreter',
     'current_os_name',
     'hardcoded_spellings',
     'portable',
@@ -217,3 +223,15 @@ def unportable_row(entry: str) -> str | None:
         f'settings.json is TRACKED IN GIT and a one-platform row permits NOTHING on the other, silently. '
         f'Write {portable(entry)} instead.'
     )
+
+
+def checkout_interpreter(root: Path, *, os_name: str) -> Path:
+    """The venv interpreter a checkout at *root* runs: its own, else its MAIN checkout's.
+
+    A linked worktree under ``.claude/worktrees/`` (WORKTREES-STAY-INSIDE) usually has no ``.venv`` of
+    its own and borrows the main checkout's -- the same fallback a consumer's hook launcher makes. The
+    returned path may not exist; whether it does is the caller's assertion to make.
+    """
+    relative = venv_interpreter(os_name=os_name)
+    own = root / relative
+    return own if own.is_file() else main_checkout(root) / relative
