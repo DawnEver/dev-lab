@@ -75,7 +75,8 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 #: are in it). RE-MEASURED from 15, which had been left behind by a tree that grew past it: a floor
 #: 39 clear of its population refuses only a total collapse, and the remedy for that is the floor,
 #: never the headroom.
-# RE-TAKEN 2026-10-03 at 89 published modules (floor 60 -> 80). RE-MEASURED 2026-09-19 at 69 published modules (the walk skips every `_`-prefixed part, so
+# RE-TAKEN 2026-10-03 at 89 published modules (floor 60 -> 80).
+# RE-MEASURED 2026-09-19 at 69 published modules (the walk skips every `_`-prefixed part, so
 # `__init__.py` is not one). The floor stood at 40 while the tree held 69, which is 4 past the
 # headroom -- a floor the population has outgrown refuses only a total collapse and passes a walk
 # that lost a third of its corpus. RE-TAKEN rather than the headroom widened; that direction is the
