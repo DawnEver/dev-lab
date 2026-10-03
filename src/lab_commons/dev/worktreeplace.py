@@ -2,8 +2,8 @@
 
 THE DEFECT, MEASURED 2026-10-03. Eight linked worktrees across the family had been created as
 SIBLINGS of their repositories (``<parent>/<repo>-wt-cf``, ``<parent>/<repo>-placement`` ...). A
-tree outside its repository is outside every scan that repo runs over itself, outside its ``.gitignore``, and outside the place the next agent looks; the user
-ruled the same day that creating one is forbidden family-wide.
+tree outside its repository is outside every scan that repo runs over itself, outside its
+``.gitignore``, and outside the place the next agent looks; the user ruled the same day that creating one is forbidden family-wide.
 
 ONE FACT, THREE MECHANISMS, AND THIS MODULE IS THE FACT. :data:`WORKTREES_REL` is the only spelling
 of the location. The agent deny row ``WORKTREES-STAY-INSIDE`` (:mod:`lab_commons.dev._deny_rows`)
