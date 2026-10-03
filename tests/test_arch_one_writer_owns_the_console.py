@@ -51,7 +51,19 @@ NOT_OURS = ('stdout', 'stderr')
 #: UNCHANGED AT 45, and that is the half worth checking -- raising the floor TIGHTENS what a walk
 #: must read, while raising the headroom would widen the waiver, which is the move this guard's own
 #: docstring calls giving up the arm to keep it.
-MODULE_FLOOR = 95
+#:
+#: RE-MEASURED 2026-10-03: 149 tracked modules. ``lab_commons.supervise`` landed that day and
+#: carried the population past the 140 this pair allowed, so the arm said so -- which is what it is
+#: for. NOTE HOW IT SAID SO LATE: ``source_modules()`` walks TRACKED files, so while the package was
+#: untracked this guard could not see twelve new modules and stayed green. The number below is the
+#: MEASUREMENT OF THE DAY THE PACKAGE BECAME VISIBLE, not of the day it was written. A projection
+#: was deliberately not written here first; a stored reading that has stopped agreeing with its
+#: derivation is the failure this file's own row above describes.
+#:
+#: THE FLOOR MOVED; THE HEADROOM DID NOT. 95 -> 119, the same ~80% both earlier readings used, and
+#: still 45 of room above it. Raising the headroom instead would widen the waiver, which is the move
+#: this guard's docstring calls giving up the arm to keep it.
+MODULE_FLOOR = 119
 MODULE_HEADROOM = 45
 
 
