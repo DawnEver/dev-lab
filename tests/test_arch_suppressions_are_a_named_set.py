@@ -439,11 +439,6 @@ ALLOWED: Final[dict[Site, str]] = {
         "['git', '-C', str(tmp_path), 'add', '-A'],",
     ): 'the same scratch checkout, staging the files the guard is then asked to read',
     (
-        'tests/_private_markers.py',
-        'S607',
-        "done = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)",
-    ): 'git through PATH, listing the tracked files the private-marker scan reads',
-    (
         'src/lab_commons/dev/collectscope.py',
         'S607',
         "['git', '-C', str(root), 'cat-file', '--batch'],",

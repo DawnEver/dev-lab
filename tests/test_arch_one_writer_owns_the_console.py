@@ -63,7 +63,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: THE FLOOR MOVED; THE HEADROOM DID NOT. 95 -> 119, the same ~80% both earlier readings used, and
 #: still 45 of room above it. Raising the headroom instead would widen the waiver, which is the move
 #: this guard's docstring calls giving up the arm to keep it.
-MODULE_FLOOR = 119
+MODULE_FLOOR = 150  # re-taken 2026-10-03: the scan read 165 after the supervise and worktree merges
 MODULE_HEADROOM = 45
 
 

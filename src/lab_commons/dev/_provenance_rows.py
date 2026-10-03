@@ -383,9 +383,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # in-kit and therefore not provenance -- that row below still supersedes `with-venv.sh`.
     'venvpath': ('original',),
     'worktreeplace': ('original',),
-    # Promoted in 4ad12b6 from this repo's own tests, so no consumer file is superseded.
-    'collectcensus': ('original',),
-    'ruffwaivers': ('original',),
     'famfiles': ('original',),
     # -- `lab_commons.dev.githooks`.
     'bootstrap': ('supersedes', 'scripts/hooks/with-venv.sh'),
