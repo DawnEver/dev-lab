@@ -19,7 +19,7 @@ code, and even rehearsing it, found none of them.
 known = history(ctx.state)
 if not known:
     result.anomalies.append(no_verified_release)
-    return result          # <-- release_available is never reached
+    return result  # <-- release_available is never reached
 ```
 
 A snapshot is written by a successful deploy. A deploy runs only on `release_available`. So a target

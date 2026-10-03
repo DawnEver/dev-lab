@@ -258,7 +258,12 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: rather than absorbing it -- which is exactly what the pair is for. Re-priced on the same ~80%
 #: both earlier readings used: 325. THE HEADROOM IS UNCHANGED AT 90; raising it is how the arm is
 #: kept while the guard it stands for is given up.
-CONSTANT_FLOOR = 325
+#:
+#: RE-MEASURED 2026-10-03, HOURS LATER AND BY THE SAME ARM: 416 constants, after the supervisor's
+#: notify protocol and its suite landed. 416 against 325 is 91 clear -- one past the same 90 -- so
+#: it said so, which is the third time in two days that this pair has done the job it was priced for
+#: instead of absorbing a growth. Re-priced on the same ~80%: 332. Headroom unchanged, as always.
+CONSTANT_FLOOR = 332
 CONSTANT_HEADROOM = 90
 
 

@@ -17,9 +17,17 @@ CODE_ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 #: How long a one-off may wait in ``scratch/`` before it is archived or promoted.
 SCRATCH_MAX_AGE_DAYS = 3.0
 
+#: Directories this walk does not enter, and `pruned_paths` exists for exactly this: A WORKTREE IS
+#: A REAL SECOND TREE with its own `src/`, and it is judged by the run that happens inside it. This
+#: guard used to walk into them, so every open worktree was reported as code outside the code roots
+#: -- a reading that says nothing about this tree and everything about which branches happen to be
+#: checked out on this box. `test_dev_codeplace` already drives the parameter; this file, which is
+#: the repo's own self-check, did not.
+PRUNED = ('.claude/worktrees',)
+
 
 def test_no_code_file_lives_outside_a_code_root() -> None:
-    found = misplaced_code(_ROOT, code_roots=CODE_ROOTS)
+    found = misplaced_code(_ROOT, code_roots=CODE_ROOTS, pruned_paths=PRUNED)
     assert not found, f'code outside {list(CODE_ROOTS)}: {found[:10]}'
 
 
