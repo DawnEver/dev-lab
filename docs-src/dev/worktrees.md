@@ -29,6 +29,7 @@ A deny pattern reads text. It can insist the target ends in `.claude/worktrees/<
    from pathlib import Path
    from lab_commons.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
 
+
    def test_every_worktree_stays_inside() -> None:
        assert_every_worktree_stays_inside(root=Path(__file__).resolve().parents[N])
    ```
