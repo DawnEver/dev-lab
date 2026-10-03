@@ -41,8 +41,13 @@ and they are recorded as fine — `alert._TIMEOUT` (15) and `systemd._GRACE` (15
 three separate judgements; `systemd.OUTPUT_CAP` and `transport.BODY_CAP` are both `64 * 1024` and cap
 different sources.
 
-The same sweep over the consumer's package found **no duplicate constant name at all** — every
-all-caps constant in `src/wdg_lab` is defined once — so the result there is a clean null, which is
-worth as much as the two findings here.
+The same sweep over a consumer's package found **no duplicate constant name at all** — every
+all-caps constant in it is defined once — so the result there is a clean null, which is worth as
+much as the two findings here.
+
+**AND I FIRST WROTE THE CONSUMER'S PATH INTO THIS FILE, WHICH IS A PUBLISHED TREE.** The private
+marker guard caught it within the hour, which is the whole argument for having one: the sentence
+read better with the path in it, and reading better is exactly the pressure that puts a consumer's
+name into a kit that ships to all of them.
 
 **Two copies that agree are not one fact. They are one fact until the day one copy is given a reason.**
