@@ -47,6 +47,10 @@ WHAT IS HERE, one module per shared body:
 * :mod:`lab_commons.dev.famtests.agentguard` -- the guard is live, and the rule that fires is the
   rule that was meant to.
 * :mod:`lab_commons.dev.famtests.configrender` -- the rendered family artefacts equal base + delta.
+* :mod:`lab_commons.dev.famtests.famfiles` -- every project-level file is family-managed or owned
+  with a reason, and every managed one is rendered; the configrender bodies, composed.
+* :mod:`lab_commons.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
+  ``<toplevel>/.claude/worktrees/``.
 * :mod:`lab_commons.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND
   in total, because a named set and a budget are each blind to what the other sees.
 * :mod:`lab_commons.dev.famtests.rostercensus` -- a placement roster is re-read against the kit,

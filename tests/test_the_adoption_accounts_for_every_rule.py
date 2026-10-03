@@ -161,6 +161,7 @@ _ENFORCED = {
     'XFAIL-NOT-SKIP': (guard('tests/test_arch_skips_are_a_named_set.py'),),
     # Prevention is the deny row (proved through the real engine); detection is the family body run
     # over this checkout's own `git worktree list`.
+    'PROJECT-FILES-HAVE-ONE-SOURCE': (guard('tests/test_dev_famfiles.py'), guard('tests/test_dev_famconfig.py')),
     'WORKTREES-STAY-INSIDE': (guard('tests/test_dev_worktreeplace.py'), guard('tests/test_dev_hooks.py')),
 }
 

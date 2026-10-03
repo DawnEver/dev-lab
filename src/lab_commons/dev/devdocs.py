@@ -141,6 +141,16 @@ PAGES: Final[tuple[Page, ...]] = (
         'Translations',
         'Why a `<stem>.zh.md` beside its `<stem>.md` escapes the CJK guard, and the non-ASCII goal',
     ),
+    Page(
+        'worktrees',
+        'Worktrees stay inside',
+        'Every checkout lives under `<repo>/.claude/worktrees/<name>`: the deny row, the detector, the ignore line',
+    ),
+    Page(
+        'project-files',
+        'Project files',
+        'Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason',
+    ),
 )
 
 

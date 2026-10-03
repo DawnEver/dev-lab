@@ -66,4 +66,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_worktreeplace.py', 'tests/test_dev_hooks.py'),
     ),
+    (
+        'PROJECT-FILES-HAVE-ONE-SOURCE',
+        (
+            'Every project-level file a repository tracks -- ignore and attribute files, the Makefile, hook and '
+            'lint configuration, agent hook wiring, CI -- is either rendered from a family base plus the repo`s '
+            'declared delta, or named as the repo`s own with the reason. One list says which; a file in neither, '
+            'a hand edit to a rendered one, or a delta restating its base is refused.'
+        ),
+        ('tests/test_dev_famfiles.py', 'tests/test_dev_famconfig.py'),
+    ),
 )

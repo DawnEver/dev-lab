@@ -52,6 +52,7 @@ from typing import Final
 
 __all__ = [
     'BASES',
+    'GITATTRIBUTES_BASE',
     'GITIGNORE_BASE',
     'GITIGNORE_CONSUMER_CORE',
     'GITIGNORE_FAMILY_LINES',
@@ -354,10 +355,23 @@ MAKEFILE_RESIDUAL_SIGNALS: Final[tuple[str, ...]] = (
     '.PHONY: test-parallel',
 )
 
+# ---------------------------------------------------------------------------- .gitattributes
+
+#: ONE LINE, AND IT IS MANDATED BY A MECHANISM RATHER THAN MEASURED (added 2026-10-03, on the user's
+#: ruling that every project-level file has one source here). This package SHIPS bash payloads
+#: (`lab_commons.dev.githooks/*.sh`) that every consumer executes, on Windows too, where Git for
+#: Windows defaults to `core.autocrlf=true`: a CRLF checkout makes bash read `#!/usr/bin/env bash\r`
+#: as a missing interpreter and `then\r` as a syntax error, and the failure lands in the CONSUMER.
+#: Only two repos carried a `.gitattributes` and they shared no line; this is the one rule whose
+#: reason holds in all four. Repo-wide normalisation (`* text=auto eol=lf`) stays a repo's delta --
+#: adopting it renormalises every tracked file, which is a repo's decision, not the family's.
+GITATTRIBUTES_BASE: Final[tuple[str, ...]] = ('*.sh text eol=lf',)
+
 #: Every base, by artefact. The render MODE is the machinery's word and is attached there; what this
 #: table owns is WHICH lines, and nothing else.
 BASES: Final[dict[str, tuple[str, ...]]] = {
     '.gitignore': GITIGNORE_BASE,
     '.pre-commit-config.yaml': PRECOMMIT_BASE,
     'Makefile': MAKEFILE_BASE,
+    '.gitattributes': GITATTRIBUTES_BASE,
 }

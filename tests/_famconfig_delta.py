@@ -70,6 +70,8 @@ from lab_commons.dev.famconfig import Delta
 
 __all__ = [
     'DELTAS',
+    'GITATTRIBUTES',
+    'GITATTRIBUTES_DELTA',
     'GITIGNORE',
     'GITIGNORE_DELTA',
     'INSTALLED_STAGES',
@@ -154,8 +156,18 @@ MAKE_TARGET_FLOOR: Final = 9
 GITIGNORE: Final = '.gitignore'
 GITIGNORE_DELTA: Final = Delta(repo=REPO, added=('*.py[cod]',), dropped={}, ceiling=1)
 
-#: Every artefact this repo declares a delta against -- all three of the kit's bases.
-DELTAS: Final[dict[str, Delta]] = {PRECOMMIT: PRECOMMIT_DELTA, MAKEFILE: MAKEFILE_DELTA, GITIGNORE: GITIGNORE_DELTA}
+#: `.gitattributes` is the base and nothing else: its one line (`*.sh text eol=lf`) is the rule this repo
+#: wrote for itself first, for the payloads it ships, and the reason moved into the base with it.
+GITATTRIBUTES: Final = '.gitattributes'
+GITATTRIBUTES_DELTA: Final = Delta(repo=REPO, added=(), dropped={}, ceiling=0)
+
+#: Every artefact this repo declares a delta against -- every one of the kit's bases.
+DELTAS: Final[dict[str, Delta]] = {
+    PRECOMMIT: PRECOMMIT_DELTA,
+    MAKEFILE: MAKEFILE_DELTA,
+    GITIGNORE: GITIGNORE_DELTA,
+    GITATTRIBUTES: GITATTRIBUTES_DELTA,
+}
 
 #: The git hook files this repo INSTALLS, which is the half a configuration cannot answer for itself.
 #: Exactly the stages the config declares: `pre-commit` for the default, `commit-msg` for commitizen.
