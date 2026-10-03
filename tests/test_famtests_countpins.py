@@ -252,7 +252,13 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: Set below it with room for ordinary deletion -- the same ~80% the first reading used -- and paired
 #: with a headroom so a tree that grows past it must RE-MEASURE rather than keep a number that would
 #: refuse only a total collapse.
-CONSTANT_FLOOR = 315
+#:
+#: RE-MEASURED 2026-10-03: 407 constants, after ``lab_commons.supervise``'s suite landed five
+#: modules in this tree. 407 against 315 is 92 clear, past the 90 headroom, so this arm said so
+#: rather than absorbing it -- which is exactly what the pair is for. Re-priced on the same ~80%
+#: both earlier readings used: 325. THE HEADROOM IS UNCHANGED AT 90; raising it is how the arm is
+#: kept while the guard it stands for is given up.
+CONSTANT_FLOOR = 325
 CONSTANT_HEADROOM = 90
 
 

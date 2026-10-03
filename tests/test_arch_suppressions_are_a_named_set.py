@@ -65,6 +65,44 @@ Site = tuple[str, str, str]
 #: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
     (
+        'src/lab_commons/supervise/deploy.py',
+        'S108',
+        "CANDIDATE: Final = '/var/tmp/lab-supervise-candidate'",
+    ): 'under /var/tmp ON PURPOSE rather than /tmp, which is what the rule is about. A candidate is '
+    'built and started beside the live service; a build in progress swept by a reboot temp cleanup '
+    'would leave a half-built tree that no later cycle knows about. The path is also overridable by '
+    'config, so a target that keeps its scratch elsewhere does not use this default at all',
+    (
+        'src/lab_commons/supervise/components/resources.py',
+        'PLC0415',
+        'import psutil',
+    ): 'psutil is an OPTIONAL extra, not a tier-1 dependency. Importing it at module scope would '
+    'make the whole resources family unimportable wherever it is absent -- including the HTTP-only '
+    'deployment that needs none of it. Imported where it is used, and its absence is reported as '
+    'an anomaly rather than raised, because a monitor that cannot measure is a fact worth knowing',
+    (
+        'src/lab_commons/supervise/components/resources.py',
+        'BLE001',
+        'except Exception:',
+    ): 'a process that exited between the table being read and this call is ordinary rather than '
+    'exceptional -- the box is running -- and psutil raises several unrelated types for it. The '
+    'read returns None and the caller skips that process',
+    (
+        'src/lab_commons/supervise/remedy.py',
+        'BLE001',
+        'except Exception as exc:',
+    ): "a component implements its action in the PROJECT's own code, so what it raises is not "
+    'enumerable here. Catching narrowly would let one handler take down the supervision cycle it was '
+    "running as a step of, losing every other component's result to report one failure. The "
+    "exception becomes the attempt's detail, which is where a reader looks for it",
+    (
+        'src/lab_commons/supervise/loop.py',
+        'BLE001',
+        'except Exception as exc:',
+    ): "the same reason one level up: a component's check is project code, and a probe that raises "
+    'must become a critical anomaly -- a probe that cannot run is worse than one reporting a '
+    'problem, because nothing is watching -- rather than unwinding the whole cycle',
+    (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
         'def call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:',
