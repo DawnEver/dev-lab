@@ -29,7 +29,7 @@ from lab_commons.dev.allow_adoption import (
 from lab_commons.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import Remedy
-from lab_commons.dev.venvpath import VENV_LAYOUTS, venv_interpreter
+from lab_commons.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_LAYOUTS, venv_interpreter
 
 #: The verdict entry point BOTH labs hand-wrote, character for character, in their own settings
 #: files AND in their own `scripts/deny_rules.py`. The agreement is the evidence for `glob_for`.
@@ -110,6 +110,7 @@ def test_one_row_per_remedy_naming_every_rule_it_answers() -> None:
     """A repo with one verdict command gets ONE row, and it says both rules it is the exit from."""
     assert derived_entries(CONSUMER_C) == {
         'Bash(./.venv/*/python* -m lab_commons.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
+        INTERPRETER_ALLOW_ENTRY: (INTERPRETER_RULE,),
     }
 
 
@@ -124,6 +125,7 @@ def test_a_needs_none_rule_is_never_derived_from() -> None:
     assert set(derived_entries(CONSUMER_B)) == {
         'Bash(./.venv/*/python* -m lab_commons.dev.verify *)',
         'Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)',
+        INTERPRETER_ALLOW_ENTRY,  # the ONE needs-none exit that is a row: the owner's interpreter spelling
     }
 
 
@@ -215,6 +217,7 @@ def test_the_section_merge_keeps_every_block_it_is_not_about() -> None:
     assert after['permissions']['allow'] == [
         'Read(**)',
         'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)',
+        INTERPRETER_ALLOW_ENTRY,
     ]
     assert live_bash_rows(before) == ('Bash(*scripts/gate/stop_sweep.py *)',)
 
@@ -233,7 +236,7 @@ def test_a_declared_road_may_not_name_a_file_the_tree_lacks() -> None:
 def test_the_block_is_bound_on_both_sides_and_neither_number_has_a_default() -> None:
     """A block that silently emptied reads as agreement; a floor it outgrew is a waiver nothing uses."""
     allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
-    assert len(allow_entries(allow)) == 3
+    assert len(allow_entries(allow)) == 4
     assert_allow_is_adoptable(allow, [], floor=2, headroom=2)
     with pytest.raises(FloorUnmet):
         assert_allow_is_adoptable(allow, [], floor=9, headroom=2)

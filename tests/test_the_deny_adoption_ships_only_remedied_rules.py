@@ -42,13 +42,14 @@ from lab_commons.dev.hook_adoption import (
 )
 from lab_commons.dev.hooks import DENY_RULES, Remedy, UnremediedRule, denies
 from lab_commons.dev.rules import tracked_files
+from lab_commons.dev.venvpath import current_os_name, venv_interpreter
 
 #: THIS repo's exit from a hand-written test line, and it is the reason the shared rule is shippable
 #: here at all: the portable verdict entry point lives in this very package. ``path`` names the file
 #: that implements it, so "the remedy exists" is resolved against git rather than asserted.
 _VERIFY = Remedy(
     kind='verdict-entry-point',
-    command='python -m lab_commons.dev.verify',
+    command=f'{venv_interpreter(os_name=current_os_name())} -m lab_commons.dev.verify',
     allow=r'\blab_commons\.dev\.verify\b',
     path='src/lab_commons/dev/verify.py',
 )
