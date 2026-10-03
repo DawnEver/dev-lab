@@ -747,7 +747,7 @@ def test_a_declared_drop_of_the_recipe_is_not_also_reported_as_an_orphan(tmp_pat
     assert inspect_file(path, BASES['Makefile'], delta).status == INSTALLED
 
 
-@pytest.mark.parametrize('banned', ['**/_scratch/', '/scratchpad/', '*.toolname-cache'])
+@pytest.mark.parametrize('banned', ['**/_scratch/', '/scratchpad/', '.scratch/', '*.toolname-cache'])
 def test_planted_a_banned_line_in_a_delta_is_refused(banned: str) -> None:
     """PLANTED: the 2026-10-03 ruling -- `scratch/` is the one temporary directory, no cache suffixes."""
     problems = delta_problems(_base(), _delta(added=('target/', banned)))

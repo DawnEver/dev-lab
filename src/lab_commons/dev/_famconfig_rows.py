@@ -181,7 +181,7 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
 #: scratch-like directory under any name but `scratch/` is a second place for temporary scripts, and
 #: a per-tool cache pointer suffix is one repo's tool leaking into its ignore file.
 GITIGNORE_BANNED: Final[dict[str, str]] = {
-    r'(?:^|/)(?:_scratch|scratchpad)(?:/|$)': 'the one temporary-script directory is `scratch/` (ruling 2026-10-03)',
+    r'(?:^|/)(?:_scratch|\.scratch|scratchpad)(?:/|$)': '`scratch/` is the one temporary-script directory',
     r'^\*\.[\w-]+-cache$': 'a tool-specific cache pointer suffix is not ignored family-wide (ruling 2026-10-03)',
 }
 
