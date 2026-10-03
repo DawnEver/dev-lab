@@ -10,11 +10,19 @@ accessed: 2026-10-03
 Found the moment the watchdog went live on the host, in the journal:
 
 ```
-wdg-lab-watchd.service: Got notification message from PID 301375, but reception only permitted for main PID 301211
-wdg-lab-watchd.service: Got notification message from PID 301389, but reception only permitted for main PID 301211
-wdg-lab-watchd.service: Got notification message from PID 301390, but reception only permitted for main PID 301211
-wdg-lab-watchd.service: Got notification message from PID 301544, but reception only permitted for main PID 301211
+<the unit>: Got notification message from PID 301375, but reception only permitted for main PID 301211
+<the unit>: Got notification message from PID 301389, but reception only permitted for main PID 301211
+<the unit>: Got notification message from PID 301390, but reception only permitted for main PID 301211
+<the unit>: Got notification message from PID 301544, but reception only permitted for main PID 301211
 ```
+
+**THE UNIT NAME IS ELIDED ON PURPOSE, AND THE REASON IS THIS FILE'S OWN SUBJECT.** The journal
+line begins with the deployed service's name, and that name is the ADOPTING project's -- it does not
+belong in a tree that ships to all of them. Writing it in full is what I did first, and the
+private-marker guard rejected the file within the minute; the elision is the guard's remedy and not a
+tidying. **Second time in one session** that a memory entry of mine carried a consumer's name into a
+published tree, both caught by the same guard, which is the argument for having one rather than for
+being careful.
 
 Every one is a **child** of the main PID, and they cluster inside a deploy cycle — the window where the
 supervisor forks `git`, `uv`, `systemd-run` and the candidate process.
@@ -23,7 +31,7 @@ supervisor forks `git`, `uv`, `systemd-run` and the candidate process.
 
 `systemd` puts `$NOTIFY_SOCKET` in the service's environment. **Every process the service forks
 inherits it**, and `systemd-run --scope` deliberately runs its command inside the CALLER's cgroup — so
-a child of the supervisor is, to systemd, part of `wdg-lab-watchd.service`. Anything in that chain
+a child of the supervisor is, to systemd, part of the supervisor's own unit. Anything in that chain
 that speaks the notify protocol is therefore talking AS THE SUPERVISOR.
 
 ## Why it is SAFE today, and why that is fragile
