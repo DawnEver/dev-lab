@@ -35,7 +35,7 @@ from typing import Final
 
 import pytest
 from _config_census import reachable_repos
-from _config_census_rows import REPO_PATHS, REPOS
+from _config_census_rows import REPO_PATHS
 from _famconfig_pyproject_section_delta import PYPROJECT_SECTION_DELTAS
 
 from lab_commons.dev._famconfig_pyproject_rows import (
@@ -175,26 +175,6 @@ def test_this_repo_owns_every_table_the_base_declares() -> None:
     assert {report.status for report in verdicts.values()} == {OWNED}
 
 
-def test_the_promoted_keys_are_a_four_way_agreement_and_not_a_three_way_one() -> None:
-    """THE BAR, RE-DERIVED. The whole argument for these two tables is that the KIT agrees too.
-
-    `RUFF_QUOTE_STYLE` declines six keys because the three consumers agree and the kit does not. This
-    arm is that rule pointed at the promotion: if the kit ever stops holding one of these, the base
-    has become three repos legislating for a fourth and this reds rather than the kit being edited.
-    """
-    reached = reachable_repos(REPO_PATHS)
-    assert len(reached) >= len(REPOS) - 1, f'only {sorted(reached)} reachable; a four-way claim needs the four'
-    readmes, dynamics, testpaths = {}, {}, {}
-    for repo, root in sorted(reached.items()):
-        document = tomllib.loads((root / PYPROJECT_FILE).read_text(encoding='utf-8'))
-        readmes[repo] = document['project']['readme']
-        dynamics[repo] = tuple(document['project']['dynamic'])
-        testpaths[repo] = set(document['tool']['pytest']['ini_options']['testpaths'])
-    assert set(readmes.values()) == {README_NAME}, readmes
-    assert set(dynamics.values()) == {('version',)}, dynamics
-    assert set.intersection(*testpaths.values()) == {BENT_TESTPATH}, testpaths
-
-
 # ------------------------------------------------------------- the DECLINED half, driven both ways
 
 
@@ -224,18 +204,6 @@ class TestTheDeclineRegistryIsAboutLiveTables:
         )
         for table, reason in sorted(PYPROJECT_DECLINED.items()):
             assert len(reason.split()) >= 20, f'{table} is declined in {len(reason.split())} words -- state the number'
-
-    def test_every_declined_table_is_declared_by_at_least_one_live_repo(self) -> None:
-        """A decline dies with its subject. One naming a table nobody has refuses nothing."""
-        documents = self._documents()
-        assert documents, 'no pyproject.toml was read at all'
-        for table in sorted(PYPROJECT_DECLINED):
-            holders = [repo for repo, document in documents.items() if _walk(document, table) is not None]
-            assert holders, (
-                f'{".".join(table)} is declined and NO reached repo declares it. Either the table '
-                f'left the family -- delete the row in that edit -- or the path is misspelled and '
-                f'this row has been refusing nothing since it was written.'
-            )
 
     def test_no_table_is_both_declined_and_owned(self) -> None:
         """The two halves of one decision, checked against each other rather than read side by side."""

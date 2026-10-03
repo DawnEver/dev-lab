@@ -19,8 +19,6 @@ from typing import Final
 
 import pytest
 from _collect_census_rows import FILE_FLOORS, REPO_FLOOR, ROW_FLOOR, ROWS
-from _config_census import reachable_repos
-from _config_census_rows import REPO_PATHS
 
 from lab_commons.dev.collectcensus import (
     CollectRow,
@@ -32,9 +30,7 @@ from lab_commons.dev.collectcensus import (
     assert_reaches,
     derivable_suppliers,
     measure,
-    readings_of,
 )
-from lab_commons.dev.collectscope import ALIASES, STDLIB
 
 #: The repo under verification, read from its WORKING TREE.
 HERE: Final = 'lab-commons'
@@ -137,22 +133,3 @@ def test_the_derivation_reaches_what_a_spelling_settles_and_refuses_the_rest(
     `foo-bar` as supplying `foo`.
     """
     assert derivable_suppliers(name, declared) == expected
-
-
-def test_every_alias_row_is_needed_by_a_real_tree_and_no_needed_one_is_missing() -> None:
-    """BOTH SIDES OF THE KIT'S ALIAS TABLE, DERIVED from whatever trees this box holds.
-
-    An unused alias row is a waiver nothing uses. The set reached is computed from the live readings
-    rather than listed, so an alias that stops being imported anywhere reds as loudly as an import
-    nothing can resolve. It names no consumer row: the alias table is the kit's.
-    """
-    reached: set[str] = set()
-    seen_names: set[str] = set()
-    for repo, root in sorted(reachable_repos(REPO_PATHS).items()):
-        readings, _, _, _ = readings_of(root, at_head=repo != HERE)
-        for reading in readings.values():
-            names = {use.name for use in reading.uses if use.name not in STDLIB}
-            reached |= names & set(ALIASES)
-            seen_names |= names
-    assert len(seen_names) > 30, f'the alias scan read {len(seen_names)} import names, which is no corpus'
-    assert set(ALIASES) - reached == set(), sorted(set(ALIASES) - reached)

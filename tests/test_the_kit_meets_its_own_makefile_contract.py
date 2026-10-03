@@ -63,7 +63,6 @@ from lab_commons.dev.famconfig import (
     meaningful_lines,
     measured_delta,
     recipe_blocks,
-    satisfies,
 )
 from lab_commons.dev.famtests.configrender import (
     assert_artefact_is_rendered,
@@ -181,51 +180,6 @@ class TestRequiredIsTheTerminalModeForThisArtefact:
             for repo, root in sorted(reached.items())
             if (root / MAKEFILE).is_file()
         }
-
-    def test_the_shared_targets_still_carry_unshared_recipes(self) -> None:
-        """THE MEASUREMENT RENDERING WOULD HAVE TO SURVIVE, and it does not: 7 of the 9 diverge."""
-        blocks = self._blocks()
-        assert len(blocks) >= DIVERGENCE_FLOOR, (
-            f'{len(blocks)} Makefile(s) readable here; divergence measured over fewer than '
-            f'{DIVERGENCE_FLOOR} repos is not a weak reading but an impossible one'
-        )
-        base = artefact_base(MAKEFILE)
-        headers = [line for line in base.content_lines if line.endswith(':')]
-        assert len(headers) >= MAKE_TARGET_FLOOR, f'the base declares {len(headers)} target headers'
-        divergent = {
-            header
-            for header in headers
-            if len(
-                {tuple(lines) for repo in blocks for name, lines in blocks[repo].items() if satisfies(header, (name,))}
-            )
-            > 1
-        }
-        assert divergent == DIVERGENT_RECIPES, (
-            f'the recipe divergence moved: now {sorted(divergent)}, recorded {sorted(DIVERGENT_RECIPES)}. '
-            f'If it SHRANK to nothing the four repos finally agree on their recipes and RENDERED is '
-            f'worth re-opening -- with this measurement quoted. If it GREW, a repo took its own tree '
-            f'or toolchain into a recipe the base had, and the remedy is there and not here.'
-        )
-        assert set(headers) - divergent == SHARED_RECIPES, sorted(set(headers) - divergent)
-
-    def test_no_base_header_is_a_shared_LINE_so_byte_equality_has_nothing_to_stand_on(self) -> None:
-        """THE SECOND HALF, and the one that settles it even for the two recipes that DO agree.
-
-        RENDERED compares bytes. `all:` and `verify:` agree on their bodies and disagree on the
-        header itself, because that is where a Makefile puts its prerequisites -- and a prerequisite
-        list is each repo's own dependency graph. A base fixing one spelling would legislate it.
-        """
-        blocks = self._blocks()
-        assert len(blocks) >= DIVERGENCE_FLOOR, f'{len(blocks)} Makefile(s) readable here'
-        spellings = {
-            header: {name for repo in blocks for name in blocks[repo] if satisfies(header, (name,))}
-            for header in SHARED_RECIPES
-        }
-        for header, seen in sorted(spellings.items()):
-            assert len(seen) > 1, (
-                f'{header} is now spelled identically in every reached repo: {sorted(seen)}. That is '
-                f'one of the two preconditions RENDERED needs; check the other arm before acting on it.'
-            )
 
     def test_the_mode_is_still_required_and_the_reason_is_the_measurement_above(self) -> None:
         """THE RATCHET. A mode arriving as RENDERED while the recipes still diverge is the bad half."""

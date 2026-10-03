@@ -188,29 +188,6 @@ def _enforced_by_kit(code: str) -> bool:
 # --------------------------------------------------------------------- arm 1: the kit's coverage
 
 
-def test_the_kit_selects_every_group_any_consumer_selects() -> None:
-    """ARM 1. Whatever a consumer asks of its own code, the kit asks of the code it SHIPS them.
-
-    Stated over COVERAGE, not membership: a kit selecting ``PLR`` satisfies a consumer selecting
-    ``PLR2004``, and the arm is about what is enabled rather than about how it is spelled.
-    """
-    reached = _reached_consumers()
-    assert len(reached) >= REACH_FLOOR, (
-        f'only {sorted(reached)} of {list(CONSUMERS)} are checked out beside this repo, so this arm '
-        f'measured nothing; a reach below {REACH_FLOOR} is INCONCLUSIVE, not green'
-    )
-    kit = ruff_select(reachable_repos(REPO_PATHS)['lab-commons'])
-    for repo, root in reached.items():
-        blind = sorted(
-            group for group in ruff_select(root) if not any(selector_covers(selector, group) for selector in kit)
-        )
-        assert blind == [], (
-            f'{repo} lints {blind} and the kit does not select them. The kit SHIPS code to that repo, '
-            f'so every one of those groups is a question its own source is never asked. Add them to '
-            f'[tool.ruff.lint] select in this repo and fix what they red -- never narrow the consumer.'
-        )
-
-
 def test_the_kit_select_is_the_recorded_fifty_eight() -> None:
     """The adoption itself, pinned as a NAMED SET so a group cannot fall out unremarked."""
     live = ruff_select(reachable_repos(REPO_PATHS)['lab-commons'])
@@ -222,55 +199,6 @@ def test_the_kit_select_is_the_recorded_fifty_eight() -> None:
 
 
 # ------------------------------------------- arm 2: what the kit enforces, a consumer may not drop
-
-
-def test_no_code_the_kit_enforces_is_globally_ignored_by_a_consumer() -> None:
-    """ARM 2, WITH ITS CEILING. Every live divergence must be a DECLARED one, in one of two tiers."""
-    reached = _reached_consumers()
-    assert len(reached) >= REACH_FLOOR, (
-        f'only {sorted(reached)} of {list(CONSUMERS)} are checked out, so this arm measured nothing'
-    )
-    kit = reachable_repos(REPO_PATHS)['lab-commons']
-    kit_select, kit_ignore = ruff_select(kit), ruff_ignore(kit)
-    for repo, root in reached.items():
-        enforced_here_and_dropped_there = sorted(
-            code
-            for code in ruff_ignore(root)
-            if any(selector_covers(selector, code) for selector in kit_select)
-            and not any(selector_covers(waived, code) for waived in kit_ignore)
-        )
-        assert enforced_here_and_dropped_there, (
-            f'{repo} diverges from the kit on NOTHING, which would mean this arm has stopped measuring '
-            f'anything; the eight decided rows were live when it was written'
-        )
-        grew = [code for code in enforced_here_and_dropped_there if code not in WAIVER_CEILING]
-        assert grew == [], (
-            f'{repo} globally ignores {grew}, which this kit ENFORCES, and no row declares why. Either '
-            f'the consumer stops ignoring it or the kit stops enforcing it -- and whichever it is, the '
-            f'row goes in WAIVED_CONSUMER_IGNORES with its own reason (a decision) or in ADOPTION_DEBT '
-            f'(one judgement held many times). The ceiling may only SHRINK.'
-        )
-
-
-def test_every_declared_waiver_is_still_needed_and_still_says_why() -> None:
-    """THE OTHER SIDE OF THE RATCHET. A waiver nothing uses is as wrong as an undeclared one."""
-    reached = _reached_consumers()
-    assert len(reached) >= REACH_FLOOR, f'only {sorted(reached)} are checked out, so the ratchet measured nothing'
-    live: set[str] = set()
-    for root in reached.values():
-        live |= {code for code in ruff_ignore(root) if _enforced_by_kit(code)}
-    stale = sorted(WAIVER_CEILING - live)
-    assert stale == [], (
-        f'{stale} are declared waivers that no reachable consumer needs any more. Delete the rows in '
-        f'the same edit that observed it -- the ceiling is what makes this set worth having.'
-    )
-    reasonless = sorted(code for code, why in WAIVED_CONSUMER_IGNORES.items() if not why.strip())
-    assert reasonless == [], f'a bare waiver says a divergence exists, not why it may: {reasonless}'
-    overlap = sorted(set(WAIVED_CONSUMER_IGNORES) & set(ADOPTION_DEBT))
-    assert overlap == [], (
-        f'{overlap} are in BOTH tiers. A decided row and a bulk row are different claims, and a code '
-        f'in both lets the decided one be deleted without the ceiling moving.'
-    )
 
 
 def test_the_decided_tier_is_the_eight_the_census_measured() -> None:

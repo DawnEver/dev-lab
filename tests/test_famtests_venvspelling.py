@@ -39,7 +39,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: status/issue doors outgrew it -- the floor is raised rather than the margin widened. The floor is
 #: on FILES READ: a walk that lost its root reports exactly what a clean tree reports, and this
 #: scan's whole value is its silence.
-FILE_FLOOR = 120
+FILE_FLOOR = 150  # RE-MEASURED 2026-10-03 at 165 files (supervise landed).
 
 
 def _tree() -> dict[str, str]:

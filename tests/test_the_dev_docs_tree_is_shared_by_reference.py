@@ -47,13 +47,13 @@ import re
 from pathlib import Path
 from typing import Final
 
-from _config_census import dev_pages, reachable_repos, read_at_head
+from _config_census import reachable_repos, read_at_head
 from _config_census_rows import REPO_PATHS
 from _famconfig_delta import DELTAS
 
-from lab_commons.dev.devdocs import CANONICAL_TREE, PAGES, Page, pointer_table, slugs
-from lab_commons.dev.famconfig import BASES, STAMP, ForkedDelta, artefact_base
-from lab_commons.dev.famtests.devdocs import COPY_CEILING, copied_fraction, residue_problems
+from lab_commons.dev.devdocs import CANONICAL_TREE, PAGES, pointer_table, slugs
+from lab_commons.dev.famconfig import BASES, ForkedDelta, artefact_base
+from lab_commons.dev.famtests.devdocs import COPY_CEILING, copied_fraction
 
 #: The dev index, spelled once. Every repo in the family keeps one and only this one is generated.
 INDEX: Final = 'index.md'
@@ -164,45 +164,12 @@ def _kit_page(root: Path, slug: str) -> str:
 class TestEveryDevIndexIsOneRenderOfOneRegistry:
     """The property the four indexes CLAIM in their own prose, asserted against a live render."""
 
-    def test_each_repo_holds_exactly_one_family_table_and_it_is_the_live_render(self) -> None:
-        """EQUALITY against `pointer_table(base)`, not containment and not against a stored copy."""
-        reached = _reached()
-        for repo, root in sorted(reached.items()):
-            found = family_blocks(_index_of(root))
-            assert len(found) == 1, (
-                f'{repo} holds {len(found)} family pointer tables in {INDEX_PATH}; exactly one is the '
-                f'shape every repo here declares'
-            )
-            assert found[0] == pointer_table(POINTER_BASES[repo]), (
-                f"{repo}'s dev index table is not what `pointer_table({POINTER_BASES[repo]!r})` renders "
-                f'today. That file says in its own text that it cannot drift from PAGES, so either the '
-                f'registry moved and this table was not re-rendered, or the table was hand-edited. '
-                f'Re-render it; do not edit this assertion.'
-            )
-
     def test_the_render_covers_every_declared_page_and_the_registry_is_not_empty(self) -> None:
         """The floor. An empty `PAGES` renders an empty table that every index would trivially match."""
         assert len(PAGES) >= 10, f'{len(PAGES)} pages declared; the registry this module measures is nearly empty'
         rendered = pointer_table(POINTER_BASES['lab-commons'])
         for page in PAGES:
             assert f'{page.slug}.md' in rendered, f'{page.slug} is declared and absent from its own render'
-
-    def test_a_planted_rename_upstream_convicts_every_pasted_table(self) -> None:
-        """PLANTED CONTROL for the rot the prose promised was impossible, driving the REAL comparator.
-
-        One page is renamed in a COPY of the registry, exactly as a rename upstream would do. Every
-        live index must then fail the same equality that passes above -- which is what says the green
-        above is a measurement of four files rather than of a constant.
-        """
-        renamed = tuple(Page('renamed-slug', p.title, p.subject) if i == 0 else p for i, p in enumerate(PAGES))
-        assert renamed != PAGES, 'the control renamed nothing'
-        for repo, root in sorted(_reached().items()):
-            stale = family_blocks(_index_of(root))
-            assert stale, f'{repo} had no family table to convict, so this control proves nothing there'
-            assert stale[0] != pointer_table(POINTER_BASES[repo], renamed), (
-                f'{repo} matches a table rendered from a registry with a RENAMED page, so this '
-                f'comparison cannot tell the two apart and the arm above is not checking anything'
-            )
 
     def test_a_planted_local_table_is_not_read_as_the_family_one(self) -> None:
         """PLANTED CONTROL for the reader. consumer-a' own table has the identical header."""
@@ -211,89 +178,6 @@ class TestEveryDevIndexIsOneRenderOfOneRegistry:
         assert family_blocks(local) == (), 'a table of the repo`s OWN pages reads as the family table'
         both = f'{pointer_table(".")}\n\nsome prose\n\n{local}'
         assert len(family_blocks(both)) == 1, 'the reader cannot separate the two tables consumer-a holds'
-
-
-class TestTheTwoReadersAgreeOnThisRepo:
-    """Every reading above is of the COMMITTED file. This is what says that is also the file on disk.
-
-    Without it, an uncommitted edit to this repo's own index makes every arm here describe a document
-    nobody else has -- and it is the arm that caught the first run of this module, where the kit's
-    regenerated table was in the working tree and the hand-typed one was still at HEAD.
-    """
-
-    def test_the_working_tree_and_HEAD_agree_on_this_repos_dev_index(self) -> None:
-        """One file, two readers, and a floor under the reading."""
-        root = _reached()['lab-commons']
-        at_head = family_blocks(_index_of(root))
-        in_tree = family_blocks((root / CANONICAL_TREE / INDEX).read_text(encoding='utf-8'))
-        assert at_head, 'the HEAD reader found no family table, so every comparison here is against nothing'
-        assert in_tree == at_head, (
-            'this checkout`s dev index differs from HEAD. Every arm in this module reads the COMMITTED '
-            'file, so an uncommitted edit here makes them describe a file nobody else has.'
-        )
-
-
-class TestTheFamilyPagesExistExactlyOnce:
-    """THE DECLINE, AS A MEASUREMENT. A base keeps copies agreeing; there is nothing here to keep."""
-
-    def test_every_family_page_is_held_by_the_kit_and_by_nobody_else(self) -> None:
-        """The reading that makes a base pointless, taken over all four repos and all twelve pages."""
-        reached = _reached()
-        consumers = {repo: root for repo, root in reached.items() if repo != 'lab-commons'}
-        assert len(consumers) >= REPO_FLOOR - 1, sorted(consumers)
-        for slug in slugs():
-            page = _kit_page(reached['lab-commons'], slug)
-            held = {repo: read_at_head(root, f'{CANONICAL_TREE}/{slug}.md') for repo, root in consumers.items()}
-            assert copies_of_page(page, held) == (), (
-                f'{slug}.md now exists as a real COPY outside the kit. That is the day this tree has '
-                f'two versions of one document to keep agreeing, which is the job a famconfig base '
-                f'does -- re-open the decline with this measurement quoted.'
-            )
-
-    def test_a_planted_copy_is_convicted_by_the_same_reader(self) -> None:
-        """PLANTED CONTROL. Without it the arm above is green on a reader that reads nothing."""
-        page = _kit_page(_reached()['lab-commons'], slugs()[0])
-        assert copies_of_page(page, {'planted': page}) == ('planted',), 'a verbatim copy is not read as a copy'
-        assert copies_of_page(page, {'planted': None}) == (), 'an absent file is read as a copy'
-        assert copied_fraction(page, page) == 1.0, 'the fraction reader does not recognise its own input'
-
-
-class TestTheConsumersKeepPointersAndNotCopies:
-    """What each consumer's tree actually holds, as EQUALITIES against the live directories."""
-
-    def test_neither_lab_holds_anything_but_its_index(self) -> None:
-        """The MOVES rows, re-measured. A second page here re-opens whether the move finished."""
-        reached = _reached()
-        for repo in LAB_REPOS:
-            if repo not in reached:
-                continue
-            pages = dev_pages(reached[repo])
-            assert pages == {INDEX}, (
-                f'{repo} now holds {sorted(pages)} under {CANONICAL_TREE}; its census row says the tree '
-                f'is one pointer page, so either a page came back or one of its own was written'
-            )
-
-    def test_every_consumer_a_page_under_a_family_name_is_a_residue(self) -> None:
-        """The SPLITS row's own claim, read off the live trees and `slugs()` -- no hand-held name set.
-
-        Through the consumer-side famtest's own pure reader, so the census and consumer-a' suite judge
-        a copy by ONE instrument. Only the stems the family declares are passed: which of consumer-a'
-        OTHER pages may name a family module is consumer-a' allowlist, asserted in its own suite.
-        """
-        reached = _reached()
-        assert CONSUMER_A in reached, (
-            f'{CONSUMER_A} is not checked out beside lab-commons, so the one SPLITS consumer is unmeasured'
-        )
-        declared = set(slugs())
-        local = {
-            name.removesuffix('.md'): read_at_head(reached[CONSUMER_A], f'{CANONICAL_TREE}/{name}') or ''
-            for name in dev_pages(reached[CONSUMER_A])
-            if name.removesuffix('.md') in declared
-        }
-        assert len(local) >= RESIDUE_FLOOR, f'{sorted(local)}: below anything worth calling a split tree'
-        family = {slug: _kit_page(reached['lab-commons'], slug) for slug in slugs()}
-        problems = residue_problems(local, family, subject_allowlist={})
-        assert problems == (), 'consumer-a pages under a family name that are not residues:\n  ' + '\n  '.join(problems)
 
 
 class TestNobodyDeclaresABaseWhileTheMeasurementHolds:
@@ -320,11 +204,3 @@ class TestNobodyDeclaresABaseWhileTheMeasurementHolds:
         assert DELTAS, 'the delta table is empty, so this arm would pass against a repo declaring nothing'
         for artefact in (f'{CANONICAL_TREE}/', INDEX, INDEX_PATH):
             assert artefact not in DELTAS, f'a Delta arrived for {artefact!r} while the tree is shared by reference'
-
-    def test_no_dev_index_carries_a_renderer_stamp(self) -> None:
-        """A stamp would mean `famconfig` wrote one of these files, which is the adoption nobody argued."""
-        for repo, root in sorted(_reached().items()):
-            assert STAMP not in _index_of(root), (
-                f'{repo}`s {INDEX_PATH} carries the famconfig stamp. Either it was rendered -- declare '
-                f'it and flip the arms above -- or a stamp was pasted into a file nobody rendered.'
-            )

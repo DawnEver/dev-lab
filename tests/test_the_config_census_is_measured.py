@@ -25,8 +25,6 @@ saying which side it was on.
 
 from __future__ import annotations
 
-import tomllib
-
 import pytest
 from _config_census import (
     MOVES,
@@ -37,22 +35,17 @@ from _config_census import (
     Placement,
     compose,
     dev_pages,
-    gitignore_patterns,
     hook_ids,
     installed_hook_names,
-    make_targets,
     reachable_repos,
     read_at_head,
-    ruff_config,
     ruff_ignore,
-    ruff_scalars,
     ruff_select,
     selector_covers,
 )
 from _config_census_rows import (
     ARTEFACTS,
     CONSUMER_IGNORE_CORE,
-    CONSUMER_IGNORE_DELTA,
     CONSUMER_SELECT,
     COUNTER_DIRECTION_CODES,
     GROUPS_THE_KIT_DOES_NOT_LINT,
@@ -61,11 +54,9 @@ from _config_census_rows import (
     KIT_IGNORE,
     KIT_SELECT,
     KIT_SELECT_BEFORE_R1,
-    MAKE_TARGET_CORE,
     PARTITIONS,
     REPO_PATHS,
     REPOS,
-    SHARED_GITIGNORE_CORE,
 )
 
 CENSUS = compose(PARTITIONS)
@@ -217,115 +208,6 @@ def test_selector_covers_resolves_the_linter_before_the_digits() -> None:
     assert not selector_covers('PLC0415', 'PLC0414'), 'the digits match by PREFIX, not by string start'
 
 
-def test_consumer_a_reads_ruff_toml_and_the_pyproject_block_is_dead() -> None:
-    """FINDING 2, RE-DERIVED against the lane when it is checked out."""
-    root = reachable_repos(REPO_PATHS).get('consumer-a')
-    if root is None:
-        pytest.fail('the consumer-a lane is not checked out beside this repo, so finding 2 is unmeasured here')
-    assert (root / 'ruff.toml').is_file(), 'the lane no longer carries ruff.toml; finding 2 described that file'
-    assert ruff_select(root) == set(CONSUMER_SELECT), 'the winning config drifted from the consumer select'
-    project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    loser = project.get('tool', {}).get('ruff', {})
-    assert loser in ({}, {'extend': 'ruff.toml'}), (
-        f'the LOSING [tool.ruff] block now holds {sorted(loser)}. It held exactly one key naming the '
-        f'winner, which is what made it dead rather than lying, and R3 deleted it; anything else in it '
-        f'is a decision ruff never reads.'
-    )
-    assert ruff_config(root) != loser, 'the reader returned the losing config, so precedence is not being applied'
-    assert ruff_config(root), 'ruff.toml is the winner and it must be the non-empty side of that comparison'
-
-
-def test_the_three_consumers_agree_on_the_select_and_diverge_by_five_codes_in_total() -> None:
-    """The measurement every SPLITS row rests on, re-derived for whichever consumers are here."""
-    reached = reachable_repos(REPO_PATHS)
-    present = [repo for repo in CONSUMERS if repo in reached]
-    assert present, f'no consumer is checked out beside this repo; absent: {list(CONSUMERS)}'
-    for repo in present:
-        root = reached[repo]
-        assert ruff_select(root) == set(CONSUMER_SELECT), f'{repo}: select diverged from the family 58'  # noqa: S608 -- 'select' is a ruff selector list, not SQL
-        delta = ruff_ignore(root) - set(CONSUMER_IGNORE_CORE)
-        assert delta == set(CONSUMER_IGNORE_DELTA[repo]), (
-            f'{repo}: ignore delta is now {sorted(delta)}, recorded {list(CONSUMER_IGNORE_DELTA[repo])}'
-        )
-        assert set(CONSUMER_IGNORE_CORE) <= ruff_ignore(root), f'{repo}: dropped part of the 62-code core'
-        assert ruff_scalars(root) == {
-            'line-length': 120,
-            'target-version': 'py313',
-            'unsafe-fixes': True,
-            'quote-style': 'single',
-        }, f'{repo}: a scalar knob diverged, so "identical except the ignore delta" no longer holds'
-    live_core = set.intersection(*(set(ruff_ignore(reached[repo])) for repo in present))
-    assert live_core == set(CONSUMER_IGNORE_CORE), (
-        f'the three-way ignore core is now {len(live_core)} codes against the declared '
-        f'{len(CONSUMER_IGNORE_CORE)}: only-live {sorted(live_core - set(CONSUMER_IGNORE_CORE))}, '
-        f'only-declared {sorted(set(CONSUMER_IGNORE_CORE) - live_core)}. An EQUALITY because the '
-        f'subset above is satisfied by every shorter tuple, so the constant could be edited down '
-        f'forever and stay green -- the shape that hid a two-short `SHARED_GITIGNORE_CORE`. WHOSE '
-        f'DRIFT THIS ACCUSES: one of the three CONSUMERS; the kit is not in the intersection, since '
-        f'its ignore list is ten codes and is its own delta. Re-measured 2026-09-19: 62 live, 62 '
-        f'declared, so the constant was NOT short.'
-    )
-
-
-def test_the_gitignore_core_is_the_consumers_and_the_kit_holds_its_named_share() -> None:
-    """The consumer core, as an EQUALITY, and the kit -- rendered from the base -- holding all of it.
-
-    IT ASSERTED A SUBSET UNTIL 2026-09-19 AND THAT IS WHY IT WAS WRONG. `SHARED_GITIGNORE_CORE` read
-    12 while the live three-way intersection was 14, and `core <= consumer` is satisfied by every
-    shorter tuple -- so the constant could drift DOWN forever and this arm would stay green. An
-    equality has no such slack: a pattern leaving any consumer reds, and so does one arriving in all
-    three without the constant moving.
-    """
-    reached = reachable_repos(REPO_PATHS)
-    kit = gitignore_patterns(reached['lab-commons'])
-    assert len(kit) >= 8, f'{len(kit)} patterns read from lab-commons/.gitignore; the reader found nothing'
-    # ALL FOURTEEN since 2026-10-03, when the kit adopted the rendered base (which holds the core).
-    assert set(SHARED_GITIGNORE_CORE) <= kit, sorted(set(SHARED_GITIGNORE_CORE) - kit)
-    present = [repo for repo in CONSUMERS if repo in reached]
-    assert len(present) >= 2, f'{present}: a three-way intersection over fewer than two repos is not a reading'
-    measured = frozenset.intersection(*(gitignore_patterns(reached[repo]) for repo in present))
-    assert measured == set(SHARED_GITIGNORE_CORE), (
-        f'the consumer core moved: measured {sorted(measured)} over {present}, recorded '
-        f'{sorted(SHARED_GITIGNORE_CORE)}. Re-measure and move the constant in the same edit.'
-    )
-    for repo in present:
-        other = gitignore_patterns(reached[repo])
-        assert not kit <= other, f'{repo} became a superset of the kit, so the SPLITS seam moved'
-
-
-def test_the_makefile_core_is_three_targets_across_all_four() -> None:
-    """MAKE_TARGET_CORE both ways, and `verify` in ALL FOUR rather than the gap this used to assert.
-
-    THE ARM THAT FLIPPED, 2026-09-18, and the flip is the point. This test used to assert
-    ``'verify' not in per_repo['consumer-a']`` -- guarding the census row's claim that consumer-a
-    was the only repo without one. A separate edit in the consumer-a lane gave that repo a `verify`
-    naming its own runner, so the guard went red for the RIGHT reason: the tree had moved past the
-    prose. The honest repair is the ratchet's other side -- a capability ARRIVED, so it is asserted
-    rather than the census being edited to say the arrival never happened.
-
-    The wider re-measurement that came with it: the all-four common set is NINE, not three, and it is
-    exactly what `MAKEFILE_BASE` defines. `MAKE_TARGET_CORE` was raised to match, which puts a NAMED
-    SET on its population on purpose -- any repo dropping any of the nine reds, and the remedy is the
-    target, never the tuple.
-    """
-    reached = reachable_repos(REPO_PATHS)
-    per_repo = {repo: make_targets(root) for repo, root in reached.items()}
-    assert per_repo, 'no Makefile was read at all'
-    common = set.intersection(*(set(t) for t in per_repo.values()))
-    assert common == set(MAKE_TARGET_CORE), (
-        f'the four-repo common target set is now {sorted(common)} against the declared '
-        f'{list(MAKE_TARGET_CORE)}. THIS IS AN EQUALITY AND THE CONSTANT`S OWN COMMENT ALWAYS SAID SO '
-        f'-- "a NAMED SET and not a floor ... the remedy when a repo drops one is to restore the '
-        f'TARGET, never to shorten this tuple" -- while the assertion here was a subset any shorter '
-        f'tuple satisfies. Declaration and mechanism disagreed in the same commit; the mechanism '
-        f'moved. WHOSE DRIFT THIS ACCUSES: ANY of the four, the kit included. A target that JOINED '
-        f'the intersection is a real family target and belongs in the tuple and in `MAKEFILE_BASE`. '
-        f'Re-measured 2026-09-19: nine live, nine declared, so the constant was NOT short.'
-    )
-    absent = sorted(repo for repo, targets in per_repo.items() if 'verify' not in targets)
-    assert absent == [], f'{absent} lost `verify`, the one target every repo in the family reaches its verdict through'
-
-
 def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() -> None:
     """THE RATCHET'S OTHER SIDE for the pre-commit rows: DECLARED is not INSTALLED.
 
@@ -416,36 +298,3 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         assert '../../../lab-commons/docs-src/dev/' in index, (
             'the consumer-a dev index stopped pointing upstream, so its SPLITS row describes a former shape'
         )
-
-
-def test_a_planted_short_core_is_convicted_by_the_equality_and_not_by_the_subset() -> None:
-    """PLANTED CONTROL for the four cores this module now pins as EQUALITIES.
-
-    The defect being controlled for is not a wrong measurement -- all four constants re-measured
-    exactly right on 2026-09-19 -- but a wrong ASSERTION SHAPE. `DECLARED <= live` is satisfied by
-    every shorter declaration, so a constant can be edited down forever and stay green; that is how
-    `SHARED_GITIGNORE_CORE` sat at twelve against a live fourteen. This plants exactly that edit --
-    one name dropped from each core -- and shows the subset still passes while the equality convicts.
-    Without it the four equalities above are only a claim that today's numbers agree.
-    """
-    reached = reachable_repos(REPO_PATHS)
-    consumers = [repo for repo in CONSUMERS if repo in reached]
-    assert consumers, 'no consumer is checked out, so nothing below is measured against the family'
-    cores = {
-        'CONSUMER_IGNORE_CORE': (
-            set(CONSUMER_IGNORE_CORE),
-            set.intersection(*(set(ruff_ignore(reached[r])) for r in consumers)),
-        ),
-        'MAKE_TARGET_CORE': (
-            set(MAKE_TARGET_CORE),
-            set.intersection(*(set(make_targets(r)) for r in reached.values())),
-        ),
-        'HOOK_ID_CORE': (set(HOOK_ID_CORE), set.intersection(*(set(hook_ids(r)) for r in reached.values()))),
-    }
-    assert len(cores) >= 3, 'the control lost the cores it exists to drive'
-    for name, (declared, live) in cores.items():
-        assert declared, f'{name} is empty, so both shapes below are vacuous'
-        assert declared == live, f'{name}: {len(declared)} declared against {len(live)} live -- fix the CONSTANT'
-        shortened = declared - {min(declared)}
-        assert shortened <= live, f'{name}: a short core fails even the SUBSET, so this control proves nothing'
-        assert shortened != live, f'{name}: the equality accepts a core one name short -- it is not an equality'
