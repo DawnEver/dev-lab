@@ -147,6 +147,17 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # release carrying this module reaches that repo -- the row is the claim, not the landing.
     'pytestout': ('supersedes', 'scripts/gate/_transcript.py'),
     'reports': ('original',),
+    # ADOPTED_BY, AND NOT `supersedes`, BECAUSE BOTH FILES STAY AND BOTH DELEGATE: the reader half of
+    # `tests/_config_census.py` moved here under a spelling-complete table, leaving that file its
+    # placement machinery, and `tests/test_a_waiver_wider_than_an_ignore_is_declared.py` kept its
+    # floors and its bar while its reading moved. Both import from this module today, which is what
+    # makes the row checkable rather than a claim -- `supersedes` would name two files that keep every
+    # line they have.
+    'ruffwaivers': (
+        'adopted_by',
+        'tests/_config_census.py',
+        'tests/test_a_waiver_wider_than_an_ignore_is_declared.py',
+    ),
     'rules': ('original',),
     'seams': ('supersedes', 'scripts/gate/seam_install.py'),
     'selfbuild': ('supersedes', 'scripts/gate/native_install.py'),
@@ -165,6 +176,14 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'collectscope': ('original',),
     'synccensus': ('original',),
     'syncscope': ('original',),
+    # THE CENSUS OVER `collectscope`, AND IT IS A RENAME RATHER THAN A CARVING: git records
+    # `R052 tests/_collect_census.py -> src/lab_commons/dev/collectcensus.py` in the commit that made
+    # this repo stop holding consumers' rows, and the path named here no longer exists. The file that
+    # answered this question used to sit in this repo's OWN test tree, which is a consumer of the kit
+    # like any other -- the `approxfloors` row below already establishes that. Its rows half,
+    # `tests/_collect_census_rows.py`, STAYED and is this repo's own row rather than any other
+    # repo's, so the row is not a licence to read that file as a consumer's.
+    'collectcensus': ('supersedes', 'tests/_collect_census.py'),
     # 'original' until 2026-09-18, when the assertion-SHAPE reader landed here and took the whole
     # reading half of a consumer's vacuous-assert lint -- its `_called_name`, `_is_assertion`,
     # `_is_vacuous_assert` and its walk. The consumer keeps its own floors and its bar, which is the
