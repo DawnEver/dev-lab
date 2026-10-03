@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.devdocs import CANONICAL_TREE, slugs
+from lab_commons.dev.devdocs import CANONICAL_TREE, pointer_table, slugs
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -41,6 +41,7 @@ __all__ = [
     'SHINGLE_WORDS',
     'UPSTREAM_SHINGLE_FLOOR',
     'assert_local_dev_pages_are_residues',
+    'assert_the_index_holds_the_live_table',
     'copied_fraction',
     'family_subjects',
     'local_pages',
@@ -187,4 +188,26 @@ def assert_local_dev_pages_are_residues(
     problems = residue_problems(pages, family, subject_allowlist=subject_allowlist)
     if problems:
         msg = 'local dev pages that are not residues of the family tree:\n  ' + '\n  '.join(problems)
+        raise AssertionError(msg)
+
+
+def assert_the_index_holds_the_live_table(*, root: Path, base: str) -> None:
+    """The consumer's verdict on ITS OWN dev index: exactly one copy of the LIVE family pointer table.
+
+    *base* is how this repo reaches the family pages (a relative sibling path or the forge URL), and
+    the table is re-rendered from the registry rather than compared with a stored copy -- so a page
+    added or renamed upstream reds here until this repo re-renders. Moved here 2026-10-03 from a kit
+    test that reached into every consumer checkout: a test judges the repo it lives in.
+    """
+    index = root.joinpath(*CANONICAL_TREE.split('/'), 'index.md')
+    if not index.is_file():
+        msg = f'no dev index at {index}; the family pointer table has nowhere to live'
+        raise AssertionError(msg)
+    table = pointer_table(base)
+    found = index.read_text(encoding='utf-8').count(table)
+    if found != 1:
+        msg = (
+            f'{index} holds {found} copies of the live family pointer table (want exactly 1). Re-render it: '
+            f'paste lab_commons.dev.devdocs.pointer_table({base!r}) in place of the old table.'
+        )
         raise AssertionError(msg)

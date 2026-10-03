@@ -49,11 +49,15 @@ from lab_commons.dev.famconfig import (
     BASES,
     INSTALLED,
     RENDERED,
+    RUFF_SECTIONS,
+    SECTION_BASES,
     artefact_base,
     delta_problems,
     inspect_file,
+    inspect_section,
     measured_delta,
     render,
+    ruff_config_path,
 )
 from lab_commons.dev.famtests._configrender_readings import (
     HookStages,
@@ -72,7 +76,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
-    from lab_commons.dev.famconfig import Base, Delta
+    from lab_commons.dev.famconfig import Base, Delta, SectionDelta
 
 __all__ = [
     'HookStages',
@@ -84,6 +88,7 @@ __all__ = [
     'assert_declared_ids_survive',
     'assert_delta_is_not_a_fork',
     'assert_every_base_is_accounted_for',
+    'assert_every_section_is_owned',
     'assert_modes_are_as_agreed',
     'assert_no_base_line_left_undeclared',
     'assert_no_rule_is_reopened',
@@ -346,3 +351,26 @@ def assert_render_round_trips(
         raise AssertionError(msg)
     if not any(target in line for line in edited.offending):
         msg = f'{artefact} reds on the edit but never names {target!r}: {edited.offending}'
+
+
+def assert_every_section_is_owned(*, root: Path, deltas: Mapping[str, SectionDelta], repo: str) -> None:
+    """Every family config TABLE in *root* is the section base plus this repo's SectionDelta.
+
+    The tables are `[tool.ruff*]`, `[project]` and `[tool.pytest.ini_options]`; every base must be declared.
+
+    The consumer's verdict on its OWN tables. Moved here 2026-10-03 from kit tests that read every
+    consumer's pyproject/ruff config from the kit's suite: a test judges the repo it lives in.
+    """
+    missing = sorted(set(SECTION_BASES) - set(deltas))
+    unknown = sorted(set(deltas) - set(SECTION_BASES))
+    problems = [f'{name}: no SectionDelta declared' for name in missing]
+    problems += [f'{name}: declared, and the kit publishes no such section' for name in unknown]
+    for name in sorted(set(SECTION_BASES) & set(deltas)):
+        base = SECTION_BASES[name]
+        path = ruff_config_path(root) if name in RUFF_SECTIONS else root / 'pyproject.toml'
+        report = inspect_section(path, base, deltas[name])
+        if not report.ok:
+            problems.append(f'{name} in {path.name}: {report.status} -- {report.detail} {list(report.offending)}')
+    if problems:
+        msg = f'{repo}: config tables that are not base + delta:\n  ' + '\n  '.join(problems)
+        raise AssertionError(msg)
