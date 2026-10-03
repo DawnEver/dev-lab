@@ -98,12 +98,54 @@ const UV_RUN = /^(?:[^\s]*[/\\])?(uvx?)(?:\.exe)?$/i;
 /** An argument that belongs to the WRAPPER rather than to the command it runs. */
 const WRAPPER_ARG = /^(?:-|\d+(?:\.\d+)?[smhd]?$)/;
 
+/** Shells: a `-c` script handed to one of these is SHELL text, so it has segments of its own. */
+const SHELLS = /(?:^|[/\\])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$/i;
+
 /**
  * Split a shell line at the operators that START a new command. `(` and `)` separate too, so a
  * subshell body is its own segment and `(pytest tests)` is still a pytest invocation.
+ *
+ * AN OPERATOR INSIDE QUOTES IS TEXT, and so is a backslash-escaped one. MEASURED 2026-10-03: a
+ * naive split read `grep -rn "a\|uv run --no-sync" f` as a pipe into a `uv run` command and refused
+ * a grep. `"..."` honours backslash escapes, `'...'` honours none -- the shell's own rules.
  */
 function segments(line) {
-  return line.split(/\|\||&&|[;|&()\n]/);
+  const out = [];
+  let current = '';
+  let quote = '';
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote) {
+      current += ch;
+      if (ch === '\\' && quote === '"' && i + 1 < line.length) current += line[++i];
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '\\' && i + 1 < line.length) {
+      current += ch + line[++i];
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    const two = line.slice(i, i + 2);
+    if (two === '||' || two === '&&') {
+      out.push(current);
+      current = '';
+      i += 1;
+      continue;
+    }
+    if (';|&()\n'.includes(ch)) {
+      out.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current);
+  return out;
 }
 
 /** The command word of a segment, with env assignments and surrounding quotes dropped. */
@@ -172,8 +214,15 @@ function executedTexts(cmd) {
   const { rest, executed } = splitHeredocs(cmd);
   const out = [];
   for (const segment of segments(rest)) {
-    for (const position of commandPositions(segment)) out.push({ text: position, kind: 'segment' });
-    for (const script of inlineScripts(segment)) out.push({ text: script, kind: 'code' });
+    const positions = commandPositions(segment);
+    for (const position of positions) out.push({ text: position, kind: 'segment' });
+    // A shell's `-c` script is a command LINE: `bash -c "cd x && uv run python y"` runs `uv` at a
+    // command position the quote-aware split no longer opens, so the script is split in its own right.
+    const shell = positions.some((position) => SHELLS.test(commandWord(position)));
+    for (const script of inlineScripts(segment)) {
+      out.push({ text: script, kind: 'code' });
+      if (shell) out.push(...executedTexts(script));
+    }
   }
   for (const body of executed) out.push({ text: body, kind: 'code' });
   return out;
