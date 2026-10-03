@@ -453,6 +453,13 @@ ALLOWED: Final[dict[Site, str]] = {
         'S607',
         "['git', '-C', str(root), *args],",
     ): 'the same resolution for the ls-tree that lists the blobs that batch then reads',
+    (
+        'tests/_private_markers.py',
+        'S607',
+        "done = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)",
+    ): 'git through PATH, the same deliberate resolution as every other row here -- and this one is '
+    'the scan that decides whether a published tree may be pushed, so hard-coding a path would make '
+    'it answer "no private markers" on every box whose git is somewhere else',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')
