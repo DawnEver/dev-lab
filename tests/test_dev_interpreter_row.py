@@ -29,10 +29,10 @@ def _rules(tmp_path: Path, remedies: dict[str, Remedy]) -> Path:
 @pytest.mark.parametrize(
     'command',
     [
-        'uv run python scripts/x.py',
+        'uv run python x.py',
         'uv run -m lab_commons.dev.verify',
         'uvx python',
-        'python scripts/x.py',
+        'python x.py',
         'python3 -c "print(1)"',
         'py -3 x.py',
         'timeout 60 uv run python x.py',
@@ -54,7 +54,7 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
     'command',
     [
         '.venv/Scripts/python.exe -m lab_commons.dev.verify',
-        '.venv/bin/python scripts/x.py',
+        '.venv/bin/python x.py',
         'C:/work/repo/.venv/Scripts/python.exe -V',
         'git commit -m "uv run python is refused now"',
     ],
