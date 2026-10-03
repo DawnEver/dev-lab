@@ -75,6 +75,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     'CANDIDATE_RELATIVE_PATHS',
+    'INTERPRETER_ALLOW_ENTRY',
+    'INTERPRETER_RULE',
     'VENV_INTERPRETER_GLOB',
     'VENV_LAYOUTS',
     'UnknownPlatform',
@@ -110,6 +112,14 @@ CANDIDATE_RELATIVE_PATHS: Final[tuple[tuple[str, ...], ...]] = (
 #: somewhere other than where it was written. Derived from :data:`VENV_LAYOUTS` below rather than
 #: typed, so it cannot drift from the layouts it is supposed to cover.
 VENV_INTERPRETER_GLOB: Final = '.venv/*/python*'
+
+#: THE settings.json allow row for the interpreter, derived from the glob above -- every repo's block
+#: carries exactly this (``allow_adoption.derived_entries``), and the deny row named by
+#: :data:`INTERPRETER_RULE` names the same spelling as its exit. One owner, three renderings.
+INTERPRETER_ALLOW_ENTRY: Final = f'Bash({VENV_INTERPRETER_GLOB} *)'
+
+#: The deny row whose exit is the venv interpreter.
+INTERPRETER_RULE: Final = 'BARE-INTERPRETER'
 
 #: A concrete venv interpreter ANYWHERE in a line, with an optional ``./`` and either separator, so
 #: the guard reads the spelling a human would write rather than only the one this module renders.

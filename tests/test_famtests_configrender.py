@@ -65,7 +65,7 @@ class _Hook:
 
 
 def _gitignore_delta(**over: object) -> Delta:
-    fields: dict[str, object] = {'repo': _REPO, 'added': ('scratch/',), 'dropped': {}, 'ceiling': 4}
+    fields: dict[str, object] = {'repo': _REPO, 'added': ('planted-tmp/',), 'dropped': {}, 'ceiling': 4}
     return Delta(**(fields | over))
 
 
@@ -447,7 +447,9 @@ def test_the_round_trip_control_passes_then_reds_on_one_edited_line(tmp_path: Pa
 #: A re-inclusion of a whole SUBTREE. Everything under it comes back, including the cache
 #: directories a base directory rule excluded at any depth -- which is what makes a later
 #: re-statement of that rule load-bearing rather than redundant.
-_DEEP_NEGATION = '!**/.claude/memory/**'
+#: NOT `.claude/...` any more: since 2026-10-03 the base owns the Claude section, so a delta re-including
+#: under `.claude` is refused for reopening the BASE -- a different arm. Any other subtree shows the order.
+_DEEP_NEGATION = '!**/keep/**'
 
 #: The delta's re-statement of a base directory rule. It closes the re-inclusion above it and
 #: closes NOTHING below it, because gitignore is last-match-wins per path.

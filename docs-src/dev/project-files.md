@@ -45,3 +45,11 @@ Repos: LC = lab-commons, MS = consumer-a, OL = consumer-c, WL = consumer-b (the 
 2. Remove from each delta every line the base now holds (a restatement is refused at render time).
 3. `python -m lab_commons.dev.famfiles --deltas <that module>`; commit the rendered files.
 4. One test file calling both `famtests.famfiles` bodies, with `owned_here` naming the repo's own files and why.
+
+## The interpreter spelling
+
+One owner: `lab_commons.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`, `INTERPRETER_ALLOW_ENTRY`). Rendered from it:
+
+- the `permissions.allow` row `Bash(.venv/*/python* *)` -- `allow_adoption.derived_entries` puts it in every repo's allow block, so the settings check every consumer already runs refuses a block without it;
+- the deny row `BARE-INTERPRETER` (`_deny_interpreter_row`): it refuses `uv run ...`, `uvx`, and a bare `python`/`python3`/`py`, including behind wrappers and heredocs (the engine unwraps `uv run` and the row fires on either position). The refusal names `.venv/Scripts/python.exe` / `.venv/bin/python`, and for a worktree with no `.venv` the main checkout's. `python -m pytest` stays with `BARE-TEST-INVOCATION`: one shape, one row;
+- a repo whose user-facing CLI runs through `uv run` (consumer-a: `uv run <cli>`) opens exactly that with its own `Remedy.allow` for `BARE-INTERPRETER` -- a per-repo delta, never a hole in the base row.

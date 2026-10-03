@@ -97,7 +97,7 @@ from lab_commons.dev._allow_settings import promised_command as _promised
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, denies
-from lab_commons.dev.venvpath import portable, unportable_row
+from lab_commons.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, portable, unportable_row
 
 __all__ = [
     'BASH',
@@ -218,6 +218,12 @@ def derived_entries(
     """
     out: dict[str, list[str]] = {}
     for rule in rules:
+        # THE ONE UNIVERSAL EXIT THAT IS A ROW: BARE-INTERPRETER's way out is the venv interpreter,
+        # spelled by its owner (`venvpath`), so every adopting repo's allow block carries it -- the
+        # settings row and the refusal text cannot drift apart (user ruling 2026-10-03).
+        if rule.id == INTERPRETER_RULE:
+            out.setdefault(INTERPRETER_ALLOW_ENTRY, []).append(rule.id)
+            continue
         remedy = adoption.remedies.get(rule.id)
         if rule.needs is None or remedy is None:
             continue

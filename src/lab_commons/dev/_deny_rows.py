@@ -52,6 +52,7 @@ sharper pattern with the near-miss added to ``permits`` -- never a narrower clai
 
 from __future__ import annotations
 
+from lab_commons.dev._deny_interpreter_row import BARE_INTERPRETER
 from lab_commons.dev._deny_worktree_row import WORKTREES_STAY_INSIDE
 from lab_commons.dev.venvpath import VENV_LAYOUTS
 from lab_commons.dev.worktreeplace import WORKTREES_REL
@@ -72,7 +73,8 @@ _FORGE_HAZARD = (
     'it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.'
 )
 _FORGE_REMEDY = (
-    'Write through the family door: python -m lab_commons.dev.forge issue create|comment|close, pr create '
+    'Write through the family door: .venv/Scripts/python.exe (POSIX .venv/bin/python) -m lab_commons.dev.forge '
+    'issue create|comment|close, pr create '
     '(reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, '
     'edit, review -- is the integrator`s to make: report it rather than reaching for another client.'
 )
@@ -114,7 +116,7 @@ _FORGE_WRITE_ROWS: tuple[dict[str, object], ...] = (
             'gh issue view 7 --comments',
             'tea issues list',
             'tea pulls 9',
-            'python -m lab_commons.dev.forge issue create --title x --body y',
+            '.venv/Scripts/python.exe -m lab_commons.dev.forge issue create --title x --body y',
             'git commit -m "gh issue create is refused now"',
         ),
     },
@@ -208,7 +210,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         ),
         'permits': (
             'grep -rn "pytest" src',
-            'python -m lab_commons.dev.verify',
+            '.venv/Scripts/python.exe -m lab_commons.dev.verify',
             'git log --oneline -- tests/test_dev_verify.py',
         ),
     },
@@ -398,4 +400,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         ),
     },
     WORKTREES_STAY_INSIDE,
+    BARE_INTERPRETER,
 )

@@ -551,6 +551,11 @@ _ORDINARY: Final = '**/.DS_Store'
 _SORTED: Final = tuple(line for line in GITIGNORE_BASE if line not in GITIGNORE_CLAUDE_SECTION)
 
 
+def _sorted_part(line: str) -> Base:
+    """The base's SORTED part with *line* promoted into it -- what the order-free refusal judges."""
+    return Base('.gitignore', tuple(sorted((*_SORTED, line))), RENDERED)
+
+
 def _promoted(line: str) -> Base:
     """The live `.gitignore` base with *line* promoted into it, sorted exactly as the table is."""
     return Base('.gitignore', (*sorted((*_SORTED, line)), *GITIGNORE_CLAUDE_SECTION), RENDERED)
@@ -576,7 +581,7 @@ def test_the_refusal_names_the_remedy_rather_than_only_the_defect() -> None:
 
 def test_an_ordinary_line_is_still_promotable_into_the_same_base() -> None:
     """THE CONTROL. A guard that refused every promotion would report what a frozen table reports."""
-    assert positional_base_lines(_promoted(_ORDINARY), floating_floor=2) == ()
+    assert positional_base_lines(_sorted_part(_ORDINARY), floating_floor=2) == ()
     assert_base_is_order_free(_promoted(_ORDINARY))
     assert _ORDINARY in rendered_lines(_promoted(_ORDINARY), _delta())
 
@@ -633,7 +638,7 @@ def test_planted_a_negation_promoted_into_the_base_is_refused_and_named() -> Non
     not starting with `**/`, and a negation excludes no paths at all, so nothing subsumes it.
     """
     assert floating_subject(_NEGATION) is None, 'the older arm is blind to this line, by construction'
-    assert positional_base_lines(_promoted(_NEGATION), floating_floor=2) == ()
+    assert positional_base_lines(_sorted_part(_NEGATION), floating_floor=2) == ()
     with pytest.raises(PositionalBase, match=r'!\*\*/\.claude/memory/\*\*'):
         rendered_lines(_promoted(_NEGATION), _delta())
 
@@ -646,7 +651,8 @@ def test_the_negation_refusal_names_the_remedy_too() -> None:
 
 def test_the_live_base_declares_no_negation_and_the_reading_saw_every_line() -> None:
     """THE FLOOR. A reading over an empty base finds no negation and reads exactly like a clean one."""
-    assert negated_base_lines(_base()) == ()
+    assert negated_base_lines(Base('.gitignore', _SORTED, RENDERED)) == ()
+    assert set(negated_base_lines(_base())) <= set(GITIGNORE_CLAUDE_SECTION), 'negations only in the ordered section'
     assert len(_base().content_lines) >= GITIGNORE_FLOOR, 'a reading over a gutted base is vacuous'
     sorted_part = Base('.gitignore', tuple(sorted((*_SORTED, _NEGATION))), RENDERED)
     assert negated_base_lines(sorted_part) == (_NEGATION,), 'the reading is not blind'
