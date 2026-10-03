@@ -14,6 +14,10 @@ dependencies = [
     # (lab_commons.em) needs no additional dependency, so it ships in the wheel --
     # "optional" for em means optional IMPORT, not optional install.
     "structlog",
+    # structlog's DEFAULT config builds a coloured ConsoleRenderer at IMPORT time and, on Windows,
+    # raises SystemError when colorama is absent -- so `import lab_commons` crashed in every
+    # environment that installs only this package (the pre-commit `issue-ref` hook env, family-wide).
+    "colorama; sys_platform == 'win32'",
     "platformdirs",
     "rtoml",
     "pint>=0.25.2",
