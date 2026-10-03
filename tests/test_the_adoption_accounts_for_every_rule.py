@@ -159,6 +159,9 @@ _ENFORCED = {
     ),
     'VERDICT-BAR-IS-THE-INCREMENT': (guard('tests/test_dev_verdict.py'),),
     'XFAIL-NOT-SKIP': (guard('tests/test_arch_skips_are_a_named_set.py'),),
+    # Prevention is the deny row (proved through the real engine); detection is the family body run
+    # over this checkout's own `git worktree list`.
+    'WORKTREES-STAY-INSIDE': (guard('tests/test_dev_worktreeplace.py'), guard('tests/test_dev_hooks.py')),
 }
 
 #: Rules this repo does NOT yet refuse a violation of, BY NAME with the reason. A mapping rather than

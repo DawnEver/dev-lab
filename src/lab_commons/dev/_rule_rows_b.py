@@ -57,4 +57,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_forgeissue.py',),
     ),
+    (
+        'WORKTREES-STAY-INSIDE',
+        (
+            'Every checkout of a repository -- a linked worktree, a moved one, a clone made for it -- lives '
+            'under `<toplevel>/.claude/worktrees/<name>`, never beside or outside the repository. A tree '
+            'outside is outside every scan, ignore rule and search the repository runs over itself.'
+        ),
+        ('tests/test_dev_worktreeplace.py', 'tests/test_dev_hooks.py'),
+    ),
 )
