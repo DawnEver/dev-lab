@@ -93,7 +93,10 @@ def test_a_lying_owned_entry_is_refused(repo: Path, owned: dict[str, str], needl
 def test_one_render_writes_every_rendered_artefact_and_a_hand_edit_reds(repo: Path) -> None:
     """The renderer and the check, round trip: rendered files are current; a hand edit is reported."""
     rendered = {name: DELTAS[name] for name in DELTAS if BASES[name].mode == RENDERED}
-    assert all(line.endswith('current') for line in render_all(repo, rendered, write=False))
+    lines = render_all(repo, rendered, write=False)
+    assert [line for line in lines if line.split(':')[0] in rendered] == [
+        f'{name}: current' for name in sorted(rendered)
+    ]
     path = repo / '.gitignore'
     path.write_text(path.read_text(encoding='utf-8').replace('.claude/worktrees/\n', ''), encoding='utf-8')
     assert any(line.startswith('.gitignore: would render') for line in render_all(repo, rendered, write=False))

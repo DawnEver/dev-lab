@@ -523,7 +523,9 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         '(`.verify/`, `**/__version__.py`, `/build/`, `/dist/`, `.claude/.rem-state.json`, '
         '`.claude/worktrees/`, `htmlcov/`, `output/`, `**/.DS_Store`) joined the fourteen-pattern '
         'consumer core, after which this tree`s file is the base plus ONE delta line, `*.py[cod]`. '
-        '`tests/test_the_kit_renders_its_own_gitignore.py` holds the rendering.',
+        'THE SEAM is the base: every pattern a family mechanism writes. What BREAKS if the one delta line moved: a '
+        'compiled file outside `__pycache__/` gets committed. `tests/test_the_kit_renders_its_own_gitignore.py` '
+        'holds the rendering.',
     ),
     'lab-commons::Makefile': Placement(
         SPLITS,

@@ -123,8 +123,11 @@ def project_files_on_disk(root: Path) -> tuple[str, ...]:
     return tuple(sorted(path for path in tracked if '/' not in path or path in nested or _is_workflow(path)))
 
 
+_WORKFLOWS: Final = '.github/workflows/'
+
+
 def _is_workflow(path: str) -> bool:
-    return path.startswith('.github/workflows/') and path.count('/') == 2  # noqa: PLR2004 -- the depth of a workflow file
+    return path.startswith(_WORKFLOWS) and '/' not in path[len(_WORKFLOWS) :]
 
 
 def unaccounted(root: Path, owned_here: Mapping[str, str]) -> tuple[str, ...]:

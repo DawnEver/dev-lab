@@ -4,7 +4,7 @@ Rule `WORKTREES-STAY-INSIDE` (statement in `lab_commons.dev.rules`). Every check
 
 ## Why
 
-User ruling, 2026-10-03: eight worktrees had been created as SIBLINGS of their repositories (`PEMC/lab-commons-wt-cf`, `PEMC/lc-placement`, `PEMC/lab-commons-integrator`, `PEMC/ms-placement`, `PEMC/optimi-lab-wt-cf`, `WindingDesign/wdg-lab-wt-pm`, ...). A tree outside its repository is outside every scan, ignore rule and search the repository runs over itself, and outside the place the next agent looks for it.
+User ruling, 2026-10-03: eight worktrees had been created as SIBLINGS of their repositories (`<parent>/<repo>-wt-cf`, `<parent>/<repo>-placement`, `<parent>/<repo>-integrator`, ... -- in all four repos). A tree outside its repository is outside every scan, ignore rule and search the repository runs over itself, and outside the place the next agent looks for it.
 
 ## One fact, three mechanisms
 

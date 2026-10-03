@@ -91,7 +91,7 @@ def _base() -> Base:
     return artefact_base('.gitignore')
 
 
-def _delta(added: tuple[str, ...] = ('target/', 'htmlcov/'), ceiling: int = 4) -> Delta:
+def _delta(added: tuple[str, ...] = ('target/', 'coverage-html/'), ceiling: int = 4) -> Delta:
     return Delta(repo='planted-repo', added=added, dropped={}, ceiling=ceiling)
 
 
@@ -344,13 +344,13 @@ def test_a_measured_delta_round_trips_an_unmanaged_file(tmp_path: Path) -> None:
 def test_planted_a_line_every_delta_adds_is_named() -> None:
     """THE ANTI-FORK ARM: three repos adding one line is a base line that was never promoted."""
     deltas = [
-        Delta(repo='a', added=('htmlcov/', 'target/'), dropped={}, ceiling=4),
-        Delta(repo='b', added=('htmlcov/', 'usr/'), dropped={}, ceiling=4),
-        Delta(repo='c', added=('htmlcov/', 'attic/'), dropped={}, ceiling=4),
+        Delta(repo='a', added=('coverage-html/', 'target/'), dropped={}, ceiling=4),
+        Delta(repo='b', added=('coverage-html/', 'usr/'), dropped={}, ceiling=4),
+        Delta(repo='c', added=('coverage-html/', 'attic/'), dropped={}, ceiling=4),
     ]
     signals = fork_signals(deltas)
     assert len(signals) == 1
-    assert 'htmlcov/' in signals[0]
+    assert 'coverage-html/' in signals[0]
     assert fork_signals([*deltas[:2], Delta(repo='c', added=('attic/',), dropped={}, ceiling=4)]) == ()
 
 
@@ -576,9 +576,9 @@ def test_an_ordinary_line_is_still_promotable_into_the_same_base() -> None:
 
 
 def test_the_live_base_is_order_free_today_and_the_scan_was_not_empty() -> None:
-    """THE FLOOR. Two floating rules here; a reading that found none subsumes nothing, vacuously."""
+    """THE FLOOR. Four floating rules here since 2026-10-03; a reading that found none subsumes nothing, vacuously."""
     floating = tuple(line for line in _base().content_lines if floating_subject(line))
-    assert floating == ('**/.env', '**/__pycache__/'), floating
+    assert floating == ('**/.DS_Store', '**/.env', '**/__pycache__/', '**/__version__.py'), floating
     assert positional_base_lines(_base(), floating_floor=len(floating)) == ()
 
 

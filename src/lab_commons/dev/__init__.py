@@ -235,6 +235,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   are not equally wrong -- executable DATA, a consumer TREE PATH, and PROSE -- and the waiver is a
   NAMED SET of evicted-by-design rows rather than a count, so a deletion lands mechanically. NOT
   RE-EXPORTED -- ``scan`` and ``kinds`` say nothing once flattened.
+* :mod:`lab_commons.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
+* :mod:`lab_commons.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.
 * :mod:`lab_commons.dev.durations` -- what every test COST, as a ledger the runner merges rather than
   overwrites, and the two readings a ``slow`` marker set is judged by. The wall's own kills arrive

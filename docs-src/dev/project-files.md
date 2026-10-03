@@ -13,7 +13,7 @@ Rule `PROJECT-FILES-HAVE-ONE-SOURCE` (statement in `lab_commons.dev.rules`). Use
 
 ## Inventory, measured 2026-10-03
 
-Repos: LC = lab-commons, MS = motronics-studio, OL = optimi-lab, WL = wdg-lab.
+Repos: LC = lab-commons, MS = consumer-a, OL = consumer-c, WL = consumer-b (the aliases the rest of this kit uses).
 
 | file | LC | MS | OL | WL | shared vs own | family mechanism |
 |---|---|---|---|---|---|---|
@@ -41,7 +41,7 @@ Repos: LC = lab-commons, MS = motronics-studio, OL = optimi-lab, WL = wdg-lab.
 
 ## Adopting it in a repo
 
-1. Keep the repo's `DELTAS` module where it is (`tests/_famconfig_delta.py` in LC, `tests/architecture/ratchets/_famconfig.py` in MS, `tests/architecture/_famconfig.py` in OL and WL) and add a `Delta` for every base the kit publishes -- the completeness arm refuses a missing one.
+1. Keep the repo's `DELTAS` module where it is (`tests/_famconfig_delta.py` in LC, `tests/architecture/ratchets/_famconfig.py` in consumer-a, `tests/architecture/_famconfig.py` in consumer-b and consumer-c) and add a `Delta` for every base the kit publishes -- the completeness arm refuses a missing one.
 2. Remove from each delta every line the base now holds (a restatement is refused at render time).
 3. `python -m lab_commons.dev.famfiles --deltas <that module>`; commit the rendered files.
 4. One test file calling both `famtests.famfiles` bodies, with `owned_here` naming the repo's own files and why.

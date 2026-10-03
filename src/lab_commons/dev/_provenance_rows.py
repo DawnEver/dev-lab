@@ -363,6 +363,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # not a forked file. `CANDIDATE_RELATIVE_PATHS` moved here from `githooks.bootstrap`, which is
     # in-kit and therefore not provenance -- that row below still supersedes `with-venv.sh`.
     'venvpath': ('original',),
+    'worktreeplace': ('original',),
+    'famfiles': ('original',),
     # -- `lab_commons.dev.githooks`.
     'bootstrap': ('supersedes', 'scripts/hooks/with-venv.sh'),
 }
