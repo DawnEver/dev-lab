@@ -424,11 +424,6 @@ ALLOWED: Final[dict[Site, str]] = {
         "Q_pi_rad = Q_(np.pi, 'rad')",
     ): 'the same spelling, in radians',
     (
-        'tests/test_the_config_census_is_measured.py',
-        'S608',
-        "assert ruff_select(root) == set(CONSUMER_SELECT), f'{repo}: select diverged from the family 58'",
-    ): "the word 'select' here names a ruff selector list; there is no database in this repo",
-    (
         'tests/test_two_repos_cannot_both_hold_the_box.py',
         'S607',
         "subprocess.run(['git', 'init', '-q'], cwd=root, check=True, capture_output=True)",
