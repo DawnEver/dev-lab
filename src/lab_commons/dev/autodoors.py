@@ -37,7 +37,6 @@ __all__ = [
     'CODEX_RULES_REL',
     'DOOR_MODULES',
     'NEVER_ALLOWED',
-    'WRAPPER',
     'claude_rows',
     'codex_rules',
     'doors',
@@ -59,9 +58,6 @@ DOOR_MODULES: Final[dict[str, str]] = {
     'lab_commons.dev.famfiles': 'renders the family project files',
     'lab_commons.dev.autodoors': 'renders these door rules',
 }
-
-#: The shell netverb wrapper, a door when the repo tracks it.
-WRAPPER: Final = 'scripts/hooks/with-retry.sh'
 
 #: The raw verbs the doors replace. Never rendered as an allow on either client.
 NEVER_ALLOWED: Final = (
@@ -91,12 +87,18 @@ def _tracked(root: Path) -> tuple[str, ...]:
     return tuple(sorted(done.stdout.splitlines()))
 
 
-def script_doors(root: Path) -> tuple[str, ...]:
-    """The repo's tracked ``scripts/**.py`` ENTRY POINTS (a ``__main__`` guard), plus the wrapper if tracked."""
+def script_doors(root: Path, *, shell_doors: tuple[str, ...]) -> tuple[str, ...]:
+    """The repo's tracked ``scripts/**.py`` ENTRY POINTS (a ``__main__`` guard), plus its tracked *shell_doors*.
+
+    *shell_doors* is the repo's own list (e.g. its netverb wrapper), with no default: a consumer's path
+    is that consumer's data, never this leaf's.
+    """
     out: list[str] = []
     for rel in _tracked(root):
         path = root / rel
-        if rel == WRAPPER or (rel.endswith('.py') and path.is_file() and _MAIN_GUARD.search(path.read_text('utf-8'))):
+        if rel in shell_doors or (
+            rel.endswith('.py') and path.is_file() and _MAIN_GUARD.search(path.read_text('utf-8'))
+        ):
             out.append(rel)
     return tuple(out)
 
@@ -153,9 +155,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.autodoors', description=main.__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--write', action='store_true', help=f'write {CODEX_RULES_REL}')
+    parser.add_argument('--shell-door', action='append', default=[], help='a tracked shell door (repeatable)')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    scripts = script_doors(root)
+    scripts = script_doors(root, shell_doors=tuple(args.shell_door))
     text = codex_rules(scripts)
     target = root / CODEX_RULES_REL
     for row in claude_rows(scripts):

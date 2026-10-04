@@ -57,6 +57,7 @@ def test_the_real_codex_engine_allows_a_door_and_not_a_raw_verb(tmp_path: Path) 
             [codex, 'execpolicy', 'check', '--rules', str(rules), *argv],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=False,
             timeout=120,
         )
@@ -75,8 +76,12 @@ def test_script_doors_are_the_tracked_entry_points(tmp_path: Path) -> None:
     (work / 'scripts' / 'hooks' / 'with-retry.sh').write_text('#!/bin/sh\n', encoding='utf-8')
     (work / 'scripts' / 'untracked.py').write_text(guard, encoding='utf-8')
     subprocess.run([_GIT, 'add', 'scripts/door.py', 'scripts/helper.py', 'scripts/hooks'], cwd=work, check=True)
-    assert script_doors(work) == ('scripts/door.py', 'scripts/hooks/with-retry.sh')
+    assert script_doors(work, shell_doors=('scripts/hooks/with-retry.sh',)) == (
+        'scripts/door.py',
+        'scripts/hooks/with-retry.sh',
+    )
     assert main(['--repo', str(work)]) == 1
     assert main(['--repo', str(work), '--write']) == 0
     assert (work / CODEX_RULES_REL).is_file()
     assert main(['--repo', str(work)]) == 0
+    assert main(['--repo', str(work), '--shell-door', 'scripts/hooks/with-retry.sh']) == 1, 'a new door is stale'

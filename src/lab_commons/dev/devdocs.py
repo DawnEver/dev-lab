@@ -157,6 +157,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'One long-lived branch per session: the declared branch set, the census, and the merge-and-delete list',
     ),
     Page(
+        'auto-doors',
+        'Auto mode runs the doors',
+        'Local cleanup and own-run stops are checked doors both clients allow; pushes and remote deletes stay human',
+    ),
+    Page(
         'project-files',
         'Project files',
         'Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason',

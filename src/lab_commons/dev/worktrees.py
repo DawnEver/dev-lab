@@ -3,7 +3,7 @@
 User ruling 2026-10-04 (AUTO-MODE-RUNS-THE-DOORS): local cleanup is a checked door an agent may run
 unattended; nothing here pushes or touches origin.
 
-THE INCIDENT IT ENCODES (motronics, 2026-10-04): a cleanup loop ran ``mkdir -p "$D" && mv output "$D"``
+THE INCIDENT IT ENCODES (consumer-a, 2026-10-04): a cleanup loop ran ``mkdir -p "$D" && mv output "$D"``
 and then ``; git worktree remove --force``. The archive helper failed, ``mv`` never ran, and the ``;``
 let the removal delete five worktrees' ignored ``output/``. So every destructive step here runs only
 AFTER its precondition is VERIFIED (target exists, source gone), and removal is ``git worktree remove``

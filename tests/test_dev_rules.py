@@ -68,6 +68,7 @@ _IDS = frozenset(
         'NO-REFLECTION',
         'ONE-BOX-ONE-LOCK',
         'ONE-BRANCH-PER-SESSION',
+        'AUTO-MODE-RUNS-THE-DOORS',
         'PLANTED-CONTROL',
         'PRODUCTION-ENTRY-POINT',
         'PUBLIC-SURFACE-DECLARED',

@@ -145,6 +145,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/consumer-b-update.sh'),
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset': ('original',),
+    # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
+    'autodoors': ('original',),
+    # ORIGINAL in code: generalises consumer-a's --pid killer, which stays until that repo adopts this.
+    'stoprun': ('original',),
+    # ORIGINAL: the archive-then-remove door is new; it encodes a consumer-a incident, not its code.
+    'worktrees': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
     'privatemarkers': ('original',),

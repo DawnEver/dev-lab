@@ -242,6 +242,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   NAMED SET of evicted-by-design rows rather than a count, so a deletion lands mechanically. NOT
   RE-EXPORTED -- ``scan`` and ``kinds`` say nothing once flattened.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
+* :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
+* :mod:`lab_commons.dev.worktrees` -- the local worktree door: archive ignored output, then remove clean trees.
+* :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify tree, children first.
 * :mod:`lab_commons.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`lab_commons.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

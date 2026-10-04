@@ -14,7 +14,9 @@ _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session'}))
 
 
 def _run(cwd: Path, *args: str) -> str:
-    return subprocess.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True, timeout=60).stdout
+    return subprocess.run(
+        [_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True, encoding='utf-8', timeout=60
+    ).stdout
 
 
 def test_apply_deletes_merged_local_branches_only_and_never_touches_origin(tmp_path: Path) -> None:

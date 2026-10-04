@@ -19,7 +19,9 @@ from pathlib import Path
 from _arch_corpus import TEST_FLOOR, assert_floor, parse, rel, suite_modules
 
 #: Test modules permitted to skip, each with the reason. EMPTY, measured 2026-09-15.
-ALLOWED_SKIPS: dict[str, str] = {}
+ALLOWED_SKIPS: dict[str, str] = {
+    'tests/test_dev_autodoors.py': 'drives the real codex execpolicy engine, which only a box with the codex CLI has',
+}
 
 
 def skip_sites(paths: tuple[Path, ...]) -> tuple[str, ...]:

@@ -26,6 +26,7 @@
 | [Translations](./translations.md) | Why a `<stem>.zh.md` beside its `<stem>.md` escapes the CJK guard, and the non-ASCII goal |
 | [Worktrees stay inside](./worktrees.md) | Every checkout lives under `<repo>/.claude/worktrees/<name>`: the deny row, the detector, the ignore line |
 | [One branch per session](./branch-set.md) | One long-lived branch per session: the declared branch set, the census, and the merge-and-delete list |
+| [Auto mode runs the doors](./auto-doors.md) | Local cleanup and own-run stops are checked doors both clients allow; pushes and remote deletes stay human |
 | [Project files](./project-files.md) | Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason |
 
 ## Reading these from a consuming repo

@@ -1,6 +1,6 @@
 """STOP ONE OWN GATE/VERIFY RUN: ``python -m lab_commons.dev.stoprun --pid PID [--dry-run]``.
 
-Generalised 2026-10-04 from motronics' ``scripts/gate/stop_sweep.py --pid`` (AUTO-MODE-RUNS-THE-DOORS):
+Generalised 2026-10-04 from consumer-a's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
 an agent stopping its OWN superseded run was refused as a raw ``taskkill /T /F``. The door replaces the
 raw kill with a checked one: it REFUSES unless the pid's command line is a run it can identify
 (:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest), and then stops that pid's
@@ -49,7 +49,13 @@ def process_table() -> dict[int, Proc]:
         )
         shell = shutil.which('powershell') or 'powershell'
         done = subprocess.run(
-            [shell, '-NoProfile', '-Command', script], capture_output=True, text=True, check=False, timeout=60
+            [shell, '-NoProfile', '-Command', script],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            timeout=60,
         )
         rows = json.loads(done.stdout or '[]')
         rows = rows if isinstance(rows, list) else [rows]
@@ -58,6 +64,8 @@ def process_table() -> dict[int, Proc]:
         [shutil.which('ps') or 'ps', '-A', '-o', 'pid=,ppid=,args='],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
         timeout=60,
     )
@@ -95,7 +103,7 @@ def _kill(pid: int) -> None:
         )
         return
     with contextlib.suppress(ProcessLookupError):
-        os.kill(pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
+        os.kill(pid, signal.SIGTERM)
 
 
 def stop(
