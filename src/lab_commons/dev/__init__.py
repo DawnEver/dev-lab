@@ -232,6 +232,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: a lane cites any verdict for this tree, the trunk a PASS.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, comment reads.
+* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs + ``lab/gate``/``lab/heavy``; one ready predicate.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
 * :mod:`lab_commons.dev.floors` -- a scan that read NOTHING is not a clean scan; both sides, no default.

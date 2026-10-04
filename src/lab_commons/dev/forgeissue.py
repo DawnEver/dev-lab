@@ -39,6 +39,7 @@ from typing import Final
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgestatus import GATE_CONTEXT, Status, status_list
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, client_for
+from lab_commons.dev.integrator import gate_ready
 from lab_commons.dev.issueref import CLOSING_VERBS, REF_VERBS
 from lab_commons.log import emit
 
@@ -191,7 +192,7 @@ def derive(*, is_open: bool, closed_on_default: bool, lanes: Sequence[Lane]) -> 
     """The table in the module docstring, as a function of its evidence."""
     if not is_open or closed_on_default:
         return DONE
-    if any(lane.gate == 'success' for lane in lanes):
+    if any(gate_ready(lane.gate) for lane in lanes):
         return READY
     return IN_PROGRESS if lanes else TODO
 

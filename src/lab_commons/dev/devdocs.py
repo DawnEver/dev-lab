@@ -127,6 +127,11 @@ PAGES: Final[tuple[Page, ...]] = (
         ),
     ),
     Page(
+        'integrator',
+        'The integrator',
+        'Woken or self-polling, one derived merge queue: the ready predicate over `lab/gate` and `lab/heavy`',
+    ),
+    Page(
         'retirement',
         'Retirement',
         'An archive and a retired-spelling registry are a PLACE and a RULE, and why the rule cannot live in the place',
