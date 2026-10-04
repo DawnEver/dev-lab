@@ -123,17 +123,10 @@ def test_the_shipped_planted_control_passes(tmp_path: Path) -> None:
     assert_the_planted_branchset_is_policed(tmp_path, trunk='main')
 
 
-#: Undeclared origin branches already contained in origin/main, MEASURED 2026-10-04 and awaiting a
-#: remote delete the agent was not permitted to run. TWO-SIDED: a new undeclared branch reds, and so
-#: does this pin outliving a deleted branch -- shrink it in the change that deletes one.
-_PENDING_DELETION = frozenset({
-    'feat/cjk-root-archived',
-    'feat/hooks-guaranteed',
-    'feat/inconclusive-lane',
-    'feat/worktrees-stay-inside',
-    'fix/githooks-interpreter',
-    'fix/no-reflection',
-})  # fmt: skip
+#: Undeclared origin branches awaiting a remote delete. The six merged lanes pinned here were deleted
+#: on 2026-10-04, so the set is empty. TWO-SIDED: a new undeclared branch reds, and so does this pin
+#: outliving a deleted branch -- shrink it in the change that deletes one.
+_PENDING_DELETION: frozenset[str] = frozenset()
 
 
 def test_this_repo_carries_only_its_declared_branches() -> None:
