@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -40,6 +39,7 @@ from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.logref import MARKER
 from lab_commons.dev.treedirt import status_paths
+from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
@@ -262,6 +262,7 @@ def _tree_state(root: Path) -> tuple[str, bool]:
         [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
         timeout=_GIT_TIMEOUT_S,
     ).stdout.strip()
@@ -302,7 +303,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         decided = admit(
             anchors, trunk=trunk, trunk_tiers=args.trunk_tier, head=head, clean=clean, env=_current_env(), gap=args.gap
         )
-    sys.stdout.write(decided.message + '\n')
+    emit(decided.message)
     return 0 if decided.allowed else 1
 
 

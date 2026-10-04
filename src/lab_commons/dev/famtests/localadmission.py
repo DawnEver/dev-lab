@@ -108,9 +108,9 @@ def offenders_in(source: str) -> tuple[int, ...]:
     """The line numbers in *source* that keep a local admission rule."""
     tree = ast.parse(source)
     found: set[int] = set()
-    scopes: list[ast.AST] = [tree, *(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))]
+    scopes: list[ast.Module | ast.ClassDef] = [tree, *(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))]
     for scope in scopes:
-        for stmt in getattr(scope, 'body', []):
+        for stmt in scope.body:
             value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
             if value is not None and _is_table(value):
                 found.add(stmt.lineno)

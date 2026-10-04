@@ -114,6 +114,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeauth': ('original',),
     'forgework': ('original',),
     'forgestatus': ('original',),
+    # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
+    'admission': ('original',),
     'forgeissue': ('original',),
     'issueref': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
@@ -305,6 +307,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # either, the nearest neighbour BY SUBJECT -- a declaration that lies -- which reads PROSE
     # against the whole tree where this cannot see across a single function boundary.
     'echoedtoken': ('original',),
+    # ORIGINAL in the kit: refuses consumer-local push-admission copies once `admission` exists.
+    'localadmission': ('original',),
     # FOUR consumer rosters, not three: consumer-a holds TWO, one for `scripts/` and one for
     # `tests/architecture/`, and they declare DIFFERENT ceilings (40 and 50) over intervals that
     # exclude each other's value. That is why the bars are arguments here and not constants, and why

@@ -83,6 +83,9 @@ WHAT IS HERE, one module per shared body:
   arm here that reads no clock at all: the pool-spawning runtimes pinned BY NAME, which two labs had
   each pinned by a count.
 
+* :mod:`lab_commons.dev.famtests.localadmission` -- no consumer keeps its own push-admission table,
+  citation body or verdict-line reader; :mod:`lab_commons.dev.admission` is the one source.
+
 * :mod:`lab_commons.dev.famtests.echoedtoken` -- no assertion searches for a token its own producer
   was handed, which is the one shape that cannot fail however green it reads. Found 2026-09-18 in
   ``boundedremedy`` itself and it is why this row exists: every body in this package asserts on text

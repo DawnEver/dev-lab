@@ -480,7 +480,7 @@ SPELLING_HEADROOM = 3
 #: the floor rather than either factor alone: a parametrisation that lost one whole spelling still
 #: reports a full green over the other two, which is the shape that let this defect live twice.
 # RE-MEASURED 2026-09-19 at 207 (69 modules x 3 spellings), 7 past the old ceiling of 110 + 90.
-CASE_FLOOR = 180
+CASE_FLOOR = 250
 CASE_HEADROOM = 90
 
 #: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.

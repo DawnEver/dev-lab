@@ -225,7 +225,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``; ``HARNESS_*`` stamp.
-* :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status: PASS/FAIL only, on a clean HEAD.
+* :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE as ``error``), on a clean HEAD.
+* :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: a lane cites PASS/FAIL/INCONCLUSIVE for this tree and env, the trunk a PASS.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, comment reads.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
