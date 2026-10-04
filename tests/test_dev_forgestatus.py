@@ -56,10 +56,12 @@ def _verdict(tmp_path: Path, outcome: Outcome) -> Verdict:
     return Verdict(tree='sha256:' + 'b' * 64, env='env:1', selector=selector, result=result, log=LogRef.of(log))
 
 
-def test_pass_is_success_fail_is_failure_and_inconclusive_posts_nothing() -> None:
+def test_pass_is_success_fail_is_failure_and_inconclusive_is_error() -> None:
+    # User ruling 2026-10-04: a lane may push an INCONCLUSIVE tree, so every pushed tree carries its
+    # verdict -- a non-success state the trunk's protection still refuses.
     assert state_for(Outcome.PASS) == 'success'
     assert state_for(Outcome.FAIL) == 'failure'
-    assert state_for(Outcome.INCONCLUSIVE) is None
+    assert state_for(Outcome.INCONCLUSIVE) == 'error'
 
 
 @pytest.mark.parametrize(('forge', 'root'), CASES)
@@ -74,9 +76,9 @@ def test_status_post_sends_state_context_and_a_truncated_description(server, for
     assert posted == Status('lab/gate', 'success', 'd', '')
 
 
-def test_a_state_outside_the_three_is_refused_before_anything_is_sent(server) -> None:
+def test_a_state_outside_the_four_is_refused_before_anything_is_sent(server) -> None:
     with pytest.raises(ValueError, match='one of'):
-        status_post(client(CASES[0].values[0], Loopback(server)), _SHA, context='c', state='error', description='')
+        status_post(client(CASES[0].values[0], Loopback(server)), _SHA, context='c', state='skipped', description='')
     assert Recorder.received == []
 
 
@@ -146,15 +148,21 @@ def test_publish_posts_the_verdict_line_on_the_commit(server, tmp_path: Path) ->
     assert verdict.line().startswith('VERDICT '), 'the description is the citable verdict line'
 
 
-def test_publish_posts_nothing_for_inconclusive_or_for_no_commit(tmp_path: Path) -> None:
+def test_publish_posts_nothing_for_no_commit(tmp_path: Path) -> None:
     def never(_root: Path) -> None:
         msg = 'no client may be built'
         raise AssertionError(msg)
 
-    held = publish(tmp_path, _verdict(tmp_path, Outcome.INCONCLUSIVE), context=GATE_CONTEXT, commit=_SHA, client=never)
+    held = publish(tmp_path, _verdict(tmp_path, Outcome.INCONCLUSIVE), context=GATE_CONTEXT, commit=None, client=never)
     dirty = publish(tmp_path, _verdict(tmp_path, Outcome.FAIL), context=GATE_CONTEXT, commit=None, client=never)
-    assert 'INCONCLUSIVE' in held
+    assert 'dirty' in held
     assert 'dirty' in dirty
+
+
+def test_an_inconclusive_verdict_names_itself_in_the_error_description(tmp_path: Path) -> None:
+    verdict = _verdict(tmp_path, Outcome.INCONCLUSIVE)
+    assert state_for(verdict.result.outcome) == 'error'
+    assert 'result=inconclusive' in verdict.line()[:DESCRIPTION_LIMIT]
 
 
 def test_publish_skips_without_a_credential_and_reports_a_refusal_without_raising(server, tmp_path: Path) -> None:

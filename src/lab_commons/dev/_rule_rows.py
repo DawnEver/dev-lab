@@ -276,10 +276,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'VERDICT-BAR-IS-THE-INCREMENT',
         (
             'A verdict answers for the INCREMENT that produced it, not for the tree: a red the increment did '
-            'not cause is inventory rather than a blocker. What refuses is INCONCLUSIVE, an unreadable verdict '
-            'or no log -- those proved NOTHING, so there is no verdict to carry.'
+            'not cause is inventory rather than a blocker. A non-trunk push cites PASS, FAIL or INCONCLUSIVE '
+            'for the same tree and env and records the gap; only the trunk requires PASS. What refuses is no '
+            'verdict about THIS tree -- none, another tree, another env, a dirty tree.'
         ),
         (
+            'src/lab_commons/dev/admission.py',
+            'tests/test_dev_admission.py',
             'scripts/gate/prepush_gate.py',
             'tests/architecture/gate/test_prepush_gate_refuses_every_inconclusive_run.py',
             'tests/architecture/gate/test_the_message_check_judges_the_push_increment.py',

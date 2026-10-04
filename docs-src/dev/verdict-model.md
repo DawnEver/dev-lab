@@ -24,13 +24,13 @@
 
 | destination | the bar | what does NOT block it |
 |---|---|---|
-| a lane (`feat/...`, `fix/...`) | a gate PASS over the increment THAT LANE developed | a red the lane did not cause; a red heavy |
-| the integration branch | a gate PASS over everything THAT MERGE brought in | a red that predates the merge; a red heavy |
+| a lane (`feat/...`, `fix/...`) | a gate verdict — PASS, FAIL or INCONCLUSIVE — for this tree and env over the increment THAT LANE developed | a red or an unproved run; a red heavy |
+| the integration branch | a gate verdict — PASS, FAIL or INCONCLUSIVE — for this tree and env over everything THAT MERGE brought in | a red or an unproved run; a red heavy |
 | `main` | a heavy PASS for that exact tree and environment | nothing — this is the ONE hop where everything must be green |
 
 - **THE BAR IS THE INCREMENT, NOT THE TREE** (user ruling 2026-09-07): a lane answers for the code it developed and a merge answers for what it brought in, so a red your increment did not cause is INVENTORY the integrator assigns, never a personal blocker.
 - **The heavy tier never blocks a push** — it is unbounded, it is YOURS to run, and its result is RECORDED rather than waited on. Run it, say what it said, push.
-- What a pre-push check refuses is what proved NOTHING — INCONCLUSIVE, an unreadable verdict, no log — and it ALLOWS a judged tree through including a FAIL, because a red is information about a tree.
+- **A non-trunk push cites ANY verdict about THIS tree** (user ruling 2026-10-04, "INCONCLUSIVE may be pushed"): PASS, FAIL or INCONCLUSIVE for the same tree and env. It refuses only what is no verdict about this tree — none at all, an unreadable one, another tree, another env, a dirty working tree. A cited INCONCLUSIVE is printed loudly and a non-PASS citation writes a dated GAP record (the verdict line, the failing node ids, the never-ran count) the consumer names. The trunk keeps the strict bar: a PASS of its trunk tier. ONE implementation, `lab_commons.dev.admission` (library and CLI); `famtests.localadmission` refuses a consumer copy.
 - **Inventory is CARRIED, not asserted.** "That red was not mine" from an agent is self-certification; the honest form is an enumerated table that only shrinks, red on a NEW entry and red on a STALE one alike.
 - No mechanism distinguishes "my increment caused this red" from "this red pre-existed inside my increment's reach". The honest test is a baseline comparison — restore the prior file, re-measure, diff the residuals — and it is done BY HAND.
 

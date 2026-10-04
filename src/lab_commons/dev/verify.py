@@ -378,9 +378,9 @@ def main(argv: list[str] | None = None) -> int:
     that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
     sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
 
-    A JUDGED RUN IS THEN PUBLISHED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
+    EVERY RUN IS THEN PUBLISHED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
     :mod:`lab_commons.dev.forgestatus`) -- on HEAD only when the tree was clean before and after the
-    run and HEAD did not move, and never for INCONCLUSIVE. ``--no-status`` opts out. The publish
+    run and HEAD did not move; INCONCLUSIVE posts ``error`` naming itself. ``--no-status`` opts out. The publish
     prints one line and can neither raise nor change the exit code: the verdict is the run's.
     """
     parser = argparse.ArgumentParser(

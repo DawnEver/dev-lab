@@ -7,8 +7,10 @@ gate or heavy run earned is posted against the exact commit it judged, under :da
 (the line names the tree, the env and the log digest) rather than a bare colour.
 
 THE MAPPING IS THE VERDICT'S POLARITY, NOT A NEW ONE: PASS -> ``success``, FAIL -> ``failure``, and
-INCONCLUSIVE POSTS NOTHING. A ``pending`` or ``error`` for "nobody knows" would be a state somebody
-reads as a judgement; an absent status is exactly what an unjudged commit has.
+INCONCLUSIVE -> ``error``, whose description is the verdict line and so NAMES it. User ruling
+2026-10-04: a lane may push an INCONCLUSIVE tree (:mod:`lab_commons.dev.admission`), so every pushed
+tree carries the verdict it was pushed on; ``error`` is not ``success``, so trunk protection that
+requires the context still refuses it.
 
 A VERDICT ABOUT A DIRTY TREE HAS NO COMMIT. :func:`verdict_commit` returns HEAD's sha only when the
 tree was clean before the run, is clean after it, and HEAD did not move -- the conditions under which
@@ -62,13 +64,17 @@ GATE_CONTEXT: Final = 'lab/gate'
 #: The integrator's heavy verdict -- the context ``main`` protection requires once it is enabled.
 HEAVY_CONTEXT: Final = 'lab/heavy'
 
-#: The states this door writes. ``error`` is the forge's and never this family's: see the docstring.
-STATES: Final = ('success', 'failure', 'pending')
+#: The states this door writes; ``error`` carries an INCONCLUSIVE verdict (see the docstring).
+STATES: Final = ('success', 'failure', 'error', 'pending')
 
 #: GitHub's description limit, the tighter of the two forges; a longer one is refused, not truncated.
 DESCRIPTION_LIMIT: Final = 140
 
-_STATE_FOR: Final[dict[Outcome, str]] = {Outcome.PASS: 'success', Outcome.FAIL: 'failure'}
+_STATE_FOR: Final[dict[Outcome, str]] = {
+    Outcome.PASS: 'success',
+    Outcome.FAIL: 'failure',
+    Outcome.INCONCLUSIVE: 'error',
+}
 
 
 @dataclass(frozen=True)
@@ -87,9 +93,9 @@ def _status(raw: Mapping[str, Any]) -> Status:
     return Status(raw.get('context') or '', state, raw.get('description') or '', raw.get('target_url') or '')
 
 
-def state_for(outcome: Outcome) -> str | None:
-    """``success`` for PASS, ``failure`` for FAIL, ``None`` -- post nothing -- for INCONCLUSIVE."""
-    return _STATE_FOR.get(outcome)
+def state_for(outcome: Outcome) -> str:
+    """``success`` for PASS, ``failure`` for FAIL, ``error`` for INCONCLUSIVE."""
+    return _STATE_FOR[outcome]
 
 
 def status_post(client: Client, sha: str, *, context: str, state: str, description: str) -> Status:
@@ -181,8 +187,6 @@ def publish(
     appeared" otherwise reads the same whether it was a dirty tree, a missing token or a 403.
     """
     state = state_for(verdict.result.outcome)
-    if state is None:
-        return f'status: not posted -- an INCONCLUSIVE verdict publishes no {context} status'
     if commit is None:
         return 'status: not posted -- the tree was dirty or moved, so this verdict is about no commit'
     try:
