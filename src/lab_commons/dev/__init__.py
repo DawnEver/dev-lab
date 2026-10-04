@@ -165,6 +165,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``per-file-ignores``, read across every spelling ruff honours from the config ruff RESOLVES, and
   ``assert_waivers_declared``, which refuses an undeclared waiver and a stale row alike. A repo
   declares its own rows; the kit ships the reader and the refusal. Not re-exported below.
+* :mod:`lab_commons.dev.privatemarkers` -- the scan a PUBLISHED repo runs over every tracked file:
+  generic patterns (home paths, non-reserved e-mails, chat ids, cloud folder names) plus an optional
+  machine-local denylist reported by kind only. Each consumer calls ``scan_tree`` over its own
+  checkout from one test. Not re-exported below.
 * :mod:`lab_commons.dev.devdocs` -- the family's MECHANISM DOCS as DATA: one row per page under this
   repo's ``docs-src/dev/``, with the pointer table a consuming repo RENDERS instead of copying. The
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under
