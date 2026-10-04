@@ -244,3 +244,78 @@ def test_decide_is_run_engine_over_the_shipped_copy(rules: Path) -> None:
     """One runner, two spellings of WHOSE: a name reaches the wheel, a path reaches a checkout."""
     for command in ('pytest tests/', 'git status --short'):
         assert agenthooks.decide(command, rules) == agenthooks.run_engine(agenthooks.engine_path(), command, rules)
+
+
+# --------------------------------------------------------------------------------------------
+# DOORS PER REPO -- a refusal names the exit of the repo the COMMAND targets, not the session's
+#
+# MEASURED 2026-10-04: a session started in one repo refused commands an agent ran inside ANOTHER
+# repo and named the first repo's runner and dated-path script, neither of which exists there. The
+# rules come from the session root; the exit must come from the target.
+
+SESSION_DOOR = 'python scripts/session_only/runner.py measure'
+TARGET_DOOR = 'python -m target_only.verify'
+
+
+@pytest.fixture
+def two_repos(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A session repo whose rules name its own door, and a target repo declaring a different one."""
+    session, target = tmp_path / 'session', tmp_path / 'target'
+    for repo in (session, target):
+        (repo / '.git').mkdir(parents=True)
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    adoption = HookAdoption(
+        app_name='session',
+        remedies={
+            'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', SESSION_DOOR),
+            'PUSH-NO-VERIFY': Remedy('verdict-entry-point', SESSION_DOOR),
+        },
+        declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
+    )
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(adoption), encoding='utf-8')
+    (target / 'pyproject.toml').write_text(
+        '[project]\nname = "t"\n\n[tool.lab_commons.doors]\n'
+        f'BARE-TEST-INVOCATION = "{TARGET_DOOR}"\n'
+        f"PUSH-NO-VERIFY = '{TARGET_DOOR}'\n\n[tool.other]\nx = 1\n",
+        encoding='utf-8',
+    )
+    return session, target, rules
+
+
+def _names_target_door(reason: str | None) -> bool:
+    return reason is not None and TARGET_DOOR in reason and SESSION_DOOR not in reason
+
+
+def test_a_refusal_in_another_repo_names_that_repos_door(two_repos: tuple[Path, Path, Path]) -> None:
+    """Resolved from the call's cwd, a `cd X &&` prefix, and `git -C X` -- each one planted."""
+    session, target, rules = two_repos
+    assert _names_target_door(agenthooks.decide('pytest tests/', rules, cwd=target / 'src'))
+    assert _names_target_door(agenthooks.decide(f'cd "{target.as_posix()}" && pytest -q', rules, cwd=session))
+    assert _names_target_door(agenthooks.decide('cd ../target && pytest -q', rules, cwd=session))
+    assert _names_target_door(
+        agenthooks.decide(f'git -C {target.as_posix()} push --no-verify origin HEAD', rules, cwd=session)
+    )
+
+
+def test_a_refusal_in_the_session_repo_keeps_its_own_door(two_repos: tuple[Path, Path, Path]) -> None:
+    """The fallback: no other repo named, so the session root's rows speak unchanged."""
+    session, _target, rules = two_repos
+    reason = agenthooks.decide('pytest tests/', rules, cwd=session)
+    assert reason is not None
+    assert SESSION_DOOR in reason
+    assert TARGET_DOOR not in reason
+
+
+def test_a_target_declaring_no_door_is_told_the_named_exit_is_not_its_own(
+    two_repos: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """A repo with no `[tool.lab_commons.doors]` row is not handed another repo's exit as if it were its own."""
+    _session, _target, rules = two_repos
+    bare = tmp_path / 'bare'
+    (bare / '.git').mkdir(parents=True)
+    reason = agenthooks.decide('pytest tests/', rules, cwd=bare)
+    assert reason is not None
+    assert 'declares no door' in reason, reason
+    assert bare.as_posix().lower() in reason.lower(), reason

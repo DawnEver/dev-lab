@@ -66,6 +66,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 
 /** Commands whose heredoc body / `-c` argument is EXECUTED and must therefore be scanned. */
 const INTERPRETERS =
@@ -254,6 +255,94 @@ function commandPositions(segment) {
   return out;
 }
 
+/* ================================ WHOSE DOOR A REFUSAL NAMES ================================
+ *
+ * The rules come from the SESSION root -- the project the session started in -- but a command can
+ * target ANOTHER repo: run from its directory, behind `cd X &&`, or as `git -C X`. MEASURED
+ * 2026-10-04: an agent working inside one repo was refused and told to run the session repo's
+ * verdict runner and dated-path script, neither of which exists where it was. So the PATTERN stays
+ * the session's, and the EXIT is resolved from the repo the command targets: each repo declares its
+ * doors once, keyed by rule ID, in `[tool.lab_commons.doors]` of its pyproject.
+ */
+
+/** A Git Bash `/c/x` path as the host spells it; quotes dropped. */
+function hostPath(word) {
+  const bare = word.replace(/^["']|["']$/g, '');
+  const drive = /^\/([a-zA-Z])(?=\/|$)/.exec(bare);
+  return drive ? `${drive[1]}:${bare.slice(2)}` : bare;
+}
+
+/** The directory the command acts in: the call's cwd, moved by `cd X` segments, or `git -C X`. */
+function targetDir(cmd, cwd) {
+  let dir = cwd;
+  const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
+  for (const segment of segments(splitHeredocs(cmd).rest)) {
+    const text = segment.replace(ENV_PREFIX, '').trim();
+    const cd = new RegExp(String.raw`^(?:cd|pushd)\s+${word}\s*$`).exec(text);
+    if (cd) {
+      dir = path.resolve(dir, hostPath(cd[1]));
+      continue;
+    }
+    const gitC = new RegExp(String.raw`^git(?:\.exe)?\s+-C\s+${word}`).exec(text);
+    if (gitC) return path.resolve(dir, hostPath(gitC[1]));
+  }
+  return dir;
+}
+
+/** The nearest directory at or above `dir` holding a `.git` (a worktree's `.git` is a file). */
+function repoRoot(dir) {
+  let at = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(path.join(at, '.git'))) return at;
+    const up = path.dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+
+/** `[tool.lab_commons.doors]` of `root`'s pyproject: rule ID -> the command that repo offers. */
+function doorsOf(root) {
+  const doors = {};
+  let text;
+  try {
+    text = fs.readFileSync(path.join(root, 'pyproject.toml'), 'utf8');
+  } catch {
+    return doors;
+  }
+  let inside = false;
+  for (const line of text.split(/\r?\n/)) {
+    const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
+    if (header) {
+      inside = header[1].trim() === 'tool.lab_commons.doors';
+      continue;
+    }
+    const row = inside && /^\s*["']?([A-Za-z0-9_-]+)["']?\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')/.exec(line);
+    if (row) doors[row[1]] = row[2] !== undefined ? row[2].replace(/\\(["\\])/g, '$1') : row[3];
+  }
+  return doors;
+}
+
+const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+
+/** The reason to show: the session's own, unless the command targets another repo. */
+function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
+  const target = cwd ? repoRoot(targetDir(cmd, cwd)) : null;
+  if (!target || !sessionRoot || samePath(target, sessionRoot)) return reason;
+  const shown = target.replace(/\\/g, '/');
+  const door = doorsOf(target)[rule.name];
+  if (door) {
+    return (
+      `${rule.name}: refused. This command targets ${shown}, so its exit is that repo's own door ` +
+      `(pyproject [tool.lab_commons.doors]): ${door}`
+    );
+  }
+  return (
+    `[${rule.name}: this command targets ${shown}, which declares no door for this rule in its ` +
+    `pyproject [tool.lab_commons.doors]; any repo file named below belongs to ` +
+    `${sessionRoot.replace(/\\/g, '/')} and may not exist there] ${reason}`
+  );
+}
+
 /** Does `rule` fire on any executed text? */
 function fires(rule, texts) {
   const argument = rule.matches === 'argument';
@@ -275,6 +364,7 @@ try {
 if (input.tool_name !== 'Bash' || !Array.isArray(rules)) process.exit(0);
 const cmd = (input.tool_input && input.tool_input.command) || '';
 const root = (input.cwd || '').replace(/\\/g, '/');
+const sessionRoot = repoRoot(path.resolve(path.dirname(process.argv[2]), '..', '..'));
 const texts = executedTexts(cmd);
 
 for (const rule of rules) {
@@ -290,7 +380,13 @@ for (const rule of rules) {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: String(rule.reason || rule.name).replaceAll('{root}', root),
+          permissionDecisionReason: reasonFor(
+            rule,
+            String(rule.reason || rule.name).replaceAll('{root}', root),
+            cmd,
+            input.cwd || '',
+            sessionRoot
+          ),
         },
       })
     );

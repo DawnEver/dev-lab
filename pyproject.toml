@@ -89,6 +89,16 @@ pruned_paths = ['.claude/worktrees']
 trunk = 'main'
 sessions = []
 
+[tool.lab_commons.doors]
+# This repo's exits, keyed by deny-rule ID. The agent guard runs from whichever project a session
+# started in; when a refused command TARGETS this repo (its cwd, `cd X &&`, `git -C X`), the refusal
+# names the door declared here instead of the session repo's. <venv python> is .venv/Scripts/python.exe
+# on Windows and .venv/bin/python on POSIX -- in a worktree, the main checkout's.
+BARE-TEST-INVOCATION = "<venv python> -m lab_commons.dev.verify [-- <pytest args>]  (the verdict door; a hand-written pytest line has none)"
+PUSH-NO-VERIFY = "<venv python> -m lab_commons.dev.verify, then push without skipping the hook"
+GIT-NETWORK-VERB = "<venv python> -m lab_commons.dev.netverb -- git <push|fetch|pull|clone|ls-remote> ...  (retries 3x, then reports a diagnosis)"
+OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name> 2>&1  (create the day's <kind> directory first; the shape is lab_commons.dev.datedlog's)"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
