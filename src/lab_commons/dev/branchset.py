@@ -195,9 +195,7 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
         if not row.deletable or row.name in branchset.declared or not sha:
             out.append(f'kept     local   {row.name}  (not held by a declared branch)')
         elif row.name in busy or _unpushed(root, row.name) != 0:
-            out.append(
-                f'kept     local   {row.name}  (checked out in a worktree, or holds commits origin lacks)'
-            )
+            out.append(f'kept     local   {row.name}  (checked out in a worktree, or holds commits origin lacks)')
         elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders):
             out.append(f'kept     local   {row.name}  (ancestry re-check failed)')
         else:
