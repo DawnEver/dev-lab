@@ -45,6 +45,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TextIO
 
+from lab_commons.log import emit
+
 __all__ = [
     'ARCHIVE_DIRECTORY',
     'CODE_SUFFIXES',
@@ -254,7 +256,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     reason = refuse_write(path)
     if reason is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}
-        sys.stdout.write(json.dumps({'hookSpecificOutput': decision}) + '\n')
+        emit(json.dumps({'hookSpecificOutput': decision}))
     return 0
 
 

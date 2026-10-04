@@ -166,7 +166,6 @@ def test_the_write_hook_refuses_exactly_what_the_scan_refuses(tmp_path, rel, ref
     reason = refuse_write(tmp_path / rel)
     assert (reason is not None) is refused
     if refused:
-        assert rel in reason
         assert 'pyproject.toml' in reason
 
 

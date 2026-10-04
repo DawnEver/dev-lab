@@ -29,6 +29,7 @@ import tomllib
 from pathlib import Path
 
 from lab_commons.dev.checkout import authority_for, git_out, origin_branches
+from lab_commons.log import emit
 
 __all__ = [
     'BranchSet',
@@ -168,10 +169,10 @@ def main(argv: list[str] | None = None) -> int:
     root = parser.parse_args(argv).root
     rows = merge_candidates(root, declared_branchset(root))
     if rows is None:
-        print(f'git could not read the branches of {root}; an unread repo is not a clean one')  # noqa: T201
+        emit(f'git could not read the branches of {root}; an unread repo is not a clean one')
         return 2
     for row in rows:
-        print(f'{"delete" if row.deletable else "merge "}  {row.where:<7} {row.name}')  # noqa: T201
+        emit(f'{"delete" if row.deletable else "merge "}  {row.where:<7} {row.name}')
     return 0
 
 

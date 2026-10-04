@@ -468,7 +468,8 @@ def test_a_roster_that_imports_no_kit_module_is_not_a_mismatch(tmp_path: Path) -
 #: `githooks`. Its own floor because the defect this section exists for is reachable ONLY through a
 #: sub-package: a corpus of top-level modules would pass every arm here while blind.
 # RE-MEASURED 2026-09-19 at 22 sub-package modules, 2 past the old ceiling of 8 + 12.
-NESTED_FLOOR = 18
+# RE-MEASURED 2026-10-04 at 31 after the three-lane merge and `famtests.branchset`; re-taken the same way.
+NESTED_FLOOR = 26
 NESTED_HEADROOM = 12
 
 #: The declared spellings. A floor rather than a pin, because the remedy for a spelling nobody

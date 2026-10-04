@@ -101,7 +101,11 @@ def test_a_malformed_declaration_is_refused_by_name(tmp_path: Path) -> None:
 
 
 def _commit(repo: Path, message: str) -> str:
-    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', message)
+    # A REAL change per commit: absorption is judged by patch-id (`git cherry`), and two EMPTY commits
+    # carry no change to tell apart, so an empty `feat/out` reads as already held by `feat/in`.
+    (repo / f'{message.replace(":", "").replace(" ", "_")}.txt').write_text(message, encoding='utf-8')
+    run_git(repo, 'add', '-A')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', message)
     return git_out(repo, 'rev-parse', 'HEAD')
 
 
