@@ -1,4 +1,9 @@
-"""The LOCAL worktree door, driven on a real repository: planted prunable, kept and orphan trees."""
+"""The LOCAL worktree door on a real repository: only a CLEAN tree goes (ruling 2026-10-04).
+
+Planted refusals: a modified file, an untracked file, a staged file, an ignored ``output/``, a HEAD on
+no remote branch, and an unregistered directory holding files. Planted removals: a clean tree with
+only caches, and an EMPTY unregistered directory.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +15,7 @@ from lab_commons.dev.famtests.visibility import commit, plant_checkout
 from lab_commons.dev.worktrees import main, prune
 
 _GIT = shutil.which('git') or 'git'
+_BLOCKED = ('modified', 'untracked', 'staged', 'ignored', 'wip')
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -23,39 +29,43 @@ def _planted(tmp_path: Path) -> Path:
     _run(work, 'commit', '-q', '-m', 'ignore')
     _run(work, 'push', '-q', 'origin', 'main')
     home = work / '.claude' / 'worktrees'
-    _run(work, 'worktree', 'add', '--detach', str(home / 'done'), 'origin/main')
-    (home / 'done' / 'output').mkdir()
-    (home / 'done' / 'output' / 'result.txt').write_text('keep me', encoding='utf-8')
+    for name in ('done', 'modified', 'untracked', 'staged', 'ignored'):
+        _run(work, 'worktree', 'add', '--detach', str(home / name), 'origin/main')
     (home / 'done' / '__pycache__').mkdir()
+    (home / 'modified' / 'base.txt').write_text('changed', encoding='utf-8')
+    (home / 'untracked' / 'scratch.txt').write_text('untracked', encoding='utf-8')
+    (home / 'staged' / 'new.txt').write_text('staged', encoding='utf-8')
+    _run(home / 'staged', 'add', 'new.txt')
+    (home / 'ignored' / 'output').mkdir()
+    (home / 'ignored' / 'output' / 'result.txt').write_text('keep me', encoding='utf-8')
     _run(work, 'worktree', 'add', '-b', 'wip', str(home / 'wip'), 'origin/main')
     commit(home / 'wip', 'wip.txt')
-    _run(work, 'worktree', 'add', '--detach', str(home / 'dirty'), 'origin/main')
-    (home / 'dirty' / 'scratch.txt').write_text('untracked', encoding='utf-8')
     (home / 'leftover').mkdir()
     (home / 'leftover' / 'note.txt').write_text('agent output', encoding='utf-8')
+    (home / 'empty' / 'nested').mkdir(parents=True)
     return work
-
-
-def _archived(work: Path, name: str) -> list[str]:
-    return [p.read_text(encoding='utf-8') for p in (work / 'output' / 'logs').rglob(name)]
 
 
 def test_the_census_touches_nothing(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     lines = prune(work, apply=False) or ()
     assert any(line.startswith('prunable') and 'done' in line for line in lines)
-    assert any(line.startswith('orphan') and 'leftover' in line for line in lines)
-    assert (work / '.claude' / 'worktrees' / 'done' / 'output' / 'result.txt').is_file()
-    assert (work / '.claude' / 'worktrees' / 'leftover').is_dir()
+    assert any(line.startswith('orphan') and 'empty' in line for line in lines)
+    assert (work / '.claude' / 'worktrees' / 'done').is_dir()
+    assert (work / '.claude' / 'worktrees' / 'empty').is_dir()
 
 
-def test_prune_archives_before_removing_and_keeps_what_is_not_safe(tmp_path: Path) -> None:
+def test_only_a_clean_tree_and_an_empty_leftover_go(tmp_path: Path) -> None:
     work = _planted(tmp_path)
     home = work / '.claude' / 'worktrees'
-    assert main(['--root', str(work), '--prune']) == 0
+    lines = prune(work, apply=True) or ()
     assert not (home / 'done').exists()
-    assert _archived(work, 'result.txt') == ['keep me'], 'ignored output/ is archived, never deleted'
-    assert (home / 'wip' / 'wip.txt').is_file(), 'HEAD on no remote branch: kept'
-    assert (home / 'dirty' / 'scratch.txt').is_file(), 'untracked files: kept'
-    assert not (home / 'leftover').exists()
-    assert _archived(work, 'note.txt') == ['agent output']
+    assert not (home / 'empty').exists()
+    for name in _BLOCKED:
+        assert (home / name).is_dir(), f'{name} must be refused'
+        assert any(line.startswith('kept') and name in line for line in lines)
+    assert (home / 'ignored' / 'output' / 'result.txt').read_text(encoding='utf-8') == 'keep me'
+    assert (home / 'staged' / 'new.txt').is_file()
+    assert (home / 'leftover' / 'note.txt').is_file(), 'a leftover holding files is listed, never moved'
+    assert any('note.txt' in line for line in lines)
+    assert main(['--root', str(work), '--prune']) == 0

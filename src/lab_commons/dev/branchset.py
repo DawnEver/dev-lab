@@ -176,7 +176,8 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
     So an origin candidate is only LISTED, with the command a human runs. Each local delete follows a
     FRESH ``merge-base --is-ancestor`` and is pinned to the sha that check saw (``update-ref -d <ref>
     <sha>``), so a branch that moved in between is kept, never lost. A declared branch, a branch with
-    commits origin lacks, and a branch checked out in any worktree are never touched.
+    commits origin lacks, and a branch checked out in ANY worktree (clean or not -- ruling 2026-10-04:
+    a tree is committed or cleared first) are never touched.
     """
     rows = merge_candidates(root, branchset)
     if rows is None:
@@ -194,7 +195,9 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
         if not row.deletable or row.name in branchset.declared or not sha:
             out.append(f'kept     local   {row.name}  (not held by a declared branch)')
         elif row.name in busy or _unpushed(root, row.name) != 0:
-            out.append(f'kept     local   {row.name}  (checked out, or holds commits origin lacks)')
+            out.append(
+                f'kept     local   {row.name}  (checked out in a worktree, or holds commits origin lacks)'
+            )
         elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders):
             out.append(f'kept     local   {row.name}  (ancestry re-check failed)')
         else:

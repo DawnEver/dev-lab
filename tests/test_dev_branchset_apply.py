@@ -38,6 +38,7 @@ def test_apply_deletes_merged_local_branches_only_and_never_touches_origin(tmp_p
     _run(work, 'branch', 'feat/session')
     _run(work, 'branch', 'busy')
     _run(work, 'worktree', 'add', str(tmp_path / 'busy-tree'), 'busy')
+    (tmp_path / 'busy-tree' / 'dirty.txt').write_text('uncommitted', encoding='utf-8')
 
     lines = apply_local(work, _DECLARED) or ()
 

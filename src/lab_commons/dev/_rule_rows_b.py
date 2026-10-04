@@ -103,7 +103,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'In Claude Code and Codex auto mode the family`s checked doors run unprompted: one narrow allow row '
             'per door, rendered for both clients from one table. Destructive LOCAL cleanup -- merged branches, '
             'clean worktrees, an agent`s own gate run -- goes through a door that re-checks its precondition; '
-            'pushes and remote deletions are never automatic and stay with a human or the gated push hook.'
+            'pushes and remote deletions are never automatic and stay with a human or the gated push hook. A '
+            'worktree is removed, or its branch deleted, only when it is CLEAN (nothing modified, staged or '
+            'untracked): work is committed or cleared by a human first, never moved aside by a door.'
         ),
         ('tests/test_dev_autodoors.py', 'tests/test_dev_branchset_apply.py', 'tests/test_dev_worktrees.py'),
     ),
