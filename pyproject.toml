@@ -84,6 +84,11 @@ code_roots = []
 # A worktree is a real second tree with its own src/, judged by the run inside it.
 pruned_paths = ['.claude/worktrees']
 
+[tool.lab_commons.branchset]
+# ONE-BRANCH-PER-SESSION: the trunk is the one long-lived branch; a session's lane merges and is deleted.
+trunk = 'main'
+sessions = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

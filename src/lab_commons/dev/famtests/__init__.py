@@ -187,6 +187,10 @@ WHAT IS HERE, one module per shared body:
   shingles; and no other local page takes a ``lab_commons.dev`` module as its subject unless the
   consumer allowlists it WITH A REASON. The consumer-side half of :mod:`lab_commons.dev.devdocs`.
 
+* :mod:`lab_commons.dev.famtests.branchset` -- ONE-BRANCH-PER-SESSION: origin carries only the declared
+  branch set, and this box no undeclared branch origin already holds; unpushed work is reported, not
+  refused. Generalises the per-consumer origin-branch pins of :mod:`~lab_commons.dev.famtests.visibility`.
+
 * :mod:`lab_commons.dev.famtests.noreflection` -- NO-REFLECTION: no tracked Python outside attic/ and
   archived/ calls ``getattr``/``hasattr``/``setattr``/``delattr`` or defines ``__getattr__``, outside a
   two-sided allow-set keyed by path whose every entry carries its reason. Replaces one hand-written

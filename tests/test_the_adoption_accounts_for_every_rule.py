@@ -133,6 +133,7 @@ _ENFORCED = {
     'NO-CJK-IN-TRACKED-SOURCE': (guard('tests/test_dev_cjk.py'),),
     'NO-LAZY-IMPORT': (lint('PLC0415'),),
     'NO-REFLECTION': (guard('tests/test_arch_production_carries_no_reflection.py'),),
+    'ONE-BRANCH-PER-SESSION': (guard('tests/test_dev_branchset.py'),),
     'ONE-BOX-ONE-LOCK': (
         guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
         guard('tests/test_dev_boxwait.py'),

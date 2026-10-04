@@ -87,4 +87,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_famfiles.py', 'tests/test_dev_famconfig.py'),
     ),
+    (
+        'ONE-BRANCH-PER-SESSION',
+        (
+            'Each working session maintains exactly ONE long-lived branch and merges its work into it; every '
+            'other branch is merged and then deleted, never left behind. A repo`s long-lived branches are '
+            'DECLARED -- the trunk plus one branch per declared session or lane owner -- and anything else on '
+            'origin or on this box is debt. Unpushed work is reported, never deleted silently.'
+        ),
+        ('tests/test_dev_branchset.py',),
+    ),
 )

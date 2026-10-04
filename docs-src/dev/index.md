@@ -25,6 +25,7 @@
 | [The docs pipeline](./docs-pipeline.md) | The three properties a docs builder must hold, and why an unbuilt sub-site is announced rather than silent |
 | [Translations](./translations.md) | Why a `<stem>.zh.md` beside its `<stem>.md` escapes the CJK guard, and the non-ASCII goal |
 | [Worktrees stay inside](./worktrees.md) | Every checkout lives under `<repo>/.claude/worktrees/<name>`: the deny row, the detector, the ignore line |
+| [One branch per session](./branch-set.md) | One long-lived branch per session: the declared branch set, the census, and the merge-and-delete list |
 | [Project files](./project-files.md) | Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason |
 
 ## Reading these from a consuming repo

@@ -232,7 +232,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: a lane cites any verdict for this tree, the trunk a PASS.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, comment reads.
-* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs + ``lab/gate``/``lab/heavy``; one ready predicate.
+* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the gate statuses.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
 * :mod:`lab_commons.dev.floors` -- a scan that read NOTHING is not a clean scan; both sides, no default.
@@ -241,6 +241,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   are not equally wrong -- executable DATA, a consumer TREE PATH, and PROSE -- and the waiver is a
   NAMED SET of evicted-by-design rows rather than a count, so a deletion lands mechanically. NOT
   RE-EXPORTED -- ``scan`` and ``kinds`` say nothing once flattened.
+* :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`lab_commons.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

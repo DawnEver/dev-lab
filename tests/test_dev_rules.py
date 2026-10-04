@@ -67,6 +67,7 @@ _IDS = frozenset(
         'NO-LAZY-IMPORT',
         'NO-REFLECTION',
         'ONE-BOX-ONE-LOCK',
+        'ONE-BRANCH-PER-SESSION',
         'PLANTED-CONTROL',
         'PRODUCTION-ENTRY-POINT',
         'PUBLIC-SURFACE-DECLARED',

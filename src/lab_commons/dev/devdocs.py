@@ -152,6 +152,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'Every checkout lives under `<repo>/.claude/worktrees/<name>`: the deny row, the detector, the ignore line',
     ),
     Page(
+        'branch-set',
+        'One branch per session',
+        'One long-lived branch per session: the declared branch set, the census, and the merge-and-delete list',
+    ),
+    Page(
         'project-files',
         'Project files',
         'Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason',

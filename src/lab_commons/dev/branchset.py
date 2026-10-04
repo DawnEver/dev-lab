@@ -1,0 +1,179 @@
+"""ONE-BRANCH-PER-SESSION: a repo's long-lived branches are a DECLARED set, and anything else is debt.
+
+User directive 2026-10-04: each working session keeps exactly ONE long-lived branch, work is merged
+into it, and every other branch is merged and deleted rather than left behind. The set a repo may
+carry is therefore DATA, declared once in ``[tool.lab_commons.branchset]`` of its ``pyproject.toml``
+and read by :func:`declared_branchset`::
+
+    [tool.lab_commons.branchset]
+    trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
+    sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
+
+Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
+
+* :func:`census` -- which ORIGIN branches are undeclared (debt), which LOCAL branches are undeclared
+  and hold nothing origin lacks (debt), and which local ones hold UNPUSHED work (reported, never
+  deleted: unpushed work exists nowhere else).
+* :func:`merge_candidates` -- every undeclared branch, local and on origin, and whether it may be
+  DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
+  first. ``python -m lab_commons.dev.branchset [--root R]`` prints this list; it deletes nothing.
+
+The assertions consumers run are :mod:`lab_commons.dev.famtests.branchset`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import tomllib
+from pathlib import Path
+
+from lab_commons.dev.checkout import authority_for, git_out, origin_branches
+
+__all__ = [
+    'BranchSet',
+    'BranchSetNotDeclared',
+    'Candidate',
+    'Census',
+    'census',
+    'declared_branchset',
+    'main',
+    'merge_candidates',
+]
+
+_TABLE = '[tool.lab_commons.branchset]'
+
+
+class BranchSetNotDeclared(ValueError):
+    """The repo declares no branch set, or declares one that is not a trunk plus a list of names."""
+
+
+@dataclasses.dataclass(frozen=True)
+class BranchSet:
+    """The trunk plus one long-lived branch per declared session or lane owner."""
+
+    trunk: str
+    sessions: frozenset[str]
+
+    @property
+    def declared(self) -> frozenset[str]:
+        """Every branch name the repo may carry long-term."""
+        return self.sessions | {self.trunk}
+
+
+@dataclasses.dataclass(frozen=True)
+class Census:
+    """What a checkout carries beyond its declared set. Every field is sorted branch names."""
+
+    undeclared_origin: tuple[str, ...]
+    local_debt: tuple[str, ...]
+    unpushed: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True)
+class Candidate:
+    """One undeclared branch and whether it may be deleted without losing a commit."""
+
+    name: str
+    where: str
+    deletable: bool
+
+
+def declared_branchset(root: Path) -> BranchSet:
+    """The branch set *root* declares in its ``pyproject.toml``.
+
+    Raises:
+        BranchSetNotDeclared: no readable manifest, no table, no trunk, or sessions not a list of names.
+
+    """
+    manifest = root / 'pyproject.toml'
+    try:
+        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        raise BranchSetNotDeclared(msg) from exc
+    table = data.get('tool', {}).get('lab_commons', {}).get('branchset')
+    trunk = table.get('trunk') if isinstance(table, dict) else None
+    sessions = table.get('sessions', []) if isinstance(table, dict) else None
+    if not isinstance(trunk, str) or not trunk:
+        msg = f'{manifest} declares no {_TABLE} trunk; name it -- a guessed trunk reads every checkout clean'
+        raise BranchSetNotDeclared(msg)
+    if not isinstance(sessions, list) or not all(isinstance(name, str) and name for name in sessions):
+        msg = f'{_TABLE} sessions in {manifest} is {sessions!r}; it must be a list of branch names'
+        raise BranchSetNotDeclared(msg)
+    return BranchSet(trunk, frozenset(sessions))
+
+
+def _local_branches(root: Path) -> tuple[str, ...] | None:
+    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/')
+    return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
+
+
+def _unpushed(root: Path, branch: str) -> int | None:
+    out = git_out(root, 'rev-list', '--count', f'refs/heads/{branch}', '--not', '--remotes=origin')
+    return None if out is None else int(out.strip())
+
+
+def census(root: Path, branchset: BranchSet) -> Census | None:
+    """The undeclared branches of *root*, or ``None`` when git could not answer -- never a clean read."""
+    remote = origin_branches(root, protected=frozenset({'HEAD'}))
+    local = _local_branches(root)
+    if remote is None or local is None:
+        return None
+    debt: list[str] = []
+    unpushed: list[str] = []
+    for name in local:
+        if name in branchset.declared:
+            continue
+        ahead = _unpushed(root, name)
+        if ahead is None:
+            return None
+        (unpushed if ahead else debt).append(name)
+    return Census(tuple(n for n in remote if n not in branchset.declared), tuple(debt), tuple(unpushed))
+
+
+def _holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
+    """The refs whose history makes a tip safe to delete: the trunk's authority and every session."""
+    refs = [authority_for(root, branchset.trunk)]
+    for session in sorted(branchset.sessions):
+        refs += [
+            r
+            for r in (f'refs/remotes/origin/{session}', f'refs/heads/{session}')
+            if git_out(root, 'rev-parse', '--verify', '--quiet', r)
+        ]
+    return tuple(refs)
+
+
+def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] | None:
+    """Every undeclared branch, local then origin, and whether its tip is already held by a declared one."""
+    remote = origin_branches(root, protected=frozenset({'HEAD'}))
+    local = _local_branches(root)
+    if remote is None or local is None:
+        return None
+    holders = _holders(root, branchset)
+    rows: list[Candidate] = []
+    for where, names, prefix in (('local', local, 'refs/heads/'), ('origin', remote, 'refs/remotes/origin/')):
+        for name in names:
+            if name in branchset.declared:
+                continue
+            held = any(git_out(root, 'merge-base', '--is-ancestor', f'{prefix}{name}', h) is not None for h in holders)
+            rows.append(Candidate(name, where, held))
+    return tuple(rows)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the merge-and-delete candidates of a repo. Deletes nothing; exit 2 when git cannot answer."""
+    parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.branchset', description=main.__doc__)
+    parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout to read (default: cwd)')
+    root = parser.parse_args(argv).root
+    rows = merge_candidates(root, declared_branchset(root))
+    if rows is None:
+        print(f'git could not read the branches of {root}; an unread repo is not a clean one')  # noqa: T201
+        return 2
+    for row in rows:
+        print(f'{"delete" if row.deletable else "merge "}  {row.where:<7} {row.name}')  # noqa: T201
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
