@@ -149,7 +149,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'autodoors': ('original',),
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun': ('original',),
-    # ORIGINAL: the archive-then-remove door is new; it encodes a consumer's incident, not its code.
+    # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
     # consumer held a copy, which is why each published one had no guard at all.
