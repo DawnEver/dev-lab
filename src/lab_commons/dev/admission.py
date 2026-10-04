@@ -17,7 +17,7 @@ keeps it. What travels on a lane instead is the GAP: citing a non-PASS verdict w
 the verdict line, the failing node ids and the never-ran count at a dated path the consumer names,
 so the gap is inventory someone can read rather than a push nobody could make.
 
-AN INCONCLUSIVE THAT NEVER STARTED IS NOT A VERDICT (user ruling 2026-10-04, "同意"). A run that
+AN INCONCLUSIVE THAT NEVER STARTED IS NOT A VERDICT (user ruling 2026-10-04, "agreed"). A run that
 selected or ran ZERO tests -- the box was held by another run and this one never started
 (``selector=never-selected``), every asked test NOT RUN, ``ran=0``, ``collected 0 items`` -- said
 nothing about the tree, so a lane push citing it is refused exactly like "no verdict", and the remedy

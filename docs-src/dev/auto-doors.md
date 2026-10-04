@@ -6,7 +6,7 @@ Rule `AUTO-MODE-RUNS-THE-DOORS` (statement in `lab_commons.dev.rules`). In Claud
 
 User directive, 2026-10-04: in both clients' auto mode, the sanctioned script doors must run without being blocked. On the same day, every refusal that cost a session time came from Claude Code's auto-mode classifier, and none came from a deny hook. The refused commands were a `taskkill` of the agent's own gate run, `git push origin --delete` of an ancestry-checked branch, and `rm -rf` of untracked worktree leftovers.
 
-User ruling, same day: "你不能随便 push 和删远程分支，但是要有能力清理本地分支和 worktree!" In English: agents may not push or delete remote branches at will, but they must be able to clean local branches and worktrees. So:
+User ruling, same day: agents may not push or delete remote branches at will, but they must be able to clean local branches and worktrees. So:
 
 - **Remote is human.** A push goes through the gated push hook. A remote branch deletion is run by a human, and the door prints the command for it.
 - **Local is a door.** The raw verbs (`git branch -D`, `git worktree remove --force`, `rm -rf`, `taskkill`) stay unallowed. Each one is replaced by a door that re-checks its precondition at the moment it acts.

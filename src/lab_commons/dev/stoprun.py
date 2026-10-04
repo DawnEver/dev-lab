@@ -1,6 +1,6 @@
 """STOP ONE OWN GATE/VERIFY RUN: ``python -m lab_commons.dev.stoprun --pid PID [--dry-run]``.
 
-Generalised 2026-10-04 from consumer-a's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
+Generalised 2026-10-04 from a consumer's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
 an agent stopping its OWN superseded run was refused as a raw ``taskkill /T /F``. The door replaces the
 raw kill with a checked one: it REFUSES unless the pid's command line is a run it can identify
 (:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest), and then stops that pid's
