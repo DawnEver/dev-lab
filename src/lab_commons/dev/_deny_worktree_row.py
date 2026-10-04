@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from lab_commons.dev.worktreeplace import WORKTREES_REL
 
-__all__ = ['WORKTREES_STAY_INSIDE']
+__all__ = ['BASE_IS_EXPLICIT_ALLOW', 'BASE_IS_EXPLICIT_PATTERN', 'WORKTREES_STAY_INSIDE']
 
 #: WORKTREES-STAY-INSIDE, built from pieces so the PATTERN and the OPENING name the same verbs.
 #: A shell TOKEN: a quoted string or a bare word that stops at a shell separator.
@@ -29,6 +29,16 @@ _ADD_OPT = (
     r'(?:-[bB]\s+' + _SHELL_WORD + r'|--reason(?:=|\s+)' + _SHELL_WORD + r'|--(?!reason\b)[\w-]+|-(?![bB](?:\s|$))\w+)'
 )
 _GOOD_ADD = r'(?:\s+' + _ADD_OPT + r')*\s+' + _INSIDE + _END
+#: A POSITIONAL word of `worktree add`: anything that is not an option.
+_POS = r'(?!-)' + _SHELL_WORD
+#: WORKTREE-BASE-IS-EXPLICIT reads the SAME grammar: a path AND a commit-ish, with options -- `-b <branch>`
+#: included -- in any position. MEASURED 2026-10-04: the row used to demand the commit-ish at the END of
+#: the whole command line, so `-b <branch> <path> origin/main && ...` and `<path> -b <branch> <sha>`
+#: were refused as "no commit-ish" although both name one. Any second positional is a commit-ish:
+#: git itself refuses one that does not resolve, so the row asks only that one was CHOSEN.
+_NAMES_BASE = r'(?:\s+' + _ADD_OPT + r')*\s+' + _POS + r'(?:\s+' + _ADD_OPT + r')*\s+' + _POS + _END
+BASE_IS_EXPLICIT_PATTERN = r'git(?:\.exe)?(?:\s+-[Cc]\s+' + _SHELL_WORD + r')*\s+worktree\s+add\b'
+BASE_IS_EXPLICIT_ALLOW = r'^(?![\s\S]*' + _GIT + r'worktree\s+add(?!' + _NAMES_BASE + r'))'
 _GOOD_MOVE = r'(?:\s+-\S+)*\s+' + _SHELL_WORD + r'\s+' + _INSIDE + _END
 _GOOD_CLONE = r'(?:\s+' + _SHELL_WORD + r')*?\s+' + _INSIDE + r'\s*(?=$|[;&|)\n])'
 

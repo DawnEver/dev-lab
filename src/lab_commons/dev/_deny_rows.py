@@ -54,7 +54,7 @@ from __future__ import annotations
 
 from lab_commons.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from lab_commons.dev._deny_interpreter_row import BARE_INTERPRETER
-from lab_commons.dev._deny_worktree_row import WORKTREES_STAY_INSIDE
+from lab_commons.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from lab_commons.dev.worktreeplace import WORKTREES_REL
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
@@ -256,9 +256,9 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'WORKTREE-BASE-IS-EXPLICIT',
-        'pattern': r'\bgit\s+worktree\s+add\b',
+        'pattern': BASE_IS_EXPLICIT_PATTERN,
         'matches': 'command',
-        'allow': r'\bgit\s+worktree\s+add\b[^\n]*\s(?:[0-9a-f]{7,40}|origin/\S+|refs/\S+|HEAD(?:[~^@]\S*)?)\s*$',
+        'allow': BASE_IS_EXPLICIT_ALLOW,
         'hazard': (
             '`git worktree add <path>` with no commit-ish silently takes the CURRENT HEAD, which on a shared '
             'checkout is routinely not the tree you meant. MEASURED 2026-09-01: two agents were handed trees '
@@ -269,10 +269,22 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         ),
         'remedy': f'Name the commit the tree starts from: git worktree add --detach {WORKTREES_REL}/<name> <sha>',
         'needs': None,
-        'refuses': ('git worktree add ../probe', 'git worktree add --detach /tmp/probe'),
+        'refuses': (
+            'git worktree add ../probe',
+            'git worktree add --detach /tmp/probe',
+            'git worktree add -b fix/x .claude/worktrees/x',
+            'git worktree add .claude/worktrees/x -b fix/x',
+            'git -C C:/work/lab-commons worktree add --detach C:/work/lab-commons/.claude/worktrees/x',
+        ),
         'permits': (
             'git worktree add --detach .claude/worktrees/probe 4a4e8b13f',
             'git worktree add .claude/worktrees/probe origin/main',
+            # MEASURED 2026-10-04: both of these were refused as "no commit-ish" -- `-b <branch>` in
+            # either position, and a command that did not END at the commit-ish.
+            'git worktree add -b fix/x .claude/worktrees/x origin/main',
+            'git worktree add .claude/worktrees/x -b fix/x 4a4e8b13f',
+            'git worktree add -b fix/x .claude/worktrees/x main',
+            'git worktree add --detach .claude/worktrees/p 4a4e8b13f && git -C .claude/worktrees/p switch -c fix/p',
             'git worktree list',
             'git worktree remove .claude/worktrees/probe',
         ),
