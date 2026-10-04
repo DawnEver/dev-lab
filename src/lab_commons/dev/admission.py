@@ -17,6 +17,13 @@ keeps it. What travels on a lane instead is the GAP: citing a non-PASS verdict w
 the verdict line, the failing node ids and the never-ran count at a dated path the consumer names,
 so the gap is inventory someone can read rather than a push nobody could make.
 
+AN INCONCLUSIVE THAT NEVER STARTED IS NOT A VERDICT (user ruling 2026-10-04, "同意"). A run that
+selected or ran ZERO tests -- the box was held by another run and this one never started
+(``selector=never-selected``), every asked test NOT RUN, ``ran=0``, ``collected 0 items`` -- said
+nothing about the tree, so a lane push citing it is refused exactly like "no verdict", and the remedy
+says to wait for the seat or re-run. An INCONCLUSIVE that STARTED and was cut short (a wall, a node
+down, a truncated log) still admits a lane push and writes the gap record.
+
 WHY HERE AND NOT IN EACH CONSUMER. Three repos each carried a copy of this table and of the verdict
 grammar it reads, and the copies disagreed (first versus last match, PASS-only versus PASS/FAIL).
 :mod:`lab_commons.dev.famtests.localadmission` refuses a consumer that keeps one.
@@ -53,6 +60,7 @@ __all__ = [
     'admit',
     'decide_fresh',
     'main',
+    'never_started',
     'parse_verdict_line',
     'record_gap',
 ]
@@ -80,6 +88,14 @@ _MIN_SHA: Final = 7
 
 _FAILED: Final = re.compile(r'^(?:FAILED|ERROR) (\S+)', re.MULTILINE)
 _NEVER_RAN: Final = re.compile(r'(\d+) of \d+ asked NOT RUN')
+_ALL_NOT_RUN: Final = re.compile(r'\b(\d+) of (\d+) asked NOT RUN')
+_NEVER_STARTED: Final = re.compile(
+    r'selector=never-selected\b|\bnever started\b|\bran=0\b|\bcollected 0 items\b', re.IGNORECASE
+)
+NEVER_STARTED_REMEDY: Final = (
+    'an INCONCLUSIVE that never started (zero tests selected or run) is not a verdict -- '
+    'wait for the seat, then re-run the gate on this tree'
+)
 _GIT_TIMEOUT_S: Final = 120
 
 
@@ -114,6 +130,15 @@ def parse_verdict_line(text: str) -> CitedVerdict | None:
     line = text[start : len(text) if end < 0 else end].strip()
     tier = last.groupdict().get('tier')
     return CitedVerdict(tree=last['tree'], env=last['env'], tier=tier, result=last['result'].upper(), line=line)
+
+
+def never_started(cited: CitedVerdict, log_text: str) -> bool:
+    """Whether *cited* is an INCONCLUSIVE whose run selected or ran ZERO tests -- no verdict at all."""
+    if cited.result != 'INCONCLUSIVE':
+        return False
+    if _NEVER_STARTED.search(cited.line) or _NEVER_STARTED.search(log_text):
+        return True
+    return any(int(m[1]) > 0 and m[1] == m[2] for m in _ALL_NOT_RUN.finditer(log_text))
 
 
 def _same_tree(stamp: str, head: str) -> bool:
@@ -190,6 +215,8 @@ def admit(
             cited_reason: str | None = f'the {tier} anchor holds a tier={cited.tier} verdict'
         else:
             cited_reason = _why_not(cited, results=results, head=head, clean=clean, env=env)
+        if cited_reason is None and cited is not None and text is not None and never_started(cited, text):
+            cited_reason = NEVER_STARTED_REMEDY
         if cited_reason is None and cited is not None and text is not None:
             admissible.append((_RANK[cited.result], order, cited, text))
         else:
@@ -200,7 +227,10 @@ def admit(
             [
                 f'[admission] {where}: push REFUSED -- no recorded verdict for tree={head} in env={env}.',
                 *(reasons or ['[admission]   no anchor applies to this destination']),
-                f'[admission] Remedy: run the gate on THIS clean tree; this push needs {bar}.',
+                (
+                    f'[admission] Remedy: run the gate on THIS clean tree (or wait for the seat and re-run '
+                    f'one that never started); this push needs {bar}.'
+                ),
             ]
         )
         return Admission(allowed=False, cited=None, message=message)
@@ -226,6 +256,10 @@ def decide_fresh(log: Path, *, trunk: bool, gap: Path | None = None) -> Admissio
     if cited is None:
         return Admission(
             allowed=False, cited=None, message=f'[admission] {where}: no verdict readable in {log} -- push REFUSED.'
+        )
+    if never_started(cited, text):
+        return Admission(
+            allowed=False, cited=None, message=f'[admission] {where}: push REFUSED -- {NEVER_STARTED_REMEDY}.'
         )
     if cited.result not in (TRUNK_RESULTS if trunk else LANE_RESULTS):
         refused = f'[admission] trunk: {cited.result} -- push REFUSED; the trunk takes a PASS.'

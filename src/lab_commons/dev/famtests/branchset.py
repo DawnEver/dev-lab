@@ -27,6 +27,7 @@ import warnings
 from typing import TYPE_CHECKING
 
 from lab_commons.dev.branchset import BranchSet, Census, census, merge_candidates
+from lab_commons.dev.checkout import git_out
 from lab_commons.dev.famtests.visibility import commit, plant_checkout
 
 if TYPE_CHECKING:
@@ -37,6 +38,7 @@ __all__ = [
     'assert_local_branches_declared',
     'assert_origin_branches_declared',
     'assert_the_planted_branchset_is_policed',
+    'merged_owed',
 ]
 
 _GIT = shutil.which('git') or 'git'
@@ -55,17 +57,54 @@ def _read(root: Path, branchset: BranchSet) -> Census:
     return found
 
 
-def assert_origin_branches_declared(*, root: Path, branchset: BranchSet) -> None:
-    """Origin carries the declared set and nothing else.
+def _merged(root: Path, branchset: BranchSet, where: str) -> frozenset[str]:
+    """Undeclared branches on *where* whose tip is held by HEAD, origin/<trunk> or a session branch.
+
+    A MERGED branch is not a red (ruling 2026-10-04): remote deletion is never automatic, so a red
+    here forced an agent to delete on origin BEFORE its push could verify. It is reported instead.
+    """
+    rows = merge_candidates(root, branchset) or ()
+    prefix = 'refs/heads/' if where == 'local' else 'refs/remotes/origin/'
+    return frozenset(
+        r.name
+        for r in rows
+        if r.where == where
+        and (r.deletable or git_out(root, 'merge-base', '--is-ancestor', f'{prefix}{r.name}', 'HEAD') is not None)
+    )
+
+
+def merged_owed(*, root: Path, branchset: BranchSet) -> tuple[str, ...]:
+    """Each merged undeclared branch with the exact command that deletes it -- owed, never run here."""
+    owed = [
+        f'origin {n}: merged, deletion owed to a human -- git push origin --delete {n}'
+        for n in sorted(_merged(root, branchset, 'origin'))
+    ]
+    owed += [
+        f'local {n}: merged -- python -m lab_commons.dev.branchset --apply'
+        for n in sorted(_merged(root, branchset, 'local'))
+    ]
+    return tuple(owed)
+
+
+def assert_origin_branches_declared(*, root: Path, branchset: BranchSet) -> tuple[str, ...]:
+    """Origin carries the declared set, plus MERGED branches whose deletion is owed (returned, warned).
 
     Raises:
-        BranchSetViolation: an undeclared origin branch, or refs that could not be read.
+        BranchSetViolation: an undeclared origin branch NOT contained in HEAD/trunk/a session, or unread refs.
 
     """
-    extra = _read(root, branchset).undeclared_origin
+    merged = _merged(root, branchset, 'origin')
+    owed = tuple(n for n in _read(root, branchset).undeclared_origin if n in merged)
+    if owed:
+        warnings.warn(
+            'merged, deletion owed to a human: ' + '; '.join(f'git push origin --delete {n}' for n in owed),
+            stacklevel=2,
+        )
+    extra = tuple(n for n in _read(root, branchset).undeclared_origin if n not in merged)
     if extra:
         msg = f'origin carries undeclared branches {list(extra)} (ONE-BRANCH-PER-SESSION): {_REMEDY}'
         raise BranchSetViolation(msg)
+    return owed
 
 
 def assert_local_branches_declared(*, root: Path, branchset: BranchSet) -> tuple[str, ...]:
@@ -78,8 +117,11 @@ def assert_local_branches_declared(*, root: Path, branchset: BranchSet) -> tuple
     found = _read(root, branchset)
     if found.unpushed:
         warnings.warn(f'undeclared local branches hold UNPUSHED work: {list(found.unpushed)}', stacklevel=2)
-    if found.local_debt:
-        msg = f'this box carries undeclared branches {list(found.local_debt)} (ONE-BRANCH-PER-SESSION): {_REMEDY}'
+    merged = _merged(root, branchset, 'local')
+    if owed := [n for n in found.local_debt if n in merged]:
+        warnings.warn(f'merged local branches {owed}: python -m lab_commons.dev.branchset --apply', stacklevel=2)
+    if debt := [n for n in found.local_debt if n not in merged]:
+        msg = f'this box carries undeclared branches {debt} (ONE-BRANCH-PER-SESSION): {_REMEDY}'
         raise BranchSetViolation(msg)
     return found.unpushed
 
@@ -101,8 +143,18 @@ def assert_the_planted_branchset_is_policed(tmp_path: Path, *, trunk: str) -> No
     if assert_local_branches_declared(root=work, branchset=declared):
         msg = 'the freshly planted checkout already reported unpushed work'
         raise BranchSetViolation(msg)
-    _run(work, 'branch', 'stray')
+    _run(work, 'branch', 'landed')
+    _run(work, 'push', '-q', 'origin', 'landed')
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter('always')
+        if assert_origin_branches_declared(root=work, branchset=declared) != ('landed',):
+            msg = 'a MERGED origin branch was not reported as a deletion owed to a human'
+            raise BranchSetViolation(msg)
+        assert_local_branches_declared(root=work, branchset=declared)
+    _run(work, 'switch', '-q', '-c', 'stray')
+    commit(work, 'stray.txt')
     _run(work, 'push', '-q', 'origin', 'stray')
+    _run(work, 'switch', '-q', trunk)
     for arm in (assert_origin_branches_declared, assert_local_branches_declared):
         try:
             arm(root=work, branchset=declared)
@@ -115,6 +167,6 @@ def assert_the_planted_branchset_is_policed(tmp_path: Path, *, trunk: str) -> No
     if 'wip' not in _read(work, declared).unpushed:
         msg = 'planted unpushed work was not reported as unpushed'
         raise BranchSetViolation(msg)
-    if [r.name for r in merge_candidates(work, declared) or () if r.deletable] != ['stray', 'stray']:
+    if [r.name for r in merge_candidates(work, declared) or () if r.deletable] != ['landed', 'landed']:
         msg = 'a branch at the trunk tip was not offered for deletion, locally and on origin'
         raise BranchSetViolation(msg)

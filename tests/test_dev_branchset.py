@@ -84,7 +84,7 @@ def test_a_clean_checkout_reads_clean_and_planted_debris_is_named(tmp_path: Path
     assert found.unpushed == ('wip',)
     with pytest.raises(BranchSetViolation, match='feat/stray'):
         assert_origin_branches_declared(root=work, branchset=_DECLARED)
-    with pytest.raises(BranchSetViolation, match='merged'):
+    with pytest.raises(BranchSetViolation, match='feat/stray'):
         assert_local_branches_declared(root=work, branchset=_DECLARED)
 
 

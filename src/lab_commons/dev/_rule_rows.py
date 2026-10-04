@@ -277,7 +277,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A verdict answers for the INCREMENT that produced it, not for the tree: a red the increment did '
             'not cause is inventory. A lane cites PASS, FAIL or INCONCLUSIVE for this tree and env and records the '
-            'gap; only the trunk needs PASS. Refused: no verdict, another tree or env, a dirty tree.'
+            'gap; only the trunk needs PASS. Refused: no verdict, another tree or env, a dirty tree -- and an '
+            'INCONCLUSIVE that never started (zero tests selected or run), which is no verdict either.'
         ),
         (
             'src/lab_commons/dev/admission.py',

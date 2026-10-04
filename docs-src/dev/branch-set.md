@@ -32,7 +32,7 @@ All reads are local refs, so fetch with `--prune` first: the remote is the autho
 
 `lab_commons.dev.famtests.branchset`:
 
-- `assert_origin_branches_declared(root=, branchset=)` -- red on any undeclared origin branch.
+- `assert_origin_branches_declared(root=, branchset=)` -- red on an undeclared origin branch that is NOT contained in HEAD, `origin/<trunk>` or a session branch. A MERGED one is not a red (ruling 2026-10-04: remote deletion is never automatic, and a red here once made an agent delete on origin so its push could verify); it is RETURNED and warned as "merged, deletion owed to a human" with `git push origin --delete <b>`. The local check treats a merged local branch the same way, pointing at `branchset --apply`. `merged_owed(root=, branchset=)` lists both.
 - `assert_local_branches_declared(root=, branchset=)` -- red on an undeclared local branch origin already holds; RETURNS (and warns about) the ones holding unpushed work, which are never a red because they are the only copy.
 - `assert_the_planted_branchset_is_policed(tmp_path, trunk=)` -- the planted control on a real bare origin: clean first, then a stray branch on both sides, unpushed work, and the deletable list.
 
