@@ -1,10 +1,19 @@
-"""STOP ONE OWN GATE/VERIFY RUN: ``python -m lab_commons.dev.stoprun --pid PID [--dry-run]``.
+"""STOP ONE OWN RUN: ``python -m lab_commons.dev.stoprun --pid PID [--repo PATH] [--dry-run]``.
 
 Generalised 2026-10-04 from a consumer's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
 an agent stopping its OWN superseded run was refused as a raw ``taskkill /T /F``. The door replaces the
 raw kill with a checked one: it REFUSES unless the pid's command line is a run it can identify
-(:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest), and then stops that pid's
-subtree only, children first. Local only.
+(:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest -- plus any the repo declares),
+and then stops that pid's subtree only, children first, never an ancestor or a sibling. Local only.
+
+A repo adds its own signatures as DATA, in ONE place -- its ``pyproject.toml`` (the repo of the cwd,
+or ``--repo``)::
+
+    [tool.lab_commons.stoprun]
+    signatures = ["jcwrap"]   # regexes searched in the pid's own command line, like the built-ins
+
+A declaration that is not a list of valid regex strings raises :class:`SignaturesNotDeclared`.
+``--dry-run`` names the signature that matched.
 
 No new dependency: the process table is read with ``Get-CimInstance Win32_Process`` on Windows and
 ``ps -A -o pid=,ppid=,args=`` elsewhere; :func:`stop` takes the table as an argument so a test can
@@ -22,12 +31,28 @@ import shutil
 import signal
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.checkout import git_out
 from lab_commons.log import emit
 
-__all__ = ['RUN_SIGNATURES', 'Proc', 'identify', 'main', 'process_table', 'stop', 'subtree']
+__all__ = [
+    'RUN_SIGNATURES',
+    'Proc',
+    'SignaturesNotDeclared',
+    'declared_signatures',
+    'identify',
+    'main',
+    'process_table',
+    'repo_root',
+    'stop',
+    'subtree',
+]
+
+_TABLE = '[tool.lab_commons.stoprun]'
 
 #: A command line that is one of these is a run this door may stop. Anything else is refused.
 RUN_SIGNATURES: Final = (
@@ -77,9 +102,53 @@ def process_table() -> dict[int, Proc]:
     return table
 
 
-def identify(cmdline: str) -> bool:
-    """Whether *cmdline* is a gate/verify run this door may stop."""
-    return any(sig.search(cmdline) for sig in RUN_SIGNATURES)
+class SignaturesNotDeclared(ValueError):
+    """``[tool.lab_commons.stoprun] signatures`` is not a list of valid regex strings."""
+
+
+def declared_signatures(root: Path) -> tuple[str, ...]:
+    """The extra signatures *root*'s ``pyproject.toml`` declares; ``()`` when it declares none.
+
+    Raises:
+        SignaturesNotDeclared: the manifest is unreadable, or the value is not a list of regex strings.
+
+    """
+    manifest = root / 'pyproject.toml'
+    if not manifest.is_file():
+        return ()
+    try:
+        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        raise SignaturesNotDeclared(msg) from exc
+    table = data.get('tool', {}).get('lab_commons', {}).get('stoprun')
+    if table is None:
+        return ()
+    value = table.get('signatures', []) if isinstance(table, dict) else table
+    if not isinstance(value, list) or not all(isinstance(s, str) and s for s in value):
+        msg = f'{_TABLE} signatures in {manifest} is {value!r}; it must be a list of regex strings'
+        raise SignaturesNotDeclared(msg)
+    for sig in value:
+        try:
+            re.compile(sig)
+        except re.error as exc:
+            msg = f'{_TABLE} signature {sig!r} in {manifest} is not a regex: {exc}'
+            raise SignaturesNotDeclared(msg) from exc
+    return tuple(value)
+
+
+def repo_root(start: Path) -> Path:
+    """The git top level containing *start*, else *start* itself."""
+    top = git_out(start, 'rev-parse', '--show-toplevel')
+    return Path(top.strip()) if top and top.strip() else start
+
+
+def identify(cmdline: str, signatures: tuple[str, ...] = ()) -> str | None:
+    """The signature *cmdline* matches (built-in first, then declared), or ``None``."""
+    for sig in (*RUN_SIGNATURES, *(re.compile(s) for s in signatures)):
+        if sig.search(cmdline):
+            return sig.pattern
+    return None
 
 
 def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
@@ -91,6 +160,14 @@ def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
         order.append(current)
         frontier += [p for p, (ppid, _) in table.items() if ppid == current and p != current and p not in order]
     return order[::-1]
+
+
+def _ancestors(table: Mapping[int, Proc], pid: int) -> set[int]:
+    seen: set[int] = set()
+    while pid in table and pid not in seen:
+        seen.add(pid)
+        pid = table[pid][0]
+    return seen
 
 
 def _kill(pid: int) -> None:
@@ -112,15 +189,19 @@ def stop(
     *,
     dry_run: bool,
     kill: Callable[[int], None] = _kill,
+    signatures: tuple[str, ...] = (),
 ) -> tuple[int, list[str]]:
     """Stop *pid*'s subtree if it is an identifiable run. ``(exit code, lines)``; 3 means refused."""
     if pid in (os.getpid(), os.getppid()):
         return 3, [f'refused: {pid} is this process or its parent']
     if pid not in table:
         return 3, [f'refused: no process {pid}']
-    if not identify(table[pid][1]):
-        return 3, [f'refused: {pid} is not a gate/verify run: {table[pid][1][:200]!r}']
-    lines = []
+    if pid in _ancestors(table, os.getpid()):
+        return 3, [f'refused: {pid} is an ancestor of this process']
+    matched = identify(table[pid][1], signatures)
+    if matched is None:
+        return 3, [f'refused: {pid} matches no run signature (built-in or {_TABLE}): {table[pid][1][:200]!r}']
+    lines = [f'matched signature {matched!r}']
     for member in subtree(table, pid):
         lines.append(f'{"would stop" if dry_run else "stopped"} {member}  {table[member][1][:120]}')
         if not dry_run:
@@ -132,9 +213,11 @@ def main(argv: list[str] | None = None) -> int:
     """Stop one identifiable gate/verify run and its subtree. Exit 3 when refused."""
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.stoprun', description=main.__doc__)
     parser.add_argument('--pid', type=int, required=True)
+    parser.add_argument('--repo', type=Path, default=None, help='repo whose pyproject declares signatures')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args(argv)
-    code, lines = stop(args.pid, process_table(), dry_run=args.dry_run)
+    signatures = declared_signatures(args.repo or repo_root(Path.cwd()))
+    code, lines = stop(args.pid, process_table(), dry_run=args.dry_run, signatures=signatures)
     for line in lines:
         emit(f'[stoprun] {line}', err=bool(code))
     return code
