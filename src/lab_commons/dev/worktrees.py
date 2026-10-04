@@ -10,51 +10,80 @@ and then ``; git worktree remove --force``. The archive helper failed, ``mv`` ne
 let the removal delete five worktrees' ignored ``output/``. So:
 
 * a registered worktree is PRUNED only when it is clean, its HEAD is contained in a remote-tracking
-  branch, and it holds no ignored content beyond regenerable caches (:data:`DISPOSABLE`) -- an
-  ignored ``output/`` BLOCKS it and is listed. Removal is ``git worktree remove`` WITHOUT ``--force``.
-* a directory under ``.claude/worktrees/`` that git does not register is the ONE automatic move: an
-  EMPTY one (no files at any depth) is moved into the dated archive and verified gone; one that holds
-  files is listed with them and refused.
+  branch, and every ignored path in it is REGENERABLE (:func:`regenerable`) -- an ignored
+  ``output/`` is work, BLOCKS it and is listed. Removal is ``git worktree remove`` WITHOUT ``--force``.
+* a directory under ``.claude/worktrees/`` that git does not register is never moved: an EMPTY one
+  (no files at any depth) is removed in place, bottom-up with ``Path.rmdir``, which itself refuses a
+  directory that is not empty; one that holds files is listed with them and refused.
 """
 
 from __future__ import annotations
 
 import argparse
-import shutil
+import tomllib
+from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 from typing import Final
 
 from lab_commons.dev.checkout import git_out, orphan_directories, worktrees
-from lab_commons.dev.datedlog import dated_log
 from lab_commons.log import emit
 
-__all__ = ['ARCHIVE_BASE', 'DISPOSABLE', 'archive_dir', 'blockers', 'main', 'prune']
+__all__ = ['REGENERABLE', 'blockers', 'main', 'prune', 'regenerable']
 
-#: Ignored entries that are regenerated on demand and may go with their tree.
-DISPOSABLE: Final = frozenset(
-    {'__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache', '.venv', 'node_modules', '.verify'}
+#: THE family default: ignored path parts (``fnmatch`` patterns) a build or a tool regenerates on
+#: demand, so they may go with their tree. A repo adds its own in ``[tool.lab_commons.worktrees]
+#: regenerable`` of its ``pyproject.toml``; anything ignored and not matched is WORK and blocks.
+REGENERABLE: Final = frozenset(
+    {
+        '__pycache__',
+        '.pytest_cache',
+        '.ruff_cache',
+        '.mypy_cache',
+        '.venv',
+        'node_modules',
+        '.verify',
+        '*.egg-info',
+        '*.py[cod]',
+        '.coverage*',
+        'htmlcov',
+        'build',
+        'dist',
+        'target',
+        '__version__.py',
+    }
 )
-
-#: Where an archived unregistered directory lands, under the checkout's dated output tree.
-ARCHIVE_BASE: Final = 'output/logs'
 
 _SHOWN: Final = 5
 
 
-def archive_dir(root: Path, name: str) -> Path:
-    """``<root>/output/logs/<yy>/<mm>/<dd>/worktree-archive/<name>`` (parent created, path NOT yet)."""
-    return dated_log(root, name, base=ARCHIVE_BASE, kind='worktree-archive')
+def regenerable(tree: Path) -> frozenset[str]:
+    """:data:`REGENERABLE` plus *tree*'s declared ``[tool.lab_commons.worktrees] regenerable``."""
+    manifest = tree / 'pyproject.toml'
+    if not manifest.is_file():
+        return REGENERABLE
+    with manifest.open('rb') as handle:
+        declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('worktrees', {})
+    extra = declared.get('regenerable', [])
+    if not isinstance(extra, list) or not all(isinstance(item, str) for item in extra):
+        msg = f'[tool.lab_commons.worktrees] regenerable in {manifest} must be a list of strings, got {extra!r}'
+        raise ValueError(msg)
+    return REGENERABLE | frozenset(extra)
+
+
+def _is_regenerable(path: str, patterns: frozenset[str]) -> bool:
+    return any(fnmatch(part, pattern) for part in PurePosixPath(path).parts for pattern in patterns)
 
 
 def blockers(tree: Path) -> tuple[str, ...] | None:
-    """Every path that stops *tree* from being removed: modified, staged, untracked, or kept-ignored."""
+    """Every path that stops *tree* from being removed: modified, staged, untracked, or ignored work."""
     out = git_out(tree, 'status', '--porcelain', '--ignored=matching')
     if out is None:
         return None
+    patterns = regenerable(tree)
     found: list[str] = []
     for line in out.splitlines():
         code, path = line[:2], line[3:].strip().rstrip('/')
-        if code == '!!' and set(PurePosixPath(path).parts) & DISPOSABLE:
+        if code == '!!' and _is_regenerable(path, patterns):
             continue
         found.append(f'{code.strip() or "?"} {path}')
     return tuple(found)
@@ -83,18 +112,19 @@ def _tree_line(root: Path, path: Path, branch: str, *, apply: bool) -> str:
     return f'{"removed " if removed else "FAILED  "} {path}  [{branch}]'
 
 
-def _orphan_line(root: Path, orphan: Path, *, apply: bool) -> str:
+def _orphan_line(orphan: Path, *, apply: bool) -> str:
     files = _files(orphan)
     if files:
         return f'kept     {orphan}  (unregistered, holds files -- a human decides: {_shown(files)})'
     if not apply:
-        return f'orphan   {orphan}  (unregistered and empty; --prune archives it)'
-    target = archive_dir(root, orphan.name)
-    if target.exists():
-        return f'FAILED   {orphan}  (archive target {target} already exists)'
-    shutil.move(str(orphan), str(target))
-    moved = target.exists() and not orphan.exists()
-    return f'{"archived" if moved else "FAILED  "} {orphan} -> {target}'
+        return f'orphan   {orphan}  (unregistered and empty; --prune removes it)'
+    try:
+        for directory in sorted(orphan.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+            directory.rmdir()
+        orphan.rmdir()
+    except OSError as error:
+        return f'FAILED   {orphan}  ({error})'
+    return f'removed  {orphan}  (unregistered and empty)'
 
 
 def prune(root: Path, *, apply: bool) -> tuple[str, ...] | None:
@@ -104,7 +134,7 @@ def prune(root: Path, *, apply: bool) -> tuple[str, ...] | None:
     if trees is None or orphans is None:
         return None
     out = [_tree_line(root, path, branch, apply=apply) for path, branch in trees[1:]]
-    out += [_orphan_line(root, orphan, apply=apply) for orphan in orphans]
+    out += [_orphan_line(orphan, apply=apply) for orphan in orphans]
     if apply:
         git_out(root, 'worktree', 'prune')
     return tuple(out)
