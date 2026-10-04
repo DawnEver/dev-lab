@@ -78,6 +78,12 @@ dev = [
     "pre-commit",
 ]
 
+# THE FAMILY PLACEMENT MAP (`lab_commons.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
+[tool.lab_commons.placement]
+code_roots = []
+# A worktree is a real second tree with its own src/, judged by the run inside it.
+pruned_paths = ['.claude/worktrees']
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
