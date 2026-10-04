@@ -36,6 +36,7 @@ __all__ = [
     'BranchSetNotDeclared',
     'Candidate',
     'Census',
+    'apply_local',
     'census',
     'declared_branchset',
     'main',
@@ -162,11 +163,61 @@ def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] 
     return tuple(rows)
 
 
+def _checked_out(root: Path) -> frozenset[str]:
+    out = git_out(root, 'for-each-ref', '--format=%(refname:short)|%(worktreepath)', 'refs/heads/')
+    rows = (line.partition('|') for line in (out or '').splitlines())
+    return frozenset(name for name, _, tree in rows if tree.strip())
+
+
+def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
+    """THE LOCAL CLEANUP DOOR: delete every deletable LOCAL candidate; one line per branch. ``None``: unread.
+
+    User ruling 2026-10-04: local cleanup is a door, but a push or a REMOTE deletion is never automatic.
+    So an origin candidate is only LISTED, with the command a human runs. Each local delete follows a
+    FRESH ``merge-base --is-ancestor`` and is pinned to the sha that check saw (``update-ref -d <ref>
+    <sha>``), so a branch that moved in between is kept, never lost. A declared branch, a branch with
+    commits origin lacks, and a branch checked out in any worktree are never touched.
+    """
+    rows = merge_candidates(root, branchset)
+    if rows is None:
+        return None
+    holders = _holders(root, branchset)
+    busy = _checked_out(root)
+    out: list[str] = []
+    for row in rows:
+        if row.where == 'origin':
+            hint = f'(human: git push origin --delete {row.name})' if row.deletable else '(merge first)'
+            out.append(f'listed   origin  {row.name}  {hint}')
+            continue
+        ref = f'refs/heads/{row.name}'
+        sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
+        if not row.deletable or row.name in branchset.declared or not sha:
+            out.append(f'kept     local   {row.name}  (not held by a declared branch)')
+        elif row.name in busy or _unpushed(root, row.name) != 0:
+            out.append(f'kept     local   {row.name}  (checked out, or holds commits origin lacks)')
+        elif not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders):
+            out.append(f'kept     local   {row.name}  (ancestry re-check failed)')
+        else:
+            done = git_out(root, 'update-ref', '-d', ref, sha) is not None
+            out.append(f'{"deleted " if done else "FAILED  "} local   {row.name}  ({sha[:10]})')
+    return tuple(out)
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Print the merge-and-delete candidates of a repo. Deletes nothing; exit 2 when git cannot answer."""
+    """List the merge-and-delete candidates; ``--apply`` deletes the deletable LOCAL ones. Exit 2: unread."""
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.branchset', description=main.__doc__)
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout to read (default: cwd)')
-    root = parser.parse_args(argv).root
+    parser.add_argument('--apply', action='store_true', help='delete deletable LOCAL branches; origin is listed only')
+    args = parser.parse_args(argv)
+    root = args.root
+    if args.apply:
+        lines = apply_local(root, declared_branchset(root))
+        if lines is None:
+            emit(f'git could not read the branches of {root}; nothing was deleted')
+            return 2
+        for line in lines:
+            emit(line)
+        return 1 if any(line.startswith('FAILED') for line in lines) else 0
     rows = merge_candidates(root, declared_branchset(root))
     if rows is None:
         emit(f'git could not read the branches of {root}; an unread repo is not a clean one')

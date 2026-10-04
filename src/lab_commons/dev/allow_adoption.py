@@ -94,6 +94,7 @@ from typing import Any, Final
 
 from lab_commons.dev._allow_settings import BASH, ROW, block_problems, live_bash_rows, merged_permissions
 from lab_commons.dev._allow_settings import promised_command as _promised
+from lab_commons.dev.autodoors import claude_rows
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, denies
@@ -248,6 +249,9 @@ class AllowAdoption:
     app_name: str
     adoption: HookAdoption
     declared: tuple[DeclaredAllow, ...] = field(default_factory=tuple)
+    #: The repo's script doors: pass ``lab_commons.dev.autodoors.script_doors(root)`` so the rows are
+    #: derived from the tracked tree -- the same list the Codex rules are rendered from.
+    scripts: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Refuse an unnamed repo, a duplicated declared row, and a declared row already derived."""
@@ -259,7 +263,7 @@ class AllowAdoption:
         if repeated:
             msg = f'{self.app_name} declares {repeated} more than once; a deletion could not say which one went.'
             raise UnarguedAllow(msg)
-        restated = sorted(set(entries) & set(derived_entries(self.adoption)))
+        restated = sorted(set(entries) & (set(derived_entries(self.adoption)) | set(claude_rows(self.scripts))))
         if restated:
             msg = (
                 f'{self.app_name} declares {restated}, which its own remedies already derive. A declared copy '
@@ -269,8 +273,14 @@ class AllowAdoption:
 
 
 def allow_entries(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> tuple[str, ...]:
-    """The whole block: derived rows in registry order, then declared rows in declaration order."""
-    return (*derived_entries(allow.adoption, rules), *(row.entry.strip() for row in allow.declared))
+    """The whole block: derived rows, then the family doors (AUTO-MODE-RUNS-THE-DOORS), then declared rows.
+
+    The doors come from :data:`lab_commons.dev.autodoors.FAMILY_DOORS`, the one table the Codex rules
+    are rendered from too. A door row the derivation already produced is not repeated.
+    """
+    derived = derived_entries(allow.adoption, rules)
+    doors = [row for row in claude_rows(allow.scripts) if row not in derived]
+    return (*derived, *doors, *(row.entry.strip() for row in allow.declared))
 
 
 def provenance(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> dict[str, str]:
@@ -280,7 +290,10 @@ def provenance(allow: AllowAdoption, rules: Sequence[DenyRule] = DENY_RULES) -> 
     RAW-PROCESS-KILL" and "declared: the docs preview server" are two different repairs, and an
     entry with no provenance is the hand edit this module exists to remove.
     """
-    out = {entry: f'derived from {", ".join(ids)}' for entry, ids in derived_entries(allow.adoption, rules).items()}
+    out = {entry: f'family door: {why}' for entry, why in claude_rows(allow.scripts).items()}
+    out.update(
+        {entry: f'derived from {", ".join(ids)}' for entry, ids in derived_entries(allow.adoption, rules).items()}
+    )
     out.update({row.entry.strip(): f'declared: {row.because}' for row in allow.declared})
     return out
 

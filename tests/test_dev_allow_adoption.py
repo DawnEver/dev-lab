@@ -26,6 +26,7 @@ from lab_commons.dev.allow_adoption import (
     self_refused,
     settings_problems,
 )
+from lab_commons.dev.autodoors import claude_rows
 from lab_commons.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
 from lab_commons.dev.hook_adoption import HookAdoption
 from lab_commons.dev.hooks import Remedy
@@ -218,6 +219,7 @@ def test_the_section_merge_keeps_every_block_it_is_not_about() -> None:
         'Read(**)',
         'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)',
         INTERPRETER_ALLOW_ENTRY,
+        *claude_rows(),
     ]
     assert live_bash_rows(before) == ('Bash(*scripts/gate/stop_sweep.py *)',)
 
@@ -236,12 +238,13 @@ def test_a_declared_road_may_not_name_a_file_the_tree_lacks() -> None:
 def test_the_block_is_bound_on_both_sides_and_neither_number_has_a_default() -> None:
     """A block that silently emptied reads as agreement; a floor it outgrew is a waiver nothing uses."""
     allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
-    assert len(allow_entries(allow)) == 4
-    assert_allow_is_adoptable(allow, [], floor=2, headroom=2)
+    doors = len(claude_rows())
+    assert len(allow_entries(allow)) == 4 + doors
+    assert_allow_is_adoptable(allow, [], floor=2 + doors, headroom=2)
     with pytest.raises(FloorUnmet):
-        assert_allow_is_adoptable(allow, [], floor=9, headroom=2)
+        assert_allow_is_adoptable(allow, [], floor=9 + doors, headroom=2)
     with pytest.raises(SlackFloor):
-        assert_allow_is_adoptable(allow, [], floor=1, headroom=1)
+        assert_allow_is_adoptable(allow, [], floor=1 + doors, headroom=1)
     with pytest.raises(FloorMisdeclared):
         assert_allow_is_adoptable(allow, [], floor=2, headroom=0)
 
@@ -275,3 +278,15 @@ def test_a_portable_declared_row_and_an_unrelated_one_both_pass() -> None:
     """THE OTHER SIDE: a guard that refused every declared row would be switched off by lunchtime."""
     assert DeclaredAllow('Bash(./.venv/*/python* scripts/dep.py *)', 'the door').entry.endswith('*)')
     assert DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server').entry == 'Bash(*yarn preview*)'
+
+
+def test_the_family_doors_ride_every_block_and_a_declared_copy_is_refused() -> None:
+    """AUTO-MODE-RUNS-THE-DOORS: each door row is in the block, script doors included, never restated."""
+    allow = AllowAdoption('consumer_c', CONSUMER_C, scripts=('scripts/gate/runner.py',))
+    entries = allow_entries(allow)
+    assert set(claude_rows(('scripts/gate/runner.py',))) <= set(entries)
+    assert 'Bash(.venv/*/python* scripts/gate/runner.py *)' in entries
+    assert provenance(allow)['Bash(.venv/*/python* -m lab_commons.dev.stoprun *)'].startswith('family door')
+    door = DeclaredAllow('Bash(.venv/*/python* -m lab_commons.dev.stoprun *)', 'a restated door')
+    with pytest.raises(UnarguedAllow):
+        AllowAdoption('consumer_c', CONSUMER_C, (door,))
