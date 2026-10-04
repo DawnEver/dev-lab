@@ -6,16 +6,16 @@ the class body, and what is left behind when execution raises. A test that asser
 object's attributes without ever having a second load, a second spelling or a failure could pass
 against a loader that re-executed every time.
 
-THE SIDE EFFECT IS THE INSTRUMENT. Each planted module appends to a list it finds in
-``builtins``, so "ran once" is a COUNT this test reads rather than an identity check it infers --
+THE SIDE EFFECT IS THE INSTRUMENT. Each planted module appends to a list on a ledger module this
+test registers in ``sys.modules``, so "ran once" is a COUNT this test reads rather than an identity check it infers --
 two module objects for one file would be indistinguishable from one if only ``is`` were asked, and
 the reverse is also true of a cache that returned the same object while re-executing the file.
 """
 
 from __future__ import annotations
 
-import builtins
 import sys
+import types
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -24,9 +24,19 @@ import pytest
 from lab_commons.dev import bypath
 from lab_commons.dev.bypath import load
 
-#: The name the planted modules append to. Held on ``builtins`` because a by-path module has no
-#: import route back to this test file.
+#: The module name the planted modules import their ledger from. Registered in ``sys.modules``
+#: because a by-path module has no import route back to this test file.
 _LEDGER = '_bypath_test_ledger'
+
+
+class _Ledger(types.ModuleType):
+    """The ledger module, with its one attribute DECLARED rather than set by name."""
+
+    executions: list[str]
+
+
+_LEDGER_MODULE = _Ledger(_LEDGER)
+_LEDGER_MODULE.executions = []
 
 
 @pytest.fixture(autouse=True)
@@ -39,11 +49,11 @@ def _clean_process_state() -> Iterator[None]:
     """
     before_modules = dict(sys.modules)
     before_cache = dict(bypath._LOADED)
-    setattr(builtins, _LEDGER, [])
+    _LEDGER_MODULE.executions.clear()
+    sys.modules[_LEDGER] = _LEDGER_MODULE
     try:
         yield
     finally:
-        delattr(builtins, _LEDGER)
         bypath._LOADED.clear()
         bypath._LOADED.update(before_cache)
         sys.modules.clear()
@@ -52,7 +62,7 @@ def _clean_process_state() -> Iterator[None]:
 
 def _ledger() -> list[str]:
     """Every execution the planted modules have recorded so far."""
-    return vars(builtins)[_LEDGER]
+    return _LEDGER_MODULE.executions
 
 
 def _plant(directory: Path, stem: str, body: str = '') -> Path:
@@ -60,7 +70,7 @@ def _plant(directory: Path, stem: str, body: str = '') -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f'{stem}.py'
     path.write_text(
-        f'import builtins\nbuiltins.{_LEDGER}.append({stem!r})\nSTATE = []\n{body}\n',
+        f'import {_LEDGER}\n{_LEDGER}.executions.append({stem!r})\nSTATE = []\n{body}\n',
         encoding='utf-8',
     )
     return path

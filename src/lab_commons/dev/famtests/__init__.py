@@ -184,6 +184,11 @@ WHAT IS HERE, one module per shared body:
   shingles; and no other local page takes a ``lab_commons.dev`` module as its subject unless the
   consumer allowlists it WITH A REASON. The consumer-side half of :mod:`lab_commons.dev.devdocs`.
 
+* :mod:`lab_commons.dev.famtests.noreflection` -- NO-REFLECTION: no tracked Python outside attic/ and
+  archived/ calls ``getattr``/``hasattr``/``setattr``/``delattr`` or defines ``__getattr__``, outside a
+  two-sided allow-set keyed by path whose every entry carries its reason. Replaces one hand-written
+  scan per consumer, each of which banned a different subset of the four names over a different tree.
+
 WHOSE COPY A BODY JUDGES IS SAID ONCE, HERE, because it was said twice and differently until
 2026-09-17 and the two answers were opposites. A body here judges THE CONSUMER'S OWN FILES -- the
 tree it is handed -- and the wheel's copy of anything is only ever the DECLARATION those files are

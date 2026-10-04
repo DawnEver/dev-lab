@@ -67,6 +67,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_worktreeplace.py', 'tests/test_dev_hooks.py'),
     ),
     (
+        'NO-REFLECTION',
+        (
+            'No tracked Python outside attic/ and archived/ calls getattr, hasattr, setattr or delattr, or '
+            'defines __getattr__. A field is read by attribute access, a capability by isinstance against a '
+            'Protocol, a dataclass by dataclasses.fields/replace, a name-keyed choice by an explicit dict; '
+            'routing the probe through vars() or __dict__ is the same probe. An irreducible boundary is a '
+            'named allow-set entry carrying its reason.'
+        ),
+        ('tests/test_arch_production_carries_no_reflection.py',),
+    ),
+    (
         'PROJECT-FILES-HAVE-ONE-SOURCE',
         (
             'Every project-level file a repository tracks -- ignore and attribute files, the Makefile, hook and '

@@ -65,6 +65,7 @@ _IDS = frozenset(
         'NETWORK-RETRY-THEN-REPORT',
         'NO-CJK-IN-TRACKED-SOURCE',
         'NO-LAZY-IMPORT',
+        'NO-REFLECTION',
         'ONE-BOX-ONE-LOCK',
         'PLANTED-CONTROL',
         'PRODUCTION-ENTRY-POINT',
