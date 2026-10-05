@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
+from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
@@ -111,6 +112,10 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 #: loud refusal. The bug was never the check; it was asking pytest for less than the check needs.
 PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs',)
 
+#: The durations ledger, loaded as a plugin so EVERY verify run records what it executed -- targeted
+#: or full, whichever conftest the selected tests sit under (:func:`lab_commons.dev.durations.pytest_configure`).
+LEDGER_PLUGIN: Final[tuple[str, ...]] = ('-p', durations.__name__)
+
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
 EXIT_CODES: Final[dict[Outcome, int]] = {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}
@@ -156,7 +161,7 @@ def project_root(start: Path | None = None) -> Path:
     return Path(found.stdout.strip()).resolve()
 
 
-def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
+def _tee(command: list[str], *, cwd: Path, handle: IO[str], extra_env: dict[str, str] | None = None) -> int:
     r"""Run *command*, streaming its merged output to *handle* AND to this process's stdout.
 
     STREAMED rather than captured and written afterwards, so a step that hangs still leaves in the
@@ -222,7 +227,7 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str]) -> int:
     """
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
-    env = os.environ | {'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'}
+    env = os.environ | {'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'} | (extra_env or {})
     with subprocess.Popen(
         command,
         cwd=cwd,
@@ -343,7 +348,12 @@ def run_verify(
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
         handle.write(_PYTEST_BANNER)
-        code = _tee([sys.executable, '-m', 'pytest', *PYTEST_ARGS, *pytest_args], cwd=root, handle=handle)
+        stamp = {
+            durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
+            durations.LEDGER_ENV_VAR: env_key(env_manifest()),
+        }
+        command = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *pytest_args]
+        code = _tee(command, cwd=root, handle=handle, extra_env=stamp)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
     reports.append(distillate.annotate(read_pytest(distillate.text, returncode=code, allowed_skips=allowed)))
     try:

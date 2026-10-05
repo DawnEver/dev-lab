@@ -40,7 +40,7 @@ from lab_commons.dev.reports import (
     read_ruff,
 )
 from lab_commons.dev.verdict import Outcome, Verdict
-from lab_commons.dev.verify import EXIT_CODES, PYTEST_ARGS, build_verdict, project_root
+from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
@@ -616,3 +616,8 @@ def test_a_judged_run_on_a_clean_unmoved_tree_publishes_lab_gate_on_head(monkeyp
 def test_a_dirty_tree_publishes_on_no_commit_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[('M src/x.py',), ('M src/x.py',)])
     assert [commit for _v, _c, commit in posted] == [None]
+
+
+def test_every_verify_run_loads_the_durations_ledger_plugin() -> None:
+    """A targeted run records too: the ledger is a plugin verify passes, not a conftest binding."""
+    assert LEDGER_PLUGIN == ('-p', 'lab_commons.dev.durations')

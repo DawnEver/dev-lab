@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, NamedTuple, Protocol
@@ -85,11 +86,17 @@ __all__ = [
     'CRASH_MARKER',
     'FAST',
     'LEDGER_DIRECTORY',
+    'LEDGER_ENV_VAR',
+    'LEDGER_TREE_VAR',
+    'MEASURE_DOOR',
+    'NO_DATA',
     'SLOW',
     'Finding',
     'Ledger',
     'LedgerInconclusive',
     'PhaseReport',
+    'PluginConfig',
+    'PluginManager',
     'Recorder',
     'Row',
     'RunConfig',
@@ -102,8 +109,10 @@ __all__ = [
     'module_of',
     'over',
     'phase_seconds',
+    'pytest_configure',
     'read',
     'unmarked_but_slow',
+    'unmeasured',
     'write',
 ]
 
@@ -124,6 +133,17 @@ CRASH_MARKER: Final = 'crashed while running'
 #: drop the marker. A caller asserts on the classification rather than on a bare count.
 SLOW: Final = 'unmarked-but-slow'
 FAST: Final = 'marked-but-fast'
+#: A third classification that is NOT a conviction: the ledger holds no reading for the module. A
+#: fresh worktree has no ledger at all, so absence is reported with the door and never failed.
+NO_DATA: Final = 'no-data'
+
+#: The door that takes a reading -- every verify run records the tests it executes.
+MEASURE_DOOR: Final = 'python -m lab_commons.dev.verify --'
+
+#: How :mod:`lab_commons.dev.verify` hands the tree and env it measures to the pytest it launches,
+#: so every reading carries what it was taken on.
+LEDGER_TREE_VAR: Final = 'LAB_COMMONS_LEDGER_TREE'
+LEDGER_ENV_VAR: Final = 'LAB_COMMONS_LEDGER_ENV'
 
 
 class LedgerInconclusive(AssertionError):
@@ -154,6 +174,20 @@ class RunConfig(Protocol):
 
     def getoption(self, name: str) -> object:
         """The command-line option *name*, or a falsy value if it was not given."""
+
+
+class PluginManager(Protocol):
+    """The one call :func:`pytest_configure` makes on a runner's plugin manager."""
+
+    def register(self, plugin: object, name: str) -> object:
+        """Register *plugin* under *name*."""
+
+
+class PluginConfig(Protocol):
+    """A runner's config, read by the plugin door for its root and its plugin manager."""
+
+    rootpath: Path
+    pluginmanager: PluginManager
 
 
 class RunSession(Protocol):
@@ -191,6 +225,8 @@ class Finding:
 
     def __str__(self) -> str:
         """The finding as one repair-shaped line, module first so a reader can sort by file."""
+        if self.verdict == NO_DATA:
+            return f'{self.module}: no data -- run `{MEASURE_DOOR} -m slow {self.module}` to measure'
         return f'{self.module}: {self.seconds:.3f}s -- {self.verdict}'
 
 
@@ -234,8 +270,16 @@ def phase_seconds(*, duration: float, failed: bool, longrepr: str, wall: float) 
     return float(duration)
 
 
-def write(root: Path, rows: Iterable[Row], *, selector: str, worker: str | None = None) -> Path:
-    """Record *rows* for ONE process, MERGED into what THAT process's file already held, keeping max.
+def write(
+    root: Path,
+    rows: Iterable[Row],
+    *,
+    selector: str,
+    worker: str | None = None,
+    tree: str = '',
+    env: str = '',
+) -> Path:
+    """Record *rows* for ONE process, MERGED by nodeid into what THAT process's file held, NEWEST WINS.
 
     MERGED RATHER THAN OVERWRITTEN, and the reason is a defect measured on this mechanism's first
     run. A ledger describing exactly one run sounds right and is not: a TARGETED run -- one file,
@@ -243,22 +287,22 @@ def write(root: Path, rows: Iterable[Row], *, selector: str, worker: str | None 
     would then red on the next full run for a reason with nothing to do with the suite. EVERY
     NARROW RUN A DEVELOPER MAKES WOULD BREAK THE GUARD.
 
-    So a row means "the longest this test has been observed to hold the box ON THIS BOX", which is
-    the claim a marker guard actually needs: a test that is slow on one run and quick on the next is
-    slow. THE COST IS STALENESS -- a test that has genuinely become fast keeps its old row until the
-    ledger is deleted -- and the remedy is exactly that deliberate act, which is what a ratchet
-    wants.
+    NEWEST WINS PER NODEID (user directive 2026-10-05), replacing an earlier keep-the-max merge: a
+    max never forgets, so a test made fast stayed slow in the ledger until someone deleted it. Each
+    row is stamped with WHEN it was taken and the ``tree``/``env`` it was taken on, so a reader can
+    tell which run a reading came from and :func:`read` picks the newest across worker files.
 
     THE MERGE IS WITH THIS PROCESS'S OWN FILE AND NOT WITH EVERY FILE IN THE DIRECTORY. A worker
     folding its siblings' rows into its own file would leave four files each claiming to have
-    measured everything; ``max`` makes that harmless to :func:`read` and ruinous to anyone reading
-    one file to find out what one worker did.
+    measured everything, which misleads anyone reading one file to find out what one worker did.
 
     Args:
         root: the checkout whose ``.verify/`` holds the ledger.
         rows: this process's measurements.
         selector: what the run SELECTED, recorded because rows mean nothing without it.
         worker: the shard id, or ``None`` for an unsharded run.
+        tree: the content address verify is measuring, or ``''`` outside verify.
+        env: the env key verify is measuring under, or ``''`` outside verify.
 
     Returns:
         The path written.
@@ -266,38 +310,38 @@ def write(root: Path, rows: Iterable[Row], *, selector: str, worker: str | None 
     """
     path = ledger_path(root, worker=worker)
     path.parent.mkdir(parents=True, exist_ok=True)
-    merged = dict(_rows_in(path))
+    payload = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    merged = {nodeid: float(value) for nodeid, value in dict(payload.get('seconds', {})).items()}
+    provenance = dict(payload.get('provenance', {}))
+    now = time.time_ns()
     for row in rows:
-        merged[row.nodeid] = max(round(float(row.seconds), 3), merged.get(row.nodeid, 0.0))
-    payload = {'selector': selector, 'seconds': merged}
+        merged[row.nodeid] = round(float(row.seconds), 3)
+        provenance[row.nodeid] = {'at_ns': now, 'tree': tree, 'env': env}
+    payload = {'selector': selector, 'seconds': merged, 'provenance': provenance}
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
     return path
 
 
-def _rows_in(path: Path) -> dict[str, float]:
-    """One ledger file's rows, or none at all if it is not there yet."""
-    if not path.is_file():
-        return {}
-    payload = json.loads(path.read_text(encoding='utf-8'))
-    return {nodeid: float(value) for nodeid, value in dict(payload.get('seconds', {})).items()}
-
-
 def read(root: Path) -> Ledger:
-    """EVERY ledger file in *root*, merged by max. An absent ledger is an EMPTY one, never an error.
+    """EVERY ledger file in *root*, merged by nodeid, NEWEST WINS. An absent ledger is an EMPTY one.
 
     Emptiness is not judged here on purpose: "no ledger" and "a ledger of nothing" are the same fact,
-    and the floor that refuses both is :func:`assert_the_ledger_is_evidence`, whose number belongs to
-    the repo. Returning a sentinel would hand a caller a third state to forget about.
+    and :func:`assert_the_ledger_is_evidence` reports it as no data against the repo's floor.
+    A row with no recorded time (a ledger written before readings were stamped) counts as oldest.
     """
     directory = Path(root) / LEDGER_DIRECTORY
-    merged: dict[str, float] = {}
+    newest: dict[str, tuple[int, float]] = {}
     selectors: list[str] = []
     paths = sorted(directory.glob(f'{_STEM}*.json')) if directory.is_dir() else []
     for path in paths:
         payload = json.loads(path.read_text(encoding='utf-8'))
         selectors.append(str(payload.get('selector', '')))
-        for nodeid, seconds in _rows_in(path).items():
-            merged[nodeid] = max(float(seconds), merged.get(nodeid, 0.0))
+        provenance = dict(payload.get('provenance', {}))
+        for nodeid, seconds in dict(payload.get('seconds', {})).items():
+            at = int(dict(provenance.get(nodeid, {})).get('at_ns', 0))
+            if nodeid not in newest or at > newest[nodeid][0]:
+                newest[nodeid] = (at, float(seconds))
+    merged = {nodeid: seconds for nodeid, (_, seconds) in newest.items()}
     return Ledger(selector=' | '.join(sorted(set(selectors))), seconds=merged)
 
 
@@ -378,13 +422,25 @@ def marked_but_fast(
     )
 
 
-def assert_the_ledger_is_evidence(*, ledger: Ledger, floor: int, headroom: int, what: str) -> None:
-    """THE FLOOR, BOTH SIDES. An absent, empty or partial ledger is a KILLED RUN, not a clean suite.
+def unmeasured(seconds: Mapping[str, float], marked: frozenset[str]) -> tuple[Finding, ...]:
+    """The marked modules the ledger holds NO reading for: :data:`NO_DATA`, reported and never failed.
 
-    THE LEDGER IS ALWAYS THE PREVIOUS RUN'S, and that is inherent rather than a bug: rows are written
-    at session finish and a guard reading them is collected long before it. A box that has never
-    completed a full run therefore reds HERE, naming the remedy -- run the suite once. That cost is
-    paid once per box, because :func:`write` merges rather than overwrites.
+    A fresh worktree has no ledger, and a default tier that deselects the marker never measures the
+    marked modules, so absence is the common case there. Each finding names the door that takes the
+    reading; none of them convicts.
+    """
+    measured = frozenset(_worst(seconds))
+    return tuple(Finding(module=name, seconds=0.0, verdict=NO_DATA) for name in sorted(marked - measured))
+
+
+def assert_the_ledger_is_evidence(*, ledger: Ledger, floor: int, headroom: int, what: str) -> str:
+    """THE FLOOR, BOTH SIDES -- and a ledger UNDER the floor is NO DATA, reported rather than failed.
+
+    THE LEDGER IS ALWAYS THE PREVIOUS RUN'S: rows are written at session finish and a guard reading
+    them is collected long before it, so a fresh worktree reads nothing. That is a missing reading,
+    not a conviction (user directive 2026-10-05), so it is returned as one line naming the door; the
+    two judgements convict only on a reading. The SLACK side still raises, because it judges a
+    ledger that does exist.
 
     Args:
         ledger: what :func:`read` returned.
@@ -393,17 +449,22 @@ def assert_the_ledger_is_evidence(*, ledger: Ledger, floor: int, headroom: int, 
         headroom: the largest slack the floor may carry before it must be re-measured -- the side
             that stops a floor measured against a small suite from passing a run that lost most of
             its corpus.
-        what: names the scan, so the refusal says which guard went quiet. NO DEFAULT; a borrowed
-            label does not raise, it MISDIRECTS.
+        what: names the scan, so the notice says which guard has no data. NO DEFAULT; a borrowed
+            label MISDIRECTS.
+
+    Returns:
+        ``''`` when the ledger is evidence, else ``<what>: no data (...) -- run `<door>` to measure``.
 
     Raises:
-        lab_commons.dev.floors.FloorUnmet: fewer rows than *floor*.
         lab_commons.dev.floors.SlackFloor: the floor has been outgrown past *headroom*.
         lab_commons.dev.floors.FloorMisdeclared: the floor or headroom refuses nothing.
 
     """
-    floors.assert_floor(len(ledger.seconds), floor=floor, what=what)
-    floors.assert_floor_still_binds(len(ledger.seconds), floor=floor, headroom=headroom, what=what)
+    count = len(ledger.seconds)
+    if count < floor:
+        return f'{what}: no data ({count} of {floor} readings) -- run `{MEASURE_DOOR}` to measure'
+    floors.assert_floor_still_binds(count, floor=floor, headroom=headroom, what=what)
+    return ''
 
 
 def assert_the_crash_marker_is_what_the_scheduler_writes(*, scheduler_source: str, where: str) -> None:
@@ -601,6 +662,9 @@ class Recorder:
     #: at, and inventing one here would be the fabricated measurement this module refuses.
     wall: float = 0.0
     seconds: dict[str, float] = field(default_factory=dict)
+    #: What verify is measuring, handed over through the environment; ``''`` outside verify.
+    tree: str = field(default_factory=lambda: os.environ.get(LEDGER_TREE_VAR, ''))
+    env: str = field(default_factory=lambda: os.environ.get(LEDGER_ENV_VAR, ''))
 
     def pytest_configure(self, config: RunConfig) -> None:
         """Bind the crash duration to THE WALL THE RUNNER IS ACTUALLY ENFORCING, never to a copy.
@@ -647,4 +711,16 @@ class Recorder:
             (Row(nodeid=nodeid, seconds=value) for nodeid, value in self.seconds.items()),
             selector=selector,
             worker=worker,
+            tree=self.tree,
+            env=self.env,
         )
+
+
+def pytest_configure(config: PluginConfig) -> None:
+    """THE PLUGIN DOOR: ``pytest -p lab_commons.dev.durations`` records every run, whatever conftest loads.
+
+    :mod:`lab_commons.dev.verify` passes it, so a TARGETED run records too -- a conftest-bound recorder
+    only loads for tests under that conftest. One :class:`Recorder` per run keeps the state off this
+    module, and ``pytest_configure`` is historic, so the instance's own one is still called.
+    """
+    config.pluginmanager.register(Recorder(root=Path(config.rootpath)), name='lab-commons-durations')

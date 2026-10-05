@@ -27,10 +27,14 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
+from lab_commons.dev import durations, floors
 from lab_commons.dev.durations import (
     CRASH_MARKER,
     FAST,
+    LEDGER_ENV_VAR,
+    LEDGER_TREE_VAR,
+    MEASURE_DOOR,
+    NO_DATA,
     SLOW,
     Finding,
     Ledger,
@@ -47,6 +51,7 @@ from lab_commons.dev.durations import (
     phase_seconds,
     read,
     unmarked_but_slow,
+    unmeasured,
     write,
 )
 
@@ -225,11 +230,73 @@ def test_a_targeted_run_does_not_clobber_the_ledger(tmp_path: Path) -> None:
     assert read(tmp_path).seconds == {'a::t': 10.0, 'b::t': 21.0}
 
 
-def test_the_merge_keeps_the_max_so_a_quick_rerun_cannot_acquit(tmp_path: Path) -> None:
-    """A test slow on one run and quick on the next IS slow; the row is a worst-observed cost."""
+def test_the_newest_reading_of_a_nodeid_wins(tmp_path: Path) -> None:
+    """Merged by nodeid, NEWEST WINS (user directive 2026-10-05): a test made fast reads as fast."""
     write(tmp_path, [Row('a::t', 90.0)], selector='all')
     write(tmp_path, [Row('a::t', 0.1)], selector='all')
-    assert read(tmp_path).seconds == {'a::t': 90.0}
+    assert read(tmp_path).seconds == {'a::t': 0.1}
+
+
+def test_newest_wins_across_worker_files(tmp_path: Path) -> None:
+    """A later targeted run in another process overrides an older reading held by a worker file."""
+    write(tmp_path, [Row('a::t', 90.0)], selector='all', worker='gw0')
+    write(tmp_path, [Row('a::t', 0.1)], selector='a')
+    assert read(tmp_path).seconds == {'a::t': 0.1}
+
+
+def test_each_reading_records_the_tree_and_env_it_was_taken_on(tmp_path: Path) -> None:
+    """A duration is a property of a tree on an env; the ledger says which."""
+    write(tmp_path, [Row('a::t', 1.0)], selector='all', tree='sha256:abc', env='e1')
+    payload = json.loads(ledger_path(tmp_path).read_text(encoding='utf-8'))
+    assert payload['provenance']['a::t']['tree'] == 'sha256:abc'
+    assert payload['provenance']['a::t']['env'] == 'e1'
+
+
+def test_the_recorder_reads_tree_and_env_from_the_verify_door(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify hands its tree and env to the pytest it launches; the recorder stamps them on each row."""
+    monkeypatch.setenv(LEDGER_TREE_VAR, 'sha256:t')
+    monkeypatch.setenv(LEDGER_ENV_VAR, 'envk')
+    recorder = Recorder(root=tmp_path)
+    recorder.pytest_runtest_logreport(_Report(nodeid='a::t', duration=1.0))
+    recorder.pytest_sessionfinish(types.SimpleNamespace(config=_Config(timeout=300)))
+    payload = json.loads(ledger_path(tmp_path).read_text(encoding='utf-8'))
+    assert payload['provenance']['a::t']['tree'] == 'sha256:t'
+    assert payload['provenance']['a::t']['env'] == 'envk'
+
+
+def test_the_plugin_registers_one_recorder_per_run(tmp_path: Path) -> None:
+    """`-p lab_commons.dev.durations` -- what verify passes -- records every run, targeted or full."""
+    registered: list[object] = []
+    config = types.SimpleNamespace(
+        rootpath=tmp_path,
+        pluginmanager=types.SimpleNamespace(register=lambda plugin, name: registered.append((plugin, name))),
+    )
+    durations.pytest_configure(config)
+    assert len(registered) == 1
+    plugin, _ = registered[0]
+    assert isinstance(plugin, Recorder)
+    assert plugin.root == tmp_path
+
+
+# -- no reading is no data, never a conviction --------------------------------------------------------
+
+
+def test_a_marked_module_with_no_reading_is_no_data_and_not_a_failure() -> None:
+    """THE PLANTED CASE: a fresh worktree has no ledger, and that convicts nobody."""
+    marked = frozenset({_WEDGE})
+    assert unmarked_but_slow({}, marked, bar=_BAR) == ()
+    assert marked_but_fast({}, marked, ceiling=_CEILING) == ()
+    (finding,) = unmeasured({}, marked)
+    assert finding.verdict == NO_DATA
+    assert str(finding) == f'{_WEDGE}: no data -- run `{MEASURE_DOOR} -m slow {_WEDGE}` to measure'
+
+
+def test_a_real_fast_reading_of_a_slow_marked_module_still_convicts() -> None:
+    """The other half of the control: a READING still convicts, and a read module is not no-data."""
+    seconds = {f'{_WEDGE}::t': 0.2}
+    marked = frozenset({_WEDGE})
+    assert marked_but_fast(seconds, marked, ceiling=_CEILING) == (Finding(_WEDGE, 0.2, FAST),)
+    assert unmeasured(seconds, marked) == ()
 
 
 def test_each_worker_writes_its_own_file_and_read_merges_them(tmp_path: Path) -> None:
@@ -265,10 +332,12 @@ def test_an_absent_ledger_is_empty_rather_than_an_error(tmp_path: Path) -> None:
     assert read(tmp_path) == Ledger(selector='', seconds={})
 
 
-def test_an_empty_ledger_is_refused_rather_than_read_as_clean(tmp_path: Path) -> None:
-    """THE FLOOR. A killed run and a clean suite report the same empty result."""
-    with pytest.raises(floors.FloorUnmet):
-        assert_the_ledger_is_evidence(ledger=read(tmp_path), floor=200, headroom=400, what='test duration')
+def test_a_ledger_under_the_floor_is_reported_as_no_data_not_failed(tmp_path: Path) -> None:
+    """A fresh worktree holds no reading: the floor REPORTS that, naming the door, and does not red."""
+    notice = assert_the_ledger_is_evidence(ledger=read(tmp_path), floor=200, headroom=400, what='test duration')
+    assert notice == f'test duration: no data (0 of 200 readings) -- run `{MEASURE_DOOR}` to measure'
+    write(tmp_path, [Row(f'm{i}::t', 1.0) for i in range(250)], selector='all')
+    assert assert_the_ledger_is_evidence(ledger=read(tmp_path), floor=200, headroom=400, what='test duration') == ''
 
 
 def test_a_ledger_the_suite_outgrew_reds_on_the_floors_other_side(tmp_path: Path) -> None:
