@@ -637,7 +637,7 @@ def assert_the_readings_still_convict(*, bar: float, ceiling: float) -> None:
         raise AssertionError(msg)
 
 
-@dataclass
+@dataclass(eq=False)
 class Recorder:
     """The runner's half: accumulate every PHASE of every test, then write the ledger ONCE.
 

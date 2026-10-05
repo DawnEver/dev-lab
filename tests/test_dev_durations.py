@@ -278,6 +278,17 @@ def test_the_plugin_registers_one_recorder_per_run(tmp_path: Path) -> None:
     assert plugin.root == tmp_path
 
 
+def test_a_recorder_is_hashable_so_any_pytest_can_register_it(tmp_path: Path) -> None:
+    """Pytest 9.0's ``parsefactories`` adds every plugin to a SET (``_holderobjseen``).
+
+    An eq-generated dataclass sets ``__hash__`` to None, so ``-p lab_commons.dev.durations`` died with
+    INTERNALERROR ``unhashable type: 'Recorder'`` there; 9.1 stopped hashing, which hid it. Identity is
+    the right equality for a per-run plugin instance.
+    """
+    one, two = Recorder(root=tmp_path), Recorder(root=tmp_path)
+    assert len({one, two}) == 2
+
+
 # -- no reading is no data, never a conviction --------------------------------------------------------
 
 
