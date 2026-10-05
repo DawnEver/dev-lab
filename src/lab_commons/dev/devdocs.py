@@ -162,6 +162,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'Local cleanup and own-run stops are checked doors both clients allow; pushes and remote deletes stay human',
     ),
     Page(
+        'refusals',
+        'Refusals',
+        'Every deny refusal is a clause, a door and a pointer; the full reasoning and history of each row',
+    ),
+    Page(
         'project-files',
         'Project files',
         'Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason',

@@ -330,17 +330,13 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   if (!target || !sessionRoot || samePath(target, sessionRoot)) return reason;
   const shown = target.replace(/\\/g, '/');
   const door = doorsOf(target)[rule.name];
+  // One header line; the full wording is docs-src/dev/refusals.md#cross-repo-refusals (lab-commons).
+  const details = reason.split('\n').filter((line) => line.startsWith('details: '));
   if (door) {
-    return (
-      `${rule.name}: refused. This command targets ${shown}, so its exit is that repo's own door ` +
-      `(pyproject [tool.lab_commons.doors]): ${door}`
-    );
+    return [`${rule.name}: refused; ${shown} declares its own door for it:`, door, ...details].join('\n');
   }
-  return (
-    `[${rule.name}: this command targets ${shown}, which declares no door for this rule in its ` +
-    `pyproject [tool.lab_commons.doors]; any repo file named below belongs to ` +
-    `${sessionRoot.replace(/\\/g, '/')} and may not exist there] ${reason}`
-  );
+  const session = sessionRoot.replace(/\\/g, '/');
+  return `[targets ${shown}, which declares no door; repo files named below are ${session}'s]\n${reason}`;
 }
 
 /** Does `rule` fire on any executed text? */

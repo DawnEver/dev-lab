@@ -109,4 +109,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_autodoors.py', 'tests/test_dev_branchset_apply.py', 'tests/test_dev_worktrees.py'),
     ),
+    (
+        'INJECTED-TEXT-IS-PROGRESSIVE',
+        (
+            'Text injected into an agent`s context -- a hook refusal, a door, a rule summary -- is the short '
+            'essential within a declared budget, and ends in a pointer to the doc that holds the reasoning '
+            'and history. Before any injected text is shortened, its full wording moves into that doc.'
+        ),
+        ('tests/test_dev_disclosure.py',),
+    ),
 )

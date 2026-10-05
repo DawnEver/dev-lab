@@ -14,7 +14,8 @@ WHAT A ROW HOLDS, and every field is load-bearing:
               of a shell segment -- or ``'argument'``: the pattern names an OPTION, whose command
               varies, so it is searched anywhere in the segment. This mirrors the engine's own
               ``matches`` field exactly and is a property of the ROW, not of the parser.
-``hazard``    WHY the shape is refused, in the words the shared source owns.
+``hazard``    WHY the shape is refused, as ONE clause. The full reasoning and its incidents live in
+              ``docs-src/dev/refusals.md#<id>``, which the rendered refusal points at.
 ``remedy``    WHAT TO DO INSTEAD. **Non-optional, and this is the whole design.** A rule that seals
               a road with no exit gets routed around rather than obeyed -- measured in this family
               over several months on a `uv` rule that named no alternative. Where the exit is a file
@@ -67,11 +68,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # hand-anchored rules drifted apart in the first place. `uv run pytest` stays in `refuses`.
         'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)',
         'matches': 'command',
-        'hazard': (
-            'a hand-written test line has no VERDICT. An exit code cannot say whether the run COVERED what '
-            'it selected, so a dead worker, a truncated run or a collection error that reported nothing all '
-            'read as green -- and the reader has merged "the tests passed" with "nobody knows".'
-        ),
+        'hazard': 'a hand-written test line has no verdict: its exit code cannot tell a covered run from a dead or truncated one.',
         'remedy': 'Re-issue through the entry point that produces a verdict: {remedy}',
         'needs': 'verdict-entry-point',
         'refuses': (
@@ -101,21 +98,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # around within a day, so the literal flag is the whole match.
         'pattern': r'\bcommit\b[^\n]*\s--amend\b',
         'matches': 'argument',
-        'hazard': (
-            '`--amend` does not act on YOUR last commit, it acts on HEAD -- and on a shared lane HEAD belongs '
-            'to whoever committed most recently. This family has NO single-agent mode, so "I just committed" '
-            'is not a safety argument; it is the exact condition under which this fires. MEASURED 2026-09-18 '
-            'on `feat/consumer-c`: agent A committed, agent B committed 40 seconds later, and A amended to fix '
-            "two digits in its OWN message -- rewriting B's commit and replacing B's message with A's. It was "
-            'caught inside a minute through `git reflog` and the tree recovered byte-identical, so only the '
-            'SHA moved; nothing about the recovery made that outcome likelier than losing the work.'
-        ),
-        'remedy': (
-            'Do not rewrite -- land the correction FORWARD. Read what HEAD actually is first: '
-            'git log -1 --format="%h %an %s". If the CONTENT is wrong, commit the fix on top. If only the '
-            'message is wrong and nothing a reader acts on changes, record the correction where the work is '
-            'reported and leave the commit alone; that is the right call once anything sits on top of it.'
-        ),
+        'hazard': '`--amend` rewrites HEAD, and on a shared lane HEAD may be another agent`s commit.',
+        'remedy': 'Land the correction FORWARD: read HEAD with git log -1 --format="%h %an %s", then commit the fix on top.',
         # `needs` is None after checking what a repo could possibly supply, and the answer is nothing:
         # `git commit` and `git log` exist in every checkout, and a follow-up convention is prose
         # rather than a file. Giving this row a `needs` would DROP it from every repo that has no
@@ -143,13 +127,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'GIT-NETWORK-VERB',
         'pattern': r'\bgit\s+(?:push|fetch|pull|clone|ls-remote)\b',
         'matches': 'command',
-        'hazard': (
-            'the forge is a REMOTE service that nobody in this family restarts, and a single transient '
-            'auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the '
-            'retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and '
-            'succeeded on the retry, and was reported blocked in between.'
-        ),
-        'remedy': 'Re-issue through the retry wrapper, which retries 3x and then REPORTS with a diagnosis: {remedy}',
+        'hazard': 'one transient forge failure on a network verb reads as "blocked"; the wrapper retries, then diagnoses.',
+        'remedy': 'Re-issue through the retry wrapper: {remedy}',
         'needs': 'retry-wrapper',
         'refuses': (
             'git push origin HEAD',
@@ -168,14 +147,9 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'GIT-STASH',
         'pattern': r'\bgit\s+stash(?:\s|$)',
         'matches': 'command',
-        'hazard': (
-            '`refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in '
-            'one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly '
-            'concurrent checkout, that is another agent losing work it never knew existed.'
-        ),
+        'hazard': '`refs/stash` is repo-wide, so a stash is popped by whoever pops next -- possibly another agent.',
         'remedy': (
-            'Keep the work where its owner can see it. Either commit it on your own lane branch (a scratch '
-            'commit is cheap and is named), or take a throwaway checkout: '
+            'Commit it on your own lane branch, or take a throwaway checkout: '
             f'git worktree add --detach {WORKTREES_REL}/<name> <sha>'
         ),
         'needs': None,
@@ -186,17 +160,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'PUSH-FORCE',
         'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b)',
         'matches': 'argument',
-        'hazard': (
-            'every branch here is read by someone else, and rewriting a ref silently invalidates any verdict '
-            'already taken against the old tree -- the verdict still cites a `tree=` address, and the tree it '
-            'names no longer exists. `--force-with-lease` is refused with the rest: it protects against a ref '
-            'that MOVED, not against a reader who already judged the ref as it was.'
-        ),
-        'remedy': (
-            'Do not rewrite a shared ref: land the change FORWARD as a new commit on your own lane, then push '
-            'without the force flag. If the history really must change, it changes on a branch nobody has '
-            'judged yet.'
-        ),
+        'hazard': 'rewriting a shared ref invalidates every verdict taken against the old tree; --force-with-lease included.',
+        'remedy': 'Land the change FORWARD as a new commit on your own lane, then push without the force flag.',
         'needs': None,
         'refuses': (
             'git push --force origin main',
@@ -212,11 +177,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'PUSH-NO-VERIFY',
         'pattern': r'\bpush\b[^\n]*--no-verify\b',
         'matches': 'argument',
-        'hazard': (
-            '`--no-verify` skips the pre-push hook, and the hook is where the verdict is taken. A push that '
-            'skipped it vouches for nothing, while looking exactly like one that did not -- the commit lands '
-            'with no evidence attached and nobody downstream can tell which kind it was.'
-        ),
+        'hazard': '`--no-verify` skips the pre-push hook where the verdict is taken, so the push vouches for nothing.',
         'remedy': 'Take the verdict first, and push once it is green: {remedy}',
         'needs': 'verdict-entry-point',
         'refuses': ('git push --no-verify origin HEAD', 'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify'),
@@ -233,13 +194,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             r'|\bkill\s+(?:-(?:9|TERM|KILL)\s+)?\d+)'
         ),
         'matches': 'argument',
-        'hazard': (
-            'a raw kill stops what you NAMED, and a test worker names nothing on its own command line -- so '
-            'the subtree that actually holds the box survives its parent. Measured twice in this family '
-            '(2026-07-29, 2026-09-13): stopping a wrapper orphaned its children, and the orphan went on '
-            'holding the CPU lock for a run whose own process was already dead.'
-        ),
-        'remedy': 'Kill the process TREE by its ROOT pid, children-first, and verify none remain: {remedy}',
+        'hazard': 'a raw kill stops only what you named; the orphaned subtree keeps holding the box.',
+        'remedy': 'Kill the process TREE by its root pid, children first: {remedy}',
         'needs': 'process-tree-killer',
         'refuses': (
             'taskkill /PID 1234 /T /F',
@@ -259,14 +215,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'pattern': BASE_IS_EXPLICIT_PATTERN,
         'matches': 'command',
         'allow': BASE_IS_EXPLICIT_ALLOW,
-        'hazard': (
-            '`git worktree add <path>` with no commit-ish silently takes the CURRENT HEAD, which on a shared '
-            'checkout is routinely not the tree you meant. MEASURED 2026-09-01: two agents were handed trees '
-            'based on the wrong branch and each reasoned about a codebase nobody runs -- one of them for 130k '
-            'tokens -- before noticing. A bare `HEAD` is accepted because it is a choice rather than an '
-            'omission, but it is the weakest one available: HEAD moves, so two trees cut from it minutes '
-            'apart can differ. Prefer the sha.'
-        ),
+        'hazard': '`git worktree add` with no commit-ish takes the current HEAD, which on a shared checkout is rarely the tree you meant.',
         'remedy': f'Name the commit the tree starts from: git worktree add --detach {WORKTREES_REL}/<name> <sha>',
         'needs': None,
         'refuses': (

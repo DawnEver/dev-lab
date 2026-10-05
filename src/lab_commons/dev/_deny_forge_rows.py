@@ -18,17 +18,10 @@ __all__ = ['FORGE_WRITE_ROWS', 'VENV_PYTHONS']
 VENV_PYTHONS: tuple[str, ...] = tuple('/'.join(parts) for parts in VENV_LAYOUTS.values())
 
 #: The hazard and the exit every FORGE-WRITE row shares, spelled once: three rows, one reason.
-_FORGE_HAZARD = (
-    'a forge write through any client but the family door carries no PROVENANCE. The forge records only '
-    'the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR '
-    'written this way cannot say which machine or which agent wrote it. The family door opens every body '
-    'it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.'
-)
+_FORGE_HAZARD = 'a forge write through any client but the family door does not record which machine or agent wrote it.'
 _FORGE_REMEDY = (
-    f'Write through the family door: {" or ".join(VENV_PYTHONS)} -m lab_commons.dev.forge '
-    'issue create|comment|close, pr create '
-    '(reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, '
-    'edit, review -- is the integrator`s to make: report it rather than reaching for another client.'
+    f'Write through the family door: {" or ".join(VENV_PYTHONS)} -m lab_commons.dev.forge issue create|comment|close, '
+    'pr create; a verb it lacks is the integrator`s.'
 )
 
 #: The HTTP verbs that WRITE, in every case spelling a shell accepts (curl and PowerShell both do).

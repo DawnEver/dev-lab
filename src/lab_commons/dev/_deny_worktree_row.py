@@ -56,17 +56,10 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
         r'^(?![\s\S]*(?:' + _GIT + r'(?:worktree\s+add(?!' + _GOOD_ADD + r')|worktree\s+move(?!' + _GOOD_MOVE + r')'
         r'|clone(?!' + _GOOD_CLONE + r'))|' + _RETRY + r'clone(?!' + _GOOD_CLONE + r')))'
     ),
-    'hazard': (
-        'a checkout created OUTSIDE its repository is outside every scan, ignore rule and search that '
-        'repository runs over itself, and outside the place the next agent looks for it. MEASURED '
-        '2026-10-03: eight worktrees across the family had been created as siblings of their repos, and '
-        'the user ruled that day that it is forbidden family-wide.'
-    ),
+    'hazard': 'a checkout outside its repository is outside every scan, ignore rule and search that repository runs.',
     'remedy': (
-        f'Put it inside the repository: git worktree add --detach {WORKTREES_REL}/<name> <sha> (from the '
-        f'repo root; with -C, git -C <repo> worktree add --detach <repo>/{WORKTREES_REL}/<name> <sha>). '
-        f'To relocate one: git worktree move <tree> <repo>/{WORKTREES_REL}/<name>. A clone takes an '
-        f'explicit target <repo>/{WORKTREES_REL}/<name> -- or is better a worktree.'
+        f'Put it inside: git worktree add --detach {WORKTREES_REL}/<name> <sha> (with -C, <repo>/{WORKTREES_REL}/<name>); '
+        f'relocate with git worktree move <tree> <repo>/{WORKTREES_REL}/<name>.'
     ),
     'needs': None,
     'refuses': (

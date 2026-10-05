@@ -130,6 +130,7 @@ _ENFORCED = {
         guard('tests/test_dev_dep_observe.py'),
     ),
     'INJECTED-DOC-WIDTH-CEILING': (guard('tests/test_dev_docwidth.py'),),
+    'INJECTED-TEXT-IS-PROGRESSIVE': (guard('tests/test_dev_disclosure.py'),),
     'NO-CJK-IN-TRACKED-SOURCE': (guard('tests/test_dev_cjk.py'),),
     'NO-LAZY-IMPORT': (lint('PLC0415'),),
     'NO-REFLECTION': (guard('tests/test_arch_production_carries_no_reflection.py'),),

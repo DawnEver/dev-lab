@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev._deny_rows import DENY_ROWS
+from lab_commons.dev.disclosure import details_for
 
 __all__ = [
     'DENY_RULES',
@@ -144,6 +145,7 @@ class DenyRule:
     allow: str | None = None
     refuses: tuple[str, ...] = ()
     permits: tuple[str, ...] = ()
+    details: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -183,7 +185,9 @@ class DenyRule:
             raise UnremediedRule(msg)
 
     def reason(self, remedy: Remedy | None = None) -> str:
-        """The full text the refused agent reads: the hazard, then the exit, with *remedy* filled in.
+        """The text the refused agent reads: ``<ID>: <hazard>``, the exit, then the ``details`` pointer.
+
+        Each on its own line, so the budget in :mod:`lab_commons.dev.disclosure` can count them.
 
         Raises:
             UnremediedRule: the rule needs an artefact and *remedy* is absent or answers a different
@@ -192,7 +196,7 @@ class DenyRule:
 
         """
         if self.needs is None:
-            return f'{self.hazard} {self.remedy}'
+            return self._lines(self.remedy)
         if remedy is None:
             msg = f'{self.id} needs a {self.needs!r} remedy and none was supplied, so it has no exit to name.'
             raise UnremediedRule(msg)
@@ -202,7 +206,11 @@ class DenyRule:
                 f'answers a different question reads as an exit and is not one.'
             )
             raise UnremediedRule(msg)
-        return f'{self.hazard} {self.remedy.replace(PLACEHOLDER, remedy.command)}'
+        return self._lines(self.remedy.replace(PLACEHOLDER, remedy.command))
+
+    def _lines(self, exit_text: str) -> str:
+        """The clause, the exit and the pointer, one per line; a row with no pointer renders two."""
+        return '\n'.join(line for line in (f'{self.id}: {self.hazard}', exit_text, self.details) if line)
 
     def rendered(self, remedy: Remedy | None = None) -> dict[str, str]:
         """The rule as the engine's own row: ``name``, ``pattern``, ``matches``, ``allow``, ``reason``.
@@ -263,7 +271,8 @@ def _build(rows: Iterable[Mapping[str, Any]]) -> tuple[DenyRule, ...]:
 
 #: THE REGISTRY. Rows are the number: nothing here states a count, because a count is blind to which
 #: row moved and the honest-looking repair when it disagrees is to edit the digit.
-DENY_RULES: Final[tuple[DenyRule, ...]] = _build(DENY_ROWS)
+#: Each universal row points at its own section of the refusals page, derived from its ID.
+DENY_RULES: Final[tuple[DenyRule, ...]] = tuple(replace(rule, details=details_for(rule.id)) for rule in _build(DENY_ROWS))
 
 
 def rules_by_id(rules: Sequence[DenyRule]) -> dict[str, DenyRule]:
