@@ -32,9 +32,12 @@ from lab_commons.dev.netverb import (
     Attempt,
     Diagnosis,
     Disposition,
+    NotANetworkVerb,
     classify,
     is_retryable,
+    main,
     run_network_verb,
+    spelled,
 )
 
 #: FLOORS. The table is the thing this module's judgement lives in, so a scan of it that reached
@@ -263,8 +266,11 @@ def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_pa
     stderr. Nothing is imported here -- the test runs the module the way the consumer will.
     """
     argv, counter = _child(tmp_path, fails=99, message=' ! [rejected] main -> main\n')
+    # The door runs only git, so the child is reached through a git shell alias.
+    alias = 'alias.netverbprobe=!' + ' '.join(f'"{Path(word).as_posix()}"' for word in argv)
+    door = [sys.executable, '-m', 'lab_commons.dev.netverb', '--attempts', '3', '--backoff', '0', '--json', '--']
     done = subprocess.run(
-        [sys.executable, '-m', 'lab_commons.dev.netverb', '--attempts', '3', '--backoff', '0', '--json', '--', *argv],
+        [*door, 'git', '-c', alias, 'netverbprobe'],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -281,3 +287,35 @@ def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_pa
     assert 'rejected' in report['attempts'][0]['output']
     assert '[netverb]' in done.stderr
     assert 'rejected' in done.stderr
+
+
+@pytest.mark.parametrize(
+    ('typed', 'expected'),
+    [
+        (['--', 'git', 'push', 'origin', 'HEAD:main'], ['git', 'push', 'origin', 'HEAD:main']),
+        (['--', 'push', 'origin', 'HEAD:main'], ['git', 'push', 'origin', 'HEAD:main']),
+        (['fetch', '--prune', 'origin'], ['git', 'fetch', '--prune', 'origin']),
+        (['--', 'git', 'log', '--', 'x'], ['git', 'log', '--', 'x']),
+    ],
+)
+def test_both_spellings_reach_git(typed: list[str], expected: list[str]) -> None:
+    """`-- git push ...` and `-- push ...` are one command; git's own `--` survives."""
+    assert spelled(typed) == expected
+
+
+@pytest.mark.parametrize('typed', [['--', 'curl', 'https://x'], ['--', 'sh', 'push.sh'], ['--', 'commit']])
+def test_any_other_first_token_is_refused_naming_the_spelling(typed: list[str]) -> None:
+    """The planted refusal: one line, naming `-- git <verb>`, and no process is started."""
+    with pytest.raises(NotANetworkVerb) as caught:
+        spelled(typed)
+    message = str(caught.value)
+    assert '\n' not in message
+    assert '-- git push' in message
+
+
+def test_the_entry_point_refuses_a_bad_spelling_without_a_traceback(capsys: pytest.CaptureFixture[str]) -> None:
+    """The measured crash: `-- push` used to raise FileNotFoundError; a non-verb is now exit 2."""
+    assert main(['--', 'curl', 'https://x']) == 2
+    err = capsys.readouterr().err
+    assert 'Traceback' not in err
+    assert err.count('\n') == 1

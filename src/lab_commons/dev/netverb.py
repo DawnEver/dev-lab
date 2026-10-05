@@ -63,14 +63,17 @@ from lab_commons.log import emit
 __all__ = [
     'DEFAULT_ATTEMPTS',
     'DEFAULT_BACKOFF_S',
+    'NETWORK_VERBS',
     'Attempt',
     'Diagnosis',
     'Disposition',
+    'NotANetworkVerb',
     'Report',
     'classify',
     'is_retryable',
     'main',
     'run_network_verb',
+    'spelled',
 ]
 
 #: Three, and it is the number every repo in this family already states in prose. A ceiling on the
@@ -346,6 +349,38 @@ def _attempt(
     return Attempt(index, done.returncode, output, classify(output))
 
 
+#: The git verbs that talk to a remote -- the one list the deny row and the door's spelling both read.
+NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote')
+
+
+class NotANetworkVerb(ValueError):
+    """The command after ``--`` is neither ``git ...`` nor a bare git network verb."""
+
+
+def spelled(command: Sequence[str]) -> list[str]:
+    """The argv to run: a leading ``--`` dropped, and ``git`` prepended to a bare network verb.
+
+    Only the separator in front is dropped; a later ``--`` is git's own pathspec separator.
+
+    Raises:
+        NotANetworkVerb: any other first token, as one line naming the right spelling.
+
+    """
+    words = list(command)
+    if words[:1] == ['--']:
+        words = words[1:]
+    if words[:1] == ['git']:
+        return words
+    if words and words[0] in NETWORK_VERBS:
+        return ['git', *words]
+    first = words[0] if words else '<nothing>'
+    msg = (
+        f'netverb: {first!r} is not a git network verb -- spell it '
+        f'`python -m lab_commons.dev.netverb -- git push ...` (or `-- {"|".join(NETWORK_VERBS)} ...`)'
+    )
+    raise NotANetworkVerb(msg)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m lab_commons.dev.netverb [options] -- <command>`` -- the shell caller's door.
 
@@ -362,9 +397,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--json', action='store_true', help='print the report as JSON on stdout')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    command = [word for word in args.command if word != '--']
-    if not command:
-        parser.error('no command given -- usage: python -m lab_commons.dev.netverb -- git fetch origin')
+    try:
+        command = spelled(args.command)
+    except NotANetworkVerb as refused:
+        emit(str(refused), err=True)
+        return 2
     report = run_network_verb(
         command, attempts=args.attempts, backoff_s=args.backoff, timeout=args.timeout, cwd=args.cwd
     )
