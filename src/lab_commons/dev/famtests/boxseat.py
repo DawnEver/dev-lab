@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import inspect
 import sys
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol, cast
 
 from lab_commons.dev.boxlock import BOX_POOL, BoxLock
 from lab_commons.dev.boxwait import PROGRESS_S, WAIT_S, hold_the_box, holders_line
@@ -77,6 +77,12 @@ HOLD_THE_BOX_PARAMETERS: Final[frozenset[str]] = frozenset({'stack', 'what', 'wa
 _THE_CALL: Final = 'hold_the_box('
 
 
+class _SeatModule(Protocol):
+    """The exact binding a verdict module must use, checked by object identity."""
+
+    hold_the_box: Callable[..., object]
+
+
 def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., Any]) -> None:
     """THE PARTICIPATION, read off the code this repo runs to get a verdict rather than off a comment.
 
@@ -100,7 +106,10 @@ def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., A
             f'about the code the repo RUNS; an unimportable entry point is a louder finding still.'
         )
         raise AssertionError(msg)
-    bound = vars(module).get('hold_the_box')
+    try:
+        bound = cast(_SeatModule, module).hold_the_box
+    except AttributeError:
+        bound = None
     if bound is not hold_the_box:
         msg = (
             f'{entry_point.__module__} bound {bound!r} as `hold_the_box`, not '

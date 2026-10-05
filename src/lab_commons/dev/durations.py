@@ -75,7 +75,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Final, NamedTuple, Protocol, runtime_checkable
 
 from lab_commons.dev import floors
 
@@ -174,6 +174,13 @@ class RunConfig(Protocol):
 
     def getoption(self, name: str) -> object:
         """The command-line option *name*, or a falsy value if it was not given."""
+
+
+@runtime_checkable
+class _WorkerConfig(Protocol):
+    """The worker-only input pytest-xdist attaches to its config, absent on the controller."""
+
+    workerinput: Mapping[str, str]
 
 
 class PluginManager(Protocol):
@@ -705,7 +712,7 @@ class Recorder:
         """
         config = session.config
         selector = str(config.getoption('-m') or '').strip() or 'all'
-        worker = vars(config).get('workerinput', {}).get('workerid')
+        worker = config.workerinput.get('workerid') if isinstance(config, _WorkerConfig) else None
         return write(
             self.root,
             (Row(nodeid=nodeid, seconds=value) for nodeid, value in self.seconds.items()),

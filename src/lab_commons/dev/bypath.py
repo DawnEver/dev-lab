@@ -62,7 +62,10 @@ def _is_this_file(module: ModuleType | None, resolved: Path) -> bool:
     """Whether *module* was loaded FROM *resolved*. A module with no ``__file__`` never is."""
     if module is None:
         return False
-    origin = vars(module).get('__file__')
+    try:
+        origin = module.__file__
+    except AttributeError:
+        return False
     if origin is None:
         return False
     try:

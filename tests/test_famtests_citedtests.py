@@ -9,6 +9,7 @@ these controls rather than a second copy agreeing with the first.
 from __future__ import annotations
 
 import re
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -227,7 +228,7 @@ def test_every_arm_binds_BOTH_sides_of_its_own_floor(arm, field: str) -> None:
     )
     with pytest.raises(floors.SlackFloor):
         arm(outgrown, floor=5, headroom=4)
-    assert field in vars(outgrown), 'the arm must judge the population this row names'
+    assert field in {declared.name for declared in fields(outgrown)}, 'the arm must judge the population this row names'
 
 
 def test_an_exemption_naming_a_deleted_file_is_refused_and_a_real_one_is_not(tmp_path: Path) -> None:

@@ -629,8 +629,17 @@ def test_the_module_declares_its_public_surface() -> None:
         'scan_files',
         'trailing_token',
     }
-    for name in units.__all__:
-        assert name in vars(units), f'{name} is exported and does not exist'
+    assert all(
+        value is not None
+        for value in (
+            units.SCANNED_SUFFIXES,
+            units.Scan,
+            units.Violation,
+            units.assert_registry_sane,
+            units.scan_files,
+            units.trailing_token,
+        )
+    )
 
 
 def _subtract_enclosing_scopes(text: str) -> tuple[units._Signature, ...]:

@@ -34,6 +34,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from typing import NamedTuple, Self
 
 from lab_commons.dev.logref import LogRef, stamp_line
 
@@ -67,8 +68,12 @@ class Outcome(Enum):
         return self is not Outcome.INCONCLUSIVE
 
 
-@dataclass(frozen=True, slots=True)
-class Selector:
+class _SelectorValues(NamedTuple):
+    spec: str
+    node_ids: tuple[str, ...]
+
+
+class Selector(_SelectorValues):
     """What the run was ASKED to cover, and what that expands to. Named, never counted.
 
     ``spec`` is what a human asked for (``'gate'``, ``'tests/unit/hamilton'``, a node id list) and
@@ -77,26 +82,37 @@ class Selector:
     records from a pin that read "2" while the table delivered one.
     """
 
-    spec: str
-    node_ids: tuple[str, ...]
+    __slots__ = ()
 
-    def __post_init__(self) -> None:
-        """Refuse a selector with no spec, which no reader could re-issue."""
-        if not self.spec.strip():
+    def __new__(cls, spec: str, node_ids: tuple[str, ...]) -> Self:
+        """Validate and normalize before constructing the immutable value."""
+        if not spec.strip():
             msg = 'a selector with no spec does not say what was asked for, so no reader can re-issue it.'
             raise ValueError(msg)
         # SORTED AND DEDUPLICATED HERE, so two calls that select the same set agree byte for byte:
         # a set has no order, and an expansion that inherited one would make an identical run
         # address differently for the sole reason that pytest enumerated in another order.
-        expanded = tuple(sorted(set(self.node_ids)))
+        expanded = tuple(sorted(set(node_ids)))
         if not expanded:
             msg = (
-                f'selector {self.spec!r} expands to nothing, so it cannot be part of a verdict. A '
+                f'selector {spec!r} expands to nothing, so it cannot be part of a verdict. A '
                 f'run that selected no test proved nothing, and "found nothing" must never be the '
                 f'same value as "found nothing wrong".'
             )
             raise ValueError(msg)
-        object.__setattr__(self, 'node_ids', expanded)
+        return super().__new__(cls, spec, expanded)
+
+    def __eq__(self, other: object) -> bool:
+        """Compare selector values, never an unrelated positional tuple."""
+        return isinstance(other, Selector) and self.spec == other.spec and self.node_ids == other.node_ids
+
+    def __ne__(self, other: object) -> bool:
+        """Keep inequality consistent with typed value equality."""
+        return not self == other
+
+    def __hash__(self) -> int:
+        """Hash the same normalized facts equality compares."""
+        return hash((self.spec, self.node_ids))
 
 
 @dataclass(frozen=True, slots=True)

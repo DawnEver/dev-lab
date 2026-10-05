@@ -44,6 +44,15 @@ class TestTheSelector:
         built = Selector(spec='x', node_ids=('b', 'a', 'b'))
         assert built.node_ids == ('a', 'b')
 
+    def test_normalization_preserves_immutable_value_semantics(self) -> None:
+        built = Selector('x', ('b', 'a', 'b'))
+        equivalent = Selector(spec='x', node_ids=('a', 'b'))
+        assert built == equivalent
+        assert hash(built) == hash(equivalent)
+        assert built != ('x', ('a', 'b'))
+        with pytest.raises(AttributeError):
+            built.node_ids = ('changed',)
+
 
 class TestTheProof:
     def test_a_covered_run_is_complete(self, selector) -> None:
