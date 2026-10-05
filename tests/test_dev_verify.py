@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -417,6 +419,86 @@ class TestTheTee:
 
 
 class TestThePlantedControl:
+    @pytest.mark.parametrize(
+        ('selection', 'output', 'expected'),
+        [
+            (
+                ('tests/test_selected.py::test_a', 'tests/test_selected.py::test_b', 'tests/test_selected.py::test_c'),
+                '3 passed in 0.1s\n',
+                Outcome.PASS,
+            ),
+            (
+                ('tests/test_selected.py::test_a',),
+                'SKIPPED [1] tests/test_selected.py:12: unavailable\n20 passed, 1 skipped in 0.1s\n',
+                Outcome.INCONCLUSIVE,
+            ),
+            ((), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
+            (('-v',), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
+            (('-k', 'selected'), '3 passed in 0.1s\n', Outcome.PASS),
+            (('-m', 'selected'), '3 passed in 0.1s\n', Outcome.PASS),
+            (('--deselect', 'tests/test_other.py'), '3 passed in 0.1s\n', Outcome.PASS),
+            (('--deselect=tests/test_other.py',), '3 passed in 0.1s\n', Outcome.PASS),
+            (('--unknown-selection',), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
+        ],
+        ids=[
+            'three-nodes-not-a-global-census',
+            'scoped-undeclared-skip',
+            'full-stale',
+            'verbose-is-still-full',
+            'keyword-scope',
+            'marker-scope',
+            'deselect-scope',
+            'inline-deselect-scope',
+            'unknown-scope-refuses',
+        ],
+    )
+    def test_verify_judges_skip_retirement_only_from_a_complete_census(
+        self, tmp_path, monkeypatch, selection, output, expected
+    ) -> None:
+        """Drive the real runner/parser boundary; only process execution is a recorded-output double.
+
+        The three-node selection reproduces the WDG 2026-10-05 raw-three-pass refusal. Another
+        file's declaration cannot be called retired by a run that never selected it. Conversely,
+        narrowing the selection cannot admit an observed undeclared skip, and a display flag
+        cannot disable the full-suite reverse ratchet.
+        """
+        subprocess.run(
+            [shutil.which('git') or 'git', 'init', '-q', str(tmp_path)],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+        (tmp_path / 'pyproject.toml').write_text(
+            '[tool.lab_commons.verify]\nallowed_skips = ["tests/test_other.py"]\n', encoding='utf-8'
+        )
+        commands = []
+
+        def no_seat(_stack, _what, **_kwargs: object) -> None:
+            return None
+
+        def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
+            assert cwd == tmp_path
+            commands.append(tuple(command))
+            if 'pytest' in command:
+                assert extra_env is not None
+            text = output if 'pytest' in command else 'All checks passed!\n'
+            handle.write(text)
+            handle.flush()
+            return 0
+
+        monkeypatch.setattr(verify, 'hold_the_box', no_seat)
+        monkeypatch.setattr(verify, '_tee', recorded_step)
+        verdict = verify.run_verify(tmp_path, selection)
+        assert commands[-1] == (sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *selection)
+        assert verdict.selector.spec == ' '.join(('verify', *selection))
+        assert verdict.result.outcome is expected
+        if selection == ('--unknown-selection',):
+            assert 'cannot establish skip census scope' in verdict.result.reason
+        elif selection and selection != ('-v',) and expected is Outcome.INCONCLUSIVE:
+            assert 'not declared' in verdict.result.reason
+        if not selection or selection == ('-v',):
+            assert 'NOT skipped' in verdict.result.reason
+
     def test_a_planted_interruption_flips_a_clean_text(self) -> None:
         """THE CONTROL, and it has both halves: the guard fires on the plant and not on the clean text.
 

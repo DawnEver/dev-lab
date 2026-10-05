@@ -21,8 +21,8 @@ project may DECLARE the skips it is living with, in its own ``pyproject.toml``::
 and both directions refuse:
 
 * a skip OBSERVED and not declared truncates the run, NAMED -- unchanged from the strict reading;
-* a skip DECLARED and not observed truncates it too. An allowance nothing uses is a hole that reads
-  as a decision, and without this half the list only ever grows.
+* in a complete suite census, a skip DECLARED and not observed truncates it too. An allowance
+  nothing uses is a hole that reads as a decision, and without this half the list only ever grows.
 
 The default is an EMPTY list, so a project that declares nothing behaves exactly as it did before
 the allowance existed. That is the property that makes this strictly stronger than the strict
@@ -178,7 +178,9 @@ def read_ruff(name: str, returncode: int) -> StepReport:
     )
 
 
-def _skip_shortfall(counts: dict[str, int], text: str, allowed: tuple[str, ...]) -> tuple[str, ...]:
+def _skip_shortfall(
+    counts: dict[str, int], text: str, allowed: tuple[str, ...], *, complete_skip_census: bool
+) -> tuple[str, ...]:
     r"""The skip ratchet, BOTH directions, plus the ceiling and the naming floor.
 
     Pure over its arguments so the planted controls drive THIS function rather than a re-implemented
@@ -208,7 +210,11 @@ def _skip_shortfall(counts: dict[str, int], text: str, allowed: tuple[str, ...])
             f'skipped and not declared in [tool.lab_commons.verify] allowed_skips: {", ".join(undeclared)}. '
             f'A skip is a selected test that reported nothing; a known failure is an xfail with its residual.'
         )
-    stale = sorted(prefix for prefix in allowed if not any(site.startswith(prefix) for site in observed))
+    stale = (
+        sorted(prefix for prefix in allowed if not any(site.startswith(prefix) for site in observed))
+        if complete_skip_census
+        else []
+    )
     if stale:
         reasons.append(
             f'declared in allowed_skips and NOT skipped by this run: {", ".join(stale)}. Delete the '
@@ -246,7 +252,9 @@ def _summary_shortfall(counts: dict[str, int], text: str, failures: tuple[str, .
     return tuple(reasons)
 
 
-def read_pytest(text: str, *, returncode: int, allowed_skips: tuple[str, ...] = ()) -> StepReport:
+def read_pytest(
+    text: str, *, returncode: int, allowed_skips: tuple[str, ...] = (), complete_skip_census: bool = True
+) -> StepReport:
     """The report for the pytest step, from what it PRINTED and what it exited with.
 
     THE ORDER OF THE QUESTIONS IS THE DESIGN. It does not ask "did something pass"; it asks what
@@ -254,6 +262,9 @@ def read_pytest(text: str, *, returncode: int, allowed_skips: tuple[str, ...] = 
     is what catches the measured ``consumer_c`` case, where a clean-looking ``307 passed`` line and
     ``!!!! Interrupted: 3 errors during collection !!!!`` were in the SAME output -- a parser
     looking for the good news finds it, and the good news was about a run that executed nothing.
+
+    ``complete_skip_census=False`` means the selector cannot judge another test's allowance
+    retired. Observed skips still require declarations, named counts and the same skip ceiling.
 
     Every reason below is one this parser can see in the text or the exit status, and each is named
     in the words a remedy would be written in:
@@ -286,7 +297,7 @@ def read_pytest(text: str, *, returncode: int, allowed_skips: tuple[str, ...] = 
         truncated.append('pytest printed no parsable summary line, so there is nothing to read a result out of')
     else:
         truncated.extend(_summary_shortfall(counts, text, failures))
-        truncated.extend(_skip_shortfall(counts, text, allowed_skips))
+        truncated.extend(_skip_shortfall(counts, text, allowed_skips, complete_skip_census=complete_skip_census))
     if returncode in _PYTEST_EXITS:
         truncated.append(_PYTEST_EXITS[returncode])
     elif returncode not in (0, 1):

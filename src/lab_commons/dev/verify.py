@@ -298,6 +298,42 @@ def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec:
     return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
 
 
+def _skip_census_scope(arguments: tuple[str, ...]) -> tuple[bool, tuple[str, ...]]:
+    """Only known presentation flags preserve a full-suite skip census.
+
+    This is not a pytest parser: it recognises selection and the few display-only flags whose
+    semantics establish this proof. Unknown options refuse a census claim instead of silently
+    disabling the reverse ratchet. The original arguments still name the verdict's selector.
+    """
+    complete = True
+    unknown: list[str] = []
+    arguments_left = iter(arguments)
+    for argument in arguments_left:
+        if argument in ('-k', '-m', '--deselect'):
+            complete = False
+            if next(arguments_left, None) is None:
+                unknown.append(argument)
+        elif argument.startswith(('--deselect=', '-k=', '-m=')) or not argument.startswith('-'):
+            complete = False
+        elif argument in ('--verbose', '--quiet', '-s') or (
+            argument.startswith('-') and len(argument) > 1 and set(argument[1:]) <= {'v', 'q'}
+        ):
+            continue
+        else:
+            unknown.append(argument)
+    reasons = (
+        (
+            (
+                f'cannot establish skip census scope for pytest option(s) {", ".join(unknown)}; '
+                'use a supported selector or a full-suite invocation'
+            ),
+        )
+        if unknown
+        else ()
+    )
+    return complete and not unknown, reasons
+
+
 def run_verify(
     root: Path,
     pytest_args: tuple[str, ...] = (),
@@ -355,7 +391,18 @@ def run_verify(
         command = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *pytest_args]
         code = _tee(command, cwd=root, handle=handle, extra_env=stamp)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
-    reports.append(distillate.annotate(read_pytest(distillate.text, returncode=code, allowed_skips=allowed)))
+    complete_census, scope_refusal = _skip_census_scope(pytest_args)
+    report = read_pytest(distillate.text, returncode=code, allowed_skips=allowed, complete_skip_census=complete_census)
+    reports.append(
+        distillate.annotate(
+            StepReport(
+                name=report.name,
+                reported=report.reported,
+                failures=report.failures,
+                truncated=(*report.truncated, *scope_refusal),
+            )
+        )
+    )
     try:
         log = LogRef.of(path)
     except UnverifiableLog as exc:
