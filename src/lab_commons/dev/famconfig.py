@@ -220,6 +220,7 @@ BASES: Final[dict[str, Base]] = {
     '.pre-commit-config.yaml': Base('.pre-commit-config.yaml', _BASE_LINES['.pre-commit-config.yaml'], RENDERED),
     'Makefile': Base('Makefile', _BASE_LINES['Makefile'], REQUIRED),
     '.gitattributes': Base('.gitattributes', _BASE_LINES['.gitattributes'], RENDERED),
+    '.rgignore': Base('.rgignore', _BASE_LINES['.rgignore'], RENDERED),
 }
 
 

@@ -173,7 +173,7 @@ def test_a_heredoc_consumed_by_a_sink_is_data_and_is_not_denied(rules: Path) -> 
 def test_a_command_that_merely_contains_a_denied_word_is_not_denied(rules: Path) -> None:
     """THE MEASURED FALSE POSITIVE. These run grep, git-log and git-commit -- not the named verb."""
     for command in (
-        'grep -rn "pytest" src',
+        'grep -n "pytest" src/a.py',
         'git log --oneline -- tests/test_dev_verify.py',
         'git commit -m "mention a push in prose"',
         'echo "git push origin main"',

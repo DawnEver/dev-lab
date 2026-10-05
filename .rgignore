@@ -1,0 +1,5 @@
+# Rendered by lab_commons.dev.famconfig from the family base for .rgignore.
+# Hand edits RED. The base is data in lab_commons.dev._famconfig_rows;
+# this repo's own lines are its declared delta. Change one, re-render, commit.
+
+attic/

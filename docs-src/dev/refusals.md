@@ -79,6 +79,11 @@ When a command targets another repo, the engine adds one header line naming that
 - **Why it is refused.** a bare `python`/`py`, `uv run` or `uvx` runs an interpreter somebody else chose -- the PATH`s, or uv`s managed one -- not this checkout`s venv, and `uv run` may sync the SHARED environment first. The allow list names only the venv interpreter, so the reflex spelling is also the one that stalls on a permission prompt (user ruling 2026-10-03).
 - **The exit.** Run the checkout's own venv interpreter: .venv/Scripts/python.exe <args> on Windows, .venv/bin/python <args> on POSIX (settings.json allows Bash(.venv/*/python* *)). In a worktree with no .venv of its own, run the MAIN checkout's: <main>/.venv/Scripts/python.exe <args> -- `git rev-parse --path-format=absolute --git-common-dir` prints <main>/.git. A repo CLI the repo declares (its own opening) stays allowed.
 
+## RECURSIVE-GREP
+
+- **Why it is refused.** `grep -r` walks the filesystem, so it descends into every git-ignored tree a checkout carries: `.venv`, `output/`, `target/`, nested worktrees. MEASURED 2026-10-05 in one consumer repo: `grep -r` over the repo did not finish in 4 min, `git grep -l` took 0.28 s, and about 66k git-ignored files were walked. A grep on a named file, a grep reading a pipe and `git grep` never walk, so they are permitted; the row keys on the recursion flag (`-r`, `-R`, a cluster such as `-rn`, `--recursive`).
+- **The exit.** Search the tracked files: git grep -n <pattern> [-- <paths>] (add `--untracked` for new files), or the agent's built-in Grep tool, which honours `.gitignore` and the family `.rgignore`.
+
 ## Cross-repo refusals
 
 When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `lab_commons.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.lab_commons.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.

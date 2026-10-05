@@ -58,6 +58,6 @@ BARE_INTERPRETER: dict[str, object] = {
         f'C:/work/repo/{_NT} -V',
         'pythonic-tool --help',
         'git commit -m "run python here"',
-        'grep -rn "uv run" src',
+        'grep -n "uv run" src/a.py',
     ),
 }

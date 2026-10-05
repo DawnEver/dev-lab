@@ -80,6 +80,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
     for row in (
         _m('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta'),
         _m('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta'),
+        _m('.rgignore', 'famconfig RENDERED: what ripgrep and the agent Grep tool skip (attic/), plus the repo Delta'),
         _m('.pre-commit-config.yaml', 'famconfig RENDERED: the hook-id core, plus the repo Delta'),
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),

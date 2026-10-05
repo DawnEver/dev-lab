@@ -420,6 +420,13 @@ MAKEFILE_RESIDUAL_SIGNALS: Final[tuple[str, ...]] = (
 #: adopting it renormalises every tracked file, which is a repo's decision, not the family's.
 GITATTRIBUTES_BASE: Final[tuple[str, ...]] = ('*.sh text eol=lf',)
 
+# ---------------------------------------------------------------------------- .rgignore
+
+#: What ripgrep -- and every agent's built-in Grep tool on top of it -- skips beyond .gitignore. ONE
+#: LINE (added 2026-10-05): `attic/` is tracked, read-only archived code, and a search hit in it is a
+#: hit on code nothing runs. `.claude/memory` is deliberately NOT here: it stays searchable.
+RGIGNORE_BASE: Final[tuple[str, ...]] = ('attic/',)
+
 #: Every base, by artefact. The render MODE is the machinery's word and is attached there; what this
 #: table owns is WHICH lines, and nothing else.
 BASES: Final[dict[str, tuple[str, ...]]] = {
@@ -427,4 +434,5 @@ BASES: Final[dict[str, tuple[str, ...]]] = {
     '.pre-commit-config.yaml': PRECOMMIT_BASE,
     'Makefile': MAKEFILE_BASE,
     '.gitattributes': GITATTRIBUTES_BASE,
+    '.rgignore': RGIGNORE_BASE,
 }

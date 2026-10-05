@@ -82,6 +82,7 @@ __all__ = [
     'PRECOMMIT_DELTA',
     'PRECOMMIT_HOOK_FLOOR',
     'REPO',
+    'RGIGNORE',
 ]
 
 #: How this repo names itself in a rendered file's drop and anchor comments.
@@ -161,12 +162,17 @@ GITIGNORE_DELTA: Final = Delta(repo=REPO, added=('*.py[cod]',), dropped={}, ceil
 GITATTRIBUTES: Final = '.gitattributes'
 GITATTRIBUTES_DELTA: Final = Delta(repo=REPO, added=(), dropped={}, ceiling=0)
 
+#: `.rgignore` is the base and nothing else.
+RGIGNORE: Final = '.rgignore'
+RGIGNORE_DELTA: Final = Delta(repo=REPO, added=(), dropped={}, ceiling=0)
+
 #: Every artefact this repo declares a delta against -- every one of the kit's bases.
 DELTAS: Final[dict[str, Delta]] = {
     PRECOMMIT: PRECOMMIT_DELTA,
     MAKEFILE: MAKEFILE_DELTA,
     GITIGNORE: GITIGNORE_DELTA,
     GITATTRIBUTES: GITATTRIBUTES_DELTA,
+    RGIGNORE: RGIGNORE_DELTA,
 }
 
 #: The git hook files this repo INSTALLS, which is the half a configuration cannot answer for itself.

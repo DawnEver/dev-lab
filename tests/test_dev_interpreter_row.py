@@ -62,8 +62,8 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
         'git commit -m "uv run python is refused now"',
         # MEASURED 2026-10-03: the `\|` inside a quoted grep PATTERN was split as a pipe, and the
         # half after it read as a `uv run` command. A quoted argument is never a command position.
-        'grep -rn "bump-api-version\\|uv run --no-sync" a.yaml b.py',
-        "grep -rn 'x|uv run python' src",
+        'grep -n "bump-api-version\\|uv run --no-sync" a.yaml b.py',
+        "grep -n 'x|uv run python' src/a.py",
         'echo "a; python x.py"',
     ],
 )

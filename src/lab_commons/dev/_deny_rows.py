@@ -54,8 +54,10 @@ sharper pattern with the near-miss added to ``permits`` -- never a narrower clai
 from __future__ import annotations
 
 from lab_commons.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
+from lab_commons.dev._deny_grep_row import RECURSIVE_GREP
 from lab_commons.dev._deny_interpreter_row import BARE_INTERPRETER
 from lab_commons.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
+from lab_commons.dev.netverb import NETWORK_VERBS
 from lab_commons.dev.worktreeplace import WORKTREES_REL
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
@@ -85,7 +87,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             # not a dropped one: it is now proved through the file the consuming repo runs.
         ),
         'permits': (
-            'grep -rn "pytest" src',
+            'grep -n "pytest" src/a.py',
             f'{VENV_PYTHONS[0]} -m lab_commons.dev.verify',
             'git log --oneline -- tests/test_dev_verify.py',
         ),
@@ -127,7 +129,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'GIT-NETWORK-VERB',
-        'pattern': r'\bgit\s+(?:push|fetch|pull|clone|ls-remote)\b',
+        'pattern': rf'\bgit\s+(?:{"|".join(NETWORK_VERBS)})\b',
         'matches': 'command',
         'hazard': 'one transient forge failure on a network verb reads as '
         '"blocked"; the wrapper retries, then diagnoses.',
@@ -245,4 +247,5 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     WORKTREES_STAY_INSIDE,
     BARE_INTERPRETER,
+    RECURSIVE_GREP,
 )
