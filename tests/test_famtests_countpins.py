@@ -262,8 +262,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-03, HOURS LATER AND BY THE SAME ARM: 416 constants, after the supervisor's
 #: notify protocol and its suite landed. 416 against 325 is 91 clear -- one past the same 90 -- so
 #: it said so, which is the third time in two days that this pair has done the job it was priced for
-#: instead of absorbing a growth. Re-priced ~80%: 350 (438 on 2026-10-04). Headroom unchanged, as always.
-CONSTANT_FLOOR = 350
+#: instead of absorbing a growth. Re-priced ~80%: 355 (443 on 2026-10-05). Headroom unchanged, as always.
+CONSTANT_FLOOR = 355
 CONSTANT_HEADROOM = 90
 
 

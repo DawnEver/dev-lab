@@ -140,7 +140,7 @@ def test_a_planted_remedyless_rule_is_refused() -> None:
     with pytest.raises(UnremediedRule, match='with no `needs` to fill it'):
         DenyRule(id='PLANTED', pattern=r'x', hazard='h', remedy=f'run {PLACEHOLDER}')
     clean = DenyRule(id='PLANTED', pattern=r'x', hazard='h', remedy=f'run {PLACEHOLDER}', needs='a-tool')
-    assert clean.reason(Remedy('a-tool', 'the-tool --go')) == 'h run the-tool --go'
+    assert clean.reason(Remedy('a-tool', 'the-tool --go')) == 'PLANTED: h\nrun the-tool --go'
 
 
 def test_a_planted_uncompilable_pattern_is_refused() -> None:

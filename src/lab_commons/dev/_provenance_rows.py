@@ -147,6 +147,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'branchset': ('original',),
     # ORIGINAL: the door table and its two renderings are new (AUTO-MODE-RUNS-THE-DOORS).
     'autodoors': ('original',),
+    # ORIGINAL: the injected-text budget and its consumer body are new (INJECTED-TEXT-IS-PROGRESSIVE).
+    'disclosure': ('original',),
+    'injectedtext': ('original',),
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
