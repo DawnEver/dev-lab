@@ -25,7 +25,7 @@ _POSIX = '/'.join(VENV_LAYOUTS['posix'])
 #: The exit, spelled from the owner: the concrete interpreter per platform, and the worktree fallback.
 INTERPRETER_REMEDY = (
     f"Run the checkout's venv interpreter: {_NT} <args> ({_POSIX} on POSIX); in a worktree without one, "
-    f"<main>/{_NT} <args>. Allowed: {INTERPRETER_ALLOW_ENTRY}; a repo-declared CLI stays allowed."
+    f'<main>/{_NT} <args>. Allowed: {INTERPRETER_ALLOW_ENTRY}; a repo-declared CLI stays allowed.'
 )
 
 BARE_INTERPRETER: dict[str, object] = {
@@ -35,7 +35,8 @@ BARE_INTERPRETER: dict[str, object] = {
         r'|(?:python(?:3(?:\.\d+)?)?|py)(?:\.exe)?(?![\w./\\-])(?!\s+-m\s+pytest\b))'
     ),
     'matches': 'command',
-    'hazard': 'a bare python/py, `uv run` or `uvx` runs an interpreter somebody else chose, and `uv run` may sync the shared environment.',
+    'hazard': 'a bare python/py, `uv run` or `uvx` runs an interpreter somebody '
+    'else chose, and `uv run` may sync the shared environment.',
     'remedy': INTERPRETER_REMEDY,
     'needs': None,
     'refuses': (

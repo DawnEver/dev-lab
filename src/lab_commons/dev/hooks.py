@@ -272,7 +272,9 @@ def _build(rows: Iterable[Mapping[str, Any]]) -> tuple[DenyRule, ...]:
 #: THE REGISTRY. Rows are the number: nothing here states a count, because a count is blind to which
 #: row moved and the honest-looking repair when it disagrees is to edit the digit.
 #: Each universal row points at its own section of the refusals page, derived from its ID.
-DENY_RULES: Final[tuple[DenyRule, ...]] = tuple(replace(rule, details=details_for(rule.id)) for rule in _build(DENY_ROWS))
+DENY_RULES: Final[tuple[DenyRule, ...]] = tuple(
+    replace(rule, details=details_for(rule.id)) for rule in _build(DENY_ROWS)
+)
 
 
 def rules_by_id(rules: Sequence[DenyRule]) -> dict[str, DenyRule]:

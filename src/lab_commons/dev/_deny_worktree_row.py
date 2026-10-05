@@ -58,7 +58,8 @@ WORKTREES_STAY_INSIDE: dict[str, object] = {
     ),
     'hazard': 'a checkout outside its repository is outside every scan, ignore rule and search that repository runs.',
     'remedy': (
-        f'Put it inside: git worktree add --detach {WORKTREES_REL}/<name> <sha> (with -C, <repo>/{WORKTREES_REL}/<name>); '
+        f'Put it inside: git worktree add --detach {WORKTREES_REL}/<name> '
+        f'<sha> (with -C, <repo>/{WORKTREES_REL}/<name>); '
         f'relocate with git worktree move <tree> <repo>/{WORKTREES_REL}/<name>.'
     ),
     'needs': None,

@@ -56,7 +56,10 @@ def test_a_pointer_to_a_missing_anchor_is_unresolved(tmp_path: Path) -> None:
     """PLANTED CONTROL for the resolver: a real page with the wrong heading is a dead hop."""
     (tmp_path / 'docs-src' / 'dev').mkdir(parents=True)
     (tmp_path / disclosure.REFUSALS_DOC).write_text('# Refusals\n\n## GIT-STASH\n', encoding='utf-8')
-    texts = {'ok': 'X: y\nz\n' + disclosure.details_for('GIT-STASH'), 'bad': 'X: y\nz\n' + disclosure.details_for('NOPE')}
+    texts = {
+        'ok': 'X: y\nz\n' + disclosure.details_for('GIT-STASH'),
+        'bad': 'X: y\nz\n' + disclosure.details_for('NOPE'),
+    }
     assert disclosure.unresolved_pointers(texts, tmp_path) == ['bad']
 
 

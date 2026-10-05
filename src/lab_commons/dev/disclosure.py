@@ -100,8 +100,7 @@ def unresolved_pointers(texts: dict[str, str], root: Path) -> list[str]:
     for key, text in texts.items():
         target = pointer(text)
         page = root / target[0] if target else None
-        if target is None or page is None or not page.is_file():
-            bad.append(key)
-        elif target[1] not in anchors(page.read_text(encoding='utf-8')):
+        readable = page is not None and page.is_file()
+        if not readable or target[1] not in anchors(page.read_text(encoding='utf-8')):
             bad.append(key)
     return bad

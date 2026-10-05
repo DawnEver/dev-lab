@@ -68,7 +68,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         # hand-anchored rules drifted apart in the first place. `uv run pytest` stays in `refuses`.
         'pattern': r'(?:\S*python[\w.]*\s+-m\s+pytest\b|pytest\b)',
         'matches': 'command',
-        'hazard': 'a hand-written test line has no verdict: its exit code cannot tell a covered run from a dead or truncated one.',
+        'hazard': 'a hand-written test line has no verdict: its exit code '
+        'cannot tell a covered run from a dead or truncated one.',
         'remedy': 'Re-issue through the entry point that produces a verdict: {remedy}',
         'needs': 'verdict-entry-point',
         'refuses': (
@@ -99,7 +100,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'pattern': r'\bcommit\b[^\n]*\s--amend\b',
         'matches': 'argument',
         'hazard': '`--amend` rewrites HEAD, and on a shared lane HEAD may be another agent`s commit.',
-        'remedy': 'Land the correction FORWARD: read HEAD with git log -1 --format="%h %an %s", then commit the fix on top.',
+        'remedy': 'Land the correction FORWARD: read HEAD with git log -1 '
+        '--format="%h %an %s", then commit the fix on top.',
         # `needs` is None after checking what a repo could possibly supply, and the answer is nothing:
         # `git commit` and `git log` exist in every checkout, and a follow-up convention is prose
         # rather than a file. Giving this row a `needs` would DROP it from every repo that has no
@@ -127,7 +129,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'GIT-NETWORK-VERB',
         'pattern': r'\bgit\s+(?:push|fetch|pull|clone|ls-remote)\b',
         'matches': 'command',
-        'hazard': 'one transient forge failure on a network verb reads as "blocked"; the wrapper retries, then diagnoses.',
+        'hazard': 'one transient forge failure on a network verb reads as '
+        '"blocked"; the wrapper retries, then diagnoses.',
         'remedy': 'Re-issue through the retry wrapper: {remedy}',
         'needs': 'retry-wrapper',
         'refuses': (
@@ -160,7 +163,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'PUSH-FORCE',
         'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b)',
         'matches': 'argument',
-        'hazard': 'rewriting a shared ref invalidates every verdict taken against the old tree; --force-with-lease included.',
+        'hazard': 'rewriting a shared ref invalidates every verdict taken '
+        'against the old tree; --force-with-lease included.',
         'remedy': 'Land the change FORWARD as a new commit on your own lane, then push without the force flag.',
         'needs': None,
         'refuses': (
@@ -215,7 +219,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'pattern': BASE_IS_EXPLICIT_PATTERN,
         'matches': 'command',
         'allow': BASE_IS_EXPLICIT_ALLOW,
-        'hazard': '`git worktree add` with no commit-ish takes the current HEAD, which on a shared checkout is rarely the tree you meant.',
+        'hazard': '`git worktree add` with no commit-ish takes the current HEAD, '
+        'which on a shared checkout is rarely the tree you meant.',
         'remedy': f'Name the commit the tree starts from: git worktree add --detach {WORKTREES_REL}/<name> <sha>',
         'needs': None,
         'refuses': (
