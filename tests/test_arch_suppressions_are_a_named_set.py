@@ -264,11 +264,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'tests/**',
     ): 'a test that cannot read a private member cannot pin a private invariant',
     (
-        'src/lab_commons/dev/dep.py',
-        'PLW0108',
-        'key: Callable[[], str] = field(default=lambda: current_env_key())',
-    ): 'the lambda is a FORWARD reference: current_env_key is defined below this dataclass',
-    (
         'src/lab_commons/dev/quantity_values.py',
         'BLE001',
         'except Exception:',

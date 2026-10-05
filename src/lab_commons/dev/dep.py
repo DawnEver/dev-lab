@@ -21,10 +21,11 @@ Measured 2026-09-16, it failed in BOTH directions at once, from ONE cause:
 
 The cause of both is the same: the question is about STATE -- which environment is about to move, and
 whether a verdict is in flight for THAT environment -- and no amount of pattern is a measurement. So
-step 1 here is ``sys.prefix`` of the INVOKING interpreter, never a parsed path and never a repo name.
-That is what makes the sibling-repo false positive structurally impossible rather than merely fixed:
-a call made from another repo's interpreter carries that repo's prefix, so it is correct by
-construction and no later scope bug can reintroduce the failure.
+the door identifies the TARGET interpreter (or the named bootstrap prefix), never the invoking
+interpreter's environment by accident. Verdicts and mutations hold the same environment-scoped
+broker seat for their whole operation; the box CPU seat is a separate resource. A mutation of B
+therefore remains permitted while a verdict runs in A, and neither direction of the start race
+can overlap a mutation and a verdict in one environment.
 
 THE TWO-LAYER SHAPE THIS LEAVES BEHIND. PREVENT where prevention is cheap and decidable (the lock),
 DETECT where prevention is impossible (the key). An unenumerated spelling that dodges any remaining
@@ -38,14 +39,11 @@ all" -- there, resolving is the hazard. For genuine dependency work resolving is
 :attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behaviour available for
 a caller whose subject is a local artefact.
 
-THE PORT IS CUT AT WHAT ACTUALLY DIFFERS PER REPO, and the cut is two of four things rather than
-four. The prefix is MEASURED here, identically everywhere. The key is COMPUTED here, identically
-everywhere, because :mod:`lab_commons.dev.envkey` is a function of the interpreter's own
-environment and of nothing repo-shaped. What is left -- where exclusion is RECORDED, and where
-verdicts are STORED -- is genuinely per repo, and those are the two callables :class:`Port` takes.
-A repo that supplies neither (consumer-c today) still gets steps 1 and 3; steps 2 and 4 then degrade
-HONESTLY, with :data:`LOCK_UNDECLARED` / :data:`NO_ANCHORS_DECLARED` rendered in the report. A silent
-skip is the vacuous-green shape this family refuses, so the gap is printed rather than assumed.
+THE PORT NAMES PROJECT-OWNED VERDICT ANCHORS and an optional additional guard for legacy runners.
+The shared EnvLock always excludes cooperating verdicts and mutations in the target environment.
+Missing anchor declarations and missing supplementary adapters are reported distinctly; neither
+changes the shared exclusion. Target snapshots use the authoritative envkey reader in the target
+interpreter, including a new environment that cannot import lab_commons yet.
 
 THE ORDERING ASYMMETRY IS INHERITED AND IS WHAT MAKES A CRASH SAFE: the lock is checked BEFORE the
 change and the anchors are retired AFTER it, so a crash in between leaves anchors that a later
@@ -59,17 +57,24 @@ failure exactly as it does on a success. The claim is then MEASURED instead of a
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import json
+import os
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.dev import _dep_project
 from lab_commons.dev.envkey import env_key, env_manifest
+from lab_commons.dev.envlock import EnvLock
+from lab_commons.log import emit
+from lab_commons.resources import Exhausted
 
 __all__ = [
     'CHILD_WALL_S',
@@ -82,19 +87,17 @@ __all__ = [
     'Version',
     'current_env_key',
     'has_pip',
+    'main',
     'mutate',
     'pip_argv',
     'refuse_if_locked',
     'retire_anchors',
 ]
 
-#: What the report says when a repo supplies no lock adapter. A SENTENCE rather than a silence: H1
-#: is unguarded in that repo, and the reader has to be told which half of the door they got.
+#: A missing supplementary guard does not repeal the shared target-environment exclusion.
 LOCK_UNDECLARED: Final = (
-    'NO LOCK DECLARED: this repo supplies no exclusion adapter, so H1 (a mutation DURING a verdict '
-    'run) is UNGUARDED here -- it is not absent, it is unchecked. Remedy: pass Port(holders=...) '
-    'naming whatever this repo uses to serialise its runs, or run this only when no verdict is in '
-    'flight.'
+    'NO LOCK DECLARED BY REPO: shared EnvLock exclusion remains enforced. No additional adapter '
+    'is declared for legacy runners that do not hold the shared environment seat.'
 )
 
 #: The same, for the other half. A moved key with nowhere to remedy it is still a moved key.
@@ -161,21 +164,18 @@ class Version(Enum):
 class Port:
     """ONE repo's answers to the two questions that are not measurable from here.
 
-    *holders* answers "who is running a verdict in this environment right now", and ``None`` means
-    the repo declares no lock AT ALL -- which is a different fact from "nobody holds it" and is
-    reported as :data:`LOCK_UNDECLARED` rather than treated as free. *anchor_paths* answers "which
-    files record a verdict about this environment", with the same three-sided distinction: ``None``
-    is undeclared, ``()`` is declared and empty.
+    *holders* optionally guards legacy verdict runners in the invoking environment, in addition
+    to the always-held shared environment seat. *anchor_paths* names verdicts owned by the target
+    project: None is undeclared, () is declared and empty.
 
-    *key* has a DEFAULT, and that is the design rather than a convenience: ``env_key`` is a function
-    of the interpreter's own installed distributions, so every repo computes it identically and no
-    adapter is needed for the half of H2 that does the DETECTING.
+    *key* is an optional injected reader. Otherwise the authoritative environment manifest is
+    measured in the target interpreter, not in whichever interpreter bootstrapped it.
     """
 
     name: str
     holders: Callable[[], Sequence[str]] | None = None
     anchor_paths: Callable[[], Sequence[Path]] | None = None
-    key: Callable[[], str] = field(default=lambda: current_env_key())  # noqa: PLW0108 -- defined below
+    key: Callable[[], str] | None = None
 
     def lock_holders(self) -> tuple[str, ...] | None:
         """Live holders, or ``None`` when this repo declares no lock."""
@@ -185,9 +185,9 @@ class Port:
         """Declared verdict anchors, or ``None`` when this repo declares none."""
         return None if self.anchor_paths is None else tuple(self.anchor_paths())
 
-    def env_key(self) -> str:
+    def env_key(self, python: str | None = None) -> str:
         """The key of the environment as it is RIGHT NOW -- called once before and once after."""
-        return self.key()
+        return self.key() if self.key is not None else _snapshot(python)[1]
 
 
 def current_env_key() -> str:
@@ -252,7 +252,7 @@ def pip_argv(
     pip: Callable[[str], bool] = has_pip,
     uv: str | None = None,
 ) -> tuple[str, ...]:
-    """The command that performs the change, into the INVOKING interpreter's environment.
+    """The command that performs the change, into the explicit TARGET interpreter's environment.
 
     ``sys.executable -m pip`` rather than a bare ``pip`` on ``PATH``: the door's whole claim is about
     the environment it measured, and a ``pip`` resolved from ``PATH`` can belong to a different one.
@@ -296,7 +296,10 @@ class Report:
 
     def render(self) -> str:
         """The lines a caller prints. Every gap is rendered, because a silent skip is a vacuous green."""
-        verb = 'would install' if self.returncode is None else 'installed'
+        if len(self.argv) > 1 and self.argv[1] == 'lock':
+            verb = 'would resolve' if self.returncode is None else 'resolved'
+        else:
+            verb = 'would install' if self.returncode is None else 'installed'
         lines = [
             f'{self.repo}: {verb} into {self.prefix}',
             f'  command: {" ".join(self.argv)}',
@@ -320,6 +323,7 @@ def mutate(
     run: Callable[..., Any] = subprocess.run,
     dry_run: bool = False,
     timeout: float = CHILD_WALL_S,
+    python: str | None = None,
 ) -> Report:
     """THE DOOR. Measure the environment, refuse a live verdict, change it, retire what it invalidated.
 
@@ -349,16 +353,121 @@ def mutate(
             'this door could decide. Name the distributions to install, or make no call.'
         )
         raise ValueError(msg)
-    refuse_if_locked(port)
+    prefix = sys.prefix if python is None else _snapshot(python)[0]
+    argv = pip_argv(requirements, mode=mode, version=version, python=python)
+    return _change(argv, port=port, prefix=prefix, python=python, run=run, dry_run=dry_run, timeout=timeout)
+
+
+def _snapshot(python: str | None) -> tuple[str, str]:
+    """Read the target with stdlib only; an empty venv need not import lab_commons."""
+    if python is None:
+        return sys.prefix, current_env_key()
+    script = (
+        'import json,runpy,sys; '
+        'm=runpy.run_path(sys.argv[1]); '
+        'print(json.dumps([sys.prefix,m["env_key"](m["env_manifest"]())]))'
+    )
+    completed = subprocess.run(
+        [python, '-I', '-c', script, str(Path(__file__).with_name('envkey.py'))],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        timeout=60,
+    )
+    prefix, key = json.loads(completed.stdout)
+    return str(prefix), str(key)
+
+
+def _change(
+    argv: Sequence[str],
+    *,
+    port: Port,
+    prefix: str,
+    python: str | None,
+    run: Callable[..., Any],
+    dry_run: bool,
+    timeout: float = CHILD_WALL_S,
+    cwd: Path | None = None,
+    environment: dict[str, str] | None = None,
+) -> Report:
+    if Path(prefix).resolve() == Path(sys.prefix).resolve():
+        refuse_if_locked(port)
     gaps = [] if port.lock_holders() is not None else [LOCK_UNDECLARED]
     declared = port.anchors()
     if declared is None:
         gaps.append(NO_ANCHORS_DECLARED)
-    before = port.env_key()
-    argv = pip_argv(requirements, mode=mode, version=version)
-    if dry_run:
-        return Report(port.name, sys.prefix, argv, None, before, None, (), tuple(gaps))
-    completed = run(list(argv), check=False, timeout=timeout)
-    after = port.env_key()
-    retired = retire_anchors(declared) if declared and after != before else ()
-    return Report(port.name, sys.prefix, argv, completed.returncode, before, after, retired, tuple(gaps))
+    try:
+        with EnvLock(prefix, f'dep:{port.name}').held():
+
+            def key() -> str:
+                if python is not None and not Path(python).is_file():
+                    return 'missing-environment'
+                return port.env_key(python)
+
+            before = key()
+            if dry_run:
+                return Report(port.name, prefix, tuple(argv), None, before, None, (), tuple(gaps))
+            options = {'check': False, 'timeout': timeout}
+            if cwd is not None:
+                options['cwd'] = cwd
+            if environment is not None:
+                options['env'] = environment
+            try:
+                completed = run(list(argv), **options)
+            finally:
+                after = key()
+                retired = retire_anchors(declared) if declared and after != before else ()
+            return Report(port.name, prefix, tuple(argv), completed.returncode, before, after, retired, tuple(gaps))
+    except Exhausted as exc:
+        raise HeldEnvironmentError(str(exc)) from exc
+
+
+def main(
+    argv: Sequence[str] | None = None, *, run: Callable[..., Any] = subprocess.run, cwd: Path | None = None
+) -> int:
+    """Bootstrap or sync the named worktree's own environment, with declared full extras."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    targets = parser.add_mutually_exclusive_group()
+    targets.add_argument('--bootstrap', type=Path)
+    targets.add_argument('--root', type=Path)
+    parser.add_argument('--sync', action='store_true')
+    parser.add_argument('--extra', action='append')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--upgrade-package', action='append', default=[])
+    args = parser.parse_args(argv)
+    if args.bootstrap is None and not args.sync and not args.upgrade_package:
+        parser.error('use --bootstrap PATH, --sync, or --upgrade-package NAME')
+    root = _dep_project.target_root(args.bootstrap or args.root, cwd or Path.cwd())
+    python, selected, paths = _dep_project.read_project(root, args.extra)
+    prefix = root / '.venv'
+    if Path(python).is_file() and Path(_snapshot(python)[0]).resolve() != prefix:
+        msg = f'{python} does not execute in its own environment {prefix}'
+        raise ValueError(msg)
+    command = _dep_project.uv_command(
+        root, python, selected, syncing=args.bootstrap is not None or args.sync, upgrade_packages=args.upgrade_package
+    )
+    environment = dict(os.environ)
+    environment.pop('VIRTUAL_ENV', None)
+    environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
+    port = Port(name=str(root), holders=tuple, anchor_paths=lambda: paths)
+    try:
+        result = _change(
+            command,
+            port=port,
+            prefix=str(prefix),
+            python=python,
+            run=run,
+            dry_run=args.dry_run,
+            cwd=root,
+            environment=environment,
+        )
+    except HeldEnvironmentError as exc:
+        emit(f'REFUSED: {exc}')
+        return 1
+    emit(result.render())
+    return result.returncode or 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

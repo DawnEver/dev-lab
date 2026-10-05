@@ -97,7 +97,7 @@ _PYRIGHT: Final = 'pyright'
 
 
 class NoInterpreter(RuntimeError):
-    """No venv under this checkout or its main checkout can run what was asked for.
+    """A checkout's own venv cannot run what was asked for.
 
     RAISED rather than reported, because the caller is a git hook and the alternative is an exit code
     of 0. A bootstrap that cannot find an interpreter and returns quietly is indistinguishable from a
@@ -134,16 +134,7 @@ def sanitized_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
 
 
 def repo_roots(start: Path | None = None) -> tuple[Path, ...]:
-    """Both roots to look for a venv in -- this checkout, then its main checkout -- in that order.
-
-    THIS checkout first: a lane that has its own ``.venv`` uses it, so a dependency change belongs to
-    the lane instead of being a change to everyone's environment. MAIN is the fallback that makes a
-    venv-less worktree work at all, and it cannot be spelled: a hook runs from whichever checkout is
-    being committed to, however deep it is nested. ``--git-common-dir`` always points at MAIN's
-    ``.git``, one level under MAIN's root, which is what derives it from git rather than from a path.
-
-    De-duplicated, because on MAIN itself the two roots are the same directory and probing it twice
-    would report a doubled diagnosis.
+    """The current checkout alone: a worktree's missing environment requires bootstrap.
 
     Args:
         start: The directory to ask git from; the process's cwd when omitted.
@@ -157,12 +148,10 @@ def repo_roots(start: Path | None = None) -> tuple[Path, ...]:
     cwd = Path.cwd() if start is None else start
     try:
         this = _git(('rev-parse', '--show-toplevel'), cwd, env)
-        common = _git(('rev-parse', '--path-format=absolute', '--git-common-dir'), cwd, env)
     except (OSError, subprocess.CalledProcessError) as exc:
         msg = f'{cwd}: git could not name this checkout, so no venv can be looked for ({exc})'
         raise NoInterpreter(msg) from exc
-    roots = [Path(this).resolve(), Path(common).resolve().parent]
-    return tuple(dict.fromkeys(roots))
+    return (Path(this).resolve(),)
 
 
 def _git(args: Sequence[str], cwd: Path, env: Mapping[str, str]) -> str:
@@ -247,7 +236,7 @@ def needed_module(argv: Sequence[str]) -> str:
 
 
 def find_interpreter(roots: Sequence[Path], module: str) -> Path:
-    """The interpreter to run *module* through: this checkout's when it can, else the main one's.
+    """The interpreter to run *module* through, confined to this checkout.
 
     Args:
         roots: Candidate checkout roots in preference order, as :func:`repo_roots` returns them.
@@ -271,15 +260,13 @@ def find_interpreter(roots: Sequence[Path], module: str) -> Path:
     where = ' or '.join(str(root) for root in roots) or '(no checkout)'
     if saw_venv:
         msg = (
-            f'no .venv under {where} provides {module!r}. A venv EXISTS in at least one of them, so '
-            f'this is a missing TOOL rather than a missing environment -- install {module} into one '
-            f'of those venvs.'
+            f'no .venv under {where} provides {module!r}: missing TOOL. Sync this checkout through '
+            f'python -m lab_commons.dev.dep --bootstrap "{where}" using an interpreter with lab-commons.'
         )
     else:
         msg = (
-            f"no populated .venv under {where}. Create one in either: this checkout's own "
-            f'(preferred -- it isolates a dependency change to the lane that made it), or the main '
-            f"checkout's, which every worktree without one borrows."
+            f"no populated .venv under {where}. Create this checkout's own environment through "
+            f'python -m lab_commons.dev.dep --bootstrap "{where}" using an interpreter with lab-commons.'
         )
     raise NoInterpreter(msg)
 

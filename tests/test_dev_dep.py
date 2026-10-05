@@ -37,6 +37,12 @@ from lab_commons.dev.dep import (
 _REQS: Final = ('example-package==1.2.3',)
 
 
+@pytest.fixture(autouse=True)
+def isolated_environment_seats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fake installers contend in a private broker directory, not the suite runner's environment."""
+    monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
+
+
 class _Run:
     """A stand-in for `subprocess.run` that records its argv and answers a chosen return code."""
 

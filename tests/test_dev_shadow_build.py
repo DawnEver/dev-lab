@@ -72,6 +72,12 @@ class TestTheRegionGuard:
         with pytest.raises(SharedVenvWriteError):
             refuse_shared_venv_write(shared_venv_root() / 'Lib' / 'site-packages')
 
+    def test_the_refusal_protects_the_active_environment_without_claiming_it_is_shared(self) -> None:
+        with pytest.raises(SharedVenvWriteError, match='active environment') as caught:
+            refuse_shared_venv_write(shared_venv_root() / 'shadow-probe')
+        assert 'every worktree' not in str(caught.value)
+        assert 'borrows' not in str(caught.value)
+
     def test_the_environment_ROOT_ITSELF_is_refused(self) -> None:
         """`--out .venv` is not a hole. A guard that only covered children would leave the root open."""
         with pytest.raises(SharedVenvWriteError):

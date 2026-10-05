@@ -11,10 +11,18 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev import agenthooks
+from lab_commons.dev._deny_interpreter_row import INTERPRETER_REMEDY
 from lab_commons.dev.allow_adoption import AllowAdoption, derived_entries, self_refused
 from lab_commons.dev.hook_adoption import HookAdoption, render
 from lab_commons.dev.hooks import DENY_RULES, Remedy, rules_by_id
 from lab_commons.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_INTERPRETER_GLOB, VENV_LAYOUTS
+
+
+def test_a_missing_worktree_environment_is_bootstrapped_not_borrowed() -> None:
+    assert '--bootstrap' in INTERPRETER_REMEDY
+    assert '<main>/' not in INTERPRETER_REMEDY
+    assert 'shared environment' not in INTERPRETER_REMEDY
+
 
 #: A consumer's own opening: its user-facing CLI runs through `uv run`, by user directive.
 CLI_OPENING = Remedy('repo-cli', 'uv run mycli run cases/x', allow=r'^\s*uv\s+run\s+mycli\b')

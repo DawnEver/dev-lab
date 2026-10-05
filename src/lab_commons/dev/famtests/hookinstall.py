@@ -273,7 +273,7 @@ def assert_the_remedy_is_derived(*, root: Path, config_name: str) -> None:
 
 
 #: An ``entry:`` whose COMMAND runs an interpreter somebody else chose: ``uv run`` (which may also
-#: SYNC the shared environment, and inside a venv-less worktree CREATES an empty ``.venv`` and dies
+#: SYNC the checkout environment, and inside a venv-less worktree CREATES an empty ``.venv`` and dies
 #: with ``No module named ...`` -- measured in a consumer 2026-10-03, ``--no-sync`` or not), ``uvx``, or
 #: a bare ``python``/``py`` that the PATH resolves. Leading ``env VAR=value`` assignments are skipped,
 #: because an ``env`` prefix still runs what follows it. A ``python`` reached through a PATH (any

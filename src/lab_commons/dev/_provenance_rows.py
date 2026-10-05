@@ -30,6 +30,7 @@ __all__ = ['PROVENANCE']
 
 PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'ab_bench': ('original',),
+    'envlock': ('original',),
     'agent_guard': ('original',),
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now

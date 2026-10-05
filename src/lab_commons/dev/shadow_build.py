@@ -1,15 +1,15 @@
 """Measure a rebuilt native extension WITHOUT installing it -- and never report a kernel as a wall.
 
-THE CONSTRAINT THAT SHAPES EVERY LINE: the venv is SHARED. Every worktree on a box borrows one
-environment, so the obvious rebuild -- ``maturin develop``, or any ``pip install`` of the fresh
-wheel -- mutates the interpreter that another lane's verdict is running in. That is not a style
-preference; it is the same hazard :mod:`lab_commons.dev.dep` exists for, arriving through a build
-tool instead of through a package manager, and a build tool takes no lock and asks nobody.
+THE CONSTRAINT THAT SHAPES EVERY LINE: a benchmark must not mutate its active environment.
+Each checkout owns its .venv; main's environment belongs only to main. The obvious rebuild --
+``maturin develop`` or ``pip install`` of the fresh wheel -- changes the benchmark's installed
+baseline. Installation belongs to the checked :mod:`lab_commons.dev.dep` door, not this measuring
+tool. The shadow-build safety refusal applies even when no other checkout uses the interpreter.
 
 SO NOTHING HERE INSTALLS. It BUILDS a wheel (``maturin build``, which only writes its output
 directory), UNPACKS it -- a wheel is a zip, so no package manager is involved at all -- and puts the
 unpack directory on ``PYTHONPATH``, where it SHADOWS the installed copy. ``PYTHONPATH`` precedes
-site-packages, so the fresh build wins while every other dependency still resolves from the shared
+site-packages, so the fresh build wins while every other dependency still resolves from the active
 venv, which is only ever READ. Measured in consumer-a 2026-09-04: under the shadow the
 extension resolved to the shadow directory and ``numpy`` still imported at 2.5.2 from the venv.
 
@@ -70,7 +70,7 @@ DEFAULT_CHILD_WALL_S: Final = 30 * 60
 
 
 class SharedVenvWriteError(RuntimeError):
-    """An output path landed inside the shared environment. REFUSED, never repaired.
+    """An output path landed inside the active environment. REFUSED, never repaired.
 
     Its own class rather than ``ValueError`` because the caller it is aimed at has a real choice to
     make -- build somewhere else -- and a refusal a caller can act on should be catchable by the
@@ -88,23 +88,23 @@ def shared_venv_root() -> Path:
 
 
 def refuse_shared_venv_write(target: Path) -> None:
-    """Refuse *target* when it lands inside the shared environment.
+    """Refuse *target* when it lands inside the active environment.
 
     RESOLVED ON BOTH SIDES BEFORE COMPARING. ``.venv/../.venv/Lib`` names the region as surely as
     ``.venv/Lib`` does, and a guard defeated by a dotted spelling is not a guard. The root itself is
     refused as well as everything under it, so ``--out .venv`` is not a hole.
 
     Raises:
-        SharedVenvWriteError: *target* is the shared environment or sits inside it.
+        SharedVenvWriteError: *target* is the active environment or sits inside it.
 
     """
     root = shared_venv_root()
     resolved = Path(target).resolve()
     if resolved == root or root in resolved.parents:
         msg = (
-            f'{resolved} is inside the shared environment at {root}. Nothing here installs: every '
-            f'worktree on this box borrows that environment, and a mid-run write to it changes the '
-            f"interpreter another party's verdict is being measured in. Build to a directory "
+            f'{resolved} is inside the active environment at {root}. Nothing here installs: '
+            f'a write would change the installed baseline this benchmark measures. Each checkout '
+            f'owns its .venv; dependency installation uses the checked dep door. Build to a directory '
             f'OUTSIDE it and shadow it via PYTHONPATH.'
         )
         raise SharedVenvWriteError(msg)
@@ -121,7 +121,7 @@ def build_wheel(
     """``maturin build`` the crate at *manifest* into *out_dir*, and return the wheel it wrote.
 
     ``build``, NEVER ``develop``: build writes only its output directory, while develop installs
-    into the shared environment. That is the whole distinction this module exists to hold, so it is
+    into the active environment. That is the whole distinction this module exists to hold, so it is
     not a parameter -- a flag that could select ``develop`` would be the hole with a friendly name.
 
     IT VERIFIES THAT A WHEEL APPEARED. ``maturin`` exiting 0 having written nothing is
@@ -131,7 +131,7 @@ def build_wheel(
 
     Args:
         manifest: the crate's ``Cargo.toml``.
-        out_dir: where the wheel goes. Refused if inside the shared environment.
+        out_dir: where the wheel goes. Refused if inside the active environment.
         wall_s: the child's ceiling -- a hang detector, see :data:`DEFAULT_CHILD_WALL_S`.
         release: build with optimisations. A debug build measured as if it were a release one is the
             most common way this harness has been observed to produce a meaningless ratio.
@@ -143,7 +143,7 @@ def build_wheel(
         The newest wheel in *out_dir*.
 
     Raises:
-        SharedVenvWriteError: *out_dir* is inside the shared environment.
+        SharedVenvWriteError: *out_dir* is inside the active environment.
         RuntimeError: ``maturin`` reported success and wrote no wheel.
 
     """
@@ -169,7 +169,7 @@ def unpack_wheel(wheel: Path, shadow_dir: Path) -> Path:
     """Unpack *wheel* into *shadow_dir* and return it. A wheel is a zip; no package manager runs.
 
     Raises:
-        SharedVenvWriteError: *shadow_dir* is inside the shared environment.
+        SharedVenvWriteError: *shadow_dir* is inside the active environment.
 
     """
     refuse_shared_venv_write(shadow_dir)

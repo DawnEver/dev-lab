@@ -6,6 +6,8 @@ session time came from Claude Code's auto-mode CLASSIFIER, none from a deny hook
 broad rows in auto mode -- ``Bash(*)`` and wildcarded interpreters such as ``Bash(.venv/*/python* *)``
 -- while a NARROW row naming one door stays live and skips the classifier. So every row here names
 ONE door: one per door module, one per tracked ``scripts/`` entry point. No ``lab_commons.dev.*``.
+The dependency bootstrap prefix is explicit; its interpreter and every tracked Python script
+door's interpreter may live in any checkout, while the invoked door remains exact.
 
 USER RULING 2026-10-04: "pushes and remote deletions are never automatic" -- they stay with a human
 or the gated push hook. LOCAL cleanup is a door: :mod:`lab_commons.dev.branchset` ``--apply`` (local
@@ -62,6 +64,9 @@ DOOR_MODULES: Final[dict[str, str]] = {
     'lab_commons.dev.autodoors': 'renders these door rules',
 }
 
+#: Bootstrap is a checked dependency door, not permission to invoke arbitrary installers.
+_DEPENDENCY_BOOTSTRAP: Final = ('python', '-m', 'lab_commons.dev.dep', '--bootstrap')
+
 #: The raw verbs the doors replace. Never rendered as an allow on either client.
 NEVER_ALLOWED: Final = (
     'git push',
@@ -109,17 +114,23 @@ def script_doors(root: Path, *, shell_doors: tuple[str, ...]) -> tuple[str, ...]
 def doors(scripts: tuple[str, ...] = ()) -> dict[tuple[str, ...], str]:
     """``{(runner, *argv prefix): why}`` -- the one table both renderings read."""
     out: dict[tuple[str, ...], str] = {('python', '-m', m): why for m, why in DOOR_MODULES.items()}
+    out[_DEPENDENCY_BOOTSTRAP] = "creates the named checkout's own environment through the checked dependency door"
     for rel in scripts:
         out[('sh', rel) if rel.endswith('.sh') else ('python', rel)] = f'repo door {rel}'
     return out
 
 
 def claude_rows(scripts: tuple[str, ...] = ()) -> dict[str, str]:
-    """Each door's NARROW ``Bash(...)`` row mapped to its reason, in table order."""
+    """Each narrow door row, with exact executable forms for cross-checkout Python calls."""
     out: dict[str, str] = {}
     for (runner, *argv), why in doors(scripts).items():
-        head = VENV_INTERPRETER_GLOB if runner == 'python' else runner
-        out[f'Bash({head} {" ".join(argv)} *)'] = why
+        heads = [VENV_INTERPRETER_GLOB if runner == 'python' else runner]
+        if runner == 'python' and ((runner, *argv) == _DEPENDENCY_BOOTSTRAP or (len(argv) == 1 and argv[0] in scripts)):
+            # Only the directory prefix varies, never the executable or its argument boundary.
+            # A python* suffix could swallow -c before the named door and permit unrelated code.
+            heads = [*_interpreters(), *(f'*/{"/".join(parts)}' for parts in VENV_LAYOUTS.values())]
+        for head in heads:
+            out[f'Bash({head} {" ".join(argv)} *)'] = why
     return out
 
 

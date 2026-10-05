@@ -1,28 +1,24 @@
 #!/usr/bin/env bash
-# Resolve an interpreter -- THIS checkout's if it has one, MAIN's otherwise -- and exec through it.
+# Resolve THIS checkout's own interpreter, never another checkout's, and exec through it.
 # A WRAPPER rather than a hook: it takes the command to run as its arguments.
 #
 #   python -m lab_commons.dev.githooks with-venv pytest -q
 #   python -m lab_commons.dev.githooks with-venv scripts/some_tool.py --flag
 #
-# A WORKTREE MAY HAVE ITS OWN `.venv`, and when it does that venv wins. A lane's own environment is
+# EACH WORKTREE OWNS ITS `.venv`. A lane's own environment is
 # the isolated case: a dependency change belongs to the lane instead of being a change to everyone's
 # environment, and `PYTHONPATH` juggling stops being necessary because the lane's own editable
 # install already points at the lane's own source.
 #
-# BORROWING MAIN'S IS THE FALLBACK, not the rule -- and the hazard it carries is why the order
-# matters: `uv run` in a venv-less worktree silently builds a SEPARATE base-only venv, with none of
-# the compiled extensions the checkout needs, while resolving the tools themselves from PATH. That
-# tests the wrong code with the wrong tools and reports green. Preferring a REAL lane venv when one
-# exists removes the motive for that mistake.
+# A missing or incomplete environment requires the dependency bootstrap door. Borrowing MAIN's
+# interpreter would judge another editable source tree and disguise the missing dependencies.
 #
 # NO INTERPRETER PATH IS HARD-CODED beyond the two standard layouts, and both are tried on every
 # platform rather than switched on `uname`: a Windows venv is `Scripts/python.exe`, a macOS/Linux one
 # is `bin/python`, and this family runs on both.
 #
-# A pre-push hook runs from whichever checkout is being pushed -- main or any worktree -- so MAIN's
-# absolute path cannot be hardcoded either. Resolve it from git itself: `--git-common-dir` always
-# points at MAIN's `.git`, one level under MAIN's root, however deep the worktree is nested.
+# A pre-push hook runs from whichever checkout is being pushed. Git names that checkout without
+# assuming a fixed worktree nesting depth.
 set -euo pipefail
 
 # BEFORE THE FIRST GIT CALL, and that ordering is the whole point: an inherited incomplete
@@ -34,7 +30,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${HERE}/git-env-repair.sh"
 
 THIS_ROOT="$(git rev-parse --show-toplevel)"
-MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
 
 # AN INTERPRETER THAT EXISTS IS NOT AN ENVIRONMENT THAT WORKS, and the difference is invisible
 # exactly where it hurts. MEASURED 2026-08-15: a worktree carried a `.venv` holding three files --
@@ -57,8 +52,7 @@ MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 #
 # So the probe asks the caller's OWN question. `_can_run` imports the module that is about to be
 # executed; a venv that cannot provide it is not a candidate FOR THIS CALL, whatever else it holds.
-# A lane venv that CAN still wins, so the isolation stays intact -- the preference only yields where
-# it would otherwise fail outright.
+# The current rule refuses an incomplete lane environment and names its bootstrap door.
 _has_distributions() {
   for _sp in "$1"/lib/python*/site-packages "$1"/Lib/site-packages; do
     for _dist in "${_sp}"/*.dist-info; do
@@ -82,7 +76,7 @@ _can_run() {
 
 PYTHON=''
 _SAW_VENV=''
-for root in "${THIS_ROOT}" "${MAIN_ROOT}"; do
+for root in "${THIS_ROOT}"; do
   for candidate in "${root}/.venv/Scripts/python.exe" "${root}/.venv/bin/python"; do
     if [ -x "${candidate}" ] && _has_distributions "${root}/.venv"; then
       _SAW_VENV="yes"
@@ -95,14 +89,11 @@ done
 
 if [ -z "${PYTHON}" ]; then
   if [ -n "${_SAW_VENV}" ]; then
-    echo "with-venv: no .venv under ${THIS_ROOT} or ${MAIN_ROOT} provides '${_NEEDED_MODULE}'." >&2
-    echo "  A venv EXISTS in at least one of them, so this is a missing TOOL rather than a" >&2
-    echo "  missing environment -- install ${_NEEDED_MODULE} into one of those venvs." >&2
+    echo "with-venv: this checkout's .venv cannot provide '${_NEEDED_MODULE}': missing TOOL." >&2
   else
-    echo "with-venv: no .venv under ${THIS_ROOT} or ${MAIN_ROOT}." >&2
-    echo "  Create one in either: this lane's own (preferred -- isolates dependency changes)," >&2
-    echo "  or MAIN's (shared by every lane that has none of its own)." >&2
+    echo "with-venv: no populated .venv under ${THIS_ROOT}." >&2
   fi
+  echo "  Use an interpreter with lab-commons: python -m lab_commons.dev.dep --bootstrap \"${THIS_ROOT}\"." >&2
   exit 1
 fi
 

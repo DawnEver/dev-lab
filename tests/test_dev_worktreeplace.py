@@ -120,14 +120,15 @@ def test_this_checkout_keeps_every_worktree_inside() -> None:
     assert_every_worktree_stays_inside(root=Path(__file__).resolve().parents[1])
 
 
-def test_a_worktree_inside_still_finds_the_family_and_borrows_the_main_venv(repo: Path) -> None:
+def test_a_worktree_inside_finds_the_family_but_requires_its_own_venv(repo: Path) -> None:
     """PLANTED: from `<repo>/.claude/worktrees/inside`, siblings resolve beside the MAIN checkout."""
     inside = repo / WORKTREES_REL / 'inside'
     assert main_checkout(inside).resolve() == repo.resolve()
     assert family_root(inside).resolve() == repo.parent.resolve()
     assert inside.parent.parent.resolve() != repo.parent.resolve(), 'the plant must sit where `..` misleads'
     relative = venv_interpreter(os_name=current_os_name())
-    assert checkout_interpreter(inside, os_name=current_os_name()) == main_checkout(inside) / relative
+    with pytest.raises(FileNotFoundError, match='--bootstrap'):
+        checkout_interpreter(inside, os_name=current_os_name())
     own = inside / relative
     own.parent.mkdir(parents=True)
     own.write_text('', encoding='utf-8')

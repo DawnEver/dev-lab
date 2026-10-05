@@ -76,8 +76,8 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## BARE-INTERPRETER
 
-- **Why it is refused.** a bare `python`/`py`, `uv run` or `uvx` runs an interpreter somebody else chose -- the PATH`s, or uv`s managed one -- not this checkout`s venv, and `uv run` may sync the SHARED environment first. The allow list names only the venv interpreter, so the reflex spelling is also the one that stalls on a permission prompt (user ruling 2026-10-03).
-- **The exit.** Run the checkout's own venv interpreter: .venv/Scripts/python.exe <args> on Windows, .venv/bin/python <args> on POSIX (settings.json allows Bash(.venv/*/python* *)). In a worktree with no .venv of its own, run the MAIN checkout's: <main>/.venv/Scripts/python.exe <args> -- `git rev-parse --path-format=absolute --git-common-dir` prints <main>/.git. A repo CLI the repo declares (its own opening) stays allowed.
+- **Why it is refused.** a bare `python`/`py`, `uv run` or `uvx` runs an interpreter somebody else chose -- the PATH's, or uv's managed one -- not this checkout's venv. `uv run` may also mutate the checkout's environment outside the checked dependency door. Each worktree owns `.venv`; main's environment belongs only to main, never to an unpopulated lane.
+- **The exit.** Run this checkout's own venv interpreter: `.venv/Scripts/python.exe <args>` on Windows or `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run `-m lab_commons.dev.dep --bootstrap <worktree>` to create the target's own environment. Use the repo-declared dependency-sync door (`scripts/gate/dep_sync.py` where supplied) for dependency changes. Agents may run these specific checked doors; this does not permit arbitrary installers or silent main-environment mutation. A repo-declared CLI stays allowed.
 
 ## RECURSIVE-GREP
 

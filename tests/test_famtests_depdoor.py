@@ -42,6 +42,12 @@ _REPO = 'a-repo-under-test'
 _ANCHOR_GLOB = '.verdicts/verify-*.log'
 
 
+@pytest.fixture(autouse=True)
+def isolated_environment_seats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planted installers must not contend with the real verifier running these controls."""
+    monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'environment-records'))
+
+
 def _anchors(tree: Path) -> tuple[Path, ...]:
     """The fixture repo's anchor adapter: the verdict logs under *tree*, and nothing else."""
     directory = tree / Path(_ANCHOR_GLOB).parent

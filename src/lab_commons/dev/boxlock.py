@@ -25,12 +25,14 @@ here.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.envlock import EnvLock
 from lab_commons.resources import (
     BOX_SEATS,
     DEFAULT_POLL_S,
@@ -139,13 +141,16 @@ class BoxLock:
         # costs; what it may not add is a second seat, which would be this class contradicting its
         # own name.
         demands = {**self.demands, SEATS.name: 1, BOX_SEATS.name: 1}
-        with self._broker(self.broker).admit(
-            BOX_POOL,
-            demands,
-            what=self.what,
-            wait_s=self.wait_s,
-            poll_s=self.poll_s,
-        ) as grant:
+        with (
+            self._broker(self.broker).admit(
+                BOX_POOL,
+                demands,
+                what=self.what,
+                wait_s=self.wait_s,
+                poll_s=self.poll_s,
+            ) as grant,
+            EnvLock(sys.prefix, self.what, broker=self._broker(self.broker)).held(),
+        ):
             yield grant
 
     @staticmethod

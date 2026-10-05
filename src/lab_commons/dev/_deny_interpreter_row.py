@@ -3,7 +3,7 @@
 USER RULING 2026-10-03: `.claude/settings.json` allows only the checkout's venv interpreter
 (:data:`lab_commons.dev.venvpath.VENV_INTERPRETER_GLOB`), yet agents reflexively type `uv run python`
 or a bare `python`. Each of those resolves an interpreter somebody else chose -- uv's managed one, the
-PATH's -- and a `uv run` may also SYNC the shared environment first. This row is the feedback at the
+PATH's -- and a `uv run` may also SYNC the checkout's environment first. This row is the feedback at the
 moment of the mistake, and its exit is spelled by :mod:`lab_commons.dev.venvpath`, the ONE owner of
 the interpreter spelling; the settings allow row is derived from the same owner
 (:func:`lab_commons.dev.allow_adoption.derived_entries`).
@@ -22,10 +22,11 @@ __all__ = ['BARE_INTERPRETER', 'INTERPRETER_REMEDY']
 _NT = '/'.join(VENV_LAYOUTS['nt'])
 _POSIX = '/'.join(VENV_LAYOUTS['posix'])
 
-#: The exit, spelled from the owner: the concrete interpreter per platform, and the worktree fallback.
+#: Each checkout owns its interpreter; bootstrap a missing environment rather than borrowing main.
 INTERPRETER_REMEDY = (
-    f"Run the checkout's venv interpreter: {_NT} <args> ({_POSIX} on POSIX); in a worktree without one, "
-    f'<main>/{_NT} <args>. Allowed: {INTERPRETER_ALLOW_ENTRY}; a repo-declared CLI stays allowed.'
+    f"Use {_NT} ({_POSIX} POSIX). Each worktree owns .venv; main's is main-only. Missing? "
+    f'Existing checkout interpreter: -m lab_commons.dev.dep --bootstrap <worktree>. '
+    f'Checked dependency doors are agent-allowed, not arbitrary installers. Allowed: {INTERPRETER_ALLOW_ENTRY}.'
 )
 
 BARE_INTERPRETER: dict[str, object] = {
@@ -36,7 +37,7 @@ BARE_INTERPRETER: dict[str, object] = {
     ),
     'matches': 'command',
     'hazard': 'a bare python/py, `uv run` or `uvx` runs an interpreter somebody '
-    'else chose, and `uv run` may sync the shared environment.',
+    'else chose, and `uv run` may mutate the checkout environment outside the checked dependency door.',
     'remedy': INTERPRETER_REMEDY,
     'needs': None,
     'refuses': (

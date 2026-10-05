@@ -35,7 +35,7 @@
 
 ## What else is shared, and each has bitten
 
-- **Dependencies.** A dep pinned into the shared environment turns every stale borrowing lane into new-deps-against-old-code. Never install into the primary checkout from a lane.
+- **Dependencies.** Each worktree owns its environment and may sync it through the dependency door. A verdict excludes mutation of the environment it is actually using. Never install into the primary checkout from a lane.
 - **Working tree — including your own.** Never edit the primary from a lane, and never edit your own lane while ITS verdict runs: collection imports, so the verdict PROBABLY describes the old tree, and "probably" is not a measurement. Queue the edit.
 - **The index.** Staging in the primary hands your staged work to whoever commits next; lanes call the linter directly rather than the staging-time fixer.
 - **The stash.** The stash ref is repo-wide, not per-worktree; use a scratch commit, or a detached probe worktree.

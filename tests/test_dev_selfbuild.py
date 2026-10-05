@@ -41,6 +41,12 @@ _WHEEL = 'consumer_a_native-0.4.1-cp312-cp312-win_amd64.whl'
 _WHEEL_RENAMED = 'consumera-native-0.4.1-cp312-cp312-win_amd64.whl'
 
 
+@pytest.fixture(autouse=True)
+def isolated_environment_seats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fake installers do not share the real verifier's environment broker."""
+    monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
+
+
 def _manifest(directory: Path, name: str) -> Path:
     """A real `pyproject.toml` declaring one project name."""
     directory.mkdir(parents=True, exist_ok=True)

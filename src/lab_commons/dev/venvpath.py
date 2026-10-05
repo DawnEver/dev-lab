@@ -68,8 +68,6 @@ import os
 import re
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.worktreeplace import main_checkout
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -236,12 +234,10 @@ def unportable_row(entry: str) -> str | None:
 
 
 def checkout_interpreter(root: Path, *, os_name: str) -> Path:
-    """The venv interpreter a checkout at *root* runs: its own, else its MAIN checkout's.
-
-    A linked worktree under ``.claude/worktrees/`` (WORKTREES-STAY-INSIDE) usually has no ``.venv`` of
-    its own and borrows the main checkout's -- the same fallback a consumer's hook launcher makes. The
-    returned path may not exist; whether it does is the caller's assertion to make.
-    """
+    """Require this checkout's own interpreter; a lane never borrows main's environment."""
     relative = venv_interpreter(os_name=os_name)
     own = root / relative
-    return own if own.is_file() else main_checkout(root) / relative
+    if not own.is_file() or (root / '.venv').resolve() != root.resolve() / '.venv':
+        msg = f'{root} has no own environment; run python -m lab_commons.dev.dep --bootstrap "{root}"'
+        raise FileNotFoundError(msg)
+    return own

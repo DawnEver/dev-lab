@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from lab_commons.dev.autodoors import (
     DOOR_MODULES,
     claude_rows,
     codex_rules,
+    doors,
     main,
     promises_raw,
     script_doors,
@@ -23,17 +25,53 @@ _GIT = shutil.which('git') or 'git'
 _SCRIPTS = ('scripts/gate/runner.py', 'scripts/hooks/with-retry.sh')
 
 
+@pytest.mark.parametrize(
+    'interpreter',
+    [
+        '.venv/Scripts/python.exe',
+        './.venv/bin/python',
+        'C:/work/repo/.claude/worktrees/lane/.venv/Scripts/python.exe',
+        '/work/repo/.claude/worktrees/lane/.venv/bin/python',
+    ],
+)
+def test_dependency_doors_admit_each_checkout_interpreter_without_an_installer_wildcard(interpreter: str) -> None:
+    rows = claude_rows(('scripts/gate/dep_sync.py',))
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
+    assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
+    assert any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs)
+    assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
+    assert not any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --sync', pattern) for pattern in globs)
+    assert not any(
+        fnmatchcase(f'{interpreter} -c arbitrary scripts/gate/dep_sync.py --sync', pattern) for pattern in globs
+    )
+    assert not any(
+        fnmatchcase(f'{interpreter} -c arbitrary -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs
+    )
+
+
+def test_bootstrap_is_a_specific_shared_door_in_both_client_renderings() -> None:
+    assert '"-m", "lab_commons.dev.dep", "--bootstrap"' in codex_rules()
+
+
+def test_cross_checkout_script_permissions_are_derived_from_the_supplied_doors() -> None:
+    rows = claude_rows(('tools/check_lane.py',))
+    assert 'Bash(*/.venv/Scripts/python.exe tools/check_lane.py *)' in rows
+    assert 'Bash(*/.venv/bin/python tools/check_lane.py *)' in rows
+    assert not any('scripts/gate/dep_sync.py' in row for row in rows)
+    assert not any('untracked_installer.py' in row for row in rows)
+
+
 def test_every_row_is_narrow_and_one_per_door() -> None:
     rows = claude_rows(_SCRIPTS)
-    assert len(rows) == len(DOOR_MODULES) + len(_SCRIPTS)
+    assert set(rows.values()) == set(doors(_SCRIPTS).values())
     assert 'Bash(.venv/*/python* -m lab_commons.dev.branchset *)' in rows
     assert 'Bash(sh scripts/hooks/with-retry.sh *)' in rows
-    assert not any('*' in row.removeprefix('Bash(.venv/*/python*').removesuffix(' *)') for row in rows)
+    assert all(any(row.endswith(f' {" ".join(argv)} *)') for (_runner, *argv) in doors(_SCRIPTS)) for row in rows)
 
 
 def test_codex_and_claude_render_the_same_doors() -> None:
     text = codex_rules(_SCRIPTS)
-    assert text.count('prefix_rule(') == len(claude_rows(_SCRIPTS))
+    assert text.count('prefix_rule(') == len(doors(_SCRIPTS))
     for module in DOOR_MODULES:
         assert f'"-m", "{module}"' in text
     assert '"sh", "scripts/hooks/with-retry.sh"' in text

@@ -174,8 +174,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under
   ``src/`` -- so what ships is the table of contents, which is the half that rots when four repos
   hand-maintain it. Not re-exported below.
+* :mod:`lab_commons.dev.envlock` -- one canonical environment seat shared by verdicts and mutations,
+  independent of the box CPU seat. Not re-exported below.
 * :mod:`lab_commons.dev.shadow_build` -- measuring a rebuilt native extension WITHOUT installing it.
-  The venv is SHARED, so ``maturin develop`` mutates the interpreter another lane's verdict is
+  Each worktree owns its venv; ``maturin develop`` still mutates the interpreter a verdict may be
   running in -- the :mod:`~lab_commons.dev.dep` hazard arriving through a build tool, which takes no
   lock and asks nobody. So it BUILDS a wheel, UNPACKS it (a wheel is a zip) and SHADOWS the
   installed copy via ``PYTHONPATH``, refusing any output path inside ``sys.prefix``; and it times

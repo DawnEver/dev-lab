@@ -152,8 +152,9 @@ def assert_this_repo_supplies_both_halves_of_the_door(
     if report.gaps:
         msg = (
             f'the door rendered {list(report.gaps)} for {repo_name}. A gap here is not cosmetic: '
-            f'LOCK_UNDECLARED means a dependency change DURING a verdict run is unchecked rather '
-            f'than impossible, and NO_ANCHORS_DECLARED means a verdict citing a dead environment '
+            f'LOCK_UNDECLARED means no supplementary adapter for legacy verdict runners is declared '
+            f'(shared EnvLock exclusion remains enforced), and NO_ANCHORS_DECLARED means a verdict '
+            f'citing a dead environment '
             f'stays on record.'
         )
         raise AssertionError(msg)

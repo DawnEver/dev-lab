@@ -9,6 +9,8 @@ evidence rather than as fixtures invented to agree with it.
 
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
+
 import pytest
 
 from lab_commons.dev.allow_adoption import (
@@ -62,6 +64,18 @@ CONSUMER_A = HookAdoption(
     remedies={'RAW-PROCESS-KILL': SWEEP},
     declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'GIT-NETWORK-VERB'}),
 )
+
+
+def test_the_permission_block_carries_the_owned_worktree_dependency_doors() -> None:
+    adoption = AllowAdoption(app_name='consumer_a', adoption=CONSUMER_A, scripts=('scripts/gate/dep_sync.py',))
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in allow_entries(adoption)]
+    for interpreter in (
+        'C:/repo/.claude/worktrees/lane/.venv/Scripts/python.exe',
+        '/repo/.claude/worktrees/lane/.venv/bin/python',
+    ):
+        assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
+        assert any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs)
+        assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
 
 
 def test_the_glob_matches_the_row_two_repos_wrote_by_hand() -> None:
@@ -285,7 +299,7 @@ def test_the_family_doors_ride_every_block_and_a_declared_copy_is_refused() -> N
     allow = AllowAdoption('consumer_c', CONSUMER_C, scripts=('scripts/gate/runner.py',))
     entries = allow_entries(allow)
     assert set(claude_rows(('scripts/gate/runner.py',))) <= set(entries)
-    assert 'Bash(.venv/*/python* scripts/gate/runner.py *)' in entries
+    assert 'Bash(.venv/Scripts/python.exe scripts/gate/runner.py *)' in entries
     assert provenance(allow)['Bash(.venv/*/python* -m lab_commons.dev.stoprun *)'].startswith('family door')
     door = DeclaredAllow('Bash(.venv/*/python* -m lab_commons.dev.stoprun *)', 'a restated door')
     with pytest.raises(UnarguedAllow):

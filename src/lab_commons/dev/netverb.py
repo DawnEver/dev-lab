@@ -16,8 +16,8 @@ WHAT IS UNIVERSAL AND WHAT WAS LOCAL, read off the shell wrapper rather than gue
   being what the classification reads; the PERMANENT/TRANSIENT split and the refusal to spend the
   remaining attempts on a permanent; capturing the exit code immediately; and reporting with a
   diagnosis instead of the word "blocked".
-* LOCAL -- ``CONSUMER_A_PUSH_ID``, ``push_lock.py``, the interpreter search that finds a worktree's
-  shared ``.venv``, and "is this push blocked by MY OWN previous attempt's gate". That last one is
+* LOCAL -- ``CONSUMER_A_PUSH_ID``, ``push_lock.py``, the original wrapper's interpreter search that
+  borrowed main's ``.venv``, and "is this push blocked by MY OWN previous attempt's gate". That last one is
   genuinely universal in SHAPE and has no portable answer: it needs a repo's own lock. It is reached
   here through *before_retry*, so an adopter supplies the answer without forking the loop.
 

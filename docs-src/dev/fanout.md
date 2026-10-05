@@ -3,13 +3,36 @@
 - Mechanics for working several changes in parallel; every rule below was measured before it was written.
 - The tiers, walls and verdict are on [the verdict model](verdict-model.md); what breaks when a tool assumes it owns the checkout is on [the shared checkout](shared-checkout.md).
 
-## Environments — own venv preferred, borrowing is the fallback
+## Environments — each worktree owns its venv
 
-- A lane MAY have its own virtual environment, and when it does, that one wins; borrowing the primary checkout's is the fallback.
-- The lane's runner must resolve the interpreter the same way every time — the lane's own environment first, then the primary's — so a verdict on a lane runs the lane's code with the right environment.
+- Each worktree owns its `.venv`, including an editable install of its own source. A missing environment needs bootstrap, not borrowing the primary checkout's interpreter for a verdict.
+- The lane's runner uses the lane's own interpreter, so its source and installed dependencies belong to the same checkout.
 - The runner takes a root, and the root picks the SOURCE and the TESTS together.
-- **When BORROWING and stepping outside the runner** — a standalone probe, a single-file run — setting the import path to the worktree's source is not a safety flag, it is the only thing making your code the code under test: omit it and the editable install answers for the package, so everything imports the PRIMARY checkout's source. Green, plausible, silent, and about the wrong tree.
-- **Never install or reinstall from a worktree.** A resolver run inside one builds a base-only environment while resolving executables from the primary, and a reinstall into the shared environment drops compiled extensions for every borrowing lane.
+- **The dependency door is the agent's to run.** Syncing its own worktree's environment is a local operation requiring no human. Never change the primary checkout's environment from a lane.
+- Environment exclusion is per environment: a verdict in lane A prevents mutation of A's environment, not bootstrap or sync of B's. CPU contention remains the box lock's responsibility.
+
+### Bootstrap and sync
+
+Use an interpreter that already has `lab-commons[dev]` to create or repair a named worktree's environment:
+
+```text
+<available python> -m lab_commons.dev.dep --bootstrap <worktree>
+<own venv python> -m lab_commons.dev.dep --root <worktree> --sync
+```
+
+The available interpreter is only the launcher; the target is always `<worktree>/.venv`, never an inherited `VIRTUAL_ENV`. An empty environment does not need to import lab-commons before bootstrap. Import or sync failures exit non-zero. A worktree cannot target the primary checkout's environment.
+
+Declare the consumer's complete selection and verdict anchors in its own `pyproject.toml`:
+
+```toml
+[tool.lab_commons.dep]
+extras = ["all", "dev", "img-to-cad", "tooldrivers"]
+anchors = ["output/gate-verdict.txt"]
+```
+
+These names are examples, not family defaults: every extra must exist in that consumer's optional-dependencies table, and anchors must name its actual verdict files. Without an extras declaration, the door selects all declared extras. With no `--extra`, sync realizes the complete declared selection; repeated explicit `--extra` flags deliberately narrow it and can prune other packages. `--dry-run` checks without mutation. A changed environment retires its declared verdict anchors, including after a failed install that changed packages.
+
+Generated auto-mode allow rows name only these dependency doors under worktree interpreters, on Windows and POSIX. They do not permit arbitrary installers. Regenerate consumers' permissions, deny rows, hooks and refusal docs after upgrading lab-commons; old recorded shared-environment incidents remain historical memory, not current instructions.
 - **A log name is a NAME, not a path** (user directive 2026-09-08): the runner puts it under its own dated directory and creates that directory itself, so there is nothing to create and nothing left loose. A name carrying a separator or a drive is REFUSED rather than normalised — the two escape hatches that stood before then excused far more than the destinations they were written for, and every in-repo caller already passed a bare name.
 
 ## Setting up

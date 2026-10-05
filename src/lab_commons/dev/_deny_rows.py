@@ -36,10 +36,10 @@ WHAT A ROW HOLDS, and every field is load-bearing:
 WHAT IS NOT HERE, AND WHY -- the judgement this file records. A shape whose HAZARD TEXT WOULD BE
 FALSE in another repo stays in the repo that has the hazard, however tempting the generalisation:
 
-* the shared-venv rules (``uv run``/``uv sync``, ``pip install``). The hazard presupposes ONE venv
-  that every worktree on the box borrows, and a dependency-sync tool to route to. A repo with its
-  own ``.venv`` has neither, so the rule would refuse a safe command and name an exit that does not
-  exist -- the exact failure this module's remedy field is built to prevent.
+* repo-specific dependency mutation rules (``uv sync``, ``pip install``). Each checkout owns its
+  ``.venv``; the hazard is bypassing that repo's checked dependency door, not borrowing a shared
+  environment. These rows require the adopting repo's concrete mutation door and verdict anchors.
+  The family bootstrap door creates a missing owned environment; arbitrary installers stay closed.
 * the worktree LEDGER rules (a lane registered in one repo's ledger). Three of the four repos have
   no ledger, so that reason is false there. The LOCATION itself is no longer in this list: the user
   ruled on 2026-10-03 that a checkout outside its repository is forbidden family-wide, for a reason

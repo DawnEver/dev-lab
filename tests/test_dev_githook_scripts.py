@@ -293,13 +293,14 @@ def test_a_lane_venv_that_CAN_run_the_tool_wins(repo: Path, worktree: Path, modu
     assert all('-m labtest_planted_tool' not in line for line in _calls(main_venv)), _calls(main_venv)
 
 
-def test_a_lane_venv_that_CANNOT_yields_to_MAINs(repo: Path, worktree: Path, module_dir: Path) -> None:
+def test_a_lane_venv_that_CANNOT_requires_its_own_sync(repo: Path, worktree: Path, module_dir: Path) -> None:
     """The same probe planted the other way round -- the control that makes the arm above mean something."""
     lane_venv = _plant_venv(worktree)
     main_venv = _plant_venv(repo, pythonpath=module_dir)
     done = _run('with-venv', ['labtest_planted_tool'], cwd=worktree, env={})
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert any('-m labtest_planted_tool' in line for line in _calls(main_venv)), _calls(main_venv)
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert '--bootstrap' in done.stderr
+    assert all('-m labtest_planted_tool' not in line for line in _calls(main_venv)), _calls(main_venv)
     assert all('-m labtest_planted_tool' not in line for line in _calls(lane_venv)), (
         'the lane venv could not provide the tool and still ran it'
     )
@@ -310,7 +311,7 @@ def test_a_STUB_venv_is_not_an_environment(repo: Path) -> None:
     _plant_venv(repo, distributions=False, pythonpath=None)
     done = _run('with-venv', ['labtest_planted_tool'], cwd=repo, env={})
     assert done.returncode == 1
-    assert 'no .venv under' in done.stderr, done.stderr
+    assert 'no populated .venv under' in done.stderr, done.stderr
     assert 'missing TOOL' not in done.stderr, 'a placeholder venv must not be reported as a missing tool'
 
 
