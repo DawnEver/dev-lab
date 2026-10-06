@@ -268,7 +268,14 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: source modules, a shared figure description and four test modules. 446 against 355 is 91 clear,
 #: one past the same 90, and the arm said so for the fourth time rather than absorbing it.
 #: Re-priced on the same ~80% every earlier reading used: 357.
-CONSTANT_FLOOR = 357
+#:
+#: RE-MEASURED 2026-10-06, HOURS LATER: 448 constants, after the viz tier split its renderer into a
+#: canvas and a coordinate system and the three figure shapes that made it necessary (a panel grid, a
+#: twin axis, a polar frame) landed their subjects and tests. The reading is +1 over the previous
+#: one here and +2 over the 446 it was priced from -- the other was a lane's own growth, measured
+#: separately; this arm counts the tree, not a diff, which is why the two are one number. Re-priced
+#: on the same ~80%: 358. THE HEADROOM IS UNCHANGED AT 90, as it has been at every reading.
+CONSTANT_FLOOR = 358
 CONSTANT_HEADROOM = 90
 
 
