@@ -9,7 +9,9 @@ evidence rather than as fixtures invented to agree with it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from fnmatch import fnmatchcase
+from typing import Final
 
 import pytest
 
@@ -70,12 +72,76 @@ def test_the_permission_block_carries_the_owned_worktree_dependency_doors() -> N
     adoption = AllowAdoption(app_name='consumer_a', adoption=CONSUMER_A, scripts=('scripts/gate/dep_sync.py',))
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in allow_entries(adoption)]
     for interpreter in (
-        'C:/repo/.claude/worktrees/lane/.venv/Scripts/python.exe',
-        '/repo/.claude/worktrees/lane/.venv/bin/python',
+        '.claude/worktrees/lane/.venv/Scripts/python.exe',
+        '.claude/worktrees/lane/.venv/bin/python',
     ):
         assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
         assert any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs)
         assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
+
+
+def test_no_row_the_block_can_carry_begins_with_a_wildcard() -> None:
+    """THE CONSUMER'S OWN PROPERTY, over every row THIS KIT renders.
+
+    ``Bash(*/.venv/Scripts/python.exe ...)`` was a leading wildcard BY CONSTRUCTION, not by accident:
+    a worktree's interpreter genuinely may live in another checkout, and the first spelling bought
+    that with a ``*`` that also permits any invocation PREFIX -- another interpreter, another
+    checkout's copy, a wrapper nobody sanctioned. MEASURED 2026-10-06 in a consuming repo: 86 of its
+    271 rendered rows led with ``*``, all of them worktree spellings of a door row, and its own
+    architecture suite refuses that shape by name. The rows are still emitted; their directory is
+    anchored on the worktrees directory (rule WORKTREES-STAY-INSIDE) instead of wildcarded.
+
+    Driven through the REAL renderers -- the derived rows, the BARE-INTERPRETER constant and the
+    door rows -- rather than against a list, and both directions are planted: the guard is shown
+    firing on the spelling it exists for, and the block is shown carrying something to check. A
+    DECLARED row is outside this property and stays so: it is the repo's own text, VERBATIM, which
+    is what an escape hatch IS -- the kit judges what it derives, and the reader judges the row
+    somebody argued for.
+    """
+    allow = AllowAdoption('consumer_a', CONSUMER_A, scripts=('scripts/gate/runner.py',))
+    entries = allow_entries(allow)
+    assert len(entries) > 6, 'a block this small would make the assertion below vacuous'
+    led = _leading_wildcards(entries)
+    assert not led, f'{led} lead with a wildcard, which permits any invocation prefix'
+    assert _leading_wildcards([*entries, 'Bash(*/.venv/Scripts/python.exe scripts/gate/runner.py *)']) == (
+        'Bash(*/.venv/Scripts/python.exe scripts/gate/runner.py *)',
+    ), 'the control: a row that leads with `*` must be caught by this exact expression'
+
+
+def _leading_wildcards(entries: Sequence[str]) -> tuple[str, ...]:
+    """The consumer's own expression, so the property pinned here is the one enforced downstream."""
+    return tuple(entry for entry in entries if entry[len('Bash(') : -1].startswith('*'))
+
+
+#: A remedy whose interpreter is preceded by a metavariable: the prefix is exactly what a tracked
+#: row cannot know, so no spelling of this road without a leading `*` exists. Reachable through the
+#: real renderer, which is why the refusal is pinned rather than the row.
+METAVARIABLE_PREFIXED: Final = (
+    '<repo>/.venv/Scripts/python.exe scripts/gate/runner.py',
+    '{root}/.venv/bin/python -m lab_commons.dev.verify',
+)
+
+
+@pytest.mark.parametrize('command', METAVARIABLE_PREFIXED)
+def test_a_remedy_that_would_render_a_leading_wildcard_is_refused_and_the_input_is_named(command: str) -> None:
+    """THE REFUSAL HALF: where no acceptable spelling exists, no row is derived and the remedy is named.
+
+    ``portable`` rewrites the venv spelling but keeps whatever precedes it, and a metavariable there
+    becomes ``*`` one step later -- so the derivation CAN produce the forbidden shape, and refusing
+    is the only honest answer: the command names an unknown prefix, and a row for it permits every
+    prefix. The repair is the caller's, and the message says which: spell the road from a path the
+    repo tracks, or DECLARE the row and argue for it.
+    """
+    with pytest.raises(UnarguedAllow, match='LEADS with a wildcard') as refused:
+        glob_for(command)
+    assert command in str(refused.value), 'the refusal must name the remedy it refused'
+
+
+def test_the_same_road_spelled_from_a_tracked_path_renders_with_no_leading_wildcard() -> None:
+    """THE OTHER SIDE, so the refusal above is a narrowing rather than a wall."""
+    rendered = glob_for('.venv/Scripts/python.exe scripts/gate/runner.py')
+    assert rendered == 'Bash(.venv/*/python* scripts/gate/runner.py *)'
+    assert not _leading_wildcards([rendered])
 
 
 def test_the_glob_matches_the_row_two_repos_wrote_by_hand() -> None:

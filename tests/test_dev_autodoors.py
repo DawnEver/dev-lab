@@ -30,11 +30,17 @@ _SCRIPTS = ('scripts/gate/runner.py', 'scripts/hooks/with-retry.sh')
     [
         '.venv/Scripts/python.exe',
         './.venv/bin/python',
-        'C:/work/repo/.claude/worktrees/lane/.venv/Scripts/python.exe',
-        '/work/repo/.claude/worktrees/lane/.venv/bin/python',
+        '.claude/worktrees/lane/.venv/Scripts/python.exe',
+        '.claude/worktrees/lane/.venv/bin/python',
     ],
 )
 def test_dependency_doors_admit_each_checkout_interpreter_without_an_installer_wildcard(interpreter: str) -> None:
+    """THE LAUNCHER MAY BE ANOTHER CHECKOUT'S INTERPRETER, and the row says which directory may vary.
+
+    The spelling that varies is a WORKTREE's, so it is anchored on the one directory that rule
+    WORKTREES-STAY-INSIDE pins (``.claude/worktrees/``) and wildcards only the worktree's name --
+    never the whole invocation prefix, which is the shape every consumer's allow guard refuses.
+    """
     rows = claude_rows(('scripts/gate/dep_sync.py',))
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
     assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
@@ -49,14 +55,42 @@ def test_dependency_doors_admit_each_checkout_interpreter_without_an_installer_w
     )
 
 
+def test_an_interpreter_spelled_by_an_absolute_path_is_not_admitted_and_that_is_the_decision() -> None:
+    """WHAT THE ANCHOR COSTS, pinned here rather than found by an agent in auto mode.
+
+    A row that does not lead with ``*`` cannot admit ``C:/repo/.claude/worktrees/lane/.venv/...``:
+    the command's first character is a drive letter or a root, and this file is TRACKED IN GIT, so
+    no rendering of it can name the one on the box reading it. The previous spelling bought that
+    coverage with a leading wildcard -- which permits ANY invocation prefix, i.e. exactly the
+    widening the consumers' allow guard refuses -- and the price is paid here instead: an agent
+    reaching for another checkout's interpreter that way is prompted once, and the road it can take
+    without a prompt is the REPO-RELATIVE one ``docs-src/dev/fanout.md`` spells anyway. Both
+    directions are asserted, because a narrowing whose replacement is also refused would be a
+    deletion wearing a docstring.
+    """
+    rows = claude_rows(('scripts/gate/dep_sync.py',))
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
+    absolute = 'C:/repo/.claude/worktrees/lane/.venv/Scripts/python.exe'
+    assert not any(fnmatchcase(f'{absolute} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
+    assert any(
+        fnmatchcase(
+            '.claude/worktrees/lane/.venv/Scripts/python.exe scripts/gate/dep_sync.py --sync',
+            pattern,
+        )
+        for pattern in globs
+    )
+
+
 def test_bootstrap_is_a_specific_shared_door_in_both_client_renderings() -> None:
     assert '"-m", "lab_commons.dev.dep", "--bootstrap"' in codex_rules()
 
 
 def test_cross_checkout_script_permissions_are_derived_from_the_supplied_doors() -> None:
+    """A WORKTREE's interpreter is spelled from the worktrees directory, never from a bare ``*/``."""
     rows = claude_rows(('tools/check_lane.py',))
-    assert 'Bash(*/.venv/Scripts/python.exe tools/check_lane.py *)' in rows
-    assert 'Bash(*/.venv/bin/python tools/check_lane.py *)' in rows
+    assert 'Bash(.claude/worktrees/*/.venv/Scripts/python.exe tools/check_lane.py *)' in rows
+    assert 'Bash(.claude/worktrees/*/.venv/bin/python tools/check_lane.py *)' in rows
+    assert not any(row.startswith('Bash(*') for row in rows), 'a door row leads with a wildcard'
     assert not any('scripts/gate/dep_sync.py' in row for row in rows)
     assert not any('untracked_installer.py' in row for row in rows)
 

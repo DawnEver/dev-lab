@@ -148,8 +148,12 @@ def glob_for(command: str) -> str:
     interpreter is made portable FIRST via :func:`lab_commons.dev.venvpath.portable`, which argues it.
 
     Raises:
-        UnarguedAllow: *command* is blank, or collapses to nothing but wildcards -- a row reading
-            ``Bash(*)`` promises every shell command there is and answers no rule in particular.
+        UnarguedAllow: *command* is blank, collapses to nothing but wildcards -- a row reading
+            ``Bash(*)`` promises every shell command there is and answers no rule in particular --
+            or renders a row that LEADS with a wildcard. The last is reachable rather than
+            theoretical: a metavariable at the head of a path becomes one (``<repo>/.venv/...`` ->
+            ``Bash(*/.venv/*/python* ...)``), and no other spelling of that road exists, because the
+            prefix the metavariable stands for is exactly what a tracked file cannot know.
 
     """
     text = _RUNS.sub('*', _METAVAR.sub('*', portable(' '.join(command.split()))))
@@ -157,6 +161,15 @@ def glob_for(command: str) -> str:
         msg = (
             f'the remedy command {command!r} renders the glob {text!r}, which promises every command there '
             f'is. A remedy that is all metavariable names no road, so no row can be derived from it.'
+        )
+        raise UnarguedAllow(msg)
+    if text.startswith('*'):
+        msg = (
+            f'the remedy command {command!r} renders the glob {text!r}, which LEADS with a wildcard. A leading '
+            f"`*` permits any invocation PREFIX -- another interpreter, another checkout's copy, a wrapper "
+            f"nobody sanctioned -- and every consumer's allow guard refuses that shape by name. It is refused "
+            f'here rather than rendered because the input names an unknown prefix: spell the road from a path '
+            f'this repo tracks, or DECLARE the row and argue for it.'
         )
         raise UnarguedAllow(msg)
     return f'{BASH}({text if text.endswith("*") else text + " *"})'

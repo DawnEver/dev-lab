@@ -7,7 +7,25 @@ broad rows in auto mode -- ``Bash(*)`` and wildcarded interpreters such as ``Bas
 -- while a NARROW row naming one door stays live and skips the classifier. So every row here names
 ONE door: one per door module, one per tracked ``scripts/`` entry point. No ``lab_commons.dev.*``.
 The dependency bootstrap prefix is explicit; its interpreter and every tracked Python script
-door's interpreter may live in any checkout, while the invoked door remains exact.
+door's interpreter may live in a WORKTREE of this repository, while the invoked door remains exact.
+
+THE INTERPRETER'S DIRECTORY IS THE ONE THING THAT VARIES, AND IT IS ANCHORED RATHER THAN WILDCARDED.
+The first spelling of this was ``*/.venv/Scripts/python.exe`` -- a leading ``*``, which permits any
+invocation prefix and is the row shape every consumer's allow guard refuses by name. MEASURED
+2026-10-06 in a consuming repo: 86 of its 271 rendered rows led with ``*``, all of them from this
+function. The prefix is not free-form after all: a linked worktree lives under
+:data:`lab_commons.dev.worktreeplace.WORKTREES_REL` (rule WORKTREES-STAY-INSIDE -- a deny row
+refuses a misplaced ``git worktree add|move|clone``, and ``famtests.worktreeplace`` detects one that
+got past it), so the spelling anchors on that directory and wildcards only the worktree's NAME.
+
+WHAT THE ANCHOR DOES NOT ADMIT, stated rather than discovered later: an interpreter spelled by an
+ABSOLUTE path (``D:/repo/.claude/worktrees/lane/.venv/Scripts/python.exe``) or by a ``..`` route.
+No row that does not lead with ``*`` can admit one -- the first character of the command is a drive
+letter or a root this file, TRACKED IN GIT, cannot know -- so an agent reaching for another
+checkout's interpreter that way is prompted once. The road it can take instead is the one
+``docs-src/dev/fanout.md`` already spells: run the door from the repository root, where the
+interpreter is this checkout's ``.venv/...`` (the plain heads below) or a worktree's
+``.claude/worktrees/<lane>/.venv/...`` (this anchor).
 
 USER RULING 2026-10-04: "pushes and remote deletions are never automatic" -- they stay with a human
 or the gated push hook. LOCAL cleanup is a door: :mod:`lab_commons.dev.branchset` ``--apply`` (local
@@ -33,6 +51,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS
+from lab_commons.dev.worktreeplace import WORKTREES_REL
 from lab_commons.log import emit
 
 __all__ = [
@@ -121,22 +140,41 @@ def doors(scripts: tuple[str, ...] = ()) -> dict[tuple[str, ...], str]:
 
 
 def claude_rows(scripts: tuple[str, ...] = ()) -> dict[str, str]:
-    """Each narrow door row, with exact executable forms for cross-checkout Python calls."""
+    """Each narrow door row, with the interpreter's directory anchored rather than wildcarded."""
     out: dict[str, str] = {}
     for (runner, *argv), why in doors(scripts).items():
         heads = [VENV_INTERPRETER_GLOB if runner == 'python' else runner]
         if runner == 'python' and ((runner, *argv) == _DEPENDENCY_BOOTSTRAP or (len(argv) == 1 and argv[0] in scripts)):
             # Only the directory prefix varies, never the executable or its argument boundary.
             # A python* suffix could swallow -c before the named door and permit unrelated code.
-            heads = [*_interpreters(), *(f'*/{"/".join(parts)}' for parts in VENV_LAYOUTS.values())]
+            heads = [*_interpreters(), *_worktree_interpreters()]
         for head in heads:
             out[f'Bash({head} {" ".join(argv)} *)'] = why
     return out
 
 
 def _interpreters() -> list[str]:
+    """The checkout's own interpreter: the concrete layout per platform, and the ``./`` spelling of each."""
     plain = ['/'.join(VENV_LAYOUTS[name]) for name in sorted(VENV_LAYOUTS)]
     return [*plain, *(f'./{p}' for p in plain)]
+
+
+def _worktree_interpreters() -> list[str]:
+    """A LINKED WORKTREE's interpreter, spelled from the repository root, one per platform layout.
+
+    THE ``*`` HERE IS THE WORKTREE'S NAME AND NOTHING ELSE. :data:`~lab_commons.dev.worktreeplace.WORKTREES_REL`
+    is the one spelling of where a worktree lives, enforcement included, so the directory that varies
+    is that one and the row can open with a literal instead of the ``*/`` this replaced -- the shape
+    every consumer's allow guard refuses. What it does NOT admit is the same interpreter reached by
+    an absolute path or a ``..`` route: no row that does not lead with a wildcard can, because the
+    command's first character is a drive or a root a TRACKED file cannot know.
+
+    One wildcard segment rather than several: a worktree NAME carrying a separator (``a/b``) or a
+    ``..`` is admitted by this glob and refused by ``WORKTREES-STAY-INSIDE`` where the tree is
+    CREATED, which is the half that reads the filesystem and can tell.
+    """
+    base = f'{WORKTREES_REL}/*'
+    return [f'{base}/{"/".join(parts)}' for parts in VENV_LAYOUTS.values()]
 
 
 def codex_rules(scripts: tuple[str, ...] = ()) -> str:
