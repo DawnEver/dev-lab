@@ -37,9 +37,9 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
         path='.github/workflows/ci.yml',
-        line=48,
-        evidence="extras: 'dev'",
-        selected=('dev',),
+        line=51,
+        evidence="extras: 'dev viz-mpl viz-bokeh'",
+        selected=('dev', 'viz-mpl', 'viz-bokeh'),
         scope='COMPLETE',
         stranded=frozenset(),
         why=(
@@ -55,6 +55,13 @@ ROWS: tuple[ScopeRow, ...] = (
             'identical -- `dev`, COMPLETE, stranding nothing -- and only the position moved: this is '
             'the row doing its job, since a pin that could not notice a 16-line shift could not '
             'notice a deletion either.'
+            ' THE SELECTION GREW ON 2026-10-06, 48 -> 51, AND BOTH TEXT AND LINE MOVED THIS TIME. The '
+            'ci caller now names the two `viz-` extras as well, because an adapter whose extra is '
+            'absent degrades: with only one of the two installed, "both backends draw" is a claim no '
+            'leg of the matrix has checked. The row is RE-MEASURED rather than re-typed: `matplotlib` '
+            'and `bokeh` arrive with it, no test module imports either one unguarded (every adapter '
+            'test holds a module-scope `pytest.importorskip`), so the scope stays COMPLETE and '
+            'nothing is stranded.'
         ),
     ),
 )

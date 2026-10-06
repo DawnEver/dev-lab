@@ -9,8 +9,9 @@ with a reason per name -- in its own tests, and calls `collectcensus.assert_reac
 checkout. Rows for other repos stored here were facts about them under names that were not theirs,
 and they went stale the day a consumer's distribution name was not the neutral spelling.
 
-MEASURED 2026-10-02 against this repo's WORKING TREE: the `dev` selection strands nothing, degrades
-nothing and leaves no name unresolved.
+MEASURED 2026-10-02 against this repo's WORKING TREE: the then-`dev` selection strands nothing,
+degrades nothing and leaves no name unresolved. RE-MEASURED 2026-10-06 over the selection CI now
+makes -- `dev` plus the two plotting extras -- with the same three empty sets.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ __all__ = [
 ROWS: tuple[CollectRow, ...] = (
     CollectRow(
         repo='lab-commons',
-        selected=('dev',),
+        selected=('dev', 'viz-mpl', 'viz-bokeh'),
         errors=frozenset(),
         degrades=frozenset(),
         unresolved=frozenset(),
@@ -37,7 +38,16 @@ ROWS: tuple[CollectRow, ...] = (
             'imports lab_commons, pytest, numpy, pint and rtoml and nothing else, every one of them '
             'in the `dev` extra or the base, and it resolves every import name it uses -- an empty '
             'UNRESOLVED set here is what proves the three resolution rules cover an entire real tree '
-            'rather than only the names somebody thought to alias.'
+            'rather than only the names somebody thought to alias. '
+            'RE-MEASURED 2026-10-06, BECAUSE THE SELECTION MOVED WITH THE CI LINE IT RECORDS. '
+            '`lab_commons.viz` landed with one extra per plotting backend and the caller now syncs all '
+            'three, so this row grew from `dev` to what CI actually installs. MEASURED, not widened: '
+            'with `viz-mpl` and `viz-bokeh` in the selection, matplotlib and bokeh are supplied and '
+            'nothing is degraded or unresolved. Under `dev` ALONE the same tree degrades on those two '
+            'names and still collects -- every adapter test holds a module-scope '
+            '`pytest.importorskip`, which is the shape this census classifies as a DEGRADE rather than '
+            'as a stranded file -- and that reading is recorded here rather than as a second row, '
+            'because this repo makes ONE selection and the row above is it.'
         ),
     ),
 )

@@ -149,6 +149,23 @@ ALLOWED: Final[dict[Site, str]] = {
         'global _structlog_configured',
     ): 'one-shot process-wide structured-logging configuration, the same idempotence flag as log.py',
     (
+        'src/lab_commons/viz/mpl.py',
+        'BLE001',
+        'except Exception:',
+    ): 'the GUI-backend probe. What a backend raises when it cannot be used is NOT one type and is '
+    'not the same type on two platforms: a toolkit that is absent raises ImportError, one that is '
+    'present but cannot reach a display raises its own (TclError, RuntimeError, a Qt C-extension '
+    'failure). Both mean the same thing to the loop -- try the next -- and catching narrowly would '
+    'let a headless box crash here instead of degrading to saving figures, which is the behaviour '
+    'the function exists to provide',
+    (
+        'src/lab_commons/viz/mpl.py',
+        'S112',
+        'except Exception:',
+    ): 'the same line and the same reason: the next iteration of the backend list IS the handling, '
+    'and there is nothing to log -- a GUI being unavailable is an ordinary outcome on the boxes this '
+    'library runs on, not an anomaly',
+    (
         'tests/test_dev_githooks.py',
         'PLC0415',
         'import os',

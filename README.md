@@ -47,6 +47,16 @@ source repo's `plan-lab-commons-standalone.md` for the full plan.
   `Q_0Nm`, ...), plus `Cartesian2DPoint`/`Polar2DPoint`, `Q_list2array`,
   `array2list_2Dpoint`, `is_equal_2DPoint`, and `CONSTANTS` (`vacuum_permeability`).
   Import explicitly: `from lab_commons.em import TorqueType`.
+- `lab_commons.viz` (**tier 2, opt-in**) — the family's ONE plotting vocabulary, and the two
+  adapters that draw it. The vocabulary imports **no plotting library at all**: a figure is
+  declared as data (`Series`, `Bars`, `Patch`, `Circle`, `Segment`, `Label`, `Field`, one
+  `Style` — the single source of the figure size, typeface and palette) and handed to a
+  `Renderer`. `NullRenderer` is the default, so a solver batch describes its figures on a box
+  where no plotting library is installed and draws nothing. A backend is an adapter whose own
+  import is the opt-in — `from lab_commons.viz.mpl import MplRenderer` (`lab-commons[viz-mpl]`)
+  or `from lab_commons.viz.bokeh import BokehRenderer` (`lab-commons[viz-bokeh]`); the two are
+  equal peers, checked against the same `Renderer` protocol and drawing the same description.
+  A figure that cannot be drawn by a backend raises with the reason, never a silent substitution.
 
 - `lab_commons.proc` (**tier 1**) — what a BOX is doing: `system_memory()` (the one home for
   `GlobalMemoryStatusEx` / `/proc/meminfo`), `working_set_bytes(pid)`, `pid_alive(pid)`,

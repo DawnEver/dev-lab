@@ -6,13 +6,13 @@ imports them. Every constraint below follows from that one fact.
 - **A consumer inherits every runtime dependency**, including the ones it never uses. A new entry
   in `[project].dependencies` is a decision typed into the named set in
   `tests/test_arch_dependencies.py`, not a line that appears. Heavier or optional machinery ships
-  behind an extra and an opt-in subpackage, as `lab_commons.dev` and `lab_commons.em` do.
+  behind an extra and an opt-in subpackage, as `lab_commons.dev`, `lab_commons.em` and `lab_commons.viz` do.
 - **An upper bound here is a resolver constraint imposed on four trees.** A floor states what this
   code needs; a ceiling is somebody's bad afternoon, inherited. Fix the incompatibility, or pin it
   in the consumer that actually has the problem.
-- **Importing the top level must not drag in a tier it did not ask for.** `lab_commons.dev` and
-  `lab_commons.em` are opt-in IMPORTS, pinned against a fresh interpreter by
-  `tests/test_dev_gate.py` — a convenience re-export at the top level would silently repeal that.
+- **Importing the top level must not drag in a tier it did not ask for.** `lab_commons.dev`,
+  `lab_commons.em` and `lab_commons.viz` are opt-in IMPORTS, each pinned against a fresh interpreter
+  (`test_dev_gate.py`, `test_viz_gate.py`) — a convenience re-export would silently repeal that.
 - **`__all__` is the contract, and there is no second place a consumer learns it was wrong.**
   A public module declares its surface, and every declared name resolves.
 - **No `_legacy`/`_compat` alias, no deprecation shim, no dual entry point.** A caller that is not

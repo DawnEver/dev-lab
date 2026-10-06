@@ -45,8 +45,12 @@ def test_every_recorded_selection_still_leaves_the_tree_what_the_table_records()
 
 
 def test_the_measurement_is_the_real_join_and_not_a_recorded_number() -> None:
-    """`measure` is what the census calls; asserting it here stops the table being self-referential."""
-    found = measure(ROOT, ('dev',), at_head=False)
+    """`measure` is what the census calls; asserting it here stops the table being self-referential.
+
+    The selection is read back out of the ROW rather than spelled a second time here, so the two
+    halves cannot disagree about which selection this repo makes.
+    """
+    found = measure(ROOT, ROWS[0].selected, at_head=False)
     assert found.files >= FILE_FLOORS[HERE], found.files
     assert (found.errors, found.degrades, found.unresolved) == (frozenset(), frozenset(), frozenset())
 

@@ -78,6 +78,26 @@ dev = [
     "pre-commit",
 ]
 
+# THE TWO GATES FOR ``lab_commons.viz``, AND THERE ARE TWO ON PURPOSE. The plotting vocabulary
+# (`lab_commons.viz` itself) imports NO plotting library: a producer declares the figure it wants and
+# installs nothing. Drawing it is an ADAPTER, one module per library, and each adapter's library is
+# its own extra -- so a consumer takes the backend it wants and does not inherit the other's. The
+# layer is equal-peer by construction rather than by intent, and `tests/test_viz_gate.py` pins both
+# halves: that importing `lab_commons` pulls neither in, and that each adapter imports exactly the
+# library its own extra names.
+viz-mpl = [
+    # 3.5 is where `matplotlib.colormaps` -- the registry the layer's palette-name check reads --
+    # landed. Nothing below it is claimed, and no ceiling is stated: an upper bound here would be a
+    # resolver constraint inherited by every consumer that wants a plot.
+    "matplotlib>=3.5",
+]
+viz-bokeh = [
+    # 3.0 is where a figure's title became a model with text rather than a string, and where the
+    # palette registry this layer checks its colormap names against is the shape it reads. The
+    # adapter is written against that API and says so here instead of failing at the first figure.
+    "bokeh>=3",
+]
+
 # THE FAMILY PLACEMENT MAP (`lab_commons.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.lab_commons.placement]
 code_roots = []

@@ -263,7 +263,12 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: notify protocol and its suite landed. 416 against 325 is 91 clear -- one past the same 90 -- so
 #: it said so, which is the third time in two days that this pair has done the job it was priced for
 #: instead of absorbing a growth. Re-priced ~80%: 355 (443 on 2026-10-05). Headroom unchanged, as always.
-CONSTANT_FLOOR = 355
+#:
+#: RE-MEASURED 2026-10-06: 446 constants, after `lab_commons.viz` and its suite landed -- three
+#: source modules, a shared figure description and four test modules. 446 against 355 is 91 clear,
+#: one past the same 90, and the arm said so for the fourth time rather than absorbing it.
+#: Re-priced on the same ~80% every earlier reading used: 357.
+CONSTANT_FLOOR = 357
 CONSTANT_HEADROOM = 90
 
 

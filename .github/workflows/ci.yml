@@ -44,8 +44,11 @@ jobs:
       #     along. What macOS adds over Linux is Darwin itself -- a case-INSENSITIVE default
       #     filesystem, BSD userland, and a different process/signal surface under `proc.py`.
       runner-os: '["ubuntu-latest", "windows-latest", "macos-latest"]'
-      # `dev` is the extra that gates `lab_commons.dev` -- pytest and ruff as executables.
-      extras: 'dev'
+      # `dev` gates `lab_commons.dev` -- pytest and ruff as executables. The two `viz-` extras gate
+      # the plotting adapters, ONE PER BACKEND, and both are installed here on purpose: an adapter
+      # whose extra is absent DEGRADES (its tests skip), so a matrix that installed only one of them
+      # would report "both backends draw" without a leg having drawn through the other.
+      extras: 'dev viz-mpl viz-bokeh'
       # `lab_commons.dev.rules` authors the family's development rules. An adoption test nobody
       # runs is exactly the declaration-nothing-enforces defect the registry exists to refuse, so
       # it gets its own labelled step.
