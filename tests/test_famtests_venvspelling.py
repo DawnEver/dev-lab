@@ -39,7 +39,16 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: status/issue doors outgrew it -- the floor is raised rather than the margin widened. The floor is
 #: on FILES READ: a walk that lost its root reports exactly what a clean tree reports, and this
 #: scan's whole value is its silence.
-FILE_FLOOR = 150  # RE-MEASURED 2026-10-03 at 165 files (supervise landed).
+#:
+#: RE-MEASURED 2026-10-03 at 165 files (supervise landed); the floor was left at 150 then, because
+#: 15 clear is inside the margin and the margin is what this arm reads.
+#:
+#: RE-MEASURED 2026-10-06 AT 191, after the viz tier's 3D slice landed its two modules (the protocol
+#: and the shape only it draws, and the matplotlib frame that draws them). 191 against 150 is 41
+#: clear -- ONE past the same 40-file margin -- so this arm said so rather than absorbing it. The
+#: margin is unchanged at 40: a floor 41 files behind the tree no longer separates a clean walk from
+#: a broken one, and widening the margin is how this arm is kept while the guard is given up.
+FILE_FLOOR = 151
 
 
 def _tree() -> dict[str, str]:

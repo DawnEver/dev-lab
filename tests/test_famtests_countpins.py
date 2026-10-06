@@ -281,7 +281,13 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: carry values) landed their subjects in the shared figure description -- one figure constant each,
 #: which is the whole of this reading's growth. Re-priced on the same ~80%: 359. The headroom is
 #: unchanged again, and this arm is what noticed the slice needed re-pricing at all.
-CONSTANT_FLOOR = 359
+#:
+#: RE-MEASURED 2026-10-06, AFTER THE 3D SLICE OF THE SAME TIER: 451 constants, after the shared
+#: figure description gained its 3D subject (two conductor groups, the weld nodes and the cell) and
+#: the gate gained the tables naming which module declares each protocol and what matplotlib's own
+#: DISTRIBUTION provides. 451 against 359 is 92 clear, two past the same 90 -- so this arm said so
+#: for the fifth time rather than absorbing it. Re-priced on the same ~80%: 361, headroom unchanged.
+CONSTANT_FLOOR = 361
 CONSTANT_HEADROOM = 90
 
 
