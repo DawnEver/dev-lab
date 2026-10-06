@@ -49,19 +49,23 @@ source repo's `plan-lab-commons-standalone.md` for the full plan.
   Import explicitly: `from lab_commons.em import TorqueType`.
 - `lab_commons.viz` (**tier 2, opt-in**) — the family's ONE plotting vocabulary, and the two
   adapters that draw it. The vocabulary imports **no plotting library at all**: a figure is
-  declared as data (`Series`, `Bars`, `Patch`, `Circle`, `Segment`, `Label`, `Field`, `Contours`,
-  `Vectors`, `Colorbar`, `Ticks`, one `Style` — the single source of the figure size, typeface and
-  palette) and handed to an adapter. A CANVAS is a `Figure` (`frame`/`save`/`show`/`close`) and a
-  COORDINATE SYSTEM is a `Frame` (its projection, its axes, every draw verb), so one picture can
-  hold a panel grid, a polar frame or a second y scale over the first. `NullRenderer` is the
-  default, so a solver batch describes its figures on a box where no plotting library is installed
-  and draws nothing. A backend is an adapter whose own import is the opt-in — `from
+  declared as data (`Series`, `Bars`, `Patch`, `Circle`, `Segment`, `Label`, `Contours`, `Vectors`,
+  `Colorbar`, `Ticks`, one `Style` — the single source of the figure size, typeface and palette —
+  and the three shapes a scalar over a plane can be: `Field` for a continuum drawn as a surface,
+  `Samples` for points that carry values, `Grid` for a masked rectilinear array) and handed to an
+  adapter. A CANVAS is a `Figure` (`frame`/`save`/`show`/`close`) and a COORDINATE SYSTEM is a
+  `Frame` (its projection, its axes, every draw verb), so one picture can hold a panel grid, a polar
+  frame or a second y scale over the first — `panel_rects(nrows, ncols)` is the panel arithmetic,
+  gaps included, so a grid's labels do not land on the panel below. `NullRenderer` is the default,
+  so a solver batch describes its figures on a box where no plotting library is installed and draws
+  nothing. A backend is an adapter whose own import is the opt-in — `from
   lab_commons.viz.mpl import MplRenderer` (`lab-commons[viz-mpl]`) or `from
   lab_commons.viz.bokeh import BokehRenderer` (`lab-commons[viz-bokeh]`); the two are equal peers,
   checked against the same two protocols and drawing the same description. A figure that cannot be
-  drawn by a backend raises with the reason, never a silent substitution — `Contours` over a point
-  set is the one verb bokeh has no glyph for, and `projection='polar'` the one coordinate system,
-  and both say so.
+  drawn by a backend raises with the reason, never a silent substitution — bokeh has no polar
+  projection, no isoline glyph and no filled-contour glyph over a point set, so `projection='polar'`,
+  `Contours` and `Field` are refused by name there, each naming the adapter or the shape to use
+  instead.
 
 - `lab_commons.proc` (**tier 1**) — what a BOX is doing: `system_memory()` (the one home for
   `GlobalMemoryStatusEx` / `/proc/meminfo`), `working_set_bytes(pid)`, `pid_alive(pid)`,

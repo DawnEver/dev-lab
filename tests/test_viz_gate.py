@@ -63,6 +63,12 @@ PROTOCOLS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     ),
 )
 
+#: THE VOCABULARY, which is more than one module now: the primitives and the protocols, plus the
+#: placement rules they refer to. NAMED, because the check below is "this tier reaches no plotting
+#: library" and a module that joined the vocabulary without joining this set would be outside it --
+#: a guarantee that quietly stopped covering the half that was most recently written.
+VOCABULARY: tuple[str, ...] = ('__init__.py', '_placement.py')
+
 
 def _declared_requirements() -> frozenset[str]:
     """Every distribution ``[project] dependencies`` names, by its bare (unversioned) name."""
@@ -157,9 +163,18 @@ class TestTheVizOptIn:
         assert result.stdout.strip() == 'False False False', 'importing lab_commons pulled the viz tier in'
 
     def test_the_vocabulary_module_reaches_no_plotting_library(self) -> None:
-        """The contract half is usable on a box that has neither backend installed."""
+        """The contract half is usable on a box that has neither backend installed.
+
+        EVERY module of the vocabulary, not just the package's own surface: the placement rules are
+        the other half of what a producer depends on, and a plotting import that arrived there would
+        be outside the file this check used to read.
+        """
         allowed = _declared_requirements() | set(sys.stdlib_module_names) | {'lab_commons'}
-        offenders = sorted(_imported_roots(VIZ_ROOT / '__init__.py') - allowed)
+        offenders = {
+            name: sorted(_imported_roots(VIZ_ROOT / name) - allowed)
+            for name in VOCABULARY
+            if _imported_roots(VIZ_ROOT / name) - allowed
+        }
         assert not offenders, f'the vocabulary imports a plotting library: {offenders}'
 
     def test_each_adapter_imports_only_the_library_its_own_extra_names(self) -> None:
@@ -255,14 +270,15 @@ class TestTheVizOptIn:
         A NAMED SET AND NOT A COUNT, for the reason the two maps above give: the question is which
         files the checks above actually read, and a module added to this tier has to be named here
         before any of them covers it -- which is what happened when the bokeh translation tables
-        left the adapter for a module of their own, and again when each adapter's frame half left
-        its canvas half.
+        left the adapter for a module of their own, again when each adapter's frame half left its
+        canvas half, and again when the placement rules left the vocabulary module.
         """
         sources = sorted(VIZ_ROOT.glob('*.py'))
         assert {source.name for source in sources} == {
             '__init__.py',
             '_bokeh_glyphs.py',
             '_bokeh_names.py',
+            '_placement.py',
             'bokeh.py',
             'bokeh_frame.py',
             'mpl.py',

@@ -275,7 +275,13 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: one here and +2 over the 446 it was priced from -- the other was a lane's own growth, measured
 #: separately; this arm counts the tree, not a diff, which is why the two are one number. Re-priced
 #: on the same ~80%: 358. THE HEADROOM IS UNCHANGED AT 90, as it has been at every reading.
-CONSTANT_FLOOR = 358
+#:
+#: RE-MEASURED 2026-10-06, AFTER THE NEXT SLICE OF THE SAME TIER: 449 constants, after the two plane
+#: shapes that were still missing (`Grid`, a masked rectilinear array, and `Samples`, points that
+#: carry values) landed their subjects in the shared figure description -- one figure constant each,
+#: which is the whole of this reading's growth. Re-priced on the same ~80%: 359. The headroom is
+#: unchanged again, and this arm is what noticed the slice needed re-pricing at all.
+CONSTANT_FLOOR = 359
 CONSTANT_HEADROOM = 90
 
 
