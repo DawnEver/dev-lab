@@ -25,8 +25,11 @@ VIZ_ROOT = REPO_ROOT / 'src' / 'lab_commons' / 'viz'
 
 #: The extra that gates each adapter, and the ONE distribution that adapter may import beyond the
 #: base runtime set. NAMED, so an extra renamed in ``pyproject.toml`` reds here rather than being
-#: discovered by a consumer whose install stopped delivering an import.
-BACKENDS: dict[str, str] = {'mpl.py': 'matplotlib', 'bokeh.py': 'bokeh'}
+#: discovered by a consumer whose install stopped delivering an import. ``_bokeh_names.py`` is in
+#: the map rather than in the floor below because it is the OTHER half of the bokeh gate: a module
+#: holding bokeh's spellings for the vocabulary must be covered by the extra that carries bokeh, or
+#: the tables could reach a library the extra does not install and nothing here would notice.
+BACKENDS: dict[str, str] = {'mpl.py': 'matplotlib', 'bokeh.py': 'bokeh', '_bokeh_names.py': 'bokeh'}
 
 
 def _declared_requirements() -> frozenset[str]:
@@ -49,6 +52,26 @@ def _imported_roots(source: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             roots.add(node.module.split('.')[0])
     return roots
+
+
+def _declared_verbs(source: Path, class_name: str) -> frozenset[str]:
+    """Every PUBLIC method name declared directly in *class_name*'s body, read from the source.
+
+    READ FROM THE SOURCE AND NOT OFF THE CLASS, which is the whole point of this file's method:
+    ``isinstance`` against the Protocol asks "is every verb present" and answers it only for an
+    object the box could IMPORT, while the count and the extras -- a verb one adapter grew and the
+    other did not, a method neither declared -- need the DECLARATION. It also keeps this check
+    runnable on a box where neither plotting library is installed, which is where a parity claim
+    that quietly held for one backend would otherwise never be read.
+    """
+    tree = ast.parse(source.read_text(encoding='utf-8'))
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name]
+    assert classes, f'{source} declares no class {class_name}'
+    return frozenset(
+        child.name
+        for child in classes[0].body
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and not child.name.startswith('_')
+    )
 
 
 def _extras() -> dict[str, frozenset[str]]:
@@ -115,6 +138,25 @@ class TestTheVizOptIn:
         assert declared['viz-mpl'] == {'matplotlib'}, 'the matplotlib extra names something else'
         assert declared['viz-bokeh'] == {'bokeh'}, 'the bokeh extra names something else'
 
+    def test_the_three_renderers_declare_exactly_the_protocols_verbs(self) -> None:
+        """THE NAMED SET, BOTH WAYS: an equality, not the one-directional coverage isinstance gives.
+
+        ``isinstance`` answers "every protocol member is present" for the objects this box can
+        import, and it is the weaker half: an adapter carrying a verb the other LACKS passes it, and
+        so does an adapter that grew a method the protocol never declared -- which is how a peer
+        relationship quietly stops being one. The equality names which verb moved, and a verb added
+        to the protocol reds here until BOTH adapters and the default renderer implement it, on a
+        box where neither plotting library is installed.
+        """
+        declared = _declared_verbs(VIZ_ROOT / '__init__.py', 'Renderer')
+        assert len(declared) >= 20, f'a floor: {len(declared)} verbs is not the vocabulary this tier ships'
+        assert _declared_verbs(VIZ_ROOT / '__init__.py', 'NullRenderer') == declared, 'the default renderer drifted'
+        for filename, class_name in (('mpl.py', 'MplRenderer'), ('bokeh.py', 'BokehRenderer')):
+            names = _declared_verbs(VIZ_ROOT / filename, class_name)
+            assert names == declared, (
+                f'{class_name} is missing {sorted(declared - names)} and adds {sorted(names - declared)}'
+            )
+
     def test_no_plotting_library_is_a_runtime_dependency(self) -> None:
         """A consumer inherits every entry of the base list, so a backend may not be one."""
         base = _declared_requirements()
@@ -143,6 +185,12 @@ class TestTheVizOptIn:
         assert bound == frozenset(viz.__all__), 'the surface a star import delivers is not the declared one'
 
     def test_the_scan_has_a_floor(self) -> None:
-        """A scan that read no file would pass every assertion above, vacuously."""
+        """A scan that read no file would pass every assertion above, vacuously.
+
+        A NAMED SET AND NOT A COUNT, for the reason the two maps above give: the question is which
+        files the checks above actually read, and a fourth module added to this tier has to be
+        named here before any of them covers it -- which is what happened when the bokeh
+        translation tables left the adapter for a module of their own.
+        """
         sources = sorted(VIZ_ROOT.glob('*.py'))
-        assert {source.name for source in sources} == {'__init__.py', 'mpl.py', 'bokeh.py'}
+        assert {source.name for source in sources} == {'__init__.py', '_bokeh_names.py', 'bokeh.py', 'mpl.py'}
