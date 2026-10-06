@@ -287,7 +287,13 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: the gate gained the tables naming which module declares each protocol and what matplotlib's own
 #: DISTRIBUTION provides. 451 against 359 is 92 clear, two past the same 90 -- so this arm said so
 #: for the fifth time rather than absorbing it. Re-priced on the same ~80%: 361, headroom unchanged.
-CONSTANT_FLOOR = 361
+#:
+#: RE-MEASURED 2026-10-06 AT 456, after the push-time arm of ONE-BRANCH-PER-SESSION landed: the new
+#: guard module and its test file, whose five module-level constants are what this reading counts.
+#: 456 against 361 is 95 clear, five past the same 90, and the sixth time this arm has said so. The
+#: ~80% of 456 is 365 -- which is still 91 clear, one past -- so the floor is 366, and the headroom
+#: does not move. A re-measurement may only TIGHTEN: 366/456 is 80.3%, inside the same band.
+CONSTANT_FLOOR = 366
 CONSTANT_HEADROOM = 90
 
 

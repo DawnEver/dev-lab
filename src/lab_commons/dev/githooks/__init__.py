@@ -46,8 +46,10 @@ no script are both named. :func:`run_hook` refuses a fragment for the same reaso
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -60,6 +62,7 @@ __all__ = [
     'HOOKS',
     'HOOK_SUFFIX',
     'KINDS',
+    'PYTHON_ENV',
     'SCRIPTS',
     'WRAPPER',
     'HookNotShipped',
@@ -96,6 +99,7 @@ SCRIPTS: Final[tuple[str, ...]] = tuple(sorted(p.stem for p in _HERE.glob(f'*{HO
 #: :func:`undeclared` is where the two are made to agree in both directions.
 KINDS: Final[dict[str, str]] = {
     'branch-push-only': WRAPPER,
+    'branchset-push': HOOK,
     'bump-version': HOOK,
     'cz-push-range': HOOK,
     'git-env-repair': FRAGMENT,
@@ -105,6 +109,13 @@ KINDS: Final[dict[str, str]] = {
 #: The subset that is wired as a git hook entry -- derived from both, so a script whose kind changes
 #: leaves this set without anyone editing it.
 HOOKS: Final[tuple[str, ...]] = tuple(name for name in SCRIPTS if KINDS.get(name) == HOOK)
+
+#: THE INTERPRETER HANDSHAKE. ``run_hook`` exports this variable and a shipped script that needs
+#: this package reads it: a bash hook cannot recover ``sys.executable``, and guessing one from
+#: ``PATH`` would let an ImportError be reported as a policy refusal. Named here, once, because the
+#: dispatcher that sets it and the script that reads it must agree, and a second spelling of the
+#: name is how they stop agreeing.
+PYTHON_ENV: Final = 'LAB_PYTHON'
 
 
 class HookNotShipped(LookupError):
@@ -233,6 +244,13 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
     operation it is attached to, and a wrapper that converted a 0 into an exception -- or the
     reverse -- would be making that decision from outside the file that documents it.
 
+    THE INTERPRETER IS PASSED DOWN AS ``LAB_PYTHON``, because this function is the only place that
+    knows it. A hook that needs THIS PACKAGE -- ``branchset-push`` reads the declared branch set with
+    ``lab_commons.dev.branchset`` -- must import it from the environment the consumer installed it
+    into, and a bash script cannot recover ``sys.executable``: it would have to guess from ``PATH``,
+    and the guess that missed would report an ImportError as a policy refusal. Handing it down costs
+    one environment variable and removes the guess. A hook that does not use it is unaffected.
+
     Raises:
         NotRunnable: When *name* is a :data:`FRAGMENT`. It is sourced, so running it would exit 0
             having done nothing -- a pass the caller cannot tell from a real one.
@@ -249,6 +267,7 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
         [bash_executable(), str(hook_path(name)), *args],
         cwd=None if cwd is None else str(cwd),
         check=False,
+        env={**os.environ, PYTHON_ENV: sys.executable},
     )
     return done.returncode
 

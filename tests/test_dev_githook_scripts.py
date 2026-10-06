@@ -134,7 +134,10 @@ def test_every_shipped_script_declares_what_it_is() -> None:
         f'the payload scan reached {githooks.SCRIPTS}; an unread tree is not a clean one'
     )
     assert githooks.undeclared() == (), githooks.undeclared()
-    assert set(githooks.HOOKS) == {'bump-version', 'cz-push-range'}, githooks.HOOKS
+    # NAMED, never counted: a fourth hook is a deliberate edit here, and a count could not say which
+    # one arrived. `branchset-push` joined on 2026-10-06 -- ONE-BRANCH-PER-SESSION refused AT PUSH
+    # TIME, where the decision is still open, rather than only by the census that runs afterwards.
+    assert set(githooks.HOOKS) == {'branchset-push', 'bump-version', 'cz-push-range'}, githooks.HOOKS
     assert set(githooks.scripts_of_kind(githooks.WRAPPER)) == {'branch-push-only', 'with-venv'}
 
 
