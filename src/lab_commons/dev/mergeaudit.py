@@ -70,6 +70,8 @@ _LINE: Final = re.compile(
     rf'^{TRAILER}:\s*(?P<kind>[A-Z]+)\s+(?P<test>\S+)(?:\s+--\s*(?P<reason>\S.*))?$', re.MULTILINE
 )
 _GIT_TIMEOUT_S: Final = 120
+#: A two-parent merge is the one shape the rule is about; an octopus is refused, one lane at a time.
+_PARENTS: Final = 2
 
 
 class MergeAuditError(RuntimeError):
@@ -210,7 +212,7 @@ def _sources(root: Path, sha: str, roots: Sequence[str]) -> dict[str, bytes]:
 def audit(root: Path, merge: str, *, roots: Sequence[str]) -> tuple[Deviation, ...]:
     """The deviations of the two-parent merge commit *merge*, reading test files under *roots*."""
     parents = _git(root, 'rev-list', '--parents', '-n', '1', merge).decode().split()[1:]
-    if len(parents) != 2:  # noqa: PLR2004 -- a two-parent merge is the one shape the rule is about
+    if len(parents) != _PARENTS:
         msg = f'{merge}: {len(parents)} parents -- the audit judges a two-parent merge; merge lanes one at a time'
         raise MergeAuditError(msg)
     bases = _git(root, 'merge-base', '--all', *parents).decode().split()
