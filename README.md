@@ -7,17 +7,26 @@ near-identical, silently-diverging copies** across those repos (see
 
 ## The two-tier rule
 
-**Tier 1 — agnostic core (always available, this package's default install).** Contains
-no concept from any single project's domain. Test: could a lab doing something
-unrelated (chemistry, finance) use it unchanged? If a symbol names a *specific* solver,
-a winding, an optimizer, or a vendor tool, it does not belong here.
+**Tier 1 ? project-agnostic infrastructure.** No single lab's solver, winding,
+optimizer, or vendor vocabulary belongs here. Generic ownership does not imply
+an eager package facade or a mandatory installation dependency.
 
-**Tier 2 — shared-domain modules (optional import).** Vocabulary that is not
-project-specific but IS common across this family of EM/motor labs — `lab_commons.em`,
-the EM quantity types/constants. A separate, clearly-named, opt-in module — importing
-tier 1 never drags tier 2 along; `lab_commons.em` needs no extra dependency to install
-(pint is already a tier-1 dep), the "optional" is about IMPORT, not install. See the
-source repo's `plan-lab-commons-standalone.md` for the full plan.
+**Tier 2 ? shared-domain vocabulary.** `lab_commons.em` describes the family's EM
+quantities; it is imported explicitly and installed through the `units` extra.
+The plotting vocabulary is NumPy data, with separate renderer adapters.
+
+The package root imports nothing. Use the defining module, such as
+`from lab_commons.log import get_logger`, rather than root symbol re-exports.
+The base installation requires NumPy only. Select capabilities explicitly:
+
+| Extra | Modules | Additional dependencies |
+|---|---|---|
+| `units` | `units`, `em`, quantity-based multiprocessing | Pint, Pydantic |
+| `paths` | `paths` | platformdirs |
+| `io` | `file_io` | rtoml |
+| `structured` | `structured` | structlog, colorama on Windows |
+| `viz-mpl` / `viz-bokeh` | named renderer adapter | matplotlib / Bokeh |
+| `dev` | development tools and their declared infrastructure | verification/tool dependencies |
 
 ## What's here (v1)
 
