@@ -6,10 +6,10 @@
 ## Environments — each worktree owns its venv
 
 - Each worktree owns its `.venv`, including an editable install of its own source. A missing environment needs bootstrap, not borrowing the primary checkout's interpreter for a verdict.
-- The lane's runner uses the lane's own interpreter, so its source and installed dependencies belong to the same checkout.
+- A worktree's runner uses that worktree's own interpreter, so its source and installed dependencies belong to the same checkout. Under fan-out only the coordinator's worktree runs it — a lane runs no tests (Concurrency, below).
 - The runner takes a root, and the root picks the SOURCE and the TESTS together.
 - **The dependency door is the agent's to run.** Syncing its own worktree's environment is a local operation requiring no human. Never change the primary checkout's environment from a lane.
-- Environment exclusion is per environment: a verdict in lane A prevents mutation of A's environment, not bootstrap or sync of B's. CPU contention remains the box lock's responsibility.
+- Environment exclusion is per environment: a verdict in worktree A prevents mutation of A's environment, not bootstrap or sync of B's. CPU contention remains the box lock's responsibility.
 
 ### Bootstrap and sync
 
@@ -38,8 +38,7 @@ Generated auto-mode allow rows name only these dependency doors under worktree i
 ## Setting up
 
 - Branch from the up-to-date INTEGRATION branch, never from `main`, which lags.
-- Lane creation seeds the ignored files a lane cannot produce a verdict without, and proves each copy by comparison rather than by assumption.
-- **Lane creation does NOT push, and the FIRST push is yours.** Until you make it, the lane has no last-pushed sha, so its first gate falls back to a much older base and measures far more than the increment — see [the shared checkout](shared-checkout.md).
+- Lane creation seeds the ignored files a checkout cannot work without, and proves each copy by comparison rather than by assumption.
 - **Split by FILE-DISJOINTNESS**: shared hotspots — an entry-point module, the central chain, the registries every feature touches — go to ONE lane, or serialize.
 - There is no lane ledger: the live audit of what exists is a script that classifies every worktree, and another that disposes of them. A ledger is a second source for a fact git already holds.
 
@@ -60,23 +59,24 @@ git worktree add --detach <path> <sha>
 - **A base check that only prints the sha is not a check.** Name a symbol the task cannot proceed without, and make a zero count a STOP.
 - **Give it the sha, never a branch name**: the integration branch moves under a long-running agent, and two agents on "the same branch" can be on two trees.
 - The coordinator may create the worktree instead, but only for a NON-isolated agent; for an isolated one the tree is unreachable and the work is lost.
-- One shared hazard bites subagents harder: if a long run holds the box lock, an agent invoking the runner gets a refusal rather than a result. Tell it that is EXPECTED, and tell it explicitly **not to kill processes or delete the lock file** — an agent trying to be helpful can destroy a four-hour verdict in one command.
-- **Do not ask a subagent for the push-tier verdict; ask for a MEASUREMENT of the paths its diff reaches**, naming any failure so inventory can be told from the increment. Measured 2026-09-15: a subagent's gate launched as a background task is reaped by the agent harness during collection and leaves an EMPTY log — it proves nothing in either direction, and costs the box lock while it lives.
+- **Ask a subagent for no verdict and no measurement**: it resolves, audits, commits and hands back — a lane runs no tests (Concurrency, below). Measured 2026-09-15: a subagent's gate launched as a background task is reaped by the agent harness during collection and leaves an EMPTY log — it proves nothing in either direction, and costs the box lock while it lives.
+- The coordinator's own run may hold the box lock for hours while its subagents work. Tell each one explicitly **not to kill processes or delete the lock file** — an agent trying to be helpful can destroy a four-hour verdict in one command.
 
-## Concurrency — one test session at a time
+## Concurrency — a lane runs no tests
 
-- Not "one gate at a time": the hazard is the SESSION, and a serial run is not "small".
-- Four lanes once obeyed "never run a full gate" by running 274 tests serially, a slow integration test, and two single files — none of them a gate — and the box hit 54 python processes until the serial gate they were protecting lost a worker and blocked forever waiting on it.
-- When fanning out, lanes do the non-pytest work — static reading, standalone probes with the import path set, direct lint runs — until the lock frees.
+- **`LANES-RUN-NO-TESTS`** (user ruling 2026-10-07): under fan-out a lane agent runs NO tests — no gate, no heavy, no measure, no targeted subset. It resolves, audits with STATIC checks only (static reading, the merge audit, direct lint runs), commits and hands back. The coordinator's MAIN session runs the verification ONCE, over the combined batch. Never re-run heavy test content per lane.
+- Measured 2026-10-07 in a consumer: five lanes measuring at once queued on the box's ONE CPU lock and re-ran what the combined `gate`/`heavy` runs anyway; one lane measure took 40 minutes to 2.5 hours. N lanes each verifying cost N serial runs whose content the batch verdict repeats.
+- The hazard is the test SESSION, not the tier, and a serial run is not "small": four lanes once obeyed "never run a full gate" by running 274 tests serially, a slow integration test, and two single files — none of them a gate — and the box hit 54 python processes until the serial gate they were protecting lost a worker and blocked forever waiting on it.
+- NOT ENFORCED, and stated here because the default is wrong without it: nothing yet tells a fan-out lane's run from its coordinator's, so nothing refuses a lane's test session. The box lock only QUEUES the second session; it does not refuse it. The registry in `lab_commons.dev.rules` cannot carry a rule with no mechanism, so the ID has no row there until one is built.
 
 ## Reading a result
 
 - Reading a verdict — exit versus log, missing logs, the tree stamp, and the reds-in-code-you-never-touched procedure — is owned by [the verdict model](verdict-model.md).
-- Two lane-specific additions: the process table answers "is it alive", never "where is it", so dump the stack of the pid a process probe reports rather than guessing from the table; and **a number you cannot reproduce is an anecdote with a decimal point** — two agents measured the same quantity as 3.05 to 5.08 s and 12.24 to 12.64 s, both were right, and one box had 29 busy processes.
+- Two additions for the coordinator reading one under fan-out: the process table answers "is it alive", never "where is it", so dump the stack of the pid a process probe reports rather than guessing from the table; and **a number you cannot reproduce is an anecdote with a decimal point** — two agents measured the same quantity as 3.05 to 5.08 s and 12.24 to 12.64 s, both were right, and one box had 29 busy processes.
 
 ## Landing
 
-- Each lane: implement, own verdict green, commit on its branch and PUSH it — every green commit, through the retry wrapper — then report SHAs, measured verification, and every file touched.
-- Integrate onto an integration worktree and then RE-GATE: two green branches can compose into a broken tree.
+- Each lane: implement, run the static audits, commit on its branch, then hand back its SHAs and every file touched. It pushes nothing: a push cites a verdict, and a lane has none.
+- The coordinator's MAIN session merges the lanes back to back, each through the merge audit, then verifies ONCE — one `gate` and one `heavy` on the combined tip — and bisects over the batch's merges only when that verdict is red (log2 N runs, not N). Two lanes can compose into a broken tree, which is why the batch verdict is the only one that answers. Then it pushes.
 - **Never write "merged" from memory**: the ancestor test answers "is this COMMIT in the target", and `git cherry` catches a cherry-pick whose sha changed. Run the ancestry check first, fall back to the other, and state which one answered.
-- The moment it says merged, delete the worktree, its output directory, and the origin branch — check the tree is CLEAN first, and trust the branch, not the directory name.
+- The moment it says merged, delete the worktree, its output directory, and the lane branch — check the tree is CLEAN first, and trust the branch, not the directory name.

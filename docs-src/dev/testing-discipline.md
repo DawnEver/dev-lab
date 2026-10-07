@@ -29,4 +29,4 @@
 - Four lanes once obeyed "never run a full gate" by running 274 tests serially, a slow integration test, and two single files — none of them a gate — and the box hit 54 python processes until the serial gate they were protecting lost a worker and blocked forever waiting on it.
 - The lock is held by the runner for EVERY tier and a second run is REFUSED and told who holds the box; `lab_commons.dev.boxlock` is the shared implementation.
 - Independent vendor tools MAY run concurrently where a repo has measured that they can; the per-vendor grouping bounds RAM and a vendor's unclassified error class, not a box-wide serialization.
-- When lanes fan out, they do the non-pytest work — static reading, standalone probes with the import path set, direct lint runs — until the lock frees; the full discipline is on [fan-out](fanout.md).
+- When lanes fan out, a lane runs no tests at all (`LANES-RUN-NO-TESTS`): it does static work only — static reading, the merge audit, direct lint runs — and the coordinator's main session verifies the combined batch once; the full discipline is on [fan-out](fanout.md).
