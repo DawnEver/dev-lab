@@ -301,7 +301,12 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: Re-priced the way every earlier reading was: the smallest floor whose clearance fits the same 90,
 #: which is 371 -- 90 clear exactly, and 80.5% of 461 against the 80.3% it replaces, so the
 #: re-measurement TIGHTENS rather than widens. The headroom is unchanged at 90, as at every reading.
-CONSTANT_FLOOR = 371
+#:
+#: RE-MEASURED 2026-10-07 AT 466, after the merge audit landed: the deviation kinds and trailer key of
+#: `dev.mergeaudit` and the three destinations of `dev.admission`. 466 against 371 is 95 clear, five
+#: past the same 90; the smallest floor whose clearance fits is 376 (80.7% of 466, TIGHTER than the
+#: 80.5% it replaces). The headroom is unchanged at 90.
+CONSTANT_FLOOR = 376
 CONSTANT_HEADROOM = 90
 
 

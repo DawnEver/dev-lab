@@ -58,3 +58,12 @@ heavy_context = "lab/heavy"         # the integration verdict's status context
 ```
 
 - The predicate, the order and the queue are the family's and are not configurable: a consumer that could redefine "ready" would be a second source of it.
+
+## A merge names every test it lost or rewrote (`MERGE-DEVIATIONS-NAMED`)
+
+- The tests ARE the feature inventory, so the one regression a gate cannot see is a resolution that deletes or rewrites the test that would have caught it. `lab_commons.dev.mergeaudit` computes, per test, what a clean three-way merge would hold, and reads git objects only.
+- A deviation is `LOST` (expected, absent), `ALTERED` (a body or presence the clean merge would not hold) or `CONFLICTED` (both sides changed it differently). Each is named in the merge commit: `Merge-Audit: <KIND> <test> -- <reason>`. A clean merge needs no line; a line naming no real deviation is refused too.
+- `ALTERED` passes on the merging agent's one-line reason and is audited afterwards (user ruling 2026-10-07).
+- Push admission audits every merge reachable from HEAD and from no remote ref, on EVERY destination, over `test_roots` in `[tool.lab_commons.integrator]` (default `["tests"]`). Name the deviation before the first push: once a merge is on a remote, it is no longer re-audited.
+- Integrate by MERGE only: a rebase resolves conflicts with no merge commit to audit.
+- Not seen: a fixture or helper changed under an unchanged test body. It still runs under the gate.

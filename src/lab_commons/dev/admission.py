@@ -1,14 +1,25 @@
 """PUSH ADMISSION -- the family's ONE answer to "may this push cite that verdict".
 
-THE RULE (user ruling 2026-10-04, "INCONCLUSIVE may be pushed"):
+THE RULE (user rulings 2026-10-04, "INCONCLUSIVE may be pushed", and 2026-10-07):
 
-=================  ======================================  =========================
-destination        admitted results, same tree and env     refused
-=================  ======================================  =========================
-a lane / an        PASS, FAIL, INCONCLUSIVE                no verdict; another tree;
-integration branch                                         another env; a dirty tree
-the trunk          PASS of a trunk tier, nothing else      everything else
-=================  ======================================  =========================
+==================  ======================================  =========================
+destination         admitted results, same tree and env     refused
+==================  ======================================  =========================
+a lane              PASS, FAIL, INCONCLUSIVE                no verdict; another tree;
+an integration ref  PASS, FAIL                              another env; a dirty tree
+the trunk           PASS of a trunk tier, nothing else      everything else
+==================  ======================================  =========================
+
+AN INTEGRATION BRANCH IS NOT A LANE (user ruling 2026-10-07). A lane may live on a box too slow to
+finish its suite, so it must be able to publish an INCONCLUSIVE; the integration branch is where
+lanes meet, and a tree nobody finished judging is where a regression from a merge hides. It cites a
+run that FINISHED -- a FAIL is on record with its gap, an INCONCLUSIVE is no statement at all.
+
+EVERY DESTINATION AUDITS THE MERGES IT PUBLISHES, unconditionally: each merge commit not yet on any
+remote must name every test its resolution lost or rewrote (:mod:`lab_commons.dev.mergeaudit`);
+an unnamed deviation refuses the push wherever it is going. The integration branch and the test roots
+are read from ``[tool.lab_commons.integrator]`` -- the one place a consumer names them. The audit
+reads git objects only, so a slow box pays nothing for it.
 
 A lane push used to be refused on INCONCLUSIVE because "nothing was proved". That made origin -- the
 only shared medium -- unreachable for exactly the increments too wide or too contended to judge, and
@@ -44,7 +55,9 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.forge import _GIT
+from lab_commons.dev.integrator import Policy, load_policy
 from lab_commons.dev.logref import MARKER
+from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, refusals
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.log import emit
 
@@ -52,17 +65,22 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
 
 __all__ = [
-    'LANE_RESULTS',
-    'TRUNK_RESULTS',
+    'INTEGRATION',
+    'LANE',
+    'RESULTS',
+    'TRUNK',
     'VERDICT_STAMP',
     'Admission',
     'CitedVerdict',
     'admit',
     'decide_fresh',
+    'destination_of',
     'main',
+    'merge_refusals',
     'never_started',
     'parse_verdict_line',
     'record_gap',
+    'unpublished_merges',
 ]
 
 #: The tiered stamp a consumer's gate runner writes: ``[verdict tree= env= tier= selector=] RESULT``.
@@ -77,8 +95,15 @@ _FLAT: Final = re.compile(
     '^' + re.escape(MARKER) + r'result=(?P<result>\w+) tree=(?P<tree>\S+) env=(?P<env>\S+) ', re.MULTILINE
 )
 
-LANE_RESULTS: Final = frozenset({'PASS', 'FAIL', 'INCONCLUSIVE'})
-TRUNK_RESULTS: Final = frozenset({'PASS'})
+LANE: Final = 'lane'
+INTEGRATION: Final = 'integration'
+TRUNK: Final = 'trunk'
+#: What each destination may cite -- the table above, as the one place it is spelled.
+RESULTS: Final = {
+    LANE: frozenset({'PASS', 'FAIL', 'INCONCLUSIVE'}),
+    INTEGRATION: frozenset({'PASS', 'FAIL'}),
+    TRUNK: frozenset({'PASS'}),
+}
 
 #: Preference when several anchors are citable: the strongest statement about the tree wins.
 _RANK: Final = {'PASS': 0, 'FAIL': 1, 'INCONCLUSIVE': 2}
@@ -179,7 +204,7 @@ def _announce(cited: CitedVerdict, *, where: str, gap: Path | None) -> str:
     if cited.result == 'INCONCLUSIVE':
         lines += [
             '[admission] !!! INCONCLUSIVE CITED -- nothing was proved about this tree. The push proceeds',
-            '[admission] !!! INCONCLUSIVE CITED -- because a lane may carry it; the trunk will not.',
+            '[admission] !!! INCONCLUSIVE CITED -- because a lane may carry it; integration and trunk will not.',
         ]
     if gap is not None and cited.result != 'PASS':
         lines.append(f'[admission] gap recorded at {gap}')
@@ -189,21 +214,22 @@ def _announce(cited: CitedVerdict, *, where: str, gap: Path | None) -> str:
 def admit(
     anchors: Sequence[tuple[str, Path]],
     *,
-    trunk: bool,
+    destination: str,
     trunk_tiers: Collection[str],
     head: str,
     clean: bool,
     env: str | None,
     gap: Path | None = None,
 ) -> Admission:
-    """Decide a push from recorded verdicts. *anchors* are ``(tier, path)`` in the repo's preference.
+    """Decide a push to *destination* from recorded verdicts; *anchors* are ``(tier, path)`` by preference.
 
-    A lane tries every anchor and cites the strongest admissible result (PASS over FAIL over
-    INCONCLUSIVE, ties in anchor order); the trunk reads only *trunk_tiers* and only a PASS. A lane
-    citing a non-PASS writes or refreshes the gap record at *gap* when one is named.
+    A lane or integration ref tries every anchor and cites the strongest result :data:`RESULTS` admits
+    (PASS over FAIL over INCONCLUSIVE, ties in anchor order); the trunk reads only *trunk_tiers* and
+    only a PASS. Citing a non-PASS writes or refreshes the gap record at *gap* when one is named.
     """
-    results = TRUNK_RESULTS if trunk else LANE_RESULTS
-    where = 'trunk' if trunk else 'lane'
+    trunk = destination == TRUNK
+    results = RESULTS[destination]
+    where = destination
     admissible: list[tuple[int, int, CitedVerdict, str]] = []
     reasons: list[str] = []
     for order, (tier, path) in enumerate(anchors):
@@ -222,7 +248,7 @@ def admit(
         else:
             reasons.append(f'[admission]   {tier} ({path}): {cited_reason or "no verdict"}')
     if not admissible:
-        bar = f'a PASS of tier {sorted(trunk_tiers)}' if trunk else 'a PASS, FAIL or INCONCLUSIVE verdict'
+        bar = f'a PASS of tier {sorted(trunk_tiers)}' if trunk else f'one of {sorted(results)}'
         message = '\n'.join(
             [
                 f'[admission] {where}: push REFUSED -- no recorded verdict for tree={head} in env={env}.',
@@ -240,13 +266,13 @@ def admit(
     return Admission(allowed=True, cited=cited, message=_announce(cited, where=where, gap=gap))
 
 
-def decide_fresh(log: Path, *, trunk: bool, gap: Path | None = None) -> Admission:
+def decide_fresh(log: Path, *, destination: str, gap: Path | None = None) -> Admission:
     """Decide a push from the log of a run made FOR this push, by the same table as :func:`admit`.
 
     No tree or env comparison: the run just judged this tree in this env. No log or no readable
     verdict is still a refusal -- that is a run that died before it could say anything.
     """
-    where = 'trunk' if trunk else 'lane'
+    where = destination
     text = _read(log)
     if text is None:
         return Admission(
@@ -261,8 +287,9 @@ def decide_fresh(log: Path, *, trunk: bool, gap: Path | None = None) -> Admissio
         return Admission(
             allowed=False, cited=None, message=f'[admission] {where}: push REFUSED -- {NEVER_STARTED_REMEDY}.'
         )
-    if cited.result not in (TRUNK_RESULTS if trunk else LANE_RESULTS):
-        refused = f'[admission] trunk: {cited.result} -- push REFUSED; the trunk takes a PASS.'
+    if cited.result not in RESULTS[destination]:
+        takes = sorted(RESULTS[destination])
+        refused = f'[admission] {where}: {cited.result} -- push REFUSED; it takes one of {takes}.'
         return Admission(allowed=False, cited=cited, message=f'{refused}\n[admission] cited: {cited.line}')
     if gap is not None and cited.result != 'PASS':
         record_gap(gap, cited, text)
@@ -289,6 +316,45 @@ def record_gap(path: Path, cited: CitedVerdict, log_text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('\n'.join(body), encoding='utf-8')
     return path
+
+
+def destination_of(remote_ref: str, policy: Policy) -> str:
+    """:data:`INTEGRATION` for the declared integration branch, else :data:`LANE`; the trunk is the caller's."""
+    return INTEGRATION if remote_ref == f'refs/heads/{policy.integration}' else LANE
+
+
+def unpublished_merges(root: Path) -> tuple[str, ...]:
+    """The merge commits reachable from HEAD and from no remote ref -- what this push publishes first."""
+    listed = subprocess.run(
+        [_GIT, '-C', str(root), 'rev-list', '--merges', 'HEAD', '--not', '--remotes'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=True,
+        timeout=_GIT_TIMEOUT_S,
+    ).stdout
+    return tuple(listed.split())
+
+
+def merge_refusals(root: Path, merges: Sequence[str], roots: Sequence[str]) -> tuple[str, ...]:
+    """Every unnamed or over-named deviation in *merges*; an audit that cannot read is one too."""
+    try:
+        return refusals(root, merges, roots=roots)
+    except MergeAuditError as error:
+        return (str(error),)
+
+
+def _audit_message(problems: Sequence[str], where: str) -> str:
+    return '\n'.join(
+        [
+            f'[admission] {where}: push REFUSED -- a merge lost or rewrote tests without naming them.',
+            *(f'[admission]   {line}' for line in problems),
+            (
+                '[admission] Remedy: restore what the resolution dropped, or name each deviation in the merge '
+                f'commit (amend it before its first push) as `{TRAILER}: <KIND> <test> -- <reason>`.'
+            ),
+        ]
+    )
 
 
 def _tree_state(root: Path) -> tuple[str, bool]:
@@ -324,8 +390,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     trunk = args.trunk_ref != 'none' and args.remote_ref == args.trunk_ref
     if trunk and not args.trunk_tier:
         parser.error('--trunk-tier is required when the push targets the trunk')
+    policy = load_policy(args.root)
+    destination = TRUNK if trunk else destination_of(args.remote_ref, policy)
+    problems = merge_refusals(args.root, unpublished_merges(args.root), policy.test_roots)
+    if problems:
+        emit(_audit_message(problems, destination))
+        return 1
     if args.fresh_log is not None:
-        decided = decide_fresh(args.fresh_log, trunk=trunk, gap=args.gap)
+        decided = decide_fresh(args.fresh_log, destination=destination, gap=args.gap)
     else:
         anchors = []
         for spec in args.anchor:
@@ -335,7 +407,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             anchors.append((tier, args.root / path))
         head, clean = _tree_state(args.root)
         decided = admit(
-            anchors, trunk=trunk, trunk_tiers=args.trunk_tier, head=head, clean=clean, env=_current_env(), gap=args.gap
+            anchors,
+            destination=destination,
+            trunk_tiers=args.trunk_tier,
+            head=head,
+            clean=clean,
+            env=_current_env(),
+            gap=args.gap,
         )
     emit(decided.message)
     return 0 if decided.allowed else 1
