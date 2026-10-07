@@ -6,24 +6,8 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Mingyang Bao" }]
 requires-python = ">=3.12"
-dependencies = [
-    # Tier 1 core deps only -- structured logging, platform-standard path resolution,
-    # TOML read/write, and the generic pint<->pydantic quantity machinery. No consumer-a,
-    # no EM/solver vocabulary: a consumer that wants only logging installs nothing
-    # heavier than this. pint is a hard dep of tier 1 (lab_commons.units); tier 2
-    # (lab_commons.em) needs no additional dependency, so it ships in the wheel --
-    # "optional" for em means optional IMPORT, not optional install.
-    "structlog",
-    # structlog's DEFAULT config builds a coloured ConsoleRenderer at IMPORT time and, on Windows,
-    # raises SystemError when colorama is absent -- so `import lab_commons` crashed in every
-    # environment that installs only this package (the pre-commit `issue-ref` hook env, family-wide).
-    "colorama; sys_platform == 'win32'",
-    "platformdirs",
-    "rtoml",
-    "pint>=0.25.2",
-    "pydantic>=2",
-    "numpy",
-]
+# Arrays are the only shared numerical runtime. Other infrastructure is opt-in.
+dependencies = ["numpy"]
 
 [project.scripts]
 # THE ONE CONSOLE SCRIPT, AND IT EXISTS FOR EXACTLY ONE CALLER. A `.pre-commit-config.yaml` entry is
@@ -58,6 +42,12 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 packages = ["src/lab_commons"]
 
 [project.optional-dependencies]
+# Each defining module has an explicit installation capability, not a root facade.
+units = ["pint>=0.25.2", "pydantic>=2"]
+paths = ["platformdirs"]
+io = ["rtoml"]
+structured = ["structlog", "colorama; sys_platform == 'win32'"]
+
 # THE GATE FOR ``lab_commons.dev``. That subpackage is opt-in exactly as ``lab_commons.em`` is --
 # the top level does not import it, and `tests/test_dev_gate.py` pins that against a fresh
 # interpreter -- and the extra below is what a consumer installs to opt in. It names the tools the
@@ -65,6 +55,7 @@ packages = ["src/lab_commons"]
 # no new dependency, which the same test proves by reading its import statements. A consumer that
 # wants only logging installs nothing heavier than the tier-1 list above.
 dev = [
+    "lab-commons[units,paths,io,structured]",
     "pytest",
     "pytest-mock",
     "ruff",
