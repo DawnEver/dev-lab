@@ -1,6 +1,6 @@
 ---
 name: HANDOFF-merge-audit-built-not-published-and-the-fcc-jmag-test-plan
-description: MERGE-DEVIATIONS-NAMED is built and committed on lab-commons lane/merge-audit (not pushed, not consumed). What it does, the two user rulings it encodes, the publish order, the motronics wiring still owed, and the acceptance test on feat/field-circuit-coupling x feat/jmag-integration, with a measured baseline.
+description: MERGE-DEVIATIONS-NAMED is built and committed on lab-commons lane/merge-audit (not pushed, not consumed). What it does, the two user rulings it encodes, the publish order, the consumer-a wiring still owed, and the acceptance test on feat/field-circuit-coupling x feat/jmag-integration, with a measured baseline.
 created: 2026-10-07
 ---
 
@@ -42,7 +42,7 @@ truth, no backward compatibility.
   - `test_no_tracked_file_carries_private_markers` names
     `.claude/memory/2026/10/07/the-population-is-gits-and-the-key-is-a-node-id.md:27-29`.
   The third (an undeclared `noqa`) is fixed in `3ecc8c9`, its file re-measured PASS.
-- motronics: NOTHING changed. `scripts/gate/prepush_gate.py` still calls `trunk=`, so it BREAKS the
+- consumer-a: NOTHING changed. `scripts/gate/prepush_gate.py` still calls `trunk=`, so it BREAKS the
   moment its venv syncs the new lab-commons. Publish and consume in the same sitting.
 
 ## Next, in order (awaiting the user's go on step 1-2)
@@ -50,7 +50,7 @@ truth, no backward compatibility.
 1. Fix the two pre-existing reds (add `encoding=` at the two calls; genericise the home paths in
    that memory file), so lab-commons trunk can cite a PASS.
 2. Merge `lane/merge-audit` into lab-commons `main`, push through the netverb door.
-3. motronics, in a LANE worktree (main checkout has another editor):
+3. consumer-a, in a LANE worktree (main checkout has another editor):
    - `prepush_gate.py`: `destination=` from `PRE_COMMIT_REMOTE_BRANCH` via
      `admission.destination_of(remote_ref, load_policy(root))`; call `admission.merge_refusals(root,
      admission.unpublished_merges(root), policy.test_roots)` before citing a verdict;
@@ -59,7 +59,7 @@ truth, no backward compatibility.
    - adopt `MERGE-DEVIATIONS-NAMED` in the adoption test;
    - `.claude/rules/workflow.md`: the "integrate/main INCLUDED ... INCONCLUSIVE" line is now false;
      `rem/integration.md`: NEWER-STRUCTURE's loss half is now enforced -- point at the rule ID.
-4. Other consumers (optimi-lab, ...): adopt the rule, follow the API break.
+4. Other consumers (consumer-c, ...): adopt the rule, follow the API break.
 
 ## Acceptance test: feat/field-circuit-coupling x feat/jmag-integration
 
@@ -87,6 +87,6 @@ Test plan:
 
 - A fixture/helper change under an unchanged test body (the gate still runs it).
 - Module-level pin DATA (`_*_pins.py`, parametrize lists defined outside the function). The most
-  practical gap in motronics; extend the fingerprint to module-level assignments under `test_roots`.
+  practical gap in consumer-a; extend the fingerprint to module-level assignments under `test_roots`.
 - A rebase resolves conflicts with no merge commit; force-push is hook-denied, merge-only is prose.
 - The delta tests of both sides are not forced into the integration verdict's selection.
