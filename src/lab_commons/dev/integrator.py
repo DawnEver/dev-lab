@@ -73,6 +73,8 @@ class Policy:
     main: str = 'main'
     gate_context: str = GATE_CONTEXT
     heavy_context: str = HEAVY_CONTEXT
+    #: The test trees :mod:`lab_commons.dev.mergeaudit` reads; every merge a push publishes is audited over them.
+    test_roots: tuple[str, ...] = ('tests',)
 
 
 @dataclass(frozen=True)
@@ -159,8 +161,7 @@ def load_policy(root: Path) -> Policy:
     if unknown:
         msg = f'[tool.lab_commons.{_TABLE}] in {manifest} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    if 'lane_prefixes' in declared:
-        declared = declared | {'lane_prefixes': tuple(declared['lane_prefixes'])}
+    declared = declared | {key: tuple(declared[key]) for key in ('lane_prefixes', 'test_roots') if key in declared}
     return Policy(**declared)
 
 

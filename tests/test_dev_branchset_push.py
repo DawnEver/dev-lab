@@ -218,6 +218,7 @@ def test_the_planted_control_pushes_both_ways(tmp_path: Path) -> None:
             cwd=root,
             capture_output=True,
             text=True,
+            encoding='utf-8',
             timeout=120,
             check=False,
         )
@@ -233,6 +234,7 @@ def test_the_planted_control_pushes_both_ways(tmp_path: Path) -> None:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding='utf-8',
         timeout=60,
         check=True,
     ).stdout

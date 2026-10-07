@@ -53,7 +53,10 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: landed -- ONE-BRANCH-PER-SESSION refused AT PUSH TIME rather than only by the census that runs
 #: after the push it judges. 192 against 151 is 41 clear, one past the margin again, and the answer is
 #: the same one: the floor moves to 152 and the margin does not move.
-FILE_FLOOR = 152
+#:
+#: RE-MEASURED 2026-10-07 AT 193 after `dev.mergeaudit` landed: 193 against 152 is 41 clear, one past
+#: the margin, so the floor moves to 153 and the margin does not move.
+FILE_FLOOR = 153
 
 
 def _tree() -> dict[str, str]:

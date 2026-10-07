@@ -24,9 +24,9 @@ MEASURED 2026-10-07, `git ls-files -co --exclude-standard` against the walk, per
 | repo | walk | git | walk-only IDENTIFIERS |
 |---|---|---|---|
 | lab-commons | 386 | 382 | 6 |
-| consumer-c (optimi-lab) | 107 | 93 | 12 |
-| consumer-b (wdg-lab) | 493 | 360 | 45 |
-| consumer-a (motronics-studio) | 8679 | 7128 | 240 |
+| consumer-c | 107 | 93 | 12 |
+| consumer-b | 493 | 360 | 45 |
+| consumer-a | 8679 | 7128 | 240 |
 
 The walk-only names are ordinary import names — `bokeh`, `lib`, `wdg`, `cache`, `design`, `verify`,
 `output`, `dist`, `local`, `reports`, `stationary`, `magnet`.

@@ -98,6 +98,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_branchset.py',),
     ),
     (
+        'MERGE-DEVIATIONS-NAMED',
+        (
+            'A merge may not lose or rewrite a test in silence. Every test whose body in the merge differs from '
+            'what a clean three-way merge would hold -- LOST, ALTERED, or CONFLICTED -- is named in the merge '
+            'commit with a one-line reason, and a push publishing a merge with an unnamed one is refused on '
+            'every destination. The tests are the feature inventory; no second list is kept.'
+        ),
+        ('tests/test_dev_mergeaudit.py',),
+    ),
+    (
         'AUTO-MODE-RUNS-THE-DOORS',
         (
             'In Claude Code and Codex auto mode the family`s checked doors run unprompted: one narrow allow row '
