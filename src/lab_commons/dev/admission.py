@@ -324,7 +324,21 @@ def destination_of(remote_ref: str, policy: Policy) -> str:
 
 
 def unpublished_merges(root: Path) -> tuple[str, ...]:
-    """The merge commits reachable from HEAD and from no remote ref -- what this push publishes first."""
+    """The merge commits reachable from HEAD and from no remote ref -- what this push publishes first.
+
+    An UNBORN HEAD (a fresh repository before its first commit) reaches no commit, so it publishes
+    no merge: the answer is empty, never a crash of the audit that asked.
+    """
+    born = subprocess.run(
+        [_GIT, '-C', str(root), 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    if born.returncode:
+        return ()
     listed = subprocess.run(
         [_GIT, '-C', str(root), 'rev-list', '--merges', 'HEAD', '--not', '--remotes'],
         capture_output=True,
