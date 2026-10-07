@@ -78,10 +78,10 @@ from lab_commons.dev.syncscope import Selection, canon, survivors
 __all__ = [
     'ALIASES',
     'GUARD_EXCEPTIONS',
-    'SKIP_DIRS',
     'STDLIB',
     'Fate',
     'FileReading',
+    'NotACheckout',
     'Reach',
     'Use',
     'fate',
@@ -120,13 +120,6 @@ GUARD_EXCEPTIONS: Final[frozenset[str]] = frozenset(
     {'BaseException', 'Exception', 'ImportError', 'ModuleNotFoundError'}
 )
 
-#: Directory names never descended when looking for LOCAL module names. ``.venv`` is the important
-#: one and it is the reason this is declared: an installed distribution sits under it, so a walk
-#: that entered it would call every third-party import LOCAL and find nothing forever.
-SKIP_DIRS: Final[frozenset[str]] = frozenset(
-    {'.claude', '.git', '.venv', '__pycache__', 'attic', 'node_modules', 'target'}
-)
-
 #: The standard library of the interpreter doing the reading. An import of one of these is supplied
 #: by python itself and no sync moves it.
 STDLIB: Final[frozenset[str]] = frozenset(sys.stdlib_module_names)
@@ -134,9 +127,23 @@ STDLIB: Final[frozenset[str]] = frozenset(sys.stdlib_module_names)
 #: The one pytest verb that turns a missing distribution into a SKIP instead of a collection error.
 _IMPORTORSKIP: Final = 'importorskip'
 
+#: The suffix that makes a listed file a module NAME rather than a directory or a data file. Named
+#: rather than spelled inline because it appears twice in one expression and the two must agree.
+_PY: Final = '.py'
+
 #: What :func:`resolve` answers for an import no sync can take away -- stdlib, or a file in the
 #: checkout. Distinct from ``None``, which means no text settled it: the two have opposite remedies.
 _SUPPLIED: Final[frozenset[str]] = frozenset()
+
+
+class NotACheckout(ValueError):
+    """``local_modules`` was pointed at a directory no git work tree answers for.
+
+    A REFUSAL RATHER THAN AN EMPTY SET. "Nothing is local here" is not a smaller answer than the
+    right one, it is the OPPOSITE one: every local name would fall through :func:`resolve` to
+    ``None``, and the census would report a residue that is not there. Nothing about a directory
+    outside a checkout makes its imports any less supplied.
+    """
 
 
 class Fate(Enum):
@@ -244,25 +251,60 @@ def _git(root: Path, *args: str) -> str:
     ).stdout
 
 
-def local_modules(root: Path, *, skip: frozenset[str] = SKIP_DIRS) -> frozenset[str]:
+def local_modules(root: Path) -> frozenset[str]:
     """Every top-level name importable from the CHECKOUT itself -- a ``<name>.py`` or a ``<name>/``.
 
     Anywhere in the tree rather than at the roots pytest happens to prepend, because ``rootdir``
     insertion depends on which files carry an ``__init__.py`` and getting that wrong turns a test
-    helper into a phantom missing distribution. Wider than the truth in the SAFE direction: this set
-    only ever removes a name from the stranded answer, and rule 1 already claimed the declared ones.
+    helper into a phantom missing distribution.
+
+    THE POPULATION IS GIT'S AND NOT THE FILESYSTEM'S, and that is a MEASUREMENT rather than a
+    preference. This used to walk the tree skipping a hand-maintained ``SKIP_DIRS``, and a
+    hand-maintained set cannot predict every directory a box will leave lying around: it named
+    ``.venv`` and missed ``htmlcov/``, ``output/``, ``.verify/``, ``.pytest_cache/``, ``.ruff_cache/``,
+    ``lib/`` and ``docs/``. MEASURED 2026-10-07 over the four repos, a walk and a listing of
+    ``git ls-files -co --exclude-standard`` disagreed on identifier-shaped names -- 240 in the largest
+    tree, 45 in the next, 12 and 6 in the two smallest, every one of them from an ignored tree -- and
+    they are ordinary import names: ``bokeh``, ``lib``, ``wdg``, ``cache``, ``design``, ``verify``,
+    ``output``, ``stationary``, ``magnet``.
+
+    **AND THAT IS NOT THE SAFE DIRECTION.** The docstring here used to argue a wider set only ever
+    removes a name from a stranded answer. That is true of the REACH answer and false of this one:
+    :func:`resolve` reads a local name as SUPPLIED, so a name the box supplied and the checkout does
+    not MASKS a distribution that is really missing -- a false negative in the census the whole module
+    exists to produce. ``src/<pkg>/viz/backend/bokeh/`` survived its own retirement commit holding
+    nothing but a ``__pycache__``, and ``import bokeh`` read as a local import in a repo whose census
+    records ``bokeh`` as UNRESOLVED.
+
+    ``-c`` plus ``-o`` minus the ignore rules is exactly "the files this checkout holds": tracked
+    files, plus the ones an author has written and not yet committed, minus everything git was told
+    to ignore. It is REPRODUCIBLE FROM THE TREE: MEASURED, a checkout that has been run in and one
+    that has not now answer identically, where before the same commit produced a different census on
+    two boxes because one of them had a retired module's ``__pycache__`` still on disk.
+
+    Raises:
+        NotACheckout: *root* is not inside a git work tree, so it has no checkout-supplied names.
+
     """
+    try:
+        listing = _git(root, 'ls-files', '-co', '--exclude-standard')
+    except subprocess.CalledProcessError as exc:
+        msg = (
+            f'{root} is not in a git work tree, so which names this CHECKOUT supplies cannot be read. '
+            f'A filesystem walk answers a different question -- it answers what this BOX has, and every '
+            f'ignored directory it finds is a distribution the census can no longer convict. Point this '
+            f'at a checkout, or read the tree some other way.'
+        )
+        raise NotACheckout(msg) from exc
     names: set[str] = set()
-    stack = [root]
-    while stack:
-        for path in stack.pop().iterdir():
-            if path.name in skip:
-                continue
-            if path.is_dir():
-                stack.append(path)
-                names.add(path.name)
-            elif path.suffix == '.py':
-                names.add(path.stem)
+    for line in listing.splitlines():
+        parts = line.strip().split('/')
+        if not parts or not parts[-1]:
+            continue
+        names.update(parts[:-1])
+        name = parts[-1]
+        if name.endswith(_PY) and (stem := name.removesuffix(_PY)):
+            names.add(stem)
     return frozenset(names)
 
 

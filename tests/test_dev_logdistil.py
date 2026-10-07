@@ -35,7 +35,7 @@ from lab_commons.dev._logdistil import Distillate, distil, distil_log, relevant
 from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
 from lab_commons.dev.pytestout import TRUNCATION_MARKERS
 from lab_commons.dev.reports import StepReport, read_pytest
-from lab_commons.dev.verify import _PYTEST_BANNER, _tee
+from lab_commons.dev.verify import _PYTEST_BANNER, PYTEST_ARGS, _tee
 
 #: The banner ``verify`` writes between the ruff half of a log and the pytest half.
 BANNER = _PYTEST_BANNER
@@ -63,7 +63,7 @@ PARSE_SHAPES: dict[str, str] = {
     '_CSI': '\x1b[31mFAILED\x1b[0m tests/test_a.py::\x1b[1mtest_b\x1b[0m - assert 0',
     '_FAILED_NODE': 'FAILED tests/test_units.py::test_a_bare_float_is_refused - AssertionError',
     '_INTERRUPTED': '!!!!!!! Interrupted: 3 errors during collection !!!!!!!',
-    '_SKIPPED': 'SKIPPED [1] tests/test_vendor.py:31: needs the vendor',
+    '_SKIPPED': 'SKIPPED tests/test_vendor.py::test_a - needs the vendor',
     '_SUMMARY': '=========== 3 failed, 304 passed, 2 xfailed in 14.8s ===========',
     'node down': '[gw3] node down: Not properly terminated',
 }
@@ -181,8 +181,13 @@ class TestAnOrdinaryLogParsesByteIdentically:
         log = tmp_path / 'verify.log'
         with log.open('w', encoding='utf-8') as handle, contextlib.redirect_stdout(io.StringIO()):
             handle.write(BANNER)
+            # `*PYTEST_ARGS` RATHER THAN A HAND-WRITTEN `-rfEs`, and it is a fix rather than tidying.
+            # This helper spelled the flags itself, so it went on producing the FOLDED skip summary
+            # after `verify` started asking for the unfolded one -- and the comparison below, which
+            # exists to prove the streamed parse equals the whole-text parse, would have compared two
+            # readings of a report nothing produces. The flags are the entry point's; ask it for them.
             code = _tee(
-                [sys.executable, '-m', 'pytest', '-rfEs', '-p', 'no:cacheprovider', str(suite)],
+                [sys.executable, '-m', 'pytest', *PYTEST_ARGS, '-p', 'no:cacheprovider', str(suite)],
                 cwd=tmp_path,
                 handle=handle,
             )
@@ -204,6 +209,25 @@ class TestAnOrdinaryLogParsesByteIdentically:
     #: The planted skip, DECLARED. An undeclared skip truncates -- that is the ratchet working, and
     #: it would hide the red this comparison exists to find.
     ALLOWED = ('suite/test_planted.py',)
+
+    def test_the_real_run_names_its_skips_by_node_id(self, tmp_path: Path) -> None:
+        """THE CONTRACT WITH PYTEST ITSELF, taken from a LIVE run rather than from a fixture.
+
+        The ratchet above pins a representative line for ``_SKIPPED``; this pins that the line is the
+        one the installed pytest PRINTS. It matters because the allowance is keyed on it: if a future
+        pytest folds the summary again -- or renames the flag -- the representative would still parse
+        and every declaration in every consumer would silently stop matching a line number.
+        """
+        log, code = self._real_log(tmp_path, self.SUITE)
+        text = distil_log(log, banner=BANNER).text
+        assert 'SKIPPED suite/test_planted.py::test_grey' in text, (
+            f'the planted skip must be reported by node id, and the log said: '
+            f'{[line for line in text.splitlines() if "SKIPPED" in line]}'
+        )
+        report = read_pytest(text, returncode=code, allowed_skips=self.ALLOWED)
+        assert 'allowed_skips' not in ' '.join(report.truncated), (
+            'the declared module prefix must match the node id the real run printed'
+        )
 
     def test_the_streamed_parse_equals_the_whole_text_parse(self, tmp_path: Path) -> None:
         log, code = self._real_log(tmp_path, self.SUITE)

@@ -465,6 +465,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'S607',
         "done = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)",
     ): 'git through PATH listing exactly what a push publishes; an absolute path is wrong on every box',
+    (
+        'tests/test_dev_collectscope.py',
+        'S607',
+        "['git', '-C', str(root), *arguments],",
+    ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

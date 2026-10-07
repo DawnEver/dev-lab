@@ -125,7 +125,7 @@ PYPROJECT_DECLINED: Final[dict[tuple[str, ...], str]] = {
         'ONE REPO, AND THE KIT ALREADY OWNS IT IN CODE. Only consumer-b declares '
         '`[tool.lab_commons.verify]`, and its schema is defined by `lab_commons.dev.verify` in this '
         'package. A section base restating that schema would be a SECOND source for it, and the one '
-        'key it holds (`allowed_skips`) is eight paths into one lab`s test tree.'
+        'key it holds (`allowed_skips`) is a list of pytest node IDs into one lab`s test tree.'
     ),
     ('tool', 'hatch'): (
         'A CONSEQUENCE OF `[build-system]` AND NOT AN INDEPENDENT DECISION. Present in the two '

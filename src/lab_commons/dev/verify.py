@@ -50,7 +50,14 @@ from lab_commons.dev.forgestatus import GATE_CONTEXT, head_sha, publish, verdict
 from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.pytestout import strip_ansi
-from lab_commons.dev.reports import MalformedAllowance, StepReport, declared_skips, read_pytest, read_ruff
+from lab_commons.dev.reports import (
+    MalformedAllowance,
+    StepReport,
+    declared_skips,
+    read_pytest,
+    read_ruff,
+    stale_declarations,
+)
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
 from lab_commons.log import emit
@@ -110,7 +117,16 @@ RUFF_STEPS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 #: The disagreement check that caught this is kept exactly as it is. It was right -- the summary and
 #: the named set genuinely disagreed -- and it is what turned a silent mis-classification into a
 #: loud refusal. The bug was never the check; it was asking pytest for less than the check needs.
-PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs',)
+#:
+#: AND ``--no-fold-skipped``, FOR THE SAME REASON ONE STEP FURTHER. Measured 2026-10-07 against the
+#: installed pytest: ``-rs`` FOLDS the skip summary into ``SKIPPED [2] tests/test_vendor.py:31:
+#: reason`` -- grouped by (file, line, reason), with no node id in the line and a LINE NUMBER in its
+#: place. Every allowance in every consumer was therefore keyed on a fact about a file's layout, and
+#: a consumer measured what that costs: a five-line comment moved a skip from ``:101`` to ``:106`` and
+#: an entry that had just been re-measured by hand stopped matching, so every verdict from that
+#: checkout read INCONCLUSIVE. ``--no-fold-skipped`` selects pytest's other skip summary --
+#: ``SKIPPED <node id> - <reason>``, one line per skip -- and a node id is the name of the test.
+PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
 
 #: The durations ledger, loaded as a plugin so EVERY verify run records what it executed -- targeted
 #: or full, whichever conftest the selected tests sit under (:func:`lab_commons.dev.durations.pytest_configure`).
@@ -298,6 +314,25 @@ def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec:
     return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
 
 
+def _vanished_shortfall(stale: tuple[str, ...]) -> tuple[str, ...]:
+    """The refusal for a declaration whose SUBJECT left the checkout, read off the tree.
+
+    Its own function because it is the one shortfall no step produced: every other reason in
+    :func:`run_verify` is read out of what a process PRINTED, and this one is read out of the files a
+    declaration names -- so it binds before anything launches, and on a selected invocation too,
+    where the run cannot judge anybody else's allowance retired.
+    """
+    if not stale:
+        return ()
+    reason = (
+        f'declared in [tool.lab_commons.verify] allowed_skips and naming nothing in this checkout: '
+        f'{", ".join(stale)}. An entry is read as a pytest NODE ID -- a module path, optionally '
+        f'followed by ::test_name -- so one that resolves to no file names no test at all. Delete it '
+        f'in the same edit that removed its subject, or point it at the name that replaced it.'
+    )
+    return (reason,)
+
+
 def _skip_census_scope(arguments: tuple[str, ...]) -> tuple[bool, tuple[str, ...]]:
     """Only known presentation flags preserve a full-suite skip census.
 
@@ -344,7 +379,9 @@ def run_verify(
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
     The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
-    refused against a tree that has not yet spent twenty minutes being tested.
+    refused against a tree that has not yet spent twenty minutes being tested -- and so is an entry
+    whose SUBJECT has left the checkout (:func:`~lab_commons.dev.reports.stale_declarations`), which
+    is the one side of the ratchet a selected invocation can still judge.
 
     THE BOX IS HELD ACROSS ALL THREE STEPS and not only pytest, because the measured harm was 194
     CPU-minutes of a process TREE and ruff over a large tree is not free either.
@@ -374,6 +411,7 @@ def run_verify(
 
     """
     allowed = declared_skips(root)
+    vanished = _vanished_shortfall(stale_declarations(root, allowed))
     directory = root / LOG_DIRECTORY
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
@@ -399,7 +437,7 @@ def run_verify(
                 name=report.name,
                 reported=report.reported,
                 failures=report.failures,
-                truncated=(*report.truncated, *scope_refusal),
+                truncated=(*report.truncated, *scope_refusal, *vanished),
             )
         )
     )

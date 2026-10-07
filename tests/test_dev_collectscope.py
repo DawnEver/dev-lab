@@ -8,10 +8,18 @@ to be clean.
 THE PAIR THAT MATTERS MOST is the guard one. A module-scope `import cv2` must be reported and a
 `pytest.importorskip('cv2')` must NOT be, from the same manifest and the same distribution -- one
 direction alone would be satisfied by a reader that always answers the same way.
+
+THE LOCAL-NAME POPULATION IS A THIRD SUCH PAIR, and it is over a REAL git checkout rather than a
+planted directory. `local_modules` decides which import names "this checkout supplies"; taken from
+the DISK it answers yes for whatever the box happens to have left lying around, and every such name
+is a distribution the stranded-import census can no longer convict. So a name that is tracked must
+be found and a name that is only debris must not, from the same tree, in both directions.
 """
 
 from __future__ import annotations
 
+import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
@@ -20,6 +28,7 @@ import pytest
 from lab_commons.dev.collectscope import (
     ALIASES,
     Fate,
+    NotACheckout,
     Use,
     fate,
     local_modules,
@@ -183,15 +192,147 @@ def test_every_alias_row_is_reached_by_the_family_scan() -> None:
         assert suppliers, f'{name} maps to no supplier, so the row can never resolve anything'
 
 
-def test_local_modules_never_descends_into_an_installed_environment(tmp_path: Path) -> None:
-    """THE ONE EXCLUSION THAT MATTERS: a walk into `.venv` calls every third-party import LOCAL."""
-    (tmp_path / '.venv' / 'Lib' / 'site-packages' / 'cv2').mkdir(parents=True)
-    (tmp_path / 'helpers.py').write_text('', encoding='utf-8')
-    (tmp_path / 'pkg').mkdir()
-    found = local_modules(tmp_path)
-    assert 'helpers' in found
-    assert 'pkg' in found
-    assert 'cv2' not in found, 'the scan entered the environment and would never convict anything again'
+def _git(root: Path, *arguments: str) -> None:
+    """Run git at *root* and refuse a non-zero exit, so a broken plant fails loudly."""
+    subprocess.run(
+        ['git', '-C', str(root), *arguments],  # noqa: S607
+        capture_output=True,
+        check=True,
+    )
+
+
+def _checkout(root: Path, *, files: Mapping[str, str], ignores: tuple[str, ...] = ()) -> Path:
+    """A REAL git checkout at *root*: a ``.gitignore`` naming *ignores*, then *files* STAGED.
+
+    Staged rather than committed, because ``git ls-files`` reads the INDEX and a commit would need
+    an identity this box may not have. Nothing here is a test OF git: the subject is the reader, and
+    what the plant has to supply is a tree where "tracked" and "on disk" are different questions.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    (root / '.gitignore').write_text(''.join(f'{pattern}\n' for pattern in ignores), encoding='utf-8')
+    for name, body in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding='utf-8')
+    _git(root, 'init', '--quiet')
+    _git(root, 'add', '-A')
+    return root
+
+
+def _write(root: Path, name: str, body: str = '') -> None:
+    """One debris file, creating whatever directories it needs."""
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding='utf-8')
+
+
+#: What the family's own ``.gitignore`` leaves behind on a box that has RUN things -- every entry
+#: measured as a directory the walk used to descend into and git does not track.
+DEBRIS: Final[tuple[str, ...]] = (
+    # A clone the sibling-repo pattern leaves at the root; `lib` is a plausible import name.
+    '.venv/Lib/site-packages/cv2/__init__.py',
+    '.pytest_cache/v/cache/lastfailed',
+    '.ruff_cache/0.16.10/somehash',
+    'htmlcov/index.html',
+    # THE MEASURED ONE, from consumer-b 2026-10-07: a directory retired from the index but left on disk
+    # holding nothing but a `__pycache__`. `src/app/viz/backend/bokeh/` still existed on the
+    # box, so the walk answered that `import bokeh` was supplied by a checkout that does not.
+    'src/app/viz/backend/bokeh/__pycache__/plot.cpython-313.pyc',
+    # The same shape one directory higher: `design` and `wdg` were names an output tree supplied.
+    'output/logs/26/09/14/design/3Ph-48/wdg/result.toml',
+)
+
+_IGNORES: Final[tuple[str, ...]] = (
+    '.venv/',
+    '.pytest_cache/',
+    '.ruff_cache/',
+    '__pycache__/',
+    'htmlcov/',
+    'output/',
+    '*.pyc',
+)
+
+_TRACKED: Final[dict[str, str]] = {
+    'src/real_module.py': '',
+    'helpers.py': '',
+    'tests/unit/test_a.py': '',
+}
+
+
+class TestTheLocalNamePopulationIsTheCheckouts:
+    """D1, MEASURED 2026-10-07: a filesystem walk and a checkout are not the same set of files.
+
+    ``local_modules`` answers "what can be imported from THIS CHECKOUT", and `resolve` reads a local
+    name as SUPPLIED -- so every name the box adds beyond the checkout is a distribution the
+    stranded-import census can no longer convict. The walk's answer was a fact about the machine;
+    the population is now git's own, which is a fact about the checkout and nothing else.
+    """
+
+    def test_a_tracked_file_and_a_tracked_directory_are_local(self, tmp_path: Path) -> None:
+        """THE FLOOR. A scan that found nothing would agree with the debris tests below vacuously."""
+        root = _checkout(tmp_path, files=_TRACKED)
+        found = local_modules(root)
+        assert {'real_module', 'helpers', 'tests', 'unit', 'src'} <= found, sorted(found)
+
+    def test_a_file_the_author_has_just_written_is_local(self, tmp_path: Path) -> None:
+        """``-o`` IS LOAD-BEARING and it is the half ``--cached`` alone would lose.
+
+        A file that is untracked and NOT ignored is one somebody wrote this minute and will commit;
+        it is part of the checkout in every sense that matters to this reader. Only IGNORED debris
+        is not.
+        """
+        root = _checkout(tmp_path, files=_TRACKED, ignores=_IGNORES)
+        _write(root, 'fresh_module.py')
+        assert 'fresh_module' in local_modules(root)
+
+    @pytest.mark.parametrize('debris', DEBRIS, ids=lambda name: name.split('/')[0])
+    def test_ignored_debris_never_supplies_an_import_name(self, tmp_path: Path, debris: str) -> None:
+        """THE SUBJECT, one plant per shape, each of them a directory the walk answered for.
+
+        A directory is a name to this reader -- the tree position of a module is decided by pytest's
+        rootdir insertion, not by the package layout -- so a directory that exists only as debris is
+        a name that exists only as debris.
+        """
+        root = _checkout(tmp_path, files=_TRACKED, ignores=_IGNORES)
+        _write(root, debris)
+        found = local_modules(root)
+        assert 'real_module' in found, 'the control: the checkout is still read'
+        assert not found & {'cv2', 'venv', 'cache', 'bokeh', 'design', 'wdg', '__pycache__'}, sorted(found)
+
+    def test_a_checkout_with_debris_and_one_without_agree(self, tmp_path: Path) -> None:
+        """THE TWO TREES ARE THE SAME COMMIT, which is the whole complaint.
+
+        MEASURED before the fix on consumer-b: one ``tree=`` hash produced a different census in two
+        worktrees, because a stale ``__pycache__`` under a retired module changed the local set. A
+        verdict that cannot be reproduced from its own tree hash is not a verdict, so this asserts
+        equality between a checkout that has run things and one that has not.
+        """
+        clean = _checkout(tmp_path / 'clean', files=_TRACKED, ignores=_IGNORES)
+        dirty = _checkout(tmp_path / 'dirty', files=_TRACKED, ignores=_IGNORES)
+        for debris in DEBRIS:
+            _write(dirty, debris)
+        assert local_modules(clean) == local_modules(dirty)
+
+    def test_debris_does_not_mask_a_distribution_that_the_checkout_does_not_supply(self, tmp_path: Path) -> None:
+        """THE HARM, AT THE JOIN. ``resolve`` answers ``None`` for a name no text settled.
+
+        An empty answer is the honest residue; the empty SET is "supplied, nothing can prune it".
+        A ``bokeh/`` left over from a retirement commit turned the first into the second, which is
+        the false negative this module's docstring argues the derivation never errs in.
+        """
+        root = _checkout(tmp_path, files=_TRACKED, ignores=_IGNORES)
+        _write(root, 'output/bokeh/plot.py')
+        assert resolve('bokeh', frozenset(), local_modules(root)) is None
+
+    def test_a_directory_that_is_not_a_checkout_is_refused(self, tmp_path: Path) -> None:
+        """UNSUPPORTED-RAISES. A tree git does not answer for has no checkout-supplied names.
+
+        The empty set would not be a smaller answer, it would be the OPPOSITE one: every local name
+        would fall through to UNRESOLVED, and the census would report a residue that is not there.
+        """
+        _write(tmp_path, 'helpers.py')
+        with pytest.raises(NotACheckout, match='not in a git work tree'):
+            local_modules(tmp_path)
 
 
 def test_an_unparseable_file_is_reported_rather_than_dropped() -> None:

@@ -28,6 +28,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -40,6 +41,7 @@ from lab_commons.dev.reports import (
     declared_skips,
     read_pytest,
     read_ruff,
+    stale_declarations,
 )
 from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
@@ -71,10 +73,14 @@ SILENT = ''
 #: A run whose summary names failures the output never attributes to a node id.
 UNNAMED = '2 failed, 40 passed in 3.1s\n'
 
-#: A run with skips, in the shape ``-rs`` prints them: the count grouped at ONE location, because
-#: pytest groups a skip by (file, line, reason) and there is no node id in the line to match.
+#: A run with skips, in the shape ``verify`` asks pytest for: ONE LINE PER SKIP, naming the NODE ID.
+#: MEASURED 2026-10-07 against the installed pytest: ``--no-fold-skipped`` turns the grouped
+#: ``SKIPPED [2] tests/test_vendor.py:31: reason`` into ``SKIPPED <node id> - <reason>``, which is
+#: ``_pytest.terminal.show_skipped_unfolded``. The folded line is the one that carries a LINE NUMBER
+#: and no node id, and a line number is what moves when an unrelated edit inserts a comment above it.
 SKIPPING = """=========================== short test summary info ============================
-SKIPPED [2] tests/test_vendor.py:31: needs the vendor engine
+SKIPPED tests/test_vendor.py::test_a - needs the vendor engine
+SKIPPED tests/test_vendor.py::test_b - needs the vendor engine
 300 passed, 2 skipped in 9.0s
 """
 
@@ -83,13 +89,20 @@ COUNTED_NOT_NAMED = '300 passed, 2 skipped in 9.0s\n'
 
 #: A suite that skipped itself into a green verdict. Every skip here could be declared, and the
 #: ceiling is the only thing between this text and a PASS over five executed tests.
-MOSTLY_SKIPPED = """=========================== short test summary info ============================
-SKIPPED [20] tests/test_vendor.py:31: needs the vendor engine
-5 passed, 20 skipped in 1.0s
+MOSTLY_SKIPPED = (
+    """=========================== short test summary info ============================
 """
+    + ''.join(f'SKIPPED tests/test_vendor.py::test_{n} - needs the vendor engine\n' for n in range(20))
+    + """5 passed, 20 skipped in 1.0s
+"""
+)
 
-#: The location prefix that covers every skip in :data:`SKIPPING`.
+#: The MODULE, which is a prefix of every node id inside it.
 VENDOR = 'tests/test_vendor.py'
+
+#: The two node ids :data:`SKIPPING` reports, spelled the way the allowance has to.
+VENDOR_A = 'tests/test_vendor.py::test_a'
+VENDOR_B = 'tests/test_vendor.py::test_b'
 
 
 def _verdict(reports: tuple[StepReport, ...], log: Path) -> Verdict:
@@ -193,49 +206,167 @@ class TestTheSkipRatchet:
         assert 's' in PYTEST_ARGS[0]
         assert PYTEST_ARGS[0].startswith('-r')
 
+    def test_pytest_is_asked_for_skips_that_carry_a_node_id(self) -> None:
+        """THE OTHER HALF OF ``-rs``, AND IT IS A SEPARATE DECISION.
+
+        MEASURED 2026-10-07 in the installed pytest: ``-rs`` FOLDS the skip summary, and the folded
+        line -- ``SKIPPED [2] tests/test_vendor.py:31: needs the vendor`` -- groups skips by
+        (file, line, reason). There is no node id in it to match, so every allowance keyed on that
+        text is keyed on a LINE NUMBER. ``--no-fold-skipped`` is the documented option that turns
+        the same summary into ``SKIPPED <node id> - <reason>``, and a node id is what does not move
+        when an unrelated edit inserts five lines above a skip.
+        """
+        assert '--no-fold-skipped' in PYTEST_ARGS
+
     def test_a_declared_skip_lets_the_run_settle(self) -> None:
         assert read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR,)).truncated == ()
 
     def test_an_undeclared_skip_truncates_and_is_named(self) -> None:
-        """Forward side. The node location is in the reason, not a number of them."""
+        """Forward side, and the remedy is printable: the message carries the strings to paste."""
         reasons = ' | '.join(read_pytest(SKIPPING, returncode=0).truncated)
         assert 'skipped and not declared' in reasons
-        assert 'tests/test_vendor.py:31' in reasons
+        assert VENDOR_A in reasons
+        assert VENDOR_B in reasons
 
     def test_a_declared_skip_that_did_not_happen_truncates_and_is_named(self) -> None:
         """The other side. Without it the list only ever grows, which is a waiver nothing uses."""
-        allowed = (VENDOR, 'tests/test_retired.py')
+        allowed = (VENDOR, 'tests/test_retired.py::test_a')
         reasons = ' | '.join(read_pytest(SKIPPING, returncode=0, allowed_skips=allowed).truncated)
         assert 'declared in allowed_skips and NOT skipped' in reasons
-        assert 'tests/test_retired.py' in reasons
-        assert 'tests/test_vendor.py' not in reasons.split('NOT skipped')[1]
+        assert 'tests/test_retired.py::test_a' in reasons
+        assert VENDOR not in reasons.split('NOT skipped')[1]
 
-    def test_a_prefix_covers_a_file_and_an_exact_location_pins_one_site(self) -> None:
-        """ONE spelling, said twice: entries are location PREFIXES, never node ids."""
-        assert read_pytest(SKIPPING, returncode=0, allowed_skips=('tests/test_vendor.py:31',)).truncated == ()
-        assert read_pytest(SKIPPING, returncode=0, allowed_skips=('tests/test_vendor.py:99',)).truncated != ()
+    def test_a_module_prefix_covers_every_node_in_it_and_a_node_id_pins_one(self) -> None:
+        """ONE spelling, said twice: a module prefix covers every test in it, a node id pins one."""
+        assert read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR,)).truncated == ()
+        assert read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR_A, VENDOR_B)).truncated == ()
+        pinned = ' | '.join(read_pytest(SKIPPING, returncode=0, allowed_skips=(VENDOR_A,)).truncated)
+        named = pinned.split('allowed_skips:')[1].split('. A skip')[0].strip()
+        assert named == VENDOR_B, 'a pin on one test leaves exactly the other one undeclared'
 
-    def test_a_windows_spelled_location_matches_a_posix_declaration(self) -> None:
-        r"""MEASURED 2026-09-16: the node-id separator differs by platform.
+    def test_a_pin_survives_every_line_above_it_moving(self) -> None:
+        """THE DEFECT, restated as the property that fixed it.
 
-        pytest prints ``tests\\test_vendor.py:4`` on Windows, ``tests/...`` on Linux.
-        One declaration is committed for both, so the comparison normalises -- otherwise
-        the same repo settles on one box and truncates on the other, which is not a verdict.
+        MEASURED in consumer-b: a five-line comment inserted into a test file moved a skip from ``:101``
+        to ``:106`` and silently invalidated a pin that had just been re-measured -- and the same
+        list read 18 rows in one checkout, 20 in a second and 21 in a third. A node id is the name
+        of the test, so the edit that moves the line cannot reach it.
+        """
+        moved = SKIPPING.replace('test_a', 'test_a')  # the node id is what pytest reports
+        assert read_pytest(moved, returncode=0, allowed_skips=(VENDOR_A, VENDOR_B)).truncated == ()
+        # And the SHAPE the folded summary prints is not silently read as a node id. It carries a
+        # LINE and a bracket count, so no allowance can cover it and the naming floor is what says
+        # so -- which is the loud half of the contract: a pytest that folded again would refuse,
+        # never quietly re-key every declaration to a line number.
+        folded = 'SKIPPED [2] tests/test_vendor.py:31: needs the vendor engine\n300 passed, 2 skipped in 9.0s\n'
+        reasons = ' | '.join(read_pytest(folded, returncode=0, allowed_skips=(VENDOR,)).truncated)
+        assert 'the short summary names 0' in reasons, (
+            'a folded summary names no test, so it must refuse rather than match the bracket count'
+        )
+
+    def test_a_windows_spelled_node_id_matches_a_posix_declaration(self) -> None:
+        r"""MEASURED 2026-09-16: the separator differs by platform.
+
+        pytest prints ``tests\test_vendor.py`` on Windows and ``tests/...`` on Linux. One
+        declaration is committed for both, so the comparison normalises -- otherwise the same repo
+        settles on one box and truncates on the other, which is not a verdict.
         """
         windows = SKIPPING.replace('tests/test_vendor.py', 'tests\\test_vendor.py')
         assert read_pytest(windows, returncode=0, allowed_skips=(VENDOR,)).truncated == ()
-        assert 'tests/test_vendor.py:31' in ' | '.join(read_pytest(windows, returncode=0).truncated)
+        assert VENDOR_A in ' | '.join(read_pytest(windows, returncode=0).truncated)
+
+    def test_a_line_a_test_printed_is_not_read_as_a_skip(self) -> None:
+        """``-s`` IS IN THE FAMILY'S addopts: a test's own stdout lands in the same log.
+
+        MEASURED in consumer-b's ``[tool.pytest.ini_options]``, which passes ``-s``. A pattern that
+        took any line beginning with the word would read a printed report as an undeclared skip, and
+        the run would refuse over a line nothing skipped. Every node id pytest builds names a ``.py``
+        path, so the shape is asked for and the printed line fails it.
+        """
+        printed = 'SKIPPED three cases the vendor does not cover\n300 passed in 9.0s\n'
+        reasons = read_pytest(printed, returncode=0, allowed_skips=()).truncated
+        assert not any('skipped and not declared' in reason for reason in reasons), reasons
 
     def test_skips_that_were_counted_but_not_named_truncate(self) -> None:
         """The naming floor: an allowance cannot be checked against skips nobody reported."""
         reasons = ' | '.join(read_pytest(COUNTED_NOT_NAMED, returncode=0, allowed_skips=(VENDOR,)).truncated)
         assert 'the short summary names 0' in reasons
-        assert '-rs' in reasons
+        assert '--no-fold-skipped' in reasons
 
     def test_the_ceiling_refuses_a_suite_that_skipped_itself_green(self) -> None:
         """An escape hatch needs a CEILING, not just a reason -- and this one is a ratio."""
         reasons = ' | '.join(read_pytest(MOSTLY_SKIPPED, returncode=0, allowed_skips=(VENDOR,)).truncated)
         assert f'above the {SKIP_CEILING:.0%} ceiling' in reasons
+
+
+class TestTheVanishedSubjectArm:
+    """THE ARM THE RUNTIME RATCHET CANNOT BE, and the sibling of ``_debt.COST_IS_CONDITIONAL``.
+
+    consumer-b's own docstring names the shape and says why it has to exist: *"a reason for a marker
+    nobody carries is a hole ... A declaration whose subject left must leave with it."*
+    ``COST_IS_CONDITIONAL`` has that arm as a test of its own. ``allowed_skips`` did not, because a
+    LOCATION cannot be checked without a run -- nothing but pytest knows which line a skip is
+    reported at. A node id CAN be: it names a file and a test that either exist or do not.
+
+    The measured harm this closes is consumer-b's own note -- an entry pinned at ``:39`` while the
+    marker sat at ``:48``, an *"allowance for a location that no longer exists"*, and every verdict
+    from a checkout with no clone reading INCONCLUSIVE until somebody re-measured by hand.
+    """
+
+    #: A planted test module, used as the SUBJECT every direction below is taken against.
+    BODY: Final = (
+        'import pytest\n\n\n'
+        '@pytest.mark.skipif(True, reason="no vendor")\n'
+        'def test_grey() -> None: ...\n\n\n'
+        'class TestGroup:\n'
+        '    def test_inside(self) -> None: ...\n'
+    )
+
+    def _tree(self, tmp_path: Path) -> Path:
+        (tmp_path / 'tests' / 'unit').mkdir(parents=True)
+        (tmp_path / 'tests' / 'unit' / 'test_vendor.py').write_text(self.BODY, encoding='utf-8')
+        return tmp_path
+
+    def test_a_declaration_whose_file_is_gone_is_refused(self, tmp_path: Path) -> None:
+        root = self._tree(tmp_path)
+        (root / 'tests' / 'unit' / 'test_vendor.py').unlink()
+        assert stale_declarations(root, (VENDOR_A,)) == (VENDOR_A,)
+
+    def test_a_declaration_whose_test_is_gone_is_refused(self, tmp_path: Path) -> None:
+        """The half a file check alone cannot see: the file is there and the subject is not."""
+        root = self._tree(tmp_path)
+        assert stale_declarations(root, ('tests/unit/test_vendor.py::test_deleted',)) == (
+            'tests/unit/test_vendor.py::test_deleted',
+        )
+
+    def test_a_declaration_whose_subject_is_there_is_not_refused(self, tmp_path: Path) -> None:
+        """THE OTHER DIRECTION, or an arm that refuses everything passes the two tests above."""
+        root = self._tree(tmp_path)
+        live = (
+            'tests/unit/test_vendor.py',
+            'tests/unit/test_vendor.py::test_grey',
+            'tests/unit/test_vendor.py::test_grey[one-1]',
+            'tests/unit/test_vendor.py::TestGroup::test_inside',
+        )
+        assert stale_declarations(root, live) == ()
+
+    def test_a_declaration_that_reaches_outside_the_checkout_is_refused(self, tmp_path: Path) -> None:
+        """An allowance is written by the repo it governs and names nothing outside it."""
+        root = self._tree(tmp_path)
+        outside = tmp_path / 'outside.py'
+        outside.write_text('def test_a() -> None: ...\n', encoding='utf-8')
+        assert stale_declarations(root, ('../outside.py::test_a',)) == ('../outside.py::test_a',)
+
+    def test_the_arm_needs_no_run_at_all(self, tmp_path: Path) -> None:
+        """It reads the tree, which is why it binds on an invocation that selected one test.
+
+        ``_skip_shortfall``'s stale arm is gated on a COMPLETE suite census -- a selected run cannot
+        judge another test's allowance retired -- so without this the hole is open on every targeted
+        invocation, which is most of them.
+        """
+        root = self._tree(tmp_path)
+        assert read_pytest(SKIPPING, returncode=0, allowed_skips=(), complete_skip_census=False).truncated != ()
+        assert stale_declarations(root, ()) == ()
 
 
 class TestTheDeclaration:
@@ -429,7 +560,7 @@ class TestThePlantedControl:
             ),
             (
                 ('tests/test_selected.py::test_a',),
-                'SKIPPED [1] tests/test_selected.py:12: unavailable\n20 passed, 1 skipped in 0.1s\n',
+                'SKIPPED tests/test_selected.py::test_a - unavailable\n20 passed, 1 skipped in 0.1s\n',
                 Outcome.INCONCLUSIVE,
             ),
             ((), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
@@ -471,6 +602,12 @@ class TestThePlantedControl:
         (tmp_path / 'pyproject.toml').write_text(
             '[tool.lab_commons.verify]\nallowed_skips = ["tests/test_other.py"]\n', encoding='utf-8'
         )
+        # THE DECLARED SUBJECT IS PLANTED, because `stale_declarations` refuses one whose file is gone
+        # before any step launches -- and this control is about the SCOPE of the runtime ratchet, not
+        # about a vanished subject. Left unplanted, every case below would truncate for the same
+        # unrelated reason and the parameterisation would stop distinguishing anything.
+        (tmp_path / 'tests').mkdir()
+        (tmp_path / 'tests' / 'test_other.py').write_text('def test_a() -> None: ...\n', encoding='utf-8')
         commands = []
 
         def no_seat(_stack, _what, **_kwargs: object) -> None:
@@ -498,6 +635,43 @@ class TestThePlantedControl:
             assert 'not declared' in verdict.result.reason
         if not selection or selection == ('-v',):
             assert 'NOT skipped' in verdict.result.reason
+
+    def test_a_declaration_whose_subject_left_refuses_before_anything_launches(self, tmp_path, monkeypatch) -> None:
+        """THE WIRING, AND IT IS THE HALF THAT MAKES `stale_declarations` MORE THAN A READER.
+
+        Driven through the REAL ``run_verify``: a checkout whose only declaration names a test that
+        is not there must refuse, and it must refuse WITHOUT the pytest step having run -- that is
+        the whole difference between this arm and the runtime ratchet, which needs a complete suite
+        census and a completed run to say anything at all.
+        """
+        subprocess.run(
+            [shutil.which('git') or 'git', 'init', '-q', str(tmp_path)],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+        (tmp_path / 'pyproject.toml').write_text(
+            '[tool.lab_commons.verify]\nallowed_skips = ["tests/test_gone.py::test_vanished"]\n', encoding='utf-8'
+        )
+        launched: list[tuple[str, ...]] = []
+
+        def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
+            assert cwd == tmp_path
+            launched.append(tuple(command))
+            if 'pytest' in command:
+                assert extra_env is not None
+            handle.write('1 passed in 0.1s\n')
+            handle.flush()
+            return 0
+
+        monkeypatch.setattr(verify, 'hold_the_box', lambda _stack, _what, **_kwargs: None)
+        monkeypatch.setattr(verify, '_tee', recorded_step)
+        verdict = verify.run_verify(tmp_path)
+        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert 'tests/test_gone.py::test_vanished' in verdict.result.reason
+        assert 'allowed_skips' in verdict.result.reason
+        pytest_step = [command for command in launched if 'pytest' in command]
+        assert pytest_step, 'the run must still have reached pytest -- the refusal is added, not an early exit'
 
     def test_a_planted_interruption_flips_a_clean_text(self) -> None:
         """THE CONTROL, and it has both halves: the guard fires on the plant and not on the clean text.

@@ -293,7 +293,15 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: 456 against 361 is 95 clear, five past the same 90, and the sixth time this arm has said so. The
 #: ~80% of 456 is 365 -- which is still 91 clear, one past -- so the floor is 366, and the headroom
 #: does not move. A re-measurement may only TIGHTEN: 366/456 is 80.3%, inside the same band.
-CONSTANT_FLOOR = 366
+#:
+#: RE-MEASURED 2026-10-07 AT 461, after the local-name and skip-key lanes landed: five module-level
+#: constants in two test files -- the real-git-checkout plant's debris list, ignore rules and tracked
+#: set, and the two node-id spellings the skip ratchet is now declared over. 461 against 366 is 95
+#: clear, five past the same 90, and the seventh time this arm has said so rather than absorbing it.
+#: Re-priced the way every earlier reading was: the smallest floor whose clearance fits the same 90,
+#: which is 371 -- 90 clear exactly, and 80.5% of 461 against the 80.3% it replaces, so the
+#: re-measurement TIGHTENS rather than widens. The headroom is unchanged at 90, as at every reading.
+CONSTANT_FLOOR = 371
 CONSTANT_HEADROOM = 90
 
 
