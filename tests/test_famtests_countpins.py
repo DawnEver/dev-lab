@@ -311,7 +311,12 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: (467 on main, 470 on the merge). 470 against 376 is 94 clear, four past the same 90; the smallest
 #: floor whose clearance fits is 380 (80.9% of 470, TIGHTER than the 80.7% it replaces). The headroom
 #: is unchanged at 90.
-CONSTANT_FLOOR = 380
+#:
+#: RE-MEASURED 2026-10-08 AT 475, after the opt-in `lab_commons.hpc` tier (Slurm planner) and the shared
+#: `lab_commons.width.fits` landed. 475 against 380 is 95 clear, five past the same 90; the smallest floor
+#: whose clearance fits is 385 (81.1% of 475, TIGHTER than the 80.9% it replaces). The headroom is
+#: unchanged at 90.
+CONSTANT_FLOOR = 385
 CONSTANT_HEADROOM = 90
 
 

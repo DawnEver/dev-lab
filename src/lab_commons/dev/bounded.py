@@ -41,6 +41,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from lab_commons.proc import kill_process_tree, process_tree, system_memory
+from lab_commons.resources import CPU, MEMORY
+from lab_commons.width import fits
 
 __all__ = [
     'BLAS_THREAD_VARS',
@@ -112,7 +114,8 @@ def worker_width(*, gb_per_worker: float, max_width: int, floor: int, reserve_co
     available = _available_gb()
     if available is None:
         return min(fallback, max(floor, by_cores))
-    return max(floor, min(max_width, by_cores, int(available // gb_per_worker)))
+    width = fits({CPU.name: by_cores, MEMORY.name: available * _GB}, {CPU.name: 1, MEMORY.name: gb_per_worker * _GB})
+    return max(floor, min(max_width, width))
 
 
 def blas_threads(workers: int) -> int:
