@@ -113,7 +113,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'In Claude Code and Codex auto mode the family`s checked doors run unprompted: one narrow allow row '
             'per door, rendered for both clients from one table. Destructive LOCAL cleanup -- merged branches, '
             'clean worktrees, an agent`s own gate run -- goes through a door that re-checks its precondition; '
-            'pushes and remote deletions are never automatic and stay with a human or the gated push hook. A '
+            'remote deletions are never automatic and stay with a human (pushes: MAIN-SESSION-PUBLISHES). A '
             'worktree is removed, or its branch deleted, only when it is CLEAN (nothing modified, staged or '
             'untracked): work is committed or cleared by a human first, never moved aside by a door.'
         ),
@@ -138,6 +138,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'needs no verdict of its own.'
         ),
         ('tests/test_dev_admission.py', 'tests/test_dev_inflight.py', 'tests/test_dev_verdictledger.py'),
+    ),
+    (
+        'MAIN-SESSION-PUBLISHES',
+        (
+            'A main session publishes without waiting for a user decision: it fast-forwards and pushes its trunk '
+            'branches, in its own repo or a sibling, through narrow allow rows rendered as data -- `git merge '
+            '--ff-only`, and the push through the repo`s retry wrapper (a raw push only where it has none). A '
+            'force push and a remote-branch deletion stay refused by deny rows, and a subagent is refused every '
+            'push by SUBAGENT-NO-HEAVY-NO-PUSH.'
+        ),
+        ('tests/test_dev_autodoors.py', 'tests/test_dev_hooks.py'),
     ),
     (
         'SUBAGENT-NO-HEAVY-NO-PUSH',

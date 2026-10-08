@@ -142,6 +142,7 @@ _ENFORCED = {
     ),
     'MERGE-DEVIATIONS-NAMED': (guard('tests/test_dev_mergeaudit.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
+    'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
     'ONE-BOX-ONE-LOCK': (
         guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
         guard('tests/test_dev_boxwait.py'),

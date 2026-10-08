@@ -204,3 +204,33 @@ def test_a_scoped_row_binds_only_its_own_scope() -> None:
     """The Python reading agrees with the engine: the main session is not judged by a subagent row."""
     assert denies(DENY_RULES, 'SKIP=ruff git commit -m x', scope='subagent') == 'SUBAGENT-NO-HEAVY-NO-PUSH'
     assert denies(DENY_RULES, 'SKIP=ruff git commit -m x') is None
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'sh scripts/hooks/with-retry.sh push origin main',
+        'sh C:/w/sib/scripts/hooks/with-retry.sh push origin integrate/main',
+        'git -C ../sib push origin main',
+        'git -C ../sib merge --ff-only lane/x',
+    ],
+)
+def test_main_session_publishes_and_a_subagent_is_still_refused(command: str) -> None:
+    """MAIN-SESSION-PUBLISHES: the doors the allow rows open are free to a main session, never a subagent."""
+    assert denies(DENY_RULES, command) is None
+    if 'push' in command:
+        assert denies(DENY_RULES, command, scope='subagent') == 'SUBAGENT-NO-HEAVY-NO-PUSH'
+
+
+@pytest.mark.parametrize(
+    ('command', 'rule'),
+    [
+        ('sh C:/w/sib/scripts/hooks/with-retry.sh push --force origin main', 'PUSH-FORCE'),
+        ('git -C ../sib push origin +main', 'PUSH-FORCE'),
+        ('git -C ../sib push origin --delete lane/x', 'PUSH-REMOTE-DELETE'),
+        ('sh scripts/hooks/with-retry.sh push origin :lane/x', 'PUSH-REMOTE-DELETE'),
+    ],
+)
+def test_a_main_session_force_push_or_remote_delete_stays_refused(command: str, rule: str) -> None:
+    """The planted control: an allow row admits the glob, the deny row still decides first."""
+    assert denies(DENY_RULES, command) == rule

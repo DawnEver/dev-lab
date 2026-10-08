@@ -96,7 +96,10 @@ def test_cross_checkout_script_permissions_are_derived_from_the_supplied_doors()
 
 
 def test_every_row_is_narrow_and_one_per_door() -> None:
+    sibling_push = 'Bash(sh */scripts/hooks/with-retry.sh push *)'
     rows = claude_rows(_SCRIPTS)
+    assert sibling_push in rows
+    rows = {row: why for row, why in rows.items() if row != sibling_push}
     assert set(rows.values()) == set(doors(_SCRIPTS).values())
     assert 'Bash(.venv/*/python* -m lab_commons.dev.branchset *)' in rows
     assert 'Bash(sh scripts/hooks/with-retry.sh *)' in rows
@@ -115,7 +118,7 @@ def test_no_rendering_allows_a_raw_destructive_verb_and_the_scan_sees_one() -> N
     body = '\n'.join(line for line in codex_rules(_SCRIPTS).splitlines() if not line.startswith('#'))
     assert promises_raw(' '.join(claude_rows(_SCRIPTS))) == ()
     assert promises_raw(body) == ()
-    assert promises_raw('Bash(git push origin --delete x)') == ('--delete', 'git push')
+    assert promises_raw('Bash(git push origin --delete x)') == ('--delete',)
 
 
 @pytest.mark.skipif(shutil.which('codex') is None, reason='codex CLI not installed on this box')
@@ -157,3 +160,29 @@ def test_script_doors_are_the_tracked_entry_points(tmp_path: Path) -> None:
     assert (work / CODEX_RULES_REL).is_file()
     assert main(['--repo', str(work)]) == 0
     assert main(['--repo', str(work), '--shell-door', 'scripts/hooks/with-retry.sh']) == 1, 'a new door is stale'
+
+
+def test_a_main_session_publishes_through_the_wrapper_where_there_is_one() -> None:
+    """MAIN-SESSION-PUBLISHES: ff-merge and the wrapper's push, own repo and sibling; no raw push row."""
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(_SCRIPTS)]
+    for command in (
+        'sh scripts/hooks/with-retry.sh push origin main',
+        'sh C:/w/sib/scripts/hooks/with-retry.sh push origin main',
+        'git merge --ff-only lane/x',
+        'git -C C:/w/sib merge --ff-only lane/x',
+    ):
+        assert any(fnmatchcase(command, pattern) for pattern in globs), command
+    assert not any(fnmatchcase('git push origin main', pattern) for pattern in globs)
+    assert not any(fnmatchcase('sh C:/w/sib/scripts/hooks/with-retry.sh fetch', pattern) for pattern in globs)
+    assert not any(fnmatchcase('git merge lane/x', pattern) for pattern in globs)
+
+
+def test_a_repo_without_a_wrapper_pushes_through_netverb_never_raw() -> None:
+    """GIT-NETWORK-VERB refuses a raw push, so no rendering promises one; netverb is the road."""
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
+    netverb_push = '.venv/Scripts/python.exe -m lab_commons.dev.netverb -- git push origin main'
+    assert any(fnmatchcase(netverb_push, g) for g in globs)
+    assert not any(fnmatchcase('git push origin main', g) for g in globs)
+    assert not any(fnmatchcase('git -C ../sib push origin main', g) for g in globs)
+    assert promises_raw(' '.join(globs)) == ()
+    assert promises_raw('Bash(git push --force origin *)') == ('--force',)

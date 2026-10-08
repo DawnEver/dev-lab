@@ -26,6 +26,8 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
     'pattern': (
         r'(?:git(?:\.exe)?(?:\s+-C\s+\S+)*\s+push\b'
         r'|(?:sh\s+)?\S*with-retry\.sh\s+push\b'
+        # The family retry verb is a push road too (MAIN-SESSION-PUBLISHES admits it for a main session).
+        rf'|{_INTERPRETER}-m\s+lab_commons\.dev\.netverb\b[^\n]*\spush\b'
         rf'|{_INTERPRETER}\S*runner\.py\s+(?:gate|heavy)\b'
         rf'|{_INTERPRETER}\S*runner\.py\b[^\n]*\s--with-heavy\b'
         r'|git(?:\.exe)?\b[^\n]*\s--no-verify\b'
@@ -42,6 +44,7 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
         'git push origin HEAD',
         'git -C .claude/worktrees/x push origin lane/x',
         'sh scripts/hooks/with-retry.sh push origin HEAD',
+        f'{VENV_PYTHONS[0]} -m lab_commons.dev.netverb -- git push origin HEAD',
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py gate',
         'python scripts/gate/runner.py heavy',
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure --with-heavy tests/test_x.py',
@@ -52,5 +55,6 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure tests/test_x.py',
         'git commit -m "push the gate later"',
         'git log --oneline -5',
+        f'{VENV_PYTHONS[0]} -m lab_commons.dev.netverb -- git fetch origin',
     ),
 }

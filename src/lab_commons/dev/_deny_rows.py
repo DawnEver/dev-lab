@@ -165,7 +165,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
     },
     {
         'id': 'PUSH-FORCE',
-        'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b)',
+        # `+<ref>` is the refspec spelling of the same force (MAIN-SESSION-PUBLISHES opened `push origin *`).
+        'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b|\+\S)',
         'matches': 'argument',
         'hazard': 'rewriting a shared ref invalidates every verdict taken '
         'against the old tree; --force-with-lease included.',
@@ -175,10 +176,34 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'git push --force origin main',
             'git push origin main --force-with-lease',
             'sh scripts/hooks/with-retry.sh push -f origin HEAD',
+            'git -C ../sib push origin +main',
         ),
         'permits': (
             'sh scripts/hooks/with-retry.sh push origin HEAD',
             'git commit -m "force a rebuild"',
+            'sh scripts/hooks/with-retry.sh push origin lane/a+b',
+        ),
+    },
+    {
+        'id': 'PUSH-REMOTE-DELETE',
+        'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
+        'matches': 'argument',
+        'hazard': 'deleting a ref on origin is unrecoverable from the agent`s side; a main session may push '
+        '(MAIN-SESSION-PUBLISHES) but remote deletions stay with a human.',
+        'remedy': 'Leave the remote branch and name it to the user; local cleanup is '
+        '`python -m lab_commons.dev.branchset --apply`, which deletes merged LOCAL branches only.',
+        'needs': None,
+        'refuses': (
+            'git push origin --delete lane/x',
+            'git -C ../sib push origin :lane/x',
+            'sh scripts/hooks/with-retry.sh push origin -d lane/x',
+            'git push --prune origin',
+            'git push --mirror origin',
+        ),
+        'permits': (
+            'sh scripts/hooks/with-retry.sh push origin HEAD:refs/heads/lane/x',
+            'sh scripts/hooks/with-retry.sh push origin main',
+            'git branch -d lane/x',
         ),
     },
     {
