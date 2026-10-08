@@ -64,7 +64,11 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-10-08 AT 204 after the opt-in `lab_commons.hpc` tier (seven modules) and
 #: `lab_commons.width` landed: 204 against 156 is 48 clear, eight past the margin, so the floor moves to
 #: 164 and the margin does not move.
-FILE_FLOOR = 164
+#:
+#: RE-MEASURED 2026-10-08 AT 208 after `hpc.grants`/`hpc.verdict`/`hpc.pytest_item` merged and
+#: `lab_commons.config` landed: 208 against 164 is 44 clear, four past the margin, so the floor moves to
+#: 168 and the margin does not move.
+FILE_FLOOR = 168
 
 
 def _tree() -> dict[str, str]:

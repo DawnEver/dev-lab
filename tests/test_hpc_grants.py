@@ -58,8 +58,8 @@ def test_a_machine_holds_several_grants(tmp_path: Path, monkeypatch: pytest.Monk
 workstation = "ws-a"
 [[hpc.grant]]
 user = "me"
-hosts = ["ada2", "ada1"]
-slurm_account = "uon-free"
+hosts = ["login2", "login1"]
+slurm_account = "acct-free"
 cpus = 64
 partitions = ["shortq"]
 [[hpc.grant]]
@@ -73,11 +73,11 @@ priority = 2
     machine = load_grants()
     assert machine.workstation == 'ws-a'
     assert machine.comment == 'lc:ws=ws-a'
-    assert [g.account for g in machine.grants] == [('me', 'uon-free'), ('me', 'x')]
-    assert machine.grants[0].targets == ('me@ada2', 'me@ada1'), 'hosts keep their order'
-    assert machine.grants[0].name == 'me@ada2 (uon-free)'
+    assert [g.account for g in machine.grants] == [('me', 'acct-free'), ('me', 'x')]
+    assert machine.grants[0].targets == ('me@login2', 'me@login1'), 'hosts keep their order'
+    assert machine.grants[0].name == 'me@login2 (acct-free)'
     assert machine.grants[0].cluster().partitions == ('shortq',)
-    assert machine.grants[0].cluster().account == 'uon-free'
+    assert machine.grants[0].cluster().account == 'acct-free'
     assert machine.grants[1].priority == 2
     assert not machine.grants[0].same_cluster(machine.grants[1])
 

@@ -316,7 +316,12 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: `lab_commons.width.fits` landed. 475 against 380 is 95 clear, five past the same 90; the smallest floor
 #: whose clearance fits is 385 (81.1% of 475, TIGHTER than the 80.9% it replaces). The headroom is
 #: unchanged at 90.
-CONSTANT_FLOOR = 385
+#:
+#: RE-MEASURED 2026-10-08 AT 479, after the hpc grants/remote verdict merged and `lab_commons.config`
+#: (one per-machine file) landed. 479 against 385 is 94 clear, four past the same 90; the smallest floor
+#: whose clearance fits is 389 (81.2% of 479, TIGHTER than the 81.1% it replaces). The headroom is
+#: unchanged at 90.
+CONSTANT_FLOOR = 389
 CONSTANT_HEADROOM = 90
 
 
