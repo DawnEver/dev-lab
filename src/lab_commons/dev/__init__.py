@@ -281,79 +281,91 @@ a ``RepoProfile`` and are the next layer. :mod:`lab_commons.dev.rules` is NOT th
 whether a named mechanism is still LIVE, and the five are the mechanisms an adopter would name.
 """
 
-from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
-from lab_commons.dev.boxlock import BOX_POOL, BoxLock
-from lab_commons.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
-from lab_commons.dev.cjk import Occurrence as CJKOccurrence
-from lab_commons.dev.cjk import Scan as CJKScan
-from lab_commons.dev.cjk import VacuousScan as VacuousCJKScan
-from lab_commons.dev.cjk import assert_floor as assert_cjk_floor
-from lab_commons.dev.cjk import ratchet as cjk_ratchet
-from lab_commons.dev.cjk import scan_files as scan_cjk_files
-from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
-from lab_commons.dev.docwidth import (
-    INJECTED_BASENAMES,
-    INJECTED_EXEMPT_PREFIXES,
-    INJECTED_PREFIXES,
-    WIDTH_CEILING,
-    Overwidth,
-    VacuousWidthScan,
-    WidthScan,
-    assert_width_floor,
-    injected_docs,
-    is_injected_doc,
-    line_widths,
-    scan_widths,
-    width_ratchet,
-    width_remedy,
-)
-from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
-from lab_commons.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
-from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
-from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
-from lab_commons.dev.profile import NotACheckout, RepoProfile
-from lab_commons.dev.quantity_values import (
-    DIMENSIONLESS,
-    QuantitySite,
-    ValueScan,
-    assert_value_floor,
-    carries_a_unit,
-    migration_conflicts,
-    parse_quantity,
-    scan_toml_values,
-    value_ratchet,
-    value_remedy,
-)
-from lab_commons.dev.reports import (
-    SKIP_CEILING,
-    MalformedAllowance,
-    StepReport,
-    declared_skips,
-    read_pytest,
-    read_ruff,
-)
-from lab_commons.dev.rules import (
-    RULES,
-    Adoption,
-    Rule,
-    UnenforceableRule,
-    assert_adopted,
-    assert_enforceable,
-    guard,
-    lint,
-    tracked_files,
-    unadopted,
-    waived,
-)
-from lab_commons.dev.units import (
-    SCANNED_SUFFIXES,
-    Scan,
-    Violation,
-    assert_registry_sane,
-    scan_files,
-    trailing_token,
-)
-from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
+import ast
+import importlib
+from functools import cache
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+# THE RE-EXPORTS ARE RESOLVED ON FIRST ACCESS, NEVER AT IMPORT. A submodule import runs this file
+# first, so an eager facade here made every submodule -- the stdlib-only hook launcher
+# `lab_commons.dev.githooks.bootstrap` above all -- require the `paths`/`io`/`units` extras just to be
+# imported, once the root stopped carrying its tier-1 dependencies. The block below is the ONE
+# statement of what is re-exported: type checkers read it, and `_lazy` derives the runtime map from it.
+if TYPE_CHECKING:
+    from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
+    from lab_commons.dev.boxlock import BOX_POOL, BoxLock
+    from lab_commons.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
+    from lab_commons.dev.cjk import Occurrence as CJKOccurrence
+    from lab_commons.dev.cjk import Scan as CJKScan
+    from lab_commons.dev.cjk import VacuousScan as VacuousCJKScan
+    from lab_commons.dev.cjk import assert_floor as assert_cjk_floor
+    from lab_commons.dev.cjk import ratchet as cjk_ratchet
+    from lab_commons.dev.cjk import scan_files as scan_cjk_files
+    from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
+    from lab_commons.dev.docwidth import (
+        INJECTED_BASENAMES,
+        INJECTED_EXEMPT_PREFIXES,
+        INJECTED_PREFIXES,
+        WIDTH_CEILING,
+        Overwidth,
+        VacuousWidthScan,
+        WidthScan,
+        assert_width_floor,
+        injected_docs,
+        is_injected_doc,
+        line_widths,
+        scan_widths,
+        width_ratchet,
+        width_remedy,
+    )
+    from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
+    from lab_commons.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
+    from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
+    from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
+    from lab_commons.dev.profile import NotACheckout, RepoProfile
+    from lab_commons.dev.quantity_values import (
+        DIMENSIONLESS,
+        QuantitySite,
+        ValueScan,
+        assert_value_floor,
+        carries_a_unit,
+        migration_conflicts,
+        parse_quantity,
+        scan_toml_values,
+        value_ratchet,
+        value_remedy,
+    )
+    from lab_commons.dev.reports import (
+        SKIP_CEILING,
+        MalformedAllowance,
+        StepReport,
+        declared_skips,
+        read_pytest,
+        read_ruff,
+    )
+    from lab_commons.dev.rules import (
+        RULES,
+        Adoption,
+        Rule,
+        UnenforceableRule,
+        assert_adopted,
+        assert_enforceable,
+        guard,
+        lint,
+        tracked_files,
+        unadopted,
+        waived,
+    )
+    from lab_commons.dev.units import (
+        SCANNED_SUFFIXES,
+        Scan,
+        Violation,
+        assert_registry_sane,
+        scan_files,
+        trailing_token,
+    )
+    from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
 
 __all__ = [
     'ABSENT',
@@ -449,3 +461,28 @@ __all__ = [
     'width_ratchet',
     'width_remedy',
 ]
+
+
+@cache
+def _lazy() -> dict[str, tuple[str, str]]:
+    """Every re-exported name -> (defining module, name there), read from the ``TYPE_CHECKING`` block."""
+    tree = ast.parse(Path(__file__).read_text(encoding='utf-8'))
+    guard = next(n for n in tree.body if isinstance(n, ast.If) and ast.unparse(n.test) == 'TYPE_CHECKING')
+    return {
+        alias.asname or alias.name: (str(node.module), alias.name)
+        for node in guard.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+
+def __getattr__(name: str) -> object:
+    """Resolve a re-exported name from its defining module on first access (PEP 562)."""
+    try:
+        module, attr = _lazy()[name]
+    except KeyError:
+        msg = f'module {__name__!r} has no attribute {name!r}'
+        raise AttributeError(msg) from None
+    value = getattr(importlib.import_module(module), attr)
+    globals()[name] = value
+    return value
