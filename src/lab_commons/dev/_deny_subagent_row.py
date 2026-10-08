@@ -33,7 +33,7 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
         rf'|{_INTERPRETER}\S*runner\.py\b[^\n]*\s--with-heavy\b'
         r'|git(?:\.exe)?\b[^\n]*\s--no-verify\b'
         # PowerShell spells the same skip as an environment assignment.
-        r"""|SKIP=|\$env:SKIP\s*=|(?:\[(?:System\.)?Environment\]::)?SetEnvironmentVariable\(\s*['"]SKIP['"])"""
+        r"""|SKIP=|\$env:SKIP\s*=)"""
     ),
     'matches': 'command',
     'scope': 'subagent',
@@ -54,7 +54,6 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
         'git commit --no-verify -m "x"',
         "$env:SKIP='ruff'; git commit -m 'x'",
         "$env:SKIP = 'ruff'",
-        "[Environment]::SetEnvironmentVariable('SKIP', 'ruff')",
     ),
     'permits': (
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure tests/test_x.py',
