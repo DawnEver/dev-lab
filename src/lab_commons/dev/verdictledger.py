@@ -236,7 +236,7 @@ class OutcomeSession(Protocol):
     config: object
 
 
-@dataclass
+@dataclass(eq=False)  # registered as a pytest plugin, which pytest hashes: identity, not value
 class OutcomeRecorder:
     """Collect PASS/FAIL per node id over every phase, and write them once at session finish.
 
