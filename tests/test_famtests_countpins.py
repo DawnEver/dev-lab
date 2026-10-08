@@ -306,7 +306,12 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: `dev.mergeaudit` and the three destinations of `dev.admission`. 466 against 371 is 95 clear, five
 #: past the same 90; the smallest floor whose clearance fits is 376 (80.7% of 466, TIGHTER than the
 #: 80.5% it replaces). The headroom is unchanged at 90.
-CONSTANT_FLOOR = 376
+#:
+#: RE-MEASURED 2026-10-08 AT 470, after the root-capability split and the verdict-ledger lane merged
+#: (467 on main, 470 on the merge). 470 against 376 is 94 clear, four past the same 90; the smallest
+#: floor whose clearance fits is 380 (80.9% of 470, TIGHTER than the 80.7% it replaces). The headroom
+#: is unchanged at 90.
+CONSTANT_FLOOR = 380
 CONSTANT_HEADROOM = 90
 
 
