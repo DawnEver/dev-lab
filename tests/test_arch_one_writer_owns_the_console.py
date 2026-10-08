@@ -63,7 +63,11 @@ NOT_OURS = ('stdout', 'stderr')
 #: THE FLOOR MOVED; THE HEADROOM DID NOT. 95 -> 119, the same ~80% both earlier readings used, and
 #: still 45 of room above it. Raising the headroom instead would widen the waiver, which is the move
 #: this guard's docstring calls giving up the arm to keep it.
-MODULE_FLOOR = 150  # re-taken 2026-10-03: the scan read 165 after the supervise and worktree merges
+#:
+#: RE-MEASURED 2026-10-08: the scan read 203 once ``lab_commons.hpc`` (and ``width``) became tracked,
+#: eight past the 195 this pair allowed. The new modules write through ``emit`` like every other;
+#: the floor is re-taken at the same ~80% and THE HEADROOM STAYS AT 45. 150 -> 160.
+MODULE_FLOOR = 160  # re-taken 2026-10-08: the scan read 203 after the hpc merge
 MODULE_HEADROOM = 45
 
 
