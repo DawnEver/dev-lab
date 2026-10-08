@@ -305,11 +305,14 @@ PRECOMMIT_BASE: Final[tuple[str, ...]] = (
     '',
     '  - repo: local',
     '    hooks:',
+    # PINNED: pre-commit keys its cached env by this STRING, so an unpinned URL keeps whatever rev
+    # first installed it (measured 2026-10-09: an env whose issueref imported structlog crashed on
+    # Windows without colorama). 97b2764 made lab_commons.log stdlib-only. Bump with the kit.
     '    - id: issue-ref',
     '      name: issue references are well-formed (warns, never blocks)',
     '      entry: lab-issue-ref',
     '      language: python',
-    "      additional_dependencies: ['lab-commons @ git+https://github.com/DawnEver/lab-commons.git']",
+    "      additional_dependencies: ['lab-commons @ git+https://github.com/DawnEver/lab-commons.git@97b2764a45c99e97890e679d7fd192ac716895a5']",
     '      stages: [commit-msg]',
     '      verbose: true',
 )
