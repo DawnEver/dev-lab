@@ -143,7 +143,15 @@ def node_executable() -> str:
     raise NoNode(msg)
 
 
-def run_engine(engine: Path, command: str, rules: Path, *, cwd: Path | None = None) -> str | None:
+def run_engine(
+    engine: Path,
+    command: str,
+    rules: Path,
+    *,
+    cwd: Path | None = None,
+    tool: str = 'Bash',
+    agent_id: str | None = None,
+) -> str | None:
     """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
     THE ENGINE IS DRIVEN, NEVER MODELLED. This feeds the real hook payload on stdin exactly as the
@@ -166,6 +174,8 @@ def run_engine(engine: Path, command: str, rules: Path, *, cwd: Path | None = No
         command: the Bash command line the agent asked for.
         rules: the ``deny-rules.json`` to judge it against.
         cwd: the tool call's working directory, which the engine expands into ``{root}``.
+        tool: the hook payload's ``tool_name`` -- ``Bash`` or ``PowerShell``; any other tool is not judged.
+        agent_id: the payload's subagent id; ``None`` sends none, as the main session does.
 
     Returns:
         The ``permissionDecisionReason`` when the engine denies, else ``None``. The engine fails OPEN
@@ -181,9 +191,10 @@ def run_engine(engine: Path, command: str, rules: Path, *, cwd: Path | None = No
             msg = f'{path} is not a file, so nothing judged {command!r} -- and nothing else may judge it instead'
             raise EngineNotReadable(msg)
     payload = {
-        'tool_name': 'Bash',
+        'tool_name': tool,
         'tool_input': {'command': command},
         'cwd': str(cwd) if cwd is not None else '',
+        **({'agent_id': agent_id} if agent_id is not None else {}),
     }
     done = subprocess.run(
         [node_executable(), str(engine), str(rules)],
@@ -201,7 +212,15 @@ def run_engine(engine: Path, command: str, rules: Path, *, cwd: Path | None = No
     return decision['permissionDecisionReason'] if decision.get('permissionDecision') == 'deny' else None
 
 
-def decide(command: str, rules: Path, *, cwd: Path | None = None, engine: str = 'deny-commands') -> str | None:
+def decide(
+    command: str,
+    rules: Path,
+    *,
+    cwd: Path | None = None,
+    engine: str = 'deny-commands',
+    tool: str = 'Bash',
+    agent_id: str | None = None,
+) -> str | None:
     """Run THE WHEEL'S OWN copy of a shipped engine over one Bash command; the reason, or ``None``.
 
     THE SUBJECT IS THE WHEEL, AND THAT IS THE ONLY QUESTION THIS ANSWERS: *does the engine this
@@ -214,6 +233,8 @@ def decide(command: str, rules: Path, *, cwd: Path | None = None, engine: str = 
         command: the Bash command line the agent asked for.
         rules: the ``deny-rules.json`` to judge it against.
         cwd: the tool call's working directory, which the engine expands into ``{root}``.
+        tool: the hook payload's ``tool_name`` -- ``Bash`` or ``PowerShell``; any other tool is not judged.
+        agent_id: the payload's subagent id; ``None`` sends none, as the main session does.
         engine: which SHIPPED engine to run, by name.
 
     Returns:
@@ -223,7 +244,7 @@ def decide(command: str, rules: Path, *, cwd: Path | None = None, engine: str = 
         EngineNotShipped: no engine of that name is in this wheel.
 
     """
-    return run_engine(engine_path(engine), command, rules, cwd=cwd)
+    return run_engine(engine_path(engine), command, rules, cwd=cwd, tool=tool, agent_id=agent_id)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
