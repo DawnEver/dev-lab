@@ -109,6 +109,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'What survives a stopped run, why a lock does not time out, and the census a reaper needs',
     ),
     Page(
+        'hpc',
+        'HPC grants and remote verdicts',
+        "Per-machine shares of shared Slurm accounts, usage read from job comments, a commit's suite on a cluster",
+    ),
+    Page(
         'box-resources',
         'Box resources',
         'What one workstation rations, the four defects measured in doing it by hand, and the broker shape',
