@@ -20,7 +20,14 @@ DEV_ROOT = REPO_ROOT / 'src' / 'lab_commons' / 'dev'
 
 def _declared_requirements() -> frozenset[str]:
     """Every distribution ``[project] dependencies`` names, by its bare (unversioned) name."""
-    declared = read_toml(REPO_ROOT / 'pyproject.toml')['project']['dependencies']
+    project = read_toml(REPO_ROOT / 'pyproject.toml')['project']
+    declared = list(project['dependencies'])
+    extras = project['optional-dependencies']
+    declared.extend(extras['dev'])
+    for requirement in extras['dev']:
+        if requirement.startswith('lab-commons['):
+            for capability in requirement.split('[', 1)[1].split(']', 1)[0].split(','):
+                declared.extend(extras[capability])
     names = set()
     for requirement in declared:
         bare = requirement.split('[')[0].split('>')[0].split('<')[0].split('=')[0].split(';')[0]
