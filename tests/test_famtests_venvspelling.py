@@ -56,7 +56,11 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #:
 #: RE-MEASURED 2026-10-07 AT 193 after `dev.mergeaudit` landed: 193 against 152 is 41 clear, one past
 #: the margin, so the floor moves to 153 and the margin does not move.
-FILE_FLOOR = 153
+#:
+#: RE-MEASURED 2026-10-08 AT 196 after the verdict-ledger lane merged (`dev.inflight`,
+#: `dev.verdictledger`, `dev._deny_subagent_row`): 196 against 153 is 43 clear, three past the margin,
+#: so the floor moves to 156 and the margin does not move.
+FILE_FLOOR = 156
 
 
 def _tree() -> dict[str, str]:
