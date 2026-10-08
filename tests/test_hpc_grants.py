@@ -210,14 +210,22 @@ def test_a_verdict_is_bound_to_a_full_sha() -> None:
 
 
 def test_every_path_stays_under_ci() -> None:
-    spec = VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='uv pip install -e .', python='3.13')
-    for script in (fetch_script(spec), build_script(spec), collect_command(spec, 'not win')):
+    spec = VerdictSpec(
+        sha=SHA,
+        repo_url='https://g/r.git',
+        install='uv pip install -e .',
+        python='3.13',
+        select='not slow',
+        not_covered='win',
+    )
+    for script in (fetch_script(spec), build_script(spec), collect_command(spec, covered_only=True)):
         for word in script.replace(';', ' ').replace('=', ' ').split():
             if '$HOME' in word or word.startswith('~'):
                 assert word.startswith(('"$HOME"/ci', '~/ci', '"$HOME/ci/bin')), word
     assert '--python 3.13' in build_script(spec)
     assert '.lab-ci-installed' in build_script(spec), 'the venv is reused once installed'
-    assert "-m 'not win'" in collect_command(spec, 'not win')
+    assert "-m '(not slow) and not (win)'" in collect_command(spec, covered_only=True)
+    assert "-m '(not slow)'" in collect_command(spec), 'pytest keeps one -m: select and not_covered are joined'
 
 
 def test_ids_are_read_from_collect_only_and_grouped_by_file() -> None:
@@ -246,7 +254,7 @@ class FakeAda:
         if '@@@ facts' in command:
             return '@@@ facts\nplatform=linux-x86_64/glibc2.28\npython=3.13.1\n'
         if '--collect-only' in command:
-            win = 'tests/w.py::t\n' if "'not (win)'" not in command else ''
+            win = 'tests/w.py::t\n' if 'not (win)' not in command else ''
             return f'tests/a.py::t1\ntests/a.py::t2\n{win}tests/b.py::t3\ntests/c.py::t4\n'
         if 'sbatch' in command:
             return '4242\n'

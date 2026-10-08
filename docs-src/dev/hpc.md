@@ -21,9 +21,9 @@ qos = { devq = "dev" }               # optional
 
 ## Remote verdict
 
-`python -m lab_commons.hpc verdict --sha <40-hex> --repo-url <https> --install "<cmd>" [--collect "<pytest args>"] [--not-covered "<marker expr>"] [--python 3.13] [--bundle <local repo>] [-c job.toml] -o record.json`
+`python -m lab_commons.hpc verdict --sha <40-hex> --repo-url <https> --install "<cmd>" [--collect "<pytest paths>"] [--select "<marker expr>"] [--not-covered "<marker expr>"] [--python 3.13] [--bundle <local repo>] [-c job.toml] -o record.json`
 
 - Everything on the cluster lives under `~/ci/`: `cache.git` (bare, fetched read-only over HTTPS), `bundles/<sha>.bundle` (only when the commit is not on the remote: `git bundle ... --not --remotes`, base64 over the runner's stdin), `trees/<sha>` (a worktree with its OWN `.venv`, built once on the login node and reused), `bin/lab_ci_pytest_item.py` (the item runner, shipped from this checkout so its parser does not depend on the tested project's `lab_commons` pin). A day-to-day `~/<repo>` checkout is never touched.
-- Node ids come from `pytest --collect-only -q` in the tree; one item per test file; the planner shards items as usual; each item runs `pytest <ids> -p no:cacheprovider -q --junitxml=<file>` and returns per-id outcomes read from the junit file.
+- Node ids come from `pytest --collect-only -q` in the tree (`--select` and `--not-covered` join into ONE `-m`, since pytest keeps only the last); one item per test file; the planner shards items as usual; each item runs `pytest <ids> -p no:cacheprovider -q --junitxml=<file>` and returns per-id outcomes read from the junit file.
 - The record `{sha, platform, cluster, python, plan, outcomes}` is written to `-o`. Outcomes: `passed`, `failed`, `error`, `skipped`, `xfailed`, `not-covered` (selected out by `--not-covered`, e.g. Windows-only vendors), `lost` (its shard died), `missing` (absent from junit). Only `passed` means passed.
 - The tested tree's venv must provide `lab_commons.hpc.worker` (any `lab-commons` since the hpc tier); the array task runs `python -m lab_commons.hpc.worker` there.
