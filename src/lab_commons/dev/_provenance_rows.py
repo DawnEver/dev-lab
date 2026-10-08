@@ -150,6 +150,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'netverb': ('adopted_by', 'scripts/pull_all.py', 'scripts/consumer-b-update.sh'),
     # ORIGINAL: the declared-set census is new; the consumers' origin pins live in famtests.visibility.
     'branchset': ('original',),
+    'family': ('original',),
     # ORIGINAL, and it supersedes no consumer file: ONE-BRANCH-PER-SESSION has been DECLARED since
     # 2026-10-04, and what is new here is WHERE it is enforced -- in a pre-push hook, where the
     # decision is still open, rather than only by the census that runs after the push it judges.
