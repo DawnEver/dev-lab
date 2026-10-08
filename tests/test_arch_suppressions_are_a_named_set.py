@@ -88,6 +88,19 @@ ALLOWED: Final[dict[Site, str]] = {
     'exceptional -- the box is running -- and psutil raises several unrelated types for it. The '
     'read returns None and the caller skips that process',
     (
+        'src/lab_commons/hpc/worker.py',
+        'BLE001',
+        'except Exception:',
+    ): "the entry point is the PROJECT's own code, so what it raises is not enumerable here. One "
+    "item's failure is recorded against that item and the shard carries on; propagating it would "
+    'cost every neighbour in the shard its result for one bad design',
+    (
+        'src/lab_commons/hpc/config.py',
+        'ANN401',
+        'def _section(name: str, raw: dict[str, Any]) -> Any:',
+    ): 'returns one of the five section dataclasses chosen by NAME from a table; the caller unpacks '
+    'them into Config by keyword, so a union return would only be cast back at that one call site',
+    (
         'src/lab_commons/supervise/remedy.py',
         'BLE001',
         'except Exception as exc:',
