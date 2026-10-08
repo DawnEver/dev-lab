@@ -8,7 +8,8 @@
  * is a rule in the JSON file passed as argv[2] (`.claude/hooks/deny-rules.json`), so adding or
  * retiring a rule is a data change, never an engine change.
  *
- * A rule is {name, pattern, matches?, allow?, reason}. `pattern` (JS regex source) denies a
+ * A rule is {name, pattern, matches?, allow?, scope?, reason}. `scope: 'subagent'` judges the rule only
+ * when the payload carries a non-empty `agent_id`. `pattern` (JS regex source) denies a
  * command it matches, unless `allow` (regex source) also matches -- the sanctioned spelling.
  * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd.
  *
@@ -67,6 +68,9 @@
 
 const fs = require('fs');
 const path = require('path');
+
+/** The tools whose `tool_input.command` the shell executes. */
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
 /** Commands whose heredoc body / `-c` argument is EXECUTED and must therefore be scanned. */
 const INTERPRETERS =
@@ -233,9 +237,16 @@ function executedTexts(cmd) {
  * Every COMMAND POSITION in one segment: the text at the wrapper itself, then at the command each
  * wrapper runs. `timeout 900 uv sync` yields both `timeout 900 uv sync` and `uv sync`, so a rule
  * naming either one still fires.
+ *
+ * A segment opening with `VAR=value` assignments ALSO yields itself whole, first: the assignment is
+ * what the shell executes before the command, so a rule naming one (`SKIP=` bypasses the commit
+ * hooks) must be able to see it. Stripping it was right for the command word and blinded every rule
+ * about the prefix itself.
  */
 function commandPositions(segment) {
   const out = [];
+  const raw = segment.trim();
+  if (ENV_PREFIX.test(raw)) out.push(raw);
   let text = segment.replace(ENV_PREFIX, '').trim();
   const seen = new Set();
   while (text && !seen.has(text)) {
@@ -357,13 +368,20 @@ try {
 } catch {
   process.exit(0);
 }
-if (input.tool_name !== 'Bash' || !Array.isArray(rules)) process.exit(0);
+// EVERY TOOL THAT RUNS A COMMAND LINE. Until 2026-10-08 this read `!== 'Bash'`, and the PowerShell
+// tool -- the same `tool_input.command`, the same shell verbs -- ran every denied shape unjudged.
+if (!SHELL_TOOLS.has(input.tool_name) || !Array.isArray(rules)) process.exit(0);
+// `agent_id` is present only when the hook fires inside a subagent (fork included); a row scoped
+// 'subagent' is judged only there. Keyed on agent_id, never agent_type: a main session launched
+// with --agent carries agent_type too.
+const subagent = typeof input.agent_id === 'string' && input.agent_id !== '';
 const cmd = (input.tool_input && input.tool_input.command) || '';
 const root = (input.cwd || '').replace(/\\/g, '/');
 const sessionRoot = repoRoot(path.resolve(path.dirname(process.argv[2]), '..', '..'));
 const texts = executedTexts(cmd);
 
 for (const rule of rules) {
+  if (rule.scope === 'subagent' && !subagent) continue;
   let hit;
   try {
     hit = fires(rule, texts) && !(rule.allow && new RegExp(rule.allow).test(cmd));

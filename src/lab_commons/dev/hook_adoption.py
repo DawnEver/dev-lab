@@ -40,7 +40,7 @@ to a refused agent and so must stay CONCRETE for the box that is running; making
 ``permissions.allow`` row portable is a separate job and belongs to
 :func:`lab_commons.dev.allow_adoption.glob_for`, which normalises it.
 
-The repo then commits that JSON and points a ``PreToolUse`` Bash matcher in `.claude/settings.json`
+The repo then commits that JSON and points a ``PreToolUse`` ``Bash|PowerShell`` matcher in `.claude/settings.json`
 at the engine with the file as ``argv[2]``. The rendered rows carry exactly the engine's own field
 names -- ``name``, ``pattern``, ``matches``, ``allow``, ``reason`` -- so nothing translates between
 the halves, and a suite in the consuming repo calls :func:`assert_shippable` plus a comparison of

@@ -111,9 +111,24 @@ def engine_beside(rules: Path) -> Path:
     return rules.parent / Path(ENGINE_REL).name
 
 
-#: The matcher the tool uses to select Bash tool calls. A rule about a COMMAND can only be enforced
-#: where a command is issued.
-_MATCHER: Final = 'Bash'
+#: The tools that issue a command line. A rule about a COMMAND can only be enforced where a command
+#: is issued, and BOTH shell tools issue one: until 2026-10-08 the matcher named Bash alone, and every
+#: denied shape ran unjudged through the PowerShell tool.
+SHELL_TOOLS: Final = ('Bash', 'PowerShell')
+
+#: The matcher the guard's hook lives on -- every shell tool, and nothing else.
+_MATCHER: Final = '|'.join(SHELL_TOOLS)
+
+
+def _tools(entry: object) -> frozenset[str]:
+    """The shell tools a ``PreToolUse`` entry's matcher names (an alternation of tool names)."""
+    if not isinstance(entry, dict):
+        return frozenset()
+    return frozenset(str(entry.get('matcher', '')).split('|')) & frozenset(SHELL_TOOLS)
+
+
+def _is_ours(hook: object) -> bool:
+    return isinstance(hook, dict) and Path(ENGINE_REL).name in str(hook.get('command', ''))
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,10 +218,14 @@ def _inspect_rules(path: Path) -> tuple[str, str]:
 
 
 def _hook_entries(settings: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every ``PreToolUse`` command hook attached to the Bash matcher, as the raw dicts."""
+    """Every ``PreToolUse`` command hook on a matcher naming EVERY shell tool, as the raw dicts.
+
+    A hook on a matcher missing one of :data:`SHELL_TOOLS` is not counted: it leaves that tool
+    unjudged, so the wiring reads as stale rather than installed.
+    """
     out: list[dict[str, Any]] = []
     for entry in settings.get('hooks', {}).get('PreToolUse', []) or []:
-        if not isinstance(entry, dict) or _MATCHER not in str(entry.get('matcher', '')):
+        if _tools(entry) != frozenset(SHELL_TOOLS):
             continue
         out += [hook for hook in entry.get('hooks', []) or [] if isinstance(hook, dict)]
     return out
@@ -222,6 +241,13 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
     commands = [str(hook.get('command', '')) for hook in _hook_entries(settings)]
     ours = [command for command in commands if Path(ENGINE_REL).name in command]
     if not ours:
+        partial = [
+            str(entry.get('matcher'))
+            for entry in settings.get('hooks', {}).get('PreToolUse', []) or []
+            if _tools(entry) and any(_is_ours(hook) for hook in entry.get('hooks', []) or [])
+        ]
+        if partial:
+            return STALE, f'the engine runs on matcher {partial[0]!r}, which leaves a shell tool unjudged'
         return ABSENT, f'no PreToolUse {_MATCHER} hook runs {Path(ENGINE_REL).name}'
     if HOOK_COMMAND in ours:
         return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
@@ -244,20 +270,25 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
     Pure over its argument -- the input is not mutated -- so the suite drives THIS function over a
     planted foreign settings file rather than re-deriving what "did not clobber" means.
 
-    Three cases, and the middle one is the one a naive writer gets wrong: no hooks at all (add), a
-    Bash matcher that already carries OTHER hooks (append to it, keeping them), and our own hook
-    already present under different arguments (replace that one hook, in place).
+    Our hook lives on a matcher naming EVERY shell tool. A copy of it on a matcher missing one (the
+    pre-2026-10-08 ``Bash`` wiring) is MOVED rather than widened in place: widening that matcher
+    would also hand every OTHER hook on it a tool its author never meant it to see. Other hooks on a
+    full shell matcher are kept, and our own hook there is replaced in place.
     """
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
     hooks = out.setdefault('hooks', {})
     pre = hooks.setdefault('PreToolUse', [])
     ours = {'type': 'command', 'command': HOOK_COMMAND}
     for entry in pre:
-        if not isinstance(entry, dict) or _MATCHER not in str(entry.get('matcher', '')):
+        if _tools(entry) and _tools(entry) != frozenset(SHELL_TOOLS):
+            entry['hooks'] = [hook for hook in entry.get('hooks', []) or [] if not _is_ours(hook)]
+    pre[:] = [entry for entry in pre if not isinstance(entry, dict) or entry.get('hooks')]
+    for entry in pre:
+        if _tools(entry) != frozenset(SHELL_TOOLS):
             continue
         commands = entry.setdefault('hooks', [])
         for index, hook in enumerate(commands):
-            if isinstance(hook, dict) and Path(ENGINE_REL).name in str(hook.get('command', '')):
+            if _is_ours(hook):
                 commands[index] = ours
                 return out
         commands.append(ours)

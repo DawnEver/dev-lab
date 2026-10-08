@@ -134,9 +134,8 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     assert after['hooks']['Stop'] == planted['hooks']['Stop'], 'an unrelated event was lost'
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'
-    commands = [hook['command'] for hook in pre[1]['hooks']]
-    assert 'node theirs.js' in commands, "another agent's Bash hook was dropped"
-    assert agent_guard.HOOK_COMMAND in commands, 'the guard was not wired'
+    assert pre[1] == planted['hooks']['PreToolUse'][1], "another agent's Bash hook was moved or widened"
+    assert pre[2] == {'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': agent_guard.HOOK_COMMAND}]}
 
 
 def test_wiring_that_runs_the_engine_with_other_arguments_is_stale(repo: Path) -> None:
@@ -202,3 +201,26 @@ def test_the_installed_guard_actually_refuses_a_command(repo: Path) -> None:
     assert denied is not None, 'the installed guard allowed a bare test line'
     assert 'lab_commons.dev.verify' in denied, denied
     assert _ask(repo, wired, 'git status') is None, 'the installed guard refused an ordinary command'
+
+
+def test_the_wiring_matches_every_shell_tool(repo: Path) -> None:
+    """A Bash-only matcher leaves the PowerShell tool unguarded, so the install names both."""
+    agent_guard.install_guard(repo)
+    settings = json.loads((repo / agent_guard.SETTINGS_REL).read_text(encoding='utf-8'))
+    matchers = [entry['matcher'] for entry in settings['hooks']['PreToolUse']]
+    assert matchers == ['Bash|PowerShell']
+
+
+def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: Path) -> None:
+    """The old wiring is STALE; the install widens OUR hook without widening anybody else's."""
+    settings = repo / agent_guard.SETTINGS_REL
+    settings.parent.mkdir(parents=True)
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    theirs = {'type': 'command', 'command': 'node theirs.js'}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [theirs, ours]}]}}
+    settings.write_text(json.dumps(old), encoding='utf-8')
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.STALE
+    agent_guard.install_guard(repo)
+    pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
+    assert pre == [{'matcher': 'Bash', 'hooks': [theirs]}, {'matcher': 'Bash|PowerShell', 'hooks': [ours]}]
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED

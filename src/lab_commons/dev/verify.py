@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,7 @@ from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.forgestatus import GATE_CONTEXT, head_sha, publish, verdict_commit
 from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
+from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import (
@@ -60,6 +62,14 @@ from lab_commons.dev.reports import (
 )
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdictledger import (
+    OUTCOMES_DIR_VAR,
+    ledger_path,
+    outcomes_dir,
+    record_promoted,
+    run_test_id,
+    served,
+)
 from lab_commons.log import emit
 from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
@@ -68,12 +78,14 @@ __all__ = [
     'HOOKS_STEP',
     'LOG_DIRECTORY',
     'MEASURED_TARGETS',
+    'OUTCOME_PLUGIN',
     'PYTEST_ARGS',
     'RUFF_STEPS',
     'build_verdict',
     'main',
     'project_root',
     'read_hooks',
+    'run_key',
     'run_verify',
 ]
 
@@ -131,6 +143,9 @@ PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
 #: The durations ledger, loaded as a plugin so EVERY verify run records what it executed -- targeted
 #: or full, whichever conftest the selected tests sit under (:func:`lab_commons.dev.durations.pytest_configure`).
 LEDGER_PLUGIN: Final[tuple[str, ...]] = ('-p', durations.__name__)
+
+#: The per-test OUTCOME recorder the verdict ledger is filled from (inert without its env var).
+OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.verdictledger')
 
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
@@ -425,8 +440,9 @@ def run_verify(
         stamp = {
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
             durations.LEDGER_ENV_VAR: env_key(env_manifest()),
+            OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
         }
-        command = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *pytest_args]
+        command = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *pytest_args]
         code = _tee(command, cwd=root, handle=handle, extra_env=stamp)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
     complete_census, scope_refusal = _skip_census_scope(pytest_args)
@@ -491,33 +507,74 @@ def main(argv: list[str] | None = None) -> int:
         help=f'ceiling on the wait for this box (default {WAIT_S:.0f}s); 0 checks once and refuses',
     )
     parser.add_argument('--no-status', action='store_true', help='do not post the verdict as a lab/gate status')
+    parser.add_argument('--rerun', action='store_true', help='run even when the ledger already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     parsed = parser.parse_args(argv)
     root = project_root()
+    arguments = tuple(parsed.pytest_args)
+    key = run_key(root, arguments)
+    ledger = ledger_path(root)
+    cited = None if parsed.rerun else served(ledger, tree=key.tree, env=key.env, test=run_test_id(key.selector))
+    if cited is not None:
+        emit(
+            f'verify: CITED {cited.result} -- the ledger ({ledger}) already judged this tree, env and selection; '
+            f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
+        )
+        return EXIT_CODES[Outcome(cited.result.lower())]
+
+    def lead() -> str:
+        code, lines = _judge(root, arguments, key, ledger, wait_s=parsed.lock_wait_s, no_status=parsed.no_status)
+        return json.dumps({'code': code, 'lines': lines})
+
+    answer, attached = run_once(key, lead, directory=box_directory(), poll_s=DEFAULT_POLL_S)
+    shared = json.loads(answer)
+    if attached:
+        emit('verify: ATTACHED to the run already in flight for this tree, env and selection; its answer:')
+        for line in shared['lines']:
+            emit(line)
+    return int(shared['code'])
+
+
+def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
+    """What makes two verify requests ONE run: the tree address, the env key and the selection."""
+    return RunKey(
+        tree=content_address(root, MEASURED_TARGETS),
+        env=env_key(env_manifest()),
+        selector=' '.join(('verify', *pytest_args)),
+    )
+
+
+def _judge(
+    root: Path, arguments: tuple[str, ...], key: RunKey, ledger: Path, *, wait_s: float, no_status: bool
+) -> tuple[int, list[str]]:
+    """The leader's run: judge, stamp, record, publish, and return the exit code with the lines it printed."""
     head, start = head_sha(root), status_paths(root)
     try:
-        verdict = run_verify(root, tuple(parsed.pytest_args), wait_s=parsed.lock_wait_s)
+        verdict = run_verify(root, arguments, wait_s=wait_s)
     except MalformedAllowance as exc:
-        emit(f'verify refuses to run: {exc}', err=True)
-        return EXIT_CODES[Outcome.INCONCLUSIVE]
+        line = f'verify refuses to run: {exc}'
+        emit(line, err=True)
+        return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
     except Exhausted as exc:
-        emit(
+        line = (
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: '
             f'{holders_line(exc)}. Wait for it, or stop that holder, then re-run; '
-            f'--lock-wait-s raises or drops the {parsed.lock_wait_s:.0f}s ceiling on the wait.',
-            err=True,
+            f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait.'
         )
-        return EXIT_CODES[Outcome.INCONCLUSIVE]
+        emit(line, err=True)
+        return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
     verdict.stamp()
+    lines = [verdict.line(), f'verify: {verdict.result.render()}']
+    lines += [f'  failed: {failure}' for failure in verdict.result.failures]
     emit('')
-    emit(verdict.line())
-    emit(f'verify: {verdict.result.render()}')
-    for failure in verdict.result.failures:
-        emit(f'  failed: {failure}')
-    if not parsed.no_status:
-        commit = verdict_commit(head, head_sha(root), start, status_paths(root))
+    for line in lines:
+        emit(line)
+    commit = verdict_commit(head, head_sha(root), start, status_paths(root))
+    if run_key(root, ()).tree == key.tree:
+        record_promoted(ledger, verdict, key.tree, key.env, key.selector, commit=commit or '')
+    if not no_status:
         emit(publish(root, verdict, context=GATE_CONTEXT, commit=commit))
-    return EXIT_CODES[verdict.result.outcome]
+    return EXIT_CODES[verdict.result.outcome], lines
 
 
 if __name__ == '__main__':

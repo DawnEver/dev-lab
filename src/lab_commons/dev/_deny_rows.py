@@ -56,11 +56,13 @@ from __future__ import annotations
 from lab_commons.dev._deny_forge_rows import FORGE_WRITE_ROWS, VENV_PYTHONS
 from lab_commons.dev._deny_grep_row import RECURSIVE_GREP
 from lab_commons.dev._deny_interpreter_row import BARE_INTERPRETER
+from lab_commons.dev._deny_subagent_row import SUBAGENT_NO_HEAVY_NO_PUSH
 from lab_commons.dev._deny_worktree_row import BASE_IS_EXPLICIT_ALLOW, BASE_IS_EXPLICIT_PATTERN, WORKTREES_STAY_INSIDE
 from lab_commons.dev.netverb import NETWORK_VERBS
 from lab_commons.dev.worktreeplace import WORKTREES_REL
 
 DENY_ROWS: tuple[dict[str, object], ...] = (
+    SUBAGENT_NO_HEAVY_NO_PUSH,
     {
         'id': 'BARE-TEST-INVOCATION',
         # `uv\s+run\s+pytest` used to stand here as a third alternative. It is GONE because the

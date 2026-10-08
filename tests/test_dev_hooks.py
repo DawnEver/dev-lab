@@ -184,3 +184,23 @@ def test_an_opening_is_what_turns_a_hit_into_a_pass() -> None:
 def test_the_lookup_is_the_registry_itself() -> None:
     """The keyed view an adoption resolves against really covers every row."""
     assert set(rules_by_id(DENY_RULES)) == {rule.id for rule in DENY_RULES}
+
+
+def test_a_subagent_row_carries_its_scope_into_the_engine_file() -> None:
+    """The scope is DATA the engine reads; a row that dropped it would refuse the main session too."""
+    row = rules_by_id(DENY_RULES)['SUBAGENT-NO-HEAVY-NO-PUSH']
+    assert row.scope == 'subagent'
+    assert row.rendered()['scope'] == 'subagent'
+    assert 'scope' not in rules_by_id(DENY_RULES)['GIT-STASH'].rendered(), 'an unscoped row grew a scope'
+
+
+def test_a_planted_unknown_scope_is_refused() -> None:
+    """A closed vocabulary: the engine reads an unknown scope as no scope, which would widen the rule."""
+    with pytest.raises(ValueError, match='scope'):
+        DenyRule(id='PLANTED', pattern='x', hazard='h', remedy='do this', scope='lane')
+
+
+def test_a_scoped_row_binds_only_its_own_scope() -> None:
+    """The Python reading agrees with the engine: the main session is not judged by a subagent row."""
+    assert denies(DENY_RULES, 'SKIP=ruff git commit -m x', scope='subagent') == 'SUBAGENT-NO-HEAVY-NO-PUSH'
+    assert denies(DENY_RULES, 'SKIP=ruff git commit -m x') is None
