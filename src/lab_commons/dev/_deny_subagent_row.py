@@ -9,7 +9,8 @@ WHAT IT REFUSES, and the one premise behind every alternative: a subagent's broa
 the ONE run the main session makes after merging every ready lane into one integration tree
 (ONE-RUN-AFTER-INTEGRATION), and publishing is the main session's. So a subagent may not push
 (directly or through the retry wrapper), may not take a ``gate``/``heavy`` tier or ``--with-heavy``,
-and may not skip the hooks (``SKIP=``, ``--no-verify``). A targeted ``measure`` stays its own.
+and may not skip the hooks (``SKIP=``, PowerShell ``$env:SKIP =``, ``--no-verify``). A targeted
+``measure`` stays its own.
 
 IT IS FIRST IN THE REGISTRY ON PURPOSE: the engine reports the first row that fires, and a subagent
 asking to push should be told to hand back its SHA, not how to retry the push.
@@ -31,7 +32,8 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
         rf'|{_INTERPRETER}\S*runner\.py\s+(?:gate|heavy)\b'
         rf'|{_INTERPRETER}\S*runner\.py\b[^\n]*\s--with-heavy\b'
         r'|git(?:\.exe)?\b[^\n]*\s--no-verify\b'
-        r'|SKIP=)'
+        # PowerShell spells the same skip as an environment assignment.
+        r"""|SKIP=|\$env:SKIP\s*=|(?:\[(?:System\.)?Environment\]::)?SetEnvironmentVariable\(\s*['"]SKIP['"])"""
     ),
     'matches': 'command',
     'scope': 'subagent',
@@ -50,6 +52,9 @@ SUBAGENT_NO_HEAVY_NO_PUSH: dict[str, object] = {
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure --with-heavy tests/test_x.py',
         'SKIP=ruff git commit -m "x"',
         'git commit --no-verify -m "x"',
+        "$env:SKIP='ruff'; git commit -m 'x'",
+        "$env:SKIP = 'ruff'",
+        "[Environment]::SetEnvironmentVariable('SKIP', 'ruff')",
     ),
     'permits': (
         f'{VENV_PYTHONS[0]} scripts/gate/runner.py measure tests/test_x.py',
