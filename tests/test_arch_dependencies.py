@@ -25,9 +25,9 @@ from _arch_corpus import ROOT
 from lab_commons.file_io import read_toml
 
 #: The tier-1 runtime dependencies, BY NAME. Two-sided: an arrival reds, and so does a removal that
-#: leaves a dead entry behind. Measured 2026-09-15. `colorama` arrived 2026-10-03 (Windows only): without it
-#: structlog's import-time default renderer raises, so `import lab_commons` failed in a bare hook env.
-RUNTIME_DEPENDENCIES = frozenset({'structlog', 'colorama', 'platformdirs', 'rtoml', 'pint', 'pydantic', 'numpy'})
+#: leaves a dead entry behind. Measured 2026-09-15; cut to `numpy` on 2026-10-08,
+#: when `09eb857` moved units, paths, io and structured logging behind their own extras.
+RUNTIME_DEPENDENCIES = frozenset({'numpy'})
 
 #: The name-boundary of a PEP 508 requirement: everything before the first comparator or marker.
 _NAME = re.compile(r'^[A-Za-z0-9._-]+')
