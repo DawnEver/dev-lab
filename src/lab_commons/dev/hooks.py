@@ -48,6 +48,7 @@ __all__ = [
     'DENY_RULES',
     'MATCH_KINDS',
     'PLACEHOLDER',
+    'SCOPES',
     'DenyRule',
     'Remedy',
     'UnremediedRule',
@@ -68,6 +69,11 @@ _ID: Final = re.compile(r'[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*')
 #: What a pattern NAMES, in the engine's own vocabulary. A closed set, so a typo cannot become a
 #: third matching mode that the engine silently reads as its default.
 MATCH_KINDS: Final = frozenset({'command', 'argument'})
+
+#: WHO a row binds, in the engine's own vocabulary. ``'subagent'`` judges the row only when the hook
+#: payload carries a non-empty ``agent_id`` -- present only inside a subagent call, fork included.
+#: A closed set, because the engine reads an unknown scope as no scope, which widens the rule.
+SCOPES: Final = frozenset({'subagent'})
 
 
 class UnremediedRule(RuntimeError):
@@ -146,6 +152,7 @@ class DenyRule:
     refuses: tuple[str, ...] = ()
     permits: tuple[str, ...] = ()
     details: str | None = None
+    scope: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -157,6 +164,9 @@ class DenyRule:
                 f'{self.id}: matches={self.matches!r} is not one of {sorted(MATCH_KINDS)}. The engine reads '
                 f'anything else as the default anchoring, so a typo would quietly widen or narrow the rule.'
             )
+            raise ValueError(msg)
+        if self.scope is not None and self.scope not in SCOPES:
+            msg = f'{self.id}: scope={self.scope!r} is not one of {sorted(SCOPES)}; the engine would read it as none.'
             raise ValueError(msg)
         _compiled(self.pattern, f'{self.id} pattern')
         _compiled(self.allow, f'{self.id} allow')
@@ -213,7 +223,7 @@ class DenyRule:
         return '\n'.join(line for line in (f'{self.id}: {self.hazard}', exit_text, self.details) if line)
 
     def rendered(self, remedy: Remedy | None = None) -> dict[str, str]:
-        """The rule as the engine's own row: ``name``, ``pattern``, ``matches``, ``allow``, ``reason``.
+        """The rule as the engine's own row: ``name``, ``pattern``, ``matches``, ``allow``, ``scope``, ``reason``.
 
         The two openings -- the rule's own and the remedy's -- are combined by ALTERNATION rather
         than by picking one. They are different claims (a spelling sanctioned everywhere, and this
@@ -223,6 +233,8 @@ class DenyRule:
         row = {'name': self.id, 'pattern': self.pattern, 'matches': self.matches, 'reason': self.reason(remedy)}
         if openings:
             row['allow'] = openings[0] if len(openings) == 1 else '|'.join(f'(?:{text})' for text in openings)
+        if self.scope is not None:
+            row['scope'] = self.scope
         return row
 
 
@@ -295,14 +307,24 @@ def fires(rule: DenyRule, segment: str) -> bool:
     return re.search(anchored, segment) is not None
 
 
-def denies(rules: Sequence[DenyRule], segment: str, remedies: Mapping[str, Remedy] | None = None) -> str | None:
+def denies(
+    rules: Sequence[DenyRule],
+    segment: str,
+    remedies: Mapping[str, Remedy] | None = None,
+    *,
+    scope: str | None = None,
+) -> str | None:
     """The ID of the first rule that REFUSES *segment*, or ``None`` -- openings applied.
 
     An opening is tested against the whole text, as the engine tests it against the whole command:
     an ``allow`` is a statement about the invocation, not about the token the pattern landed on.
+    *scope* is who is asking, as the engine reads it: ``None`` for the main session, ``'subagent'``
+    inside one. A scoped row binds only its own scope.
     """
     supplied = remedies or {}
     for rule in rules:
+        if rule.scope is not None and rule.scope != scope:
+            continue
         if not fires(rule, segment):
             continue
         offered = supplied.get(rule.id)

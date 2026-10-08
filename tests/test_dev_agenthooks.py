@@ -189,13 +189,19 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
     for rule in DENY_RULES:
         if rule.id not in shipped:
             continue
+        # A scoped row is judged where its scope holds -- inside a subagent -- and its refusals are
+        # ALSO driven outside it, where this row must not be the one that fires (the planted control).
+        agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if agenthooks.decide(command, rules) is None:
+            if agenthooks.decide(command, rules, agent_id=agent) is None:
                 wrong.append(f'{rule.id}: the engine ALLOWED a command the row says it refuses: {command!r}')
+            outside = agenthooks.decide(command, rules) if agent else None
+            if outside is not None and outside.startswith(f'{rule.id}:'):
+                wrong.append(f'{rule.id}: the scoped row fired OUTSIDE a subagent on {command!r}')
         for command in rule.permits:
             checked += 1
-            if agenthooks.decide(command, rules) is not None:
+            if agenthooks.decide(command, rules, agent_id=agent) is not None:
                 wrong.append(f'{rule.id}: the engine DENIED a near-miss the row permits: {command!r}')
     assert checked >= CONTROL_FLOOR, (
         f'only {checked} controls reached the engine, below the {CONTROL_FLOOR} floor. Finding nothing wrong '
@@ -319,3 +325,69 @@ def test_a_target_declaring_no_door_is_told_the_named_exit_is_not_its_own(
     assert reason is not None
     assert 'declares no door' in reason, reason
     assert bare.as_posix().lower() in reason.lower(), reason
+
+
+# --------------------------------------------------------------------------------------------
+# Every shell tool, and the subagent scope
+
+
+def test_the_powershell_tool_is_judged_like_bash(rules: Path) -> None:
+    """THE BYPASS CLOSED: the engine used to exit on any tool but Bash, so PowerShell ran everything."""
+    reason = agenthooks.decide('pytest tests/', rules, tool='PowerShell')
+    assert reason is not None, 'a bare test line through the PowerShell tool was allowed'
+    assert reason.startswith('BARE-TEST-INVOCATION')
+
+
+def test_a_non_shell_tool_is_never_judged(rules: Path) -> None:
+    """Only a tool that runs a command line is in scope; anything else stays fail-open."""
+    assert agenthooks.decide('pytest tests/', rules, tool='Write') is None
+
+
+def _scoped_rules(tmp_path: Path) -> Path:
+    path = tmp_path / 'deny-rules.json'
+    rows = [{'name': 'SCOPED', 'pattern': r'git\s+push\b', 'matches': 'command', 'scope': 'subagent', 'reason': 'S'}]
+    path.write_text(json.dumps(rows), encoding='utf-8')
+    return path
+
+
+def test_a_subagent_scoped_rule_fires_only_inside_a_subagent(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same command, refused with ``agent_id`` and allowed without it."""
+    rules = _scoped_rules(tmp_path)
+    assert agenthooks.decide('git push origin HEAD', rules, agent_id='a1') == 'S'
+    assert agenthooks.decide('git push origin HEAD', rules) is None
+    assert agenthooks.decide('git push origin HEAD', rules, agent_id='') is None, 'an empty id is no subagent'
+
+
+def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rules: Path) -> None:
+    """END TO END through the shipped engine: the same command, with and without ``agent_id``."""
+    inside = agenthooks.decide('git push origin HEAD', rules, agent_id='a1')
+    assert inside is not None
+    assert inside.startswith('SUBAGENT-NO-HEAVY-NO-PUSH:'), inside
+    assert 'hand the commit SHA back' in inside
+    outside = agenthooks.decide('git push origin HEAD', rules)
+    assert outside is not None
+    assert outside.startswith('GIT-NETWORK-VERB:'), 'the main session lost its own (retry) door'
+
+
+def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
+    reason = agenthooks.decide('git push origin HEAD', rules, tool='PowerShell', agent_id='a1')
+    assert reason is not None
+    assert reason.startswith('SUBAGENT-NO-HEAVY-NO-PUSH:')
+
+
+def test_a_subagent_keeps_its_targeted_measure(rules: Path) -> None:
+    """The exit the refusal names must stay open: a targeted measure of the tests it touched."""
+    assert (
+        agenthooks.decide(
+            '.venv/Scripts/python.exe scripts/gate/runner.py measure tests/test_x.py', rules, agent_id='a1'
+        )
+        is None
+    )
+
+
+def test_a_hook_skip_prefix_is_seen_by_the_engine(rules: Path) -> None:
+    """``SKIP=`` is an env prefix the engine used to strip before any rule saw it."""
+    reason = agenthooks.decide('SKIP=ruff git commit -m "x"', rules, agent_id='a1')
+    assert reason is not None
+    assert reason.startswith('SUBAGENT-NO-HEAVY-NO-PUSH:')
+    assert agenthooks.decide('SKIP=ruff git commit -m "x"', rules) is None, 'the main session was refused'
