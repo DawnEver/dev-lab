@@ -128,4 +128,24 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_disclosure.py',),
     ),
+    (
+        'ONE-RUN-AFTER-INTEGRATION',
+        (
+            'Tests run ONCE, on the integrated tree: lanes and subagents run no broad verification, only a '
+            'targeted measure of the tests they touched; the main session merges every ready lane into one '
+            'tree and runs the gate once. A duplicate request attaches to the run in flight, a key the verdict '
+            'ledger already holds is cited rather than re-run, and push admission reads the ledger -- a lane '
+            'needs no verdict of its own.'
+        ),
+        ('tests/test_dev_admission.py', 'tests/test_dev_inflight.py', 'tests/test_dev_verdictledger.py'),
+    ),
+    (
+        'SUBAGENT-NO-HEAVY-NO-PUSH',
+        (
+            'A subagent never takes a broad verdict and never publishes: no push, no gate or heavy tier, no '
+            'skipped hook. It commits on its lane and hands the SHA back to the main session, which merges '
+            'and verifies once. A targeted measure of the tests it touched stays its own.'
+        ),
+        ('tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
+    ),
 )

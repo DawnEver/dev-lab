@@ -276,8 +276,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'VERDICT-BAR-IS-THE-INCREMENT',
         (
             'A verdict answers for the INCREMENT that produced it, not the tree: a red it did not cause is inventory. '
-            'A lane cites PASS, FAIL or INCONCLUSIVE for this tree and env and records the gap; the trunk needs PASS. '
-            'Refused: no verdict (an INCONCLUSIVE that ran zero tests is none), another tree or env, a dirty tree.'
+            'A lane needs no verdict; the integration push cites a ledger PASS or FAIL for HEAD and env, and a FAIL '
+            'records the gap; the trunk needs PASS. Refused: no such entry, another commit or env, a dirty tree.'
         ),
         (
             'src/lab_commons/dev/admission.py',

@@ -6,7 +6,7 @@
 ## Environments — each worktree owns its venv
 
 - Each worktree owns its `.venv`, including an editable install of its own source. A missing environment needs bootstrap, not borrowing the primary checkout's interpreter for a verdict.
-- A worktree's runner uses that worktree's own interpreter, so its source and installed dependencies belong to the same checkout. Under fan-out only the coordinator's worktree runs it — a lane runs no tests (Concurrency, below).
+- A worktree's runner uses that worktree's own interpreter, so its source and installed dependencies belong to the same checkout. Under fan-out only the coordinator's worktree runs a broad verdict — a lane runs at most a targeted measure (Concurrency, below).
 - The runner takes a root, and the root picks the SOURCE and the TESTS together.
 - **The dependency door is the agent's to run.** Syncing its own worktree's environment is a local operation requiring no human. Never change the primary checkout's environment from a lane.
 - Environment exclusion is per environment: a verdict in worktree A prevents mutation of A's environment, not bootstrap or sync of B's. CPU contention remains the box lock's responsibility.
@@ -59,15 +59,15 @@ git worktree add --detach <path> <sha>
 - **A base check that only prints the sha is not a check.** Name a symbol the task cannot proceed without, and make a zero count a STOP.
 - **Give it the sha, never a branch name**: the integration branch moves under a long-running agent, and two agents on "the same branch" can be on two trees.
 - The coordinator may create the worktree instead, but only for a NON-isolated agent; for an isolated one the tree is unreachable and the work is lost.
-- **Ask a subagent for no verdict and no measurement**: it resolves, audits, commits and hands back — a lane runs no tests (Concurrency, below). Measured 2026-09-15: a subagent's gate launched as a background task is reaped by the agent harness during collection and leaves an EMPTY log — it proves nothing in either direction, and costs the box lock while it lives.
+- **Ask a subagent for no broad verdict**: it resolves, audits, runs at most a targeted `measure` of what it touched, commits and hands back its SHA (Concurrency, below). Measured 2026-09-15: a subagent's gate launched as a background task is reaped by the agent harness during collection and leaves an EMPTY log — it proves nothing in either direction, and costs the box lock while it lives.
 - The coordinator's own run may hold the box lock for hours while its subagents work. Tell each one explicitly **not to kill processes or delete the lock file** — an agent trying to be helpful can destroy a four-hour verdict in one command.
 
-## Concurrency — a lane runs no tests
+## Concurrency — tests run once, after integration
 
-- **`LANES-RUN-NO-TESTS`** (user ruling 2026-10-07): under fan-out a lane agent runs NO tests — no gate, no heavy, no measure, no targeted subset. It resolves, audits with STATIC checks only (static reading, the merge audit, direct lint runs), commits and hands back. The coordinator's MAIN session runs the verification ONCE, over the combined batch. Never re-run heavy test content per lane.
-- Measured 2026-10-07 in a consumer: five lanes measuring at once queued on the box's ONE CPU lock and re-ran what the combined `gate`/`heavy` runs anyway; one lane measure took 40 minutes to 2.5 hours. N lanes each verifying cost N serial runs whose content the batch verdict repeats.
-- The hazard is the test SESSION, not the tier, and a serial run is not "small": four lanes once obeyed "never run a full gate" by running 274 tests serially, a slow integration test, and two single files — none of them a gate — and the box hit 54 python processes until the serial gate they were protecting lost a worker and blocked forever waiting on it.
-- NOT ENFORCED, and stated here because the default is wrong without it: nothing yet tells a fan-out lane's run from its coordinator's, so nothing refuses a lane's test session. The box lock only QUEUES the second session; it does not refuse it. The registry in `lab_commons.dev.rules` cannot carry a rule with no mechanism, so the ID has no row there until one is built.
+- **`ONE-RUN-AFTER-INTEGRATION`** (user ruling 2026-10-08; statement in `lab_commons.dev.rules`): a lane or subagent runs no broad verification -- no gate, no heavy. It may run a targeted `measure` of the tests it wrote or touched, then commits and hands back its SHA. The coordinator's MAIN session merges every ready lane into one integration tree and runs the gate ONCE; that verdict, recorded in the verdict ledger, is what the integration push cites. A lane push needs no verdict of its own.
+- **ENFORCED.** `SUBAGENT-NO-HEAVY-NO-PUSH` refuses a subagent's push, gate/heavy tier, `--with-heavy` and hook skipping in the agent guard (keyed on the hook payload's `agent_id`); admission admits a lane with no verdict and reads the integration verdict off the ledger; the runner queues on a held box, attaches a duplicate `(tree, env, selector)` to the run in flight, and cites a key the ledger already holds.
+- Measured 2026-10-07 in a consumer: five lanes measuring at once queued on the box's ONE CPU lock and re-ran what the combined `gate`/`heavy` runs anyway; one lane measure took 40 minutes to 2.5 hours. Measured 2026-10-08: 95 of 98 runner logs in a day were one key, re-launched by polling agents.
+- The hazard is the test SESSION, not the tier, and a serial run is not "small": four lanes once obeyed "never run a full gate" by running 274 tests serially, a slow integration test, and two single files — none of them a gate — and the box hit 54 python processes until the serial gate they were protecting lost a worker and blocked forever waiting on it. A targeted measure is the tests you touched, not a subset of the suite.
 
 ## Reading a result
 

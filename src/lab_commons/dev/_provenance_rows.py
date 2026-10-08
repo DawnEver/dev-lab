@@ -64,6 +64,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     ),
     'boxlock': ('original',),
     'boxwait': ('original',),
+    'inflight': ('original',),
+    'verdictledger': ('original',),
     'bypath': ('supersedes', 'scripts/gate/_by_path.py'),
     'checkout': (
         'supersedes',

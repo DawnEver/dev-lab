@@ -127,6 +127,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   this is the fourth -- queue on a DEADLINE, say who you are waiting for while you wait, and refuse
   NAMING the holder when the deadline passes. Separate from ``verify`` because verify is one adopter
   and not the only one.
+* :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
+  request ATTACHES to the run in flight and receives its answer instead of running the suite again.
+* :mod:`lab_commons.dev.verdictledger` -- the ONE record of promoted verdicts, keyed by tree, env and
+  test; written only by the runner after promotion, read by the runner (cite) and by push admission.
 * :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the

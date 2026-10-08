@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -33,6 +35,7 @@ from typing import Final
 import pytest
 
 from lab_commons.dev import verify
+from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, verify_log
 from lab_commons.dev.reports import (
     SKIP_CEILING,
@@ -44,6 +47,7 @@ from lab_commons.dev.reports import (
     stale_declarations,
 )
 from lab_commons.dev.verdict import Outcome, Verdict
+from lab_commons.dev.verdictledger import Entry, entries, outcomes_dir, record, run_test_id
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
 
@@ -626,7 +630,8 @@ class TestThePlantedControl:
         monkeypatch.setattr(verify, 'hold_the_box', no_seat)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path, selection)
-        assert commands[-1] == (sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *selection)
+        expected_command = (sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *verify.OUTCOME_PLUGIN)
+        assert commands[-1] == (*expected_command, *selection)
         assert verdict.selector.spec == ' '.join(('verify', *selection))
         assert verdict.result.outcome is expected
         if selection == ('--unknown-selection',):
@@ -854,6 +859,8 @@ def _patched_main(
     """Drive ``main`` with the run and the git readings replaced, recording what reaches ``publish``."""
     posted: list = []
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
+    monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
+    monkeypatch.setattr(verify, 'ledger_path', lambda _root: tmp_path / 'ledger.jsonl')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
@@ -877,3 +884,81 @@ def test_a_dirty_tree_publishes_on_no_commit_and_keeps_the_exit_code(monkeypatch
 def test_every_verify_run_loads_the_durations_ledger_plugin() -> None:
     """A targeted run records too: the ledger is a plugin verify passes, not a conftest binding."""
     assert LEDGER_PLUGIN == ('-p', 'lab_commons.dev.durations')
+
+
+def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeypatch, tmp_path: Path) -> None:
+    """THE 95-OF-98 PATTERN: a second verify of the same key reads the leader's answer and runs nothing."""
+    root, box = tmp_path / 'root', tmp_path / 'inflight'
+    root.mkdir()
+    box.mkdir()
+    monkeypatch.setattr(verify, 'project_root', lambda: root)
+    monkeypatch.setattr(verify, 'box_directory', lambda: box)
+    monkeypatch.setattr(verify, 'ledger_path', lambda _root: tmp_path / 'ledger.jsonl')
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('the duplicate ran the suite'))
+    key = verify.run_key(root, ('tests/a.py',))
+    claim_path(box, key).write_text(json.dumps({'pid': os.getpid(), 'run': 'r1'}), encoding='utf-8')
+    answer = {'code': EXIT_CODES[Outcome.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
+    (box / f'{key.digest()}.r1.result').write_text(json.dumps(answer), encoding='utf-8')
+    assert verify.main(['--no-status', 'tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+
+
+def test_the_run_key_is_the_tree_the_env_and_the_selection(tmp_path: Path) -> None:
+    """Two selections are two runs; the same selection on the same tree is one."""
+    assert verify.run_key(tmp_path, ('a',)) == verify.run_key(tmp_path, ('a',))
+    assert verify.run_key(tmp_path, ('a',)) != verify.run_key(tmp_path, ('b',))
+
+
+def _ledgered(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Route ``main`` at a planted root, inflight directory and ledger; returns the ledger path."""
+    ledger = tmp_path / 'ledger.jsonl'
+    monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
+    monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
+    monkeypatch.setattr(verify, 'ledger_path', lambda _root: ledger)
+    monkeypatch.setattr(verify, 'head_sha', lambda _root: 'a' * 40)
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: ())
+    return ledger
+
+
+def test_a_selection_the_ledger_already_judged_is_cited_and_not_run(monkeypatch, tmp_path: Path) -> None:
+    """THE LOOKUP BEFORE THE RUN: a recorded FAIL on this key is the answer, and nothing runs."""
+    ledger = _ledgered(monkeypatch, tmp_path)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a judged selection ran again'))
+    key = verify.run_key(tmp_path, ('tests/a.py',))
+    entry = Entry(key.tree, key.env, run_test_id(key.selector), 'FAIL', tier='verify', commit='', log='x.log')
+    record(ledger, [entry])
+    assert verify.main(['--no-status', 'tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+
+
+def test_rerun_ignores_the_ledger(monkeypatch, tmp_path: Path) -> None:
+    ledger = _ledgered(monkeypatch, tmp_path)
+    key = verify.run_key(tmp_path, ())
+    record(ledger, [Entry(key.tree, key.env, run_test_id(key.selector), 'FAIL', tier='verify', commit='', log='x')])
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
+    assert verify.main(['--no-status', '--rerun']) == EXIT_CODES[Outcome.PASS]
+
+
+def test_a_promoted_run_records_itself_and_every_test_outcome(monkeypatch, tmp_path: Path) -> None:
+    """The ONE writer: after promotion, the run's key and each node id's outcome enter the ledger."""
+    ledger = _ledgered(monkeypatch, tmp_path)
+    judged = _judged(tmp_path)
+    outcomes = outcomes_dir(judged.log.path)
+    outcomes.mkdir()
+    (outcomes / 'outcomes.json').write_text(json.dumps({'tests/a.py::t': 'PASS'}), encoding='utf-8')
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: judged)
+    assert verify.main(['--no-status']) == EXIT_CODES[Outcome.PASS]
+    key = verify.run_key(tmp_path, ())
+    recorded = {(row.test, row.result, row.commit) for row in entries(ledger)}
+    assert recorded == {(run_test_id(key.selector), 'PASS', 'a' * 40), ('tests/a.py::t', 'PASS', 'a' * 40)}
+    assert {row.tree for row in entries(ledger)} == {key.tree}
+
+
+def test_an_inconclusive_run_records_nothing(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED: nobody-knows never enters the ledger, so it can never be cited."""
+    ledger = _ledgered(monkeypatch, tmp_path)
+    log = tmp_path / 'cut.log'
+    log.write_text('ran\n', encoding='utf-8')
+    cut = StepReport(name='pytest', reported=(), failures=(), truncated=('the wall fired',))
+    verdict = build_verdict((cut,), tree='sha256:' + 'b' * 64, env='env:1', spec='verify', log=LogRef.of(log))
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
+    assert verify.main(['--no-status']) == EXIT_CODES[Outcome.INCONCLUSIVE]
+    assert entries(ledger) == ()
