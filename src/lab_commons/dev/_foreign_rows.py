@@ -69,7 +69,8 @@ SCAN_FLOOR: Final = 80
 #: EVIDENCE rather than a mechanism, and rewriting all of them to name the SHAPE instead is the LAST
 #: step of this migration rather than the first. The ceiling is what stops the number growing while
 #: the other two kinds are being emptied.
-PROSE_CEILING: Final = 168
+#: RE-MEASURED 2026-10-08 at **167** after the root-capability split removed one sibling mention.
+PROSE_CEILING: Final = 167
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.
