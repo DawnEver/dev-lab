@@ -7,15 +7,18 @@ these tests feed the probe's ``@@@ shared`` section the way ``squeue -o "%C %k"`
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
 
+from lab_commons.config import CONFIG_ENV
+from lab_commons.hpc import run as run_module
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
-from lab_commons.hpc.grants import GRANTS_ENV, Grant, Machine, grants_path, load_grants
+from lab_commons.hpc.grants import Grant, Machine, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
 from lab_commons.hpc.pytest_item import junit_key, parse_junit
-from lab_commons.hpc.run import render_script
+from lab_commons.hpc.run import Unreachable, failover_runner, render_script
 from lab_commons.hpc.slurm import PROBE_COMMAND, parse_snapshot, parse_usage, probe_command
 from lab_commons.hpc.verdict import (
     VerdictSpec,
@@ -29,7 +32,7 @@ from lab_commons.hpc.verdict import (
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
-GRANT = Grant(account='me@login.example', slurm_account='acct-free', cpus=64, partitions=('shortq', 'defq'))
+GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', cpus=64, partitions=('shortq', 'defq'))
 SHA = 'a' * 40
 
 
@@ -37,59 +40,137 @@ def _snap(shared: str = '') -> object:
     return parse_snapshot(IDLE + '@@@ shared\n' + shared, 'acct-free')
 
 
-# -- the grants file -------------------------------------------------------------------------------------
+# -- the grants table -------------------------------------------------------------------------------------
 
 
-def _write(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / 'hpc.toml'
+def _table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    path = tmp_path / 'config.toml'
     path.write_text(text, encoding='utf-8')
-    return path
+    monkeypatch.setenv(CONFIG_ENV, str(path))
 
 
-def test_a_machine_holds_several_grants(tmp_path: Path) -> None:
-    path = _write(
+def test_a_machine_holds_several_grants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _table(
         tmp_path,
-        'workstation = "ws-a"\n'
-        '[[grant]]\naccount = "me@ada"\nslurm_account = "uon-free"\ncpus = 64\npartitions = ["shortq"]\n'
-        '[[grant]]\naccount = "me@other"\nslurm_account = "x"\ncpus = 8\npriority = 2\n',
+        monkeypatch,
+        """
+[hpc]
+workstation = "ws-a"
+[[hpc.grant]]
+user = "me"
+hosts = ["ada2", "ada1"]
+slurm_account = "uon-free"
+cpus = 64
+partitions = ["shortq"]
+[[hpc.grant]]
+user = "me"
+hosts = ["other"]
+slurm_account = "x"
+cpus = 8
+priority = 2
+""",
     )
-    machine = load_grants(path)
+    machine = load_grants()
     assert machine.workstation == 'ws-a'
     assert machine.comment == 'lc:ws=ws-a'
-    assert [g.account for g in machine.grants] == ['me@ada', 'me@other']
+    assert [g.account for g in machine.grants] == [('me', 'uon-free'), ('me', 'x')]
+    assert machine.grants[0].targets == ('me@ada2', 'me@ada1'), 'hosts keep their order'
+    assert machine.grants[0].name == 'me@ada2 (uon-free)'
     assert machine.grants[0].cluster().partitions == ('shortq',)
     assert machine.grants[0].cluster().account == 'uon-free'
     assert machine.grants[1].priority == 2
+    assert not machine.grants[0].same_cluster(machine.grants[1])
 
 
-def test_the_env_names_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(GRANTS_ENV, str(tmp_path / 'g.toml'))
-    assert grants_path() == tmp_path / 'g.toml'
-    monkeypatch.delenv(GRANTS_ENV)
-    assert grants_path() == Path.home() / '.config' / 'lab-commons' / 'hpc.toml'
+def _grant(**extra: object) -> str:
+    keys = {'hosts': '["h"]', 'cpus': '1', **extra}
+    return 'workstation = "w"\n[[grant]]\nuser = "u"\nslurm_account = "s"\n' + ''.join(
+        f'{k} = {v}\n' for k, v in keys.items()
+    )
 
 
 @pytest.mark.parametrize(
-    ('text', 'match'),
+    ('table', 'match'),
     [
-        (None, 'no HPC grants file'),
-        (
-            (
-                'workstation = "w"\n[[grant]]\naccount="a"\nslurm_account="s"\ncpus=1\n'
-                '[[grant]]\naccount="a"\nslurm_account="t"\ncpus=1\n'
-            ),
-            'granted twice',
-        ),
-        ('workstation = "w"\n[[grant]]\naccount="a"\nslurm_account="s"\ncpus=0\n', 'share must be positive'),
-        ('workstation = "w"\n[[grant]]\naccount="a"\nslurm_account="s"\ncpus=1\nkey="x"\n', 'unknown keys'),
-        ('workstation = ""\n[[grant]]\naccount="a"\nslurm_account="s"\ncpus=1\n', 'workstation'),
-        ('workstation = "w"\n', 'no \\[\\[grant\\]\\]'),
+        ({}, r'no \[hpc\] table'),
+        (_grant() + '[[grant]]\nuser = "u"\nhosts = ["g"]\nslurm_account = "s"\ncpus = 2\n', 'granted twice'),
+        (_grant(cpus='0'), 'share must be positive'),
+        (_grant(key='"x"'), 'unknown keys'),
+        (_grant(account='"u@h"'), 'unknown keys'),
+        (_grant(hosts='[]'), 'at least one login host'),
+        (_grant().replace('"w"', '""'), 'workstation'),
+        ('workstation = "w"\n', r'no \[\[hpc\.grant\]\]'),
     ],
 )
-def test_a_bad_grants_file_is_refused_by_name(tmp_path: Path, text: str | None, match: str) -> None:
-    path = tmp_path / 'hpc.toml' if text is None else _write(tmp_path, text)
-    with pytest.raises((ValueError, FileNotFoundError), match=match):
-        load_grants(path)
+def test_a_bad_grants_table_is_refused_by_name(table: str | dict, match: str) -> None:
+    raw = table if isinstance(table, dict) else tomllib.loads(table)
+    with pytest.raises(ValueError, match=match):
+        load_grants(raw)
+
+
+def test_no_machine_file_refuses_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'absent.toml'))
+    with pytest.raises(ValueError, match=r'absent\.toml \[hpc\]: no \[hpc\] table'):
+        load_grants()
+
+
+# -- login-host failover ---------------------------------------------------------------------------------
+
+
+class _Host:
+    def __init__(self, target: str, *, up: bool) -> None:
+        self.target, self.up, self.commands = target, up, []
+
+    def __call__(self, command: str, stdin: str | None = None) -> str:
+        self.commands.append(command)
+        if not self.up:
+            msg = f'ssh could not reach {self.target}'
+            raise Unreachable(msg)
+        return f'{self.target}:{command}'
+
+
+def test_an_unreachable_first_host_fails_over_and_the_second_stays_chosen() -> None:
+    down, up = _Host('me@h1', up=False), _Host('me@h2', up=True)
+    run = failover_runner([(down.target, down), (up.target, up)])
+    assert run('hostname', None) == 'me@h2:hostname'
+    assert run('squeue', None) == 'me@h2:squeue'
+    assert down.commands == ['hostname'], 'a host that did not answer is not asked again'
+
+
+def test_no_host_answering_names_every_host() -> None:
+    run = failover_runner([('me@h1', _Host('me@h1', up=False)), ('me@h2', _Host('me@h2', up=False))])
+    with pytest.raises(Unreachable, match=r'me@h1.*me@h2'):
+        run('true', None)
+
+
+def test_a_failing_command_is_not_a_failover() -> None:
+    def broken(_command: str, _stdin: str | None = None) -> str:
+        msg = 'ssh exited 1: sbatch: error'
+        raise RuntimeError(msg)
+
+    second = _Host('me@h2', up=True)
+    run = failover_runner([('me@h1', broken), ('me@h2', second)])
+    with pytest.raises(RuntimeError, match='sbatch'):
+        run('sbatch x', None)
+    assert second.commands == []
+
+
+def test_runner_for_tries_the_grants_targets_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+
+    def fake(argv: list[str], _stdin: object = None, _timeout: float = 0) -> str:
+        seen.append(argv)
+        if argv[-2] == 'me@h1':
+            msg = 'ssh could not reach me@h1'
+            raise Unreachable(msg)
+        return 'ok'
+
+    monkeypatch.setattr(run_module, '_completed', fake)
+    grant = Grant(user='me', hosts=('h1', 'h2'), slurm_account='a', cpus=1)
+    assert run_module.runner_for(grant)('true', None) == 'ok'
+    assert [a[-2] for a in seen] == ['me@h1', 'me@h2']
+    assert 'BatchMode=yes' in seen[0]
+    assert any(a.startswith('ConnectTimeout=') for a in seen[0])
 
 
 # -- live usage is read, never stored --------------------------------------------------------------------
@@ -132,21 +213,21 @@ def test_the_plan_is_capped_by_headroom_and_tagged() -> None:
 
 
 def test_the_grant_that_finishes_first_wins() -> None:
-    small = Grant(account='me@a', slurm_account='acct-free', cpus=8)
-    big = Grant(account='me@b', slurm_account='acct-free', cpus=64)
+    small = Grant(user='me', hosts=('a',), slurm_account='acct-free', cpus=8)
+    big = Grant(user='me', hosts=('b',), slurm_account='acct-free', cpus=64)
     grant, _ = allocate(500, Cost(seconds=60), [(small, _snap()), (big, _snap())], workstation='w', policy=Policy())
     assert grant is big
 
 
 def test_a_tie_goes_to_priority() -> None:
-    low = Grant(account='me@a', slurm_account='acct-free', cpus=64)
-    high = Grant(account='me@b', slurm_account='acct-free', cpus=64, priority=1)
+    low = Grant(user='me', hosts=('a',), slurm_account='acct-free', cpus=64)
+    high = Grant(user='me', hosts=('b',), slurm_account='acct-free', cpus=64, priority=1)
     grant, _ = allocate(10, Cost(seconds=60), [(low, _snap()), (high, _snap())], workstation='w', policy=Policy())
     assert grant is high
 
 
 def test_no_headroom_anywhere_names_every_account() -> None:
-    other = Grant(account='me@b', slurm_account='acct-free', cpus=4)
+    other = Grant(user='me', hosts=('b',), slurm_account='acct-free', cpus=4)
     with pytest.raises(ValueError, match=r'me@login\.example') as refused:
         allocate(
             10, Cost(cpus=8), [(GRANT, _snap('96 lc:ws=ws-b\n')), (other, _snap())], workstation='ws-a', policy=Policy()
