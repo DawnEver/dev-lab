@@ -14,6 +14,7 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import run as run_module
+from lab_commons.hpc import verdict as verdict_module
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
@@ -298,16 +299,18 @@ def test_every_path_stays_under_ci() -> None:
         install='uv pip install -e .',
         python='3.13',
         select='not slow',
-        not_covered='win',
+        table={'win': ('windows',)},
     )
-    for script in (fetch_script(spec), build_script(spec), collect_command(spec, covered_only=True)):
+    for script in (fetch_script(spec), build_script(spec), collect_command(spec, also='win')):
         for word in script.replace(';', ' ').replace('=', ' ').split():
             if '$HOME' in word or word.startswith('~'):
                 assert word.startswith(('"$HOME"/ci', '~/ci', '"$HOME/ci/bin')), word
     assert '--python 3.13' in build_script(spec)
     assert '.lab-ci-installed' in build_script(spec), 'the venv is reused once installed'
-    assert "-m '(not slow) and not (win)'" in collect_command(spec, covered_only=True)
-    assert "-m '(not slow)'" in collect_command(spec), 'pytest keeps one -m: select and not_covered are joined'
+    assert "-m '(not slow) and (win)'" in collect_command(spec, also='win')
+    assert "-m '(not slow)'" in collect_command(spec), (
+        'pytest keeps one -m: select and the platform expression are joined'
+    )
 
 
 def test_ids_are_read_from_collect_only_and_grouped_by_file() -> None:
@@ -336,8 +339,9 @@ class FakeAda:
         if '@@@ facts' in command:
             return '@@@ facts\nplatform=linux-x86_64/glibc2.28\npython=3.13.1\n'
         if '--collect-only' in command:
-            win = 'tests/w.py::t\n' if 'not (win)' not in command else ''
-            return f'tests/a.py::t1\ntests/a.py::t2\n{win}tests/b.py::t3\ntests/c.py::t4\n'
+            if '(win)' in command:
+                return 'tests/w.py::t\n'
+            return 'tests/a.py::t1\ntests/a.py::t2\ntests/w.py::t\ntests/b.py::t3\ntests/c.py::t4\n'
         if 'sbatch' in command:
             return '4242\n'
         if 'sacct' in command:
@@ -361,7 +365,7 @@ def test_the_verdict_records_outcomes_and_never_passes_what_it_did_not_run() -> 
     ada = FakeAda()
     machine = Machine(workstation='ws-a', grants=(GRANT,))
     record = remote_verdict(
-        VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='true', not_covered='win'),
+        VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='true', table={'win': ('windows',)}),
         machine,
         lambda _g: ada,
         cost=Cost(seconds=600),
@@ -370,6 +374,7 @@ def test_the_verdict_records_outcomes_and_never_passes_what_it_did_not_run() -> 
         stamp='t0',
     )
     assert record['sha'] == SHA
+    assert record['left'] == {'tests/w.py::t': ['windows']}, 'left names the platforms that CAN run it'
     assert record['platform'] == 'linux-x86_64/glibc2.28'
     assert record['cluster'] == 'login.example'
     assert record['python'] == '3.13.1'
@@ -414,9 +419,7 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
 
 def test_a_network_drop_while_waiting_is_ridden_out_not_fatal() -> None:
     """The jobs survive a VPN drop; the watcher must too (measured 2026-10-09: one abort killed a verdict)."""
-    from lab_commons.hpc import verdict as verdict_module
-
-    answers = iter(['drop', 'drop', '7.0|RUNNING\n7.1|COMPLETED\n', '7.0|COMPLETED\n7.1|COMPLETED\n'])
+    answers = iter(['drop', 'drop', '7_0|RUNNING\n7_1|COMPLETED\n', '7_0|COMPLETED\n7_1|COMPLETED\n'])
 
     def run(command: str, stdin: str | None) -> str:
         del command, stdin
@@ -433,7 +436,6 @@ def test_a_network_drop_while_waiting_is_ridden_out_not_fatal() -> None:
 
 
 def test_a_long_outage_names_where_the_results_wait() -> None:
-    from lab_commons.hpc import verdict as verdict_module
 
     def run(command: str, stdin: str | None) -> str:
         del command, stdin

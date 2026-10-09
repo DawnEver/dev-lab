@@ -71,7 +71,10 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #:
 #: RE-MEASURED 2026-10-08 AT 209 after `dev.family` landed: 209 against 168 is 41 clear, one past the
 #: margin, so the floor moves to 169 and the margin does not move.
-FILE_FLOOR = 169
+#:
+#: RE-MEASURED 2026-10-09 AT 211 after `hpc.platforms` and `dev.platformparts` landed: 211 against 169 is
+#: 42 clear, two past the margin, so the floor moves to 171 and the margin does not move.
+FILE_FLOOR = 171
 
 
 def _tree() -> dict[str, str]:

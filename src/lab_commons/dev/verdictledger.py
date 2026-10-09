@@ -96,6 +96,10 @@ class Entry:
     ``tier`` names the runner tier that produced it; ``commit`` is HEAD when the tree was clean and
     unmoved across the run, else ``''`` (admission reads only entries that name a commit); ``log``
     is the evidence.
+
+    ``part`` is ``''`` for a run over the whole selection, else the PLATFORM a part ran on
+    (:mod:`lab_commons.dev.platformparts`); a part's run entry carries ``left`` -- every node id of
+    the selection that neither it nor an earlier part ran, mapped to the platforms that CAN run it.
     """
 
     tree: str
@@ -106,6 +110,8 @@ class Entry:
     commit: str
     log: str
     at: str = ''
+    part: str = ''
+    left: dict[str, list[str]] = field(default_factory=dict)
 
 
 def run_test_id(selector: str) -> str:
@@ -175,17 +181,28 @@ def entries(path: Path) -> tuple[Entry, ...]:
 def served(path: Path, *, tree: str, env: str, test: str) -> Entry | None:
     """The newest entry for the key, or ``None`` when there is none or the key is FLAKY."""
     key = reach(test, tree=tree)
-    matching = [row for row in entries(path) if (row.tree, row.env, row.test) == (key, env, test)]
+    matching = [row for row in entries(path) if (row.tree, row.env, row.test, row.part) == (key, env, test, '')]
     if not matching or {row.result for row in matching} == RECORDED:
         return None
     return matching[-1]
 
 
-def record_promoted(path: Path, verdict: Verdict, tree: str, env: str, selector: str, *, commit: str) -> None:
+def record_promoted(
+    path: Path,
+    verdict: Verdict,
+    tree: str,
+    env: str,
+    selector: str,
+    *,
+    commit: str,
+    part: str = '',
+    left: Mapping[str, list[str]] | None = None,
+) -> None:
     """THE ONE WRITER's entry point: a PROMOTED verdict's run entry plus every outcome it recorded.
 
     The caller has already checked the tree did not move during the run. An unsettled verdict
-    records nothing; the per-test outcomes are read from :func:`outcomes_dir` beside its log.
+    records nothing; the per-test outcomes are read from :func:`outcomes_dir` beside its log. A
+    platform part names its *part* and what it *left*; both ride on the run entry only.
     """
     if not verdict.result.outcome.settled:
         return
@@ -193,10 +210,20 @@ def record_promoted(path: Path, verdict: Verdict, tree: str, env: str, selector:
     tier = selector.split(' ', 1)[0]
 
     def entry(test: str, result: str) -> Entry:
-        return Entry(tree, env, test, result, tier=tier, commit=commit, log=evidence)
+        return Entry(tree, env, test, result, tier=tier, commit=commit, log=evidence, part=part)
 
     outcomes = sorted(read_outcomes(outcomes_dir(verdict.log.path)).items())
-    run = entry(run_test_id(selector), verdict.result.outcome.value.upper())
+    run = Entry(
+        tree,
+        env,
+        run_test_id(selector),
+        verdict.result.outcome.value.upper(),
+        tier=tier,
+        commit=commit,
+        log=evidence,
+        part=part,
+        left=dict(left or {}),
+    )
     record(path, [run, *(entry(test, result) for test, result in outcomes)])
 
 

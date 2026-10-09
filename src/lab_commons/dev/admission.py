@@ -23,6 +23,12 @@ module reads those entries and never parses a log. An INCONCLUSIVE never reaches
 run that never started" needs no reading of its own here. A cited FAIL writes the gap record from
 the ledger's own per-test FAIL rows for the same tree and env.
 
+A VERDICT MAY BE COMPOSED OF PLATFORM PARTS (user ruling 2026-10-09, :mod:`lab_commons.dev.platformparts`):
+with no whole verdict for HEAD, the newest part per platform for HEAD is cited instead when together
+they ran every selected test. A FAIL part is a composed FAIL; a missing part, a test no part ran, or a
+test no declared platform can run is refused by name. The trunk counts a composition only when every
+part is a PASS of a trunk tier.
+
 EVERY DESTINATION AUDITS THE MERGES IT PUBLISHES, unconditionally: each merge commit not yet on any
 remote must name every test its resolution lost or rewrote (:mod:`lab_commons.dev.mergeaudit`).
 
@@ -48,12 +54,13 @@ from lab_commons.dev.forge import _GIT
 from lab_commons.dev.integrator import Policy, load_policy
 from lab_commons.dev.logref import MARKER
 from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, refusals
+from lab_commons.dev.platformparts import compose, parts_for, this_platform
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdictledger import Entry, entries, ledger_path
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
 __all__ = [
     'INTEGRATION',
@@ -146,6 +153,7 @@ def admit(
     head: str,
     clean: bool,
     env: str,
+    host: str,
     gap: Path | None = None,
 ) -> Admission:
     """Decide a push to *destination* from the ledger's *rows*, by the table in this module's docstring.
@@ -177,6 +185,7 @@ def admit(
         (order, row)
         for order, row in enumerate(rows)
         if row.test.startswith(_RUN_PREFIX)
+        and not row.part
         and row.commit
         and row.commit == head
         and row.env == env
@@ -184,45 +193,95 @@ def admit(
         and (destination != TRUNK or row.tier in trunk_tiers)
     ]
     if not citable:
+        parts = parts_for(rows, head=head, env=env, host=host)
+        if parts:
+            return _admit_composed(
+                parts, destination=destination, trunk_tiers=trunk_tiers, head=head, rows=rows, gap=gap
+            )
         bar = f'a PASS of tier {sorted(trunk_tiers)}' if destination == TRUNK else f'one of {sorted(results)}'
         return Admission(
             allowed=False,
             cited=None,
             message=(
-                f'[admission] {destination}: push REFUSED -- no recorded verdict for HEAD {head} in env={env}.\n'
+                f'[admission] {destination}: push REFUSED -- no recorded verdict for HEAD {head} in env={env}, '
+                'whole or composed of platform parts.\n'
                 f'[admission] Remedy: run the gate on THIS clean, integrated tree; this push needs {bar}.'
             ),
         )
     _order, cited = min(citable, key=lambda item: (_RANK[item[1].result], -item[0]))
+    return _cite((cited,), destination=destination, result=cited.result, rows=rows, gap=gap)
+
+
+def _cite(
+    cited: Sequence[Entry], *, destination: str, result: str, rows: Sequence[Entry], gap: Path | None
+) -> Admission:
     lines = [
-        f'[admission] {destination}: cited {cited.result} -- push proceeds.',
-        f'[admission] cited: {_describe(cited)}',
+        f'[admission] {destination}: cited {result} -- push proceeds.',
+        *(f'[admission] cited: {_describe(entry)}' for entry in cited),
     ]
-    if gap is not None and cited.result != 'PASS':
+    if gap is not None and result != 'PASS':
         record_gap(gap, cited, rows)
         lines.append(f'[admission] gap recorded at {gap}')
-    return Admission(allowed=True, cited=cited, message='\n'.join(lines))
+    return Admission(allowed=True, cited=cited[0], message='\n'.join(lines))
 
 
-def record_gap(path: Path, cited: Entry, rows: Sequence[Entry]) -> Path:
+def _admit_composed(
+    parts: Mapping[str, Entry],
+    *,
+    destination: str,
+    trunk_tiers: Collection[str],
+    head: str,
+    rows: Sequence[Entry],
+    gap: Path | None,
+) -> Admission:
+    """A verdict COMPOSED of platform parts (:mod:`lab_commons.dev.platformparts`) for HEAD."""
+    composed = compose(parts, head=head)
+    if composed.problems:
+        return Admission(
+            allowed=False,
+            cited=None,
+            message='\n'.join(
+                [
+                    (
+                        f'[admission] {destination}: push REFUSED -- the platform parts for HEAD {head} '
+                        f'({", ".join(sorted(parts))}) do not cover the selection.'
+                    ),
+                    *(f'[admission]   {problem}' for problem in composed.problems),
+                ]
+            ),
+        )
+    if destination == TRUNK and (composed.result != 'PASS' or any(p.tier not in trunk_tiers for p in composed.parts)):
+        return Admission(
+            allowed=False,
+            cited=None,
+            message=(
+                f'[admission] trunk: push REFUSED -- a composed verdict counts only when EVERY part is a PASS of '
+                f'tier {sorted(trunk_tiers)}; parts: '
+                + ', '.join(f'{p.part}={p.result}/{p.tier}' for p in composed.parts)
+            ),
+        )
+    return _cite(composed.parts, destination=destination, result=composed.result, rows=rows, gap=gap)
+
+
+def record_gap(path: Path, cited: Sequence[Entry], rows: Sequence[Entry]) -> Path:
     """Write (or REWRITE) the gap record a FAIL citation leaves; returns *path*.
 
-    The consumer names the dated path; this owns the content: the cited entry and the failing node
-    ids the ledger recorded for the same tree and env.
+    The consumer names the dated path; this owns the content: the cited entries (one, or one per
+    platform part) and the failing node ids the ledger recorded for each one's tree and env.
     """
+    keys = {(entry.tree, entry.env) for entry in cited}
     failing = sorted(
         {
             row.test
             for row in rows
-            if (row.tree, row.env) == (cited.tree, cited.env)
-            and row.result == 'FAIL'
-            and not row.test.startswith(_RUN_PREFIX)
+            if (row.tree, row.env) in keys and row.result == 'FAIL' and not row.test.startswith(_RUN_PREFIX)
         }
     )
+    result = 'FAIL' if any(entry.result != 'PASS' for entry in cited) else 'PASS'
     body = [
-        f'# Push gap: {cited.result} cited for commit {cited.commit}',
+        f'# Push gap: {result} cited for commit {cited[0].commit}',
         '',
-        f'- verdict: `{_describe(cited)}`',
+        *(f'- verdict: `{_describe(entry)}`' for entry in cited),
         f'- failing node ids: {len(failing)}',
         *(f'  - `{node}`' for node in failing),
         '',
@@ -330,6 +389,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         head=head,
         clean=clean,
         env=_current_env(),
+        host=this_platform(),
         gap=args.gap,
     )
     emit(decided.message)
