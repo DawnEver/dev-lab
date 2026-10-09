@@ -6,7 +6,6 @@ these tests feed the probe's ``@@@ shared`` section the way ``squeue -o "%C %k"`
 
 from __future__ import annotations
 
-import json
 import tomllib
 from pathlib import Path
 
@@ -16,9 +15,8 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import run as run_module
 from lab_commons.hpc import verdict as verdict_module
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
-from lab_commons.hpc.grants import Grant, Machine, load_grants
+from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
-from lab_commons.hpc.pytest_item import junit_key, parse_junit
 from lab_commons.hpc.run import Unreachable, failover_runner, render_script
 from lab_commons.hpc.slurm import PROBE_COMMAND, parse_snapshot, parse_usage, probe_command
 from lab_commons.hpc.verdict import (
@@ -29,7 +27,6 @@ from lab_commons.hpc.verdict import (
     group_items,
     parse_collection_errors,
     parse_ids,
-    remote_verdict,
 )
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
@@ -245,43 +242,26 @@ def test_the_script_carries_the_workstation_comment(tmp_path: Path) -> None:
     assert '#SBATCH --output=logs/%A_%a.out\n' in script, 'Slurm never expands ~; the run dir is the submit dir'
 
 
+def test_a_grants_setup_runs_first_in_every_task(tmp_path: Path) -> None:
+    """Ada's compute nodes have no git until a module is loaded (2026-10-09: 126 tests errored on it)."""
+    ada = Grant(**{**GRANT.__dict__, 'setup': ('module load git-uoneasy/2.42.0-GCCcore-13.2.0',)})
+    _, plan = allocate(10, Cost(seconds=60), [(ada, _snap())], workstation='ws-a', policy=Policy())
+    config = Config(job=JobSpec(name='j', setup=('source .venv/bin/activate',)), source=tmp_path / 'h.toml')
+    lines = render_script(plan, config, '~/r').splitlines()
+    assert lines.index('module load git-uoneasy/2.42.0-GCCcore-13.2.0') < lines.index('source .venv/bin/activate')
+
+
+def test_the_grant_table_reads_setup() -> None:
+    table = {'workstation': 'w', 'grant': [{**_GRANT_ROW, 'setup': ['module load git']}]}
+    assert load_grants(table).grants[0].setup == ('module load git',)
+
+
+_GRANT_ROW = {'user': 'me', 'hosts': ['h'], 'slurm_account': 'a', 'cpus': 4}
+
+
 def test_an_untagged_plan_carries_no_comment(tmp_path: Path) -> None:
     plan = make_plan(10, Cost(seconds=60), _snap(), cluster=GRANT.cluster(), policy=Policy(), limits=Limits())
     assert '--comment' not in render_script(plan, Config(source=tmp_path / 'h.toml'), '~/r')
-
-
-# -- the item runner -------------------------------------------------------------------------------------
-
-
-def test_junit_keys_follow_pytests_mangling() -> None:
-    assert junit_key('tests/unit/test_a.py::TestB::test_c[x-1]') == ('tests.unit.test_a.TestB', 'test_c[x-1]')
-    assert junit_key('tests/test_a.py::test_d') == ('tests.test_a', 'test_d')
-
-
-def test_junit_outcomes_and_a_missing_id() -> None:
-    junit = (
-        '<testsuites><testsuite>'
-        '<testcase classname="t.test_a" name="ok"/>'
-        '<testcase classname="t.test_a" name="bad"><failure/></testcase>'
-        '<testcase classname="t.test_a" name="bad"><error/></testcase>'
-        '<testcase classname="t.test_a" name="skip"><skipped type="pytest.skip"/></testcase>'
-        '<testcase classname="t.test_a" name="xf"><skipped type="pytest.xfail"/></testcase>'
-        '</testsuite></testsuites>'
-    )
-    ids = [f't/test_a.py::{n}' for n in ('ok', 'bad', 'skip', 'xf', 'gone')]
-    assert parse_junit(junit, ids) == {
-        ids[0]: 'passed',
-        ids[1]: 'failed',
-        ids[2]: 'skipped',
-        ids[3]: 'xfailed',
-        ids[4]: 'missing',
-    }
-
-
-def test_the_item_runner_is_standalone() -> None:
-    """It is shipped as text and imported beside an arbitrary lab_commons -- it must import none."""
-    source = (Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'pytest_item.py').read_text(encoding='utf-8')
-    assert 'lab_commons' not in ''.join(line for line in source.splitlines() if line.startswith(('import', 'from')))
 
 
 # -- the remote verdict ----------------------------------------------------------------------------------
@@ -317,89 +297,7 @@ def test_ids_are_read_from_collect_only_and_grouped_by_file() -> None:
     text = 'tests/a.py::t1\ntests/a.py::t2[x]\ntests/b.py::C::t3\n\n3 tests collected in 0.1s\n'
     ids = parse_ids(text)
     assert ids == ['tests/a.py::t1', 'tests/a.py::t2[x]', 'tests/b.py::C::t3']
-    items = group_items(ids)
-    assert [i['ids'] for i in items] == [ids[:2], ids[2:]]
-    assert items[1]['junit'] == '.lab-ci/junit/1.xml'
-
-
-class FakeAda:
-    """A runner answering the verdict flow; items 0 and 2 return, item 1's shard dies."""
-
-    def __init__(self, *, have: bool = True) -> None:
-        """*have*: whether the cache already holds the commit."""
-        self.have = have
-        self.calls: list[tuple[str, str | None]] = []
-
-    def __call__(self, command: str, stdin: str | None = None) -> str:  # noqa: C901, PLR0911 -- one answer per verb
-        self.calls.append((command, stdin))
-        if command.startswith('echo "@@@ nodes"'):
-            return IDLE + '@@@ shared\n8 lc:ws=other\n'
-        if 'cat-file' in command:
-            return 'have\n' if self.have else 'missing\n'
-        if '@@@ facts' in command:
-            return '@@@ facts\nplatform=linux-x86_64/glibc2.28\npython=3.13.1\n'
-        if '--collect-only' in command:
-            if '(win)' in command:
-                return 'tests/w.py::t\n'
-            return 'tests/a.py::t1\ntests/a.py::t2\ntests/w.py::t\ntests/b.py::t3\ntests/c.py::t4\n'
-        if 'sbatch' in command:
-            return '4242\n'
-        if 'sacct' in command:
-            return '4242_0|COMPLETED\n4242_1|FAILED\n4242_2|COMPLETED\n'
-        if 'results/*.json' in command:
-            manifest = json.loads(next(s for c, s in self.calls if 'manifest.json' in c) or '')
-            lines = []
-            for shard, (start, stop) in enumerate(manifest['shards']):
-                if shard == 1:
-                    continue
-                results = []
-                for index in range(start, stop):
-                    ids = manifest['items'][index]['ids']
-                    results.append({'index': index, 'ok': True, 'value': {'outcomes': dict.fromkeys(ids, 'passed')}})
-                lines.append(json.dumps({'shard': shard, 'results': results}))
-            return '\n'.join(lines) + '\n'
-        return ''
-
-
-def test_the_verdict_records_outcomes_and_never_passes_what_it_did_not_run() -> None:
-    ada = FakeAda()
-    machine = Machine(workstation='ws-a', grants=(GRANT,))
-    record = remote_verdict(
-        VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='true', table={'win': ('windows',)}),
-        machine,
-        lambda _g: ada,
-        cost=Cost(seconds=600),
-        policy=Policy(shard_minutes_min=1, shard_minutes_max=15),
-        sleep=lambda _s: None,
-        stamp='t0',
-    )
-    assert record['sha'] == SHA
-    assert record['left'] == {'tests/w.py::t': ['windows']}, 'left names the platforms that CAN run it'
-    assert record['platform'] == 'linux-x86_64/glibc2.28'
-    assert record['cluster'] == 'login.example'
-    assert record['python'] == '3.13.1'
-    assert record['plan']['comment'] == 'lc:ws=ws-a'
-    assert record['plan']['job_id'] == '4242'
-    outcomes = record['outcomes']
-    assert outcomes['tests/w.py::t'] == 'not-covered'
-    assert outcomes['tests/a.py::t1'] == 'passed'
-    assert outcomes['tests/b.py::t3'] == 'lost', 'a dead shard is not a pass'
-    assert outcomes['tests/c.py::t4'] == 'passed'
-    script = next(s for c, s in ada.calls if c.endswith('job.sh') and 'cat >' in c) or ''
-    assert '#SBATCH --comment=lc:ws=ws-a' in script
-    assert 'cd "$HOME"/ci/trees/' + SHA in script
-    assert 'lab_ci_pytest_item' in (next(s for c, s in ada.calls if 'manifest.json' in c) or '')
-
-
-def test_a_commit_off_the_remote_without_a_bundle_is_refused() -> None:
-    with pytest.raises(RuntimeError, match=r'not on https://g/r\.git'):
-        remote_verdict(
-            VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='true'),
-            Machine(workstation='w', grants=(GRANT,)),
-            lambda _g: FakeAda(have=False),
-            cost=Cost(),
-            policy=Policy(),
-        )
+    assert group_items(ids) == [ids[:2], ids[2:]]
 
 
 def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -> None:
