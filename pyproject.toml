@@ -6,8 +6,8 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Mingyang Bao" }]
 requires-python = ">=3.12"
-# Arrays are the only shared numerical runtime. Other infrastructure is opt-in.
-dependencies = ["numpy"]
+# The base install is the standard library; every capability that needs a package is an extra.
+dependencies = []
 
 [project.scripts]
 # THE ONE CONSOLE SCRIPT, AND IT EXISTS FOR EXACTLY ONE CALLER. A `.pre-commit-config.yaml` entry is
@@ -43,7 +43,7 @@ packages = ["src/lab_commons"]
 
 [project.optional-dependencies]
 # Each defining module has an explicit installation capability, not a root facade.
-units = ["pint>=0.25.2", "pydantic>=2"]
+units = ["numpy", "pint>=0.25.2", "pydantic>=2"]
 paths = ["platformdirs"]
 io = ["rtoml"]
 structured = ["structlog", "colorama; sys_platform == 'win32'"]
@@ -76,6 +76,8 @@ dev = [
 # layer is equal-peer by construction rather than by intent, and `tests/test_viz_gate.py` pins both
 # halves: that importing `lab_commons` pulls neither in, and that each adapter imports exactly the
 # library its own extra names.
+# The viz VOCABULARY is NumPy data, so it is its own extra; each backend extra names only its library.
+viz = ["numpy"]
 viz-mpl = [
     # 3.5 is where `matplotlib.colormaps` -- the registry the layer's palette-name check reads --
     # landed. Nothing below it is claimed, and no ceiling is stated: an upper bound here would be a

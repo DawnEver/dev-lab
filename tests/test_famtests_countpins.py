@@ -321,7 +321,11 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: (one per-machine file) landed. 479 against 385 is 94 clear, four past the same 90; the smallest floor
 #: whose clearance fits is 389 (81.2% of 479, TIGHTER than the 81.1% it replaces). The headroom is
 #: unchanged at 90.
-CONSTANT_FLOOR = 389
+#:
+#: RE-MEASURED 2026-10-09 AT 483, after `dev.family` and the standard-library base install landed. 483
+#: against 389 is 94 clear, four past the same 90; the smallest floor whose clearance fits is 393 (81.4%
+#: of 483, TIGHTER than the 81.2% it replaces). The headroom is unchanged at 90.
+CONSTANT_FLOOR = 393
 CONSTANT_HEADROOM = 90
 
 

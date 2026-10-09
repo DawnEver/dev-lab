@@ -26,8 +26,11 @@ from lab_commons.file_io import read_toml
 
 #: The tier-1 runtime dependencies, BY NAME. Two-sided: an arrival reds, and so does a removal that
 #: leaves a dead entry behind. Measured 2026-09-15; cut to `numpy` on 2026-10-08,
-#: when `09eb857` moved units, paths, io and structured logging behind their own extras.
-RUNTIME_DEPENDENCIES = frozenset({'numpy'})
+#: when `09eb857` moved units, paths, io and structured logging behind their own extras; cut to
+#: NOTHING on 2026-10-09, when numpy followed the only three modules that import it (`units`, `em`,
+#: `viz`) into their extras. The base install is the standard library --
+#: `tests/test_the_base_install_is_the_standard_library.py` imports every ungated module to prove it.
+RUNTIME_DEPENDENCIES: frozenset[str] = frozenset()
 
 #: The name-boundary of a PEP 508 requirement: everything before the first comparator or marker.
 _NAME = re.compile(r'^[A-Za-z0-9._-]+')
@@ -37,6 +40,7 @@ _UPPER = re.compile(r'(<=?|==|~=)\s*\d')
 
 
 def _declared() -> tuple[str, ...]:
+    """The ``[project].dependencies`` list; a manifest without the KEY is unread, an empty list is a claim."""
     return tuple(read_toml(ROOT / 'pyproject.toml')['project']['dependencies'])
 
 
@@ -48,7 +52,9 @@ def upper_bounded(requirements: tuple[str, ...]) -> tuple[str, ...]:
 def test_no_runtime_dependency_carries_an_upper_bound() -> None:
     """THE CHECK. A floor is a statement; a ceiling is inherited by every consumer."""
     requirements = _declared()
-    assert requirements, 'the dependency list read empty -- an unread pyproject is not a clean one'
+    extras = read_toml(ROOT / 'pyproject.toml')['project']['optional-dependencies']
+    requirements += tuple(req for reqs in extras.values() for req in reqs if not req.startswith('lab-commons'))
+    assert requirements, 'no requirement read at all -- an unread pyproject is not a clean one'
     bounded = upper_bounded(requirements)
     assert bounded == (), (
         f'these requirements pin a ceiling every consumer inherits: {list(bounded)}. Fix the '

@@ -112,8 +112,13 @@ _VERB_FLOORS: dict[str, int] = {'Figure': 6, 'Frame': 20, 'Frame3D': 10}
 
 
 def _declared_requirements() -> frozenset[str]:
-    """Every distribution ``[project] dependencies`` names, by its bare (unversioned) name."""
-    declared = read_toml(REPO_ROOT / 'pyproject.toml')['project']['dependencies']
+    """What the vocabulary may import: ``[project] dependencies`` plus the ``viz`` extra, by bare name.
+
+    The base install is the standard library since 2026-10-09, and the vocabulary's NumPy arrives
+    with its own ``viz`` extra -- the one every backend extra is installed beside.
+    """
+    project = read_toml(REPO_ROOT / 'pyproject.toml')['project']
+    declared = [*project['dependencies'], *project['optional-dependencies']['viz']]
     names = set()
     for requirement in declared:
         bare = requirement.split('[')[0].split('>')[0].split('<')[0].split('=')[0].split(';')[0]

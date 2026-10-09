@@ -17,15 +17,16 @@ The plotting vocabulary is NumPy data, with separate renderer adapters.
 
 The package root imports nothing. Use the defining module, such as
 `from lab_commons.log import get_logger`, rather than root symbol re-exports.
-The base installation requires NumPy only. Select capabilities explicitly:
+The base installation is the standard library alone. Select capabilities explicitly:
 
 | Extra | Modules | Additional dependencies |
 |---|---|---|
-| `units` | `units`, `em`, quantity-based multiprocessing | Pint, Pydantic |
+| `units` | `units`, `em`, `multiprocess` | NumPy, Pint, Pydantic |
 | `paths` | `paths` | platformdirs |
 | `io` | `file_io` | rtoml |
 | `structured` | `structured` | structlog, colorama on Windows |
-| `viz-mpl` / `viz-bokeh` | named renderer adapter | matplotlib / Bokeh |
+| `viz` | the plotting vocabulary (`viz`) | NumPy |
+| `viz-mpl` / `viz-bokeh` | named renderer adapter, beside `viz` | matplotlib / Bokeh |
 | `dev` | development tools and their declared infrastructure | verification/tool dependencies |
 
 ## What's here (v1)
@@ -72,8 +73,8 @@ The base installation requires NumPy only. Select capabilities explicitly:
   the faces that index it, which is how meshed data arrives. `NullRenderer` is the default,
   so a solver batch describes its figures on a box where no plotting library is installed and draws
   nothing. A backend is an adapter whose own import is the opt-in — `from
-  lab_commons.viz.mpl import MplRenderer` (`lab-commons[viz-mpl]`) or `from
-  lab_commons.viz.bokeh import BokehRenderer` (`lab-commons[viz-bokeh]`); the two are equal peers,
+  lab_commons.viz.mpl import MplRenderer` (`lab-commons[viz,viz-mpl]`) or `from
+  lab_commons.viz.bokeh import BokehRenderer` (`lab-commons[viz,viz-bokeh]`); the two are equal peers,
   checked against the same protocols and drawing the same description. A figure that cannot be
   drawn by a backend raises with the reason, never a silent substitution — bokeh has no polar
   projection, no isoline glyph, no filled-contour glyph over a point set and no third axis, so
