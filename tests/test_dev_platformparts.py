@@ -53,9 +53,17 @@ def test_the_linux_part_is_derived_strictly() -> None:
     assert run.env == 'hpc:login.ada:linux-x86_64/glibc2.28:python-3.13.1', 'the env names the cluster, not this box'
     assert run.handed == {'t::f': ['windows']}
     assert {t.test for t in tests} == {'t::a', 't::c'}
-    for bad in ('failed', 'error', 'lost', 'missing'):
+    for bad in ('failed', 'error'):
         failing = platformparts.linux_part(_record({'t::a': 'passed', 't::x': bad}), tier='heavy', log='r@d')
         assert failing[0].result == 'FAIL', bad
+
+
+@pytest.mark.parametrize('unrun', ['lost', 'missing'])
+def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_recorded_as_fail(unrun: str) -> None:
+    """Measured 2026-10-09: 50349 lost ids from a build that never made a venv were written as a linux FAIL."""
+    outcomes = {'t::a': 'passed', 't::e': 'error', 't::x': unrun}
+    with pytest.raises(platformparts.PartRefusal, match=r'INCONCLUSIVE: 1 of 3 .*t::x'):
+        platformparts.linux_part(_record(outcomes), tier='heavy', log='r@d')
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
         platformparts.linux_part(_record({'t::f': 'not-covered'}), tier='heavy', log='r@d')
 

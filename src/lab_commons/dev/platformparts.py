@@ -9,9 +9,12 @@ table and its collected ids; no part reads another part's record, so every part 
 time and in parallel. Each part records what it ``handed``: every collected id assigned to ANOTHER
 part, mapped to the platforms that can run it.
 
-* The ``linux`` part comes from the cluster: ``python -m lab_commons.hpc verdict`` writes a record,
-  :func:`linux_part` turns it into ledger entries STRICTLY -- PASS only when every covered outcome is
-  passed / skipped / xfailed; any failed, error, lost or missing id is FAIL; nothing covered is refused.
+* The ``linux`` part comes from the cluster: ``python -m lab_commons.hpc verdict submit``, then
+  ``verdict gather`` writes a record, and :func:`linux_part` turns it into ledger entries STRICTLY -- PASS
+  only when every covered outcome is passed / skipped / xfailed; a failed or error id is FAIL. A part
+  with ANY lost or missing id is INCONCLUSIVE and is REFUSED, never recorded: a FAIL claims the code
+  failed, and measured 2026-10-09 a record of 50349 lost ids (a build that never produced a venv) was
+  written as a linux FAIL. Nothing covered is refused too.
 * Any other part (a consumer's gate runner with ``--platform <name>``) calls :func:`select` with a
   collector over its own checkout, runs the ids assigned to it and records what it ``handed``.
 
@@ -61,11 +64,15 @@ PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
 #: How many ids a missing-part refusal names before eliding; the count is always given.
 _NAMED: Final = 5
 
+#: Outcomes of ids that never reported: they make a part INCONCLUSIVE, never FAIL.
+_UNRUN: Final = frozenset({'lost', 'missing'})
+
 #: The cluster record's word for an id it handed to another part.
 _NOT_COVERED: Final = 'not-covered'
 
 _LINUX_COMMAND: Final = (
-    'python -m lab_commons.hpc verdict --sha {head} --repo-url <https> --install "<cmd>" -o <record.json>, then '
+    'python -m lab_commons.hpc verdict submit --sha {head} --repo-url <https> --install "<cmd>", then '
+    'python -m lab_commons.hpc verdict gather --sha {head} -o <record.json> until it writes the record, then '
     'python -m lab_commons.dev.platformparts record-linux <record.json> --tier <tier>'
 )
 _PART_COMMAND: Final = "the repo's gate runner on a {platform} box with `--platform {platform}`"
@@ -85,6 +92,14 @@ def linux_part(record_: Mapping[str, Any], *, tier: str, log: str) -> list[Entry
     covered = {node: outcome for node, outcome in outcomes.items() if outcome != _NOT_COVERED}
     if not covered:
         msg = f'the linux record for {record_["sha"]} covers no test -- an empty part is not a pass'
+        raise PartRefusal(msg)
+    unrun = sorted(node for node, outcome in covered.items() if outcome in _UNRUN)
+    if unrun:
+        msg = (
+            f'the linux record for {record_["sha"]} is INCONCLUSIVE: {len(unrun)} of {len(covered)} covered test(s) '
+            f'never reported ({", ".join(unrun[:_NAMED])}{", ..." if len(unrun) > _NAMED else ""}) -- '
+            'gather again or re-submit; it is not recorded, so no admission can cite it'
+        )
         raise PartRefusal(msg)
     handed = {
         node: list(record_['handed'].get(node, [])) for node, outcome in outcomes.items() if outcome == _NOT_COVERED
@@ -185,7 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog='python -m lab_commons.dev.platformparts', description=__doc__.splitlines()[0]
     )
     parser.add_argument('verb', choices=['record-linux'])
-    parser.add_argument('record', type=Path, help='the record `python -m lab_commons.hpc verdict -o` wrote')
+    parser.add_argument('record', type=Path, help='the record `python -m lab_commons.hpc verdict gather -o` wrote')
     parser.add_argument('--tier', required=True, help='the tier the cluster selection amounts to (gate, heavy)')
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose ledger is written')
     parser.add_argument('--ledger', type=Path, help="the verdict ledger (default: the main checkout's)")
