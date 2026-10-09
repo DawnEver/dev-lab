@@ -7,6 +7,7 @@ these tests feed the probe's ``@@@ shared`` section the way ``squeue -o "%C %k"`
 from __future__ import annotations
 
 import tomllib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -243,12 +244,12 @@ def test_the_script_carries_the_workstation_comment(tmp_path: Path) -> None:
 
 
 def test_a_grants_setup_runs_first_in_every_task(tmp_path: Path) -> None:
-    """Ada's compute nodes have no git until a module is loaded (2026-10-09: 126 tests errored on it)."""
-    ada = Grant(**{**GRANT.__dict__, 'setup': ('module load git-uoneasy/2.42.0-GCCcore-13.2.0',)})
-    _, plan = allocate(10, Cost(seconds=60), [(ada, _snap())], workstation='ws-a', policy=Policy())
+    """A real cluster's compute nodes have no git until a module is loaded (2026-10-09: 126 tests errored on it)."""
+    loaded = replace(GRANT, setup=('module load git/2.42.0',))
+    _, plan = allocate(10, Cost(seconds=60), [(loaded, _snap())], workstation='ws-a', policy=Policy())
     config = Config(job=JobSpec(name='j', setup=('source .venv/bin/activate',)), source=tmp_path / 'h.toml')
     lines = render_script(plan, config, '~/r').splitlines()
-    assert lines.index('module load git-uoneasy/2.42.0-GCCcore-13.2.0') < lines.index('source .venv/bin/activate')
+    assert lines.index('module load git/2.42.0') < lines.index('source .venv/bin/activate')
 
 
 def test_the_grant_table_reads_setup() -> None:
