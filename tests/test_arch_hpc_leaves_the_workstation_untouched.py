@@ -76,7 +76,7 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
 ) -> None:
     repo, sha = _repo(tmp_path)
     fake = FakeVerdictCluster(have=False)
-    real_run = subprocess.run
+    real_popen = subprocess.Popen
     spawned: list[list[str]] = []
 
     def have_after_pack(command: str, stdin: str | None = None) -> str:
@@ -84,20 +84,16 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
             fake.have = True
         return fake(command.replace(sha, 'a' * 40), stdin)
 
-    def spy(argv: list[str], *args: object, **kw: object) -> subprocess.CompletedProcess[bytes]:
+    def spy(argv: list[str], *args: object, **kw: object) -> subprocess.Popen[bytes]:
         spawned.append(list(argv))
         is_git = Path(str(argv[0])).stem == 'git'
         if not (is_git and argv[3] in READ_ONLY_GIT):
             pytest.fail(f'a local subprocess other than read-only git: {argv}')
-        return real_run(argv, *args, **kw)  # type: ignore[call-overload]
-
-    def no_popen(*args: object, **_kw: object) -> None:
-        pytest.fail(f'a local Popen: {args}')
+        return real_popen(argv, *args, **kw)  # type: ignore[call-overload]
 
     monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
     monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: have_after_pack)
-    monkeypatch.setattr(subprocess, 'run', spy)
-    monkeypatch.setattr(subprocess, 'Popen', no_popen)
+    monkeypatch.setattr(subprocess, 'Popen', spy)
     before_repo, before_dir = _fingerprint(repo), sorted(tmp_path.rglob('*'))
     common = ['--sha', sha]
     assert cli.main(['verdict', 'submit', *common, '--repo-url', 'https://g/r.git', '--install', 'true',
