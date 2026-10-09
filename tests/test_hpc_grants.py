@@ -26,6 +26,7 @@ from lab_commons.hpc.verdict import (
     collect_command,
     fetch_script,
     group_items,
+    parse_collection_errors,
     parse_ids,
     remote_verdict,
 )
@@ -394,3 +395,18 @@ def test_a_commit_off_the_remote_without_a_bundle_is_refused() -> None:
             cost=Cost(),
             policy=Policy(),
         )
+
+
+def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -> None:
+    """One unimportable file must not hide the rest of the tree: it is recorded, the run goes on."""
+    spec = VerdictSpec(sha='a' * 40, repo_url='https://g/r.git', install='true')
+    assert '--continue-on-collection-errors' in collect_command(spec)
+    text = (
+        'tests/a.py::t1\n'
+        'ERROR tests/b.py - ImportError: no module named x\n'
+        'ERROR tests/c.py::C::t - fixture\n'
+        'ERROR tests/d.py\n'
+        '!!!!! Interrupted: 3 errors during collection !!!!!\n'
+    )
+    assert parse_collection_errors(text) == ['tests/b.py', 'tests/c.py::C::t', 'tests/d.py']
+    assert parse_ids(text) == ['tests/a.py::t1'], 'an ERROR line is not a collected id'
