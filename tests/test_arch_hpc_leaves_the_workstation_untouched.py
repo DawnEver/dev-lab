@@ -27,7 +27,7 @@ from lab_commons.hpc.verdict import _pack
 _GIT: Final = shutil.which('git') or 'git'
 
 #: The git subcommands a verdict may run here; each one only READS the repository.
-READ_ONLY_GIT = frozenset({'show', 'for-each-ref', 'pack-objects'})
+READ_ONLY_GIT = frozenset({'show', 'for-each-ref', 'pack-objects', 'rev-parse'})
 
 
 def _git(repo: Path, *args: str, stdin: bytes | None = None) -> bytes:
