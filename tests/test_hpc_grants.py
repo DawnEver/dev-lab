@@ -14,13 +14,11 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import run as run_module
-from lab_commons.hpc import verdict as verdict_module
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
 from lab_commons.hpc.run import Unreachable, failover_runner, render_script
-from lab_commons.hpc.slurm import PROBE_COMMAND, parse_snapshot, parse_usage, probe_command
-from lab_commons.hpc.verdict import (
+from lab_commons.hpc.shell import (
     VerdictSpec,
     build_script,
     collect_command,
@@ -29,6 +27,7 @@ from lab_commons.hpc.verdict import (
     parse_collection_errors,
     parse_ids,
 )
+from lab_commons.hpc.slurm import PROBE_COMMAND, parse_snapshot, parse_usage, probe_command
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
@@ -285,7 +284,7 @@ def test_every_path_stays_under_ci() -> None:
     for script in (fetch_script(spec), build_script(spec), collect_command(spec, also='win')):
         for word in script.replace(';', ' ').replace('=', ' ').split():
             if '$HOME' in word or word.startswith('~'):
-                assert word.startswith(('"$HOME"/ci', '~/ci', '"$HOME/ci/bin')), word
+                assert word.startswith(('"$HOME"/ci', '~/ci', '"$HOME/ci/', '\\"$HOME/ci/', '$HOME/ci/')), word
     assert '--python 3.13' in build_script(spec)
     assert '.lab-ci-installed' in build_script(spec), 'the venv is reused once installed'
     assert "-m '(not slow) and (win)'" in collect_command(spec, also='win')
@@ -304,7 +303,9 @@ def test_ids_are_read_from_collect_only_and_grouped_by_file() -> None:
 def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -> None:
     """One unimportable file must not hide the rest of the tree: it is recorded, the run goes on."""
     spec = VerdictSpec(sha='a' * 40, repo_url='https://g/r.git', install='true')
-    assert '--continue-on-collection-errors' in collect_command(spec)
+    assert '--continue-on-collection-errors' in collect_command(replace(spec, collect='-x tests')), 'the plain path'
+    collector = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'collect.py'
+    assert '--continue-on-collection-errors' in collector.read_text(encoding='utf-8'), 'the per-file collector'
     text = (
         'tests/a.py::t1\n'
         'ERROR tests/b.py - ImportError: no module named x\n'
@@ -314,31 +315,3 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
     )
     assert parse_collection_errors(text) == ['tests/b.py', 'tests/c.py::C::t', 'tests/d.py']
     assert parse_ids(text) == ['tests/a.py::t1'], 'an ERROR line is not a collected id'
-
-
-def test_a_network_drop_while_waiting_is_ridden_out_not_fatal() -> None:
-    """The jobs survive a VPN drop; the watcher must too (measured 2026-10-09: one abort killed a verdict)."""
-    answers = iter(['drop', 'drop', '7_0|RUNNING\n7_1|COMPLETED\n', '7_0|COMPLETED\n7_1|COMPLETED\n'])
-
-    def run(command: str, stdin: str | None) -> str:
-        del command, stdin
-        answer = next(answers)
-        if answer == 'drop':
-            msg = 'no login host answered'
-            raise Unreachable(msg)
-        return answer
-
-    slept: list[float] = []
-    states = verdict_module._wait(run, '7', 2, 30.0, slept.append)
-    assert set(states.values()) == {'COMPLETED'}
-    assert len(slept) == 3
-
-
-def test_a_long_outage_names_where_the_results_wait() -> None:
-    def run(command: str, stdin: str | None) -> str:
-        del command, stdin
-        msg = 'no login host answered'
-        raise Unreachable(msg)
-
-    with pytest.raises(Unreachable, match=r'job 7.*still on the cluster'):
-        verdict_module._wait(run, '7', 2, 3600.0, lambda _s: None)

@@ -22,7 +22,7 @@ import pytest
 from test_hpc_verdict import MACHINE, FakeVerdictCluster
 
 from lab_commons.hpc import __main__ as cli
-from lab_commons.hpc.verdict import _pack
+from lab_commons.hpc.shell import pack
 
 _GIT: Final = shutil.which('git') or 'git'
 
@@ -56,18 +56,20 @@ def test_hpc_imports_nothing_of_the_box_lock_or_the_environment_seats() -> None:
         "for m in pkgutil.iter_modules(h.__path__): importlib.import_module('lab_commons.hpc.' + m.name)\n"
         "print('\\n'.join(sorted(k for k in sys.modules if k.startswith('lab_commons.dev'))))\n"
     )
-    out = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        [sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8', check=True
+    ).stdout
     assert out.split() == [], 'lab_commons.hpc reaches lab_commons.dev (box lock, env seats) -- it must not'
 
 
 def test_the_pack_reads_the_repository_and_the_cluster_cache_can_index_it(tmp_path: Path) -> None:
     repo, sha = _repo(tmp_path)
     before = _fingerprint(repo)
-    pack = base64.b64decode(_pack(repo, sha))
+    shipped = base64.b64decode(pack(repo, sha))
     assert _fingerprint(repo) == before, 'the caller repository is byte-identical: no ref, no index, no object'
     cache = tmp_path / 'cache.git'
     subprocess.run([_GIT, 'init', '-q', '--bare', str(cache)], check=True)
-    _git(cache, 'index-pack', '--stdin', stdin=pack)
+    _git(cache, 'index-pack', '--stdin', stdin=shipped)
     assert _git(cache, 'cat-file', '-t', sha).strip() == b'commit'
 
 

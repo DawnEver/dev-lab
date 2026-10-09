@@ -309,6 +309,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'def __call__(self, command: str, stdin: str | None = None) -> str:',
     ): 'the same fake: one return per verb it answers',
     (
+        'tests/test_hpc_verdict.py',
+        'PLR0912',
+        'def __call__(self, command: str, stdin: str | None = None) -> str:',
+    ): 'the same fake: one branch per verb it answers',
+    (
+        'tests/test_arch_hpc_leaves_the_workstation_untouched.py',
+        'call-overload',
+        'return real_popen(argv, *args, **kw)',
+    ): 'the spy forwards whatever Popen was called with; a pass-through cannot restate its overloads',
+    (
         'src/lab_commons/dev/units.py',
         'C901',
         'def _python_signatures(text: str) -> Iterator[_Signature]:',
