@@ -60,6 +60,9 @@ RUN_SIGNATURES: Final = (
     re.compile(r'scripts[/\\]gate[/\\]runner\.py\b'),
     re.compile(r'-m\s+pytest\b'),
     re.compile(r'(?:^|[/\\\s])pytest(?:\.exe)?(?:\s|$)'),
+    # A PUSH MUST NEVER BLOCK: a pre-push hook that hangs is a run this door must be able to stop.
+    re.compile(r'--hook-type=pre-push\b'),
+    re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
 )
 
 Proc = tuple[int, str]  # (parent pid, command line)

@@ -115,3 +115,11 @@ def test_a_declared_signature_stops_a_planted_tree_and_spares_a_bystander(tmp_pa
         for proc in (planted, bystander):
             proc.kill()
             proc.wait(timeout=30)
+
+
+def test_a_blocking_pre_push_hook_is_a_run_this_door_stops() -> None:
+    """A PUSH MUST NEVER BLOCK: the rule says kill it, so the door that kills must recognise it."""
+    assert identify('python.exe -mpre_commit hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push')
+    assert identify('python.exe scripts/gate/prepush_gate.py')
+    assert not identify('python.exe -mpre_commit hook-impl --config=.pre-commit-config.yaml --hook-type=pre-commit')
+    assert not identify('git push origin main')
