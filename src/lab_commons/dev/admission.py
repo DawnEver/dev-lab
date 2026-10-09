@@ -24,9 +24,9 @@ run that never started" needs no reading of its own here. A cited FAIL writes th
 the ledger's own per-test FAIL rows for the same tree and env.
 
 A VERDICT MAY BE COMPOSED OF PLATFORM PARTS (user ruling 2026-10-09, :mod:`lab_commons.dev.platformparts`):
-with no whole verdict for HEAD, the newest part per platform for HEAD is cited instead when together
-they ran every selected test. A FAIL part is a composed FAIL; a missing part, a test no part ran, or a
-test no declared platform can run is refused by name. The trunk counts a composition only when every
+with no whole verdict for HEAD, the newest part per platform for HEAD is cited instead when every id
+any part handed off is assigned to a recorded part. A FAIL part is a composed FAIL; a missing part, or a test no
+declared platform can run is refused by name. The trunk counts a composition only when every
 part is a PASS of a trunk tier.
 
 EVERY DESTINATION AUDITS THE MERGES IT PUBLISHES, unconditionally: each merge commit not yet on any

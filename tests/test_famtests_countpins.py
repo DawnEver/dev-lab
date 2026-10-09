@@ -330,7 +330,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: their tests landed: 486 against 393 is 93 clear, three past the same 90, so the floor moves to 396.
 #: The headroom is unchanged at 90.
 #: RE-MEASURED 2026-10-09 AT 494 after the hpc verdict hardening landed: 404 keeps the same 90.
-CONSTANT_FLOOR = 404
+#: RE-MEASURED 2026-10-09 AT 495 after the platform-part assignment rule and its tests landed: 405 keeps 90.
+CONSTANT_FLOOR = 405
 CONSTANT_HEADROOM = 90
 
 

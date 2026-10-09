@@ -2,20 +2,22 @@
 
 THE SPLIT IS DECLARED ONCE, per marker, in ``[tool.lab_commons.platforms]`` (:mod:`lab_commons.hpc.platforms`).
 A part is named for the platform it RAN ON -- ``linux``, ``windows``, ``macos`` -- never for where it
-was launched from. Each part runs the tests its platform can run AND no earlier part ran, and records
-what it ``left``: every node id still unrun, mapped to the platforms that can run it.
+was launched from. EVERY COLLECTED ID IS ASSIGNED TO EXACTLY ONE PART by one rule,
+:func:`lab_commons.hpc.platforms.assign`: the first platform in ``PLATFORMS`` order that can run it
+(linux, else windows, else macos). A part's selection is therefore a pure function of the commit's
+table and its collected ids; no part reads another part's record, so every part can start at any
+time and in parallel. Each part records what it ``handed``: every collected id assigned to ANOTHER
+part, mapped to the platforms that can run it.
 
 * The ``linux`` part comes from the cluster: ``python -m lab_commons.hpc verdict`` writes a record,
   :func:`linux_part` turns it into ledger entries STRICTLY -- PASS only when every covered outcome is
   passed / skipped / xfailed; any failed, error, lost or missing id is FAIL; nothing covered is refused.
-* A later part (a consumer's gate runner with ``--platform <name>``) asks :func:`to_run` what it
-  should run and records ``left`` = :func:`left_after`.
+* Any other part (a consumer's gate runner with ``--platform <name>``) calls :func:`select` with a
+  collector over its own checkout, runs the ids assigned to it and records what it ``handed``.
 
-COMPOSITION (:func:`compose`). The newest part per platform for HEAD. A test is covered when some
-part ran it, i.e. when it is absent from at least one part's ``left``; the REMAINDER is the
-intersection of every part's ``left``. An empty remainder composes; any FAIL part makes it FAIL. A
-remainder id that no declared platform can run is refused by name; one that a platform with no
-recorded part can run names that part and the command producing it.
+COMPOSITION (:func:`compose`). The newest part per platform for HEAD. Every id some part handed must
+be assigned to a part that is recorded; any FAIL part makes it FAIL. An id no declared platform can
+run is refused by name; one whose assigned part is missing names that part and the command producing it.
 
 THE ENV KEY IS HONEST: a linux part's env names the cluster, its platform and its python
 (``hpc:<cluster>:<platform>:python-<x.y.z>``), never this box. A part recorded for THIS box's platform
@@ -33,11 +35,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.dev.verdictledger import Entry, LedgerRefusal, ledger_path, record, run_test_id
-from lab_commons.hpc.platforms import PLATFORMS, host_platform
+from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 __all__ = [
     'LINUX',
@@ -45,16 +47,13 @@ __all__ = [
     'Composition',
     'PartRefusal',
     'compose',
-    'left_after',
     'linux_part',
     'main',
     'parts_for',
-    'remainder',
+    'select',
+    'split',
     'this_platform',
-    'to_run',
 ]
-
-LINUX: Final = 'linux'
 
 #: Covered outcomes that do not fail a part: ran and passed, or declined by the test's own design.
 PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
@@ -62,7 +61,7 @@ PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
 #: How many ids a missing-part refusal names before eliding; the count is always given.
 _NAMED: Final = 5
 
-#: The cluster record's word for an id it left to another platform.
+#: The cluster record's word for an id it handed to another part.
 _NOT_COVERED: Final = 'not-covered'
 
 _LINUX_COMMAND: Final = (
@@ -73,7 +72,7 @@ _PART_COMMAND: Final = "the repo's gate runner on a {platform} box with `--platf
 
 
 class PartRefusal(ValueError):
-    """A part that cannot be recorded or selected -- recording it would claim a run nobody made."""
+    """A part that cannot be recorded -- recording it would claim a run nobody made."""
 
 
 def _command(platform: str, head: str) -> str:
@@ -87,16 +86,18 @@ def linux_part(record_: Mapping[str, Any], *, tier: str, log: str) -> list[Entry
     if not covered:
         msg = f'the linux record for {record_["sha"]} covers no test -- an empty part is not a pass'
         raise PartRefusal(msg)
-    left = {node: list(record_['left'].get(node, [])) for node, outcome in outcomes.items() if outcome == _NOT_COVERED}
+    handed = {
+        node: list(record_['handed'].get(node, [])) for node, outcome in outcomes.items() if outcome == _NOT_COVERED
+    }
     failing = sorted(node for node, outcome in covered.items() if outcome not in PASSING)
     sha = str(record_['sha'])
     tree = f'commit:{sha}'
     env = f'hpc:{record_["cluster"]}:{record_["platform"]}:python-{record_["python"]}'
 
-    def row(test: str, result: str, left: dict[str, list[str]] | None = None) -> Entry:
-        return Entry(tree, env, test, result, tier=tier, commit=sha, log=log, part=LINUX, left=left or {})
+    def row(test: str, result: str, handed: dict[str, list[str]] | None = None) -> Entry:
+        return Entry(tree, env, test, result, tier=tier, commit=sha, log=log, part=LINUX, handed=handed or {})
 
-    run = row(run_test_id(f'{tier} linux-part'), 'FAIL' if failing else 'PASS', left=left)
+    run = row(run_test_id(f'{tier} linux-part'), 'FAIL' if failing else 'PASS', handed=handed)
     tests = [
         row(node, 'FAIL' if node in failing else 'PASS') for node, out in sorted(covered.items()) if out != 'skipped'
     ]
@@ -112,34 +113,28 @@ def parts_for(rows: Sequence[Entry], *, head: str, env: str, host: str) -> dict[
     return found
 
 
-def remainder(parts: Mapping[str, Entry]) -> dict[str, list[str]]:
-    """Every id NO part ran -- in every part's ``left`` -- with the platforms that can run it."""
-    if not parts:
-        return {}
-    keys = set.intersection(*(set(part.left) for part in parts.values()))
-    first = next(iter(parts.values()))
-    return {node: list(first.left[node]) for node in sorted(keys)}
+def split(can: Mapping[str, Sequence[str]], platform: str) -> tuple[list[str], dict[str, list[str]]]:
+    """``(ids assigned to *platform*'s part, every other id with the platforms that can run it)``."""
+    mine = [node for node, platforms in can.items() if assign(platforms) == platform]
+    handed = {node: list(platforms) for node, platforms in can.items() if assign(platforms) != platform}
+    return mine, handed
 
 
-def to_run(
-    rows: Sequence[Entry], *, head: str, platform: str, env: str, host: str
+def select(
+    root: Path, sha: str, platform: str, *, collect: Callable[[str], Sequence[str]]
 ) -> tuple[list[str], dict[str, list[str]]]:
-    """``(ids this platform's part runs, the remainder it starts from)``; refused when no part exists yet."""
-    parts = {name: part for name, part in parts_for(rows, head=head, env=env, host=host).items() if name != platform}
-    if not parts:
-        msg = (
-            f'no platform part is recorded for {head}, so there is nothing to select from; '
-            f'record the linux part first: {_command(LINUX, head)}'
-        )
-        raise PartRefusal(msg)
-    remaining = remainder(parts)
-    return [node for node, can in remaining.items() if platform in can], remaining
+    """:func:`split` of what *collect* yields, by the table commit *sha* of *root* declares.
 
-
-def left_after(remaining: Mapping[str, list[str]], ran: Sequence[str]) -> dict[str, list[str]]:
-    """What a part leaves: the remainder it started from, minus what it ran."""
-    done = set(ran)
-    return {node: list(can) for node, can in remaining.items() if node not in done}
+    *collect* takes a pytest marker expression (``''`` for none) and returns the node ids it collects
+    in the consumer's checkout: once for everything, once per platform that cannot run some marker.
+    """
+    if platform not in PLATFORMS:
+        msg = f'unknown platform {platform!r}; a part is named for the platform it runs on, one of {PLATFORMS}'
+        raise ValueError(msg)
+    table = table_at(root, sha)
+    ids = list(collect(''))
+    cannot = {name: set(collect(expr)) for name in PLATFORMS if (expr := cannot_run(table, name))}
+    return split(runnable(ids, cannot), platform)
 
 
 @dataclass(frozen=True)
@@ -156,27 +151,27 @@ def compose(parts: Mapping[str, Entry], *, head: str) -> Composition:
     ordered = tuple(parts[name] for name in sorted(parts))
     result = 'FAIL' if any(part.result != 'PASS' for part in ordered) else 'PASS'
     problems: list[str] = []
-    remaining = remainder(parts)
-    nowhere = sorted(node for node, can in remaining.items() if not can)
+    handed: dict[str, list[str]] = {}
+    for part in ordered:
+        handed.update(part.handed)
+    nowhere = sorted(node for node, can in handed.items() if assign(can) is None)
     if nowhere:
         problems.append(f'no declared platform can run {len(nowhere)} test(s): {", ".join(nowhere)}')
     missing: dict[str, list[str]] = {}
-    for node, can in remaining.items():
-        for platform in can:
-            if platform not in parts:
-                missing.setdefault(platform, []).append(node)
+    for node, can in sorted(handed.items()):
+        owner = assign(can)
+        if owner is not None and owner not in parts:
+            missing.setdefault(owner, []).append(node)
     for platform in PLATFORMS:
         if platform in missing:
             ids = missing[platform]
             problems.append(
-                f'missing the {platform} part for {len(ids)} test(s) no part ran ({", ".join(ids[:_NAMED])}'
+                f'missing the {platform} part for {len(ids)} test(s) assigned to it ({", ".join(ids[:_NAMED])}'
                 f'{", ..." if len(ids) > _NAMED else ""}); produce it with {_command(platform, head)}'
             )
-    unrun = sorted(node for node, can in remaining.items() if can and all(platform in parts for platform in can))
-    if unrun:
-        problems.append(
-            f'{len(unrun)} test(s) no part ran though a part exists for each platform that can: {", ".join(unrun)}'
-        )
+    disowned = sorted(node for part in ordered for node, can in part.handed.items() if assign(can) == part.part)
+    if disowned:
+        problems.append(f'{len(disowned)} test(s) handed off by the part they are assigned to: {", ".join(disowned)}')
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
@@ -204,7 +199,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit(f'[platformparts] refused: {refusal}')
         return 1
     run = rows[0]
-    emit(f'[platformparts] linux part {run.result} for {run.commit} env={run.env}; left {len(run.left)} -> {target}')
+    emit(
+        f'[platformparts] linux part {run.result} for {run.commit} env={run.env}; handed {len(run.handed)} -> {target}'
+    )
     return 0
 
 

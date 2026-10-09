@@ -98,8 +98,9 @@ class Entry:
     is the evidence.
 
     ``part`` is ``''`` for a run over the whole selection, else the PLATFORM a part ran on
-    (:mod:`lab_commons.dev.platformparts`); a part's run entry carries ``left`` -- every node id of
-    the selection that neither it nor an earlier part ran, mapped to the platforms that CAN run it.
+    (:mod:`lab_commons.dev.platformparts`); a part's run entry carries ``handed`` -- every collected
+    node id assigned to ANOTHER part (:func:`lab_commons.hpc.platforms.assign`), mapped to the platforms
+    that CAN run it.
     """
 
     tree: str
@@ -111,7 +112,7 @@ class Entry:
     log: str
     at: str = ''
     part: str = ''
-    left: dict[str, list[str]] = field(default_factory=dict)
+    handed: dict[str, list[str]] = field(default_factory=dict)
 
 
 def run_test_id(selector: str) -> str:
@@ -196,13 +197,13 @@ def record_promoted(
     *,
     commit: str,
     part: str = '',
-    left: Mapping[str, list[str]] | None = None,
+    handed: Mapping[str, list[str]] | None = None,
 ) -> None:
     """THE ONE WRITER's entry point: a PROMOTED verdict's run entry plus every outcome it recorded.
 
     The caller has already checked the tree did not move during the run. An unsettled verdict
     records nothing; the per-test outcomes are read from :func:`outcomes_dir` beside its log. A
-    platform part names its *part* and what it *left*; both ride on the run entry only.
+    platform part names its *part* and what it *handed*; both ride on the run entry only.
     """
     if not verdict.result.outcome.settled:
         return
@@ -222,7 +223,7 @@ def record_promoted(
         commit=commit,
         log=evidence,
         part=part,
-        left=dict(left or {}),
+        handed=dict(handed or {}),
     )
     record(path, [run, *(entry(test, result) for test, result in outcomes)])
 
