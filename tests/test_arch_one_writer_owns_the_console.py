@@ -67,7 +67,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: RE-MEASURED 2026-10-08: the scan read 203 once ``lab_commons.hpc`` (and ``width``) became tracked,
 #: eight past the 195 this pair allowed. The new modules write through ``emit`` like every other;
 #: the floor is re-taken at the same ~80% and THE HEADROOM STAYS AT 45. 150 -> 160.
-MODULE_FLOOR = 163  # re-taken 2026-10-09: the scan read 208 after the family-membership module merged
+MODULE_FLOOR = 165  # re-taken 2026-10-09: 210 once hpc.platforms and dev.platformparts landed
 MODULE_HEADROOM = 45
 
 

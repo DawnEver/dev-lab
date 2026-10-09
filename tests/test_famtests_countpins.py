@@ -325,7 +325,11 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-09 AT 483, after `dev.family` and the standard-library base install landed. 483
 #: against 389 is 94 clear, four past the same 90; the smallest floor whose clearance fits is 393 (81.4%
 #: of 483, TIGHTER than the 81.2% it replaces). The headroom is unchanged at 90.
-CONSTANT_FLOOR = 393
+#:
+#: RE-MEASURED 2026-10-09 AT 486, after the platform parts (`hpc.platforms`, `dev.platformparts`) and
+#: their tests landed: 486 against 393 is 93 clear, three past the same 90, so the floor moves to 396.
+#: The headroom is unchanged at 90.
+CONSTANT_FLOOR = 396
 CONSTANT_HEADROOM = 90
 
 
