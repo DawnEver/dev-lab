@@ -410,3 +410,35 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
     )
     assert parse_collection_errors(text) == ['tests/b.py', 'tests/c.py::C::t', 'tests/d.py']
     assert parse_ids(text) == ['tests/a.py::t1'], 'an ERROR line is not a collected id'
+
+
+def test_a_network_drop_while_waiting_is_ridden_out_not_fatal() -> None:
+    """The jobs survive a VPN drop; the watcher must too (measured 2026-10-09: one abort killed a verdict)."""
+    from lab_commons.hpc import verdict as verdict_module
+
+    answers = iter(['drop', 'drop', '7.0|RUNNING\n7.1|COMPLETED\n', '7.0|COMPLETED\n7.1|COMPLETED\n'])
+
+    def run(command: str, stdin: str | None) -> str:
+        del command, stdin
+        answer = next(answers)
+        if answer == 'drop':
+            msg = 'no login host answered'
+            raise Unreachable(msg)
+        return answer
+
+    slept: list[float] = []
+    states = verdict_module._wait(run, '7', 2, 30.0, slept.append)
+    assert set(states.values()) == {'COMPLETED'}
+    assert len(slept) == 3
+
+
+def test_a_long_outage_names_where_the_results_wait() -> None:
+    from lab_commons.hpc import verdict as verdict_module
+
+    def run(command: str, stdin: str | None) -> str:
+        del command, stdin
+        msg = 'no login host answered'
+        raise Unreachable(msg)
+
+    with pytest.raises(Unreachable, match=r'job 7.*still on the cluster'):
+        verdict_module._wait(run, '7', 2, 3600.0, lambda _s: None)
