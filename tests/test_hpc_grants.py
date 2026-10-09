@@ -14,6 +14,7 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import run as run_module
+from lab_commons.hpc import verdict as verdict_module
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
@@ -414,9 +415,7 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
 
 def test_a_network_drop_while_waiting_is_ridden_out_not_fatal() -> None:
     """The jobs survive a VPN drop; the watcher must too (measured 2026-10-09: one abort killed a verdict)."""
-    from lab_commons.hpc import verdict as verdict_module
-
-    answers = iter(['drop', 'drop', '7.0|RUNNING\n7.1|COMPLETED\n', '7.0|COMPLETED\n7.1|COMPLETED\n'])
+    answers = iter(['drop', 'drop', '7_0|RUNNING\n7_1|COMPLETED\n', '7_0|COMPLETED\n7_1|COMPLETED\n'])
 
     def run(command: str, stdin: str | None) -> str:
         del command, stdin
@@ -433,8 +432,6 @@ def test_a_network_drop_while_waiting_is_ridden_out_not_fatal() -> None:
 
 
 def test_a_long_outage_names_where_the_results_wait() -> None:
-    from lab_commons.hpc import verdict as verdict_module
-
     def run(command: str, stdin: str | None) -> str:
         del command, stdin
         msg = 'no login host answered'
