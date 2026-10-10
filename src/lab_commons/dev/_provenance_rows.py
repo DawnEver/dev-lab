@@ -30,7 +30,7 @@ __all__ = ['PROVENANCE']
 
 PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'ab_bench': ('original',),
-    'envlock': ('original',),
+    'envseat': ('original',),
     'agent_guard': ('original',),
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and
     # nothing generated them, so there is no consumer file this replaced -- only nine rows it now
@@ -62,10 +62,14 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
         'scripts/gate/wall_reason.py',
         'scripts/gate/width.py',
     ),
-    'boxlock': ('original',),
+    'cpuseat': ('original',),
     'boxwait': ('original',),
     'inflight': ('original',),
-    'verdictledger': ('original',),
+    'runcache': ('original',),
+    'forgeserve': ('original',),
+    'familyheads': ('original',),
+    'outcomes': ('original',),
+    'lanepolicy': ('original',),
     'platformparts': ('original',),
     'bypath': ('supersedes', 'scripts/gate/_by_path.py'),
     'checkout': (
@@ -300,12 +304,12 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # the ASSERTIONS over it were what stayed forked, which is the class of row that has no import to
     # be found by. NOT a second spelling of `dep` itself: that module OWNS the door -- it composes the
     # argv, refuses, retires and renders -- and this only asserts on what it returned. NOT `boxseat`
-    # either, its nearest neighbour BY IMPORT: both touch `BoxLock`, but this plants a holder solely
+    # either, its nearest neighbour BY IMPORT: both touch `CpuSeat`, but this plants a holder solely
     # so an ADAPTER can be caught answering "nobody" forever, and asserts nothing about exclusion.
     'depdoor': ('supersedes', 'tests/architecture/test_the_dependency_door_is_wired.py'),
     # THE OTHER HALF OF THAT PAIR, from the same two audit lanes on the same day: 84.6% identical,
     # and the 15.4% is a docstring, ONE value (the private pool name) and four messages that differ
-    # only in where the line wraps. `boxlock` publishes the exclusion and `boxwait` the bounded wait;
+    # only in where the line wraps. `cpuseat` publishes the exclusion and `boxwait` the bounded wait;
     # this is the body that DRIVES them. NOT inside either: those are 2 and 4 public names about
     # HOLDING a seat, while this takes no real lock at all -- every plant is on an injected
     # `resource_dir=`, because the body runs inside a verdict run already holding the real one. The

@@ -73,3 +73,13 @@ def test_no_retired_spelling_survives_in_the_tracked_tree() -> None:
             continue
         found += [f'{name}: {spelling!r} -> {remedy}' for spelling, remedy in RETIRED.items() if spelling in text]
     assert not found, 'retired spellings (replace each with its remedy):\n' + '\n'.join(found)
+
+
+@pytest.mark.parametrize('flag', ['--install', '--needs'])
+def test_the_build_flags_of_run_submit_are_refused_by_name(flag: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """How a cluster env is built is the commit's own [tool.lab_commons.hpc] declaration, read at --sha."""
+    with pytest.raises(SystemExit):
+        hpc_main.main(['run', 'submit', '--sha', 'a' * 40, f'{flag}=uv sync'])
+    err = capsys.readouterr().err
+    assert f'`run submit {flag}` is retired' in err
+    assert '[tool.lab_commons.hpc]' in err
