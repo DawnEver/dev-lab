@@ -307,6 +307,8 @@ class FakeRunCluster:
         if '--collect-only' in command or 'lab_ci_collect.py --cache' in command:
             if '(win)' in command:
                 return 'tests/w.py::t\n'
+            if self.collected is not None:
+                return self.collected
             return (
                 '@@@ time collect=3s\n'
                 'tests/a.py::t1\ntests/a.py::t2\ntests/w.py::t\ntests/b.py::t3\ntests/b.py::t4\ntests/b.py::t5\n'
@@ -523,12 +525,12 @@ def test_every_round_adds_its_job_to_the_record() -> None:
 
 
 def test_an_empty_collection_refuses_carrying_the_collectors_own_error() -> None:
-    """PLANTED, wdg-lab 2026-10-10: the import error that emptied the collection is in the refusal."""
-    said = 'ImportError while loading conftest tests/conftest.py\nE   ModuleNotFoundError: No module named wdg\n'
+    """PLANTED, a consumer 2026-10-10: the import error that emptied the collection is in the refusal."""
+    said = 'ImportError while loading conftest tests/conftest.py\nE   ModuleNotFoundError: No module named thing\n'
     fake = FakeRunCluster(collected='@@@ time collect=1s\n' + said)
     with pytest.raises(RuntimeError, match='an empty run is not a pass') as refused:
         _submit(fake)
-    assert 'ModuleNotFoundError: No module named wdg' in str(refused.value)
+    assert 'ModuleNotFoundError: No module named thing' in str(refused.value)
     assert '[tool.lab_commons.hpc] install' in str(refused.value), 'the refusal names the remedy'
     assert not fake.manifests
 

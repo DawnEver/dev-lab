@@ -46,15 +46,14 @@ from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.boxwait import WAIT_S, hold_run_seats, holders_line
 from lab_commons.dev.content import content_address
-from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.envkey import env_key, env_manifest
-from lab_commons.dev.familyheads import check, installed_family, offline_line, refusal, sync_door
+from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
+from lab_commons.dev.localpart import post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
-from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir, read_outcomes, read_reasons
-from lab_commons.dev.platformparts import local_record, post_local, this_platform
+from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import (
     MalformedAllowance,
@@ -67,7 +66,6 @@ from lab_commons.dev.reports import (
 from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
-from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
 from lab_commons.log import emit
 from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
@@ -541,12 +539,6 @@ def main(argv: list[str] | None = None) -> int:
     return int(shared['code'])
 
 
-def family_freshness(root: Path) -> tuple[str | None, str | None]:
-    """``(refusal, offline line)`` for this interpreter's floating family packages against their forge heads."""
-    freshness = check(installed_family(), cache=CpuSeat.resource_dir() / 'family-heads.json')
-    return refusal(freshness, door=sync_door(root)), offline_line(freshness)
-
-
 def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
     """What makes two verify requests ONE run: the tree address, the env key and the selection."""
     return RunKey(
@@ -587,33 +579,6 @@ def _judge(
     if not no_status:
         emit(post_part(root, verdict, commit, arguments))
     return EXIT_CODES[verdict.result.outcome], lines
-
-
-def post_part(root: Path, verdict: Verdict, commit: str | None, arguments: tuple[str, ...]) -> str:
-    """Post a settled run as this platform's ``tests/<platform>`` part of *commit*; one line says what happened."""
-    if commit is None:
-        return 'part: not posted -- the tree was dirty or moved, so this run is about no commit'
-    if not verdict.result.outcome.settled:
-        return 'part: not posted -- an INCONCLUSIVE run is no part'
-    directory = outcomes_dir(verdict.log.path)
-
-    def collect(expression: str) -> list[str]:
-        argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
-        command = [*argv, '-m', expression, *arguments]
-        done = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
-        return parse_ids(done.stdout)
-
-    record = local_record(
-        root,
-        sha=commit,
-        platform=this_platform(),
-        scope=INCREMENTAL if arguments else FULL,
-        req=verdict.log.path.stem,
-        outcomes=read_outcomes(directory),
-        reasons=read_reasons(directory),
-        collect=collect,
-    )
-    return post_local(root, record, directory)
 
 
 if __name__ == '__main__':

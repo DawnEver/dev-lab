@@ -768,7 +768,7 @@ def test_a_repo_declaring_a_private_source_renders_it_into_its_hook_environment(
     """ONE declaration: the ``[tool.uv]`` override a private repo makes is what its hooks install, at the one pin."""
     gitea = 'https://gitea.example.org/Team/lab-commons.git'
     (tmp_path / 'pyproject.toml').write_text(
-        f'[tool.uv]\noverride-dependencies = ["optimi-lab @ git+https://x/o.git", "lab-commons @ git+{gitea}"]\n',
+        f'[tool.uv]\noverride-dependencies = ["dep-a @ git+https://x/o.git", "lab-commons @ git+{gitea}"]\n',
         encoding='utf-8',
     )
     assert hook_requirement(tmp_path) == f'lab-commons @ git+{gitea}@{HOOK_LAB_COMMONS_REV}'

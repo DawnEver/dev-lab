@@ -129,6 +129,12 @@ are too unqualified to survive being flattened into a namespace this wide.
   and not the only one.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
+* :mod:`lab_commons.dev.familyheads` -- a floating git package behind its forge head makes an env STALE;
+  verify refuses it naming the sync door, and an unreachable forge is said, never read as fresh.
+* :mod:`lab_commons.dev.forgeserve` -- ``forge serve --mode M``: the one harness entry (tick, produce,
+  publish, route); a producer refusing its argv is a broken contract, never a skip.
+* :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<platform>`` part, in the cluster
+  record's shape.
 * :mod:`lab_commons.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`lab_commons.dev.outcomes` -- the pytest plugin writing a run's per-test outcomes in the run

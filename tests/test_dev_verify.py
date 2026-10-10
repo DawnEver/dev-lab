@@ -35,7 +35,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev import verify
+from lab_commons.dev import localpart, verify
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, verify_log
 from lab_commons.dev.reports import (
@@ -871,8 +871,8 @@ def _patched_main(
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(verify, 'local_record', lambda _root, **fields: fields)
-    monkeypatch.setattr(verify, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
+    monkeypatch.setattr(localpart, 'local_record', lambda _root, **fields: fields)
+    monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
     assert verify.main([]) == EXIT_CODES[Outcome.PASS]
     return posted
 
@@ -880,7 +880,7 @@ def _patched_main(
 def test_a_judged_clean_run_posts_this_platforms_full_part_on_head(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[(), ()])
     assert [(record['sha'], record['platform'], record['scope']) for record in posted] == [
-        ('a' * 40, verify.this_platform(), 'full')
+        ('a' * 40, localpart.this_platform(), 'full')
     ]
 
 
@@ -969,4 +969,4 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
     assert verify.main(['--no-status']) == EXIT_CODES[Outcome.INCONCLUSIVE]
     assert runs(cache) == ()
-    assert verify.post_part(tmp_path, verdict, 'a' * 40, ()) == 'part: not posted -- an INCONCLUSIVE run is no part'
+    assert localpart.post_part(tmp_path, verdict, 'a' * 40, ()) == 'part: not posted -- an INCONCLUSIVE run is no part'

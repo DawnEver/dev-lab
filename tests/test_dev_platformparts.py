@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import make_repo
 
-from lab_commons.dev import platformparts
+from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.forgestatus import Status
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
@@ -261,10 +261,10 @@ def test_the_standing_is_the_one_reading_of_a_platform_result() -> None:
 
 def test_a_local_run_becomes_a_record_of_the_cluster_shape(tmp_path: Path, monkeypatch) -> None:
     """A windows verify keeps the ids assigned to windows and hands every other id off, not-covered."""
-    monkeypatch.setattr(platformparts, 'table_at', lambda _root, _sha: read_table(PYPROJECT))
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: read_table(PYPROJECT))
     outcomes = {'t::a': 'passed', 't::f': 'failed', 't::m': 'skipped'}
     collected = {'femm': ['t::f'], 'femm or matlab': ['t::f', 't::m']}
-    record = platformparts.local_record(
+    record = localpart.local_record(
         tmp_path,
         sha=SHA,
         platform='windows',
@@ -281,18 +281,27 @@ def test_a_local_run_becomes_a_record_of_the_cluster_shape(tmp_path: Path, monke
     assert (part.platform, part.result, part.ran, part.hands) == ('windows', 'FAIL', 1, {'linux': 2})
 
 
-def test_a_local_record_with_no_table_keeps_every_id(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(platformparts, 'table_at', lambda _root, _sha: {})
-    record = platformparts.local_record(
-        tmp_path,
-        sha=SHA,
-        platform='windows',
-        scope='incremental',
-        req='r',
-        outcomes={'t::a': 'passed', 't::s': 'skipped'},
-        reasons={'t::s': 'why'},
-        collect=lambda _expr: pytest.fail('no marker is declared, so nothing is collected'),
-    )
-    assert record['outcomes'] == {'t::a': 'passed', 't::s': 'skipped'}
-    assert record['reasons'] == {'t::s': 'why'}
-    assert platformparts.part_of(record).hands == {}
+def test_a_local_record_with_no_table_assigns_every_id_to_linux(tmp_path: Path, monkeypatch) -> None:
+    """No table: every id runs everywhere, so the one rule assigns it to linux -- a windows run covers nothing."""
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
+
+    def local(platform: str) -> dict[str, object]:
+        return localpart.local_record(
+            tmp_path,
+            sha=SHA,
+            platform=platform,
+            scope='incremental',
+            req='r',
+            outcomes={'t::a': 'passed', 't::s': 'skipped'},
+            reasons={'t::s': 'why'},
+            collect=lambda _expr: pytest.fail('no marker is declared, so nothing is collected'),
+        )
+
+    on_linux = local('linux')
+    assert on_linux['outcomes'] == {'t::a': 'passed', 't::s': 'skipped'}
+    assert on_linux['reasons'] == {'t::s': 'why'}
+    assert platformparts.part_of(on_linux).hands == {}
+    on_windows = local('windows')
+    assert set(on_windows['outcomes'].values()) == {'not-covered'}
+    with pytest.raises(platformparts.PartRefusal, match='covers no test'):
+        platformparts.part_of(on_windows)

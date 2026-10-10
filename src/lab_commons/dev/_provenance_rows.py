@@ -67,6 +67,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'inflight': ('original',),
     'runcache': ('original',),
     'forgeserve': ('original',),
+    'localpart': ('original',),
     'familyheads': ('original',),
     'outcomes': ('original',),
     'lanepolicy': ('original',),

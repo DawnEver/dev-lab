@@ -69,7 +69,7 @@ from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from lab_commons.dev.venvpath import checkout_interpreter
 from lab_commons.hpc.__main__ import main as hpc_main
 from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
-from lab_commons.hpc.records import read_record, write_record
+from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.log import emit
@@ -90,13 +90,11 @@ __all__ = [
     'UndeclaredPart',
     'cluster',
     'compose',
-    'local_record',
     'main',
     'part_argv',
     'part_context',
     'part_of',
     'parts_of',
-    'post_local',
     'select',
     'split',
     'standing',
@@ -389,46 +387,6 @@ def post(root: Path, path: Path) -> str:
     enqueue(root, Post(str(record['sha']), part_context(part.platform), part.state, part.description()), record=path)
     lines = flush(root)
     return '\n'.join([f'[platformparts] {part.platform} part {part.result}: {part.description()}', *lines])
-
-
-def local_record(
-    root: Path,
-    *,
-    sha: str,
-    platform: str,
-    scope: str,
-    req: str,
-    outcomes: Mapping[str, str],
-    reasons: Mapping[str, str],
-    collect: Callable[[str], Sequence[str]],
-) -> dict[str, Any]:
-    """The run record of a LOCAL run, in the cluster record's shape, so it posts as the same kind of part.
-
-    The ids are the ones the run reported; each is assigned by the commit's table exactly as
-    :func:`select` assigns them (*collect* is asked only for the marker expressions the table declares).
-    An id assigned to *platform* carries its outcome; every other id is handed off, ``not-covered``.
-    """
-    table = table_at(root, sha)
-    cannot = {name: set(collect(expr)) for name in PLATFORMS if (expr := cannot_run(table, name))}
-    mine, handed = split(runnable(list(outcomes), cannot), platform)
-    return {
-        'sha': sha,
-        'platform': platform,
-        'scope': scope,
-        'req': req,
-        'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, _NOT_COVERED)},
-        'handed': handed,
-        'reasons': {node: why for node, why in reasons.items() if node in mine},
-    }
-
-
-def post_local(root: Path, record: Mapping[str, Any], directory: Path) -> str:
-    """Write *record* under *directory* and post its part; a refused part is one line, never a raise."""
-    path = write_record(dict(record), directory)
-    try:
-        return post(root, path)
-    except (PartRefusal, PostFailed) as why:
-        return f'[platformparts] not posted: {why}'
 
 
 def cluster(

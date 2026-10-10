@@ -60,7 +60,7 @@ class EnvironmentSeat:
     def holders(prefix: Path | str, *, broker: Broker | None = None) -> tuple[Holder, ...]:
         """Who holds THIS environment now, without taking it; a holder of another environment is not named."""
         pool = environment_pool(prefix)
-        return tuple(_declared(pool, broker).holders(pool))
+        return tuple(holder for holder in _declared(pool, broker).holders(pool) if holder.pool == pool)
 
 
 def _declared(pool: str, broker: Broker | None) -> Broker:

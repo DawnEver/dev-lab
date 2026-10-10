@@ -28,24 +28,23 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.dev.cpuseat import CpuSeat
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
 __all__ = [
     'CACHE_TTL_S',
     'DEFAULT_DOOR',
-    'FAMILY',
     'Freshness',
     'Installed',
     'check',
+    'family_freshness',
     'installed_family',
     'offline_line',
     'refusal',
     'sync_door',
 ]
-
-#: The floating family packages: the repos whose heads move under an existing venv.
-FAMILY: Final = frozenset({'lab-commons', 'wdg-lab', 'optimi-lab', 'ai-lab'})
 
 #: How long a forge head is believed, in seconds. Short: the point is to see a push within minutes.
 CACHE_TTL_S: Final = 300.0
@@ -88,12 +87,10 @@ def _canonical(name: str) -> str:
 def installed_family(
     distributions: Callable[[], Iterable[metadata.Distribution]] = metadata.distributions,
 ) -> tuple[Installed, ...]:
-    """Every family distribution in THIS interpreter that was installed from a git URL (PEP 610)."""
+    """Every distribution in THIS interpreter installed from a git URL (PEP 610): the floating family."""
     found: dict[str, Installed] = {}
     for distribution in distributions():
         name = _canonical(distribution.metadata['Name'] or '')
-        if name not in FAMILY:
-            continue
         try:
             origin = json.loads(distribution.read_text('direct_url.json') or '{}')
         except ValueError:
@@ -155,16 +152,17 @@ def check(
     *,
     cache: Path,
     now: float | None = None,
-    ls_remote: Callable[[str, str], str | None] = _ls_remote,
+    ls_remote: Callable[[str, str], str | None] | None = None,
 ) -> Freshness:
     """Compare each floating installed commit to its forge head (cached for :data:`CACHE_TTL_S`)."""
     moment = time.time() if now is None else now
+    ask = _ls_remote if ls_remote is None else ls_remote
     stale: list[tuple[Installed, str]] = []
     unknown: list[Installed] = []
     for one in installed:
         if one.pinned:
             continue
-        head = _cached_head(cache, one.url, one.ref, now=moment, ls_remote=ls_remote)
+        head = _cached_head(cache, one.url, one.ref, now=moment, ls_remote=ask)
         if head is None:
             unknown.append(one)
         elif head != one.commit:
@@ -203,3 +201,9 @@ def offline_line(freshness: Freshness) -> str | None:
         return None
     names = ', '.join(f'{one.name} ({one.url})' for one in freshness.unknown)
     return f'family heads UNKNOWN -- the forge did not answer for {names}; freshness is unchecked, not fresh.'
+
+
+def family_freshness(root: Path) -> tuple[str | None, str | None]:
+    """``(refusal, offline line)`` for THIS interpreter's floating packages, cached beside the machine's records."""
+    freshness = check(installed_family(), cache=CpuSeat.resource_dir() / 'family-heads.json')
+    return refusal(freshness, door=sync_door(root)), offline_line(freshness)

@@ -71,8 +71,8 @@ class OutcomeSession(Protocol):
 
 def _skip_reason(report: OutcomeReport) -> str:
     longrepr = report.longrepr
-    if isinstance(longrepr, tuple) and len(longrepr) == 3:  # noqa: PLR2004 -- pytest's (path, line, reason)
-        return str(longrepr[2]).removeprefix('Skipped: ')
+    if isinstance(longrepr, tuple):  # pytest's (path, line, reason)
+        return str(longrepr[-1]).removeprefix('Skipped: ')
     return str(longrepr or '')
 
 
@@ -95,7 +95,8 @@ class OutcomeRecorder:
         if report.failed:
             self.outcomes[node] = 'failed'
         elif report.skipped:
-            if hasattr(report, 'wasxfail'):
+            # a skip carries pytest's (path, line, reason) tuple; an xfail carries the failure it expected
+            if not isinstance(report.longrepr, tuple):
                 self.outcomes.setdefault(node, 'xfailed')
             else:
                 self.outcomes.setdefault(node, 'skipped')
