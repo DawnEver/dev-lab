@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from _forge_fake import make_repo
 
 from lab_commons.dev import platformparts
 from lab_commons.dev.forgestatus import Status
@@ -134,3 +135,104 @@ def test_the_cli_queues_the_part_with_its_record_and_flushes(tmp_path: Path, mon
     empty = write_record({**_record({}), 'req': 't1'}, tmp_path / 'runs')
     assert platformparts.main(['post', str(empty), '--root', str(tmp_path)]) == 1
     assert len(queued) == 1, 'a refused part is never queued'
+
+
+DECLARED = """
+[tool.lab_commons.hpc]
+install = "uv sync --extra dev"
+needs = ["cargo", "cc"]
+collect = "tests"
+
+[tool.lab_commons.parts]
+output = "output/logs"
+
+[tool.lab_commons.parts.produce.windows]
+full = ["scripts/gate/runner.py", "gate", "--platform", "windows", "--full"]
+incremental = ["scripts/gate/runner.py", "gate", "--platform", "windows"]
+"""
+
+
+def _checkout(tmp_path: Path, pyproject: str, remote: str = 'git@forge.example.org:o/r.git') -> tuple[Path, str]:
+    repo = make_repo(tmp_path, remote)
+    (repo / 'pyproject.toml').write_text(pyproject, encoding='utf-8')
+    python = repo / '.venv' / 'Scripts' / 'python.exe'
+    python.parent.mkdir(parents=True)
+    python.write_text('', encoding='utf-8')
+    return repo, str(python)
+
+
+def test_the_cluster_argv_is_filled_from_the_declarations_alone(tmp_path: Path) -> None:
+    repo, python = _checkout(tmp_path, DECLARED)
+    argv = platformparts.part_argv(repo, 'linux', SHA, scope='full', os_name='nt')
+    output = Path(argv[-1])
+    assert argv == [
+        python, '-m', 'lab_commons.dev.platformparts', 'cluster', '--sha', SHA,
+        '--repo-url', 'https://forge.example.org/o/r.git',
+        '--install', 'uv sync --extra dev', '--needs', 'cargo,cc', '--collect', 'tests', '-o', str(output),
+    ]  # fmt: skip
+    assert output.relative_to(repo).parts[:2] == ('output', 'logs')
+    assert output.relative_to(repo).parts[-2:] == ('parts', SHA)
+    assert not any('<' in item for item in argv), 'no placeholder survives'
+
+
+def test_a_local_part_runs_the_declared_producer_per_scope(tmp_path: Path) -> None:
+    repo, python = _checkout(tmp_path, DECLARED)
+    full = platformparts.part_argv(repo, 'windows', SHA, scope='full', os_name='nt')
+    assert full == [python, 'scripts/gate/runner.py', 'gate', '--platform', 'windows', '--full']
+    incremental = platformparts.part_argv(repo, 'windows', SHA, scope='incremental', os_name='nt')
+    assert incremental[-1] == 'windows'
+
+
+@pytest.mark.parametrize(
+    ('drop', 'platform', 'named'),
+    [
+        ('install = "uv sync --extra dev"\n', 'linux', r'\[tool\.lab_commons\.hpc\] install'),
+        ('output = "output/logs"\n', 'linux', r'\[tool\.lab_commons\.parts\] output'),
+        ('full = ["scripts/gate/runner.py", "gate", "--platform", "windows", "--full"]\n', 'windows',
+         r'\[tool\.lab_commons\.parts\.produce\.windows\] full'),
+    ],
+)  # fmt: skip
+def test_a_missing_declaration_is_refused_naming_its_key(tmp_path: Path, drop: str, platform: str, named: str) -> None:
+    """PLANTED CONTROL: the full declaration produces an argv; removing one key refuses by that key."""
+    assert DECLARED.count(drop) == 1
+    repo, _python = _checkout(tmp_path, DECLARED.replace(drop, ''))
+    with pytest.raises(platformparts.UndeclaredPart, match=named):
+        platformparts.part_argv(repo, platform, SHA, scope='full', os_name='nt')
+
+
+def test_a_cluster_part_is_full_and_macos_needs_its_own_declaration(tmp_path: Path) -> None:
+    repo, _python = _checkout(tmp_path, DECLARED)
+    with pytest.raises(ValueError, match='scope full'):
+        platformparts.part_argv(repo, 'linux', SHA, scope='incremental', os_name='nt')
+    with pytest.raises(platformparts.UndeclaredPart, match=r'produce\.macos\] full'):
+        platformparts.part_argv(repo, 'macos', SHA, scope='full', os_name='nt')
+
+
+def test_cluster_submits_gathers_and_posts_the_record(tmp_path: Path, monkeypatch) -> None:
+    calls: list[list[str]] = []
+    output = tmp_path / 'records'
+
+    def hpc(argv: list[str]) -> int:
+        calls.append(argv)
+        if argv[1] == 'gather':
+            write_record(_record({'t::a': 'failed'}), output)
+            return 1
+        return 0
+
+    posted: list[Path] = []
+    monkeypatch.setattr(platformparts, 'post', lambda _root, path: posted.append(path) or 'posted')
+    flags = ['--repo-url', 'https://f/o/r.git', '--install', 'uv sync']
+    assert platformparts.cluster(tmp_path, sha=SHA, hpc_args=flags, output=output, hpc=hpc) == 'posted'
+    assert calls[0] == ['run', 'submit', '--sha', SHA, '--scope', 'full', '--repo', str(tmp_path), *flags]
+    assert calls[1] == ['run', 'gather', '--sha', SHA, '-o', str(output), '--wait']
+    assert posted == [output / f'run-{SHA}-linux-t0.json.gz'], 'a red run is still posted as a FAIL part'
+
+
+def test_cluster_refuses_a_failed_submit_and_a_gather_without_a_record(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same verb with the run absent posts nothing."""
+    seen: list[str] = []
+    with pytest.raises(platformparts.PartRefusal, match='run submit'):
+        platformparts.cluster(tmp_path, sha=SHA, hpc_args=[], output=tmp_path, hpc=lambda a: seen.append(a[1]) or 2)
+    assert seen == ['submit'], 'nothing is gathered after a failed submit'
+    with pytest.raises(platformparts.PartRefusal, match='no linux record'):
+        platformparts.cluster(tmp_path, sha=SHA, hpc_args=[], output=tmp_path / 'none', hpc=lambda _a: 0)

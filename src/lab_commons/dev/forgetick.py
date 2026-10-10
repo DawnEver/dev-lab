@@ -25,8 +25,10 @@ only its holder can gather them (forge plan section 5) -- otherwise the request 
 
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
 ``quiet``, fetch ``origin``, list every request this machine could serve with its state, claim at most
-one per platform (newest ref first), and print the command producing each claimed part. It runs
-nothing itself and notifies nobody: running is the repo's runner, notification is the harness's.
+one per platform (newest ref first), and give each claimed part the argv producing it
+(:func:`lab_commons.dev.platformparts.part_argv`, scope full). A platform whose producer the repo does
+not declare is not claimed; its refusal names the pyproject key to add. It runs nothing itself and
+notifies nobody: running is the repo's runner, notification is the harness's.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ import argparse
 import dataclasses
 import json
 import re
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -56,9 +59,11 @@ from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.integrator import Policy, load_policy
-from lab_commons.dev.platformparts import command_for, part_context, this_platform
+from lab_commons.dev.platformparts import UndeclaredPart, part_argv, part_context, this_platform
+from lab_commons.dev.venvpath import current_os_name
 from lab_commons.hpc.grants import Grant, load_grants, workstation
 from lab_commons.hpc.platforms import LINUX
+from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
 __all__ = [
@@ -151,6 +156,7 @@ class Work:
     platform: str
     state: str
     holder: Claim | None = None
+    argv: tuple[str, ...] = ()
 
 
 def _hpc_id(grant: Grant) -> str:
@@ -235,6 +241,7 @@ class TickReport:
     work: tuple[Work, ...]
     claimed: tuple[Work, ...]
     lines: tuple[str, ...]
+    refused: tuple[str, ...] = ()
 
 
 def tick(
@@ -249,6 +256,7 @@ def tick(
     dry_run: bool = False,
     fetch: Callable[[Path], None] = fetch_origin,
     host: str | None = None,
+    os_name: str | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives."""
     if mode not in MODES:
@@ -268,6 +276,7 @@ def tick(
     hpc_ids = frozenset(_hpc_id(grant) for grant in grants)
     work: list[Work] = []
     claimed: list[Work] = []
+    refused: list[str] = []
     for serve in serving(host or this_platform(), grants):
         me = Claim(machine, login, now + lease, serve.hpc)
         taken = False
@@ -275,15 +284,22 @@ def tick(
             state, holder = assess(status_history(built, sha), serve, me=me, now=now, hpc_ids=hpc_ids)
             found = Work(ref, sha, serve.platform, state, holder)
             if state in _CLAIMABLE and not taken and not dry_run:
-                found = claim(built, found, me, now=now, hpc_ids=hpc_ids)
-                taken = found.state == MINE
-                claimed += [found] if taken else []
+                try:  # the argv BEFORE the claim: a part nobody can produce is never claimed
+                    argv = part_argv(root, serve.platform, sha, scope=FULL, os_name=os_name or current_os_name())
+                except (UndeclaredPart, FileNotFoundError) as why:
+                    refused.append(f'{part_context(serve.platform)}: not claimed -- {why}')
+                    taken = True
+                else:
+                    found = dataclasses.replace(claim(built, found, me, now=now, hpc_ids=hpc_ids), argv=tuple(argv))
+                    taken = found.state == MINE
+                    claimed += [found] if taken else []
             work.append(found)
     for item in work:
         who = f' by {item.holder.login}@{item.holder.machine or _NOBODY}' if item.holder else ''
         lines.append(f'{item.state:<7} {part_context(item.platform):<14} {item.ref}  {item.sha[:12]}{who}')
-    lines += [f'produce {part_context(item.platform)}: {command_for(item.platform, item.sha)}' for item in claimed]
-    return TickReport(tuple(work), tuple(claimed), tuple(lines))
+    lines += [f'produce {part_context(item.platform)}: {shlex.join(item.argv)}' for item in claimed]
+    lines += [f'refused {reason}' for reason in refused]
+    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -314,6 +330,7 @@ def main(
     now: datetime | None = None,
     grants: Sequence[Grant] | None = None,
     host: str | None = None,
+    os_name: str | None = None,
 ) -> int:
     """``tick --mode integrate|develop|quiet [--dry-run] [--lease-hours H] [--json]``; exit 1 when the forge fails."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
@@ -334,6 +351,7 @@ def main(
             dry_run=args.dry_run,
             fetch=fetch,
             host=host,
+            os_name=os_name,
         )
     except ForgeCallFailed as failed:
         emit(f'[tick] {failed.report.remedy}', err=True)
@@ -343,16 +361,16 @@ def main(
         return 1
     if args.json:
         payload = {
-            'work': [{**dataclasses.asdict(item), 'holder': _holder(item)} for item in report.work],
+            'work': [
+                {'ref': item.ref, 'sha': item.sha, 'platform': item.platform, 'state': item.state}
+                | {'holder': _holder(item)}
+                for item in report.work
+            ],
             'claimed': [
-                {
-                    'ref': item.ref,
-                    'sha': item.sha,
-                    'platform': item.platform,
-                    'command': command_for(item.platform, item.sha),
-                }
+                {'ref': item.ref, 'sha': item.sha, 'platform': item.platform, 'argv': list(item.argv)}
                 for item in report.claimed
             ],
+            'refused': list(report.refused),
         }
         emit(json.dumps(payload, indent=2))
     else:

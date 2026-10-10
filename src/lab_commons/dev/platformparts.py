@@ -32,7 +32,25 @@ status in the same context is a CLAIM on the part (:mod:`lab_commons.dev.forgeti
 
 COMPOSITION (:func:`compose`). The latest part per platform for the commit. Every platform some part
 hands ids to must have a part; any FAIL part makes it FAIL; a part naming ``nowhere`` ids is refused
-by name, as is a missing part, naming the command that produces it.
+by name, as is a missing part.
+
+HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject, and :func:`part_argv`
+turns it into ONE fully filled argv run with the checkout's own venv python, cwd = the checkout::
+
+    [tool.lab_commons.hpc]                 # the cluster (linux) part
+    install = "uv sync --no-install-project --extra dev"
+    needs = ["cargo", "cc"]                # optional: login-node commands beyond git and uv
+    collect = "tests"                      # optional: pytest arguments selecting the tests
+
+    [tool.lab_commons.parts]
+    output = "output/logs"                 # base of the dated run-record directory (datedlog)
+
+    [tool.lab_commons.parts.produce.windows]   # a local part: argv after the venv python, per scope
+    full = ["-m", "lab_commons.dev.verify"]
+
+The repo url is origin's, spelled https. A missing declaration is refused naming the key to add --
+never a command with a hole in it. The linux argv is ``platformparts cluster``: submit, gather
+``--wait``, post, in one process.
 """
 
 from __future__ import annotations
@@ -40,14 +58,20 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.dev.datedlog import dated_log
+from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
+from lab_commons.dev.venvpath import checkout_interpreter
+from lab_commons.hpc.__main__ import main as hpc_main
 from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
+from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
@@ -62,9 +86,11 @@ __all__ = [
     'Composition',
     'Part',
     'PartRefusal',
-    'command_for',
+    'UndeclaredPart',
+    'cluster',
     'compose',
     'main',
+    'part_argv',
     'part_context',
     'part_of',
     'parts_of',
@@ -95,16 +121,19 @@ _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) hands=(?P<hands>-|[a-z]+:\d+(?:,[a-z]+:\d+)*) nowhere=(?P<nowhere>\d+)$'
 )
 
-_LINUX_COMMAND: Final = (
-    'python -m lab_commons.hpc run submit --sha {head} --scope full --repo-url <https> --install "<cmd>", then '
-    'python -m lab_commons.hpc run gather --sha {head} -o <dir> until it writes the record, then '
-    'python -m lab_commons.dev.platformparts post <dir>/run-{head}-linux-<req>.json.gz'
-)
-_PART_COMMAND: Final = "the repo's runner on a {platform} box with `--platform {platform}`, then platformparts post"
+#: The remedy a missing part names: the tick that claims it runs :func:`part_argv`.
+_PRODUCE: Final = 'a `lab_commons.dev.forge tick` serving {platform} claims and produces it'
+
+#: Where the run records a cluster part gathers land, under the declared dated base.
+_RECORD_KIND: Final = 'parts'
 
 
 class PartRefusal(ValueError):
     """A part that cannot be posted -- posting it would claim a run nobody made."""
+
+
+class UndeclaredPart(ValueError):
+    """The repo does not declare how to produce a part; the message names the pyproject key to add."""
 
 
 def part_context(platform: str) -> str:
@@ -112,9 +141,57 @@ def part_context(platform: str) -> str:
     return f'{CONTEXT_PREFIX}{platform}'
 
 
-def command_for(platform: str, head: str) -> str:
-    """The command that produces *platform*'s part for commit *head*."""
-    return _LINUX_COMMAND.format(head=head) if platform == LINUX else _PART_COMMAND.format(platform=platform)
+def _text(table: Mapping[str, Any], name: str, key: str, example: str, *, required: bool) -> str:
+    value = table.get(key, None if required else '')
+    if not isinstance(value, str) or (required and not value):
+        msg = f'pyproject.toml must declare [{name}] {key} as a non-empty string, e.g. {key} = {example}'
+        raise UndeclaredPart(msg)
+    return value
+
+
+def _strings(value: object, name: str, key: str, example: str, *, required: bool) -> list[str]:
+    if value is None and not required:
+        return []
+    if not isinstance(value, list) or not value or not all(isinstance(item, str) and item for item in value):
+        msg = f'pyproject.toml must declare [{name}] {key} as a non-empty array of strings, e.g. {key} = {example}'
+        raise UndeclaredPart(msg)
+    return list(value)
+
+
+def part_argv(root: Path, platform: str, head: str, *, scope: str, os_name: str) -> list[str]:
+    """The ONE fully filled argv producing *platform*'s part of commit *head* at *scope* (module docstring).
+
+    Raises:
+        UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
+        FileNotFoundError: the checkout has no own venv.
+
+    """
+    if platform not in PLATFORMS or scope not in {FULL, INCREMENTAL}:
+        msg = f'a part is one of {PLATFORMS} at scope {FULL} or {INCREMENTAL}, not {platform!r} at {scope!r}'
+        raise ValueError(msg)
+    declared = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8')).get('tool', {})
+    declared = declared.get('lab_commons', {})
+    if platform != LINUX:
+        table = f'tool.lab_commons.parts.produce.{platform}'
+        produce = declared.get('parts', {}).get('produce', {}).get(platform, {}).get(scope)
+        argv = _strings(produce, table, scope, '["-m", "lab_commons.dev.verify"]', required=True)
+        return [str(checkout_interpreter(root, os_name=os_name)), *argv]
+    if scope != FULL:
+        msg = f'a cluster part is produced at scope {FULL}; {INCREMENTAL} needs the re-run ids (run submit --only)'
+        raise ValueError(msg)
+    hpc, name = declared.get('hpc', {}), 'tool.lab_commons.hpc'
+    install = _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
+    needs = _strings(hpc.get('needs'), name, 'needs', '["cargo", "cc"]', required=False)
+    collect = _text(hpc, name, 'collect', '"tests"', required=False)
+    output = _text(declared.get('parts', {}), 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
+    forge = forge_from_remote(root)
+    python = str(checkout_interpreter(root, os_name=os_name))
+    directory = dated_log(root, head, base=output, kind=_RECORD_KIND)
+    return [
+        python, '-m', 'lab_commons.dev.platformparts', 'cluster', '--sha', head,
+        '--repo-url', f'https://{forge.host}/{forge.owner}/{forge.repo}.git',
+        '--install', install, '--needs', ','.join(needs), '--collect', collect, '-o', str(directory),
+    ]  # fmt: skip
 
 
 def _elided(ids: Sequence[str]) -> str:
@@ -250,7 +327,7 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     result = 'FAIL' if any(part.result != 'PASS' for part in ordered) else 'PASS'
     problems: list[str] = []
     if not ordered:
-        problems.append(f'no part is posted for {head}; produce one with {command_for(LINUX, head)}')
+        problems.append(f'no part is posted for {head}; {_PRODUCE.format(platform=LINUX)}')
     nowhere = sum(part.nowhere for part in ordered)
     if nowhere:
         named = ', '.join(f'{part.platform}={part.nowhere}' for part in ordered if part.nowhere)
@@ -259,7 +336,7 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
         handing = {part.platform: part.hands[platform] for part in ordered if part.hands.get(platform)}
         if handing and platform not in parts:
             by = ', '.join(f'{name} hands {count}' for name, count in sorted(handing.items()))
-            problems.append(f'missing the {platform} part ({by}); produce it with {command_for(platform, head)}')
+            problems.append(f'missing the {platform} part ({by}); {_PRODUCE.format(platform=platform)}')
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
@@ -272,20 +349,56 @@ def post(root: Path, path: Path) -> str:
     return '\n'.join([f'[platformparts] {part.platform} part {part.result}: {part.description()}', *lines])
 
 
+def cluster(
+    root: Path,
+    *,
+    sha: str,
+    hpc_args: Sequence[str],
+    output: Path,
+    hpc: Callable[[list[str]], int] = hpc_main,
+) -> str:
+    """Produce the linux part of *sha*: ``hpc run submit`` (full), ``run gather --wait``, then :func:`post`.
+
+    *hpc_args* are the submit flags :func:`part_argv` filled. The newest record gathered into *output*
+    is posted -- a red run is a FAIL part and still posted; no record at all is refused.
+    """
+    submitted = hpc(['run', 'submit', '--sha', sha, '--scope', FULL, '--repo', str(root), *hpc_args])
+    if submitted != 0:
+        msg = f'run submit for {sha} exited {submitted}; nothing was submitted, so there is nothing to post'
+        raise PartRefusal(msg)
+    hpc(['run', 'gather', '--sha', sha, '-o', str(output), '--wait'])
+    records = sorted(output.glob(f'run-{sha}-{LINUX}-*.json.gz'), key=lambda path: path.stat().st_mtime)
+    if not records:
+        msg = f'run gather wrote no linux record for {sha} into {output}; its output above says why'
+        raise PartRefusal(msg)
+    return post(root, records[-1])
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """``post <run-record>``: queue a run record's part as its ``tests/<platform>`` status, record attached."""
+    """``post <run-record>`` | ``cluster --sha ...``: post a record's part, or produce the linux part."""
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.platformparts', description=__doc__.splitlines()[0]
     )
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and (refused := refusal('platformparts', argv[0])):
         parser.error(refused)
-    parser.add_argument('verb', choices=['post'])
-    parser.add_argument('record', type=Path, help='the run record `python -m lab_commons.hpc run gather -o` wrote')
-    parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose origin receives the part')
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    posting = verbs.add_parser('post', help='post a run record as its part')
+    posting.add_argument('record', type=Path, help='the run record `python -m lab_commons.hpc run gather -o` wrote')
+    producing = verbs.add_parser('cluster', help='submit, gather and post the linux part (argv from forge tick)')
+    producing.add_argument('--sha', required=True)
+    producing.add_argument('-o', '--output', type=Path, required=True, help='the dated run-record directory')
+    for flag in ('--repo-url', '--install', '--needs', '--collect'):
+        producing.add_argument(flag, required=True, help=f'passed to hpc run submit {flag}')
+    for each in (posting, producing):
+        each.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose origin receives the part')
     args = parser.parse_args(argv)
     try:
-        emit(post(args.root, args.record))
+        if args.verb == 'post':
+            emit(post(args.root, args.record))
+        else:
+            flags = ['--repo-url', args.repo_url, '--install', args.install, '--needs', args.needs]
+            emit(cluster(args.root, sha=args.sha, hpc_args=[*flags, '--collect', args.collect], output=args.output))
     except (PartRefusal, PostFailed) as why:
         emit(f'[platformparts] refused: {why}', err=True)
         return 1

@@ -33,7 +33,7 @@ from lab_commons.dev.forgetick import (
     tick,
 )
 from lab_commons.dev.integrator import Policy
-from lab_commons.hpc.grants import Grant
+from lab_commons.hpc.grants import Grant, workstation
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 LATER = NOW + timedelta(hours=6)
@@ -118,7 +118,17 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', branch)
         tips[branch] = git_out(repo, 'rev-parse', 'HEAD')
         run_git(repo, 'update-ref', f'refs/remotes/origin/{branch}', tips[branch])
+    (repo / 'pyproject.toml').write_text(PRODUCE, encoding='utf-8')
+    (repo / '.venv' / 'Scripts').mkdir(parents=True)
+    (repo / '.venv' / 'Scripts' / 'python.exe').write_text('', encoding='utf-8')
     return repo, tips
+
+
+PRODUCE = '[tool.lab_commons.parts.produce.windows]\nfull = ["-m", "lab_commons.dev.verify"]\n'
+
+
+def _argv(repo: Path) -> list[str]:
+    return [str(repo / '.venv' / 'Scripts' / 'python.exe'), '-m', 'lab_commons.dev.verify']
 
 
 def test_the_mode_names_the_refs_it_serves(tmp_path: Path) -> None:
@@ -140,6 +150,7 @@ def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetic
         grants=kwargs.pop('grants', ()),
         fetch=lambda _root: None,
         host='windows',
+        os_name='nt',
         **kwargs,
     )
 
@@ -159,7 +170,20 @@ def test_a_tick_claims_an_open_request_and_names_the_command(server, tmp_path: P
     assert [(w.ref, w.platform, w.state) for w in report.claimed] == [('integrate/main', 'windows', MINE)]
     posted = next(r for r in Recorder.received if r['method'] == 'POST')
     assert posted['body'] == {'state': 'pending', 'context': 'tests/windows', 'description': ME.description()}
+    assert report.claimed[0].argv == tuple(_argv(repo)), 'the declared producer, run with the venv python'
     assert any(line.startswith('produce tests/windows:') for line in report.lines)
+
+
+def test_a_part_the_repo_cannot_produce_is_never_claimed(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the claimable request of the test above, with the producer undeclared."""
+    repo, tips = _origin(tmp_path)
+    (repo / 'pyproject.toml').write_text('', encoding='utf-8')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))
+    report = _tick(repo, server)
+    assert report.claimed == ()
+    assert not [r for r in Recorder.received if r['method'] == 'POST']
+    assert 'tool.lab_commons.parts.produce.windows] full' in report.refused[0]
 
 
 def test_a_tick_that_loses_the_race_claims_nothing(server, tmp_path: Path) -> None:
@@ -233,3 +257,28 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
     printed = json.loads(capsys.readouterr().out)
     assert printed['work'][0]['state'] == DONE
     assert printed['claimed'] == []
+    assert printed['refused'] == []
+
+
+def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, capsys) -> None:
+    repo, tips = _origin(tmp_path)
+    sha = tips['integrate/main']
+    me = Claim(workstation() or '', 'alice', NOW + forgetick.DEFAULT_LEASE)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    mine = {'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': me.description()}
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    code = forgetick.main(
+        ['--mode', 'integrate', '--json'],
+        cwd=repo,
+        env=credential_env(tmp_path),
+        transport=Loopback(server),
+        fetch=lambda _root: None,
+        now=NOW,
+        grants=(),
+        host='windows',
+        os_name='nt',
+    )
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed['claimed'] == [{'ref': 'integrate/main', 'sha': sha, 'platform': 'windows', 'argv': _argv(repo)}]
