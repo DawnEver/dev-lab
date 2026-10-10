@@ -61,7 +61,14 @@ def repo(tmp_path: Path) -> Path:
 def _run(repo: Path, **env_overrides: str) -> subprocess.CompletedProcess[str]:
     import os  # noqa: PLC0415 -- only this helper needs the ambient environment
 
-    env = {**os.environ, 'LAB_BUMP_RELEASE_BRANCH': 'main', **env_overrides}
+    # THE IDENTITY IS THE TEST'S, like `_git`'s: the hook writes annotated tags, and a CI runner has
+    # no global `user.name`, so borrowing the ambient one passed only on a configured box.
+    identity = {
+        f'GIT_{who}_{what}': value
+        for who in ('AUTHOR', 'COMMITTER')
+        for what, value in (('NAME', 't'), ('EMAIL', 't@example.invalid'))
+    }
+    env = {**os.environ, **identity, 'LAB_BUMP_RELEASE_BRANCH': 'main', **env_overrides}
     return subprocess.run(
         [BASH, str(githooks.hook_path('bump-version')), 'origin'],
         cwd=repo,
