@@ -463,36 +463,10 @@ def apply_protection(
 
 
 if __name__ == '__main__':
-    # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, ``status`` for commit
-    # statuses, ``issue claim|status|comments|comments-since`` for derived issue state and comment
-    # reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for run records,
-    # ``tick`` for requests and claims and ``route <record>`` for failure routing. The verbs live in
-    # the ``forge*`` sibling modules, which import THIS module, so the imports are deferred to the
-    # entry point: at the top they would be circular (NO-LAZY-IMPORT's written exception).
+    # The noun dispatch imports the ``forge*`` siblings, which import THIS module, so it is deferred
+    # to the entry point: at the top it would be circular (NO-LAZY-IMPORT's written exception).
     import sys
 
-    from lab_commons.dev import (
-        forgeauth,
-        forgeissue,
-        forgeoutbox,
-        forgerecords,
-        forgeroute,
-        forgestatus,
-        forgetick,
-        forgework,
-    )
+    from lab_commons.dev import forgecli
 
-    argv = sys.argv[1:]
-    nouns = {
-        'auth': forgeauth.main,
-        'status': forgestatus.main,
-        'publish': forgeoutbox.main,
-        'records': forgerecords.main,
-        'route': forgeroute.main,
-        'tick': forgetick.main,
-    }
-    if argv[:1] and argv[0] in nouns:
-        raise SystemExit(nouns[argv[0]](argv[1:]))
-    if argv[:1] == ['issue'] and argv[1:2] in (['claim'], ['status'], ['comments'], ['comments-since']):
-        raise SystemExit(forgeissue.main(argv[1:]))
-    raise SystemExit(forgework.main(argv))
+    raise SystemExit(forgecli.main(sys.argv[1:]))

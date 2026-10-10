@@ -116,6 +116,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # No consumer had issue/PR verbs or a token installer to fork: each box ran ``gh``/``tea`` or a
     # browser. Checked 2026-10-01 against every consumer's tracked files.
     'forgeauth': ('original',),
+    'forgecli': ('original',),
     'forgework': ('original',),
     'forgestatus': ('original',),
     'forgeoutbox': ('original',),
