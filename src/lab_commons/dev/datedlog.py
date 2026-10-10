@@ -93,7 +93,9 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
         )
         raise ValueError(msg)
     given = Path(name)
-    if not name or _escapes(name) or len(given.parts) != 1 or name in {'.', '..'}:
+    # Both separators on every OS: a POSIX Path reads ``sub\gate.log`` as ONE part, so the parts
+    # count alone let a Windows-spelled path through on Linux and macOS.
+    if not name or _escapes(name) or len(given.parts) != 1 or name in {'.', '..'} or '/' in name or '\\' in name:
         msg = (
             f'this takes a NAME, not a path, and got {name!r}. Everything a dated harness writes '
             f'goes under <base>/<yy>/<mm>/<dd>/<kind>/ and there is no exemption: an undated '
