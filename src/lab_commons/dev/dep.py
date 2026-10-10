@@ -5,7 +5,8 @@ not run in.** Exactly two hazards follow, and neither of them mentions a tool na
 
 * **H1 -- mutation DURING a run.** A verdict computes its ``env_key`` when the run ENDS, so a swap at
   minute three of a thirty-minute suite yields a key naming an environment the tests never executed
-  in. ``env_key`` STRUCTURALLY cannot catch this, so it must be PREVENTED -- :func:`refuse_if_locked`.
+  in. ``env_key`` STRUCTURALLY cannot catch this, so it must be PREVENTED -- the target environment's
+  :class:`~lab_commons.dev.envseat.EnvironmentSeat`, which every run holds and this door takes.
 * **H2 -- mutation BETWEEN runs.** Every stored verdict becomes a statement about a dead environment.
   This IS catchable, and the remedy is to RETIRE the verdict anchors -- :func:`retire_anchors`.
 
@@ -39,10 +40,10 @@ all" -- there, resolving is the hazard. For genuine dependency work resolving is
 :attr:`Mode.RESOLVE` is the default and :attr:`Mode.PINNED` keeps the narrow behaviour available for
 a caller whose subject is a local artefact.
 
-THE PORT NAMES PROJECT-OWNED VERDICT ANCHORS and an optional additional guard for legacy runners.
-The shared EnvLock always excludes cooperating verdicts and mutations in the target environment.
-Missing anchor declarations and missing supplementary adapters are reported distinctly; neither
-changes the shared exclusion. Target snapshots use the authoritative envkey reader in the target
+THE PORT NAMES PROJECT-OWNED VERDICT ANCHORS. The exclusion is not a port answer: it is the TARGET
+environment's seat, keyed by its prefix, so a run holding another environment (or the machine's CPU
+seat) is never a reason to refuse. A missing anchor declaration is reported as a gap. Target snapshots
+use the authoritative envkey reader in the target
 interpreter, including a new environment that cannot import lab_commons yet.
 
 THE ORDERING ASYMMETRY IS INHERITED AND IS WHAT MAKES A CRASH SAFE: the lock is checked BEFORE the
@@ -72,13 +73,12 @@ from typing import Any, Final
 
 from lab_commons.dev import _dep_project
 from lab_commons.dev.envkey import env_key, env_manifest
-from lab_commons.dev.envlock import EnvLock
+from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.log import emit
 from lab_commons.resources import Exhausted
 
 __all__ = [
     'CHILD_WALL_S',
-    'LOCK_UNDECLARED',
     'NO_ANCHORS_DECLARED',
     'HeldEnvironmentError',
     'Mode',
@@ -90,15 +90,8 @@ __all__ = [
     'main',
     'mutate',
     'pip_argv',
-    'refuse_if_locked',
     'retire_anchors',
 ]
-
-#: A missing supplementary guard does not repeal the shared target-environment exclusion.
-LOCK_UNDECLARED: Final = (
-    'NO LOCK DECLARED BY REPO: shared EnvLock exclusion remains enforced. No additional adapter '
-    'is declared for legacy runners that do not hold the shared environment seat.'
-)
 
 #: The same, for the other half. A moved key with nowhere to remedy it is still a moved key.
 NO_ANCHORS_DECLARED: Final = (
@@ -164,22 +157,17 @@ class Version(Enum):
 class Port:
     """ONE repo's answers to the two questions that are not measurable from here.
 
-    *holders* optionally guards legacy verdict runners in the invoking environment, in addition
-    to the always-held shared environment seat. *anchor_paths* names verdicts owned by the target
-    project: None is undeclared, () is declared and empty.
+    *anchor_paths* names verdicts owned by the target project: None is undeclared, () is declared
+    and empty. WHO MAY BLOCK A CHANGE is not a port answer -- it is whoever holds the target
+    environment's seat, read by the door itself.
 
     *key* is an optional injected reader. Otherwise the authoritative environment manifest is
     measured in the target interpreter, not in whichever interpreter bootstrapped it.
     """
 
     name: str
-    holders: Callable[[], Sequence[str]] | None = None
     anchor_paths: Callable[[], Sequence[Path]] | None = None
     key: Callable[[], str] | None = None
-
-    def lock_holders(self) -> tuple[str, ...] | None:
-        """Live holders, or ``None`` when this repo declares no lock."""
-        return None if self.holders is None else tuple(self.holders())
 
     def anchors(self) -> tuple[Path, ...] | None:
         """Declared verdict anchors, or ``None`` when this repo declares none."""
@@ -195,25 +183,15 @@ def current_env_key() -> str:
     return env_key(env_manifest())
 
 
-def refuse_if_locked(port: Port) -> None:
-    """H1, PREVENTED. Raise while a verdict is in flight for this environment, naming the holder.
-
-    Raises:
-        HeldEnvironmentError: *port* reports at least one live holder. The message names every
-            holder and the remedy, because "busy" on its own sends a reader to the process table to
-            guess, and guessing wrong kills somebody's evidence.
-
-    """
-    holders = port.lock_holders()
-    if not holders:
-        return
-    msg = (
-        f'{port.name}: a verdict is running here, held by {", ".join(holders)}. Its env_key is '
+def _held_refusal(name: str, exhausted: Exhausted) -> HeldEnvironmentError:
+    """H1, PREVENTED: the target environment's seat is held, and the refusal names who holds it."""
+    holders = ', '.join(holder.describe() for holder in exhausted.holders) or 'a holder the broker cannot name'
+    return HeldEnvironmentError(
+        f'{name}: a verdict is running in this environment, held by {holders}. Its env_key is '
         f'computed when the run ENDS, so mutating this environment now would make that verdict name '
         f'an environment it never tested. Wait for that run to finish and re-issue; nothing else is '
         f'required.'
     )
-    raise HeldEnvironmentError(msg)
 
 
 def retire_anchors(paths: Sequence[Path]) -> tuple[str, ...]:
@@ -344,7 +322,7 @@ def mutate(
     Raises:
         ValueError: *requirements* is empty. A bare ``pip install`` names nothing to change, so
             there is no change whose safety this could be deciding.
-        HeldEnvironmentError: a verdict is in flight -- see :func:`refuse_if_locked`.
+        HeldEnvironmentError: a run holds the target environment's seat; the refusal names it.
 
     """
     if not requirements:
@@ -391,14 +369,12 @@ def _change(
     cwd: Path | None = None,
     environment: dict[str, str] | None = None,
 ) -> Report:
-    if Path(prefix).resolve() == Path(sys.prefix).resolve():
-        refuse_if_locked(port)
-    gaps = [] if port.lock_holders() is not None else [LOCK_UNDECLARED]
+    gaps = []
     declared = port.anchors()
     if declared is None:
         gaps.append(NO_ANCHORS_DECLARED)
     try:
-        with EnvLock(prefix, f'dep:{port.name}').held():
+        with EnvironmentSeat(prefix, f'dep:{port.name}').held():
 
             def key() -> str:
                 if python is not None and not Path(python).is_file():
@@ -420,7 +396,7 @@ def _change(
                 retired = retire_anchors(declared) if declared and after != before else ()
             return Report(port.name, prefix, tuple(argv), completed.returncode, before, after, retired, tuple(gaps))
     except Exhausted as exc:
-        raise HeldEnvironmentError(str(exc)) from exc
+        raise _held_refusal(port.name, exc) from exc
 
 
 def main(
@@ -450,7 +426,7 @@ def main(
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)
     environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
-    port = Port(name=str(root), holders=tuple, anchor_paths=lambda: paths)
+    port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
         result = _change(
             command,

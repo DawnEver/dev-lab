@@ -281,7 +281,7 @@ def assert_a_planted_recipe_is_convicted() -> None:
       the green above comes from the sanction rather than from a pattern that stopped matching.
 
     Takes no argument, for the reason
-    :func:`lab_commons.dev.famtests.depdoor.assert_a_port_declaring_neither_renders_both_gaps` takes
+    :func:`lab_commons.dev.famtests.depdoor.assert_a_port_declaring_no_anchors_renders_the_gap` takes
     none: a control the caller can parametrise is a control the caller can aim somewhere harmless.
 
     Raises:

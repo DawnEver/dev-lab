@@ -32,7 +32,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.boxlock import BoxLock
+from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.proc import pid_alive
 
 if TYPE_CHECKING:
@@ -62,7 +62,7 @@ class RunKey:
 
 def box_directory() -> Path:
     """The box-wide claim directory: beside the box lock's records, outside every repository."""
-    return BoxLock.resource_dir() / 'inflight'
+    return CpuSeat.resource_dir() / 'inflight'
 
 
 def claim_path(directory: Path, key: RunKey) -> Path:

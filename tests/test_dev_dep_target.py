@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from lab_commons.dev import _dep_project, dep
-from lab_commons.dev.boxlock import BoxLock
+from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.resources import Exhausted
 
 
@@ -27,8 +27,9 @@ def _live_verdict(tmp_path, monkeypatch, *, python: str = sys.executable) -> Ite
     ready.unlink(missing_ok=True)
     code = (
         'import json,pathlib,sys\n'
-        'from lab_commons.dev.boxlock import BoxLock\n'
-        'with BoxLock("gate:environment-A").held():\n'
+        'from lab_commons.dev.cpuseat import CpuSeat\n'
+        'from lab_commons.dev.envseat import EnvironmentSeat\n'
+        'with CpuSeat("gate:environment-A").held(), EnvironmentSeat(sys.prefix, "gate:environment-A").held():\n'
         ' pending=pathlib.Path(sys.argv[1]).with_suffix(".tmp")\n'
         ' pending.write_text(\n'
         '  json.dumps({"prefix":sys.prefix,"python":sys.executable}),encoding="utf-8")\n'
@@ -59,7 +60,7 @@ def _live_verdict(tmp_path, monkeypatch, *, python: str = sys.executable) -> Ite
 
 
 def _port() -> dep.Port:
-    return dep.Port(name='target-control', holders=tuple, anchor_paths=tuple, key=lambda: 'unchanged')
+    return dep.Port(name='target-control', anchor_paths=tuple, key=lambda: 'unchanged')
 
 
 def test_a_real_verdict_refuses_mutation_of_its_environment_before_the_child_runs(tmp_path, monkeypatch) -> None:
@@ -120,12 +121,12 @@ def test_mutation_holds_the_same_environment_seat_until_the_child_finishes(tmp_p
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
-        with pytest.raises(Exhausted), BoxLock('gate:starts-during-mutation').held():
+        with pytest.raises(Exhausted), EnvironmentSeat(sys.prefix, 'gate:starts-during-mutation').held():
             pytest.fail('a verdict entered an environment while its mutation was running')
         return SimpleNamespace(returncode=0)
 
     assert dep.mutate(('example',), port=_port(), run=run).returncode == 0
-    with BoxLock('gate:after-mutation').held():
+    with EnvironmentSeat(sys.prefix, 'gate:after-mutation').held():
         pass
 
 
