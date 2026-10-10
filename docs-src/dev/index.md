@@ -20,8 +20,8 @@
 | [HPC grants and remote runs](./hpc.md) | Per-machine shares of shared Slurm accounts, usage read from job comments, a commit's suite on a cluster |
 | [Box resources](./box-resources.md) | What one workstation rations, the four defects measured in doing it by hand, and the broker shape |
 | [The forge](./forge.md) | How `main` is protected on a self-hosted forge: the push whitelist, the status check, branch disposal |
-| [Issues](./issues.md) | An issue is intent; todo/in-progress/ready/done are derived from origin refs and `lab/gate`, claims are comments |
-| [The integrator](./integrator.md) | Woken or self-polling, one derived merge queue: the ready predicate over `lab/gate` and `lab/heavy` |
+| [Issues](./issues.md) | An issue is intent; todo/in-progress/ready/done are derived from origin refs and the lane parts, claims are comments |
+| [The integrator](./integrator.md) | Woken or self-polling, one derived merge queue: the ready predicate over the `tests/<platform>` parts |
 | [Retirement](./retirement.md) | An archive and a retired-spelling registry are a PLACE and a RULE, and why the rule cannot live in the place |
 | [The docs pipeline](./docs-pipeline.md) | The three properties a docs builder must hold, and why an unbuilt sub-site is announced rather than silent |
 | [Translations](./translations.md) | Why a `<stem>.zh.md` beside its `<stem>.md` escapes the CJK guard, and the non-ASCII goal |

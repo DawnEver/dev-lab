@@ -47,20 +47,20 @@ def _pushed(repo: Path, sha: str) -> None:
 def test_a_status_on_an_unpushed_commit_is_held_then_posted_once_it_is_on_origin(server, tmp_path: Path) -> None:
     """PLANTED CONTROL: the commit the old publish always failed on."""
     repo, sha = _committed(tmp_path)
-    enqueue(repo, Post(sha, 'lab/gate', 'success', 'VERDICT result=pass'))
+    enqueue(repo, Post(sha, 'tests/linux', 'success', 'VERDICT result=pass'))
 
     def built(_root: Path) -> Client:
         return client(FORGE, Loopback(server))
 
-    assert flush(repo, client=built) == [f'status: held lab/gate on {sha[:12]} -- the commit is not on origin yet']
+    assert flush(repo, client=built) == [f'status: held tests/linux on {sha[:12]} -- the commit is not on origin yet']
     assert Recorder.received == [], 'nothing is sent for a commit the forge does not hold'
     assert len(queued(repo)) == 1, 'a held entry is kept'
     _pushed(repo, sha)
-    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'lab/gate', 'status': 'success'}))
-    assert flush(repo, client=built) == [f'status: lab/gate=success on {sha[:12]}']
+    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
+    assert flush(repo, client=built) == [f'status: tests/linux=success on {sha[:12]}']
     assert Recorder.received[-1]['body'] == {
         'state': 'success',
-        'context': 'lab/gate',
+        'context': 'tests/linux',
         'description': 'VERDICT result=pass',
     }
     assert queued(repo) == (), 'a posted entry leaves the outbox'
@@ -88,39 +88,39 @@ def test_a_record_is_attached_and_the_status_links_it(server, tmp_path: Path) ->
 def test_a_refused_post_raises_after_trying_every_entry_and_keeps_the_failed_one(server, tmp_path: Path) -> None:
     repo, sha = _committed(tmp_path)
     _pushed(repo, sha)
-    enqueue(repo, Post(sha, 'lab/gate', 'failure', 'VERDICT result=fail'))
+    enqueue(repo, Post(sha, 'tests/linux', 'failure', 'VERDICT result=fail'))
     enqueue(repo, Post(sha, 'tests/windows', 'success', 'scope=full ran=2'))
     answer('POST', f'{API}/statuses/{sha}', (403, {'message': 'forbidden'}), (201, {'context': 'tests/windows'}))
-    with pytest.raises(PostFailed, match=r'(?s)post FAILED lab/gate.*remedy: it stays queued'):
+    with pytest.raises(PostFailed, match=r'(?s)post FAILED tests/linux.*remedy: it stays queued'):
         flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
-    assert [post.context for post in queued(repo)] == ['lab/gate']
+    assert [post.context for post in queued(repo)] == ['tests/linux']
 
 
 def test_no_credential_keeps_the_entry_and_raises_nothing(tmp_path: Path) -> None:
     repo, sha = _committed(tmp_path)
     _pushed(repo, sha)
-    enqueue(repo, Post(sha, 'lab/gate', 'success', 'v'))
+    enqueue(repo, Post(sha, 'tests/linux', 'success', 'v'))
 
     def no_token(_root: Path) -> None:
         msg = 'no stored credential for forge.example.org'
         raise NoCredential(msg)
 
-    assert flush(repo, client=no_token)[0].startswith('status: kept lab/gate')
+    assert flush(repo, client=no_token)[0].startswith('status: kept tests/linux')
     assert len(queued(repo)) == 1
 
 
 def test_a_newer_run_replaces_the_queued_post_for_the_same_commit_and_context(tmp_path: Path) -> None:
     repo, sha = _committed(tmp_path)
-    enqueue(repo, Post(sha, 'lab/gate', 'failure', 'old'))
-    enqueue(repo, Post(sha, 'lab/gate', 'success', 'new'))
+    enqueue(repo, Post(sha, 'tests/linux', 'failure', 'old'))
+    enqueue(repo, Post(sha, 'tests/linux', 'success', 'new'))
     assert [(p.state, p.description) for p in queued(repo)] == [('success', 'new')]
 
 
 def test_a_post_that_could_never_land_is_refused_at_queueing() -> None:
     with pytest.raises(ValueError, match='one of'):
-        Post('a' * 40, 'lab/gate', 'skipped', '')
+        Post('a' * 40, 'tests/linux', 'skipped', '')
     with pytest.raises(ValueError, match='40-hex'):
-        Post('abc', 'lab/gate', 'success', '')
+        Post('abc', 'tests/linux', 'success', '')
 
 
 def test_the_outbox_is_shared_by_every_worktree_of_the_repository(tmp_path: Path) -> None:
@@ -133,11 +133,11 @@ def test_the_outbox_is_shared_by_every_worktree_of_the_repository(tmp_path: Path
 def test_publish_cli_flushes_with_the_stored_credential(server, tmp_path: Path, capsys) -> None:
     repo, sha = _committed(tmp_path)
     _pushed(repo, sha)
-    enqueue(repo, Post(sha, 'lab/gate', 'success', 'v'))
-    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'lab/gate', 'status': 'success'}))
+    enqueue(repo, Post(sha, 'tests/linux', 'success', 'v'))
+    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
     env = credential_env(tmp_path)
     assert forgeoutbox.main([], cwd=repo, env=env, transport=_RedirectedLoopback(server)) == 0
-    assert 'lab/gate=success' in capsys.readouterr().out
+    assert 'tests/linux=success' in capsys.readouterr().out
     assert forgeoutbox.main([], cwd=repo, env=env, transport=_RedirectedLoopback(server)) == 0
     assert 'outbox is empty' in capsys.readouterr().out
 

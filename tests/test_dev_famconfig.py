@@ -37,6 +37,8 @@ from lab_commons.dev._famconfig_rows import (
     GITIGNORE_CLAUDE_SECTION,
     GITIGNORE_CONSUMER_CORE,
     GITIGNORE_FAMILY_LINES,
+    HOOK_LAB_COMMONS,
+    HOOK_LAB_COMMONS_REV,
     MAKE_TARGET_CONSUMER_CORE,
     MAKEFILE_BASE,
     MAKEFILE_RESIDUAL_SIGNALS,
@@ -67,6 +69,7 @@ from lab_commons.dev.famconfig import (
     delta_problems,
     floating_subject,
     fork_signals,
+    hook_requirement,
     inspect_file,
     meaningful_lines,
     measured_delta,
@@ -759,3 +762,44 @@ def test_planted_a_banned_line_in_a_delta_is_refused(banned: str) -> None:
     problems = delta_problems(_base(), _delta(added=('target/', banned)))
     assert any('no repo in the family may' in problem and banned in problem for problem in problems), problems
     assert not delta_problems(_base(), _delta(added=('target/',))), 'the control line itself is clean'
+
+
+def test_a_repo_declaring_a_private_source_renders_it_into_its_hook_environment(tmp_path: Path) -> None:
+    """ONE declaration: the ``[tool.uv]`` override a private repo makes is what its hooks install, at the one pin."""
+    gitea = 'https://gitea.example.org/Team/lab-commons.git'
+    (tmp_path / 'pyproject.toml').write_text(
+        f'[tool.uv]\noverride-dependencies = ["dep-a @ git+https://x/o.git", "lab-commons @ git+{gitea}"]\n',
+        encoding='utf-8',
+    )
+    assert hook_requirement(tmp_path) == f'lab-commons @ git+{gitea}@{HOOK_LAB_COMMONS_REV}'
+    lines = artefact_base('.pre-commit-config.yaml', tmp_path).lines
+    assert any(f'git+{gitea}@{HOOK_LAB_COMMONS_REV}' in line for line in lines)
+    assert not any('github.com' in line and 'lab-commons @' in line for line in lines)
+
+
+def test_a_repo_with_no_private_source_renders_the_public_pin(tmp_path: Path) -> None:
+    """PLANTED OTHER SIDE: no override, or an override pinned to a ref, still yields one requirement at one pin."""
+    assert hook_requirement(tmp_path) == HOOK_LAB_COMMONS
+    assert hook_requirement(None) == HOOK_LAB_COMMONS
+    assert any(HOOK_LAB_COMMONS in line for line in artefact_base('.pre-commit-config.yaml', tmp_path).lines)
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.uv]\noverride-dependencies = ["lab-commons[dev] @ git+https://g.example/T/lab-commons.git@main"]\n',
+        encoding='utf-8',
+    )
+    assert hook_requirement(tmp_path) == f'lab-commons @ git+https://g.example/T/lab-commons.git@{HOOK_LAB_COMMONS_REV}'
+
+
+def test_a_locked_repo_renders_the_lab_commons_its_venv_runs(tmp_path: Path) -> None:
+    """The lock wins: the hook installs the resolved url at the locked commit, never a second revision."""
+    commit = 'c' * 40
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.uv]\noverride-dependencies = ["lab-commons @ git+https://gitea.example.org/T/lab-commons.git"]\n',
+        encoding='utf-8',
+    )
+    (tmp_path / 'uv.lock').write_text(
+        '[[package]]\nname = "numpy"\nversion = "2"\n'
+        '[[package]]\nname = "lab-commons"\nversion = "0.3"\n'
+        f'source = {{ git = "https://gitea.example.org/T/lab-commons.git#{commit}" }}\n',
+        encoding='utf-8',
+    )
+    assert hook_requirement(tmp_path) == f'lab-commons @ git+https://gitea.example.org/T/lab-commons.git@{commit}'

@@ -20,8 +20,8 @@ from typing import Final
 
 import pytest
 
+from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.dep import (
-    LOCK_UNDECLARED,
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
     Mode,
@@ -31,8 +31,8 @@ from lab_commons.dev.dep import (
     has_pip,
     mutate,
     pip_argv,
-    refuse_if_locked,
 )
+from lab_commons.dev.envseat import EnvironmentSeat
 
 _REQS: Final = ('example-package==1.2.3',)
 
@@ -81,41 +81,33 @@ def test_the_prefix_is_this_interpreters_and_never_a_parsed_path() -> None:
     assert report.prefix == sys.prefix
 
 
-def test_a_held_lock_refuses_and_names_the_holder_and_the_remedy() -> None:
-    """PLANTED CONTROL, H1: a lock that answers with a holder must stop the mutation."""
-    port = Port(name='repo-under-test', holders=lambda: ('gate:integrate/main since 12:01',))
-    with pytest.raises(HeldEnvironmentError) as caught:
-        refuse_if_locked(port)
-    message = str(caught.value)
-    assert 'gate:integrate/main since 12:01' in message
-    assert 'Wait for that run to finish and re-issue' in message
-
-
-def test_a_held_lock_refuses_the_whole_door_and_runs_nothing() -> None:
+def test_a_run_holding_this_environment_refuses_and_names_the_holder_and_the_remedy() -> None:
+    """PLANTED CONTROL, H1: a run holding the TARGET environment's seat stops the mutation, by name."""
     run = _Run()
-    port = Port(name='repo-under-test', holders=lambda: ('heavy:main',))
-    with pytest.raises(HeldEnvironmentError):
-        mutate(_REQS, port=port, run=run)
+    with EnvironmentSeat(sys.prefix, 'verify:repo-under-test').held(), pytest.raises(HeldEnvironmentError) as caught:
+        mutate(_REQS, port=Port(name='repo-under-test'), run=run)
+    message = str(caught.value)
+    assert 'verify:repo-under-test' in message
+    assert 'env_key' in message
+    assert 'Wait for that run to finish and re-issue' in message
     assert run.calls == [], 'the refusal must precede the mutation, or it guarded nothing'
 
 
-def test_a_free_lock_permits_and_the_command_runs() -> None:
-    """THE OTHER SIDE. A door that refuses a free lock too would pass the test above."""
+def test_a_run_holding_another_environment_does_not_refuse(tmp_path: Path) -> None:
+    """THE OTHER SIDE: a verify in an unrelated repo's environment is no reason to refuse this one."""
     run = _Run()
-    port = Port(name='repo-under-test', holders=tuple)
-    report = mutate(_REQS, port=port, run=run)
+    with EnvironmentSeat(tmp_path / 'another-repo' / '.venv', 'verify:another-repo').held():
+        report = mutate(_REQS, port=Port(name='repo-under-test'), run=run)
     assert len(run.calls) == 1
     assert report.returncode == 0
-    assert LOCK_UNDECLARED not in report.render()
 
 
-def test_a_repo_with_no_lock_is_permitted_and_the_gap_is_rendered() -> None:
-    """Honest degradation: consumer-c today. Steps 1 and 3 run; step 2 is VISIBLY absent."""
+def test_the_machine_cpu_seat_is_not_an_environment_guard() -> None:
+    """A run's CPU seat is a machine resource: holding it alone never refuses a dependency change."""
     run = _Run()
-    report = mutate(_REQS, port=Port(name='no-lock-repo'), run=run)
+    with CpuSeat('verify:a-run-on-this-machine').held():
+        mutate(_REQS, port=Port(name='repo-under-test'), run=run)
     assert len(run.calls) == 1
-    assert LOCK_UNDECLARED in report.render()
-    assert 'no-lock-repo' in report.render()
 
 
 def test_a_moved_env_key_retires_every_anchor_that_exists(tmp_path: Path) -> None:
@@ -123,7 +115,6 @@ def test_a_moved_env_key_retires_every_anchor_that_exists(tmp_path: Path) -> Non
     anchors = _anchors(tmp_path, 'gate.verdict', 'heavy.verdict')
     port = Port(
         name='repo-under-test',
-        holders=tuple,
         anchor_paths=lambda: anchors,
         key=_keys('before-key', 'after-key'),
     )
@@ -137,7 +128,7 @@ def test_a_moved_env_key_retires_every_anchor_that_exists(tmp_path: Path) -> Non
 def test_an_unmoved_env_key_retires_nothing(tmp_path: Path) -> None:
     """THE OTHER SIDE, and the one that matters: a no-op install must not destroy a live verdict."""
     anchors = _anchors(tmp_path, 'gate.verdict')
-    port = Port(name='repo-under-test', holders=tuple, anchor_paths=lambda: anchors, key=_keys('same', 'same'))
+    port = Port(name='repo-under-test', anchor_paths=lambda: anchors, key=_keys('same', 'same'))
     report = mutate(_REQS, port=port, run=_Run())
     assert report.moved is False
     assert report.retired == ()
@@ -147,7 +138,6 @@ def test_an_unmoved_env_key_retires_nothing(tmp_path: Path) -> None:
 def test_an_anchor_that_does_not_exist_is_not_reported_as_retired(tmp_path: Path) -> None:
     port = Port(
         name='repo-under-test',
-        holders=tuple,
         anchor_paths=lambda: (tmp_path / 'never-written.verdict',),
         key=_keys('before', 'after'),
     )
@@ -158,14 +148,14 @@ def test_an_anchor_that_does_not_exist_is_not_reported_as_retired(tmp_path: Path
 
 def test_a_repo_with_no_anchors_declared_renders_the_gap() -> None:
     """A moved key with nowhere to remedy it must SAY so; a silent pass is the vacuous green."""
-    port = Port(name='no-anchor-repo', holders=tuple, key=_keys('before', 'after'))
+    port = Port(name='no-anchor-repo', key=_keys('before', 'after'))
     report = mutate(_REQS, port=port, run=_Run())
     assert report.moved is True
     assert NO_ANCHORS_DECLARED in report.render()
 
 
 def test_a_declared_but_empty_anchor_set_is_not_the_same_as_undeclared() -> None:
-    port = Port(name='repo', holders=tuple, anchor_paths=tuple, key=_keys('before', 'after'))
+    port = Port(name='repo', anchor_paths=tuple, key=_keys('before', 'after'))
     report = mutate(_REQS, port=port, run=_Run())
     assert NO_ANCHORS_DECLARED not in report.render()
 
@@ -237,7 +227,7 @@ def test_the_argv_the_report_declares_is_the_argv_the_child_was_given() -> None:
     door answers the fact instead, and the argv stays single-sourced.
     """
     run = _Run()
-    port = Port(name='repo', holders=tuple, anchor_paths=tuple, key=_keys('same'))
+    port = Port(name='repo', anchor_paths=tuple, key=_keys('same'))
     report = mutate(_REQS, port=port, mode=Mode.PINNED, version=Version.REPEATS, run=run)
     assert len(run.calls) == 1, 'the floor: a scan over no call is vacuous'
     assert run.calls[0] == report.argv
@@ -249,7 +239,7 @@ def test_the_argv_the_report_declares_is_the_argv_the_child_was_given() -> None:
 def test_a_dry_run_checks_everything_and_mutates_nothing(tmp_path: Path) -> None:
     anchors = _anchors(tmp_path, 'gate.verdict')
     run = _Run()
-    port = Port(name='repo', holders=tuple, anchor_paths=lambda: anchors, key=_keys('before', 'after'))
+    port = Port(name='repo', anchor_paths=lambda: anchors, key=_keys('before', 'after'))
     report = mutate(_REQS, port=port, run=run, dry_run=True)
     assert run.calls == []
     assert report.returncode is None
@@ -257,16 +247,15 @@ def test_a_dry_run_checks_everything_and_mutates_nothing(tmp_path: Path) -> None
     assert 'would install' in report.render()
 
 
-def test_a_dry_run_still_refuses_a_held_lock() -> None:
-    port = Port(name='repo', holders=lambda: ('gate:lane',))
-    with pytest.raises(HeldEnvironmentError):
-        mutate(_REQS, port=port, run=_Run(), dry_run=True)
+def test_a_dry_run_still_refuses_a_held_environment() -> None:
+    with EnvironmentSeat(sys.prefix, 'gate:lane').held(), pytest.raises(HeldEnvironmentError):
+        mutate(_REQS, port=Port(name='repo'), run=_Run(), dry_run=True)
 
 
 def test_a_failed_command_still_checks_whether_the_environment_moved(tmp_path: Path) -> None:
     """A non-zero pip is not a promise that nothing changed, and the door does not make one."""
     anchors = _anchors(tmp_path, 'gate.verdict')
-    port = Port(name='repo', holders=tuple, anchor_paths=lambda: anchors, key=_keys('before', 'after'))
+    port = Port(name='repo', anchor_paths=lambda: anchors, key=_keys('before', 'after'))
     report = mutate(_REQS, port=port, run=_Run(returncode=1), dry_run=False)
     assert report.returncode == 1
     assert report.moved is True
@@ -279,7 +268,7 @@ def test_an_empty_requirement_set_refuses_rather_than_running_a_bare_pip() -> No
 
 
 def test_the_shared_key_is_available_to_every_repo_without_an_adapter() -> None:
-    """The env_key half of the port has a default, which is why only lock and anchors are injected."""
+    """The env_key half of the port has a default, which is why only anchors are injected."""
     first, second = current_env_key(), current_env_key()
     assert first == second
     assert len(first) >= 8

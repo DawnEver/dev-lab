@@ -31,7 +31,6 @@ from lab_commons.hpc.pytest_item import canonical, outcome_of, read_stream
 from lab_commons.hpc.records import read_record, read_streams, record_name, write_record
 from lab_commons.hpc.run import RETRIES, gather_run, submit_run
 from lab_commons.hpc.shell import (
-    BUILD_LOG,
     FULL,
     INCREMENTAL,
     PREP_LOG,
@@ -197,6 +196,8 @@ def test_every_awkward_id_that_ran_is_reported_under_its_collected_id(
     assert [outcomes[n] for n in grouped] == ['failed', 'passed']
     assert outcomes[next(n for n in ids if n.endswith('test_xfail'))] == 'xfailed'
     assert outcomes[next(n for n in ids if n.endswith('test_skip'))] == 'skipped'
+    assert result['whys'][next(n for n in ids if n.endswith('test_skip'))] == 'not here', 'a skip keeps its reason'
+    assert result['whys'][next(n for n in ids if n.endswith('test_xfail'))] == 'known', 'an xfail keeps its reason'
     assert outcomes[next(n for n in ids if n.endswith('test_setup_error'))] == 'error'
     assert sum(o == 'passed' for o in outcomes.values()) == 9
     assert result['done']['done'] == 1
@@ -272,11 +273,12 @@ class FakeRunCluster:
         lacking: tuple[str, ...] = (),
         active: int = 0,
         env: str = 'e0ffee0123456789',
+        collected: str | None = None,
     ) -> None:
         """*have*: the cache holds the commit; *oom*: round 0 is OUT_OF_MEMORY; *active*: sacct polls RUNNING."""
         self.have, self.dies, self.kills, self.oom = have, dies, kills, oom
         self.build_fails, self.lacking, self.active = build_fails, lacking, active
-        self.env = env
+        self.env, self.collected = env, collected
         self.state = ''
         self.queue = ''
         self.calls: list[tuple[str, str | None]] = []
@@ -305,6 +307,8 @@ class FakeRunCluster:
         if '--collect-only' in command or 'lab_ci_collect.py --cache' in command:
             if '(win)' in command:
                 return 'tests/w.py::t\n'
+            if self.collected is not None:
+                return self.collected
             return (
                 '@@@ time collect=3s\n'
                 'tests/a.py::t1\ntests/a.py::t2\ntests/w.py::t\ntests/b.py::t3\ntests/b.py::t4\ntests/b.py::t5\n'
@@ -343,7 +347,9 @@ COST, POLICY = Cost(seconds=600), Policy(shard_minutes_min=1, shard_minutes_max=
 
 
 def _submit(fake: FakeRunCluster, **kw: object) -> str:
-    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', install='true', table={'win': ('windows',)})
+    spec = RunSpec(
+        sha=SHA, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1'), table={'win': ('windows',)}
+    )
     return submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0', **kw)
 
 
@@ -472,12 +478,12 @@ def test_a_missing_prerequisite_is_named_before_anything_is_fetched() -> None:
 
 
 def test_the_build_runs_in_its_own_errexit_shell_and_checks_the_venv() -> None:
-    spec = RunSpec(sha=SHA, repo_url='u', install='false; true', needs=('cargo',))
+    spec = RunSpec(sha=SHA, repo_url='u', builds=Builds(install='false; true', needs=('cargo',), env_key='k1'))
     script = build_script(spec)
     assert "bash -eo pipefail -c 'uv venv" in script, 'a failing first install line cannot be masked by the next'
     assert '[ -x "$E/bin/python" ]' in script
-    assert f'E="$HOME"/ci/trees/{SHA}/.venv' in script, 'undeclared: the tree keeps its own venv'
-    assert BUILD_LOG in script
+    assert 'E="$HOME"/ci/envs/k1' in script, 'every env lives under its key'
+    assert '"$HOME"/ci/envs/k1.log' in script, 'the build log sits beside the env it builds'
     assert 'git uv cargo' in needs_script(spec)
 
 
@@ -488,7 +494,7 @@ def test_every_round_runs_as_the_user_whose_home_holds_the_built_tree() -> None:
     machine = Machine(workstation='ws-a', grants=(GRANT, other))
     connect = {GRANT.account: mine, other.account: theirs}
 
-    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', install='true')
+    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1'))
     submit_run(spec, machine, lambda g: connect[g.account], cost=COST, policy=POLICY, stamp='t0')
     builder = mine if any('@@@ facts' in c for c, _ in mine.calls) else theirs
     for _ in range(2 + RETRIES):
@@ -501,16 +507,32 @@ def test_every_round_runs_as_the_user_whose_home_holds_the_built_tree() -> None:
 
 def test_only_runs_the_ids_the_caller_selected() -> None:
     fake = FakeRunCluster()
-    spec = RunSpec(sha=SHA, repo_url='u', install='true', only=frozenset({'tests/b.py::t4'}))
+    spec = RunSpec(
+        sha=SHA, repo_url='u', builds=Builds(install='true', env_key='k1'), only=frozenset({'tests/b.py::t4'})
+    )
     submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0')
     assert [i['ids'] for i in fake.manifests[0]['items']] == [['tests/b.py::t4']]
-    assert RunSpec(sha=SHA, repo_url='u', install='true', only=frozenset({'x'})).scope == INCREMENTAL
-    assert RunSpec(sha=SHA, repo_url='u', install='true').scope == FULL
+    assert (
+        RunSpec(sha=SHA, repo_url='u', builds=Builds(install='true', env_key='k1'), only=frozenset({'x'})).scope
+        == INCREMENTAL
+    )
+    assert RunSpec(sha=SHA, repo_url='u', builds=Builds(install='true', env_key='k1')).scope == FULL
 
 
 def test_every_round_adds_its_job_to_the_record() -> None:
     record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'})))
     assert record['job_ids'] == ['4243', '4244'], 'a retry round is part of the same run'
+
+
+def test_an_empty_collection_refuses_carrying_the_collectors_own_error() -> None:
+    """PLANTED, a consumer 2026-10-10: the import error that emptied the collection is in the refusal."""
+    said = 'ImportError while loading conftest tests/conftest.py\nE   ModuleNotFoundError: No module named thing\n'
+    fake = FakeRunCluster(collected='@@@ time collect=1s\n' + said)
+    with pytest.raises(RuntimeError, match='an empty run is not a pass') as refused:
+        _submit(fake)
+    assert 'ModuleNotFoundError: No module named thing' in str(refused.value)
+    assert '[tool.lab_commons.hpc] install' in str(refused.value), 'the refusal names the remedy'
+    assert not fake.manifests
 
 
 def test_a_venv_that_cannot_name_its_env_refuses_the_run() -> None:
@@ -530,8 +552,8 @@ def test_the_record_is_named_for_its_sha_platform_and_request_and_round_trips_gz
 
 
 def test_declared_inputs_share_one_env_and_native_build_and_put_the_source_on_pythonpath() -> None:
-    builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', env_key='e1', native_key='n1')
-    script = build_script(RunSpec(sha=SHA, repo_url='u', install='uv sync', builds=builds))
+    builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', 'uv sync', env_key='e1', native_key='n1')
+    script = build_script(RunSpec(sha=SHA, repo_url='u', builds=builds))
     assert 'export E="$HOME"/ci/envs/e1' in script
     assert 'export N="$HOME"/ci/native/n1' in script
     assert 'flock 9' in script, 'two runs building one key wait for each other'
@@ -542,7 +564,7 @@ def test_declared_inputs_share_one_env_and_native_build_and_put_the_source_on_py
 def test_a_commit_off_the_remote_without_a_pack_source_is_refused() -> None:
     with pytest.raises(RuntimeError, match=r'not on https://g/r\.git'):
         submit_run(
-            RunSpec(sha=SHA, repo_url='https://g/r.git', install='true'),
+            RunSpec(sha=SHA, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1')),
             Machine(workstation='w', grants=(GRANT,)),
             lambda _g: FakeRunCluster(have=False),
             cost=Cost(),
@@ -551,16 +573,16 @@ def test_a_commit_off_the_remote_without_a_pack_source_is_refused() -> None:
 
 
 def test_env_and_native_builds_share_persistent_caches_and_cargo_is_locked() -> None:
-    builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', env_key='e1', native_key='n1')
-    script = build_script(RunSpec(sha=SHA, repo_url='u', install='uv sync', builds=builds))
+    builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', 'uv sync', env_key='e1', native_key='n1')
+    script = build_script(RunSpec(sha=SHA, repo_url='u', builds=builds))
     assert ' UV_CACHE_DIR="$HOME"/ci/uv-cache' in script, 'one uv cache across every env key'
     assert 'export CARGO_TARGET_DIR="$HOME"/ci/cargo-target' in script, 'a rust edit compiles only changed crates'
     assert 'flock 8' in script, 'two native keys building at once take turns on the shared target'
 
 
 def test_prep_steps_are_timed_into_the_tree_log_and_the_record() -> None:
-    builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', env_key='e1', native_key='n1')
-    spec = RunSpec(sha=SHA, repo_url='u', install='uv sync', builds=builds, collect='tests')
+    builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', 'uv sync', env_key='e1', native_key='n1')
+    spec = RunSpec(sha=SHA, repo_url='u', builds=builds, collect='tests')
     for script, step in (
         (build_script(spec), 'env'),
         (build_script(spec), 'native'),

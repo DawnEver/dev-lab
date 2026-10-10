@@ -1,10 +1,9 @@
 """Commit statuses on the forge -- the door a result is PUBLISHED through (forge.md, layer C).
 
 WHY A STATUS AND NOT A COMMENT OR A LABEL. A status is the forge's one record keyed by the exact
-commit it is about, readable by every workstation without a clone. A verify run is posted under
-:data:`GATE_CONTEXT` with the verdict line as its description -- citable (the line names the tree, the
-env and the log digest) rather than a bare colour; a platform PART is posted under ``tests/<platform>``
-(:mod:`lab_commons.dev.platformparts`) and a claim on one is a ``pending`` status in that same context
+commit it is about, readable by every workstation without a clone. ONE NAME FOR A PLATFORM RESULT:
+a part, posted under ``tests/<platform>`` (:mod:`lab_commons.dev.platformparts`) -- by a cluster run
+and by a local verify alike -- and a claim on one is a ``pending`` status in that same context
 (:mod:`lab_commons.dev.forgetick`).
 
 THE MAPPING IS THE VERDICT'S POLARITY, NOT A NEW ONE: PASS -> ``success``, FAIL -> ``failure``, and
@@ -42,8 +41,6 @@ from lab_commons.log import emit
 
 __all__ = [
     'DESCRIPTION_LIMIT',
-    'GATE_CONTEXT',
-    'HEAVY_CONTEXT',
     'STATES',
     'Status',
     'head_sha',
@@ -54,12 +51,6 @@ __all__ = [
     'status_post',
     'verdict_commit',
 ]
-
-#: The lane-gate context: a verify run's verdict on the commit it judged.
-GATE_CONTEXT: Final = 'lab/gate'
-
-#: The integrator's heavy verdict context (:mod:`lab_commons.dev.integrator`).
-HEAVY_CONTEXT: Final = 'lab/heavy'
 
 #: The states this door writes; ``error`` carries an INCONCLUSIVE verdict, ``pending`` a claim.
 STATES: Final = ('success', 'failure', 'error', 'pending')

@@ -15,6 +15,7 @@ import pytest
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
+from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable, failover_runner, render_script
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, load_grants
@@ -266,14 +267,14 @@ def test_an_untagged_plan_carries_no_comment(tmp_path: Path) -> None:
 
 def test_a_run_is_bound_to_a_full_sha() -> None:
     with pytest.raises(ValueError, match='40-hex'):
-        RunSpec(sha='99d207471a', repo_url='https://x', install='true')
+        RunSpec(sha='99d207471a', repo_url='https://x', builds=Builds(install='true', env_key='k1'))
 
 
 def test_every_path_stays_under_ci() -> None:
     spec = RunSpec(
         sha=SHA,
         repo_url='https://g/r.git',
-        install='uv pip install -e .',
+        builds=Builds(install='uv pip install -e .', env_key='k1'),
         python='3.13',
         select='not slow',
         table={'win': ('windows',)},
@@ -299,7 +300,7 @@ def test_ids_are_read_from_collect_only_and_grouped_by_file() -> None:
 
 def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -> None:
     """One unimportable file must not hide the rest of the tree: it is recorded, the run goes on."""
-    spec = RunSpec(sha='a' * 40, repo_url='https://g/r.git', install='true')
+    spec = RunSpec(sha='a' * 40, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1'))
     assert '--continue-on-collection-errors' in collect_command(replace(spec, collect='-x tests')), 'the plain path'
     collector = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'collect.py'
     assert '--continue-on-collection-errors' in collector.read_text(encoding='utf-8'), 'the per-file collector'
@@ -346,10 +347,10 @@ def test_the_retired_workstation_key_is_refused_by_name() -> None:
 
 
 def test_the_tree_carries_its_submodules_at_their_pinned_commits() -> None:
-    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', install='uv sync', python='3.13')
+    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', builds=Builds(install='uv sync', env_key='k1'), python='3.13')
     script = build_script(spec)
     assert 'git submodule update -q --init --recursive' in script, 'a tree without its submodules fails as broken code'
-    assert script.index('git submodule update') < script.index(spec.install), 'submodules land before the build'
+    assert script.index('git submodule update') < script.index(spec.builds.install), 'submodules land before the build'
 
 
 # -- every declared partition is asked for; the grant with the most room builds ---------------------------

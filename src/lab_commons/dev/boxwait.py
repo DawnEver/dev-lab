@@ -1,6 +1,10 @@
-"""The VISIBLE, BOUNDED wait for this box's one seat -- the adoption half of :mod:`.boxlock`.
+"""The VISIBLE, BOUNDED wait for a run's two seats -- the adoption half of :mod:`.cpuseat` and :mod:`.envseat`.
 
-WHY IT IS ITS OWN MODULE. ``boxlock`` states the RULE (one CPU-saturating run at a time, as a
+A RUN HOLDS TWO RESOURCES: the machine's one CPU seat (queued for, visibly, here) and the seat of
+the environment it runs in (``sys.prefix``), so no mutation of THAT environment can land mid-run.
+Only the second is what a dependency door contends for.
+
+WHY IT IS ITS OWN MODULE. ``cpuseat`` states the RULE (one CPU-saturating run at a time, as a
 box-scoped structural seat) and the broker under it enforces it. Neither says what a dev TIER should
 do when it finds the box held, and that is a policy with three wrong answers and one right one:
 start anyway (the harm), refuse instantly (a re-run loop), block forever (a crash rendered as a
@@ -15,14 +19,16 @@ an entry point that reimplemented them would be the second definition this famil
 from __future__ import annotations
 
 import contextlib
+import sys
 import time
 from typing import Final
 
-from lab_commons.dev.boxlock import BoxLock
+from lab_commons.dev.cpuseat import CpuSeat
+from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.log import emit
 from lab_commons.resources import Exhausted
 
-__all__ = ['PROGRESS_S', 'WAIT_S', 'hold_the_box', 'holders_line']
+__all__ = ['PROGRESS_S', 'WAIT_S', 'hold_run_seats', 'holders_line']
 
 #: The CEILING ON THE WAIT for the box, in seconds -- 30 minutes, the same bound this family's gate
 #: tier already carries, so a run queued behind a gate cannot outlive the thing it queues behind.
@@ -41,15 +47,15 @@ WAIT_S: Final = 1800.0
 PROGRESS_S: Final = 60.0
 
 
-def hold_the_box(stack: contextlib.ExitStack, what: str, *, wait_s: float, poll_s: float) -> None:
-    """Take the box's ONE seat for the life of *stack*, queueing VISIBLY, or raise naming the holder.
+def hold_run_seats(stack: contextlib.ExitStack, what: str, *, wait_s: float, poll_s: float) -> None:
+    """Take the CPU seat, then this interpreter's environment seat, for the life of *stack*, or raise naming the holder.
 
     THE ADOPTION THIS EXISTS TO MAKE, measured missing 2026-09-16: ``lab_commons.dev.verify`` took
     NO lock, a sibling repo ran it for ~194 CPU-minutes holding ~17 GB, and a repo that DID take a
     lock computed 2 workers from what was left and had to report INCONCLUSIVE. A lock only one party
     takes is a tax on whoever obeys it, so the party that took none takes this one.
 
-    THE SEAT IS THE EXCLUSION AND NO MEMORY IS DECLARED HERE. ``BoxLock``'s ``demands`` is what a
+    THE SEAT IS THE EXCLUSION AND NO MEMORY IS DECLARED HERE. ``CpuSeat``'s ``demands`` is what a
     caller expects to CONSUME, and a test-suite driver does not know -- its footprint is whatever
     the suite under it allocates, per repo and per selection. An invented number is a declaration
     the code cannot honour; the seat, one CPU-saturating run at a time, is what the harm needed.
@@ -73,7 +79,7 @@ def hold_the_box(stack: contextlib.ExitStack, what: str, *, wait_s: float, poll_
             spelling here would be a second definition of "the box is busy".
 
     """
-    lock = BoxLock(what, wait_s=0.0)
+    lock = CpuSeat(what, wait_s=0.0)
     started = time.monotonic()
     deadline = started + max(0.0, wait_s)
     announced: float | None = None
@@ -89,7 +95,9 @@ def hold_the_box(stack: contextlib.ExitStack, what: str, *, wait_s: float, poll_
                 emit(f'{what}: waiting {waited:.0f}s for the box. Held by: {holders_line(exhausted)}', flush=True)
             time.sleep(min(poll_s, max(0.0, deadline - time.monotonic())))
         else:
-            return
+            break
+    remaining = max(0.0, deadline - time.monotonic())
+    stack.enter_context(EnvironmentSeat(sys.prefix, what, wait_s=remaining, poll_s=poll_s).held())
 
 
 def holders_line(exhausted: Exhausted) -> str:

@@ -138,20 +138,20 @@ _ENFORCED = {
     'ONE-RUN-AFTER-INTEGRATION': (
         guard('tests/test_dev_admission.py'),
         guard('tests/test_dev_inflight.py'),
-        guard('tests/test_dev_verdictledger.py'),
+        guard('tests/test_dev_runcache.py'),
     ),
     'MERGE-DEVIATIONS-NAMED': (guard('tests/test_dev_mergeaudit.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
     'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
     'ONE-BOX-ONE-LOCK': (
-        guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
+        guard('tests/test_two_repos_cannot_both_hold_the_cpu_seat.py'),
         guard('tests/test_dev_boxwait.py'),
         guard('tests/test_liveness.py'),
     ),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
         guard('tests/test_dev_boxwait.py'),
-        guard('tests/test_two_repos_cannot_both_hold_the_box.py'),
+        guard('tests/test_two_repos_cannot_both_hold_the_cpu_seat.py'),
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates
         # the process TREE rather than the direct child, and a refusal that must consult the WIDTH
         # before it may name a tier as the remedy. The boxwait pair covered only the lock's refusal.

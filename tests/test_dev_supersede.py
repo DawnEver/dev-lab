@@ -75,7 +75,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 #: are in it). RE-MEASURED from 15, which had been left behind by a tree that grew past it: a floor
 #: 39 clear of its population refuses only a total collapse, and the remedy for that is the floor,
 #: never the headroom.
-# RE-TAKEN 2026-10-08 at 106 published modules (floor 80 -> 100): inflight and verdictledger landed.
+# RE-TAKEN 2026-10-08 at 106 published modules (floor 80 -> 100): inflight and the run cache landed.
 # RE-TAKEN 2026-10-03 at 89 published modules (floor 60 -> 80).
 # RE-MEASURED 2026-09-19 at 69 published modules (the walk skips every `_`-prefixed part, so
 # `__init__.py` is not one). The floor stood at 40 while the tree held 69, which is 4 past the
@@ -482,7 +482,7 @@ SPELLING_HEADROOM = 3
 #: the floor rather than either factor alone: a parametrisation that lost one whole spelling still
 #: reports a full green over the other two, which is the shape that let this defect live twice.
 # RE-MEASURED 2026-09-19 at 207 (69 modules x 3 spellings), 7 past the old ceiling of 110 + 90.
-CASE_FLOOR = 250
+CASE_FLOOR = 270  # re-taken 2026-10-10 at 351+: seats split, run cache, parts, forge serve
 CASE_HEADROOM = 90
 
 #: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.

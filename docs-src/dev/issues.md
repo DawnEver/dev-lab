@@ -2,7 +2,7 @@
 
 - This page is how the family uses forge ISSUES. The forge itself (protection, tokens, the door) is on [the forge](forge.md); readiness as ref movement is on [the three participants](the-three-participants.md).
 - **An issue records INTENT only: what should change and why.** Its state is never kept by hand: no status labels, no "in progress" field, no assignee as a lock. A hand-kept state is a second copy of a fact the refs already hold, and it goes stale the first time a branch is deleted or rebased without anybody editing the label.
-- Rule IDs: `ISSUE-IS-INTENT` (this page) and `VERDICT-AS-STATUS` (the `lab/gate` status this page reads).
+- Rule IDs: `ISSUE-IS-INTENT` (this page) and `VERDICT-AS-STATUS` (the `tests/<platform>` parts this page reads).
 
 ## Linking a branch to an issue
 
@@ -26,10 +26,10 @@
 | state | derived from |
 |---|---|
 | `done` | the issue is closed, or a `Closes #N` (also `Fixes`/`Resolves`) commit is on the default branch |
-| `ready` | a lane referencing it has a tip whose `lab/gate` status is `success` |
+| `ready` | a lane referencing it has a tip whose `tests/<platform>` parts stand PASS |
 | `in-progress` | an origin branch carries a commit referencing `#N` that is not on the default branch, or is named `fix/<N>-...` |
 | `todo` | open, and nothing on origin references it |
 
 - **Fetch-free: the caller fetches.** The branches are read from the local remote-tracking refs (`refs/remotes/origin/*`), so run `git fetch --prune origin` first when freshness matters. The output prints each lane's tip, so a stale answer is visible.
-- `ready` reads the status the lane's own gate published: `python -m lab_commons.dev.verify` posts `lab/gate` on a clean HEAD after a judged run (see [the forge](forge.md), layer C). A lane whose gate never ran stays `in-progress`, which is the truth.
+- `ready` reads the parts posted on the lane's tip: `python -m lab_commons.dev.verify` posts its platform's part on a clean HEAD after a settled run, and `forge tick` produces the rest (see [the forge](forge.md), layer C). A lane with no part stays `in-progress`, which is the truth.
 - The output also lists every current claim and flags a conflict.

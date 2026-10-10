@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import make_repo
 
-from lab_commons.dev import platformparts
+from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.forgestatus import Status
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
@@ -83,7 +83,7 @@ def test_a_record_handing_off_its_own_ids_is_refused() -> None:
 def test_the_description_round_trips_through_a_status() -> None:
     part = platformparts.Part('windows', 'full', 'FAIL', ran=7, hands={'macos': 1}, nowhere=2)
     status = Status(platformparts.part_context('windows'), part.state, part.description(), 'u')
-    parts, problems = platformparts.parts_of([status, Status('lab/gate', 'success', 'VERDICT', '')])
+    parts, problems = platformparts.parts_of([status, Status('ci/foreign', 'success', 'not a part', '')])
     assert parts == {'windows': part}
     assert problems == ()
     _, claimed = platformparts.parts_of([Status('tests/linux', 'pending', 'claim machine=G', '')])
@@ -162,13 +162,14 @@ def _checkout(tmp_path: Path, pyproject: str, remote: str = 'git@forge.example.o
 
 
 def test_the_cluster_argv_is_filled_from_the_declarations_alone(tmp_path: Path) -> None:
+    """The build (install, needs) is NOT in the argv: hpc run submit reads it from the commit itself."""
     repo, python = _checkout(tmp_path, DECLARED)
     argv = platformparts.part_argv(repo, 'linux', SHA, scope='full', os_name='nt')
     output = Path(argv[-1])
     assert argv == [
         python, '-m', 'lab_commons.dev.platformparts', 'cluster', '--sha', SHA,
         '--repo-url', 'https://forge.example.org/o/r.git',
-        '--install', 'uv sync --extra dev', '--needs', 'cargo,cc', '--collect', 'tests', '-o', str(output),
+        '--collect', 'tests', '-o', str(output),
     ]  # fmt: skip
     assert output.relative_to(repo).parts[:2] == ('output', 'logs')
     assert output.relative_to(repo).parts[-2:] == ('parts', SHA)
@@ -221,7 +222,7 @@ def test_cluster_submits_gathers_and_posts_the_record(tmp_path: Path, monkeypatc
 
     posted: list[Path] = []
     monkeypatch.setattr(platformparts, 'post', lambda _root, path: posted.append(path) or 'posted')
-    flags = ['--repo-url', 'https://f/o/r.git', '--install', 'uv sync']
+    flags = ['--repo-url', 'https://f/o/r.git', '--collect', 'tests']
     assert platformparts.cluster(tmp_path, sha=SHA, hpc_args=flags, output=output, hpc=hpc) == 'posted'
     assert calls[0] == ['run', 'submit', '--sha', SHA, '--scope', 'full', '--repo', str(tmp_path), *flags]
     assert calls[1] == ['run', 'gather', '--sha', SHA, '-o', str(output), '--wait']
@@ -236,3 +237,71 @@ def test_cluster_refuses_a_failed_submit_and_a_gather_without_a_record(tmp_path:
     assert seen == ['submit'], 'nothing is gathered after a failed submit'
     with pytest.raises(platformparts.PartRefusal, match='no linux record'):
         platformparts.cluster(tmp_path, sha=SHA, hpc_args=[], output=tmp_path / 'none', hpc=lambda _a: 0)
+
+
+def _status(platform: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
+    return Status(f'tests/{platform}', state, f'scope={scope} ran=2 hands={hands} nowhere=0', '')
+
+
+def test_the_standing_is_the_one_reading_of_a_platform_result() -> None:
+    """PASS only when nothing is missing; a FAIL part is FAIL whatever else; unsettled otherwise."""
+    assert platformparts.standing([_status('linux')], head=SHA).result == 'PASS'
+    assert platformparts.standing([], head=SHA).result == ''
+    assert platformparts.standing([_status('linux', hands='windows:1')], head=SHA).result == ''
+    both = [_status('linux', hands='windows:1'), _status('windows')]
+    assert platformparts.standing(both, head=SHA).result == 'PASS'
+    red = [_status('linux', 'failure'), _status('windows', 'pending')]
+    assert platformparts.standing(red, head=SHA).result == 'FAIL'
+    incremental = [_status('linux', scope='incremental')]
+    assert platformparts.standing(incremental, head=SHA).result == 'PASS'
+    full = platformparts.standing(incremental, head=SHA, scope='full')
+    assert full.result == ''
+    assert any('scope incremental' in problem for problem in full.problems)
+
+
+def test_a_local_run_becomes_a_record_of_the_cluster_shape(tmp_path: Path, monkeypatch) -> None:
+    """A windows verify keeps the ids assigned to windows and hands every other id off, not-covered."""
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: read_table(PYPROJECT))
+    outcomes = {'t::a': 'passed', 't::f': 'failed', 't::m': 'skipped'}
+    collected = {'femm': ['t::f'], 'femm or matlab': ['t::f', 't::m']}
+    record = localpart.local_record(
+        tmp_path,
+        sha=SHA,
+        platform='windows',
+        scope='full',
+        req='verify-x',
+        outcomes=outcomes,
+        reasons={'t::m': 'no matlab here', 't::a': 'not mine'},
+        collect=collected.__getitem__,
+    )
+    assert record['outcomes'] == {'t::f': 'failed', 't::a': 'not-covered', 't::m': 'not-covered'}
+    assert record['handed'] == {'t::a': ['linux', 'windows', 'macos'], 't::m': ['linux', 'windows']}
+    assert record['reasons'] == {}
+    part = platformparts.part_of(record)
+    assert (part.platform, part.result, part.ran, part.hands) == ('windows', 'FAIL', 1, {'linux': 2})
+
+
+def test_a_local_record_with_no_table_assigns_every_id_to_linux(tmp_path: Path, monkeypatch) -> None:
+    """No table: every id runs everywhere, so the one rule assigns it to linux -- a windows run covers nothing."""
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
+
+    def local(platform: str) -> dict[str, object]:
+        return localpart.local_record(
+            tmp_path,
+            sha=SHA,
+            platform=platform,
+            scope='incremental',
+            req='r',
+            outcomes={'t::a': 'passed', 't::s': 'skipped'},
+            reasons={'t::s': 'why'},
+            collect=lambda _expr: pytest.fail('no marker is declared, so nothing is collected'),
+        )
+
+    on_linux = local('linux')
+    assert on_linux['outcomes'] == {'t::a': 'passed', 't::s': 'skipped'}
+    assert on_linux['reasons'] == {'t::s': 'why'}
+    assert platformparts.part_of(on_linux).hands == {}
+    on_windows = local('windows')
+    assert set(on_windows['outcomes'].values()) == {'not-covered'}
+    with pytest.raises(platformparts.PartRefusal, match='covers no test'):
+        platformparts.part_of(on_windows)

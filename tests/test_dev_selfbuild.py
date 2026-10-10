@@ -16,11 +16,13 @@ deleted and leave every other test green, because ``Mode.PINNED`` still refuses 
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from lab_commons.dev.dep import HeldEnvironmentError, Port
+from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.selfbuild import (
     ForeignDistributionError,
     NothingBuiltError,
@@ -130,7 +132,6 @@ def test_the_install_is_pinned_names_the_wheel_and_retires_the_moved_anchors(tmp
     keys = iter(['before-key', 'after-key'])
     port = Port(
         name='plant',
-        holders=lambda: (),
         anchor_paths=lambda: (anchor,),
         key=lambda: next(keys),
     )
@@ -152,9 +153,9 @@ def test_a_held_lock_refuses_before_anything_is_installed(tmp_path: Path) -> Non
     """H1: a verdict is in flight, so nothing runs and the anchor it will cite survives."""
     anchor = tmp_path / 'gate.verdict'
     anchor.write_text('PASS', encoding='utf-8')
-    port = Port(name='plant', holders=lambda: ('pid 1234 (heavy)',), anchor_paths=lambda: (anchor,))
+    port = Port(name='plant', anchor_paths=lambda: (anchor,))
     run = _Recorder()
-    with pytest.raises(HeldEnvironmentError, match='pid 1234'):
+    with EnvironmentSeat(sys.prefix, 'pid 1234 (heavy)').held(), pytest.raises(HeldEnvironmentError, match='pid 1234'):
         install_self_build(_wheel(tmp_path), manifests=_workspace(tmp_path), port=port, run=run)
     assert run.calls == []
     assert anchor.exists()
@@ -162,26 +163,19 @@ def test_a_held_lock_refuses_before_anything_is_installed(tmp_path: Path) -> Non
 
 def test_ownership_is_decided_before_the_lock_is_even_consulted(tmp_path: Path) -> None:
     """ORDER. A foreign wheel is refused whether or not the box happens to be free."""
-    consulted: list[str] = []
-
-    def holders() -> tuple[str, ...]:
-        consulted.append('lock')
-        return ()
-
-    port = Port(name='plant', holders=holders)
-    with pytest.raises(ForeignDistributionError):
+    port = Port(name='plant')
+    with EnvironmentSeat(sys.prefix, 'a run holding this environment').held(), pytest.raises(ForeignDistributionError):
         install_self_build(
             _wheel(tmp_path, 'scipy-1.14.0-cp312-cp312-win_amd64.whl'),
             manifests=_workspace(tmp_path),
             port=port,
             run=_Recorder(),
         )
-    assert consulted == [], 'the lock was asked about a wheel that was never eligible'
 
 
 def test_a_missing_wheel_is_a_typo_and_says_so(tmp_path: Path) -> None:
     """Checked here rather than left to pip: a missing local file is not an environment decision."""
-    port = Port(name='plant', holders=lambda: ())
+    port = Port(name='plant')
     with pytest.raises(FileNotFoundError, match='no such wheel'):
         install_self_build(tmp_path / 'absent.whl', manifests=_workspace(tmp_path), port=port, run=_Recorder())
 
@@ -190,7 +184,7 @@ def test_a_dry_run_checks_everything_and_retires_nothing(tmp_path: Path) -> None
     """A dry run that deleted an anchor would have mutated the very thing it reports on."""
     anchor = tmp_path / 'heavy.verdict'
     anchor.write_text('PASS', encoding='utf-8')
-    port = Port(name='plant', holders=lambda: (), anchor_paths=lambda: (anchor,), key=lambda: 'steady')
+    port = Port(name='plant', anchor_paths=lambda: (anchor,), key=lambda: 'steady')
     run = _Recorder()
     report = install_self_build(_wheel(tmp_path), manifests=_workspace(tmp_path), port=port, run=run, dry_run=True)
     assert run.calls == []
@@ -202,7 +196,7 @@ def test_a_dry_run_checks_everything_and_retires_nothing(tmp_path: Path) -> None
 
 def test_the_workspace_label_defaults_to_the_port_name(tmp_path: Path) -> None:
     """A refusal a reader cannot place is a refusal they route around."""
-    port = Port(name='consumer-a', holders=lambda: ())
+    port = Port(name='consumer-a')
     with pytest.raises(ForeignDistributionError, match='consumer-a'):
         install_self_build(
             _wheel(tmp_path, 'scipy-1.14.0-cp312-cp312-win_amd64.whl'),
@@ -231,7 +225,7 @@ def test_two_builds_at_one_version_both_reach_pip_as_a_forced_reinstall(tmp_path
         wheel = tmp_path / _WHEEL
         wheel.write_bytes(content)
         run = _Recorder()
-        port = Port(name='plant', holders=lambda: (), anchor_paths=lambda: (), key=lambda: 'unmoved')
+        port = Port(name='plant', anchor_paths=lambda: (), key=lambda: 'unmoved')
         report = install_self_build(wheel, manifests=manifests, port=port, run=run)
         assert len(run.calls) == 1, 'the floor: no call means nothing was measured'
         assert run.calls[0] == list(report.argv), 'the report named a command the child never got'

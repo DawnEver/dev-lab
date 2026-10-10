@@ -6,33 +6,31 @@ and the same repo with exactly one answer broken -- a port missing an adapter, a
 says "nobody", a reader that invents an anchor, a door handed a key that never moves.
 
 THE FIXTURES ARE A REPO THAT DOES NOT EXIST, deliberately. The subject of this body is the consumer's
-adapters, so the kit's own test supplies the smallest pair that behaves like one: a holders adapter
-over a real :class:`~lab_commons.dev.boxlock.BoxLock` in an injected records directory, and an anchor
-reader over a glob. Nothing here is installed and no real box seat is taken.
+adapters, so the kit's own test supplies the smallest one that behaves like one: an anchor reader
+over a glob. Environment seats are planted in an injected records directory; nothing is installed.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.boxlock import BoxLock
-from lab_commons.dev.dep import Port, mutate
+from lab_commons.dev.dep import NO_ANCHORS_DECLARED, Port, mutate
 from lab_commons.dev.famtests.depdoor import (
     A_REQUIREMENT,
-    BOTH_GAPS,
+    UNDECLARED_GAPS,
     Ran,
     assert_a_moved_key_retires_a_planted_anchor,
-    assert_a_port_declaring_neither_renders_both_gaps,
+    assert_a_port_declaring_no_anchors_renders_the_gap,
+    assert_a_verdict_in_another_environment_does_not_refuse,
     assert_an_unmoved_key_retires_nothing,
     assert_the_anchor_reader_has_a_floor_and_a_ceiling,
     assert_the_door_refuses_while_a_verdict_is_in_flight,
-    assert_the_holders_adapter_names_a_planted_holder,
-    assert_this_repo_supplies_both_halves_of_the_door,
+    assert_this_repo_declares_its_verdict_anchors,
     scripted_keys,
 )
-from lab_commons.resources import Broker
 
 #: The fixture repo's name. Not one of the four real ones, so a body that closed over a family name
 #: rather than reading its argument would red here rather than agreeing by coincidence.
@@ -56,22 +54,9 @@ def _anchors(tree: Path) -> tuple[Path, ...]:
     return tuple(sorted(directory.glob(Path(_ANCHOR_GLOB).name)))
 
 
-def _holders(*, broker: Broker) -> tuple[str, ...]:
-    """The fixture repo's holders adapter: the box seat, named as the door will print it."""
-    return tuple(f'{holder.what} since={holder.since}' for holder in BoxLock.holders(broker=broker))
-
-
-def _port(*, broker: Broker) -> Port:
-    """The fixture repo's port factory -- both halves answered, which is the state under test."""
-    return Port(name=_REPO, holders=lambda: _holders(broker=broker), anchor_paths=lambda: ())
-
-
-@pytest.fixture
-def records(tmp_path: Path) -> Broker:
-    """A broker over an ISOLATED records directory, so a plant contends only with its own case."""
-    directory = tmp_path / 'records'
-    directory.mkdir()
-    return Broker(resource_dir=directory)
+def _port() -> Port:
+    """The fixture repo's port factory -- anchors declared, which is the state under test."""
+    return Port(name=_REPO, anchor_paths=lambda: ())
 
 
 @pytest.fixture
@@ -90,66 +75,51 @@ def _plant_anchor(tree: Path, stamp: str) -> Path:
     return anchor
 
 
-def test_the_gap_set_is_two_named_sentences() -> None:
-    """THE FLOOR ON THE PIN ITSELF. An empty or one-sided set would make the control vacuous."""
-    assert len(BOTH_GAPS) == 2
-    assert all(sentence.strip() for sentence in BOTH_GAPS)
+def test_the_gap_set_is_the_named_anchor_sentence() -> None:
+    """THE FLOOR ON THE PIN ITSELF. An empty set would make the control vacuous."""
+    assert frozenset({NO_ANCHORS_DECLARED}) == UNDECLARED_GAPS
 
 
-def test_a_complete_port_renders_no_gap(records: Broker) -> None:
-    """THE PROPERTY, on a repo that answers both questions."""
-    assert_this_repo_supplies_both_halves_of_the_door(port=_port, repo_name=_REPO, broker=records)
+def test_a_complete_port_renders_no_gap() -> None:
+    """THE PROPERTY, on a repo that declares its anchors."""
+    assert_this_repo_declares_its_verdict_anchors(port=_port, repo_name=_REPO)
 
 
-def test_a_port_missing_the_lock_adapter_reds(records: Broker) -> None:
-    """PLANTED: half a door. The property arm must convict, or it is asserting nothing."""
-
-    def half(*, broker: Broker) -> Port:
-        _ = broker
-        return Port(name=_REPO, anchor_paths=lambda: ())
-
-    with pytest.raises(AssertionError, match='NO LOCK DECLARED'):
-        assert_this_repo_supplies_both_halves_of_the_door(port=half, repo_name=_REPO, broker=records)
+def test_a_port_missing_the_anchor_adapter_reds() -> None:
+    """PLANTED: an undeclared anchor reader. The property arm must convict, or it is asserting nothing."""
+    with pytest.raises(AssertionError, match='NO VERDICT ANCHORS'):
+        assert_this_repo_declares_its_verdict_anchors(port=lambda: Port(name=_REPO), repo_name=_REPO)
 
 
-def test_a_report_that_does_not_name_the_repo_reds(records: Broker) -> None:
+def test_a_report_that_does_not_name_the_repo_reds() -> None:
     """PLANTED: a complete door reporting under somebody else's name."""
     with pytest.raises(AssertionError, match='who changed what'):
-        assert_this_repo_supplies_both_halves_of_the_door(
-            port=_port,
-            repo_name='a-name-the-port-never-uses',
-            broker=records,
-        )
+        assert_this_repo_declares_its_verdict_anchors(port=_port, repo_name='a-name-the-port-never-uses')
 
 
 def test_the_control_convicts_a_port_declaring_neither() -> None:
     """THE CONTROL, run as the consumer will run it."""
-    assert_a_port_declaring_neither_renders_both_gaps()
-
-
-def test_the_holders_adapter_arm_is_green_on_a_real_adapter(records: Broker) -> None:
-    """The fixture adapter really reads the box records, so the plant is visible to it."""
-    assert_the_holders_adapter_names_a_planted_holder(live_holders=_holders, broker=records)
-
-
-def test_an_adapter_that_always_says_nobody_reds(records: Broker) -> None:
-    """PLANTED: the vacuous green this arm exists for -- an adapter blind to every run forever."""
-    with pytest.raises(AssertionError, match='cannot see the run it is meant to refuse'):
-        assert_the_holders_adapter_names_a_planted_holder(live_holders=lambda **_: (), broker=records)
-
-
-def test_an_adapter_that_always_names_somebody_reds(records: Broker) -> None:
-    """THE OTHER SIDE: an adapter naming a phantom refuses every dependency change this repo makes."""
-    with pytest.raises(AssertionError, match='already named'):
-        assert_the_holders_adapter_names_a_planted_holder(
-            live_holders=lambda **_: ('a-holder-that-is-not-there',),
-            broker=records,
-        )
+    assert_a_port_declaring_no_anchors_renders_the_gap()
 
 
 def test_the_door_refuses_a_live_verdict() -> None:
     """H1 prevented, through the real door."""
     assert_the_door_refuses_while_a_verdict_is_in_flight(repo_name=_REPO, verdict_anchors=lambda: ())
+
+
+def test_a_verdict_in_another_environment_is_no_refusal(tmp_path: Path) -> None:
+    """The other side of H1, green: another repo's verify does not refuse this environment."""
+    assert_a_verdict_in_another_environment_does_not_refuse(
+        repo_name=_REPO, verdict_anchors=lambda: (), elsewhere=tmp_path / 'another' / '.venv'
+    )
+
+
+def test_a_machine_wide_guard_reds_the_other_environment_arm() -> None:
+    """PLANTED: an environment arm handed THIS environment as "elsewhere" -- the over-broad guard -- reds."""
+    with pytest.raises(AssertionError, match='refused a change'):
+        assert_a_verdict_in_another_environment_does_not_refuse(
+            repo_name=_REPO, verdict_anchors=lambda: (), elsewhere=Path(sys.prefix)
+        )
 
 
 def test_the_refusal_arm_has_no_plantable_red_and_that_is_recorded() -> None:
@@ -167,7 +137,7 @@ def test_the_refusal_arm_has_no_plantable_red_and_that_is_recorded() -> None:
     the same question through a port with no holder at all, which must NOT raise -- the other side
     of the same ratchet, and the one a repo could really break.
     """
-    quiet = Port(name=_REPO, holders=lambda: (), anchor_paths=lambda: ())
+    quiet = Port(name=_REPO, anchor_paths=lambda: ())
     report = mutate(A_REQUIREMENT, port=quiet, dry_run=True)
     assert report.gaps == ()
 

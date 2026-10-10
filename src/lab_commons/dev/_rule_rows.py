@@ -276,8 +276,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'VERDICT-BAR-IS-THE-INCREMENT',
         (
             'A verdict answers for the INCREMENT that produced it, not the tree: a red it did not cause is inventory. '
-            'A lane needs no verdict; the integration push cites a ledger PASS or FAIL for HEAD and env, and a FAIL '
-            'records the gap; the trunk needs PASS. Refused: no such entry, another commit or env, a dirty tree.'
+            'Lane and integration pushes are admitted with no result -- parts are produced FROM pushed shas; the '
+            'trunk needs every tests/<platform> part of HEAD on the forge a PASS of scope full. Refused: a part '
+            'missing, unsettled, failing or incremental, or the forge unreadable -- there is no local fallback.'
         ),
         (
             'src/lab_commons/dev/admission.py',
@@ -452,7 +453,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'number makes a dead holder immortal.'
         ),
         (
-            'tests/test_two_repos_cannot_both_hold_the_box.py',
+            'tests/test_two_repos_cannot_both_hold_the_cpu_seat.py',
             'tests/test_liveness.py',
             'tests/test_dev_boxwait.py',
         ),

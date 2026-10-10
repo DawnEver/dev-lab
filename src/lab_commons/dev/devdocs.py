@@ -127,14 +127,14 @@ PAGES: Final[tuple[Page, ...]] = (
         'issues',
         'Issues',
         (
-            'An issue is intent; todo/in-progress/ready/done are derived from origin refs and `lab/gate`, '
+            'An issue is intent; todo/in-progress/ready/done are derived from origin refs and the lane parts, '
             'claims are comments'
         ),
     ),
     Page(
         'integrator',
         'The integrator',
-        'Woken or self-polling, one derived merge queue: the ready predicate over `lab/gate` and `lab/heavy`',
+        'Woken or self-polling, one derived merge queue: the ready predicate over the `tests/<platform>` parts',
     ),
     Page(
         'retirement',

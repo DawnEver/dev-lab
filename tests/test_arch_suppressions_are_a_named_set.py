@@ -484,7 +484,7 @@ ALLOWED: Final[dict[Site, str]] = {
         "Q_pi_rad = Q_(np.pi, 'rad')",
     ): 'the same spelling, in radians',
     (
-        'tests/test_two_repos_cannot_both_hold_the_box.py',
+        'tests/test_two_repos_cannot_both_hold_the_cpu_seat.py',
         'S607',
         "subprocess.run(['git', 'init', '-q'], cwd=root, check=True, capture_output=True)",
     ): 'git through PATH, the same deliberate resolution as verify.project_root',

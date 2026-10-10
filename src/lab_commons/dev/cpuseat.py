@@ -1,4 +1,9 @@
-"""One CPU-saturating run at a time on this box, built ON ``lab_commons.resources``.
+"""THE CPU SEAT: one CPU-saturating run at a time on this machine, built ON ``lab_commons.resources``.
+
+A MACHINE RESOURCE, CONTENDED BY RUNS ONLY. Whether an environment may be MUTATED is a different
+question about a different resource -- :class:`~lab_commons.dev.envseat.EnvironmentSeat`, keyed by
+one environment -- and this seat never answers it: a sync of one repo's venv takes no CPU seat, so a
+run in an unrelated repo cannot refuse it.
 
 THERE IS NO SECOND LOCK HERE, and that is the design rather than a shortcut. ``lab_commons``
 already ships cross-process admission, a refusal that names its holders, and a running ceiling
@@ -13,7 +18,7 @@ is just a string, so "box-wide" used to be a property of every caller passing th
 consumer that passed its own name silently opted out of contending, and nothing in the broker could
 tell it so. That is now a property of the MECHANISM -- :data:`lab_commons.resources.BOX_SEATS` is a
 ``Scope.BOX`` dimension, whose record files are one set per box rather than one set per pool, so two
-repos that never agree on a pool name still meet on the same seat. :data:`BOX_POOL` remains what
+repos that never agree on a pool name still meet on the same seat. :data:`CPU_POOL` remains what
 this lock's records are NAMED by (records need a pool), and it is no longer what excludes anybody.
 
 WHY ``seats=1`` AND NOT A CPU DEMAND. A CPU-saturating run wants the box's whole width, and an
@@ -25,14 +30,12 @@ here.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev.envlock import EnvLock
 from lab_commons.resources import (
     BOX_SEATS,
     DEFAULT_POLL_S,
@@ -44,12 +47,12 @@ from lab_commons.resources import (
     Holder,
 )
 
-__all__ = ['BOX_POOL', 'BoxLock']
+__all__ = ['CPU_POOL', 'CpuSeat']
 
 #: The name this lock's records carry. NOT the exclusion -- see the module docstring: what excludes
 #: is the box-scoped seat below. Kept as a named constant because a record still has to say which
 #: pool wrote it, and a caller that wants to read this lock's records has to know where they are.
-BOX_POOL: Final = 'lab-commons-box'
+CPU_POOL: Final = 'lab-commons-cpu'
 
 #: The rule, as data the broker MUST read. A STRUCTURAL capacity is a property of the tool rather
 #: than of the machine, which is exactly what "this pool runs one at a time" is -- and because
@@ -60,7 +63,7 @@ _ONE_SEAT: Final = Capacity.structural(
     1,
     note=(
         'the exclusion within this pool: one CPU-saturating run at a time, for every repo that '
-        'names BOX_POOL. Serialising an unmeasured box is the direction that cannot crash it, and '
+        'names CPU_POOL. Serialising an unmeasured box is the direction that cannot crash it, and '
         'a measurement of four seats cannot lift a structural constant.'
     ),
 )
@@ -81,7 +84,7 @@ _ONE_BOX_SEAT: Final = Capacity.structural(
 
 
 @dataclass
-class BoxLock:
+class CpuSeat:
     """The exclusion, as an object a caller describes itself to and then holds.
 
     ``what`` is not decoration: it is what the refusal PRINTS, and a refusal that says "busy" sends
@@ -117,9 +120,9 @@ class BoxLock:
         the smallest, so a second call cannot tighten or loosen anything.
         """
         if broker is None:
-            return Broker(CapacityRegistry([(BOX_POOL, _ONE_SEAT), (BOX_POOL, _ONE_BOX_SEAT)]))
-        broker.registry.declare(BOX_POOL, _ONE_SEAT)
-        broker.registry.declare(BOX_POOL, _ONE_BOX_SEAT)
+            return Broker(CapacityRegistry([(CPU_POOL, _ONE_SEAT), (CPU_POOL, _ONE_BOX_SEAT)]))
+        broker.registry.declare(CPU_POOL, _ONE_SEAT)
+        broker.registry.declare(CPU_POOL, _ONE_BOX_SEAT)
         return broker
 
     @contextmanager
@@ -141,16 +144,13 @@ class BoxLock:
         # costs; what it may not add is a second seat, which would be this class contradicting its
         # own name.
         demands = {**self.demands, SEATS.name: 1, BOX_SEATS.name: 1}
-        with (
-            self._broker(self.broker).admit(
-                BOX_POOL,
-                demands,
-                what=self.what,
-                wait_s=self.wait_s,
-                poll_s=self.poll_s,
-            ) as grant,
-            EnvLock(sys.prefix, self.what, broker=self._broker(self.broker)).held(),
-        ):
+        with self._broker(self.broker).admit(
+            CPU_POOL,
+            demands,
+            what=self.what,
+            wait_s=self.wait_s,
+            poll_s=self.poll_s,
+        ) as grant:
             yield grant
 
     @staticmethod
@@ -163,9 +163,9 @@ class BoxLock:
         reads records, and this method adds no write of its own. It reports the box-scoped seat
         whatever pool its holder named, so a second repo's run is named here rather than invisible.
         """
-        return tuple(BoxLock._broker(broker).holders(BOX_POOL))
+        return tuple(CpuSeat._broker(broker).holders(CPU_POOL))
 
     @staticmethod
     def resource_dir(*, broker: Broker | None = None) -> Path:
         """Where the exclusion lives on disk -- outside every repository, by the broker's design."""
-        return BoxLock._broker(broker).resource_dir()
+        return CpuSeat._broker(broker).resource_dir()

@@ -2,7 +2,8 @@
 
 ``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
 state and comment reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for
-run records, ``tick`` for requests and claims and ``route <record>`` for failure routing; anything
+run records, ``tick`` for requests and claims, ``route <record>`` for failure routing and ``serve``
+for the whole harness sequence; anything
 else is the issue/PR door. The verbs live in the sibling modules, which import :mod:`forge`, so
 :mod:`forge` reaches this module only from its entry point.
 """
@@ -17,6 +18,7 @@ from lab_commons.dev import (
     forgeoutbox,
     forgerecords,
     forgeroute,
+    forgeserve,
     forgestatus,
     forgetick,
     forgework,
@@ -33,6 +35,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'publish': forgeoutbox.main,
     'records': forgerecords.main,
     'route': forgeroute.main,
+    'serve': forgeserve.main,
     'tick': forgetick.main,
 }
 

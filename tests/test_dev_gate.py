@@ -98,4 +98,4 @@ class TestTheOptInGate:
         """A scan that read no file would pass every one of the assertions above, vacuously."""
         sources = sorted(DEV_ROOT.glob('*.py'))
         assert len(sources) >= 6
-        assert {'content.py', 'verdict.py', 'boxlock.py', 'profile.py'} <= {source.name for source in sources}
+        assert {'content.py', 'verdict.py', 'cpuseat.py', 'profile.py'} <= {source.name for source in sources}

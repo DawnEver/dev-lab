@@ -18,16 +18,17 @@ WHAT ARRIVES WITH NO DEFAULT, and why each is one repo's answer rather than a co
 
 * *repo_name* -- what the ``Port`` calls this repo. It is what the report PRINTS, and a report that
   names the wrong repo is read by whoever is deciding whether to stop their own run.
-* *port* -- the repo's own port FACTORY, called as ``port(broker=...)``. The factory and not a built
-  ``Port``, because the records directory the holders adapter reads has to be the CASE's: this body
-  runs inside a ``verify`` run that already holds the real seat, so a real port would refuse here --
-  correctly, and before it could report anything.
-* *live_holders* / *verdict_anchors* -- the two adapters themselves, so the floor arms below judge
-  the repo's readers rather than the kit's.
+* *port* -- the repo's own port FACTORY, called with no argument.
+* *verdict_anchors* -- the repo's anchor adapter, so the floor arms below judge the repo's reader
+  rather than the kit's.
+
+WHO MAY BLOCK A CHANGE IS NOT A REPO ANSWER. It is whoever holds the TARGET environment's
+:class:`~lab_commons.dev.envseat.EnvironmentSeat`, read by the door itself; the refusal arms plant a
+holder on that seat and, on the other side, on an unrelated environment that must not refuse.
 * *anchor_glob* -- the repo-relative name shape its verdict logs take. Spelled by the repo because
   only the repo knows what its ``verify`` writes; the retirement arms are worthless if they retire a
   shape it never produces.
-* *broker* / *anchor* / *tree* -- the case's own doubles and the tree being read, supplied per arm.
+* *anchor* / *tree* / *elsewhere* -- the case's own doubles and the tree being read, supplied per arm.
 
 A *root* BULLET STOOD HERE UNTIL 2026-09-19 AND NAMED A KEYWORD NO FUNCTION IN THIS MODULE TAKES.
 None of the seven ``assert_*`` bodies has ever had a ``root`` parameter; the argument belongs to
@@ -38,13 +39,11 @@ naming an argument that does not exist raises nothing; a consumer lane found it 
 it. This is the dominant defect in this codebase's own words -- a declaration asserting a property
 the code does not have -- sitting inside the package written to refuse exactly that.
 
-THE GAP SET IS PINNED AS A NAMED SET, both directions, and never as a count. An integer cannot say
-WHICH half of the door came off, and this family has an incident where a disagreeing pin was edited
-down to meet a broken table rather than the other way round. :data:`BOTH_GAPS` is the set the control
-must render and the set the repo's own port must render none of.
+THE GAP SET IS PINNED AS A NAMED SET, both directions, and never as a count. :data:`UNDECLARED_GAPS`
+is the set the control must render and the set the repo's own port must render none of.
 
 THE CONTROL IS NOT OPTIONAL AND TAKES NO ARGUMENT.
-:func:`assert_a_port_declaring_neither_renders_both_gaps` PLANTS a port that answers neither question
+:func:`assert_a_port_declaring_no_anchors_renders_the_gap` PLANTS a port that declares no anchors
 and drives the REAL ``mutate``. Without it, the property arm passes on a door that renders nothing at
 all -- which is the state every repo in this family was in until 2026-09-17, reading green throughout.
 
@@ -54,41 +53,37 @@ stand-in for :func:`subprocess.run` that records its argv and installs nothing.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.boxlock import BoxLock
 from lab_commons.dev.dep import (
-    LOCK_UNDECLARED,
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
     Port,
     mutate,
 )
+from lab_commons.dev.envseat import EnvironmentSeat
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from lab_commons.resources import Broker
-
 __all__ = [
     'A_REQUIREMENT',
-    'BOTH_GAPS',
+    'UNDECLARED_GAPS',
     'Ran',
     'assert_a_moved_key_retires_a_planted_anchor',
-    'assert_a_port_declaring_neither_renders_both_gaps',
+    'assert_a_port_declaring_no_anchors_renders_the_gap',
+    'assert_a_verdict_in_another_environment_does_not_refuse',
     'assert_an_unmoved_key_retires_nothing',
     'assert_the_anchor_reader_has_a_floor_and_a_ceiling',
     'assert_the_door_refuses_while_a_verdict_is_in_flight',
-    'assert_the_holders_adapter_names_a_planted_holder',
-    'assert_this_repo_supplies_both_halves_of_the_door',
+    'assert_this_repo_declares_its_verdict_anchors',
     'scripted_keys',
 ]
 
-#: The two sentences the door renders for the two halves nobody supplied, as a NAMED SET. A count
-#: here would say "one gap" and leave a reader unable to tell an unguarded H1 from an unremediable
-#: H2 -- two findings with two different remedies.
-BOTH_GAPS: Final[frozenset[str]] = frozenset({LOCK_UNDECLARED, NO_ANCHORS_DECLARED})
+#: The sentences the door renders for what a repo left undeclared, as a NAMED SET.
+UNDECLARED_GAPS: Final[frozenset[str]] = frozenset({NO_ANCHORS_DECLARED})
 
 #: The requirement every arm names. Nothing is ever installed, but the door REFUSES an empty
 #: requirement list -- correctly, since a bare ``pip install`` names no change whose safety to decide
@@ -131,31 +126,26 @@ def scripted_keys(*values: str) -> Callable[[], str]:
     return lambda: next(sequence, last)
 
 
-def assert_this_repo_supplies_both_halves_of_the_door(
+def assert_this_repo_declares_its_verdict_anchors(
     *,
-    port: Callable[..., Port],
+    port: Callable[[], Port],
     repo_name: str,
-    broker: Broker,
 ) -> None:
-    """THE PROPERTY. A report from THIS repo's port renders NEITHER gap, and says who changed what.
+    """THE PROPERTY. A report from THIS repo's port renders no gap, and says who changed what.
 
     Args:
-        port: the repo's port factory, called as ``port(broker=...)``.
+        port: the repo's port factory, called with no argument.
         repo_name: what the report must call this repo.
-        broker: an ISOLATED records directory. Not squeamishness -- see this module's docstring.
 
     Raises:
         AssertionError: a gap was rendered, or the report does not name the repo and the command.
 
     """
-    report = mutate(A_REQUIREMENT, port=port(broker=broker), dry_run=True)
+    report = mutate(A_REQUIREMENT, port=port(), dry_run=True)
     if report.gaps:
         msg = (
             f'the door rendered {list(report.gaps)} for {repo_name}. A gap here is not cosmetic: '
-            f'LOCK_UNDECLARED means no supplementary adapter for legacy verdict runners is declared '
-            f'(shared EnvLock exclusion remains enforced), and NO_ANCHORS_DECLARED means a verdict '
-            f'citing a dead environment '
-            f'stays on record.'
+            f'NO_ANCHORS_DECLARED means a verdict citing a dead environment stays on record.'
         )
         raise AssertionError(msg)
     rendered = report.render()
@@ -168,8 +158,8 @@ def assert_this_repo_supplies_both_halves_of_the_door(
         raise AssertionError(msg)
 
 
-def assert_a_port_declaring_neither_renders_both_gaps() -> None:
-    """THE PLANTED CONTROL, driving the REAL door: a port answering neither question renders BOTH.
+def assert_a_port_declaring_no_anchors_renders_the_gap() -> None:
+    """THE PLANTED CONTROL, driving the REAL door: a port declaring no anchors renders every gap.
 
     This is the arm that makes the property arm mean anything. Without it, a ``mutate`` that rendered
     nothing at all -- for any reason, including a scanner that never looked -- passes.
@@ -179,61 +169,20 @@ def assert_a_port_declaring_neither_renders_both_gaps() -> None:
     the under-declaration this family has already paid for six times over.
 
     Raises:
-        AssertionError: the control port rendered a gap set other than :data:`BOTH_GAPS`.
+        AssertionError: the control port rendered a gap set other than :data:`UNDECLARED_GAPS`.
 
     """
-    report = mutate(A_REQUIREMENT, port=Port(name='a-repo-that-declares-neither'), dry_run=True)
+    report = mutate(A_REQUIREMENT, port=Port(name='a-repo-that-declares-no-anchors'), dry_run=True)
     rendered = frozenset(report.gaps)
-    if rendered != BOTH_GAPS:
-        missing = sorted(gap.split(':')[0] for gap in BOTH_GAPS - rendered)
-        extra = sorted(gap.split(':')[0] for gap in rendered - BOTH_GAPS)
+    if rendered != UNDECLARED_GAPS:
+        missing = sorted(gap.split(':')[0] for gap in UNDECLARED_GAPS - rendered)
+        extra = sorted(gap.split(':')[0] for gap in rendered - UNDECLARED_GAPS)
         msg = (
             f'a port answering NEITHER question rendered {len(rendered)} gap(s). Not rendered: '
             f'{missing}; rendered and not pinned: {extra}. A gap that is not printed is a gap that '
             f'is assumed away, and this arm is the only thing standing between the property arm and '
             f'a door that renders nothing at all.'
         )
-        raise AssertionError(msg)
-
-
-def assert_the_holders_adapter_names_a_planted_holder(
-    *,
-    live_holders: Callable[..., Sequence[str]],
-    broker: Broker,
-) -> None:
-    """PLANTED ON THE MACHINE, both sides. An adapter answering "nobody" forever guards nothing.
-
-    The floor is the middle reading: an adapter that returns an empty tuple whatever is happening
-    reads as "no verdict is ever in flight", which is a vacuous green the door cannot see through.
-    The two empty readings either side are the other half of the ratchet -- an adapter that always
-    named somebody would refuse every dependency change this repo will ever make.
-
-    Args:
-        live_holders: the repo's own holders adapter, called as ``live_holders(broker=...)``.
-        broker: an ISOLATED records directory, so the plant contends only with itself.
-
-    Raises:
-        AssertionError: the adapter saw a holder that was not planted, or missed one that was.
-
-    """
-    before = tuple(live_holders(broker=broker))
-    if before:
-        msg = f'a fresh records directory already named {list(before)} as a verdict run'
-        raise AssertionError(msg)
-    planted = 'verify:the-planted-run'
-    with BoxLock(planted, broker=broker).held():
-        named = tuple(live_holders(broker=broker))
-    if not any(planted in holder for holder in named):
-        msg = (
-            f'the adapter answered {list(named)} while {planted!r} really held the box. H1 cannot be '
-            f'refused by an adapter that cannot see the run it is meant to refuse, and an adapter '
-            f'that can never see one is indistinguishable from a repo declaring no lock -- except '
-            f'that the repo declaring none is at least reported.'
-        )
-        raise AssertionError(msg)
-    after = tuple(live_holders(broker=broker))
-    if after:
-        msg = f'the planted holder outlived the block that took it: {list(after)}'
         raise AssertionError(msg)
 
 
@@ -258,9 +207,10 @@ def assert_the_door_refuses_while_a_verdict_is_in_flight(
 
     """
     holder = f'verify:{repo_name} pid=4242'
-    held = Port(name=repo_name, holders=lambda: (holder,), anchor_paths=verdict_anchors)
+    port = Port(name=repo_name, anchor_paths=verdict_anchors)
     try:
-        mutate(A_REQUIREMENT, port=held, dry_run=True)
+        with EnvironmentSeat(sys.prefix, holder).held():
+            mutate(A_REQUIREMENT, port=port, dry_run=True)
     except HeldEnvironmentError as refusal:
         text = str(refusal)
     else:
@@ -278,6 +228,35 @@ def assert_the_door_refuses_while_a_verdict_is_in_flight(
             f'when it ends.'
         )
         raise AssertionError(msg)
+
+
+def assert_a_verdict_in_another_environment_does_not_refuse(
+    *,
+    repo_name: str,
+    verdict_anchors: Callable[[], Sequence[Path]],
+    elsewhere: Path,
+) -> None:
+    """THE OTHER SIDE OF H1: a verdict holding an UNRELATED environment never refuses this one.
+
+    A guard keyed on the machine rather than on the environment refuses a sync of repo B because a
+    verify runs in repo A -- the over-broad denial that teaches agents to route around the door.
+
+    Args:
+        repo_name: what the port calls this repo.
+        verdict_anchors: the repo's anchor adapter.
+        elsewhere: the prefix of an environment that is not this interpreter's.
+
+    Raises:
+        AssertionError: the door refused while only another environment was held.
+
+    """
+    holder = f'verify:another-repo-than-{repo_name}'
+    try:
+        with EnvironmentSeat(elsewhere, holder).held():
+            mutate(A_REQUIREMENT, port=Port(name=repo_name, anchor_paths=verdict_anchors), dry_run=True)
+    except HeldEnvironmentError as refusal:
+        msg = f'the door refused a change to this environment because {holder} held {elsewhere}: {refusal}'
+        raise AssertionError(msg) from None
 
 
 def assert_a_moved_key_retires_a_planted_anchor(
@@ -306,7 +285,6 @@ def assert_a_moved_key_retires_a_planted_anchor(
         raise AssertionError(msg)
     moved = Port(
         name=repo_name,
-        holders=lambda: (),
         anchor_paths=verdict_anchors,
         key=scripted_keys('before', 'after'),
     )
@@ -348,7 +326,6 @@ def assert_an_unmoved_key_retires_nothing(
         raise AssertionError(msg)
     still = Port(
         name=repo_name,
-        holders=lambda: (),
         anchor_paths=verdict_anchors,
         key=scripted_keys('same', 'same'),
     )

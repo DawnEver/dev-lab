@@ -31,7 +31,7 @@ from typing import Any, Final
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
-from lab_commons.dev.integrator import load_policy
+from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.log import emit
 
 __all__ = [

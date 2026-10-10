@@ -157,7 +157,7 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     """
     out: list[str] = []
     for artefact in sorted(deltas):
-        base = artefact_base(artefact)
+        base = artefact_base(artefact, root)
         path = root / artefact
         report = inspect_file(path, base, deltas[artefact])
         if report.status == INSTALLED:

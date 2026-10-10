@@ -32,7 +32,7 @@ from lab_commons.dev.forgetick import (
     serving,
     tick,
 )
-from lab_commons.dev.integrator import Policy
+from lab_commons.dev.lanepolicy import Policy
 from lab_commons.hpc.grants import Grant, workstation
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)

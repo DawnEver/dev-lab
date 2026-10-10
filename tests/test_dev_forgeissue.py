@@ -73,8 +73,8 @@ def _lanes_repo(tmp_path: Path) -> Path:
 
 
 def test_the_derived_state_table() -> None:
-    lane = Lane('feat/x', 'a' * 40, '')
-    green = Lane('feat/x', 'a' * 40, 'success')
+    lane = Lane('feat/x', 'a' * 40, ready=False)
+    green = Lane('feat/x', 'a' * 40, ready=True)
     assert derive(is_open=True, closed_on_default=False, lanes=()) == TODO
     assert derive(is_open=True, closed_on_default=False, lanes=(lane,)) == IN_PROGRESS
     assert derive(is_open=True, closed_on_default=False, lanes=(lane, green)) == READY
@@ -120,12 +120,12 @@ def test_issue_status_derives_ready_from_a_green_gate_and_reports_conflicting_cl
 
     def gate(_client: object, sha: str) -> tuple[Status, ...]:
         asked.append(sha)
-        return (Status('lab/gate', 'success', 'VERDICT result=pass', ''),)
+        return (Status('tests/linux', 'success', 'scope=full ran=3 hands=- nowhere=0', ''),)
 
     state = issue_status(client(_FORGE, Loopback(server)), repo, 7, statuses=gate)
     assert state.state == READY
     assert [lane.branch for lane in state.lanes] == ['feat/x']
-    assert asked == [state.lanes[0].tip], 'the gate is read on the LANE TIP, nowhere else'
+    assert asked == [state.lanes[0].tip], 'the parts are read on the LANE TIP, nowhere else'
     assert state.conflict, 'two unstamped claims naming two branches are a conflict for the human'
 
 

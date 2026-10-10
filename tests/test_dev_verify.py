@@ -29,12 +29,13 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Final
 
 import pytest
 
-from lab_commons.dev import forgeoutbox, verify
+from lab_commons.dev import localpart, verify
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, verify_log
 from lab_commons.dev.reports import (
@@ -46,8 +47,8 @@ from lab_commons.dev.reports import (
     read_ruff,
     stale_declarations,
 )
+from lab_commons.dev.runcache import CachedRun, runs
 from lab_commons.dev.verdict import Outcome, Verdict
-from lab_commons.dev.verdictledger import Entry, entries, outcomes_dir, record, run_test_id
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
 
@@ -107,6 +108,12 @@ VENDOR = 'tests/test_vendor.py'
 #: The two node ids :data:`SKIPPING` reports, spelled the way the allowance has to.
 VENDOR_A = 'tests/test_vendor.py::test_a'
 VENDOR_B = 'tests/test_vendor.py::test_b'
+
+
+@pytest.fixture(autouse=True)
+def _fresh_family(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every ``main`` here judges a planted run, never this box's forge: the family check is its own file."""
+    monkeypatch.setattr(verify, 'family_freshness', lambda _root: (None, None))
 
 
 def _verdict(reports: tuple[StepReport, ...], log: Path) -> Verdict:
@@ -627,7 +634,7 @@ class TestThePlantedControl:
             handle.flush()
             return 0
 
-        monkeypatch.setattr(verify, 'hold_the_box', no_seat)
+        monkeypatch.setattr(verify, 'hold_run_seats', no_seat)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path, selection)
         expected_command = (sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *verify.OUTCOME_PLUGIN)
@@ -669,7 +676,7 @@ class TestThePlantedControl:
             handle.flush()
             return 0
 
-        monkeypatch.setattr(verify, 'hold_the_box', lambda _stack, _what, **_kwargs: None)
+        monkeypatch.setattr(verify, 'hold_run_seats', lambda _stack, _what, **_kwargs: None)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path)
         assert verdict.result.outcome is Outcome.INCONCLUSIVE
@@ -860,19 +867,21 @@ def _patched_main(
     posted: list = []
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
     monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
-    monkeypatch.setattr(verify, 'ledger_path', lambda _root: tmp_path / 'ledger.jsonl')
+    monkeypatch.setattr(verify, 'cache_path', lambda _root: tmp_path / 'runs.jsonl')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(forgeoutbox, 'enqueue', lambda _root, post: posted.append(post))
-    monkeypatch.setattr(forgeoutbox, 'flush', lambda _root: ['status: held'])
+    monkeypatch.setattr(localpart, 'local_record', lambda _root, **fields: fields)
+    monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
     assert verify.main([]) == EXIT_CODES[Outcome.PASS]
     return posted
 
 
-def test_a_judged_run_on_a_clean_unmoved_tree_queues_lab_gate_on_head(monkeypatch, tmp_path: Path) -> None:
+def test_a_judged_clean_run_posts_this_platforms_full_part_on_head(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[(), ()])
-    assert [(post.context, post.sha, post.state) for post in posted] == [('lab/gate', 'a' * 40, 'success')]
+    assert [(record['sha'], record['platform'], record['scope']) for record in posted] == [
+        ('a' * 40, localpart.this_platform(), 'full')
+    ]
 
 
 def test_a_dirty_tree_queues_nothing_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
@@ -892,7 +901,7 @@ def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeyp
     box.mkdir()
     monkeypatch.setattr(verify, 'project_root', lambda: root)
     monkeypatch.setattr(verify, 'box_directory', lambda: box)
-    monkeypatch.setattr(verify, 'ledger_path', lambda _root: tmp_path / 'ledger.jsonl')
+    monkeypatch.setattr(verify, 'cache_path', lambda _root: tmp_path / 'runs.jsonl')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('the duplicate ran the suite'))
     key = verify.run_key(root, ('tests/a.py',))
     claim_path(box, key).write_text(json.dumps({'pid': os.getpid(), 'run': 'r1'}), encoding='utf-8')
@@ -907,57 +916,57 @@ def test_the_run_key_is_the_tree_the_env_and_the_selection(tmp_path: Path) -> No
     assert verify.run_key(tmp_path, ('a',)) != verify.run_key(tmp_path, ('b',))
 
 
-def _ledgered(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Route ``main`` at a planted root, inflight directory and ledger; returns the ledger path."""
-    ledger = tmp_path / 'ledger.jsonl'
+def _cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Route ``main`` at a planted root, inflight directory and run cache; returns the cache path."""
+    cache = tmp_path / 'runs.jsonl'
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
     monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
-    monkeypatch.setattr(verify, 'ledger_path', lambda _root: ledger)
+    monkeypatch.setattr(verify, 'cache_path', lambda _root: cache)
     monkeypatch.setattr(verify, 'head_sha', lambda _root: 'a' * 40)
     monkeypatch.setattr(verify, 'status_paths', lambda _root: ())
-    return ledger
+    return cache
 
 
-def test_a_selection_the_ledger_already_judged_is_cited_and_not_run(monkeypatch, tmp_path: Path) -> None:
-    """THE LOOKUP BEFORE THE RUN: a recorded FAIL on this key is the answer, and nothing runs."""
-    ledger = _ledgered(monkeypatch, tmp_path)
+def _plant(cache: Path, key: verify.RunKey, result: str) -> None:
+    cache.write_text(
+        json.dumps(asdict(CachedRun(key.tree, key.env, key.selector, result, '', 'x.log'))) + '\n', encoding='utf-8'
+    )
+
+
+def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, tmp_path: Path) -> None:
+    """THE LOOKUP BEFORE THE RUN: a cached FAIL on this key is the answer, and nothing runs."""
+    cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a judged selection ran again'))
-    key = verify.run_key(tmp_path, ('tests/a.py',))
-    entry = Entry(key.tree, key.env, run_test_id(key.selector), 'FAIL', tier='verify', commit='', log='x.log')
-    record(ledger, [entry])
+    _plant(cache, verify.run_key(tmp_path, ('tests/a.py',)), 'FAIL')
     assert verify.main(['--no-status', 'tests/a.py']) == EXIT_CODES[Outcome.FAIL]
 
 
-def test_rerun_ignores_the_ledger(monkeypatch, tmp_path: Path) -> None:
-    ledger = _ledgered(monkeypatch, tmp_path)
-    key = verify.run_key(tmp_path, ())
-    record(ledger, [Entry(key.tree, key.env, run_test_id(key.selector), 'FAIL', tier='verify', commit='', log='x')])
+def test_rerun_ignores_the_cache(monkeypatch, tmp_path: Path) -> None:
+    cache = _cached(monkeypatch, tmp_path)
+    _plant(cache, verify.run_key(tmp_path, ()), 'FAIL')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     assert verify.main(['--no-status', '--rerun']) == EXIT_CODES[Outcome.PASS]
 
 
-def test_a_promoted_run_records_itself_and_every_test_outcome(monkeypatch, tmp_path: Path) -> None:
-    """The ONE writer: after promotion, the run's key and each node id's outcome enter the ledger."""
-    ledger = _ledgered(monkeypatch, tmp_path)
-    judged = _judged(tmp_path)
-    outcomes = outcomes_dir(judged.log.path)
-    outcomes.mkdir()
-    (outcomes / 'outcomes.json').write_text(json.dumps({'tests/a.py::t': 'PASS'}), encoding='utf-8')
-    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: judged)
+def test_a_promoted_run_is_cached_with_its_commit(monkeypatch, tmp_path: Path) -> None:
+    """The one writer: after promotion, the run's key, result and commit enter the cache."""
+    cache = _cached(monkeypatch, tmp_path)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     assert verify.main(['--no-status']) == EXIT_CODES[Outcome.PASS]
     key = verify.run_key(tmp_path, ())
-    recorded = {(row.test, row.result, row.commit) for row in entries(ledger)}
-    assert recorded == {(run_test_id(key.selector), 'PASS', 'a' * 40), ('tests/a.py::t', 'PASS', 'a' * 40)}
-    assert {row.tree for row in entries(ledger)} == {key.tree}
+    assert [(run.tree, run.selector, run.result, run.commit) for run in runs(cache)] == [
+        (key.tree, key.selector, 'PASS', 'a' * 40)
+    ]
 
 
-def test_an_inconclusive_run_records_nothing(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED: nobody-knows never enters the ledger, so it can never be cited."""
-    ledger = _ledgered(monkeypatch, tmp_path)
+def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED: nobody-knows never enters the cache, so it can never be cited, and is no part."""
+    cache = _cached(monkeypatch, tmp_path)
     log = tmp_path / 'cut.log'
     log.write_text('ran\n', encoding='utf-8')
     cut = StepReport(name='pytest', reported=(), failures=(), truncated=('the wall fired',))
     verdict = build_verdict((cut,), tree='sha256:' + 'b' * 64, env='env:1', spec='verify', log=LogRef.of(log))
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
     assert verify.main(['--no-status']) == EXIT_CODES[Outcome.INCONCLUSIVE]
-    assert entries(ledger) == ()
+    assert runs(cache) == ()
+    assert localpart.post_part(tmp_path, verdict, 'a' * 40, ()) == 'part: not posted -- an INCONCLUSIVE run is no part'

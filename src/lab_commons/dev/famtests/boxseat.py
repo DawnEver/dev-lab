@@ -1,6 +1,6 @@
-"""ONE BOX, ONE SEAT -- the assertion half, shared, over :mod:`lab_commons.dev.boxlock`/``boxwait``.
+"""ONE BOX, ONE SEAT -- the assertion half, shared, over :mod:`lab_commons.dev.cpuseat`/``boxwait``.
 
-:mod:`lab_commons.dev.boxlock` publishes the EXCLUSION and :mod:`lab_commons.dev.boxwait` publishes
+:mod:`lab_commons.dev.cpuseat` publishes the EXCLUSION and :mod:`lab_commons.dev.boxwait` publishes
 the bounded, narrated WAIT on it. What stayed forked was the eight-arm test that drives them.
 MEASURED 2026-09-19 by two independent audit lanes that did not know of each other: consumer-b's and
 consumer-c's ``tests/architecture/test_the_verdict_run_takes_the_box.py`` are **84.6% identical**,
@@ -34,11 +34,11 @@ WHAT ARRIVES WITH NO DEFAULT:
   in the kit is one repo's answer handed silently to another.
 
 THE ``>=`` IN BOTH FORKS IS FIXED HERE AND THAT IS THE ONE BEHAVIOURAL CHANGE AN ADOPTER MEETS. Both
-copies assert ``signature(hold_the_box).parameters.keys() >= {'stack', 'what', 'wait_s', 'poll_s'}``.
+copies assert ``signature(hold_run_seats).parameters.keys() >= {'stack', 'what', 'wait_s', 'poll_s'}``.
 A ``>=`` is satisfied by every LONGER signature, so it cannot see a parameter ADDED -- and a new
 required parameter on a shared wait is exactly the change that breaks the other three repos' callers
 silently. It is the declared-``<=``-live shape that hid six wrong constants in this family in one
-week. :data:`HOLD_THE_BOX_PARAMETERS` is compared for EQUALITY, both directions red.
+week. :data:`HOLD_RUN_SEATS_PARAMETERS` is compared for EQUALITY, both directions red.
 """
 
 from __future__ import annotations
@@ -47,8 +47,8 @@ import inspect
 import sys
 from typing import TYPE_CHECKING, Any, Final, Protocol, cast
 
-from lab_commons.dev.boxlock import BOX_POOL, BoxLock
-from lab_commons.dev.boxwait import PROGRESS_S, WAIT_S, hold_the_box, holders_line
+from lab_commons.dev.boxwait import PROGRESS_S, WAIT_S, hold_run_seats, holders_line
+from lab_commons.dev.cpuseat import CPU_POOL, CpuSeat
 from lab_commons.resources import BOX_SEATS, Broker, Exhausted
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = [
-    'HOLD_THE_BOX_PARAMETERS',
+    'HOLD_RUN_SEATS_PARAMETERS',
     'assert_a_pool_name_of_its_own_does_not_opt_a_run_out',
     'assert_a_second_run_is_refused_while_one_holds_the_box',
     'assert_asking_who_holds_the_box_is_not_taking_it',
@@ -67,20 +67,20 @@ __all__ = [
     'assert_the_wait_is_bounded_and_narrates',
 ]
 
-#: The parameters :func:`lab_commons.dev.boxwait.hold_the_box` takes, as a NAMED SET compared for
+#: The parameters :func:`lab_commons.dev.boxwait.hold_run_seats` takes, as a NAMED SET compared for
 #: EQUALITY. Not a superset assertion -- see this module's docstring -- and not a count, which could
 #: not say which of the four moved and would invite being edited to match whatever it found.
-HOLD_THE_BOX_PARAMETERS: Final[frozenset[str]] = frozenset({'stack', 'what', 'wait_s', 'poll_s'})
+HOLD_RUN_SEATS_PARAMETERS: Final[frozenset[str]] = frozenset({'stack', 'what', 'wait_s', 'poll_s'})
 
 #: The call every arm looks for in the entry point's own source. The paren is load-bearing: a module
 #: that merely IMPORTS the name would otherwise satisfy an assertion about calling it.
-_THE_CALL: Final = 'hold_the_box('
+_THE_CALL: Final = 'hold_run_seats('
 
 
 class _SeatModule(Protocol):
     """The exact binding a verdict module must use, checked by object identity."""
 
-    hold_the_box: Callable[..., object]
+    hold_run_seats: Callable[..., object]
 
 
 def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., Any]) -> None:
@@ -96,7 +96,7 @@ def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., A
         entry_point: the repo's own verdict function, e.g. ``lab_commons.dev.verify.run_verify``.
 
     Raises:
-        AssertionError: the entry point's module bound another ``hold_the_box``, or does not call it.
+        AssertionError: the entry point's module bound another ``hold_run_seats``, or does not call it.
 
     """
     module = sys.modules.get(entry_point.__module__)
@@ -107,13 +107,13 @@ def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., A
         )
         raise AssertionError(msg)
     try:
-        bound = cast(_SeatModule, module).hold_the_box
+        bound = cast(_SeatModule, module).hold_run_seats
     except AttributeError:
         bound = None
-    if bound is not hold_the_box:
+    if bound is not hold_run_seats:
         msg = (
-            f'{entry_point.__module__} bound {bound!r} as `hold_the_box`, not '
-            f'{hold_the_box!r}. This repo is a party to the box rendezvous only if the function its '
+            f'{entry_point.__module__} bound {bound!r} as `hold_run_seats`, not '
+            f'{hold_run_seats!r}. This repo is a party to the box rendezvous only if the function its '
             f'verdict entry point calls is the FAMILY one -- a same-named local excludes nobody.'
         )
         raise AssertionError(msg)
@@ -128,7 +128,7 @@ def assert_the_verdict_entry_point_takes_the_box(*, entry_point: Callable[..., A
 
 
 def assert_a_second_run_is_refused_while_one_holds_the_box(*, records: Path) -> None:
-    """PLANTED CONTENTION on the REAL ``BoxLock``, and the refusal must NAME who is in the way.
+    """PLANTED CONTENTION on the REAL ``CpuSeat``, and the refusal must NAME who is in the way.
 
     TWO BROKER INSTANCES OVER ONE RECORDS DIRECTORY, because that is the shape the rule is about: two
     parties sharing nothing but a path. One object handing itself a refusal would prove only that a
@@ -144,9 +144,9 @@ def assert_a_second_run_is_refused_while_one_holds_the_box(*, records: Path) -> 
 
     """
     planted = 'the-planted-holder'
-    with BoxLock(planted, broker=Broker(resource_dir=records)).held():
+    with CpuSeat(planted, broker=Broker(resource_dir=records)).held():
         try:
-            with BoxLock('the-run-that-must-queue', broker=Broker(resource_dir=records)).held():
+            with CpuSeat('the-run-that-must-queue', broker=Broker(resource_dir=records)).held():
                 pass
         except Exhausted as refusal:
             named = holders_line(refusal)
@@ -182,11 +182,11 @@ def assert_the_seat_is_released_when_the_run_ends(*, records: Path) -> None:
 
     """
     broker = Broker(resource_dir=records)
-    with BoxLock('the-first-run', broker=broker).held():
+    with CpuSeat('the-first-run', broker=broker).held():
         pass
     try:
-        with BoxLock('the-run-after-it', broker=broker).held():
-            held = BoxLock.holders(broker=broker)
+        with CpuSeat('the-run-after-it', broker=broker).held():
+            held = CpuSeat.holders(broker=broker)
     except Exhausted as refusal:
         msg = (
             f'the seat was never released: {holders_line(refusal)}. A lock that outlives the run '
@@ -202,7 +202,7 @@ def assert_the_seat_is_released_when_the_run_ends(*, records: Path) -> None:
 def assert_a_pool_name_of_its_own_does_not_opt_a_run_out(*, records: Path, pool_name: str) -> None:
     """THE PATH, WHICH IS THE RULE'S ACTUAL CLAIM: agreeing on the mechanism alone measures nothing.
 
-    A repo that adopted ``BoxLock`` and then named its own pool would be excluded from nobody. So a
+    A repo that adopted ``CpuSeat`` and then named its own pool would be excluded from nobody. So a
     job is admitted under a pool name of its OWN and must STILL be refused, because it demands the
     BOX dimension, whose records are one set per box rather than one set per pool -- it meets a
     holder it never agreed on a name with.
@@ -220,7 +220,7 @@ def assert_a_pool_name_of_its_own_does_not_opt_a_run_out(*, records: Path, pool_
         msg = 'the private pool has no name, so this arm plants nothing and cannot fail'
         raise AssertionError(msg)
     shared = 'the-run-under-the-shared-name'
-    with BoxLock(shared, broker=Broker(resource_dir=records)).held():
+    with CpuSeat(shared, broker=Broker(resource_dir=records)).held():
         try:
             with Broker(resource_dir=records).admit(
                 pool_name,
@@ -263,8 +263,8 @@ def assert_asking_who_holds_the_box_is_not_taking_it(*, records: Path) -> None:
 
     """
     broker = Broker(resource_dir=records)
-    first = BoxLock.holders(broker=broker)
-    second = BoxLock.holders(broker=broker)
+    first = CpuSeat.holders(broker=broker)
+    second = CpuSeat.holders(broker=broker)
     if first or second:
         msg = (
             f'a fresh records directory named {first or second} as a holder. Asking is not taking: a '
@@ -272,8 +272,8 @@ def assert_asking_who_holds_the_box_is_not_taking_it(*, records: Path) -> None:
         )
         raise AssertionError(msg)
     taken = 'the-run-that-really-takes-it'
-    with BoxLock(taken, broker=broker).held():
-        held = [holder.what for holder in BoxLock.holders(broker=broker)]
+    with CpuSeat(taken, broker=broker).held():
+        held = [holder.what for holder in CpuSeat.holders(broker=broker)]
     if held != [taken]:
         msg = (
             f'the read reported {held} while exactly one run held the box. Equality and not a '
@@ -281,7 +281,7 @@ def assert_asking_who_holds_the_box_is_not_taking_it(*, records: Path) -> None:
             f'that sees neither, and both end with a second run starting.'
         )
         raise AssertionError(msg)
-    after = BoxLock.holders(broker=broker)
+    after = CpuSeat.holders(broker=broker)
     if after:
         msg = f'the holder outlived the block that took it: {[holder.what for holder in after]}'
         raise AssertionError(msg)
@@ -298,7 +298,7 @@ def assert_the_rendezvous_is_outside_this_repository(*, root: Path) -> None:
         AssertionError: the box records live inside *root*.
 
     """
-    directory = BoxLock.resource_dir()
+    directory = CpuSeat.resource_dir()
     if directory.is_relative_to(root):
         msg = (
             f'the box records live at {directory}, inside {root}. A rendezvous a sibling repo cannot '
@@ -316,7 +316,7 @@ def assert_the_wait_is_bounded_and_narrates(*, progress_share_ceiling: float) ->
 
     Raises:
         AssertionError: the wait is unbounded, the queue is silent for too long a share of it, or the
-            shared wait's parameter set is no longer :data:`HOLD_THE_BOX_PARAMETERS`.
+            shared wait's parameter set is no longer :data:`HOLD_RUN_SEATS_PARAMETERS`.
 
     """
     if not 0 < progress_share_ceiling <= 1:
@@ -335,12 +335,12 @@ def assert_the_wait_is_bounded_and_narrates(*, progress_share_ceiling: float) ->
             f'a terminal, and the remedy for the two is opposite.'
         )
         raise AssertionError(msg)
-    live = frozenset(inspect.signature(hold_the_box).parameters)
-    if live != HOLD_THE_BOX_PARAMETERS:
+    live = frozenset(inspect.signature(hold_run_seats).parameters)
+    if live != HOLD_RUN_SEATS_PARAMETERS:
         msg = (
-            f'`hold_the_box` takes {sorted(live)}, not {sorted(HOLD_THE_BOX_PARAMETERS)}. Added and '
-            f'not pinned: {sorted(live - HOLD_THE_BOX_PARAMETERS)}; pinned and gone: '
-            f'{sorted(HOLD_THE_BOX_PARAMETERS - live)}. Both directions: a parameter REMOVED means a '
+            f'`hold_run_seats` takes {sorted(live)}, not {sorted(HOLD_RUN_SEATS_PARAMETERS)}. Added and '
+            f'not pinned: {sorted(live - HOLD_RUN_SEATS_PARAMETERS)}; pinned and gone: '
+            f'{sorted(HOLD_RUN_SEATS_PARAMETERS - live)}. Both directions: a parameter REMOVED means a '
             f'caller can no longer bound its own wait, and a required one ADDED breaks the other '
             f'three repos silently -- which a superset assertion cannot see.'
         )
@@ -354,7 +354,7 @@ def assert_the_box_pool_is_a_name_rather_than_a_measurement() -> None:
         AssertionError: the pool or the box-wide dimension has no name.
 
     """
-    if not BOX_POOL.strip():
+    if not CPU_POOL.strip():
         msg = 'the records pool has no name, so nothing in this module wrote where it claimed to'
         raise AssertionError(msg)
     if not BOX_SEATS.name.strip():

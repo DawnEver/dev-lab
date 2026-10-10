@@ -27,6 +27,6 @@
 
 - **One test session at a time, machine-wide**, and the hazard is the SESSION rather than the tier: a serial run is not "small".
 - Four lanes once obeyed "never run a full gate" by running 274 tests serially, a slow integration test, and two single files — none of them a gate — and the box hit 54 python processes until the serial gate they were protecting lost a worker and blocked forever waiting on it.
-- The lock is held by the runner for EVERY tier and a second run is REFUSED and told who holds the box; `lab_commons.dev.boxlock` is the shared implementation.
+- The lock is held by the runner for EVERY tier and a second run is REFUSED and told who holds the box; `lab_commons.dev.cpuseat` is the shared implementation.
 - Independent vendor tools MAY run concurrently where a repo has measured that they can; the per-vendor grouping bounds RAM and a vendor's unclassified error class, not a box-wide serialization.
 - When lanes fan out, tests run once after integration (`ONE-RUN-AFTER-INTEGRATION`): a lane runs at most a targeted `measure` of the tests it touched, and the coordinator's main session merges every ready lane and runs the gate once; the full discipline is on [fan-out](fanout.md).
