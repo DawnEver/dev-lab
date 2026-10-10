@@ -13,20 +13,19 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, make_repo, run_git
 
-from lab_commons.dev.forgestatus import GATE_CONTEXT, HEAVY_CONTEXT, Status
+from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.integrator import (
     BLOCKED,
-    HEAVY_NEEDED,
+    PARTS_NEEDED,
     PROMOTE,
     WAITING,
     LaneRef,
-    Policy,
-    gate_ready,
-    load_policy,
+    lane_ready,
     main,
     read_refs,
     ready_lanes,
 )
+from lab_commons.dev.lanepolicy import Policy, load_policy
 
 _POLICY = Policy(lane_prefixes=('feat/', 'fix/'))
 
@@ -35,14 +34,32 @@ def _ref(branch: str, tip: str, at: int = 0, *, absorbed: bool = False) -> LaneR
     return LaneRef(branch, tip, at, absorbed=absorbed)
 
 
-def test_gate_ready_is_success_and_nothing_else() -> None:
-    assert gate_ready('success')
-    assert not any(gate_ready(state) for state in ('failure', 'pending', 'error', ''))
+def _part(state: str = 'success', *, platform: str = 'linux', scope: str = 'full', hands: str = '-') -> Status:
+    """A ``tests/<platform>`` part as the forge holds it -- the one name for a platform result."""
+    return Status(f'tests/{platform}', state, f'scope={scope} ran=3 hands={hands} nowhere=0', '')
+
+
+_GREEN = (_part(),)
+_RED = (_part('failure'),)
+
+
+def test_a_lane_is_ready_only_when_its_parts_stand_pass() -> None:
+    assert lane_ready(_GREEN, head='a')
+    assert lane_ready((_part(scope='incremental'),), head='a'), 'a lane takes a part of any scope'
+    assert not lane_ready(_RED, head='a')
+    assert not lane_ready((), head='a'), 'no part is no result'
+    assert not lane_ready((_part('pending'),), head='a'), 'a claim is not a part'
+    assert not lane_ready((_part(hands='windows:2'),), head='a'), 'a part handing to a missing platform'
+
+
+def test_a_retired_lab_namespace_status_is_not_a_platform_result() -> None:
+    """PLANTED: a green ``lab``-namespace status carries no part, so the lane still waits."""
+    assert not lane_ready((Status('lab' + '/gate', 'success', 'PASS', ''),), head='a')
 
 
 def test_a_lane_is_ready_only_on_a_green_gate_at_its_exact_tip() -> None:
     refs = (_ref('feat/a', 'a1', 3), _ref('feat/b', 'b1', 1), _ref('fix/2-c', 'c1', 2), _ref('feat/d', 'd1'))
-    statuses = {'a1': {GATE_CONTEXT: 'success'}, 'b1': {GATE_CONTEXT: 'success'}, 'c1': {GATE_CONTEXT: 'failure'}}
+    statuses = {'a1': _GREEN, 'b1': _GREEN, 'c1': _RED}
     queue = ready_lanes(refs, statuses, _POLICY)
     # Ordered by the tip's commit time, oldest first: the lane that finished first merges first.
     assert [lane.branch for lane in queue.merge] == ['feat/b', 'feat/a']
@@ -50,13 +67,13 @@ def test_a_lane_is_ready_only_on_a_green_gate_at_its_exact_tip() -> None:
 
 
 def test_a_status_on_an_older_tip_does_not_carry_to_a_moved_or_force_pushed_one() -> None:
-    queue = ready_lanes((_ref('feat/a', 'new'),), {'old': {GATE_CONTEXT: 'success'}}, _POLICY)
+    queue = ready_lanes((_ref('feat/a', 'new'),), {'old': _GREEN}, _POLICY)
     assert queue.merge == ()
     assert [(lane.branch, lane.state) for lane in queue.held] == [('feat/a', WAITING)]
 
 
 def test_undeclared_prefixes_absorbed_lanes_and_the_integration_branches_are_never_queued() -> None:
-    green = {GATE_CONTEXT: 'success'}
+    green = _GREEN
     refs = (
         _ref('wip/x', 'w'),
         _ref('feat/done', 'f', absorbed=True),
@@ -68,29 +85,36 @@ def test_undeclared_prefixes_absorbed_lanes_and_the_integration_branches_are_nev
 
 
 def test_ties_order_by_branch_name_so_two_modes_print_the_same_queue() -> None:
-    green = {GATE_CONTEXT: 'success'}
+    green = _GREEN
     queue = ready_lanes((_ref('feat/z', 'z', 5), _ref('feat/a', 'a', 5)), {'z': green, 'a': green}, _POLICY)
     assert [lane.branch for lane in queue.merge] == ['feat/a', 'feat/z']
 
 
 @pytest.mark.parametrize(
-    ('heavy', 'state'),
-    [('success', PROMOTE), ('failure', BLOCKED), ('', HEAVY_NEEDED), ('pending', HEAVY_NEEDED)],
+    ('parts', 'state'),
+    [
+        (_GREEN, PROMOTE),
+        (_RED, BLOCKED),
+        ((), PARTS_NEEDED),
+        ((_part('pending'),), PARTS_NEEDED),
+        ((_part(scope='incremental'),), PARTS_NEEDED),
+    ],
 )
-def test_the_integration_tip_not_on_main_is_judged_by_its_heavy_status(heavy: str, state: str) -> None:
-    statuses = {'i': {HEAVY_CONTEXT: heavy}} if heavy else {}
+def test_the_integration_tip_not_on_main_is_judged_by_its_full_parts(parts: tuple[Status, ...], state: str) -> None:
+    """The same reading push admission makes for the trunk: every part a PASS of scope full."""
+    statuses = {'i': parts}
     queue = ready_lanes((_ref('integrate/main', 'i'),), statuses, _POLICY)
     assert queue.promotion is not None
     assert (queue.promotion.branch, queue.promotion.state) == ('integrate/main', state)
 
 
-def test_the_consumer_declares_prefixes_branches_and_contexts(tmp_path: Path) -> None:
+def test_the_consumer_declares_prefixes_and_branches(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.integrator]\nlane_prefixes = ["lane/"]\nintegration = "stage"\ngate_context = "ci/gate"\n',
+        '[tool.lab_commons.integrator]\nlane_prefixes = ["lane/"]\nintegration = "stage"\n',
         encoding='utf-8',
     )
     policy = load_policy(tmp_path)
-    assert policy == Policy(lane_prefixes=('lane/',), integration='stage', gate_context='ci/gate')
+    assert policy == Policy(lane_prefixes=('lane/',), integration='stage')
     assert load_policy(tmp_path / 'absent') == Policy()
 
 
@@ -137,7 +161,7 @@ def test_read_refs_marks_what_the_integration_branch_already_holds(tmp_path: Pat
 
 def test_the_poll_entry_prints_the_ordered_queue(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo, tips = _repo(tmp_path)
-    green = {tips['feat/out']: (Status(GATE_CONTEXT, 'success', 'PASS', ''),)}
+    green = {tips['feat/out']: _GREEN}
 
     def statuses(sha: str) -> tuple[Status, ...]:
         return green.get(sha, ())
@@ -145,6 +169,6 @@ def test_the_poll_entry_prints_the_ordered_queue(tmp_path: Path, capsys: pytest.
     assert main(['queue', '--json'], cwd=repo, statuses=statuses) == 0
     printed = json.loads(capsys.readouterr().out)
     assert [lane['branch'] for lane in printed['merge']] == ['feat/out']
-    assert printed['promotion']['state'] == HEAVY_NEEDED
+    assert printed['promotion']['state'] == PARTS_NEEDED
     assert main(['queue'], cwd=repo, statuses=statuses) == 0
     assert f'merge  feat/out  {tips["feat/out"][:12]}' in capsys.readouterr().out

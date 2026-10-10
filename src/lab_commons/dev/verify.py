@@ -44,14 +44,17 @@ from typing import IO, Final
 
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
-from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
+from lab_commons.dev.boxwait import WAIT_S, hold_run_seats, holders_line
 from lab_commons.dev.content import content_address
+from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.envkey import env_key, env_manifest
-from lab_commons.dev.forgeoutbox import publish_verdict
+from lab_commons.dev.familyheads import check, installed_family, offline_line, refusal, sync_door
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.logref import LogRef, UnverifiableLog
+from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir, read_outcomes, read_reasons
+from lab_commons.dev.platformparts import local_record, post_local, this_platform
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import (
     MalformedAllowance,
@@ -61,16 +64,10 @@ from lab_commons.dev.reports import (
     read_ruff,
     stale_declarations,
 )
+from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
-from lab_commons.dev.verdictledger import (
-    OUTCOMES_DIR_VAR,
-    ledger_path,
-    outcomes_dir,
-    record_promoted,
-    run_test_id,
-    served,
-)
+from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
 from lab_commons.log import emit
 from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
@@ -145,8 +142,8 @@ PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
 #: or full, whichever conftest the selected tests sit under (:func:`lab_commons.dev.durations.pytest_configure`).
 LEDGER_PLUGIN: Final[tuple[str, ...]] = ('-p', durations.__name__)
 
-#: The per-test OUTCOME recorder the verdict ledger is filled from (inert without its env var).
-OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.verdictledger')
+#: The per-test OUTCOME recorder a run's record is built from (inert without its env var).
+OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.outcomes')
 
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
@@ -433,7 +430,7 @@ def run_verify(
     path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
     with contextlib.ExitStack() as box, path.open('w', encoding='utf-8') as handle:
-        hold_the_box(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
+        hold_run_seats(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
         reports.append(read_hooks(root, handle=handle))
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
@@ -490,13 +487,12 @@ def main(argv: list[str] | None = None) -> int:
     that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
     sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
 
-    EVERY RUN IS THEN QUEUED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
-    :mod:`lab_commons.dev.forgestatus`) -- on HEAD only when the tree was clean before and after the
-    run and HEAD did not move; INCONCLUSIVE posts ``error`` naming itself. ``--no-status`` opts out. The
-    queue (:mod:`lab_commons.dev.forgeoutbox`) is flushed at once, so a commit already on ``origin`` is
-    posted now and an unpushed one is posted by the next ``forge publish`` or ``forge tick`` after its
-    push; an attempted post that fails RAISES ``PostFailed`` naming its remedy, after the verdict line
-    and the ledger are already written.
+    A SETTLED RUN IS THEN POSTED AS THIS PLATFORM'S PART, ``tests/<platform>`` -- the one name for a
+    platform result (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become a run record
+    of the cluster's shape (scope ``full`` for a bare run, ``incremental`` for a selection), posted on
+    HEAD only when the tree was clean before and after the run and HEAD did not move. An INCONCLUSIVE
+    run is no part and posts nothing. ``--no-status`` opts out. A refused or failed post is one line;
+    it changes neither the verdict nor the exit code.
     """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',
@@ -510,24 +506,30 @@ def main(argv: list[str] | None = None) -> int:
         metavar='SECONDS',
         help=f'ceiling on the wait for this box (default {WAIT_S:.0f}s); 0 checks once and refuses',
     )
-    parser.add_argument('--no-status', action='store_true', help='do not post the verdict as a lab/gate status')
-    parser.add_argument('--rerun', action='store_true', help='run even when the ledger already judged this key')
+    parser.add_argument('--no-status', action='store_true', help='do not post the run as this platform part')
+    parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     parsed = parser.parse_args(argv)
     root = project_root()
     arguments = tuple(parsed.pytest_args)
+    stale, offline = family_freshness(root)
+    if offline:
+        emit(f'verify: {offline}', err=True)
+    if stale:
+        emit(f'verify: inconclusive -- nothing ran: {stale}', err=True)
+        return EXIT_CODES[Outcome.INCONCLUSIVE]
     key = run_key(root, arguments)
-    ledger = ledger_path(root)
-    cited = None if parsed.rerun else served(ledger, tree=key.tree, env=key.env, test=run_test_id(key.selector))
+    cache = cache_path(root)
+    cited = None if parsed.rerun else cached(cache, tree=key.tree, env=key.env, selector=key.selector)
     if cited is not None:
         emit(
-            f'verify: CITED {cited.result} -- the ledger ({ledger}) already judged this tree, env and selection; '
+            f'verify: CITED {cited.result} -- the run cache ({cache}) already judged this tree, env and selection; '
             f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
         )
         return EXIT_CODES[Outcome(cited.result.lower())]
 
     def lead() -> str:
-        code, lines = _judge(root, arguments, key, ledger, wait_s=parsed.lock_wait_s, no_status=parsed.no_status)
+        code, lines = _judge(root, arguments, key, cache, wait_s=parsed.lock_wait_s, no_status=parsed.no_status)
         return json.dumps({'code': code, 'lines': lines})
 
     answer, attached = run_once(key, lead, directory=box_directory(), poll_s=DEFAULT_POLL_S)
@@ -537,6 +539,12 @@ def main(argv: list[str] | None = None) -> int:
         for line in shared['lines']:
             emit(line)
     return int(shared['code'])
+
+
+def family_freshness(root: Path) -> tuple[str | None, str | None]:
+    """``(refusal, offline line)`` for this interpreter's floating family packages against their forge heads."""
+    freshness = check(installed_family(), cache=CpuSeat.resource_dir() / 'family-heads.json')
+    return refusal(freshness, door=sync_door(root)), offline_line(freshness)
 
 
 def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
@@ -549,9 +557,9 @@ def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
 
 
 def _judge(
-    root: Path, arguments: tuple[str, ...], key: RunKey, ledger: Path, *, wait_s: float, no_status: bool
+    root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, no_status: bool
 ) -> tuple[int, list[str]]:
-    """The leader's run: judge, stamp, record, publish, and return the exit code with the lines it printed."""
+    """The leader's run: judge, stamp, cache, post the part, and return the exit code with the lines it printed."""
     head, start = head_sha(root), status_paths(root)
     try:
         verdict = run_verify(root, arguments, wait_s=wait_s)
@@ -575,10 +583,37 @@ def _judge(
         emit(line)
     commit = verdict_commit(head, head_sha(root), start, status_paths(root))
     if run_key(root, ()).tree == key.tree:
-        record_promoted(ledger, verdict, key.tree, key.env, key.selector, commit=commit or '')
+        remember(cache, verdict, tree=key.tree, env=key.env, selector=key.selector, commit=commit or '')
     if not no_status:
-        emit(publish_verdict(root, verdict, commit))
+        emit(post_part(root, verdict, commit, arguments))
     return EXIT_CODES[verdict.result.outcome], lines
+
+
+def post_part(root: Path, verdict: Verdict, commit: str | None, arguments: tuple[str, ...]) -> str:
+    """Post a settled run as this platform's ``tests/<platform>`` part of *commit*; one line says what happened."""
+    if commit is None:
+        return 'part: not posted -- the tree was dirty or moved, so this run is about no commit'
+    if not verdict.result.outcome.settled:
+        return 'part: not posted -- an INCONCLUSIVE run is no part'
+    directory = outcomes_dir(verdict.log.path)
+
+    def collect(expression: str) -> list[str]:
+        argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
+        command = [*argv, '-m', expression, *arguments]
+        done = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
+        return parse_ids(done.stdout)
+
+    record = local_record(
+        root,
+        sha=commit,
+        platform=this_platform(),
+        scope=INCREMENTAL if arguments else FULL,
+        req=verdict.log.path.stem,
+        outcomes=read_outcomes(directory),
+        reasons=read_reasons(directory),
+        collect=collect,
+    )
+    return post_local(root, record, directory)
 
 
 if __name__ == '__main__':

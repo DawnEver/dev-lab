@@ -58,7 +58,7 @@ from lab_commons.dev.forge import (
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.integrator import Policy, load_policy
+from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import UndeclaredPart, part_argv, part_context, this_platform
 from lab_commons.dev.venvpath import current_os_name
 from lab_commons.hpc.grants import Grant, load_grants, workstation

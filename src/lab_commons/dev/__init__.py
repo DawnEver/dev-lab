@@ -35,7 +35,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
-* :mod:`lab_commons.dev.boxlock` — one CPU-saturating run at a time, ON the broker that already
+* :mod:`lab_commons.dev.cpuseat` — one CPU-saturating run at a time, ON the broker that already
   ships in this package rather than beside it.
 * :mod:`lab_commons.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
@@ -122,15 +122,19 @@ are too unqualified to survive being flattened into a namespace this wide.
   second module rather than a wider ``units``: a scan that refuses a unit-spelling NAME rewards the
   LOSSY repair -- deleting the suffix silences it and records the unit nowhere. This proves the unit
   reached the VALUE instead, and ``migration_conflicts`` refuses a key in both waiver and registry.
-* :mod:`lab_commons.dev.boxwait` -- the adoption half of ``boxlock``: what a dev tier DOES when it
+* :mod:`lab_commons.dev.boxwait` -- the adoption half of ``cpuseat``: what a dev tier DOES when it
   finds the box held. Three answers are wrong (start anyway, refuse instantly, block forever) and
   this is the fourth -- queue on a DEADLINE, say who you are waiting for while you wait, and refuse
   NAMING the holder when the deadline passes. Separate from ``verify`` because verify is one adopter
   and not the only one.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
-* :mod:`lab_commons.dev.verdictledger` -- the ONE record of promoted verdicts, keyed by tree, env and
-  test; written only by the runner after promotion, read by the runner (cite); never by push admission.
+* :mod:`lab_commons.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
+  selector: a judged key is cited, not re-run. It decides no push.
+* :mod:`lab_commons.dev.outcomes` -- the pytest plugin writing a run's per-test outcomes in the run
+  record's vocabulary, so a local run posts the same kind of part a cluster run does.
+* :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
+  ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per platform it ran on (linux
   from the cluster, windows/macos from a box), each a ``tests/<platform>`` status on the forge.
 * :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
@@ -180,7 +184,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   prose itself is deliberately NOT here -- ``tests/test_arch_rules_pages.py`` refuses markdown under
   ``src/`` -- so what ships is the table of contents, which is the half that rots when four repos
   hand-maintain it. Not re-exported below.
-* :mod:`lab_commons.dev.envlock` -- one canonical environment seat shared by verdicts and mutations,
+* :mod:`lab_commons.dev.envseat` -- one canonical environment seat shared by verdicts and mutations,
   independent of the box CPU seat. Not re-exported below.
 * :mod:`lab_commons.dev.shadow_build` -- measuring a rebuilt native extension WITHOUT installing it.
   Each worktree owns its venv; ``maturin develop`` still mutates the interpreter a verdict may be
@@ -242,9 +246,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin, claims as pending statuses with a lease.
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
-* :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, comment reads.
+* :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
-* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the gate statuses.
+* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<platform> parts.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.
@@ -297,7 +301,6 @@ whether a named mechanism is still LIVE, and the five are the mechanisms an adop
 """
 
 from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
-from lab_commons.dev.boxlock import BOX_POOL, BoxLock
 from lab_commons.dev.cjk import CJK_RANGES, EXEMPT_PREFIXES
 from lab_commons.dev.cjk import Occurrence as CJKOccurrence
 from lab_commons.dev.cjk import Scan as CJKScan
@@ -306,6 +309,7 @@ from lab_commons.dev.cjk import assert_floor as assert_cjk_floor
 from lab_commons.dev.cjk import ratchet as cjk_ratchet
 from lab_commons.dev.cjk import scan_files as scan_cjk_files
 from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
+from lab_commons.dev.cpuseat import CPU_POOL, CpuSeat
 from lab_commons.dev.docwidth import (
     INJECTED_BASENAMES,
     INJECTED_EXEMPT_PREFIXES,
@@ -338,8 +342,8 @@ from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selec
 
 __all__ = [
     'ABSENT',
-    'BOX_POOL',
     'CJK_RANGES',
+    'CPU_POOL',
     'DEFAULT_IGNORES',
     'DENY_RULES',
     'EXCLUDED_TOKENS',
@@ -352,10 +356,10 @@ __all__ = [
     'UNIT_TOKENS',
     'UNREADABLE',
     'WIDTH_CEILING',
-    'BoxLock',
     'CJKOccurrence',
     'CJKScan',
     'Citation',
+    'CpuSeat',
     'DenyRule',
     'HookAdoption',
     'IncompleteRun',

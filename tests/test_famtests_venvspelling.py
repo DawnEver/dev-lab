@@ -58,7 +58,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: the margin, so the floor moves to 153 and the margin does not move.
 #:
 #: RE-MEASURED 2026-10-08 AT 196 after the verdict-ledger lane merged (`dev.inflight`,
-#: `dev.verdictledger`, `dev._deny_subagent_row`): 196 against 153 is 43 clear, three past the margin,
+#: `dev.runcache`, `dev._deny_subagent_row`): 196 against 153 is 43 clear, three past the margin,
 #: so the floor moves to 156 and the margin does not move.
 #:
 #: RE-MEASURED 2026-10-08 AT 204 after the opt-in `lab_commons.hpc` tier (seven modules) and

@@ -17,9 +17,9 @@ statuses (:mod:`lab_commons.dev.platformparts`) are read from the forge and comp
 PASS of scope ``full``, every platform some part hands ids to present, no id runnable nowhere. An
 incremental part is a re-run of named ids and says nothing about the rest, so it is not a trunk part.
 
-THE FORGE IS THE ONE SOURCE, AND THERE IS NO LOCAL FALLBACK. The verdict ledger is a cache of this
-box's runs (:mod:`lab_commons.dev.verdictledger`) and no longer decides a push: a result only this box
-can see is a result no other workstation can check. If the forge cannot be read, the trunk WAITS --
+THE FORGE IS THE ONE SOURCE, AND THERE IS NO LOCAL FALLBACK. The run cache is this box's memory of
+its verify runs (:mod:`lab_commons.dev.runcache`) and decides no push: a result only this box can see is
+a result no other workstation can check. If the forge cannot be read, the trunk WAITS --
 the refusal names the remedy; nothing local stands in for it.
 
 EVERY DESTINATION AUDITS THE MERGES IT PUBLISHES, unconditionally: each merge commit not yet on any
@@ -47,10 +47,10 @@ from lab_commons.dev.forge import _GIT, NoCredential, UnreadableRemote
 from lab_commons.dev.forgeoutbox import unprompted_client
 from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.dev.integrator import Policy, load_policy
+from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.logref import MARKER
 from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, refusals
-from lab_commons.dev.platformparts import compose, parts_of
+from lab_commons.dev.platformparts import standing
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
@@ -152,16 +152,10 @@ def admit(destination: str, *, head: str, statuses: Callable[[], Sequence[Status
                 '`python -m lab_commons.dev.forge status list <sha>` answers.'
             ),
         )
-    parts, unsettled = parts_of(found)
-    composed = compose(parts, head=head)
-    problems = [*unsettled, *composed.problems]
-    problems += [
-        f'{part.platform} is {part.result} of scope {part.scope}; the trunk takes only a PASS of scope {TRUNK_SCOPE}'
-        for part in composed.parts
-        if part.result != 'PASS' or part.scope != TRUNK_SCOPE
-    ]
-    cited = ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in composed.parts)
-    if problems:
+    judged = standing(found, head=head, scope=TRUNK_SCOPE)
+    cited = judged.cited()
+    if judged.result != 'PASS':
+        problems = judged.problems or tuple(f'{part.platform} is {part.result}' for part in judged.parts)
         return Admission(
             allowed=False,
             message='\n'.join(

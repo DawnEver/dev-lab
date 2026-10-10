@@ -46,12 +46,9 @@ from lab_commons.dev.forge import (
     on_origin,
 )
 from lab_commons.dev.forgerecords import attach
-from lab_commons.dev.forgestatus import GATE_CONTEXT, STATES, state_for, status_post
+from lab_commons.dev.forgestatus import STATES, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.verdict import Verdict
 from lab_commons.log import emit
-
-LINE_BREAK: Final = chr(10)
 
 __all__ = [
     'OUTBOX_REL',
@@ -61,7 +58,6 @@ __all__ = [
     'flush',
     'main',
     'outbox_dir',
-    'publish_verdict',
     'queued',
     'unprompted_client',
 ]
@@ -207,14 +203,6 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
         msg = '\n'.join([*lines, *(f'status: post FAILED {line}' for line in failures), f'remedy: {_REMEDY}'])
         raise PostFailed(msg)
     return lines
-
-
-def publish_verdict(root: Path, verdict: Verdict, commit: str | None) -> str:
-    """Queue *verdict* as the ``lab/gate`` status of *commit* and flush; the lines say what happened."""
-    if commit is None:
-        return 'status: not queued -- the tree was dirty or moved, so this verdict is about no commit'
-    enqueue(root, Post(commit, GATE_CONTEXT, state_for(verdict.result.outcome), verdict.line()))
-    return LINE_BREAK.join(flush(root))
 
 
 def main(

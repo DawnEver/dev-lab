@@ -38,7 +38,7 @@ HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject, and 
 turns it into ONE fully filled argv run with the checkout's own venv python, cwd = the checkout::
 
     [tool.lab_commons.hpc]                 # the cluster (linux) part
-    install = "uv sync --no-install-project --extra dev"
+    install = "uv sync --extra dev"          # must install the project: its venv reports the env key
     needs = ["cargo", "cc"]                # optional: login-node commands beyond git and uv
     collect = "tests"                      # optional: pytest arguments selecting the tests
 
@@ -69,7 +69,7 @@ from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from lab_commons.dev.venvpath import checkout_interpreter
 from lab_commons.hpc.__main__ import main as hpc_main
 from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
-from lab_commons.hpc.records import read_record
+from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.retired import refusal
 from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.log import emit
@@ -86,16 +86,20 @@ __all__ = [
     'Composition',
     'Part',
     'PartRefusal',
+    'Standing',
     'UndeclaredPart',
     'cluster',
     'compose',
+    'local_record',
     'main',
     'part_argv',
     'part_context',
     'part_of',
     'parts_of',
+    'post_local',
     'select',
     'split',
+    'standing',
     'this_platform',
 ]
 
@@ -180,8 +184,7 @@ def part_argv(root: Path, platform: str, head: str, *, scope: str, os_name: str)
         msg = f'a cluster part is produced at scope {FULL}; {INCREMENTAL} needs the re-run ids (run submit --only)'
         raise ValueError(msg)
     hpc, name = declared.get('hpc', {}), 'tool.lab_commons.hpc'
-    install = _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
-    needs = _strings(hpc.get('needs'), name, 'needs', '["cargo", "cc"]', required=False)
+    _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)  # read at --sha by hpc run submit
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
     output = _text(declared.get('parts', {}), 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
     forge = forge_from_remote(root)
@@ -190,7 +193,7 @@ def part_argv(root: Path, platform: str, head: str, *, scope: str, os_name: str)
     return [
         python, '-m', 'lab_commons.dev.platformparts', 'cluster', '--sha', head,
         '--repo-url', f'https://{forge.host}/{forge.owner}/{forge.repo}.git',
-        '--install', install, '--needs', ','.join(needs), '--collect', collect, '-o', str(directory),
+        '--collect', collect, '-o', str(directory),
     ]  # fmt: skip
 
 
@@ -340,6 +343,45 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
+@dataclass(frozen=True)
+class Standing:
+    """A commit's result as its parts on the forge say it: ``PASS``, ``FAIL``, or ``''`` while unsettled.
+
+    THE ONE READING of a platform result, shared by push admission and the integrator's queue: a FAIL
+    part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, of the
+    wrong scope, or ids runnable nowhere) leaves it ``''``; else ``PASS``.
+    """
+
+    result: str
+    parts: tuple[Part, ...]
+    problems: tuple[str, ...]
+
+    def cited(self) -> str:
+        """The parts it rests on, one ``platform=RESULT/scope ran=N`` each."""
+        return ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in self.parts)
+
+
+def standing(statuses: Sequence[Status], *, head: str, scope: str | None = None) -> Standing:
+    """The :class:`Standing` of commit *head* from its latest statuses; *scope* requires every part at it."""
+    parts, unsettled = parts_of(statuses)
+    composed = compose(parts, head=head)
+    problems = [*unsettled, *composed.problems]
+    if scope is not None:
+        problems += [
+            f'{part.platform} is {part.result} of scope {part.scope}; only a PASS of scope {scope} counts here'
+            for part in composed.parts
+            if part.result != 'PASS' or part.scope != scope
+        ]
+    failed = any(part.result == 'FAIL' for part in composed.parts)
+    return Standing(result=_settled(failed=failed, problems=problems), parts=composed.parts, problems=tuple(problems))
+
+
+def _settled(*, failed: bool, problems: Sequence[str]) -> str:
+    if failed:
+        return 'FAIL'
+    return '' if problems else 'PASS'
+
+
 def post(root: Path, path: Path) -> str:
     """Queue the part *path*'s record proves, with the record attached, and flush; returns the lines."""
     record = read_record(path)
@@ -347,6 +389,46 @@ def post(root: Path, path: Path) -> str:
     enqueue(root, Post(str(record['sha']), part_context(part.platform), part.state, part.description()), record=path)
     lines = flush(root)
     return '\n'.join([f'[platformparts] {part.platform} part {part.result}: {part.description()}', *lines])
+
+
+def local_record(
+    root: Path,
+    *,
+    sha: str,
+    platform: str,
+    scope: str,
+    req: str,
+    outcomes: Mapping[str, str],
+    reasons: Mapping[str, str],
+    collect: Callable[[str], Sequence[str]],
+) -> dict[str, Any]:
+    """The run record of a LOCAL run, in the cluster record's shape, so it posts as the same kind of part.
+
+    The ids are the ones the run reported; each is assigned by the commit's table exactly as
+    :func:`select` assigns them (*collect* is asked only for the marker expressions the table declares).
+    An id assigned to *platform* carries its outcome; every other id is handed off, ``not-covered``.
+    """
+    table = table_at(root, sha)
+    cannot = {name: set(collect(expr)) for name in PLATFORMS if (expr := cannot_run(table, name))}
+    mine, handed = split(runnable(list(outcomes), cannot), platform)
+    return {
+        'sha': sha,
+        'platform': platform,
+        'scope': scope,
+        'req': req,
+        'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, _NOT_COVERED)},
+        'handed': handed,
+        'reasons': {node: why for node, why in reasons.items() if node in mine},
+    }
+
+
+def post_local(root: Path, record: Mapping[str, Any], directory: Path) -> str:
+    """Write *record* under *directory* and post its part; a refused part is one line, never a raise."""
+    path = write_record(dict(record), directory)
+    try:
+        return post(root, path)
+    except (PartRefusal, PostFailed) as why:
+        return f'[platformparts] not posted: {why}'
 
 
 def cluster(
@@ -388,7 +470,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     producing = verbs.add_parser('cluster', help='submit, gather and post the linux part (argv from forge tick)')
     producing.add_argument('--sha', required=True)
     producing.add_argument('-o', '--output', type=Path, required=True, help='the dated run-record directory')
-    for flag in ('--repo-url', '--install', '--needs', '--collect'):
+    for flag in ('--repo-url', '--collect'):
         producing.add_argument(flag, required=True, help=f'passed to hpc run submit {flag}')
     for each in (posting, producing):
         each.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose origin receives the part')
@@ -397,8 +479,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.verb == 'post':
             emit(post(args.root, args.record))
         else:
-            flags = ['--repo-url', args.repo_url, '--install', args.install, '--needs', args.needs]
-            emit(cluster(args.root, sha=args.sha, hpc_args=[*flags, '--collect', args.collect], output=args.output))
+            flags = ['--repo-url', args.repo_url, '--collect', args.collect]
+            emit(cluster(args.root, sha=args.sha, hpc_args=flags, output=args.output))
     except (PartRefusal, PostFailed) as why:
         emit(f'[platformparts] refused: {why}', err=True)
         return 1

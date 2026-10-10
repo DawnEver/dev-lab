@@ -65,14 +65,14 @@ def test_pass_is_success_fail_is_failure_and_inconclusive_is_error() -> None:
 
 @pytest.mark.parametrize(('forge', 'root'), CASES)
 def test_status_post_sends_state_context_and_a_truncated_description(server, forge, root) -> None:
-    answer('POST', f'{root}/statuses/{_SHA}', (201, {'context': 'lab/gate', 'state': 'success', 'description': 'd'}))
+    answer('POST', f'{root}/statuses/{_SHA}', (201, {'context': 'tests/linux', 'state': 'success', 'description': 'd'}))
     posted = status_post(
-        client(forge, Loopback(server)), _SHA, context='lab/gate', state='success', description='x' * 500
+        client(forge, Loopback(server)), _SHA, context='tests/linux', state='success', description='x' * 500
     )
     sent = Recorder.received[-1]
     assert (sent['method'], sent['path']) == ('POST', f'{root}/statuses/{_SHA}')
-    assert sent['body'] == {'state': 'success', 'context': 'lab/gate', 'description': 'x' * DESCRIPTION_LIMIT}
-    assert posted == Status('lab/gate', 'success', 'd', '')
+    assert sent['body'] == {'state': 'success', 'context': 'tests/linux', 'description': 'x' * DESCRIPTION_LIMIT}
+    assert posted == Status('tests/linux', 'success', 'd', '')
 
 
 def test_a_state_outside_the_four_is_refused_before_anything_is_sent(server) -> None:
@@ -89,21 +89,21 @@ def test_gitea_list_keeps_the_newest_status_per_context_and_reads_status_as_stat
         (
             200,
             [
-                {'id': 3, 'context': 'lab/gate', 'status': 'success', 'description': 'new'},
-                {'id': 1, 'context': 'lab/gate', 'status': 'failure', 'description': 'old'},
-                {'id': 2, 'context': 'lab/heavy', 'status': 'pending', 'description': 'h'},
+                {'id': 3, 'context': 'tests/linux', 'status': 'success', 'description': 'new'},
+                {'id': 1, 'context': 'tests/linux', 'status': 'failure', 'description': 'old'},
+                {'id': 2, 'context': 'tests/windows', 'status': 'pending', 'description': 'h'},
             ],
         ),
     )
     listed = status_list(client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (Status('lab/gate', 'success', 'new', ''), Status('lab/heavy', 'pending', 'h', ''))
+    assert listed == (Status('tests/linux', 'success', 'new', ''), Status('tests/windows', 'pending', 'h', ''))
 
 
 def test_github_list_reads_the_combined_status(server) -> None:
-    combined = {'state': 'success', 'statuses': [{'context': 'lab/gate', 'state': 'success', 'description': 'd'}]}
+    combined = {'state': 'success', 'statuses': [{'context': 'tests/linux', 'state': 'success', 'description': 'd'}]}
     answer('GET', f'/repos/o/r/commits/{_SHA}/status', (200, combined))
     listed = status_list(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (Status('lab/gate', 'success', 'd', ''),)
+    assert listed == (Status('tests/linux', 'success', 'd', ''),)
 
 
 # --------------------------------------------------------------------------------------------

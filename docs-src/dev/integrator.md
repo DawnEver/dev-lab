@@ -1,27 +1,27 @@
 # The integrator — two ways to wake, one queue
 
 - This page is how the integrator (the coordinator of [the three participants](the-three-participants.md)) finds work. What a lane, the integration branch and `main` each prove is on [branch layers](branch-layers.md); the statuses it reads are published as described on [the forge](forge.md), layer C.
-- **User directive 2026-10-02: two work modes, one merge queue, one definition of "ready".** WOKEN: an event (a lane's `lab/gate` went green) wakes the integrator's session. SELF-POLLING: the integrator fetches every origin branch on a cadence and compares their `lab/gate` and `lab/heavy` statuses.
+- **User directive 2026-10-02: two work modes, one merge queue, one definition of "ready".** WOKEN: an event (a lane's parts went green) wakes the integrator's session. SELF-POLLING: the integrator fetches every origin branch on a cadence and reads their `tests/<platform>` parts.
 - **The modes differ only in WHAT STARTS a pass, never in what the pass computes.** Both run `git fetch --prune origin` through the retry wrapper, then `python -m lab_commons.dev.integrator queue [--json]`. A wake carries no readiness — it means "re-derive now" — which keeps the existing rule that a notification is a priority hint and origin is the only shared medium.
 
 ## The ready predicate
 
 - Inputs: the remote-tracking refs (`refs/remotes/origin/*`, with each tip's committer time), `git cherry` of each tip against its target, and the LATEST status per context on each un-absorbed tip.
 - A **lane** is an origin branch under a declared prefix. It is skipped when ABSORBED: `git cherry <origin/integration> <tip>` prints no `+` line, so a cherry-picked or rebased lane whose content is present is not re-queued (the ancestor test would say no).
-- An un-absorbed lane is `merge` when its tip's latest `lab/gate` is `success`, `blocked` on `failure`, `waiting` otherwise (absent, `pending`, `error`). `gate_ready(state)` is the one spelling of that rule, and `forgeissue`'s `ready` state calls the same function.
-- The **integration branch**, when its change is not on `main`, is `promote` on a `lab/heavy` `success`, `blocked` on `failure`, `heavy-needed` otherwise.
+- An un-absorbed lane is `merge` when its tip's parts stand PASS (any scope), `blocked` on a FAIL part, `waiting` otherwise (no part, a claim, a missing platform). `lane_ready(statuses, head=)` is the one spelling of that rule, and `forgeissue`'s `ready` state calls the same function; both read `platformparts.standing`, as trunk admission does.
+- The **integration branch**, when its change is not on `main`, is `promote` when its parts stand PASS at scope `full` (what the trunk admits), `blocked` on a FAIL part, `parts-needed` otherwise.
 - Everything else (`main`, undeclared prefixes) is never queued.
 
 ## The queue
 
 - **It lives nowhere. It is recomputed from origin every pass**, by `ready_lanes(refs, statuses, policy)` — a pure function over the inputs above. No file, no daemon state, no comment thread holds it, so there is nothing to go stale and nothing two modes can disagree on.
 - **Idempotent by construction**: a duplicate wake, a wake lost in transit, and a wake racing a poll all print the same queue, because none of them is an input. A merged lane drops out on the next pass because `git cherry` now absorbs it.
-- **Order**: oldest tip commit time first (the lane that finished first merges first), ties by branch name, so two passes over the same refs print byte-identical queues. The integrator merges the `merge` rows in that order, re-gates the combination, publishes `lab/gate` on the integration tip, then runs heavy when the row reads `heavy-needed`, and fast-forwards `main` on `promote`.
+- **Order**: oldest tip commit time first (the lane that finished first merges first), ties by branch name, so two passes over the same refs print byte-identical queues. The integrator merges the `merge` rows in that order, pushes the combination, lets `forge tick` produce its full parts when the row reads `parts-needed`, and fast-forwards `main` on `promote`.
 
 ## Mode (a) — woken
 
-- The observer is the bridge daemon's `observer.mjs` (per machine, in the user's Claude Code config tree, not in this family). It already fetches each observed repo, follows a pushed tip until `lab/gate`/`lab/heavy` appear, and posts the result into that session's Telegram Topic.
-- **The wake is one more sink for the event it already detects.** When a `lab/gate` `success` lands on a lane tip, the observer also calls its host adapter's `inject(id, text)` for the session whose branch is the declared integration branch in that repo, with the text `integrator: wake <repo> <branch> <sha>`. The Claude adapter delivers that as a channel message, which starts a turn in the integrator's session; its handler is "fetch, then `queue`".
+- The observer is the bridge daemon's `observer.mjs` (per machine, in the user's Claude Code config tree, not in this family). It already fetches each observed repo, follows a pushed tip until its `tests/<platform>` parts appear, and posts the result into that session's Telegram Topic.
+- **The wake is one more sink for the event it already detects.** When a lane tip's parts stand PASS, the observer also calls its host adapter's `inject(id, text)` for the session whose branch is the declared integration branch in that repo, with the text `integrator: wake <repo> <branch> <sha>`. The Claude adapter delivers that as a channel message, which starts a turn in the integrator's session; its handler is "fetch, then `queue`".
 - **The adapter is documented, not shipped here.** The observer lives outside this family's repos and its inject path needs a live channel-connected session, which no test in this repo can stand up. What it needs: identify the integrator session by `branch == integration` (it already reads each session's branch), and coalesce — at most one wake per repo per poll.
 - Inside Claude Code, a session that is not channel-connected is reachable by cross-session `SendMessage` from another agent; that is the fallback if the bridge is down, with the same one-line payload.
 
@@ -52,9 +52,7 @@ Only names, in its `pyproject.toml`; every key is optional and an unknown key is
 [tool.lab_commons.integrator]
 lane_prefixes = ["feat/", "fix/"]   # which origin branches are lanes
 integration = "integrate/main"      # the branch lanes merge into
-main = "main"                       # the branch a heavy PASS promotes to
-gate_context = "lab/gate"           # the lane verdict's status context
-heavy_context = "lab/heavy"         # the integration verdict's status context
+main = "main"                       # the branch full PASS parts promote to
 ```
 
 - The predicate, the order and the queue are the family's and are not configurable: a consumer that could redefine "ready" would be a second source of it.

@@ -133,11 +133,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Tests run ONCE, on the integrated tree: lanes and subagents run no broad verification, only a '
             'targeted measure of the tests they touched; the main session merges every ready lane into one '
-            'tree and runs the gate once. A duplicate request attaches to the run in flight, a key the verdict '
-            'ledger already holds is cited rather than re-run, and push admission reads the ledger -- a lane '
-            'needs no verdict of its own.'
+            'tree and runs the gate once. A duplicate request attaches to the run in flight, a key the box run '
+            'cache already judged is cited rather than re-run, and push admission reads the forge parts -- a '
+            'lane needs no result of its own.'
         ),
-        ('tests/test_dev_admission.py', 'tests/test_dev_inflight.py', 'tests/test_dev_verdictledger.py'),
+        ('tests/test_dev_admission.py', 'tests/test_dev_inflight.py', 'tests/test_dev_runcache.py'),
     ),
     (
         'MAIN-SESSION-PUBLISHES',

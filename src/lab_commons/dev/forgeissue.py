@@ -6,7 +6,7 @@ ago. The family's readiness signal is ref movement on ``origin`` (the-three-part
 state of an issue is computed from exactly that, every time it is asked:
 
     done         the issue is closed, or ``Closes #N`` is on the default branch
-    ready        a lane referencing it has a tip whose ``lab/gate`` status is ``success``
+    ready        a lane referencing it has a tip whose ``tests/<platform>`` parts stand PASS
     in-progress  an origin branch carries a commit ``Refs #N`` (or ``Closes``/``Fixes``), or is
                  named ``fix/<N>-...``
     todo         open, and nothing on origin references it
@@ -37,9 +37,9 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
-from lab_commons.dev.forgestatus import GATE_CONTEXT, Status, status_list
+from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, client_for
-from lab_commons.dev.integrator import gate_ready
+from lab_commons.dev.integrator import lane_ready
 from lab_commons.dev.issueref import CLOSING_VERBS, REF_VERBS
 from lab_commons.log import emit
 
@@ -77,11 +77,11 @@ _ISSUE_OF: Final = re.compile(r'/issues/(\d+)/?$')
 
 @dataclass(frozen=True)
 class Lane:
-    """An origin branch that references the issue, its tip, and that tip's ``lab/gate`` state."""
+    """An origin branch that references the issue, its tip, and whether that tip's parts stand PASS."""
 
     branch: str
     tip: str
-    gate: str
+    ready: bool
 
 
 @dataclass(frozen=True)
@@ -192,7 +192,7 @@ def derive(*, is_open: bool, closed_on_default: bool, lanes: Sequence[Lane]) -> 
     """The table in the module docstring, as a function of its evidence."""
     if not is_open or closed_on_default:
         return DONE
-    if any(gate_ready(lane.gate) for lane in lanes):
+    if any(lane.ready for lane in lanes):
         return READY
     return IN_PROGRESS if lanes else TODO
 
@@ -228,10 +228,6 @@ def comments_since(client: Client, since: str) -> tuple[IssueComment, ...]:
     return _listed(client, 'issues/comments', since)
 
 
-def _gate(statuses: Sequence[Status]) -> str:
-    return next((status.state for status in statuses if status.context == GATE_CONTEXT), '')
-
-
 def issue_status(
     client: Client,
     root: Path,
@@ -242,7 +238,7 @@ def issue_status(
     """Derive issue *number*'s state from *root*'s remote-tracking refs and the forge. Fetches nothing."""
     issue = client.issue_view(number)
     found, closed = lanes_for(root, number)
-    lanes = tuple(Lane(branch, tip, _gate(statuses(client, tip))) for branch, tip in found)
+    lanes = tuple(Lane(branch, tip, lane_ready(statuses(client, tip), head=tip)) for branch, tip in found)
     claims = claims_of(_comments(client, number))
     state = derive(is_open=issue.state == 'open', closed_on_default=closed, lanes=lanes)
     conflict = len({one.branch for one in claims}) > 1
@@ -269,7 +265,7 @@ def claim(client: Client, root: Path, number: int, *, branch: str | None = None)
 
 def _render(state: IssueState) -> str:
     lines = [f'#{state.number} [{state.state}] {state.title}']
-    lines += [f'  lane  {lane.branch}  {lane.tip[:12]}  {GATE_CONTEXT}={lane.gate or "-"}' for lane in state.lanes]
+    lines += [f'  lane  {lane.branch}  {lane.tip[:12]}  parts={"ready" if lane.ready else "-"}' for lane in state.lanes]
     lines += [f'  claim {one.branch}  by {one.by or "(unstamped)"}  {one.url}' for one in state.claims]
     if state.conflict:
         named = sorted({one.branch for one in state.claims})
