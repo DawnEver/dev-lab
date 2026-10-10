@@ -122,6 +122,16 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'the ONE door every REST verb goes through returns parsed JSON, whose shape is the endpoint; each '
     'verb normalizes it into a typed Issue/Comment/PullRequest immediately',
     (
+        'src/lab_commons/dev/forgework.py',
+        'ANN401',
+        'def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: _Found = None) -> Any:',
+    ): 'the attachment door returns the parsed JSON answer, normalized by its one caller (forgerecords.Attachment)',
+    (
+        'src/lab_commons/dev/forgework.py',
+        'ANN401',
+        'def _request(self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found) -> Any:',
+    ): 'the retry loop under call and upload returns their parsed JSON unchanged',
+    (
         'src/lab_commons/dev/docsite.py',
         'arg-type',
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',

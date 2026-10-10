@@ -1,31 +1,26 @@
-"""Commit statuses on the forge -- the door a verdict is PUBLISHED through (forge.md, layer C).
+"""Commit statuses on the forge -- the door a result is PUBLISHED through (forge.md, layer C).
 
-WHY A STATUS AND NOT A COMMENT OR A LABEL. The forge can refuse a ``main`` update whose commit lacks
-a green status in a NAMED context; nothing else it stores can refuse anything. So the verdict that a
-gate or heavy run earned is posted against the exact commit it judged, under :data:`GATE_CONTEXT` or
-:data:`HEAVY_CONTEXT`, with the verdict line as its description -- which makes the status citable
-(the line names the tree, the env and the log digest) rather than a bare colour.
+WHY A STATUS AND NOT A COMMENT OR A LABEL. A status is the forge's one record keyed by the exact
+commit it is about, readable by every workstation without a clone. A verify run is posted under
+:data:`GATE_CONTEXT` with the verdict line as its description -- citable (the line names the tree, the
+env and the log digest) rather than a bare colour; a platform PART is posted under ``tests/<platform>``
+(:mod:`lab_commons.dev.platformparts`) and a claim on one is a ``pending`` status in that same context
+(:mod:`lab_commons.dev.forgetick`).
 
 THE MAPPING IS THE VERDICT'S POLARITY, NOT A NEW ONE: PASS -> ``success``, FAIL -> ``failure``, and
-INCONCLUSIVE -> ``error``, whose description is the verdict line and so NAMES it. User ruling
-2026-10-04: a lane may push an INCONCLUSIVE tree (:mod:`lab_commons.dev.admission`), so every pushed
-tree carries the verdict it was pushed on; ``error`` is not ``success``, so trunk protection that
-requires the context still refuses it.
+INCONCLUSIVE -> ``error``, whose description is the verdict line and so NAMES it.
 
 A VERDICT ABOUT A DIRTY TREE HAS NO COMMIT. :func:`verdict_commit` returns HEAD's sha only when the
 tree was clean before the run, is clean after it, and HEAD did not move -- the conditions under which
 the content address the verdict carries IS a reading of that commit's tree. Otherwise nothing is
 posted, because a status is a claim about a commit and this run made none.
 
-A POST THAT WAS ATTEMPTED AND FAILED RAISES (:class:`PostFailed`, naming its remedy). The retired
-post-failed-and-continue made a refused status read as "the verdict stands" while the forge -- the
-place every other workstation reads parts from -- held nothing. The verdict line and the ledger are
-already written when :func:`publish` runs, so raising loses no evidence. A post that was never
-attempted is not a failure and returns its line: no commit (dirty tree), or no credential or
-``origin`` here (a box that does not publish).
+A STATUS CAN ONLY BE POSTED ON A COMMIT THE FORGE HOLDS, so a run's status is never posted from the
+run directly: it is QUEUED and posted once the commit is on ``origin`` (:mod:`lab_commons.dev.forgeoutbox`,
+which also raises when an attempted post fails).
 
-PROVENANCE-FREE ON PURPOSE. Status descriptions are machine verdict lines, length-limited by the
-forge, so no ``[machine · agent · branch]`` stamp is prepended; the forge records the token's login.
+PROVENANCE-FREE ON PURPOSE. Status descriptions are machine lines, length-limited by the forge, so no
+``[machine · agent · branch]`` stamp is prepended; the forge records the token's login as ``creator``.
 """
 
 from __future__ import annotations
@@ -33,17 +28,16 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import os
 import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, NoCredential, Transport, UnreadableRemote, https_transport
+from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
-from lab_commons.dev.verdict import Outcome, Verdict
+from lab_commons.dev.verdict import Outcome
 from lab_commons.log import emit
 
 __all__ = [
@@ -51,27 +45,26 @@ __all__ = [
     'GATE_CONTEXT',
     'HEAVY_CONTEXT',
     'STATES',
-    'PostFailed',
     'Status',
     'head_sha',
     'main',
-    'publish',
     'state_for',
+    'status_history',
     'status_list',
     'status_post',
     'verdict_commit',
 ]
 
-#: The lane-gate context: a dev agent's gate verdict on its own lane tip.
+#: The lane-gate context: a verify run's verdict on the commit it judged.
 GATE_CONTEXT: Final = 'lab/gate'
 
-#: The integrator's heavy verdict -- the context ``main`` protection requires once it is enabled.
+#: The integrator's heavy verdict context (:mod:`lab_commons.dev.integrator`).
 HEAVY_CONTEXT: Final = 'lab/heavy'
 
-#: The states this door writes; ``error`` carries an INCONCLUSIVE verdict (see the docstring).
+#: The states this door writes; ``error`` carries an INCONCLUSIVE verdict, ``pending`` a claim.
 STATES: Final = ('success', 'failure', 'error', 'pending')
 
-#: GitHub's description limit, the tighter of the two forges; a longer one is refused, not truncated.
+#: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
 DESCRIPTION_LIMIT: Final = 140
 
 _STATE_FOR: Final[dict[Outcome, str]] = {
@@ -83,18 +76,31 @@ _STATE_FOR: Final[dict[Outcome, str]] = {
 
 @dataclass(frozen=True)
 class Status:
-    """One commit status, identical in shape whichever forge answered."""
+    """One commit status, identical in shape whichever forge answered.
+
+    ``id`` orders the posts on one commit (the forge assigns it ascending) and ``creator`` is the login
+    that posted it; neither takes part in equality, which is about what the status SAYS.
+    """
 
     context: str
     state: str
     description: str
     url: str
+    id: int = field(default=0, compare=False)
+    creator: str = field(default='', compare=False)
 
 
 def _status(raw: Mapping[str, Any]) -> Status:
     # Gitea answers the state as ``status``; GitHub as ``state``.
     state = raw.get('state') or raw.get('status') or ''
-    return Status(raw.get('context') or '', state, raw.get('description') or '', raw.get('target_url') or '')
+    return Status(
+        raw.get('context') or '',
+        state,
+        raw.get('description') or '',
+        raw.get('target_url') or '',
+        int(raw.get('id') or 0),
+        (raw.get('creator') or {}).get('login') or '',
+    )
 
 
 def state_for(outcome: Outcome) -> str:
@@ -102,12 +108,16 @@ def state_for(outcome: Outcome) -> str:
     return _STATE_FOR[outcome]
 
 
-def status_post(client: Client, sha: str, *, context: str, state: str, description: str) -> Status:
+def status_post(
+    client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
+) -> Status:
     """Post one status on *sha*. The description is cut to :data:`DESCRIPTION_LIMIT`, never sent long."""
     if state not in STATES:
         msg = f'a status state is one of {STATES}, not {state!r}'
         raise ValueError(msg)
     body = {'state': state, 'context': context, 'description': description[:DESCRIPTION_LIMIT]}
+    if target_url:
+        body['target_url'] = target_url
     return _status(client.call('POST', f'{client.repo}/statuses/{sha}', body))
 
 
@@ -126,6 +136,12 @@ def status_list(client: Client, sha: str) -> tuple[Status, ...]:
             newest[item.get('context') or ''] = item
         raw = list(newest.values())
     return tuple(sorted((_status(item) for item in raw), key=lambda status: status.context))
+
+
+def status_history(client: Client, sha: str) -> tuple[Status, ...]:
+    """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
+    path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
+    return tuple(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id))
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -162,58 +178,6 @@ def verdict_commit(
     if head_before is None or head_before != head_after or start != () or end != ():
         return None
     return head_before
-
-
-#: A publish runs at the end of an unattended verify, so the credential lookup must never PROMPT: a
-#: helper that opens a sign-in window would hang a finished run on a dialog nobody is watching.
-_NO_PROMPT: Final = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
-
-
-def _unprompted_client(root: Path) -> Client:
-    # Set in THIS process rather than passed as ``env=``: an explicit env is the test seam, which
-    # also blanks PATH for ``git credential`` -- and that hides the real helper from a real run.
-    for name, value in _NO_PROMPT.items():
-        os.environ.setdefault(name, value)
-    return client_for(root)
-
-
-class PostFailed(RuntimeError):
-    """A status post was attempted and did not land; the message names the cause and the remedy."""
-
-
-_POST_REMEDY: Final = (
-    're-run once the forge answers (python -m lab_commons.dev.forge status list <sha> shows what it holds), '
-    'or pass --no-status to run without publishing'
-)
-
-
-def publish(
-    root: Path,
-    verdict: Verdict,
-    *,
-    context: str,
-    commit: str | None,
-    client: Callable[[Path], Client] = _unprompted_client,
-) -> str:
-    """Post *verdict* on *commit* under *context*; return the one line saying what happened.
-
-    Every skip is NAMED in that line, because "no status appeared" otherwise reads the same whether it
-    was a dirty tree or a missing token. A post that was attempted and failed raises :class:`PostFailed`.
-    """
-    state = state_for(verdict.result.outcome)
-    if commit is None:
-        return 'status: not posted -- the tree was dirty or moved, so this verdict is about no commit'
-    try:
-        posted = status_post(client(root), commit, context=context, state=state, description=verdict.line())
-    except (NoCredential, UnreadableRemote) as exc:
-        return f'status: skipped -- no forge credential or remote here ({exc})'
-    except ForgeCallFailed as exc:
-        msg = f'status: post FAILED on {commit[:12]} ({exc.report.diagnosis.value}) -- remedy: {exc.report.remedy}'
-        raise PostFailed(msg) from exc
-    except (OSError, ValueError, KeyError) as exc:
-        msg = f'status: post FAILED on {commit[:12]} -- {exc!r}; remedy: {_POST_REMEDY}'
-        raise PostFailed(msg) from exc
-    return f'status: {posted.context}={posted.state} on {commit[:12]}'
 
 
 def _parser() -> argparse.ArgumentParser:

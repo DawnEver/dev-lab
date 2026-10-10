@@ -130,9 +130,9 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`lab_commons.dev.verdictledger` -- the ONE record of promoted verdicts, keyed by tree, env and
-  test; written only by the runner after promotion, read by the runner (cite) and by push admission.
+  test; written only by the runner after promotion, read by the runner (cite); never by push admission.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per platform it ran on (linux
-  from the cluster, windows/macos from a box), split by ``[tool.lab_commons.platforms]``, one row per marker.
+  from the cluster, windows/macos from a box), each a ``tests/<platform>`` status on the forge.
 * :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the
@@ -238,7 +238,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``; ``HARNESS_*`` stamp.
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
-* :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: a lane cites any verdict for this tree, the trunk a PASS.
+* :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
+* :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
+* :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, comment reads.
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the gate statuses.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit.

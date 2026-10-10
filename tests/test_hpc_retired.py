@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import platformparts
+from lab_commons.dev import admission, platformparts
 from lab_commons.hpc import __main__ as hpc_main
 from lab_commons.hpc.retired import RETIRED, refusal
 
@@ -32,7 +32,21 @@ def test_the_old_part_verb_is_refused_by_name_with_its_remedy(capsys: pytest.Cap
         platformparts.main(['record-linux', 'r.json', '--tier', 'heavy'])
     err = capsys.readouterr().err
     assert '`platformparts record-linux` is retired' in err
-    assert 'platformparts record <run-record>' in err
+    assert 'platformparts post <run-record>' in err
+
+
+@pytest.mark.parametrize('flag', ['--trunk-tier', '--ledger', '--gap'])
+def test_the_ledger_admission_flags_are_refused_by_name(tmp_path, flag: str, capsys) -> None:
+    """Admission reads the forge: the ledger, its tiers and its gap record are retired as admission inputs."""
+    with pytest.raises(SystemExit):
+        admission.main(['--root', str(tmp_path), '--trunk-ref', 'none', '--remote-ref', 'r', flag, 'x'])
+    assert 'is retired' in capsys.readouterr().err
+
+
+def test_the_ledger_part_verb_is_refused_by_name(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        platformparts.main(['record', 'r.json.gz'])
+    assert '`platformparts record` is retired' in capsys.readouterr().err
 
 
 def test_a_live_verb_is_not_a_refusal() -> None:

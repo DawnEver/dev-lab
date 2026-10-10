@@ -47,7 +47,8 @@ from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.boxwait import WAIT_S, hold_the_box, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
-from lab_commons.dev.forgestatus import GATE_CONTEXT, head_sha, publish, verdict_commit
+from lab_commons.dev.forgeoutbox import publish_verdict
+from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.logref import LogRef, UnverifiableLog
@@ -489,11 +490,13 @@ def main(argv: list[str] | None = None) -> int:
     that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
     sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
 
-    EVERY RUN IS THEN PUBLISHED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
+    EVERY RUN IS THEN QUEUED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
     :mod:`lab_commons.dev.forgestatus`) -- on HEAD only when the tree was clean before and after the
-    run and HEAD did not move; INCONCLUSIVE posts ``error`` naming itself. ``--no-status`` opts out. A skipped
-    publish prints one line; an attempted post that fails RAISES ``PostFailed`` naming its remedy, after the
-    verdict line and the ledger are already written.
+    run and HEAD did not move; INCONCLUSIVE posts ``error`` naming itself. ``--no-status`` opts out. The
+    queue (:mod:`lab_commons.dev.forgeoutbox`) is flushed at once, so a commit already on ``origin`` is
+    posted now and an unpushed one is posted by the next ``forge publish`` or ``forge tick`` after its
+    push; an attempted post that fails RAISES ``PostFailed`` naming its remedy, after the verdict line
+    and the ledger are already written.
     """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',
@@ -574,7 +577,7 @@ def _judge(
     if run_key(root, ()).tree == key.tree:
         record_promoted(ledger, verdict, key.tree, key.env, key.selector, commit=commit or '')
     if not no_status:
-        emit(publish(root, verdict, context=GATE_CONTEXT, commit=commit))
+        emit(publish_verdict(root, verdict, commit))
     return EXIT_CODES[verdict.result.outcome], lines
 
 

@@ -38,6 +38,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -233,9 +234,9 @@ class Client:
         """The backend this repository's host selects."""
         return backend_for(self.forge)
 
-    def _once(self, method: str, path: str, data: bytes | None) -> tuple[int, bytes]:
+    def _once(self, method: str, path: str, data: bytes | None, content_type: str) -> tuple[int, bytes]:
         backend = self.backend
-        headers = {'Authorization': f'{backend.auth_scheme} {self.token}', 'Content-Type': 'application/json'}
+        headers = {'Authorization': f'{backend.auth_scheme} {self.token}', 'Content-Type': content_type}
         conn = self.transport(backend.host(self.forge), self.timeout)
         try:
             conn.request(method, path, body=data, headers=headers | dict(backend.headers))
@@ -255,10 +256,23 @@ class Client:
         *landed* is a create's read-back, run before each retry (see :mod:`lab_commons.dev._forge_landed`).
         """
         data = json.dumps(dict(body)).encode() if body is not None else None
+        return self._request(method, path, data, 'application/json', landed)
+
+    def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
+        """A ``multipart/form-data`` POST of one file under *field* -- the forge's attachment shape."""
+        boundary = f'lab-commons-{uuid.uuid4().hex}'
+        head = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'
+            'Content-Type: application/octet-stream\r\n\r\n'
+        ).encode()
+        data = head + content + f'\r\n--{boundary}--\r\n'.encode()
+        return self._request('POST', path, data, f'multipart/form-data; boundary={boundary}', landed)
+
+    def _request(self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found) -> Any:  # noqa: ANN401 -- JSON
         made: list[Attempt] = []
         for index in range(1, DEFAULT_ATTEMPTS + 1):
             try:
-                status, payload = self._once(method, path, data)
+                status, payload = self._once(method, path, data, content_type)
             except OSError as exc:
                 status, payload = 0, str(exc).encode()
             if 0 < status < _HTTP_ERROR_FLOOR:

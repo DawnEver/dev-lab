@@ -1,40 +1,33 @@
-"""PUSH ADMISSION -- the family's ONE answer to "may this push go", read off the verdict LEDGER.
+"""PUSH ADMISSION -- the family's ONE answer to "may this push go", read off the FORGE.
 
-THE RULE (user rulings 2026-10-04, 2026-10-07 and 2026-10-08, ONE-RUN-AFTER-INTEGRATION):
+THE RULE (user rulings 2026-10-04, 2026-10-08 and 2026-10-09, forge plan section 6):
 
-==================  =============================================  =======================
-destination         admitted                                       refused
-==================  =============================================  =======================
-a lane              always -- a lane carries no verdict of its own  nothing
-an integration ref  a PASS or FAIL recorded for HEAD, in this env   no such entry; dirty
-the trunk           a PASS of a trunk tier, for HEAD, in this env   everything else
-==================  =============================================  =======================
+==================  ================================================  ===============================
+destination         admitted                                          refused
+==================  ================================================  ===============================
+a lane              always -- a lane carries no result of its own      nothing
+an integration ref  always -- parts are produced FROM pushed shas      nothing
+the trunk           every required part of HEAD is a ``full`` PASS    anything else, or the forge down
+==================  ================================================  ===============================
 
-ONE RUN AFTER INTEGRATION. Every lane verifying itself was the second source of duplicate runs
-measured 2026-10-08: N lanes paid N suites, and the main session then paid one more on the merged
-tree, which is the only tree that is ever published to integration. So a lane is never judged on its
-own; the main session merges every ready lane into one integration tree and runs the gate ONCE, and
-the verdict it records is the one the integration push cites. A lane push therefore needs no
-verdict -- what it still needs is the merge audit below.
+PARTS ARE PRODUCED FROM PUSHED SHAS. A pushed integration sha lacking its parts IS the request
+(:mod:`lab_commons.dev.forgetick`), so an integration push cannot wait for parts that only its push
+makes possible. The trunk is where everything must already be green: HEAD's ``tests/<platform>``
+statuses (:mod:`lab_commons.dev.platformparts`) are read from the forge and composed -- every part a
+PASS of scope ``full``, every platform some part hands ids to present, no id runnable nowhere. An
+incremental part is a re-run of named ids and says nothing about the rest, so it is not a trunk part.
 
-THE LEDGER IS THE ONE SOURCE (:mod:`lab_commons.dev.verdictledger`). The runner records a run-level
-entry after PROMOTION, naming HEAD only when the tree was clean and unmoved across the run; this
-module reads those entries and never parses a log. An INCONCLUSIVE never reaches the ledger, so "a
-run that never started" needs no reading of its own here. A cited FAIL writes the gap record from
-the ledger's own per-test FAIL rows for the same tree and env.
-
-A VERDICT MAY BE COMPOSED OF PLATFORM PARTS (user ruling 2026-10-09, :mod:`lab_commons.dev.platformparts`):
-with no whole verdict for HEAD, the newest part per platform for HEAD is cited instead when every id
-any part handed off is assigned to a recorded part. A FAIL part is a composed FAIL; a missing part, or a test no
-declared platform can run is refused by name. The trunk counts a composition only when every
-part is a PASS of a trunk tier.
+THE FORGE IS THE ONE SOURCE, AND THERE IS NO LOCAL FALLBACK. The verdict ledger is a cache of this
+box's runs (:mod:`lab_commons.dev.verdictledger`) and no longer decides a push: a result only this box
+can see is a result no other workstation can check. If the forge cannot be read, the trunk WAITS --
+the refusal names the remedy; nothing local stands in for it.
 
 EVERY DESTINATION AUDITS THE MERGES IT PUBLISHES, unconditionally: each merge commit not yet on any
 remote must name every test its resolution lost or rewrote (:mod:`lab_commons.dev.mergeaudit`).
 
 THE STAMP GRAMMAR'S READER STAYS HERE. Runners still stamp their logs (``[verdict tree= env= tier=
 selector=] RESULT`` and :mod:`lab_commons.dev.verify`'s flat line) as the evidence a ledger entry
-points at, and :func:`parse_verdict_line` is the one reader of both. It no longer decides a push.
+points at, and :func:`parse_verdict_line` is the one reader of both. It does not decide a push.
 
 WHY HERE AND NOT IN EACH CONSUMER. Three repos each carried a copy of this table and the copies
 disagreed. :mod:`lab_commons.dev.famtests.localadmission` refuses a consumer that keeps one.
@@ -45,28 +38,30 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.envkey import env_key, env_manifest
-from lab_commons.dev.forge import _GIT
+from lab_commons.dev.forge import _GIT, NoCredential, UnreadableRemote
+from lab_commons.dev.forgeoutbox import unprompted_client
+from lab_commons.dev.forgestatus import Status, status_list
+from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.integrator import Policy, load_policy
 from lab_commons.dev.logref import MARKER
 from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, refusals
-from lab_commons.dev.platformparts import compose, parts_for, this_platform
-from lab_commons.dev.treedirt import status_paths
-from lab_commons.dev.verdictledger import Entry, entries, ledger_path
+from lab_commons.dev.platformparts import compose, parts_of
+from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping, Sequence
+    from collections.abc import Callable, Sequence
 
 __all__ = [
     'INTEGRATION',
     'LANE',
-    'RESULTS',
     'TRUNK',
+    'TRUNK_SCOPE',
     'VERDICT_STAMP',
     'Admission',
     'CitedVerdict',
@@ -75,7 +70,6 @@ __all__ = [
     'main',
     'merge_refusals',
     'parse_verdict_line',
-    'record_gap',
     'unpublished_merges',
 ]
 
@@ -94,17 +88,10 @@ _FLAT: Final = re.compile(
 LANE: Final = 'lane'
 INTEGRATION: Final = 'integration'
 TRUNK: Final = 'trunk'
-#: What each JUDGED destination may cite -- the table above, as the one place it is spelled. A lane
-#: is absent on purpose: it cites nothing.
-RESULTS: Final = {
-    INTEGRATION: frozenset({'PASS', 'FAIL'}),
-    TRUNK: frozenset({'PASS'}),
-}
 
-#: Preference when several entries are citable: the strongest statement about the tree wins.
-_RANK: Final = {'PASS': 0, 'FAIL': 1}
+#: The one scope whose parts the trunk admits: every id, not a re-run of named ones.
+TRUNK_SCOPE: Final = 'full'
 
-_RUN_PREFIX: Final = 'run:'
 _GIT_TIMEOUT_S: Final = 120
 
 
@@ -121,10 +108,9 @@ class CitedVerdict:
 
 @dataclass(frozen=True)
 class Admission:
-    """The decision, the ledger entry it rests on (``None`` for a lane), and the text the hook prints."""
+    """The decision and the text the hook prints."""
 
     allowed: bool
-    cited: Entry | None
     message: str
 
 
@@ -141,154 +127,51 @@ def parse_verdict_line(text: str) -> CitedVerdict | None:
     return CitedVerdict(tree=last['tree'], env=last['env'], tier=tier, result=last['result'].upper(), line=line)
 
 
-def _describe(entry: Entry) -> str:
-    return f'{entry.result} tier={entry.tier} {entry.test} tree={entry.tree} env={entry.env} evidence={entry.log}'
+def admit(destination: str, *, head: str, statuses: Callable[[], Sequence[Status]]) -> Admission:
+    """Decide a push to *destination* by the table in this module's docstring.
 
-
-def admit(
-    rows: Sequence[Entry],
-    *,
-    destination: str,
-    trunk_tiers: Collection[str],
-    head: str,
-    clean: bool,
-    env: str,
-    host: str,
-    gap: Path | None = None,
-) -> Admission:
-    """Decide a push to *destination* from the ledger's *rows*, by the table in this module's docstring.
-
-    Only RUN-LEVEL entries naming *head* as their commit, in *env*, are citable; a per-test entry
-    says nothing about a selection. PASS is preferred over FAIL, then the newest. Citing a FAIL
-    writes the gap record at *gap* when one is named.
+    *statuses* reads HEAD's latest status per context from the forge; it is called only for the trunk,
+    and any failure to read is a refusal (the trunk waits), never a pass.
     """
-    if destination == LANE:
+    if destination in {LANE, INTEGRATION}:
         return Admission(
             allowed=True,
-            cited=None,
             message=(
-                '[admission] lane: admitted with no verdict -- ONE-RUN-AFTER-INTEGRATION: the main session '
-                'merges every ready lane and runs the gate once on the integrated tree.'
+                f'[admission] {destination}: admitted with no part -- parts are produced from pushed shas; '
+                'only the trunk needs every part green.'
             ),
         )
-    results = RESULTS[destination]
-    if not clean:
+    try:
+        found = tuple(statuses())
+    except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError) as exc:
         return Admission(
             allowed=False,
-            cited=None,
             message=(
-                f'[admission] {destination}: push REFUSED -- the working tree is dirty, so no entry names it.\n'
-                '[admission] Remedy: commit, then run the gate on the clean integrated tree.'
+                f'[admission] trunk: push REFUSED -- the forge could not be read for HEAD {head} ({exc}).\n'
+                '[admission] Remedy: the trunk WAITS for the forge; there is no local fallback. Retry once '
+                '`python -m lab_commons.dev.forge status list <sha>` answers.'
             ),
         )
-    citable = [
-        (order, row)
-        for order, row in enumerate(rows)
-        if row.test.startswith(_RUN_PREFIX)
-        and not row.part
-        and row.commit
-        and row.commit == head
-        and row.env == env
-        and row.result in results
-        and (destination != TRUNK or row.tier in trunk_tiers)
-    ]
-    if not citable:
-        parts = parts_for(rows, head=head, env=env, host=host)
-        if parts:
-            return _admit_composed(
-                parts, destination=destination, trunk_tiers=trunk_tiers, head=head, rows=rows, gap=gap
-            )
-        bar = f'a PASS of tier {sorted(trunk_tiers)}' if destination == TRUNK else f'one of {sorted(results)}'
-        return Admission(
-            allowed=False,
-            cited=None,
-            message=(
-                f'[admission] {destination}: push REFUSED -- no recorded verdict for HEAD {head} in env={env}, '
-                'whole or composed of platform parts.\n'
-                f'[admission] Remedy: run the gate on THIS clean, integrated tree; this push needs {bar}.'
-            ),
-        )
-    _order, cited = min(citable, key=lambda item: (_RANK[item[1].result], -item[0]))
-    return _cite((cited,), destination=destination, result=cited.result, rows=rows, gap=gap)
-
-
-def _cite(
-    cited: Sequence[Entry], *, destination: str, result: str, rows: Sequence[Entry], gap: Path | None
-) -> Admission:
-    lines = [
-        f'[admission] {destination}: cited {result} -- push proceeds.',
-        *(f'[admission] cited: {_describe(entry)}' for entry in cited),
-    ]
-    if gap is not None and result != 'PASS':
-        record_gap(gap, cited, rows)
-        lines.append(f'[admission] gap recorded at {gap}')
-    return Admission(allowed=True, cited=cited[0], message='\n'.join(lines))
-
-
-def _admit_composed(
-    parts: Mapping[str, Entry],
-    *,
-    destination: str,
-    trunk_tiers: Collection[str],
-    head: str,
-    rows: Sequence[Entry],
-    gap: Path | None,
-) -> Admission:
-    """A verdict COMPOSED of platform parts (:mod:`lab_commons.dev.platformparts`) for HEAD."""
+    parts, unsettled = parts_of(found)
     composed = compose(parts, head=head)
-    if composed.problems:
+    problems = [*unsettled, *composed.problems]
+    problems += [
+        f'{part.platform} is {part.result} of scope {part.scope}; the trunk takes only a PASS of scope {TRUNK_SCOPE}'
+        for part in composed.parts
+        if part.result != 'PASS' or part.scope != TRUNK_SCOPE
+    ]
+    cited = ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in composed.parts)
+    if problems:
         return Admission(
             allowed=False,
-            cited=None,
             message='\n'.join(
                 [
-                    (
-                        f'[admission] {destination}: push REFUSED -- the platform parts for HEAD {head} '
-                        f'({", ".join(sorted(parts))}) do not cover the selection.'
-                    ),
-                    *(f'[admission]   {problem}' for problem in composed.problems),
+                    f'[admission] trunk: push REFUSED -- the parts of HEAD {head} on the forge ({cited or "none"}):',
+                    *(f'[admission]   {problem}' for problem in problems),
                 ]
             ),
         )
-    if destination == TRUNK and (composed.result != 'PASS' or any(p.tier not in trunk_tiers for p in composed.parts)):
-        return Admission(
-            allowed=False,
-            cited=None,
-            message=(
-                f'[admission] trunk: push REFUSED -- a composed verdict counts only when EVERY part is a PASS of '
-                f'tier {sorted(trunk_tiers)}; parts: '
-                + ', '.join(f'{p.part}={p.result}/{p.tier}' for p in composed.parts)
-            ),
-        )
-    return _cite(composed.parts, destination=destination, result=composed.result, rows=rows, gap=gap)
-
-
-def record_gap(path: Path, cited: Sequence[Entry], rows: Sequence[Entry]) -> Path:
-    """Write (or REWRITE) the gap record a FAIL citation leaves; returns *path*.
-
-    The consumer names the dated path; this owns the content: the cited entries (one, or one per
-    platform part) and the failing node ids the ledger recorded for each one's tree and env.
-    """
-    keys = {(entry.tree, entry.env) for entry in cited}
-    failing = sorted(
-        {
-            row.test
-            for row in rows
-            if (row.tree, row.env) in keys and row.result == 'FAIL' and not row.test.startswith(_RUN_PREFIX)
-        }
-    )
-    result = 'FAIL' if any(entry.result != 'PASS' for entry in cited) else 'PASS'
-    body = [
-        f'# Push gap: {result} cited for commit {cited[0].commit}',
-        '',
-        *(f'- verdict: `{_describe(entry)}`' for entry in cited),
-        f'- failing node ids: {len(failing)}',
-        *(f'  - `{node}`' for node in failing),
-        '',
-    ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('\n'.join(body), encoding='utf-8')
-    return path
+    return Admission(allowed=True, message=f'[admission] trunk: every part of HEAD {head} is green ({cited}).')
 
 
 def destination_of(remote_ref: str, policy: Policy) -> str:
@@ -344,8 +227,8 @@ def _audit_message(problems: Sequence[str], where: str) -> str:
     )
 
 
-def _tree_state(root: Path) -> tuple[str, bool]:
-    head = subprocess.run(
+def _head(root: Path) -> str:
+    return subprocess.run(
         [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
         capture_output=True,
         text=True,
@@ -353,12 +236,6 @@ def _tree_state(root: Path) -> tuple[str, bool]:
         check=False,
         timeout=_GIT_TIMEOUT_S,
     ).stdout.strip()
-    dirty = status_paths(root)
-    return head, dirty == ()
-
-
-def _current_env() -> str:
-    return env_key(env_manifest())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -367,31 +244,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout being pushed')
     parser.add_argument('--remote-ref', required=True, help='the full remote ref being updated')
     parser.add_argument('--trunk-ref', required=True, help="the trunk ref (e.g. refs/heads/main), or 'none'")
-    parser.add_argument('--trunk-tier', action='append', default=[], help='a tier whose PASS the trunk accepts')
-    parser.add_argument('--ledger', type=Path, help="the verdict ledger (default: the main checkout's)")
-    parser.add_argument('--gap', type=Path, help='where a FAIL citation records its gap (the consumer dates it)')
+    argv = sys.argv[1:] if argv is None else list(argv)
+    for word in argv:
+        if refused := refusal('admission', word.split('=', 1)[0]):
+            parser.error(refused)
     args = parser.parse_args(argv)
     trunk = args.trunk_ref != 'none' and args.remote_ref == args.trunk_ref
-    if trunk and not args.trunk_tier:
-        parser.error('--trunk-tier is required when the push targets the trunk')
     policy = load_policy(args.root)
     destination = TRUNK if trunk else destination_of(args.remote_ref, policy)
     problems = merge_refusals(args.root, unpublished_merges(args.root), policy.test_roots)
     if problems:
         emit(_audit_message(problems, destination))
         return 1
-    head, clean = _tree_state(args.root)
-    ledger = args.ledger if args.ledger is not None else ledger_path(args.root)
-    decided = admit(
-        entries(ledger),
-        destination=destination,
-        trunk_tiers=args.trunk_tier,
-        head=head,
-        clean=clean,
-        env=_current_env(),
-        host=this_platform(),
-        gap=args.gap,
-    )
+    head = _head(args.root)
+    decided = admit(destination, head=head, statuses=lambda: status_list(unprompted_client(args.root), head))
     emit(decided.message)
     return 0 if decided.allowed else 1
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev import platformparts
-from lab_commons.dev.verdictledger import entries
+from lab_commons.dev.forgestatus import Status
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
 
@@ -49,28 +49,44 @@ def test_the_table_is_one_declaration_per_marker() -> None:
 
 def test_the_part_is_derived_strictly_from_the_run() -> None:
     passing = _record(
-        {'t::a': 'passed', 't::b': 'skipped', 't::c': 'xfailed', 't::f': 'not-covered'}, {'t::f': ['windows']}
+        {'t::a': 'passed', 't::b': 'skipped', 't::c': 'xfailed', 't::f': 'not-covered', 't::m': 'not-covered'},
+        {'t::f': ['windows'], 't::m': ['windows', 'macos']},
     )
-    run, *tests = platformparts.run_part(passing, log='r@d')
-    assert (run.result, run.part, run.commit, run.tier) == ('PASS', 'linux', SHA, 'full'), (
+    part = platformparts.part_of(passing)
+    assert (part.platform, part.scope, part.result, part.state) == ('linux', 'full', 'PASS', 'success'), (
         "platform and scope are the record's"
     )
-    assert run.env == 'hpc:login.ada:linux-x86_64/glibc2.28:python-3.13.1', 'the env names the cluster, not this box'
-    assert run.handed == {'t::f': ['windows']}
-    assert {t.test for t in tests} == {'t::a', 't::c'}
+    assert (part.ran, part.hands, part.nowhere) == (3, {'windows': 2}, 0)
+    assert part.description() == 'scope=full ran=3 hands=windows:2 nowhere=0'
     for bad in ('failed', 'error'):
-        failing = platformparts.run_part(_record({'t::a': 'passed', 't::x': bad}), log='r@d')
-        assert failing[0].result == 'FAIL', bad
+        failing = platformparts.part_of(_record({'t::a': 'passed', 't::x': bad}))
+        assert (failing.result, failing.state) == ('FAIL', 'failure'), bad
 
 
 @pytest.mark.parametrize('unrun', ['lost', 'missing'])
-def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_recorded_as_fail(unrun: str) -> None:
+def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_posted(unrun: str) -> None:
     """Measured 2026-10-09: 50349 lost ids from a build that never made a venv were written as a linux FAIL."""
     outcomes = {'t::a': 'passed', 't::e': 'error', 't::x': unrun}
     with pytest.raises(platformparts.PartRefusal, match=r'INCONCLUSIVE: 1 of 3 .*t::x'):
-        platformparts.run_part(_record(outcomes), log='r@d')
+        platformparts.part_of(_record(outcomes))
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.run_part(_record({'t::f': 'not-covered'}), log='r@d')
+        platformparts.part_of(_record({'t::f': 'not-covered'}))
+
+
+def test_a_record_handing_off_its_own_ids_is_refused() -> None:
+    """PLANTED CONTROL: linux handing off an id linux can run is a selection defect, not a part."""
+    with pytest.raises(platformparts.PartRefusal, match='it is assigned: t::a'):
+        platformparts.part_of(_record({'t::b': 'passed', 't::a': 'not-covered'}, {'t::a': ['linux', 'windows']}))
+
+
+def test_the_description_round_trips_through_a_status() -> None:
+    part = platformparts.Part('windows', 'full', 'FAIL', ran=7, hands={'macos': 1}, nowhere=2)
+    status = Status(platformparts.part_context('windows'), part.state, part.description(), 'u')
+    parts, problems = platformparts.parts_of([status, Status('lab/gate', 'success', 'VERDICT', '')])
+    assert parts == {'windows': part}
+    assert problems == ()
+    _, claimed = platformparts.parts_of([Status('tests/linux', 'pending', 'claim machine=G', '')])
+    assert 'not a settled part' in claimed[0]
 
 
 def test_every_id_is_assigned_to_exactly_one_part_by_one_rule() -> None:
@@ -100,12 +116,21 @@ def test_a_part_selects_from_its_own_collection_without_reading_any_ledger(tmp_p
         platformparts.select(tmp_path, SHA, 'win32', collect=collected.__getitem__)
 
 
-def test_the_cli_writes_the_run_record_as_its_part_into_the_ledger(tmp_path: Path) -> None:
+def test_the_cli_queues_the_part_with_its_record_and_flushes(tmp_path: Path, monkeypatch, capsys) -> None:
     source = write_record(_record({'t::a': 'passed'}), tmp_path / 'runs')
-    ledger = tmp_path / 'ledger.jsonl'
-    assert platformparts.main(['record', str(source), '--ledger', str(ledger)]) == 0
-    run = entries(ledger)[0]
-    assert (run.part, run.result, run.commit, run.tier) == ('linux', 'PASS', SHA, 'full')
-    assert run.log.startswith(f'{source}@sha256:')
+    queued: list = []
+    monkeypatch.setattr(platformparts, 'enqueue', lambda _root, post, *, record: queued.append((post, record)))
+    monkeypatch.setattr(platformparts, 'flush', lambda _root: ['status: held tests/linux'])
+    assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == 0
+    post, record = queued[0]
+    assert (post.sha, post.context, post.state, post.description) == (
+        SHA,
+        'tests/linux',
+        'success',
+        'scope=full ran=1 hands=- nowhere=0',
+    )
+    assert record == source
+    assert 'status: held tests/linux' in capsys.readouterr().out
     empty = write_record({**_record({}), 'req': 't1'}, tmp_path / 'runs')
-    assert platformparts.main(['record', str(empty), '--ledger', str(ledger)]) == 1
+    assert platformparts.main(['post', str(empty), '--root', str(tmp_path)]) == 1
+    assert len(queued) == 1, 'a refused part is never queued'

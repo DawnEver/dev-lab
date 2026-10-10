@@ -14,16 +14,14 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, make_repo, run_git, serve
 
-from lab_commons.dev.forge import Forge, NoCredential
+from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgestatus import (
     DESCRIPTION_LIMIT,
-    GATE_CONTEXT,
-    PostFailed,
     Status,
     head_sha,
     main,
-    publish,
     state_for,
+    status_history,
     status_list,
     status_post,
     verdict_commit,
@@ -133,31 +131,7 @@ def test_head_sha_and_status_paths_read_a_real_checkout(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# publish: never raises, never changes the verdict
-
-
-def test_publish_posts_the_verdict_line_on_the_commit(server, tmp_path: Path) -> None:
-    forge = Forge('forge.example.org', 'o', 'r')
-    path = f'/api/v1/repos/o/r/statuses/{_SHA}'
-    answer('POST', path, (201, {'context': GATE_CONTEXT, 'state': 'success'}))
-    verdict = _verdict(tmp_path, Outcome.PASS)
-    line = publish(
-        tmp_path, verdict, context=GATE_CONTEXT, commit=_SHA, client=lambda _r: client(forge, Loopback(server))
-    )
-    assert line == f'status: {GATE_CONTEXT}=success on {_SHA[:12]}'
-    assert Recorder.received[-1]['body']['description'] == verdict.line()[:DESCRIPTION_LIMIT]
-    assert verdict.line().startswith('VERDICT '), 'the description is the citable verdict line'
-
-
-def test_publish_posts_nothing_for_no_commit(tmp_path: Path) -> None:
-    def never(_root: Path) -> None:
-        msg = 'no client may be built'
-        raise AssertionError(msg)
-
-    held = publish(tmp_path, _verdict(tmp_path, Outcome.INCONCLUSIVE), context=GATE_CONTEXT, commit=None, client=never)
-    dirty = publish(tmp_path, _verdict(tmp_path, Outcome.FAIL), context=GATE_CONTEXT, commit=None, client=never)
-    assert 'dirty' in held
-    assert 'dirty' in dirty
+# history and links
 
 
 def test_an_inconclusive_verdict_names_itself_in_the_error_description(tmp_path: Path) -> None:
@@ -166,27 +140,30 @@ def test_an_inconclusive_verdict_names_itself_in_the_error_description(tmp_path:
     assert 'result=inconclusive' in verdict.line()[:DESCRIPTION_LIMIT]
 
 
-def test_publish_skips_without_a_credential_and_raises_on_a_refused_post(server, tmp_path: Path) -> None:
-    def no_token(_root: Path) -> None:
-        msg = 'no stored credential for forge.example.org'
-        raise NoCredential(msg)
-
-    verdict = _verdict(tmp_path, Outcome.PASS)
-    assert publish(tmp_path, verdict, context=GATE_CONTEXT, commit=_SHA, client=no_token).startswith('status: skipped')
+def test_a_target_url_is_sent_only_when_given(server) -> None:
     forge = Forge('forge.example.org', 'o', 'r')
-    answer('POST', f'/api/v1/repos/o/r/statuses/{_SHA}', (403, {'message': 'forbidden'}))
-    with pytest.raises(PostFailed, match=r'post FAILED.*forge-refused') as failed:
-        publish(tmp_path, verdict, context=GATE_CONTEXT, commit=_SHA, client=lambda _r: client(forge, Loopback(server)))
-    assert 'remedy:' in str(failed.value)
+    answer('POST', f'/api/v1/repos/o/r/statuses/{_SHA}', (201, {'context': 'c', 'state': 'success'}))
+    status_post(client(forge, Loopback(server)), _SHA, context='c', state='success', description='d', target_url='u')
+    status_post(client(forge, Loopback(server)), _SHA, context='c', state='success', description='d')
+    assert Recorder.received[0]['body']['target_url'] == 'u'
+    assert 'target_url' not in Recorder.received[1]['body']
 
 
-@pytest.mark.parametrize('error', [OSError('connection reset'), ValueError('bad json'), KeyError('context')])
-def test_every_post_failure_raises_with_a_remedy(tmp_path: Path, error: Exception) -> None:
-    def broken(_root: Path) -> None:
-        raise error
-
-    with pytest.raises(PostFailed, match=r'post FAILED.*remedy:'):
-        publish(tmp_path, _verdict(tmp_path, Outcome.PASS), context=GATE_CONTEXT, commit=_SHA, client=broken)
+@pytest.mark.parametrize(
+    ('forge', 'path'),
+    [
+        (Forge('forge.example.org', 'o', 'r'), f'/api/v1/repos/o/r/statuses/{_SHA}'),
+        (Forge('github.com', 'o', 'r'), f'/repos/o/r/commits/{_SHA}/statuses'),
+    ],
+)
+def test_history_is_every_post_oldest_first_with_its_creator(server, forge, path) -> None:
+    posts = [
+        {'id': 9, 'context': 'tests/linux', 'status': 'pending', 'creator': {'login': 'bob'}},
+        {'id': 4, 'context': 'tests/linux', 'status': 'pending', 'creator': {'login': 'alice'}},
+    ]
+    answer('GET', path, (200, posts))
+    history = status_history(client(forge, Loopback(server)), _SHA)
+    assert [(s.id, s.creator) for s in history] == [(4, 'alice'), (9, 'bob')]
 
 
 # --------------------------------------------------------------------------------------------

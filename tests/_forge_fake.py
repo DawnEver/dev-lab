@@ -35,7 +35,11 @@ def git_out(cwd: Path, *args: str) -> str:
     return done.stdout.strip()
 
 
-def credential_env(tmp_path: Path, token: str = 'T') -> dict[str, str]:  # noqa: S107 -- a fake helper's answer
+#: What the fake credential helper answers unless told otherwise.
+_HELPER_ANSWER = 'T'
+
+
+def credential_env(tmp_path: Path, token: str = _HELPER_ANSWER) -> dict[str, str]:
     """An env whose ONLY credential is a git helper answering *token*: the one route a forge verb reads."""
     config = tmp_path / 'gitconfig-credential'
     helper = f'!f() {{ echo username=u; echo password={token}; }}; f'
@@ -59,8 +63,12 @@ class Recorder(BaseHTTPRequestHandler):
 
     def _serve(self, method: str) -> None:
         length = int(self.headers.get('Content-Length') or 0)
-        body = json.loads(self.rfile.read(length)) if length else None
-        type(self).received.append({'method': method, 'path': self.path, 'body': body, 'headers': dict(self.headers)})
+        raw = self.rfile.read(length) if length else b''
+        is_json = (self.headers.get('Content-Type') or '').startswith('application/json')
+        body = json.loads(raw) if raw and is_json else None
+        type(self).received.append(
+            {'method': method, 'path': self.path, 'body': body, 'raw': raw, 'headers': dict(self.headers)}
+        )
         answers = type(self).answers
         found = answers.get((method, self.path)) or answers.get((method, self.path.split('?')[0]))
         queue = found or [(404, {'message': 'not found'})]
@@ -68,7 +76,7 @@ class Recorder(BaseHTTPRequestHandler):
         if status is None:  # APPLIED, then the response is lost: the connection drops unanswered
             self.close_connection = True
             return
-        encoded = json.dumps(payload).encode()
+        encoded = b'' if payload is None else json.dumps(payload).encode()
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(encoded)))
@@ -86,6 +94,10 @@ class Recorder(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         """Recorded then answered."""
         self._serve('PATCH')
+
+    def do_DELETE(self) -> None:
+        """Recorded then answered."""
+        self._serve('DELETE')
 
     def log_message(self, fmt: str, *args: object) -> None:
         """Silent: the recording IS the log."""

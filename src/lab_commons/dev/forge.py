@@ -47,6 +47,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from lab_commons.dev.netverb import run_network_verb
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
@@ -64,8 +66,10 @@ __all__ = [
     'UnreadableRemote',
     'apply_protection',
     'assess',
+    'fetch_origin',
     'forge_from_remote',
     'https_transport',
+    'on_origin',
     'protection_body',
     'read_rule',
     'store_credential',
@@ -219,6 +223,43 @@ def _parse_remote(url: str, *, remote: str) -> Forge:
         msg = f'the `{remote}` remote {url!r} does not name a host, an owner and a repository'
         raise UnreadableRemote(msg)
     return Forge(host=host, owner=owner, repo=repo)
+
+
+#: The remote-tracking namespace every "does the forge hold it" reading uses.
+_ORIGIN_TRACKING = 'refs/remotes/origin'
+
+
+def on_origin(root: Path, sha: str) -> bool:
+    """Whether *sha* is reachable from an ``origin`` remote-tracking ref -- the forge holds it.
+
+    Offline: a push updates the remote-tracking ref the moment it lands, and a fetch for anyone else's.
+    """
+    done = subprocess.run(
+        [
+            _GIT,
+            '-C',
+            str(root),
+            'for-each-ref',
+            '--count=1',
+            '--contains',
+            sha,
+            '--format=%(refname)',
+            _ORIGIN_TRACKING,
+        ],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    return done.returncode == 0 and bool(done.stdout.strip())
+
+
+def fetch_origin(root: Path) -> None:
+    """``git fetch --prune origin``, retried then reported (:mod:`lab_commons.dev.netverb`); raises when it fails."""
+    report = run_network_verb([_GIT, 'fetch', '--prune', '--quiet', 'origin'], cwd=root, timeout=300)
+    if not report.ok:
+        raise OSError(report.remedy)
 
 
 def token_for(host: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
@@ -424,20 +465,22 @@ def apply_protection(
 if __name__ == '__main__':
     # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, ``status`` for commit
     # statuses, ``issue claim|status|comments|comments-since`` for derived issue state and comment
-    # reads, and ``auth`` for the token. The verbs live in :mod:`lab_commons.dev.forgework`,
-    # :mod:`lab_commons.dev.forgestatus`,
-    # :mod:`lab_commons.dev.forgeissue` and :mod:`lab_commons.dev.forgeauth`, which import THIS module,
-    # so the imports are deferred to the entry point: at the top they would be circular
-    # (NO-LAZY-IMPORT's written exception).
+    # reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for run records. The verbs live in the ``forge*`` sibling modules, which
+    # import THIS module, so the imports are deferred to the entry point: at the top they would be
+    # circular (NO-LAZY-IMPORT's written exception).
     import sys
 
-    from lab_commons.dev import forgeauth, forgeissue, forgestatus, forgework
+    from lab_commons.dev import forgeauth, forgeissue, forgeoutbox, forgerecords, forgestatus, forgework
 
     argv = sys.argv[1:]
-    if argv[:1] == ['auth']:
-        raise SystemExit(forgeauth.main(argv[1:]))
-    if argv[:1] == ['status']:
-        raise SystemExit(forgestatus.main(argv[1:]))
+    nouns = {
+        'auth': forgeauth.main,
+        'status': forgestatus.main,
+        'publish': forgeoutbox.main,
+        'records': forgerecords.main,
+    }
+    if argv[:1] and argv[0] in nouns:
+        raise SystemExit(nouns[argv[0]](argv[1:]))
     if argv[:1] == ['issue'] and argv[1:2] in (['claim'], ['status'], ['comments'], ['comments-since']):
         raise SystemExit(forgeissue.main(argv[1:]))
     raise SystemExit(forgework.main(argv))

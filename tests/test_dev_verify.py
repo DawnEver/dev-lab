@@ -34,7 +34,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev import verify
+from lab_commons.dev import forgeoutbox, verify
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, verify_log
 from lab_commons.dev.reports import (
@@ -856,7 +856,7 @@ def _judged(tmp_path: Path) -> Verdict:
 def _patched_main(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, heads: list[str], dirt: list[tuple[str, ...]]
 ) -> list:
-    """Drive ``main`` with the run and the git readings replaced, recording what reaches ``publish``."""
+    """Drive ``main`` with the run and the git readings replaced, recording what reaches the status queue."""
     posted: list = []
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
     monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
@@ -864,21 +864,20 @@ def _patched_main(
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(
-        verify, 'publish', lambda _root, v, *, context, commit: posted.append((v, context, commit)) or 'status: x'
-    )
+    monkeypatch.setattr(forgeoutbox, 'enqueue', lambda _root, post: posted.append(post))
+    monkeypatch.setattr(forgeoutbox, 'flush', lambda _root: ['status: held'])
     assert verify.main([]) == EXIT_CODES[Outcome.PASS]
     return posted
 
 
-def test_a_judged_run_on_a_clean_unmoved_tree_publishes_lab_gate_on_head(monkeypatch, tmp_path: Path) -> None:
+def test_a_judged_run_on_a_clean_unmoved_tree_queues_lab_gate_on_head(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[(), ()])
-    assert [(context, commit) for _v, context, commit in posted] == [('lab/gate', 'a' * 40)]
+    assert [(post.context, post.sha, post.state) for post in posted] == [('lab/gate', 'a' * 40, 'success')]
 
 
-def test_a_dirty_tree_publishes_on_no_commit_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
+def test_a_dirty_tree_queues_nothing_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[('M src/x.py',), ('M src/x.py',)])
-    assert [commit for _v, _c, commit in posted] == [None]
+    assert posted == []
 
 
 def test_every_verify_run_loads_the_durations_ledger_plugin() -> None:
