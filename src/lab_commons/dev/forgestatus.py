@@ -17,9 +17,12 @@ tree was clean before the run, is clean after it, and HEAD did not move -- the c
 the content address the verdict carries IS a reading of that commit's tree. Otherwise nothing is
 posted, because a status is a claim about a commit and this run made none.
 
-PUBLISHING NEVER CHANGES THE VERDICT. :func:`publish` returns one line for the caller to print and
-raises nothing: no credential, no ``origin``, or a forge that refused -- each is reported in that
-line and the run's exit code is the verdict's alone.
+A POST THAT WAS ATTEMPTED AND FAILED RAISES (:class:`PostFailed`, naming its remedy). The retired
+post-failed-and-continue made a refused status read as "the verdict stands" while the forge -- the
+place every other workstation reads parts from -- held nothing. The verdict line and the ledger are
+already written when :func:`publish` runs, so raising loses no evidence. A post that was never
+attempted is not a failure and returns its line: no commit (dirty tree), or no credential or
+``origin`` here (a box that does not publish).
 
 PROVENANCE-FREE ON PURPOSE. Status descriptions are machine verdict lines, length-limited by the
 forge, so no ``[machine · agent · branch]`` stamp is prepended; the forge records the token's login.
@@ -48,6 +51,7 @@ __all__ = [
     'GATE_CONTEXT',
     'HEAVY_CONTEXT',
     'STATES',
+    'PostFailed',
     'Status',
     'head_sha',
     'main',
@@ -173,6 +177,16 @@ def _unprompted_client(root: Path) -> Client:
     return client_for(root)
 
 
+class PostFailed(RuntimeError):
+    """A status post was attempted and did not land; the message names the cause and the remedy."""
+
+
+_POST_REMEDY: Final = (
+    're-run once the forge answers (python -m lab_commons.dev.forge status list <sha> shows what it holds), '
+    'or pass --no-status to run without publishing'
+)
+
+
 def publish(
     root: Path,
     verdict: Verdict,
@@ -181,10 +195,10 @@ def publish(
     commit: str | None,
     client: Callable[[Path], Client] = _unprompted_client,
 ) -> str:
-    """Post *verdict* on *commit* under *context*; return the one line saying what happened. Never raises.
+    """Post *verdict* on *commit* under *context*; return the one line saying what happened.
 
-    The line is for the run's own output. Every skip and every failure is NAMED, because "no status
-    appeared" otherwise reads the same whether it was a dirty tree, a missing token or a 403.
+    Every skip is NAMED in that line, because "no status appeared" otherwise reads the same whether it
+    was a dirty tree or a missing token. A post that was attempted and failed raises :class:`PostFailed`.
     """
     state = state_for(verdict.result.outcome)
     if commit is None:
@@ -193,8 +207,12 @@ def publish(
         posted = status_post(client(root), commit, context=context, state=state, description=verdict.line())
     except (NoCredential, UnreadableRemote) as exc:
         return f'status: skipped -- no forge credential or remote here ({exc})'
-    except (ForgeCallFailed, OSError, ValueError, KeyError) as exc:
-        return f'status: post FAILED, the verdict stands -- {exc}'
+    except ForgeCallFailed as exc:
+        msg = f'status: post FAILED on {commit[:12]} ({exc.report.diagnosis.value}) -- remedy: {exc.report.remedy}'
+        raise PostFailed(msg) from exc
+    except (OSError, ValueError, KeyError) as exc:
+        msg = f'status: post FAILED on {commit[:12]} -- {exc!r}; remedy: {_POST_REMEDY}'
+        raise PostFailed(msg) from exc
     return f'status: {posted.context}={posted.state} on {commit[:12]}'
 
 

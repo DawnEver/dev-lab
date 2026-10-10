@@ -491,8 +491,9 @@ def main(argv: list[str] | None = None) -> int:
 
     EVERY RUN IS THEN PUBLISHED as the ``lab/gate`` commit status (VERDICT-AS-STATUS, see
     :mod:`lab_commons.dev.forgestatus`) -- on HEAD only when the tree was clean before and after the
-    run and HEAD did not move; INCONCLUSIVE posts ``error`` naming itself. ``--no-status`` opts out. The publish
-    prints one line and can neither raise nor change the exit code: the verdict is the run's.
+    run and HEAD did not move; INCONCLUSIVE posts ``error`` naming itself. ``--no-status`` opts out. A skipped
+    publish prints one line; an attempted post that fails RAISES ``PostFailed`` naming its remedy, after the
+    verdict line and the ledger are already written.
     """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',

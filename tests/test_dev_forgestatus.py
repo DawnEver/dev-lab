@@ -18,6 +18,7 @@ from lab_commons.dev.forge import Forge, NoCredential
 from lab_commons.dev.forgestatus import (
     DESCRIPTION_LIMIT,
     GATE_CONTEXT,
+    PostFailed,
     Status,
     head_sha,
     main,
@@ -165,7 +166,7 @@ def test_an_inconclusive_verdict_names_itself_in_the_error_description(tmp_path:
     assert 'result=inconclusive' in verdict.line()[:DESCRIPTION_LIMIT]
 
 
-def test_publish_skips_without_a_credential_and_reports_a_refusal_without_raising(server, tmp_path: Path) -> None:
+def test_publish_skips_without_a_credential_and_raises_on_a_refused_post(server, tmp_path: Path) -> None:
     def no_token(_root: Path) -> None:
         msg = 'no stored credential for forge.example.org'
         raise NoCredential(msg)
@@ -174,10 +175,18 @@ def test_publish_skips_without_a_credential_and_reports_a_refusal_without_raisin
     assert publish(tmp_path, verdict, context=GATE_CONTEXT, commit=_SHA, client=no_token).startswith('status: skipped')
     forge = Forge('forge.example.org', 'o', 'r')
     answer('POST', f'/api/v1/repos/o/r/statuses/{_SHA}', (403, {'message': 'forbidden'}))
-    refused = publish(
-        tmp_path, verdict, context=GATE_CONTEXT, commit=_SHA, client=lambda _r: client(forge, Loopback(server))
-    )
-    assert refused.startswith('status: post FAILED, the verdict stands')
+    with pytest.raises(PostFailed, match=r'post FAILED.*forge-refused') as failed:
+        publish(tmp_path, verdict, context=GATE_CONTEXT, commit=_SHA, client=lambda _r: client(forge, Loopback(server)))
+    assert 'remedy:' in str(failed.value)
+
+
+@pytest.mark.parametrize('error', [OSError('connection reset'), ValueError('bad json'), KeyError('context')])
+def test_every_post_failure_raises_with_a_remedy(tmp_path: Path, error: Exception) -> None:
+    def broken(_root: Path) -> None:
+        raise error
+
+    with pytest.raises(PostFailed, match=r'post FAILED.*remedy:'):
+        publish(tmp_path, _verdict(tmp_path, Outcome.PASS), context=GATE_CONTEXT, commit=_SHA, client=broken)
 
 
 # --------------------------------------------------------------------------------------------
