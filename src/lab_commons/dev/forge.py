@@ -424,18 +424,20 @@ def apply_protection(
 if __name__ == '__main__':
     # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, ``status`` for commit
     # statuses, ``issue claim|status|comments|comments-since`` for derived issue state and comment
-    # reads, and ``auth`` for the token. The verbs live in :mod:`lab_commons.dev.forgework`,
+    # reads, ``route <record>`` for failure routing, and ``auth`` for the token. The verbs live in :mod:`lab_commons.dev.forgework`,
     # :mod:`lab_commons.dev.forgestatus`,
     # :mod:`lab_commons.dev.forgeissue` and :mod:`lab_commons.dev.forgeauth`, which import THIS module,
     # so the imports are deferred to the entry point: at the top they would be circular
     # (NO-LAZY-IMPORT's written exception).
     import sys
 
-    from lab_commons.dev import forgeauth, forgeissue, forgestatus, forgework
+    from lab_commons.dev import forgeauth, forgeissue, forgeroute, forgestatus, forgework
 
     argv = sys.argv[1:]
     if argv[:1] == ['auth']:
         raise SystemExit(forgeauth.main(argv[1:]))
+    if argv[:1] == ['route']:
+        raise SystemExit(forgeroute.main(argv[1:]))
     if argv[:1] == ['status']:
         raise SystemExit(forgestatus.main(argv[1:]))
     if argv[:1] == ['issue'] and argv[1:2] in (['claim'], ['status'], ['comments'], ['comments-since']):
