@@ -8,7 +8,8 @@ SUBJECT and no mechanism at all: ``scripts/pull_all.py`` calls ``git clone``/``g
 timeout and ZERO retries, and ``scripts/consumer-b-update.sh`` exits on the first failed ``fetch`` --
 so a five-minute timer turns one DNS blip into ``FETCH FAILED`` and a skipped deploy. That repo had
 to leave the rule ABSENT with the reason "a guard would demand a file that cannot exist". This is
-the file.
+the file. consumer-a removed that push id and lock advisor on 2026-10-10: a push never
+reads the box lock.
 
 WHAT IS UNIVERSAL AND WHAT WAS LOCAL, read off the shell wrapper rather than guessed:
 
@@ -304,9 +305,10 @@ def run_network_verb(
             REPORTED refusal rather than a hang nobody can see.
         before_retry: an adopter's own veto, consulted after a retryable failure and BEFORE the
             backoff. Returning ``False`` stops the loop with :attr:`Diagnosis.STOPPED_BY_CALLER`.
-            This is the seam consumer-a's ``push_lock.py`` fits: "my own previous attempt's
-            gate still holds the box" is a real stop no shared table can recognise, because the
-            evidence for it is a repo's own lock file.
+            The veto must read the attempt's own evidence, never the box's cpu lock: a push
+            takes and waits on no lock (user ruling 2026-10-10), so a held lock names somebody
+            measuring and cannot explain a push failure. consumer-a's lock advisor, the seam's
+            first occupant, was removed for exactly that misdiagnosis.
         sleep: the backoff, injected so a test can drive the REAL loop at full speed. The command
             under test is always a real subprocess; only the clock is substituted.
 
