@@ -203,7 +203,7 @@ def test_the_plan_is_capped_by_headroom_and_tagged() -> None:
         500, Cost(seconds=60), [(GRANT, _snap('16 lc:ws=ws-a\n'))], workstation='ws-a', policy=Policy()
     )
     assert grant is GRANT
-    assert plan.throttle == 48
+    assert plan.throttle == len(plan.shards) <= 48, 'the headroom caps the wave; one wave, all running'
     assert plan.comment == 'lc:ws=ws-a'
     assert plan.account == 'acct-free'
     assert plan.partitions[0] == 'shortq'

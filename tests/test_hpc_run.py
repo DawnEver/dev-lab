@@ -25,10 +25,10 @@ from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.measured import Measured
-from lab_commons.hpc.plan import make_plan
+from lab_commons.hpc.plan import Plan, make_plan
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, outcome_of, read_stream
-from lab_commons.hpc.records import read_record, read_streams, record_name, write_record
+from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
 from lab_commons.hpc.run import RETRIES, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
@@ -614,15 +614,15 @@ def test_the_record_names_why_each_red_failed() -> None:
     assert record['reasons'] == {n: f'AssertionError: {n}' for n in red}
 
 
-def test_a_multi_file_item_pays_one_start_up_and_its_memory_reads_every_file() -> None:
-    """4316 one-file items paid 9.5 h of start-up for 6.0 h of tests (measured 2026-10-10)."""
+def test_a_multi_file_item_pays_each_files_overhead_and_its_memory_reads_every_file() -> None:
+    """A file's overhead is its own (imports, module fixtures); an item holding two pays both."""
     measured = Measured(
         durations={'a.py::x': 2.0, 'b.py::y': 3.0},
         overheads={'a.py': 7.0, 'b.py': 8.0},
         peaks_mb={'a.py': 100.0, 'b.py': 4096.0},
     )
     seconds, unmeasured = measured.estimate([['a.py::x', 'b.py::y'], ['a.py::x', 'c.py::t']], Cost(seconds=120))
-    assert seconds == [8.0 + 2.0 + 3.0, 7.0 + 2.0 + 120.0], 'one start-up: the worst of the files'
+    assert seconds == [7.0 + 8.0 + 2.0 + 3.0, 7.0 + 2.0 + 120.0], 'the overheads add: a 600 s file is not hidden'
     assert unmeasured == ['c.py']
     assert measured.mem_gb([['a.py::x', 'b.py::y']], Cost(mem_gb=1), Policy(safety=1.0)) == 4.0
 
@@ -630,7 +630,7 @@ def test_a_multi_file_item_pays_one_start_up_and_its_memory_reads_every_file() -
 def test_whole_files_are_packed_into_items_up_to_the_budget() -> None:
     measured = Measured(
         durations={'a.py::x': 10.0, 'a.py::y': 10.0, 'b.py::z': 15.0, 'c.py::t': 50.0, 'd.py::u': 5.0},
-        overheads={'a.py': 7.0, 'b.py': 7.0, 'c.py': 7.0, 'd.py': 7.0},
+        overheads={'a.py': 3.0, 'b.py': 3.0, 'c.py': 3.0, 'd.py': 3.0},
     )
     files = [['a.py::x', 'a.py::y'], ['b.py::z'], ['c.py::t'], ['d.py::u']]
     items = measured.pack(files, Cost(seconds=120), budget=45.0)
@@ -640,12 +640,90 @@ def test_whole_files_are_packed_into_items_up_to_the_budget() -> None:
     assert measured.pack([['e.py::t'], ['f.py::t']], Cost(seconds=120), budget=45.0) == [['e.py::t'], ['f.py::t']]
 
 
-def test_a_multi_file_item_teaches_its_overhead_and_peak_to_every_file() -> None:
+def test_a_multi_file_item_shares_its_overhead_and_teaches_its_peak_to_every_file() -> None:
     measured = Measured()
     folded = {'seconds': {'a.py::x': 2.0, 'b.py::y': 3.0}, 'done': {'wall': 12.0, 'peak_mb': 900.0}}
     measured.learn(['a.py::x', 'b.py::y'], folded)
-    assert measured.overheads == {'a.py': 7.0, 'b.py': 7.0}
+    assert measured.overheads == {'a.py': 3.5, 'b.py': 3.5}, 'the shares sum back to the 7 s measured'
+    assert measured.estimate([['a.py::x', 'b.py::y']], Cost())[0] == [12.0], 'the same item is priced at its wall'
     assert measured.peaks_mb == {'a.py': 900.0, 'b.py': 900.0}
+
+
+# -- an id that dies is priced from its death ------------------------------------------------------------
+
+
+def test_an_id_killed_mid_run_is_floored_at_the_time_it_was_given_not_its_files_mean() -> None:
+    """Measured 2026-10-10: a file's costly id kept dying and was re-priced from its cheap survivors."""
+    measured = Measured(durations={'a.py::cheap': 1.0}, overheads={'a.py': 10.0})
+    folded = {'outcomes': {'a.py::cheap': 'passed'}, 'seconds': {'a.py::cheap': 1.0}, 'done': None}
+    measured.killed(['a.py::cheap', 'a.py::slow', 'a.py::after'], folded, spent=600.0)
+    assert measured.floors == {'a.py::slow': 589.0}, 'the interrupted id; the one after it never started'
+    seconds, _ = measured.estimate([['a.py::slow', 'a.py::after']], Cost())
+    assert seconds == [10.0 + 589.0 + 1.0], 'the slow id at its floor, not the 1 s mean of the survivors'
+    measured.learn(['a.py::slow'], {'seconds': {'a.py::slow': 700.0}, 'done': None})
+    assert measured.floors == {}, 'once it finishes, its duration is known and the floor goes'
+    assert Measured.of(measured.record()).durations['a.py::slow'] == 700.0
+
+
+def test_a_floor_survives_the_record_and_prices_a_file_with_nothing_else_measured() -> None:
+    measured = Measured(floors={'a.py::slow': 900.0})
+    again = Measured.of(measured.record())
+    assert again.estimate([['a.py::slow']], Cost(seconds=60))[0] == [900.0]
+
+
+def test_fold_charges_a_killed_item_what_its_shard_wall_had_left() -> None:
+    """Items in a shard run back to back: the unclosed one was killed after the wall minus its predecessors."""
+    items = [{'ids': ['a.py::x']}, {'ids': ['b.py::fast', 'b.py::slow']}, {'ids': ['c.py::never']}]
+    streams = {
+        0: json.dumps({'id': 'a.py::x', 'outcome': 'passed', 's': 50.0})
+        + '\n'
+        + json.dumps({'done': 0, 'wall': 100.0, 'peak_mb': 1.0}),
+        1: json.dumps({'id': 'b.py::fast', 'outcome': 'passed', 's': 20.0}),
+    }
+    measured, outcomes = Measured(), {}
+    pending, killed = fold(items, streams, outcomes, measured, {}, shards=[(0, 3)], wall=1000.0)
+    assert not killed
+    assert pending == [['b.py::slow'], ['c.py::never']]
+    assert measured.floors == {'b.py::slow': 880.0}, '1000 s wall - 100 s item 0 - 20 s finished'
+    assert 'c.py::never' not in measured.floors, 'an item after the kill never started'
+
+
+def test_a_file_whose_costly_id_dies_is_replanned_with_more_wall_than_it_died_at() -> None:
+    """No TIMEOUT state here (the round is OUT_OF_MEMORY), so only the floor can lengthen the retry."""
+    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True))
+    first, second = record['rounds']
+    assert record['floors'] == {}, 'the retry finished it, so its floor gave way to its duration'
+    assert second['minutes'] >= first['minutes'], 'the retry is never sized shorter than the wall it died at'
+
+
+def test_a_timeout_round_asks_the_next_for_twice_the_minutes() -> None:
+    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'})))
+    first, second = record['rounds']
+    assert second['minutes'] >= 2 * first['minutes']
+    assert second['mem_mb'] == first['mem_mb'], 'a timeout is not a memory problem'
+
+
+def test_a_retry_wall_is_held_to_a_partition_that_allows_it() -> None:
+    snap = parse_snapshot(IDLE)
+
+    def plan(min_minutes: float) -> Plan:
+        return make_plan(
+            4,
+            Cost(seconds=60),
+            snap,
+            cluster=GRANT.cluster(),
+            policy=Policy(),
+            limits=Limits(),
+            min_minutes=min_minutes,
+        )
+
+    assert plan(0).partitions == ('shortq', 'defq')
+    assert plan(0).minutes < 60
+    asked = plan(5 * 60)
+    assert asked.minutes == 5 * 60, 'the retry gets the minutes it asked for'
+    beyond = plan(3 * 24 * 60)
+    assert beyond.minutes == 2 * 24 * 60, "held to the longest ceiling on offer: the free QOS's two days"
+    assert beyond.partitions == ('defq',), 'only a partition whose ceiling holds the wall is named'
 
 
 def test_round_zero_packs_measured_files_into_one_item() -> None:
