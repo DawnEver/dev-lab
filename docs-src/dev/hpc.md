@@ -1,10 +1,9 @@
 # HPC: grants, shared accounts and remote verdicts
 
-- **Two files, two owners.** The JOB file (`-c hpc.toml`, travels with the project) says WHAT runs: `[job]` entry/items/setup/workdir, `[cost]` of one item, `[policy]` for cutting. The MACHINE file says WHERE this box may run: the `[hpc]` table of `~/.config/lab-commons/config.toml` (`lab_commons.config`; `$LAB_COMMONS_CONFIG` overrides the path), holding its `workstation` name and one `[[hpc.grant]]` per share it holds. Partitions and QOS are cluster facts, so they live on the grant, not the job. A leftover `~/.config/lab-commons/hpc.toml` is refused by name: move it under `[hpc]`.
+- **Two files, two owners.** The JOB file (`-c hpc.toml`, travels with the project) says WHAT runs: `[job]` entry/items/setup/workdir, `[cost]` of one item, `[policy]` for cutting. The MACHINE file says WHERE this box may run: the `[hpc]` table of `~/.config/lab-commons/config.toml` (`lab_commons.config`; `$LAB_COMMONS_CONFIG` overrides the path), holding one `[[hpc.grant]]` per share it holds; the workstation name is `$HARNESS_MACHINE` when the machine harness sets it, else absent (the retired `[hpc] workstation` key is refused by name). Partitions and QOS are cluster facts, so they live on the grant, not the job. A leftover `~/.config/lab-commons/hpc.toml` is refused by name: move it under `[hpc]`.
 
 ```toml
 [hpc]
-workstation = "lab-ws-07"            # stable, unique among boxes sharing an account
 
 [[hpc.grant]]
 user = "me"                          # ssh user; keys stay in ~/.ssh/config

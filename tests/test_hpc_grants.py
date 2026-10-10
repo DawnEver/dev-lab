@@ -54,7 +54,6 @@ def test_a_machine_holds_several_grants(tmp_path: Path, monkeypatch: pytest.Monk
         monkeypatch,
         """
 [hpc]
-workstation = "ws-a"
 [[hpc.grant]]
 user = "me"
 hosts = ["login2", "login1"]
@@ -69,6 +68,7 @@ cpus = 8
 priority = 2
 """,
     )
+    monkeypatch.setenv('HARNESS_MACHINE', 'ws-a')
     machine = load_grants()
     assert machine.workstation == 'ws-a'
     assert machine.comment == 'lc:ws=ws-a'
@@ -83,9 +83,7 @@ priority = 2
 
 def _grant(**extra: object) -> str:
     keys = {'hosts': '["h"]', 'cpus': '1', **extra}
-    return 'workstation = "w"\n[[grant]]\nuser = "u"\nslurm_account = "s"\n' + ''.join(
-        f'{k} = {v}\n' for k, v in keys.items()
-    )
+    return '[[grant]]\nuser = "u"\nslurm_account = "s"\n' + ''.join(f'{k} = {v}\n' for k, v in keys.items())
 
 
 @pytest.mark.parametrize(
@@ -97,8 +95,7 @@ def _grant(**extra: object) -> str:
         (_grant(key='"x"'), 'unknown keys'),
         (_grant(account='"u@h"'), 'unknown keys'),
         (_grant(hosts='[]'), 'at least one login host'),
-        (_grant().replace('"w"', '""'), 'workstation'),
-        ('workstation = "w"\n', r'no \[\[hpc\.grant\]\]'),
+        ({'grant': []}, r'no \[\[hpc\.grant\]\]'),
     ],
 )
 def test_a_bad_grants_table_is_refused_by_name(table: str | dict, match: str) -> None:
@@ -252,7 +249,7 @@ def test_a_grants_setup_runs_first_in_every_task(tmp_path: Path) -> None:
 
 
 def test_the_grant_table_reads_setup() -> None:
-    table = {'workstation': 'w', 'grant': [{**_GRANT_ROW, 'setup': ['module load git']}]}
+    table = {'grant': [{**_GRANT_ROW, 'setup': ['module load git']}]}
     assert load_grants(table).grants[0].setup == ('module load git',)
 
 
@@ -315,3 +312,34 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
     )
     assert parse_collection_errors(text) == ['tests/b.py', 'tests/c.py::C::t', 'tests/d.py']
     assert parse_ids(text) == ['tests/a.py::t1'], 'an ERROR line is not a collected id'
+
+
+# -- the workstation is the harness's machine name ------------------------------------------------------
+
+
+def test_the_workstation_is_harness_machine_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('HARNESS_MACHINE', 'G')
+    assert load_grants(tomllib.loads(_grant())).comment == 'lc:ws=G'
+
+
+def test_without_harness_machine_the_workstation_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv('HARNESS_MACHINE', raising=False)
+    machine = load_grants(tomllib.loads(_grant()))
+    assert machine.workstation is None
+    assert machine.comment == ''
+    _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap('40 lc:ws=G\n'))], workstation=None, policy=Policy())
+    assert plan.comment == ''
+    assert headroom(_snap('40 lc:ws=G\n'), 64, None) == 56, (
+        'an unnamed box holds nothing tagged; every tagged job is another box'
+    )
+
+
+def test_a_spaced_harness_machine_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('HARNESS_MACHINE', 'a b')
+    with pytest.raises(ValueError, match='HARNESS_MACHINE'):
+        load_grants(tomllib.loads(_grant()))
+
+
+def test_the_retired_workstation_key_is_refused_by_name() -> None:
+    with pytest.raises(ValueError, match=r'\[hpc\] workstation is retired.*HARNESS_MACHINE.*delete the line'):
+        load_grants(tomllib.loads('workstation = "w"\n' + _grant()))
