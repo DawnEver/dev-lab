@@ -243,6 +243,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin, claims as pending statuses with a lease.
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and ``lab/gate``; claims, comment reads.
+* :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the gate statuses.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.

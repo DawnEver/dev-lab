@@ -124,6 +124,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'admission': ('original',),
     'forgeissue': ('original',),
+    'forgeroute': ('original',),
     'issueref': ('original',),
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator': ('original',),

@@ -328,6 +328,10 @@ class Client:
         recent = self._landed(f'{path}?since={since(self.clock())}', **payload)
         return _comment(self.call('POST', path, payload, recent))
 
+    def issue_edit(self, number: int, body: str) -> Issue:
+        """Replace an issue's body; the body is state, so no provenance line is added."""
+        return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'body': body}))
+
     def issue_close(self, number: int) -> Issue:
         """Close an issue; nothing is written but the state."""
         return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'state': 'closed'}))

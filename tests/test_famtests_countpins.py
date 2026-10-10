@@ -332,8 +332,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-09 AT 494 after the hpc verdict hardening landed: 404 keeps the same 90.
 #: RE-MEASURED 2026-10-09 AT 495 after the platform-part assignment rule and its tests landed: 405 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 502 after the floating-tip env key and timed prep steps: 412 keeps 90.
-#: RE-MEASURED 2026-10-10 AT 511 after the forge outbox, records and tick (and their tests): 421 keeps 90.
-CONSTANT_FLOOR = 421
+#: RE-MEASURED 2026-10-10 AT 517 after the forge outbox, records, tick and route (and their tests): 427 keeps 90.
+CONSTANT_FLOOR = 427
 CONSTANT_HEADROOM = 90
 
 
