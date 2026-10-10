@@ -75,3 +75,11 @@ python -m lab_commons.dev.forge auth status     # where the token comes from, an
 | 4 | confirmation that the token is a token, not the account password | layer C only | newer forge versions reject password basic-auth for the API, so a stored password authenticates the transport and fails the API |
 
 - Reading the OS credential store to reuse the existing credential was attempted and refused by the sandbox, **and that refusal is correct**: extracting a secret is a decision for the human, not a convenience for the agent.
+
+## Parts, records, requests and claims — `publish`, `records`, `tick`
+
+- **A part is a commit status** `tests/<platform>` (`lab_commons.dev.platformparts`): `success`/`failure`, description `scope=<full|incremental> ran=<n> hands=<platform>:<n>,... nowhere=<n>`, `target_url` = its run record. `python -m lab_commons.dev.platformparts post <run-record>` produces it.
+- **Statuses wait in an outbox** (`output/forge/outbox/` of the main checkout) until the commit is on `origin`; `python -m lab_commons.dev.forge publish` posts what is reachable. verify and every tick flush it too.
+- **Run records are attachments** of one closed issue titled `run records` -- no ref, no git object. `python -m lab_commons.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin tip and the newest N first-parent trunk commits.
+- **Admission** (`python -m lab_commons.dev.admission --remote-ref R --trunk-ref refs/heads/main`): lanes and integration need no part; the trunk needs every part of HEAD a `full` PASS on the forge. Forge unreadable: the trunk waits.
+- **`python -m lab_commons.dev.forge tick --mode integrate|develop|quiet [--dry-run] [--lease-hours H] [--json]`**: flush the outbox; `quiet` stops there; else fetch origin, list every ref tip of the mode (integration branch, or the lanes) lacking a part this box can produce (its own platform, plus `linux` through a cluster grant), and claim at most one per platform by posting `pending` with `claim machine=<HARNESS_MACHINE|-> login=<forge login> until=<UTC> hpc=<user:account|->`. The earliest live claim wins a race; a lapsed claim is retaken by anyone for a local part, and only under the same grant for a cluster part. It prints the command producing each claimed part; it runs nothing and notifies nobody.

@@ -465,12 +465,13 @@ def apply_protection(
 if __name__ == '__main__':
     # ``python -m lab_commons.dev.forge <noun> <verb>`` -- the issue/PR door, ``status`` for commit
     # statuses, ``issue claim|status|comments|comments-since`` for derived issue state and comment
-    # reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for run records. The verbs live in the ``forge*`` sibling modules, which
+    # reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for run records
+    # and ``tick`` for requests and claims. The verbs live in the ``forge*`` sibling modules, which
     # import THIS module, so the imports are deferred to the entry point: at the top they would be
     # circular (NO-LAZY-IMPORT's written exception).
     import sys
 
-    from lab_commons.dev import forgeauth, forgeissue, forgeoutbox, forgerecords, forgestatus, forgework
+    from lab_commons.dev import forgeauth, forgeissue, forgeoutbox, forgerecords, forgestatus, forgetick, forgework
 
     argv = sys.argv[1:]
     nouns = {
@@ -478,6 +479,7 @@ if __name__ == '__main__':
         'status': forgestatus.main,
         'publish': forgeoutbox.main,
         'records': forgerecords.main,
+        'tick': forgetick.main,
     }
     if argv[:1] and argv[0] in nouns:
         raise SystemExit(nouns[argv[0]](argv[1:]))
