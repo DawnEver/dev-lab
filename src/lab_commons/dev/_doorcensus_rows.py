@@ -60,14 +60,15 @@ DOORS: tuple[DoorRow, ...] = (
     DoorRow(
         repo='lab-commons',
         path='.github/workflows/python-verify.yml',
-        commands=3,
+        commands=4,
         deliveries=frozenset({'INERT'}),
         why=(
             'THE ROW THAT LIES WHEN READ ALONE, and the SHARED entry below is its other half. All '
-            'three commands here consume a lock, and they read INERT only because this repo declares '
+            'four commands here consume a lock, and they read INERT only because this repo declares '
             'no floating requirement. This workflow RUNS in every caller checkout, where the kit IS '
             'floating -- so the honest classification is the SharedDoor row, and this one exists to '
-            'pin that the file still holds exactly those three commands.'
+            'pin that the file still holds exactly those four commands. 4 since 2026-10-10: a '
+            '`uv run --no-sync ... hook_install --install` step, a door added, not a delivery changed.'
         ),
     ),
 )
@@ -81,11 +82,11 @@ SHARED: tuple[SharedDoor, ...] = (
         caller_floats=('lab-commons',),
         deliveries=frozenset({'INERT', 'REVERTS'}),
         why=(
-            'THE FINDING. This reusable workflow holds `uv sync --python X $extra_flags` and two '
-            '`uv run make ...` steps, and all three are lock-consuming. Scanned at home against '
+            'THE FINDING. This reusable workflow holds `uv sync --python X $extra_flags` and three '
+            '`uv run ...` steps, and all four are lock-consuming. Scanned at home against '
             'lab-commons` empty floating set they classify INERT; scanned against a caller`s '
             '(`lab-commons`, which every caller floats by calling it) they are REVERTS, and no caller '
-            'could see the file because it is not in its tree. Two of the three were remedied with '
+            'could see the file because it is not in its tree. The three `uv run` steps take '
             '`--no-sync`, which is also the correct fix on its own terms: `uv run` with no `--extra` '
             're-syncs WITHOUT the extras the preceding step just installed, and that is the prune '
             'shape measured taking one environment from 113 distributions to 30. The remaining '
