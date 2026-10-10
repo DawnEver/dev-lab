@@ -77,7 +77,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-10-09 AT 212 after the hpc verdict hardening landed: floor 172, margin unchanged.
 #: RE-MEASURED 2026-10-09 AT 216 after hpc builds, collect, shell and records landed: floor 176, margin unchanged.
 #: RE-MEASURED 2026-10-10 AT 218 after `hpc.retired` landed with the run/part rename: floor 178, margin unchanged.
-FILE_FLOOR = 178
+#: RE-MEASURED 2026-10-10 AT 221 after hpc outstanding, progress and watch landed: floor 181, margin unchanged.
+FILE_FLOOR = 181
 
 
 def _tree() -> dict[str, str]:

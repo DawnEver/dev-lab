@@ -17,12 +17,16 @@ from types import ModuleType
 
 import pytest
 
+from lab_commons.config import CONFIG_ENV
+from lab_commons.hpc import __main__ as cli
+from lab_commons.hpc import outstanding
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.measured import Measured
 from lab_commons.hpc.plan import make_plan
+from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, outcome_of, read_stream
 from lab_commons.hpc.records import read_record, read_streams, record_name, write_record
 from lab_commons.hpc.run import RETRIES, gather_run, submit_run
@@ -40,6 +44,7 @@ from lab_commons.hpc.shell import (
     parse_times,
 )
 from lab_commons.hpc.slurm import parse_snapshot
+from lab_commons.hpc.watch import PENDING
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
@@ -273,6 +278,7 @@ class FakeRunCluster:
         self.build_fails, self.lacking, self.active = build_fails, lacking, active
         self.env = env
         self.state = ''
+        self.queue = ''
         self.calls: list[tuple[str, str | None]] = []
         self.manifests: list[dict] = []
         self.scripts: list[str] = []
@@ -282,6 +288,8 @@ class FakeRunCluster:
         if command.endswith('state.json') and 'cat >' in command:
             self.state = stdin or ''
             return ''
+        if 'squeue -h -r -j' in command:
+            return self.queue
         if 'state.json' in command:
             return self.state
         if command.startswith('for c in'):
@@ -415,7 +423,7 @@ def test_history_prices_the_plan_and_names_nothing_unmeasured() -> None:
 
 def test_submit_returns_with_the_state_on_the_cluster_and_gather_reports_pending_while_jobs_run() -> None:
     fake = FakeRunCluster(active=2)
-    assert _submit(fake) == SHA
+    assert _submit(fake)['sha'] == SHA
     assert json.loads(fake.state)['current']['job_id'] == '4243', 'the run state lives on the cluster'
     assert fake.active == 2, 'submit polls no job state'
     assert _gather(fake) is None
@@ -626,3 +634,105 @@ def test_round_zero_packs_measured_files_into_one_item() -> None:
     fake = FakeRunCluster()
     _submit(fake, history=history)
     assert [len(i['ids']) for i in fake.manifests[0]['items']] == [5], 'two files, one start-up'
+
+
+# -- where a run is, and when it stalls ------------------------------------------------------------------
+
+
+def _queue(minutes: int, partitions: str, *, pending: int = 3, running: int = 1) -> str:
+    rows = [f'RUNNING|None|{partitions}|2026-10-10T09:00:00'] * running
+    rows += [f'PENDING|Priority|{partitions}|2026-10-10T09:00:00'] * pending
+    return f'2026-10-10T{9 + minutes // 60:02d}:{minutes % 60:02d}:00\n' + '\n'.join(rows) + '\n'
+
+
+def test_the_queue_says_pending_running_why_and_for_how_long() -> None:
+    assert parse_queue(_queue(45, 'shortq,defq')) == (3, 1, ('Priority',), ('shortq', 'defq'), 45.0)
+    assert parse_queue('') == (0, 0, (), (), 0.0)
+
+
+def test_where_counts_queued_running_and_done_then_finished() -> None:
+    fake = FakeRunCluster()
+    _submit(fake)
+    fake.queue = _queue(5, 'shortq,defq', pending=0, running=0)
+    shards = json.loads(fake.state)['current']['shards']
+    progress = where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
+    assert (progress.pending, progress.running, progress.done, progress.stall) == (0, 0, shards, '')
+    assert _gather(fake) is not None
+    assert where(SHA, MACHINE, lambda _g: fake, policy=POLICY).finished
+
+
+def test_a_pend_past_the_threshold_beside_an_unnamed_idle_partition_names_the_requeue() -> None:
+    fake = FakeRunCluster()
+    _submit(fake)
+    fake.queue = _queue(45, 'shortq')
+    progress = where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
+    assert progress.pending == 3
+    assert f'scontrol update JobId={progress.job_id} Partition=shortq,defq' in progress.stall
+    assert 'defq on' in progress.stall
+
+
+def test_a_stall_on_every_declared_partition_quotes_slurms_reason_not_capacity() -> None:
+    fake = FakeRunCluster()
+    _submit(fake)
+    fake.queue = _queue(45, 'shortq,defq')
+    stall = where(SHA, MACHINE, lambda _g: fake, policy=POLICY).stall
+    assert 'already names every declared partition' in stall
+    assert 'Priority' in stall
+    assert 'scontrol' not in stall
+
+
+def test_a_pend_under_the_threshold_is_no_stall() -> None:
+    """Planted control: the same queue 10 minutes in is just a queue."""
+    fake = FakeRunCluster()
+    _submit(fake)
+    fake.queue = _queue(10, 'shortq')
+    assert where(SHA, MACHINE, lambda _g: fake, policy=POLICY).stall == ''
+
+
+# -- one list of outstanding runs; watch and gather --wait share one path --------------------------------
+
+
+def _outstanding_cli(fake: FakeRunCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[object, list]:
+
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'machine' / 'config.toml'))
+    monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
+    monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: fake)
+    slept: list[float] = []
+    monkeypatch.setattr(cli, '_sleep', slept.append)
+    state = _submit(fake)
+    outstanding.add(SHA, repo='https://g/r.git', grant=state['rounds'][0]['grant'], job_ids=['4243'])
+    return cli, slept
+
+
+def test_watch_blocks_until_every_outstanding_run_has_its_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+
+    fake = FakeRunCluster(active=2)
+    fake.queue = _queue(3, 'shortq,defq', pending=2, running=2)
+    cli, slept = _outstanding_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'status']) == 0
+    assert 'queued 2 for 3 min (Priority) on shortq,defq; running 2 of' in ''.join(capsys.readouterr())
+    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0
+    assert len(slept) == 2, 'two polls saw it running, the third gathered it'
+    assert len(list((tmp_path / 'out').iterdir())) == 1
+    assert outstanding.outstanding() == []
+    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0, 'nothing outstanding is nothing to wait for'
+
+
+def test_gather_without_wait_says_where_the_run_is_and_exits_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = FakeRunCluster(active=1)
+    fake.queue = _queue(3, 'shortq,defq', pending=1, running=0)
+    cli, slept = _outstanding_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'gather', '--sha', SHA, '-o', str(tmp_path / 'out')]) == PENDING
+    assert 'queued 1 for 3 min' in ''.join(capsys.readouterr())
+    assert slept == []
+    assert cli.main(['run', 'gather', '--sha', SHA, '--wait', '-o', str(tmp_path / 'out')]) == 0
+
+
+def test_a_red_record_makes_watch_exit_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planted control beside the green watch: same path, failing ids, exit 1."""
+    cli, _ = _outstanding_cli(_RedCluster(), tmp_path, monkeypatch)
+    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 1

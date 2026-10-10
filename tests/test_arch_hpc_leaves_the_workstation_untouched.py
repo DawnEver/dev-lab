@@ -21,7 +21,9 @@ from typing import Final
 import pytest
 from test_hpc_run import MACHINE, FakeRunCluster
 
+from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
+from lab_commons.hpc import outstanding
 from lab_commons.hpc.shell import pack
 
 _GIT: Final = shutil.which('git') or 'git'
@@ -74,8 +76,9 @@ def test_the_pack_reads_the_repository_and_the_cluster_cache_can_index_it(tmp_pa
 
 
 def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The record under ``-o`` and the machine's outstanding-run entry are the only local writes."""
     repo, sha = _repo(tmp_path)
     fake = FakeRunCluster(have=False)
     real_popen = subprocess.Popen
@@ -96,13 +99,17 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
     monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: have_after_pack)
     monkeypatch.setattr(subprocess, 'Popen', spy)
+    machine_dir = tmp_path_factory.mktemp('machine')
+    monkeypatch.setenv(CONFIG_ENV, str(machine_dir / 'config.toml'))
     before_repo, before_dir = _fingerprint(repo), sorted(tmp_path.rglob('*'))
     common = ['--sha', sha]
     assert cli.main(['run', 'submit', *common, '--scope', 'full', '--repo-url', 'https://g/r.git',
                      '--install', 'true', '--repo', str(repo)]) == 0  # fmt: skip
     assert json.loads(fake.state)['sha'] == sha, 'the run state went to the cluster'
+    assert [e['sha'] for e in outstanding.outstanding()] == [sha], 'the one local list of outstanding runs'
     out = tmp_path / 'out'
     assert cli.main(['run', 'gather', *common, '-o', str(out)]) == 0
+    assert outstanding.outstanding() == [], 'a written record takes the run off the list'
     (output,) = out.iterdir()
     assert output.name.startswith(f'run-{sha}-linux-'), output.name
     assert {argv[3] for argv in spawned} <= READ_ONLY_GIT

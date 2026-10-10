@@ -13,10 +13,11 @@ from pathlib import Path
 import pytest
 
 from lab_commons.config import CONFIG_ENV
+from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc.cluster import Unreachable, failover_runner, render_script
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
-from lab_commons.hpc.grants import Grant, load_grants
+from lab_commons.hpc.grants import Grant, Machine, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
 from lab_commons.hpc.shell import (
     RunSpec,
@@ -76,7 +77,6 @@ priority = 2
     assert machine.grants[0].targets == ('me@login2', 'me@login1'), 'hosts keep their order'
     assert machine.grants[0].name == 'me@login2 (acct-free)'
     assert machine.grants[0].cluster().partitions == ('shortq',)
-    assert machine.grants[0].cluster().account == 'acct-free'
     assert machine.grants[1].priority == 2
     assert not machine.grants[0].same_cluster(machine.grants[1])
 
@@ -205,7 +205,7 @@ def test_the_plan_is_capped_by_headroom_and_tagged() -> None:
     assert plan.throttle == 48
     assert plan.comment == 'lc:ws=ws-a'
     assert plan.account == 'acct-free'
-    assert plan.partition == 'shortq'
+    assert plan.partitions[0] == 'shortq'
 
 
 def test_the_grant_that_finishes_first_wins() -> None:
@@ -350,3 +350,81 @@ def test_the_tree_carries_its_submodules_at_their_pinned_commits() -> None:
     script = build_script(spec)
     assert 'git submodule update -q --init --recursive' in script, 'a tree without its submodules fails as broken code'
     assert script.index('git submodule update') < script.index(spec.install), 'submodules land before the build'
+
+
+# -- every declared partition is asked for; the grant with the most room builds ---------------------------
+
+
+def test_sbatch_asks_for_every_declared_partition_that_admits_the_shard(tmp_path: Path) -> None:
+    """Array 7660516 went to ``shortq`` alone and pended for hours while ``defq`` had idle nodes."""
+    _, plan = allocate(500, Cost(seconds=60), [(GRANT, _snap())], workstation='ws-a', policy=Policy())
+    assert plan.partitions == ('shortq', 'defq')
+    script = render_script(plan, Config(job=JobSpec(workdir=str(tmp_path))), '~/r')
+    assert '#SBATCH --partition=shortq,defq\n' in script
+
+
+def test_a_partition_whose_ceiling_breaks_the_shard_is_left_out() -> None:
+    """Planted control: a 30 h shard exceeds ``shortq``'s ceiling, so the list must shrink to ``defq``."""
+    _, plan = allocate(1, Cost(seconds=20 * 3600), [(GRANT, _snap())], workstation='ws-a', policy=Policy())
+    assert plan.partitions == ('defq',)
+
+
+def test_a_partition_needing_another_qos_is_not_merged_into_one_submission() -> None:
+    """One ``sbatch`` carries one ``--qos``; ``devq`` needs ``dev``, the others the default."""
+    grant = replace(GRANT, partitions=('devq', 'shortq', 'defq'), qos={'devq': 'dev'})
+    _, plan = allocate(3, Cost(seconds=60), [(grant, _snap())], workstation='ws-a', policy=Policy())
+    assert plan.partitions == ('devq',)
+    assert plan.qos == 'dev'
+
+
+def test_on_an_even_makespan_the_grant_with_more_headroom_wins_wherever_it_is_listed() -> None:
+    first = Grant(user='u1', hosts=('login.example',), slurm_account='acct-free', cpus=96)
+    second = Grant(user='u2', hosts=('login.example',), slurm_account='acct-free', cpus=96)
+    busy, idle = _snap('60 lc:ws=ws-a\n'), _snap()
+    grant, _ = allocate(1, Cost(seconds=60), [(first, busy), (second, idle)], workstation='ws-a', policy=Policy())
+    assert grant is second
+    # Planted control: equal room falls back to the file order.
+    grant, _ = allocate(1, Cost(seconds=60), [(first, idle), (second, idle)], workstation='ws-a', policy=Policy())
+    assert grant is first
+
+
+# -- probe reads the machine, not a job file in the cwd --------------------------------------------------
+
+
+def _cli_on_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
+
+    monkeypatch.chdir(tmp_path)  # no hpc.toml here
+    monkeypatch.setattr(cli, 'load_grants', lambda: Machine(workstation='ws-a', grants=(GRANT,)))
+    monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: None)
+    monkeypatch.setattr(cli, 'probe', lambda _run, _account: _snap())
+    return cli
+
+
+def test_probe_needs_no_job_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``probe`` crashed with FileNotFoundError on ``./hpc.toml``; the machine config is all it reads."""
+    cli = _cli_on_machine(monkeypatch, tmp_path)
+    assert cli.main(['probe']) == 0
+    out = capsys.readouterr()
+    assert 'shortq' in out.out + out.err
+    assert 'defq' in out.out + out.err
+
+
+@pytest.mark.parametrize('verb', ['plan', 'submit', 'status', 'gather', 'retry'])
+def test_a_verb_that_reads_a_job_file_refuses_without_one_and_names_the_remedy(
+    verb: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli = _cli_on_machine(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit):
+        cli.main([verb])
+    assert '-c <job file>' in capsys.readouterr().err
+
+
+def test_a_named_job_file_that_is_missing_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli = _cli_on_machine(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit):
+        cli.main(['status', '-c', 'nope.toml'])
+    assert 'nope.toml' in capsys.readouterr().err
