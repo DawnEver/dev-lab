@@ -34,7 +34,7 @@ directory and the memory root stay the repo's answer to the lifecycle functions,
 from __future__ import annotations
 
 import dataclasses
-import datetime
+import datetime as dt
 import json
 import os
 import shutil
@@ -279,7 +279,7 @@ def overdue_scratch(scratch: Path, *, root: Path, max_age_days: float, now: floa
 
 
 def archive_scratch(
-    source: Path, *, why: str, root: Path, memory: Path, day: datetime.date | None = None, name: str | None = None
+    source: Path, *, why: str, root: Path, memory: Path, day: dt.date | None = None, name: str | None = None
 ) -> Path:
     """Move *source* into ``<memory>/<yyyy>/<mm>/<dd>/attachments/`` and record *why* in its INDEX.
 
@@ -303,7 +303,7 @@ def archive_scratch(
     if not src.is_file():
         msg = f'{src} is not a file'
         raise ValueError(msg)
-    date = day or datetime.datetime.fromtimestamp(src.stat().st_mtime, tz=datetime.UTC).date()
+    date = day or dt.datetime.fromtimestamp(src.stat().st_mtime, tz=dt.UTC).date()
     folder = memory / f'{date:%Y}' / f'{date:%m}' / f'{date:%d}' / ARCHIVE_DIRECTORY
     dest = folder / (name or src.name)
     if dest.exists():
