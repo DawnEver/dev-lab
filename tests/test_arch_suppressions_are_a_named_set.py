@@ -394,6 +394,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'now = dt.datetime.now()',
     ): 'the date half of the same stamp, for the same reason',
     (
+        'src/lab_commons/hpc/pytest_item.py',
+        'PTH123',
+        "with open(target, 'a', encoding='utf-8') as stream:",
+    ): 'a test may fake os.name, and Path() would then spell a Windows path on the cluster (two files were written so)',
+    (
         'src/lab_commons/proc.py',
         'FBT003',
         'handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)',
