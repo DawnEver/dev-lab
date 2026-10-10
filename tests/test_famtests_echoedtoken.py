@@ -41,7 +41,9 @@ EXEMPT: Final[tuple[str, ...]] = ('src/lab_commons/dev/famtests/echoedtoken.py',
 #: RE-MEASURED 2026-10-06 at 4206, after `lab_commons.viz` landed (three source modules, four test
 #: modules and a shared description, all of them verbs and tests). Re-priced on the same ~90% the
 #: 2026-10-01 reading used: 3785. The headroom is unchanged, as it always is.
-FUNCTION_FLOOR: Final = 3788  # re-measured 2026-10-10 at 4988 after the forge outbox, records and tick
+#: RE-MEASURED 2026-10-10 at 5015, after the forge outbox, records, tick and routing doors; re-priced
+#: on the same ~90%: 4515.
+FUNCTION_FLOOR: Final = 4515
 
 #: How far past the floor the population may grow before the floor is re-measured.
 HEADROOM: Final = 1200

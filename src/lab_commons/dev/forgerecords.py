@@ -120,7 +120,7 @@ def attach(client: Client, path: Path) -> Attachment:
     number = records_issue(client, create=True)
     assets = f'{client.repo}/issues/{number}/assets'
 
-    def landed() -> Any:  # noqa: ANN401 -- JSON
+    def landed() -> Mapping[str, Any] | None:
         return next((raw for raw in client.call('GET', assets) if raw.get('name') == path.name), None)
 
     raw = client.upload(

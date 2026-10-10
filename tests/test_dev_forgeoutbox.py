@@ -20,6 +20,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from lab_commons.dev import forgeoutbox
 from lab_commons.dev.forge import Forge, NoCredential
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush, outbox_dir, queued
+from lab_commons.dev.forgework import Client
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'
@@ -47,7 +48,10 @@ def test_a_status_on_an_unpushed_commit_is_held_then_posted_once_it_is_on_origin
     """PLANTED CONTROL: the commit the old publish always failed on."""
     repo, sha = _committed(tmp_path)
     enqueue(repo, Post(sha, 'lab/gate', 'success', 'VERDICT result=pass'))
-    built = lambda _root: client(FORGE, Loopback(server))  # noqa: E731
+
+    def built(_root: Path) -> Client:
+        return client(FORGE, Loopback(server))
+
     assert flush(repo, client=built) == [f'status: held lab/gate on {sha[:12]} -- the commit is not on origin yet']
     assert Recorder.received == [], 'nothing is sent for a commit the forge does not hold'
     assert len(queued(repo)) == 1, 'a held entry is kept'

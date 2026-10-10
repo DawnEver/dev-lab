@@ -67,6 +67,9 @@ __all__ = [
 ]
 
 #: The outbox, relative to the MAIN checkout's root.
+#: The length of a full sha-1 commit id, the only commit name the forge's status endpoint takes.
+SHA_LENGTH: Final = 40
+
 OUTBOX_REL: Final = 'output/forge/outbox'
 
 _REMEDY: Final = (
@@ -94,7 +97,7 @@ class Post:
         if self.state not in STATES:
             msg = f'a status state is one of {STATES}, not {self.state!r}'
             raise ValueError(msg)
-        if len(self.sha) != 40:  # noqa: PLR2004 -- a full sha-1 commit id
+        if len(self.sha) != SHA_LENGTH:
             msg = f'a status names a full 40-hex commit id, not {self.sha!r}'
             raise ValueError(msg)
 
