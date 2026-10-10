@@ -15,11 +15,11 @@ partitions = ["shortq", "defq"]      # optional, in preference order
 qos = { devq = "dev" }               # optional
 ```
 
-- **An account is `(user, slurm_account)`; its hosts are doors.** Quota and the `lc:ws=` usage tags are per account. The runner tries each host with `ssh -o BatchMode=yes -o ConnectTimeout=10`; exit 255 (unreachable, the command never ran) fails over to the next host and logs it, and the first host that answers stays chosen. A command that ran and failed is NOT a failover. All hosts share Slurm and home, so `status`/`gather`/`retry` read back through any of them (`<job>.run.json` records the targets).
+- **An account is `(user, slurm_account)`; its hosts are doors.** Quota and the `lc:ws=` usage tags are per account. The runner tries each host with `ssh -o BatchMode=yes -o ConnectTimeout=10`; exit 255 (unreachable, the command never ran) fails over to the next host and logs it, and the first host that answers stays chosen. A command that ran and failed is NOT a failover. All hosts share Slurm and home, so `status`/`gather`/`retry` read back through any of them (`<job>.submission.json` records the targets).
 - **Many-to-many, refused by name.** A box may hold several grants; an account may be shared by several boxes, each with its own share. No `[hpc]` table, a duplicate account, an empty `hosts` or a non-positive share is refused with the file and the key named. No secrets in the file.
 - **Usage is READ, never stored.** Every job carries `--comment=lc:ws=<workstation>`. The one-round-trip probe also runs `squeue -h --me -A <acct> -o "%C %k"` and sums CPUs per tag (an untagged job counts as someone else's). `--me` matters: a university free-tier account carries thousands of other people's jobs that count against nothing of ours.
 - **Allocation is pure** (`plan.allocate`). Per grant: `headroom = min(share, quota - CPUs held by OTHER workstations) - CPUs held by this one`; plan on that headroom with the existing planner; take the grant whose plan finishes earliest (tie: higher `priority`, then file order). No headroom anywhere raises naming every account and why. `probe` prints, per grant, the shares known here against the quota and what each tag holds.
-- **Verbs.** `python -m lab_commons.hpc {probe,plan,submit,status,gather,retry} -c job.toml`; `submit` records the grant it chose in `<job>.run.json`, so `status`/`gather`/`retry` go back to the same cluster.
+- **Verbs.** `python -m lab_commons.hpc {probe,plan,submit,status,gather,retry} -c job.toml`; `submit` records the grant it chose in `<job>.submission.json`, so `status`/`gather`/`retry` go back to the same cluster.
 
 ## Remote verdict
 

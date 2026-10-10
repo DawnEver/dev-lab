@@ -13,11 +13,11 @@ from pathlib import Path
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.hpc import run as run_module
+from lab_commons.hpc import cluster as cluster_module
+from lab_commons.hpc.cluster import Unreachable, failover_runner, render_script
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
-from lab_commons.hpc.run import Unreachable, failover_runner, render_script
 from lab_commons.hpc.shell import (
     VerdictSpec,
     build_script,
@@ -161,9 +161,9 @@ def test_runner_for_tries_the_grants_targets_in_order(monkeypatch: pytest.Monkey
             raise Unreachable(msg)
         return 'ok'
 
-    monkeypatch.setattr(run_module, '_completed', fake)
+    monkeypatch.setattr(cluster_module, '_completed', fake)
     grant = Grant(user='me', hosts=('h1', 'h2'), slurm_account='a', cpus=1)
-    assert run_module.runner_for(grant)('true', None) == 'ok'
+    assert cluster_module.runner_for(grant)('true', None) == 'ok'
     assert [a[-2] for a in seen] == ['me@h1', 'me@h2']
     assert 'BatchMode=yes' in seen[0]
     assert any(a.startswith('ConnectTimeout=') for a in seen[0])
