@@ -40,7 +40,9 @@ def _repo(tmp_path: Path) -> tuple[Path, str]:
     repo = tmp_path / 'repo'
     repo.mkdir()
     _git(repo, 'init', '-q')
-    (repo / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\n[tool.lab_commons.hpc]\ninstall = "true"\n', encoding='utf-8'
+    )
     _git(repo, 'add', 'pyproject.toml')
     _git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'one')
     return repo, _git(repo, 'rev-parse', 'HEAD').decode().strip()
@@ -104,7 +106,7 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     before_repo, before_dir = _fingerprint(repo), sorted(tmp_path.rglob('*'))
     common = ['--sha', sha]
     assert cli.main(['run', 'submit', *common, '--scope', 'full', '--repo-url', 'https://g/r.git',
-                     '--install', 'true', '--repo', str(repo)]) == 0  # fmt: skip
+                     '--repo', str(repo)]) == 0  # fmt: skip
     assert json.loads(fake.state)['sha'] == sha, 'the run state went to the cluster'
     assert [e['sha'] for e in outstanding.outstanding()] == [sha], 'the one local list of outstanding runs'
     out = tmp_path / 'out'
