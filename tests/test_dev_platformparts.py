@@ -1,8 +1,7 @@
-"""PLATFORM PARTS: one declaration per marker, one assignment rule, a strict linux part from the cluster."""
+"""PLATFORM PARTS: one declaration per marker, one assignment rule, a strict part from a run record."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +9,7 @@ import pytest
 from lab_commons.dev import platformparts
 from lab_commons.dev.verdictledger import entries
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
+from lab_commons.hpc.records import write_record
 
 SHA = 'a' * 40
 
@@ -23,7 +23,10 @@ matlab = ["windows", "linux"]
 def _record(outcomes: dict[str, str], handed: dict[str, list[str]] | None = None) -> dict[str, object]:
     return {
         'sha': SHA,
-        'platform': 'linux-x86_64/glibc2.28',
+        'platform': 'linux',
+        'system': 'linux-x86_64/glibc2.28',
+        'scope': 'full',
+        'req': 't0',
         'cluster': 'login.ada',
         'python': '3.13.1',
         'plan': {},
@@ -44,17 +47,19 @@ def test_the_table_is_one_declaration_per_marker() -> None:
     assert host_platform('win32') == 'windows'
 
 
-def test_the_linux_part_is_derived_strictly() -> None:
+def test_the_part_is_derived_strictly_from_the_run() -> None:
     passing = _record(
         {'t::a': 'passed', 't::b': 'skipped', 't::c': 'xfailed', 't::f': 'not-covered'}, {'t::f': ['windows']}
     )
-    run, *tests = platformparts.linux_part(passing, tier='heavy', log='r@d')
-    assert (run.result, run.part, run.commit, run.tier) == ('PASS', 'linux', SHA, 'heavy')
+    run, *tests = platformparts.run_part(passing, log='r@d')
+    assert (run.result, run.part, run.commit, run.tier) == ('PASS', 'linux', SHA, 'full'), (
+        "platform and scope are the record's"
+    )
     assert run.env == 'hpc:login.ada:linux-x86_64/glibc2.28:python-3.13.1', 'the env names the cluster, not this box'
     assert run.handed == {'t::f': ['windows']}
     assert {t.test for t in tests} == {'t::a', 't::c'}
     for bad in ('failed', 'error'):
-        failing = platformparts.linux_part(_record({'t::a': 'passed', 't::x': bad}), tier='heavy', log='r@d')
+        failing = platformparts.run_part(_record({'t::a': 'passed', 't::x': bad}), log='r@d')
         assert failing[0].result == 'FAIL', bad
 
 
@@ -63,9 +68,9 @@ def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_recorded_as_f
     """Measured 2026-10-09: 50349 lost ids from a build that never made a venv were written as a linux FAIL."""
     outcomes = {'t::a': 'passed', 't::e': 'error', 't::x': unrun}
     with pytest.raises(platformparts.PartRefusal, match=r'INCONCLUSIVE: 1 of 3 .*t::x'):
-        platformparts.linux_part(_record(outcomes), tier='heavy', log='r@d')
+        platformparts.run_part(_record(outcomes), log='r@d')
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.linux_part(_record({'t::f': 'not-covered'}), tier='heavy', log='r@d')
+        platformparts.run_part(_record({'t::f': 'not-covered'}), log='r@d')
 
 
 def test_every_id_is_assigned_to_exactly_one_part_by_one_rule() -> None:
@@ -95,14 +100,12 @@ def test_a_part_selects_from_its_own_collection_without_reading_any_ledger(tmp_p
         platformparts.select(tmp_path, SHA, 'win32', collect=collected.__getitem__)
 
 
-def test_the_cli_writes_the_linux_part_into_the_ledger(tmp_path: Path) -> None:
-    source = tmp_path / 'record.json'
-    source.write_text(json.dumps(_record({'t::a': 'passed'})), encoding='utf-8')
+def test_the_cli_writes_the_run_record_as_its_part_into_the_ledger(tmp_path: Path) -> None:
+    source = write_record(_record({'t::a': 'passed'}), tmp_path / 'runs')
     ledger = tmp_path / 'ledger.jsonl'
-    assert platformparts.main(['record-linux', str(source), '--tier', 'heavy', '--ledger', str(ledger)]) == 0
+    assert platformparts.main(['record', str(source), '--ledger', str(ledger)]) == 0
     run = entries(ledger)[0]
-    assert (run.part, run.result, run.commit) == ('linux', 'PASS', SHA)
+    assert (run.part, run.result, run.commit, run.tier) == ('linux', 'PASS', SHA, 'full')
     assert run.log.startswith(f'{source}@sha256:')
-    empty = tmp_path / 'empty.json'
-    empty.write_text(json.dumps(_record({})), encoding='utf-8')
-    assert platformparts.main(['record-linux', str(empty), '--tier', 'heavy', '--ledger', str(ledger)]) == 1
+    empty = write_record({**_record({}), 'req': 't1'}, tmp_path / 'runs')
+    assert platformparts.main(['record', str(empty), '--ledger', str(ledger)]) == 1

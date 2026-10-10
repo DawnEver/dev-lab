@@ -17,7 +17,7 @@
 | [Fan-out](./fanout.md) | Parallel lanes in worktrees: environments, subagent bases, the shared hazards, landing |
 | [The shared checkout](./shared-checkout.md) | Where a tool's correctness argument stops transferring when the checkout is not exclusive |
 | [Killed runs and orphans](./orphans.md) | What survives a stopped run, why a lock does not time out, and the census a reaper needs |
-| [HPC grants and remote verdicts](./hpc.md) | Per-machine shares of shared Slurm accounts, usage read from job comments, a commit's suite on a cluster |
+| [HPC grants and remote runs](./hpc.md) | Per-machine shares of shared Slurm accounts, usage read from job comments, a commit's suite on a cluster |
 | [Box resources](./box-resources.md) | What one workstation rations, the four defects measured in doing it by hand, and the broker shape |
 | [The forge](./forge.md) | How `main` is protected on a self-hosted forge: the push whitelist, the status check, branch disposal |
 | [Issues](./issues.md) | An issue is intent; todo/in-progress/ready/done are derived from origin refs and `lab/gate`, claims are comments |

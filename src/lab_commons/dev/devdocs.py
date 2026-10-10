@@ -110,7 +110,7 @@ PAGES: Final[tuple[Page, ...]] = (
     ),
     Page(
         'hpc',
-        'HPC grants and remote verdicts',
+        'HPC grants and remote runs',
         "Per-machine shares of shared Slurm accounts, usage read from job comments, a commit's suite on a cluster",
     ),
     Page(

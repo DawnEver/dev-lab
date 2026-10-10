@@ -131,7 +131,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`lab_commons.dev.verdictledger` -- the ONE record of promoted verdicts, keyed by tree, env and
   test; written only by the runner after promotion, read by the runner (cite) and by push admission.
-* :mod:`lab_commons.dev.platformparts` -- a verdict COMPOSED of one part per platform it ran on (linux
+* :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per platform it ran on (linux
   from the cluster, windows/macos from a box), split by ``[tool.lab_commons.platforms]``, one row per marker.
 * :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a

@@ -1,4 +1,4 @@
-"""``lab_commons.hpc`` grants, shared-account allocation and the remote verdict -- against the recorded cluster.
+"""``lab_commons.hpc`` grants, shared-account allocation and the remote run -- against the recorded cluster.
 
 Usage per workstation is never stored: it is read back from the ``--comment`` tag every job carries, so
 these tests feed the probe's ``@@@ shared`` section the way ``squeue -o "%C %k"`` prints it.
@@ -19,7 +19,7 @@ from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, load_grants
 from lab_commons.hpc.plan import allocate, headroom, make_plan
 from lab_commons.hpc.shell import (
-    VerdictSpec,
+    RunSpec,
     build_script,
     collect_command,
     fetch_script,
@@ -261,16 +261,16 @@ def test_an_untagged_plan_carries_no_comment(tmp_path: Path) -> None:
     assert '--comment' not in render_script(plan, Config(source=tmp_path / 'h.toml'), '~/r')
 
 
-# -- the remote verdict ----------------------------------------------------------------------------------
+# -- the remote run ----------------------------------------------------------------------------------
 
 
-def test_a_verdict_is_bound_to_a_full_sha() -> None:
+def test_a_run_is_bound_to_a_full_sha() -> None:
     with pytest.raises(ValueError, match='40-hex'):
-        VerdictSpec(sha='99d207471a', repo_url='https://x', install='true')
+        RunSpec(sha='99d207471a', repo_url='https://x', install='true')
 
 
 def test_every_path_stays_under_ci() -> None:
-    spec = VerdictSpec(
+    spec = RunSpec(
         sha=SHA,
         repo_url='https://g/r.git',
         install='uv pip install -e .',
@@ -299,7 +299,7 @@ def test_ids_are_read_from_collect_only_and_grouped_by_file() -> None:
 
 def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -> None:
     """One unimportable file must not hide the rest of the tree: it is recorded, the run goes on."""
-    spec = VerdictSpec(sha='a' * 40, repo_url='https://g/r.git', install='true')
+    spec = RunSpec(sha='a' * 40, repo_url='https://g/r.git', install='true')
     assert '--continue-on-collection-errors' in collect_command(replace(spec, collect='-x tests')), 'the plain path'
     collector = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'collect.py'
     assert '--continue-on-collection-errors' in collector.read_text(encoding='utf-8'), 'the per-file collector'
@@ -346,7 +346,7 @@ def test_the_retired_workstation_key_is_refused_by_name() -> None:
 
 
 def test_the_tree_carries_its_submodules_at_their_pinned_commits() -> None:
-    spec = VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='uv sync', python='3.13')
+    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', install='uv sync', python='3.13')
     script = build_script(spec)
     assert 'git submodule update -q --init --recursive' in script, 'a tree without its submodules fails as broken code'
     assert script.index('git submodule update') < script.index(spec.install), 'submodules land before the build'

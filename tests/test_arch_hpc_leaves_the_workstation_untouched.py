@@ -1,9 +1,9 @@
-"""A cluster verdict leaves the local workstation untouched (user ruling 2026-10-09).
+"""A cluster run leaves the local workstation untouched (user ruling 2026-10-09).
 
 THE INVARIANT. :mod:`lab_commons.hpc` never imports the box lock or an environment seat (nothing in
 ``lab_commons.dev``), never runs pytest or any interpreter locally, and its only local subprocesses are
 READ-ONLY git; its only local write is the record path given by ``-o``. Measured before the fix: the
-bundle step wrote a temporary ``refs/lab-ci/<sha>`` into the caller's checkout, and the verdict was one
+bundle step wrote a temporary ``refs/lab-ci/<sha>`` into the caller's checkout, and the run was one
 local process waiting hours on the cluster.
 """
 
@@ -19,14 +19,14 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from test_hpc_verdict import MACHINE, FakeVerdictCluster
+from test_hpc_run import MACHINE, FakeRunCluster
 
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc.shell import pack
 
 _GIT: Final = shutil.which('git') or 'git'
 
-#: The git subcommands a verdict may run here; each one only READS the repository.
+#: The git subcommands a run may run here; each one only READS the repository.
 READ_ONLY_GIT = frozenset({'show', 'for-each-ref', 'pack-objects', 'rev-parse', 'ls-remote'})
 
 
@@ -77,7 +77,7 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo, sha = _repo(tmp_path)
-    fake = FakeVerdictCluster(have=False)
+    fake = FakeRunCluster(have=False)
     real_popen = subprocess.Popen
     spawned: list[list[str]] = []
 
@@ -98,12 +98,14 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     monkeypatch.setattr(subprocess, 'Popen', spy)
     before_repo, before_dir = _fingerprint(repo), sorted(tmp_path.rglob('*'))
     common = ['--sha', sha]
-    assert cli.main(['verdict', 'submit', *common, '--repo-url', 'https://g/r.git', '--install', 'true',
-                     '--repo', str(repo)]) == 0  # fmt: skip
+    assert cli.main(['run', 'submit', *common, '--scope', 'full', '--repo-url', 'https://g/r.git',
+                     '--install', 'true', '--repo', str(repo)]) == 0  # fmt: skip
     assert json.loads(fake.state)['sha'] == sha, 'the run state went to the cluster'
-    output = tmp_path / 'out' / 'record.json'
-    assert cli.main(['verdict', 'gather', *common, '-o', str(output)]) == 0
+    out = tmp_path / 'out'
+    assert cli.main(['run', 'gather', *common, '-o', str(out)]) == 0
+    (output,) = out.iterdir()
+    assert output.name.startswith(f'run-{sha}-linux-'), output.name
     assert {argv[3] for argv in spawned} <= READ_ONLY_GIT
     assert 'pack-objects' in {argv[3] for argv in spawned}, 'the commit was off the remote, so it was packed'
     assert _fingerprint(repo) == before_repo
-    assert sorted(tmp_path.rglob('*')) == sorted([*before_dir, output.parent, output]), 'only -o was written'
+    assert sorted(tmp_path.rglob('*')) == sorted([*before_dir, out, output]), 'only the record under -o was written'

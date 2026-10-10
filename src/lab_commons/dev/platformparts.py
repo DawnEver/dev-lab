@@ -1,4 +1,4 @@
-"""PLATFORM PARTS -- one commit's verdict COMPOSED of a part per platform it ran on (user ruling 2026-10-09).
+"""PLATFORM PARTS -- one commit's result COMPOSED of a part per platform it ran on (user ruling 2026-10-09).
 
 THE SPLIT IS DECLARED ONCE, per marker, in ``[tool.lab_commons.platforms]`` (:mod:`lab_commons.hpc.platforms`).
 A part is named for the platform it RAN ON -- ``linux``, ``windows``, ``macos`` -- never for where it
@@ -9,8 +9,9 @@ table and its collected ids; no part reads another part's record, so every part 
 time and in parallel. Each part records what it ``handed``: every collected id assigned to ANOTHER
 part, mapped to the platforms that can run it.
 
-* The ``linux`` part comes from the cluster: ``python -m lab_commons.hpc verdict submit``, then
-  ``verdict gather`` writes a record, and :func:`linux_part` turns it into ledger entries STRICTLY -- PASS
+* A part comes from a RUN: ``python -m lab_commons.hpc run submit``, then ``run gather`` writes its
+  record ``run-<sha>-<platform>-<req>.json.gz``, and :func:`run_part` turns it into ledger entries for the
+  record's own platform and scope, STRICTLY -- PASS
   only when every covered outcome is passed / skipped / xfailed; a failed or error id is FAIL. A part
   with ANY lost or missing id is INCONCLUSIVE and is REFUSED, never recorded: a FAIL claims the code
   failed, and measured 2026-10-09 a record of 50349 lost ids (a build that never produced a venv) was
@@ -22,8 +23,8 @@ COMPOSITION (:func:`compose`). The newest part per platform for HEAD. Every id s
 be assigned to a part that is recorded; any FAIL part makes it FAIL. An id no declared platform can
 run is refused by name; one whose assigned part is missing names that part and the command producing it.
 
-THE ENV KEY IS HONEST: a linux part's env names the cluster, its platform and its python
-(``hpc:<cluster>:<platform>:python-<x.y.z>``), never this box. A part recorded for THIS box's platform
+THE ENV KEY IS HONEST: a cluster part's env names the cluster, its system and its python
+(``hpc:<cluster>:<system>:python-<x.y.z>``), never this box. A part recorded for THIS box's platform
 is cited only in this box's env, as a whole run is.
 """
 
@@ -31,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.dev.verdictledger import Entry, LedgerRefusal, ledger_path, record, run_test_id
 from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
+from lab_commons.hpc.records import read_record
+from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
@@ -50,9 +52,9 @@ __all__ = [
     'Composition',
     'PartRefusal',
     'compose',
-    'linux_part',
     'main',
     'parts_for',
+    'run_part',
     'select',
     'split',
     'this_platform',
@@ -71,9 +73,9 @@ _UNRUN: Final = frozenset({'lost', 'missing'})
 _NOT_COVERED: Final = 'not-covered'
 
 _LINUX_COMMAND: Final = (
-    'python -m lab_commons.hpc verdict submit --sha {head} --repo-url <https> --install "<cmd>", then '
-    'python -m lab_commons.hpc verdict gather --sha {head} -o <record.json> until it writes the record, then '
-    'python -m lab_commons.dev.platformparts record-linux <record.json> --tier <tier>'
+    'python -m lab_commons.hpc run submit --sha {head} --scope full --repo-url <https> --install "<cmd>", then '
+    'python -m lab_commons.hpc run gather --sha {head} -o <dir> until it writes the record, then '
+    'python -m lab_commons.dev.platformparts record <dir>/run-{head}-linux-<req>.json.gz'
 )
 _PART_COMMAND: Final = "the repo's gate runner on a {platform} box with `--platform {platform}`"
 
@@ -86,17 +88,22 @@ def _command(platform: str, head: str) -> str:
     return _LINUX_COMMAND.format(head=head) if platform == LINUX else _PART_COMMAND.format(platform=platform)
 
 
-def linux_part(record_: Mapping[str, Any], *, tier: str, log: str) -> list[Entry]:
-    """The cluster record as ledger rows: the part's run entry first, then one row per covered id."""
+def run_part(record_: Mapping[str, Any], *, log: str) -> list[Entry]:
+    """A run record as its part's ledger rows: the part's run entry first, then one row per covered id.
+
+    The part is the record's ``platform`` and its tier the record's ``scope`` -- read, never re-declared.
+    """
+    platform, scope = str(record_['platform']), str(record_['scope'])
     outcomes: dict[str, str] = dict(record_['outcomes'])
     covered = {node: outcome for node, outcome in outcomes.items() if outcome != _NOT_COVERED}
     if not covered:
-        msg = f'the linux record for {record_["sha"]} covers no test -- an empty part is not a pass'
+        msg = f'the {platform} record for {record_["sha"]} covers no test -- an empty part is not a pass'
         raise PartRefusal(msg)
     unrun = sorted(node for node, outcome in covered.items() if outcome in _UNRUN)
     if unrun:
         msg = (
-            f'the linux record for {record_["sha"]} is INCONCLUSIVE: {len(unrun)} of {len(covered)} covered test(s) '
+            f'the {platform} record for {record_["sha"]} is INCONCLUSIVE: '
+            f'{len(unrun)} of {len(covered)} covered test(s) '
             f'never reported ({", ".join(unrun[:_NAMED])}{", ..." if len(unrun) > _NAMED else ""}) -- '
             'gather again or re-submit; it is not recorded, so no admission can cite it'
         )
@@ -107,12 +114,12 @@ def linux_part(record_: Mapping[str, Any], *, tier: str, log: str) -> list[Entry
     failing = sorted(node for node, outcome in covered.items() if outcome not in PASSING)
     sha = str(record_['sha'])
     tree = f'commit:{sha}'
-    env = f'hpc:{record_["cluster"]}:{record_["platform"]}:python-{record_["python"]}'
+    env = f'hpc:{record_["cluster"]}:{record_["system"]}:python-{record_["python"]}'
 
     def row(test: str, result: str, handed: dict[str, list[str]] | None = None) -> Entry:
-        return Entry(tree, env, test, result, tier=tier, commit=sha, log=log, part=LINUX, handed=handed or {})
+        return Entry(tree, env, test, result, tier=scope, commit=sha, log=log, part=platform, handed=handed or {})
 
-    run = row(run_test_id(f'{tier} linux-part'), 'FAIL' if failing else 'PASS', handed=handed)
+    run = row(run_test_id(f'{scope} {platform}-part'), 'FAIL' if failing else 'PASS', handed=handed)
     tests = [
         row(node, 'FAIL' if node in failing else 'PASS') for node, out in sorted(covered.items()) if out != 'skipped'
     ]
@@ -195,27 +202,30 @@ def _evidence(path: Path) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``record-linux <record.json> --tier <tier>``: append the cluster record to the verdict ledger."""
+    """``record <run-record>``: append a run record as its platform's part to the verdict ledger."""
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.platformparts', description=__doc__.splitlines()[0]
     )
-    parser.add_argument('verb', choices=['record-linux'])
-    parser.add_argument('record', type=Path, help='the record `python -m lab_commons.hpc verdict gather -o` wrote')
-    parser.add_argument('--tier', required=True, help='the tier the cluster selection amounts to (gate, heavy)')
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and (refused := refusal('platformparts', argv[0])):
+        parser.error(refused)
+    parser.add_argument('verb', choices=['record'])
+    parser.add_argument('record', type=Path, help='the run record `python -m lab_commons.hpc run gather -o` wrote')
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout whose ledger is written')
     parser.add_argument('--ledger', type=Path, help="the verdict ledger (default: the main checkout's)")
     args = parser.parse_args(argv)
-    record_ = json.loads(args.record.read_text(encoding='utf-8'))
+    record_ = read_record(args.record)
     try:
-        rows = linux_part(record_, tier=args.tier, log=_evidence(args.record))
+        rows = run_part(record_, log=_evidence(args.record))
         target = args.ledger if args.ledger is not None else ledger_path(args.root)
         record(target, rows)
-    except (PartRefusal, LedgerRefusal) as refusal:
-        emit(f'[platformparts] refused: {refusal}')
+    except (PartRefusal, LedgerRefusal) as why:
+        emit(f'[platformparts] refused: {why}')
         return 1
     run = rows[0]
     emit(
-        f'[platformparts] linux part {run.result} for {run.commit} env={run.env}; handed {len(run.handed)} -> {target}'
+        f'[platformparts] {run.part} part {run.result} ({run.tier}) for {run.commit} env={run.env}; '
+        f'handed {len(run.handed)} -> {target}'
     )
     return 0
 
