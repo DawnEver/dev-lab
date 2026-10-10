@@ -343,3 +343,10 @@ def test_a_spaced_harness_machine_is_refused(monkeypatch: pytest.MonkeyPatch) ->
 def test_the_retired_workstation_key_is_refused_by_name() -> None:
     with pytest.raises(ValueError, match=r'\[hpc\] workstation is retired.*HARNESS_MACHINE.*delete the line'):
         load_grants(tomllib.loads('workstation = "w"\n' + _grant()))
+
+
+def test_the_tree_carries_its_submodules_at_their_pinned_commits() -> None:
+    spec = VerdictSpec(sha=SHA, repo_url='https://g/r.git', install='uv sync', python='3.13')
+    script = build_script(spec)
+    assert 'git submodule update -q --init --recursive' in script, 'a tree without its submodules fails as broken code'
+    assert script.index('git submodule update') < script.index(spec.install), 'submodules land before the build'
