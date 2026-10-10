@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 import io
 import json
 import os
@@ -79,7 +79,7 @@ def test_an_archive_lands_beside_that_days_memory_and_records_why(tmp_path) -> N
     memory = tmp_path / '.claude' / 'memory'
     dest = archive_scratch(
         tmp_path / 'scratch/probe.py', why='read the card back', root=tmp_path, memory=memory,
-        day=datetime.date(2026, 9, 25),
+        day=dt.date(2026, 9, 25),
     )  # fmt: skip
     assert dest == memory / '2026/09/25/attachments/probe.py'
     assert not (tmp_path / 'scratch/probe.py').exists()
@@ -96,7 +96,7 @@ def test_an_archive_without_a_reason_is_REFUSED_and_moves_nothing(tmp_path) -> N
 
 
 def test_an_archive_never_overwrites(tmp_path) -> None:
-    day = datetime.date(2026, 9, 25)
+    day = dt.date(2026, 9, 25)
     _plant(tmp_path, 'scratch/a/probe.py')
     _plant(tmp_path, 'scratch/b/probe.py')
     memory = tmp_path / 'm'

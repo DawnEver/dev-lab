@@ -118,6 +118,13 @@ jobs:
           done
           uv sync --python ${{ matrix.python-version }} $extra_flags
 
+      - name: Install the declared git hooks
+        # A fresh clone has NO hooks, and every caller adopts `famtests.hookinstall`, whose
+        # "every declared hook is installed" arm is a statement about the checkout it runs in. The
+        # runner's checkout is one, so it installs exactly what the caller declares -- the remedy
+        # is derived from the caller's config by `hook_install`, never spelled here.
+        run: uv run --no-sync python -m lab_commons.dev.hook_install --install
+
       - name: make verify
         # THE WHOLE GATE, in one call. `uv run` puts the synced .venv on PATH, so the Makefile's
         # `python -m ruff` / `python -m pytest` resolve to the environment just built.

@@ -26,7 +26,7 @@ behind, and a sweeper cannot age out a file with no age.
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 __all__ = ['date_parts', 'dated_log']
@@ -55,7 +55,7 @@ def date_parts() -> tuple[str, str, str]:
     and reuses it -- so the log and the verdict stamped beside it never name two different days.
     Local rather than UTC because the directory is read by a human standing at the box.
     """
-    stamp = datetime.datetime.now().astimezone()
+    stamp = dt.datetime.now().astimezone()
     return stamp.strftime('%y'), stamp.strftime('%m'), stamp.strftime('%d')
 
 
@@ -93,7 +93,9 @@ def dated_log(root: Path, name: str, *, base: str, kind: str) -> Path:
         )
         raise ValueError(msg)
     given = Path(name)
-    if not name or _escapes(name) or len(given.parts) != 1 or name in {'.', '..'}:
+    # Both separators on every OS: a POSIX Path reads ``sub\gate.log`` as ONE part, so the parts
+    # count alone let a Windows-spelled path through on Linux and macOS.
+    if not name or _escapes(name) or len(given.parts) != 1 or name in {'.', '..'} or '/' in name or '\\' in name:
         msg = (
             f'this takes a NAME, not a path, and got {name!r}. Everything a dated harness writes '
             f'goes under <base>/<yy>/<mm>/<dd>/<kind>/ and there is no exemption: an undated '

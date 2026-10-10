@@ -12,7 +12,7 @@ required, which is the property the module docstring claims.
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 import inspect
 from pathlib import Path
 
@@ -24,7 +24,7 @@ from lab_commons.dev.datedlog import date_parts, dated_log
 def test_the_three_parts_are_todays_local_date_two_digits_each() -> None:
     """A floor under the format: two digits each, and the same day the box thinks it is."""
     yy, mm, dd = date_parts()
-    today = datetime.datetime.now().astimezone()
+    today = dt.datetime.now().astimezone()
     assert (yy, mm, dd) == (today.strftime('%y'), today.strftime('%m'), today.strftime('%d'))
     assert all(len(part) == 2 and part.isdigit() for part in (yy, mm, dd))
 
