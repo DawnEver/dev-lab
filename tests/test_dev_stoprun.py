@@ -48,7 +48,14 @@ def test_the_real_table_and_kill_stop_a_planted_run_and_spare_a_bystander() -> N
     run = subprocess.Popen([sys.executable, '-c', sleeper, '-m', 'lab_commons.dev.verify'])
     bystander = subprocess.Popen([sys.executable, '-c', sleeper])
     try:
+        # A child seen between fork and exec still carries THIS process's command line, so the
+        # table is read until the planted run shows its own -- the race one CI leg lost.
         table = process_table()
+        for _ in range(100):
+            if 'lab_commons.dev.verify' in table.get(run.pid, (0, ''))[1]:
+                break
+            time.sleep(0.1)
+            table = process_table()
         assert stop(bystander.pid, table, dry_run=False)[0] == 3
         assert stop(run.pid, table, dry_run=False)[0] == 0
         run.wait(timeout=30)

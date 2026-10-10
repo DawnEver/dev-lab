@@ -16,7 +16,8 @@ A declaration that is not a list of valid regex strings raises :class:`Signature
 ``--dry-run`` names the signature that matched.
 
 No new dependency: the process table is read with ``Get-CimInstance Win32_Process`` on Windows and
-``ps -A -o pid=,ppid=,args=`` elsewhere; :func:`stop` takes the table as an argument so a test can
+``ps -ww -A -o pid=,ppid=,args=`` elsewhere (``-ww``: an unbounded width, so a long command line
+is never cut before the signature it carries); :func:`stop` takes the table as an argument so a test can
 plant one.
 """
 
@@ -89,7 +90,7 @@ def process_table() -> dict[int, Proc]:
         rows = rows if isinstance(rows, list) else [rows]
         return {int(r['ProcessId']): (int(r['ParentProcessId'] or 0), r['CommandLine'] or '') for r in rows}
     done = subprocess.run(
-        [shutil.which('ps') or 'ps', '-A', '-o', 'pid=,ppid=,args='],
+        [shutil.which('ps') or 'ps', '-ww', '-A', '-o', 'pid=,ppid=,args='],
         capture_output=True,
         text=True,
         encoding='utf-8',
