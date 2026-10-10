@@ -165,7 +165,7 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
         elif base.mode != RENDERED:
             out.append(f'{artefact}: {report.status} ({base.mode}, not written) -- {report.detail}')
         elif write:
-            path.write_text(render(base, deltas[artefact]), encoding='utf-8')
+            path.write_bytes(render(base, deltas[artefact]).encode('utf-8'))
             out.append(f'{artefact}: rendered (was {report.status})')
         else:
             out.append(f'{artefact}: would render (is {report.status})')
