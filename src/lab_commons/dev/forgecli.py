@@ -25,6 +25,8 @@ from lab_commons.dev import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+__all__ = ['ISSUE_VERBS', 'NOUNS', 'main']
+
 NOUNS: dict[str, Callable[[list[str]], int]] = {
     'auth': forgeauth.main,
     'status': forgestatus.main,
