@@ -12,7 +12,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from _forge_fake import Loopback, Recorder, answer, client, make_repo, run_git, serve
+from _forge_fake import Loopback, Recorder, answer, client, credential_env, make_repo, run_git, serve
 
 from lab_commons.dev.forge import Forge, NoCredential
 from lab_commons.dev.forgestatus import (
@@ -197,17 +197,17 @@ def test_the_cli_posts_and_lists_with_json(server, tmp_path: Path, capsys) -> No
     repo = make_repo(tmp_path, 'https://f.example/o/r.git')
     answer('POST', f'/api/v1/repos/o/r/statuses/{_SHA}', (201, {'context': 'lab/test', 'state': 'pending'}))
     argv = ['post', _SHA, '--context', 'lab/test', '--state', 'pending', '--description', 'probe', '--json']
-    assert main(argv, cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out)['context'] == 'lab/test'
     assert Recorder.received[-1]['headers']['Authorization'] == 'token T'
     assert not Recorder.received[-1]['body']['description'].startswith('['), 'status writes carry no provenance'
     answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (200, [{'id': 1, 'context': 'lab/test', 'status': 'pending'}]))
-    assert main(['list', _SHA], cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert main(['list', _SHA], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert 'lab/test  pending' in capsys.readouterr().out
 
 
 def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, capsys) -> None:
     repo = make_repo(tmp_path, 'https://f.example/o/r.git')
     answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (404, {'message': 'nope'}))
-    assert main(['list', _SHA], cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 1
+    assert main(['list', _SHA], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 1
     assert 'REFUSED' in capsys.readouterr().err

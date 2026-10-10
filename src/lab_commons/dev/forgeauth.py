@@ -1,25 +1,23 @@
 """``python -m lab_commons.dev.forge auth login|status`` -- one command to give a box a forge token.
 
-WHERE THE TOKEN GOES. :func:`lab_commons.dev.forgework.token_source` reads the forge's environment
-variable first and falls back to ``git credential fill`` for the host. ``auth login`` writes to that
-fallback with ``git credential approve`` (``protocol=https``, the host, ``username=`` the login the
-forge returned, ``password=`` the token), so the forge verbs find it AND ``git push`` over https uses
-it -- one secret, kept wherever the configured helper keeps secrets (Git Credential Manager, the OS
-keychain). This module writes no file and never prints the token.
+WHERE THE TOKEN GOES. Every forge verb reads ``git credential fill`` for the host and nothing else
+(:func:`lab_commons.dev.forge.token_for`). ``auth login`` writes to that store with ``git credential
+approve`` (``protocol=https``, the host, ``username=`` the login the forge returned, ``password=`` the
+token), so the forge verbs find it AND ``git push`` over https uses it -- one secret, kept wherever
+the configured helper keeps secrets (Git Credential Manager, the OS keychain).
+This module writes no file and never prints the token.
 
 VERIFIED BEFORE STORED. The token is sent to ``GET /api/v1/user`` (Gitea) or ``GET /user`` (GitHub)
 first; a rejected token is reported with the forge's answer and is NOT stored, so a typo cannot
 displace a credential that worked.
 
-``auth status`` names WHERE the token came from (the variable, or ``git credential``) and the login it
-authenticates as -- never the secret.
+``auth status`` names the login the stored token authenticates as -- never the secret.
 """
 
 from __future__ import annotations
 
 import argparse
 import getpass
-import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -32,8 +30,9 @@ from lab_commons.dev.forge import (
     forge_from_remote,
     https_transport,
     store_credential,
+    token_for,
 )
-from lab_commons.dev.forgework import Client, ForgeCallFailed, backend_for, token_source
+from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.log import emit
 
 __all__ = ['login', 'main', 'status']
@@ -59,16 +58,15 @@ def login(
 
 def status(
     forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None, transport: Transport = https_transport
-) -> tuple[str, str]:
-    """``(where the token came from, the login it authenticates as)``.
+) -> str:
+    """The login the stored token authenticates as.
 
     Raises:
-        NoCredential: no environment variable is set and git holds no credential for the host.
+        NoCredential: git holds no credential for the host.
         ForgeCallFailed: a token was found and the forge did not accept it.
 
     """
-    where, token = token_source(forge, cwd=cwd, env=env)
-    return where, Client(forge, token, transport=transport).whoami()
+    return Client(forge, token_for(forge.host, cwd=cwd, env=env), transport=transport).whoami()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -76,7 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     verbs = parser.add_subparsers(dest='verb', required=True)
     signin = verbs.add_parser('login', help='verify a personal access token and store it with git credential')
     signin.add_argument('--token-stdin', action='store_true', help='read the token from stdin instead of a prompt')
-    check = verbs.add_parser('status', help='where the token comes from, and who it authenticates as')
+    check = verbs.add_parser('status', help='who the stored token authenticates as')
     for sub in (signin, check):
         sub.add_argument('--host', help="the forge host (default: the host of this checkout's origin)")
     return parser
@@ -119,13 +117,12 @@ def main(
         emit(f'[forge] {refused}', err=True)
         return 1
     emit(f'[forge] {forge.host}: authenticated as {who}; stored with git credential for https://{forge.host}')
-    _warn_if_shadowed(forge, env)
     return 0
 
 
 def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: Transport) -> int:
     try:
-        where, who = status(forge, cwd=root, env=env, transport=transport)
+        who = status(forge, cwd=root, env=env, transport=transport)
     except NoCredential:
         emit(f'[forge] {forge.host}: no token. Run: python -m lab_commons.dev.forge auth login', err=True)
         return 1
@@ -133,13 +130,5 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         emit(f'[forge] {forge.host}: the token did not authenticate. {failed.report.remedy}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
-    emit(f'[forge] {forge.host}: token from {where}; authenticated as {who}')
+    emit(f'[forge] {forge.host}: token from git credential; authenticated as {who}')
     return 0
-
-
-def _warn_if_shadowed(forge: Forge, env: Mapping[str, str] | None) -> None:
-    """A set environment variable wins over the stored credential; say so rather than let it surprise."""
-    source = os.environ if env is None else env
-    shadowing = [name for name in backend_for(forge).token_vars if source.get(name)]
-    if shadowing:
-        emit(f'[forge] note: {shadowing[0]} is set in this environment and takes precedence over the stored token')

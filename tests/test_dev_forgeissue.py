@@ -13,7 +13,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from _forge_fake import Loopback, Recorder, answer, client, git_out, make_repo, run_git, serve
+from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeissue import (
@@ -149,7 +149,7 @@ def test_the_cli_prints_status_as_json(server, tmp_path: Path, capsys) -> None:
     issue = {'number': 9, 'title': 't', 'state': 'open', 'body': '', 'html_url': 'h', 'user': {'login': 'a'}}
     answer('GET', f'{_ROOT}/issues/9', (200, issue))
     answer('GET', f'{_ROOT}/issues/9/comments', (200, []))
-    assert main(['status', '9', '--json'], cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert main(['status', '9', '--json'], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out)['state'] == TODO
 
 
@@ -183,11 +183,11 @@ def test_the_cli_prints_comments_since_as_json(server, tmp_path: Path, capsys) -
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git')
     answer('GET', f'{_ROOT}/issues/comments', (200, [_raw(4, 'https://forge.example.org/o/r/issues/12', 'hi')]))
     argv = ['comments-since', '2026-10-01T09:00:00Z', '--json']
-    assert main(argv, cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out) == [
         {'issue': 12, 'id': 4, 'author': 'bot', 'body': 'hi', 'created': '2026-10-01T10:00:00Z'}
     ]
     argv = ['comments', '12', '--since', '2026-10-01T09:00:00Z', '--json']
     answer('GET', f'{_ROOT}/issues/12/comments', (200, []))
-    assert main(argv, cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=Loopback(server)) == 0
+    assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out) == []

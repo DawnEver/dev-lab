@@ -35,6 +35,14 @@ def git_out(cwd: Path, *args: str) -> str:
     return done.stdout.strip()
 
 
+def credential_env(tmp_path: Path, token: str = 'T') -> dict[str, str]:  # noqa: S107 -- a fake helper's answer
+    """An env whose ONLY credential is a git helper answering *token*: the one route a forge verb reads."""
+    config = tmp_path / 'gitconfig-credential'
+    helper = f'!f() {{ echo username=u; echo password={token}; }}; f'
+    config.write_text(f'[credential]\n\thelper = "{helper}"\n', encoding='utf-8')
+    return {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+
+
 def make_repo(tmp_path: Path, remote: str, *, branch: str = 'feature') -> Path:
     repo = tmp_path / 'repo'
     repo.mkdir()

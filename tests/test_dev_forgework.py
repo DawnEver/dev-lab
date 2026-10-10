@@ -24,11 +24,11 @@ from _forge_fake import Loopback as _Loopback
 from _forge_fake import Recorder as _Recorder
 from _forge_fake import answer as _answer
 from _forge_fake import client as _client
+from _forge_fake import credential_env, serve
 from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
-from _forge_fake import serve
 
-from lab_commons.dev.forge import Forge
+from lab_commons.dev.forge import Forge, NoCredential
 from lab_commons.dev.forgework import (
     GITEA,
     GITHUB,
@@ -37,9 +37,9 @@ from lab_commons.dev.forgework import (
     Issue,
     PullRequest,
     backend_for,
+    client_for,
     main,
     provenance,
-    token_route,
 )
 from lab_commons.dev.netverb import Diagnosis, Disposition
 
@@ -86,23 +86,18 @@ def test_github_com_selects_the_github_backend_and_any_other_host_the_gitea_one(
     assert backend_for(Forge('GitHub.com', 'o', 'r')) is GITHUB
 
 
-def test_the_gitea_token_comes_from_the_env_then_from_the_git_credential(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, 'https://forge.example.org/o/r.git')
-    forge = Forge('forge.example.org', 'o', 'r')
-    assert token_route(forge, cwd=repo, env={'GITEA_TOKEN': 'from-env', 'GITHUB_TOKEN': 'wrong'}) == 'from-env'
-    config = tmp_path / 'gitconfig'
-    config.write_text(
-        '[credential]\n\thelper = "!f() { echo username=alice; echo password=from-git; }; f"\n', encoding='utf-8'
-    )
-    env = {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent'), 'GH_TOKEN': 'wrong'}
-    assert token_route(forge, cwd=repo, env=env) == 'from-git'
-
-
-def test_the_github_token_prefers_GH_TOKEN_then_GITHUB_TOKEN(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, 'https://github.com/o/r.git')
-    forge = Forge('github.com', 'o', 'r')
-    assert token_route(forge, cwd=repo, env={'GH_TOKEN': 'a', 'GITHUB_TOKEN': 'b', 'GITEA_TOKEN': 'c'}) == 'a'
-    assert token_route(forge, cwd=repo, env={'GITHUB_TOKEN': 'b'}) == 'b'
+@pytest.mark.parametrize('remote', ['https://forge.example.org/o/r.git', 'https://github.com/o/r.git'])
+def test_the_token_is_the_git_credential_and_a_token_variable_is_never_read(tmp_path: Path, remote: str) -> None:
+    """PLANTED CONTROL: the conventional token variables are set, the credential store is empty -- refused."""
+    repo = _repo(tmp_path, remote)
+    stored = 'from-git'
+    assert client_for(repo, env=credential_env(tmp_path, stored)).token == stored
+    empty = tmp_path / 'empty-gitconfig'
+    empty.write_text('[credential]\n\thelper = "!f() { :; }; f"\n', encoding='utf-8')
+    planted = {'GIT_CONFIG_GLOBAL': str(empty), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+    planted |= {'GITEA_TOKEN': 'from-env', 'GH_TOKEN': 'from-env', 'GITHUB_TOKEN': 'from-env'}
+    with pytest.raises(NoCredential):
+        client_for(repo, env=planted)
 
 
 # --------------------------------------------------------------------------------------------
@@ -307,7 +302,7 @@ def test_the_stamp_prefixes_every_created_body_and_comment_and_nothing_else(serv
 def test_the_cli_prints_the_normalized_result_as_json(server, tmp_path: Path, capsys) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     _answer('GET', '/api/v1/repos/o/r/issues/7', (200, _ISSUE))
-    env = {'GITEA_TOKEN': 'T'}
+    env = credential_env(tmp_path)
     code = main(['issue', 'view', '7', '--json'], cwd=repo, env=env, transport=_Loopback(server))
     assert code == 0
     assert json.loads(capsys.readouterr().out)['number'] == 7
@@ -316,7 +311,7 @@ def test_the_cli_prints_the_normalized_result_as_json(server, tmp_path: Path, ca
 def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git', branch='lane')
     _answer('POST', '/api/v1/repos/o/r/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': 'u'}))
-    env = {'GITEA_TOKEN': 'T', 'HARNESS_MACHINE': 'g', 'HARNESS_AGENT': 'claude'}
+    env = credential_env(tmp_path) | {'HARNESS_MACHINE': 'g', 'HARNESS_AGENT': 'claude'}
     assert main(['issue', 'comment', '7', '--body', 'hello'], cwd=repo, env=env, transport=_Loopback(server)) == 0
     assert _Recorder.received[0]['body'] == {'body': '[g · claude · lane]\n\nhello'}
     assert 'u' in capsys.readouterr().out
@@ -325,7 +320,7 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
 def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, capsys) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     _answer('GET', '/api/v1/repos/o/r/pulls/9', (404, {'message': 'nope'}))
-    assert main(['pr', 'view', '9'], cwd=repo, env={'GITEA_TOKEN': 'T'}, transport=_Loopback(server)) == 1
+    assert main(['pr', 'view', '9'], cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 1
     assert 'REFUSED' in capsys.readouterr().err
 
 

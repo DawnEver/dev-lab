@@ -17,7 +17,7 @@ from test_dev_forgework import _answer, _Loopback, _Recorder, _repo, server
 
 from lab_commons.dev.forge import Forge, token_for
 from lab_commons.dev.forgeauth import main
-from lab_commons.dev.forgework import Client, token_source
+from lab_commons.dev.forgework import Client
 
 __all__ = ['server']
 
@@ -43,13 +43,6 @@ def test_whoami_asks_the_user_endpoint_of_each_backend(server) -> None:
     assert Client(Forge('github.com', '', ''), 'T', transport=transport).whoami() == 'bob'
     assert [r['headers']['Authorization'] for r in _Recorder.received] == ['token T', 'Bearer T']
     assert transport.asked == ['f.example', 'api.github.com']
-
-
-def test_the_token_source_is_named_and_the_env_wins(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, 'https://f.example/o/r.git')
-    env, _ = _isolated_store(tmp_path)
-    forge = Forge('f.example', 'o', 'r')
-    assert token_source(forge, cwd=repo, env={**env, 'GITEA_TOKEN': 'E'}) == ('GITEA_TOKEN', 'E')
 
 
 def test_login_verifies_then_stores_where_the_fallback_and_git_push_find_it(server, tmp_path, capsys) -> None:
@@ -126,10 +119,6 @@ def test_status_names_the_source_and_the_login_and_never_the_secret(server, tmp_
     out = capsys.readouterr().out
     assert 'git credential' in out
     assert 'alice' in out
-    assert _PAT not in out
-    assert main(['status'], cwd=repo, env={**env, 'GITEA_TOKEN': _PAT}, transport=transport) == 0
-    out = capsys.readouterr().out
-    assert 'GITEA_TOKEN' in out
     assert _PAT not in out
 
 

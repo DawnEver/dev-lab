@@ -11,9 +11,9 @@ TWO BACKENDS, ONE RESULT. :func:`backend_for` reads the host already derived fro
 Gitea-shaped forge that module already speaks. Results are normalized into :class:`Issue`,
 :class:`Comment` and :class:`PullRequest`, so a caller never branches on which forge answered.
 
-THE CREDENTIAL ROUTE IS THE ONE :mod:`lab_commons.dev.forge` ALREADY USES -- ``git credential fill``
-for the host -- preceded by the forge's conventional environment variable (``GITEA_TOKEN``;
-``GH_TOKEN`` then ``GITHUB_TOKEN``). Nothing is written to disk and the token never reaches output.
+THE CREDENTIAL ROUTE IS THE ONE :mod:`lab_commons.dev.forge` ALREADY USES, AND ONLY IT -- ``git
+credential fill`` for the host (user ruling 2026-10-09: the person's own credential, never a global
+token variable a process tree inherits). Nothing is written to disk and the token never reaches output.
 
 RETRY, THEN REPORT, IN NETVERB'S VOCABULARY. Every call is bounded by
 :data:`~lab_commons.dev.netverb.DEFAULT_ATTEMPTS` and its outcome is a
@@ -50,7 +50,6 @@ from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt
 from lab_commons.log import emit
 
 __all__ = [
-    'CREDENTIAL_SOURCE',
     'GITEA',
     'GITHUB',
     'Backend',
@@ -63,8 +62,6 @@ __all__ = [
     'client_for',
     'main',
     'provenance',
-    'token_route',
-    'token_source',
 ]
 
 #: The one host that is GitHub. Every other host is treated as the Gitea-shaped forge.
@@ -103,7 +100,6 @@ class Backend:
     api_root: str
     auth_scheme: str
     list_query: str
-    token_vars: tuple[str, ...]
     fixed_host: str | None = None
     headers: tuple[tuple[str, str], ...] = ()
     page_param: str = 'limit'
@@ -122,7 +118,6 @@ GITEA: Final = Backend(
     api_root='/api/v1',
     auth_scheme='token',
     list_query='state={state}&type=issues&limit={limit}',
-    token_vars=('GITEA_TOKEN',),
 )
 
 GITHUB: Final = Backend(
@@ -130,7 +125,6 @@ GITHUB: Final = Backend(
     api_root='',
     auth_scheme='Bearer',
     list_query='state={state}&per_page={limit}',
-    token_vars=('GH_TOKEN', 'GITHUB_TOKEN'),
     fixed_host='api.github.com',
     page_param='per_page',
     headers=(
@@ -144,28 +138,6 @@ GITHUB: Final = Backend(
 def backend_for(forge: Forge) -> Backend:
     """GitHub for ``github.com``, the Gitea-shaped forge for every other host."""
     return GITHUB if forge.host.lower() == GITHUB_HOST else GITEA
-
-
-#: How :func:`token_source` names the fallback, so ``auth status`` can say where a token came from.
-CREDENTIAL_SOURCE: Final = 'git credential'
-
-
-def token_source(forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None) -> tuple[str, str]:
-    """``(where, token)``: the backend's environment variable when set, else the git transport's credential.
-
-    The credential is sent as a TOKEN header whichever helper stored it, so it must be a personal
-    access token -- which is what ``python -m lab_commons.dev.forge auth login`` stores.
-    """
-    source = os.environ if env is None else env
-    for name in backend_for(forge).token_vars:
-        if source.get(name):
-            return name, source[name]
-    return CREDENTIAL_SOURCE, token_for(forge.host, cwd=cwd, env=env)
-
-
-def token_route(forge: Forge, *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
-    """The token :func:`token_source` finds, without its provenance."""
-    return token_source(forge, cwd=cwd, env=env)[1]
 
 
 @dataclass(frozen=True)
@@ -415,7 +387,7 @@ def client_for(root: Path, *, env: Mapping[str, str] | None = None, transport: T
     """The client for *root*'s ``origin``, its token and its provenance stamp -- what every CLI verb builds."""
     forge = forge_from_remote(root)
     stamp = provenance(root, os.environ if env is None else env)
-    return Client(forge, token_route(forge, cwd=root, env=env), transport=transport, stamp=stamp)
+    return Client(forge, token_for(forge.host, cwd=root, env=env), transport=transport, stamp=stamp)
 
 
 def main(
