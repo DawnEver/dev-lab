@@ -70,7 +70,8 @@ def test_a_record_is_attached_and_the_status_links_it(server, tmp_path: Path) ->
     repo, sha = _committed(tmp_path)
     _pushed(repo, sha)
     record = tmp_path / f'run-{sha}-linux-r1.json.gz'
-    record.write_bytes(gzip.compress(b'{}'))
+    payload = gzip.compress(b'{}')  # once: gzip stamps the second into its header
+    record.write_bytes(payload)
     enqueue(repo, Post(sha, 'tests/linux', 'success', 'scope=full ran=1'), record=record)
     answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': 'run records'}]))
     url = 'https://forge.example.org/attachments/u1'
@@ -79,7 +80,7 @@ def test_a_record_is_attached_and_the_status_links_it(server, tmp_path: Path) ->
     lines = flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
     assert lines == [f'status: tests/linux=success on {sha[:12]} -> {url}']
     upload = next(r for r in Recorder.received if r['path'].startswith(f'{API}/issues/3/assets'))
-    assert gzip.compress(b'{}') in upload['raw'], 'the record bytes are what was uploaded'
+    assert payload in upload['raw'], 'the record bytes are what was uploaded'
     assert Recorder.received[-1]['body']['target_url'] == url
     assert list(outbox_dir(repo).iterdir()) == [], 'the entry and its copied record are both gone'
 
