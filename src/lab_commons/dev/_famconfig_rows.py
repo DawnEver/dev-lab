@@ -60,6 +60,9 @@ __all__ = [
     'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
     'HOOK_ID_CORE',
+    'HOOK_LAB_COMMONS',
+    'HOOK_LAB_COMMONS_REV',
+    'LAB_COMMONS_PUBLIC_URL',
     'MAKEFILE_BASE',
     'MAKEFILE_RESIDUAL_SIGNALS',
     'MAKE_TARGET_CONSUMER_CORE',
@@ -245,6 +248,20 @@ HOOK_ID_CORE: Final[tuple[str, ...]] = (
     'trailing-whitespace',
 )
 
+#: THE ONE PIN of the lab-commons revision every rendered hook environment installs. pre-commit keys its
+#: cached environment by the requirement STRING, so an unpinned URL keeps whatever revision first
+#: installed it. Bump it here, with the kit; every repo's render follows.
+HOOK_LAB_COMMONS_REV: Final = '97b2764a45c99e97890e679d7fd192ac716895a5'
+
+#: Where lab-commons resolves when a repo declares no source of its own: the public mirror.
+LAB_COMMONS_PUBLIC_URL: Final = 'https://github.com/DawnEver/lab-commons.git'
+
+#: The requirement a hook environment installs, for a repo that declares no private source. A repo
+#: that declares one (``[tool.uv] override-dependencies``) renders THAT url instead, at the same pin --
+#: :func:`lab_commons.dev.famconfig.artefact_base` substitutes it from the repo's single declaration.
+HOOK_LAB_COMMONS: Final = f'lab-commons @ git+{LAB_COMMONS_PUBLIC_URL}@{HOOK_LAB_COMMONS_REV}'
+
+
 #: The base as YAML BODY LINES. Two upstream repos, one pin each, the 11 measured core ids -- plus
 #: `issue-ref`, the twelfth, which was never measured in a consumer because the family WROTE it
 #: (2026-10-01, the approved issue design): a commit-msg check that WARNS on a malformed
@@ -312,7 +329,7 @@ PRECOMMIT_BASE: Final[tuple[str, ...]] = (
     '      name: issue references are well-formed (warns, never blocks)',
     '      entry: lab-issue-ref',
     '      language: python',
-    "      additional_dependencies: ['lab-commons @ git+https://github.com/DawnEver/lab-commons.git@97b2764a45c99e97890e679d7fd192ac716895a5']",
+    f"      additional_dependencies: ['{HOOK_LAB_COMMONS}']",
     '      stages: [commit-msg]',
     '      verbose: true',
 )
