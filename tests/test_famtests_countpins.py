@@ -333,7 +333,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-09 AT 495 after the platform-part assignment rule and its tests landed: 405 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 502 after the floating-tip env key and timed prep steps: 412 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 517 after the forge outbox, records, tick and route (and their tests): 427 keeps 90.
-CONSTANT_FLOOR = 427
+#: RE-MEASURED 2026-10-10 AT 519 after the claimed-part argv (part_argv and its tests): 429 keeps 90.
+CONSTANT_FLOOR = 429
 CONSTANT_HEADROOM = 90
 
 
