@@ -129,7 +129,7 @@ def assert_artefact_is_rendered(
     measured today, one lab runs a Makefile target and the other an inline interpreter line -- and a
     guessed remedy is a refusal nobody can act on, which is how a refusal gets routed around.
     """
-    base = artefact_base(artefact)
+    base = artefact_base(artefact, root)
     report = inspect_file(root / artefact, base, deltas[artefact])
     if report.status == INSTALLED:
         return
@@ -314,7 +314,7 @@ def assert_no_base_line_left_undeclared(*, root: Path, artefact: str, repo: str)
     ratchet as the rendered-bytes property by a route that does not go through the bytes, so a base line
     leaving is visible even where the mode is the weaker one.
     """
-    survey = measured_delta(root / artefact, artefact_base(artefact), repo)
+    survey = measured_delta(root / artefact, artefact_base(artefact, root), repo)
     if survey.dropped:
         msg = (
             f'the survey reports {sorted(survey.dropped)} absent from {artefact} on disk with no declared '

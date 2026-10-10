@@ -16,6 +16,7 @@ from _famconfig_delta import DELTAS, REPO
 
 from lab_commons.dev.famconfig import BASES, RENDERED
 from lab_commons.dev.famfiles import MANAGED, OWNED, PROJECT_FILES, main, project_files_on_disk, render_all
+from lab_commons.dev.famtests.configrender import assert_artefact_is_rendered, assert_no_base_line_left_undeclared
 from lab_commons.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
     assert_every_project_file_is_accounted_for,
@@ -102,3 +103,28 @@ def test_one_render_writes_every_rendered_artefact_and_a_hand_edit_reds(repo: Pa
     assert any(line.startswith('.gitignore: would render') for line in render_all(repo, rendered, write=False))
     render_all(repo, rendered, write=True)
     assert 'scratch/\n' in path.read_text(encoding='utf-8')
+
+
+_PRIVATE = '[tool.uv]\noverride-dependencies = ["lab-commons @ git+https://gitea.example.org/T/lab-commons.git"]\n'
+
+
+def test_a_source_pinned_render_is_what_the_drift_check_expects(tmp_path: Path) -> None:
+    """ONE expectation: the renderer and the consumer's drift check read the base through the same root.
+
+    The planted control: a repo declaring a private lab-commons source. Its rendered hook rows carry
+    that source, so a check that read the public base would call the fresh render drifted.
+    """
+    (tmp_path / 'pyproject.toml').write_text(_PRIVATE, encoding='utf-8')
+    precommit = '.pre-commit-config.yaml'
+    render_all(tmp_path, {precommit: DELTAS[precommit]}, write=True)
+    assert 'gitea.example.org' in (tmp_path / precommit).read_text(encoding='utf-8')
+    assert_artefact_is_rendered(root=tmp_path, artefact=precommit, deltas=DELTAS, repo=REPO, rerender_hint='-')
+    assert_no_base_line_left_undeclared(root=tmp_path, artefact=precommit, repo=REPO)
+
+
+def test_a_rendered_file_is_lf_on_every_os(tmp_path: Path) -> None:
+    """Rendered bytes are identical across OSes: no CRLF, whatever the platform's text default."""
+    rendered = {name: DELTAS[name] for name in DELTAS if BASES[name].mode == RENDERED}
+    render_all(tmp_path, rendered, write=True)
+    for name in rendered:
+        assert b'\r\n' not in (tmp_path / name).read_bytes(), name
