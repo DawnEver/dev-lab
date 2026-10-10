@@ -342,7 +342,8 @@ MAKE_TARGET_CORE: tuple[str, ...] = (
 #: (`tests/_famconfig_delta.py`). So this tuple is no longer "the shared part of three files"; it is
 #: the shared part of three files and the whole of a fourth, which is what a base looks like once
 #: the repo that publishes it runs it. TWELVE since 2026-10-01: the base gained `issue-ref`, the
-#: commit-msg issue-reference check, and all four repos render it.
+#: commit-msg issue-reference check, and all four repos render it. THIRTEEN since 2026-10-10: the
+#: base gained `merge-audit`, MERGE-DEVIATIONS-NAMED checked when a merge is committed.
 HOOK_ID_CORE: tuple[str, ...] = (
     'check-added-large-files',
     'check-ast',
@@ -354,6 +355,7 @@ HOOK_ID_CORE: tuple[str, ...] = (
     'debug-statements',
     'end-of-file-fixer',
     'issue-ref',
+    'merge-audit',
     'mixed-line-ending',
     'trailing-whitespace',
 )

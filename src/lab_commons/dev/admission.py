@@ -22,8 +22,9 @@ its verify runs (:mod:`lab_commons.dev.runcache`) and decides no push: a result 
 a result no other workstation can check. If the forge cannot be read, the trunk WAITS --
 the refusal names the remedy; nothing local stands in for it.
 
-EVERY DESTINATION AUDITS THE MERGES IT PUBLISHES, unconditionally: each merge commit not yet on any
-remote must name every test its resolution lost or rewrote (:mod:`lab_commons.dev.mergeaudit`).
+A PUSH DOES NO AUDIT WORK. A merge's lost or rewritten tests are checked when that merge is
+COMMITTED (:mod:`lab_commons.dev.mergeaudit`, the ``commit-msg`` hook), never here: a push must never
+block development (user ruling 2026-10-10).
 
 THE STAMP GRAMMAR'S READER STAYS HERE. Runners still stamp their logs (``[verdict tree= env= tier=
 selector=] RESULT`` and :mod:`lab_commons.dev.verify`'s flat line) as the evidence a ledger entry
@@ -49,7 +50,6 @@ from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.logref import MARKER
-from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, refusals
 from lab_commons.dev.platformparts import standing
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -68,9 +68,7 @@ __all__ = [
     'admit',
     'destination_of',
     'main',
-    'merge_refusals',
     'parse_verdict_line',
-    'unpublished_merges',
 ]
 
 #: The tiered stamp a consumer's gate runner writes: ``[verdict tree= env= tier= selector=] RESULT``.
@@ -173,54 +171,6 @@ def destination_of(remote_ref: str, policy: Policy) -> str:
     return INTEGRATION if remote_ref == f'refs/heads/{policy.integration}' else LANE
 
 
-def unpublished_merges(root: Path) -> tuple[str, ...]:
-    """The merge commits reachable from HEAD and from no remote ref -- what this push publishes first.
-
-    An UNBORN HEAD (a fresh repository before its first commit) reaches no commit, so it publishes
-    no merge: the answer is empty, never a crash of the audit that asked.
-    """
-    born = subprocess.run(
-        [_GIT, '-C', str(root), 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=False,
-        timeout=_GIT_TIMEOUT_S,
-    )
-    if born.returncode:
-        return ()
-    listed = subprocess.run(
-        [_GIT, '-C', str(root), 'rev-list', '--merges', 'HEAD', '--not', '--remotes'],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=True,
-        timeout=_GIT_TIMEOUT_S,
-    ).stdout
-    return tuple(listed.split())
-
-
-def merge_refusals(root: Path, merges: Sequence[str], roots: Sequence[str]) -> tuple[str, ...]:
-    """Every unnamed or over-named deviation in *merges*; an audit that cannot read is one too."""
-    try:
-        return refusals(root, merges, roots=roots)
-    except MergeAuditError as error:
-        return (str(error),)
-
-
-def _audit_message(problems: Sequence[str], where: str) -> str:
-    return '\n'.join(
-        [
-            f'[admission] {where}: push REFUSED -- a merge lost or rewrote tests without naming them.',
-            *(f'[admission]   {line}' for line in problems),
-            (
-                '[admission] Remedy: restore what the resolution dropped, or name each deviation in the merge '
-                f'commit (amend it before its first push) as `{TRAILER}: <KIND> <test> -- <reason>`.'
-            ),
-        ]
-    )
-
-
 def _head(root: Path) -> str:
     return subprocess.run(
         [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
@@ -244,12 +194,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(refused)
     args = parser.parse_args(argv)
     trunk = args.trunk_ref != 'none' and args.remote_ref == args.trunk_ref
-    policy = load_policy(args.root)
-    destination = TRUNK if trunk else destination_of(args.remote_ref, policy)
-    problems = merge_refusals(args.root, unpublished_merges(args.root), policy.test_roots)
-    if problems:
-        emit(_audit_message(problems, destination))
-        return 1
+    destination = TRUNK if trunk else destination_of(args.remote_ref, load_policy(args.root))
     head = _head(args.root)
     decided = admit(destination, head=head, statuses=lambda: status_list(unprompted_client(args.root), head))
     emit(decided.message)

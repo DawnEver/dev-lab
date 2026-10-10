@@ -24,6 +24,13 @@ file. A name defined twice anywhere in the four trees is keyed ``path::name`` ev
 the key set is one function of the inputs. A body is fingerprinted with docstrings stripped and
 comments gone (``ast`` drops them): prose is not specification.
 
+WHEN IT RUNS: AT COMMIT, ON THE ONE MERGE BEING COMMITTED. A merge's deviations are a fact about
+that merge, known the moment it is recorded, so :func:`main` is the ``commit-msg`` hook (the family
+base's ``merge-audit`` row): while ``MERGE_HEAD`` exists it audits the INDEX against HEAD and
+MERGE_HEAD and refuses the commit with the unnamed list and the remedy; any other commit costs one
+file check. Push admission does no audit (user ruling 2026-10-10: a push must never block
+development -- auditing 152 unpublished merges held one for over twenty minutes).
+
 WHAT THIS DOES NOT SEE, stated so nobody reads it as more: a fixture or helper that changed under an
 unchanged test body. That change still runs under the gate; what is audited here is the
 specification the gate is held to.
@@ -35,16 +42,18 @@ import ast
 import hashlib
 import re
 import subprocess
+import sys
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.forge import _GIT
+from lab_commons.dev.lanepolicy import load_policy
+from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
-    from pathlib import Path
 
 __all__ = [
     'ALTERED',
@@ -55,8 +64,9 @@ __all__ = [
     'MergeAuditError',
     'audit',
     'classify',
+    'main',
+    'pending',
     'read_tests',
-    'refusals',
     'unnamed',
 ]
 
@@ -212,6 +222,22 @@ def _sources(root: Path, sha: str, roots: Sequence[str]) -> dict[str, bytes]:
 def audit(root: Path, merge: str, *, roots: Sequence[str]) -> tuple[Deviation, ...]:
     """The deviations of the two-parent merge commit *merge*, reading test files under *roots*."""
     parents = _git(root, 'rev-list', '--parents', '-n', '1', merge).decode().split()[1:]
+    return _audit(root, merge, parents, merge, roots=roots)
+
+
+def _pending_parents(root: Path) -> list[str] | None:
+    """HEAD plus every ``MERGE_HEAD`` while a merge is being committed, else ``None``."""
+    merge_head = root / _git(root, 'rev-parse', '--git-path', 'MERGE_HEAD').decode().strip()
+    if not merge_head.is_file():
+        return None
+    head = _git(root, 'rev-parse', 'HEAD').decode().strip()
+    return [head, *merge_head.read_text(encoding='utf-8').split()]
+
+
+def _audit(
+    root: Path, merge: str, parents: Sequence[str], merged: str, *, roots: Sequence[str]
+) -> tuple[Deviation, ...]:
+    """The deviations of *merged* (a commit or a tree) as the merge of *parents*; *merge* labels refusals."""
     if len(parents) != _PARENTS:
         msg = f'{merge}: {len(parents)} parents -- the audit judges a two-parent merge; merge lanes one at a time'
         raise MergeAuditError(msg)
@@ -219,7 +245,7 @@ def audit(root: Path, merge: str, *, roots: Sequence[str]) -> tuple[Deviation, .
     if len(bases) != 1:
         msg = f'{merge}: {len(bases)} merge bases (a criss-cross) -- merge through one integration branch instead'
         raise MergeAuditError(msg)
-    shas = (bases[0], *parents, merge)
+    shas = (bases[0], *parents, merged)
     trees = [_sources(root, sha, roots) for sha in shas]
     rows = [_scan(t) for t in trees]
     if not any(rows):
@@ -231,10 +257,44 @@ def audit(root: Path, merge: str, *, roots: Sequence[str]) -> tuple[Deviation, .
     return classify(base, ours, theirs, merged)
 
 
-def refusals(root: Path, merges: Iterable[str], *, roots: Sequence[str]) -> tuple[str, ...]:
-    """One line per unnamed or over-named deviation across *merges*; empty admits."""
-    lines: list[str] = []
-    for merge in merges:
-        message = _git(root, 'log', '-1', '--format=%B', merge).decode('utf-8', 'replace')
-        lines += [f'{merge[:10]} {problem}' for problem in unnamed(audit(root, merge, roots=roots), message)]
-    return tuple(lines)
+def pending(root: Path, message: str, *, roots: Sequence[str]) -> tuple[str, ...]:
+    """What *message* fails to name about the merge being committed in *root*; empty for a non-merge.
+
+    The merged tree is the INDEX (``git write-tree``) -- exactly what the commit will record.
+    """
+    parents = _pending_parents(root)
+    if parents is None:
+        return ()
+    tree = _git(root, 'write-tree').decode().strip()
+    return unnamed(_audit(root, 'the merge being committed', parents, tree, roots=roots), message)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m lab_commons.dev.mergeaudit <commit-msg-file>`` -- the commit-msg hook; ``1`` refuses."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 1:
+        emit('merge-audit: pass exactly the commit message file (git hands it to commit-msg)', err=True)
+        return 1
+    try:
+        root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').decode().strip())
+        message = Path(args[0]).read_text(encoding='utf-8', errors='replace')
+        problems = pending(root, message, roots=load_policy(root).test_roots)
+    except (MergeAuditError, OSError) as error:
+        problems = (str(error),)
+    if not problems:
+        return 0
+    remedy = (
+        'merge-audit: Remedy: restore what the resolution dropped, or name each deviation in the message as '
+        f'`{TRAILER}: <KIND> <test> -- <reason>` and commit again.'
+    )
+    lines = [
+        'merge-audit: commit REFUSED -- this merge lost or rewrote tests without naming them.',
+        *(f'merge-audit:   {line}' for line in problems),
+        remedy,
+    ]
+    emit('\n'.join(lines), err=True)
+    return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

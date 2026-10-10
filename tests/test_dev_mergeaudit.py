@@ -10,15 +10,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from typing import TYPE_CHECKING
+import sys
+from pathlib import Path
 
 import pytest
 
 from lab_commons.dev import mergeaudit
 from lab_commons.dev.mergeaudit import ALTERED, CONFLICTED, LOST, Deviation
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _GIT = shutil.which('git') or 'git'
 
@@ -145,7 +143,6 @@ def test_the_planted_control_a_lane_test_the_merge_dropped_is_caught_end_to_end(
     _git(repo, 'commit', '-q', '-m', 'merge lane')
     head = _git(repo, 'rev-parse', 'HEAD')
     assert mergeaudit.audit(repo, head, roots=('tests',)) == (Deviation(LOST, 'test_b'),)
-    assert mergeaudit.refusals(repo, (head,), roots=('tests',))
 
 
 def test_a_clean_merge_audits_clean_end_to_end(repo: Path) -> None:
@@ -156,7 +153,6 @@ def test_a_clean_merge_audits_clean_end_to_end(repo: Path) -> None:
     _git(repo, 'merge', '-q', '-m', 'merge lane', 'lane')
     head = _git(repo, 'rev-parse', 'HEAD')
     assert mergeaudit.audit(repo, head, roots=('tests',)) == ()
-    assert mergeaudit.refusals(repo, (head,), roots=('tests',)) == ()
 
 
 def test_an_empty_test_tree_refuses_rather_than_auditing_clean(repo: Path) -> None:
@@ -169,3 +165,80 @@ def test_an_empty_test_tree_refuses_rather_than_auditing_clean(repo: Path) -> No
     head = _git(repo, 'rev-parse', 'HEAD')
     with pytest.raises(mergeaudit.MergeAuditError, match='no test'):
         mergeaudit.audit(repo, head, roots=('nothing_here',))
+
+
+def _pending_merge_dropping_b(repo: Path) -> None:
+    """A merge in progress whose resolution deleted the lane's test -- the planted LOST."""
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'src/m.py': 'X = 2\n'}, 'main moves on')
+    _git(repo, 'merge', '-q', '--no-commit', 'lane')
+    (repo / 'tests/test_b.py').unlink()
+    _git(repo, 'add', '-A')
+
+
+def test_the_commit_msg_check_refuses_the_merge_being_committed_with_the_list_and_the_remedy(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _pending_merge_dropping_b(repo)
+    monkeypatch.chdir(repo)
+    message = repo / 'MSG'
+    message.write_text('merge lane\n', encoding='utf-8')
+    assert mergeaudit.main([str(message)]) == 1
+    err = capsys.readouterr().err
+    assert 'LOST test_b' in err
+    assert f'{mergeaudit.TRAILER}: LOST test_b -- <reason>' in err
+    message.write_text(f'merge lane\n\n{mergeaudit.TRAILER}: LOST test_b -- moved upstream\n', encoding='utf-8')
+    assert mergeaudit.main([str(message)]) == 0
+
+
+def test_the_commit_msg_check_passes_a_plain_commit_without_reading_any_test(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(mergeaudit, '_audit', lambda *_a, **_k: pytest.fail('a non-merge commit was audited'))
+    message = repo / 'MSG'
+    message.write_text('feat: x\n', encoding='utf-8')
+    assert mergeaudit.main([str(message)]) == 0
+
+
+def test_git_runs_the_check_at_commit_time_and_refuses_an_unnamed_loss(repo: Path) -> None:
+    """END TO END through git's own commit-msg hook: the merge commit is never created."""
+    hook = repo / '.git' / 'hooks' / 'commit-msg'
+    python = Path(sys.executable).as_posix()
+    hook.write_text(f'#!/bin/sh\nexec "{python}" -m lab_commons.dev.mergeaudit "$1"\n', encoding='utf-8')
+    hook.chmod(0o755)
+    _pending_merge_dropping_b(repo)
+    before = _git(repo, 'rev-parse', 'HEAD')
+    refused = subprocess.run(
+        [_GIT, '-C', str(repo), 'commit', '-q', '-m', 'merge lane'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+    assert refused.returncode != 0
+    assert 'LOST test_b' in refused.stderr
+    assert _git(repo, 'rev-parse', 'HEAD') == before
+    _git(repo, 'commit', '-q', '-m', f'merge lane\n\n{mergeaudit.TRAILER}: LOST test_b -- folded into test_a')
+    assert _git(repo, 'rev-parse', 'HEAD') != before
+
+
+def test_git_merge_itself_runs_the_check_on_a_clean_merge(repo: Path) -> None:
+    """`git merge` that needs no resolution runs commit-msg too, and a clean merge needs no line."""
+    hook = repo / '.git' / 'hooks' / 'commit-msg'
+    python = Path(sys.executable).as_posix()
+    seen = repo / '.git' / 'hook-ran'
+    hook.write_text(
+        f'#!/bin/sh\necho ran > "{seen.as_posix()}"\nexec "{python}" -m lab_commons.dev.mergeaudit "$1"\n',
+        encoding='utf-8',
+    )
+    hook.chmod(0o755)
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'src/m.py': 'X = 2\n'}, 'main moves on')
+    _git(repo, 'merge', '-q', '--no-ff', '-m', 'merge lane', 'lane')
+    assert seen.is_file()
+    assert _git(repo, 'log', '-1', '--format=%s') == 'merge lane'

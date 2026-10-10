@@ -255,7 +255,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<platform> parts.
-* :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit.
+* :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.

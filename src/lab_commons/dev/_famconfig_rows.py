@@ -244,6 +244,7 @@ HOOK_ID_CORE: Final[tuple[str, ...]] = (
     'debug-statements',
     'end-of-file-fixer',
     'issue-ref',
+    'merge-audit',
     'mixed-line-ending',
     'trailing-whitespace',
 )
@@ -332,6 +333,15 @@ PRECOMMIT_BASE: Final[tuple[str, ...]] = (
     f"      additional_dependencies: ['{HOOK_LAB_COMMONS}']",
     '      stages: [commit-msg]',
     '      verbose: true',
+    # MERGE-DEVIATIONS-NAMED, checked when the merge is COMMITTED: the check reads this checkout's
+    # git objects and its own lab_commons, so it runs through the launcher in the repo's venv.
+    '    - id: merge-audit',
+    '      name: a merge names every test it lost or rewrote',
+    '      entry: lab-with-venv',
+    "      args: ['lab_commons.dev.mergeaudit']",
+    '      language: python',
+    f"      additional_dependencies: ['{HOOK_LAB_COMMONS}']",
+    '      stages: [commit-msg]',
 )
 
 # ---------------------------------------------------------------------------------- Makefile

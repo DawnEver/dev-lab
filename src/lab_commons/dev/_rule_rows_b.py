@@ -102,8 +102,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A merge may not lose or rewrite a test in silence. Every test whose body in the merge differs from '
             'what a clean three-way merge would hold -- LOST, ALTERED, or CONFLICTED -- is named in the merge '
-            'commit with a one-line reason, and a push publishing a merge with an unnamed one is refused on '
-            'every destination. The tests are the feature inventory; no second list is kept.'
+            'commit with a one-line reason, and the commit-msg hook refuses COMMITTING a merge with an unnamed '
+            'one -- checked once, on the one merge being committed; a push does no audit work. The tests are '
+            'the feature inventory; no second list is kept.'
         ),
         ('tests/test_dev_mergeaudit.py',),
     ),

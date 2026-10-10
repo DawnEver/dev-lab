@@ -184,7 +184,7 @@ DELTAS: Final[dict[str, Delta]] = {
 INSTALLED_STAGES: Final[tuple[str, ...]] = ('commit-msg', 'pre-commit')
 
 #: How many hook ids the rendered config must carry before a subset check over it means anything.
-#: TWELVE is the family core and this repo adds none, so the floor IS the count; a file that parsed
-#: to nothing would otherwise satisfy every id assertion vacuously. RE-TAKEN 11 -> 12 on 2026-10-01:
-#: the base gained `issue-ref`, the commit-msg issue-reference check.
-PRECOMMIT_HOOK_FLOOR: Final = 12
+#: THIRTEEN is the family core and this repo adds none, so the floor IS the count; a file that parsed
+#: to nothing would otherwise satisfy every id assertion vacuously. RE-TAKEN 11 -> 12 on 2026-10-01
+#: (`issue-ref`) and 12 -> 13 on 2026-10-10 (`merge-audit`, the commit-time merge audit).
+PRECOMMIT_HOOK_FLOOR: Final = 13

@@ -24,7 +24,7 @@ class Policy:
     lane_prefixes: tuple[str, ...] = ('feat/', 'fix/')
     integration: str = 'integrate/main'
     main: str = 'main'
-    #: The test trees :mod:`lab_commons.dev.mergeaudit` reads; every merge a push publishes is audited over them.
+    #: The test trees :mod:`lab_commons.dev.mergeaudit` reads when a merge is committed.
     test_roots: tuple[str, ...] = ('tests',)
 
 
