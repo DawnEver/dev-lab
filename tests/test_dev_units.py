@@ -765,14 +765,33 @@ def test_the_single_descent_reports_exactly_what_the_enclosing_scope_walk_report
     assert tuple(units._python_signatures(_SCOPE_CORPUS)) == control
 
 
+def _python_corpus(root: Path) -> list[Path]:
+    """Every Python file under *root*, excluding environments, caches and agent state.
+
+    The exclusion is judged RELATIVE TO *root*: a checkout that itself lives under ``.claude/worktrees``
+    has ``.claude`` in every absolute path, and an absolute filter there drops the whole corpus.
+    """
+    excluded = {'.venv', '__pycache__', '.claude'}
+    return [p for p in sorted(root.glob('**/*.py')) if not excluded & set(p.relative_to(root).parts)]
+
+
+def test_the_corpus_filter_is_relative_to_the_checkout_root(tmp_path: Path) -> None:
+    """PLANTED: a checkout under ``.claude/worktrees`` keeps its sources and still drops its own agent state."""
+    root = tmp_path / '.claude' / 'worktrees' / 'lane'
+    (root / 'src').mkdir(parents=True)
+    (root / '.claude').mkdir()
+    (root / 'src' / 'kept.py').write_text('', encoding='utf-8')
+    (root / '.claude' / 'dropped.py').write_text('', encoding='utf-8')
+    assert _python_corpus(root) == [root / 'src' / 'kept.py']
+
+
 def test_the_single_descent_agrees_with_the_control_on_this_repository() -> None:
     """The planted corpus is what the two must agree about; this is every shape nobody thought to plant.
 
     A floor rather than a guess at the count: this repository tracks well over 40 Python files, and a
     comparison over an empty list would agree with itself.
     """
-    sources = sorted(Path(__file__).resolve().parents[1].glob('**/*.py'))
-    sources = [p for p in sources if not {'.venv', '__pycache__', '.claude'} & set(p.parts)]
+    sources = _python_corpus(Path(__file__).resolve().parents[1])
     assert len(sources) >= 40, f'the corpus is too small to prove anything: {len(sources)}'
     for path in sources:
         text = path.read_text(encoding='utf-8')
