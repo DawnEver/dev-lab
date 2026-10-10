@@ -386,12 +386,12 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/lab_commons/paths.py',
         'DTZ005',
-        "return datetime.datetime.now().strftime(r'%H-%M-%S')",
+        "return dt.datetime.now().strftime(r'%H-%M-%S')",
     ): 'a run folder is read by a human on the box that wrote it, so LOCAL wall clock is the right reading',
     (
         'src/lab_commons/paths.py',
         'DTZ005',
-        'now = datetime.datetime.now()',
+        'now = dt.datetime.now()',
     ): 'the date half of the same stamp, for the same reason',
     (
         'src/lab_commons/proc.py',

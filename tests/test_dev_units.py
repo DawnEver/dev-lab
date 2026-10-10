@@ -772,7 +772,7 @@ def test_the_single_descent_agrees_with_the_control_on_this_repository() -> None
     comparison over an empty list would agree with itself.
     """
     sources = sorted(Path(__file__).resolve().parents[1].glob('**/*.py'))
-    sources = [path for path in sources if '.venv' not in path.parts and '__pycache__' not in path.parts]
+    sources = [p for p in sources if not {'.venv', '__pycache__', '.claude'} & set(p.parts)]  # .claude holds lane worktrees
     assert len(sources) >= 40, f'the corpus is too small to prove anything: {len(sources)}'
     for path in sources:
         text = path.read_text(encoding='utf-8')
