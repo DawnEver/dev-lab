@@ -2,9 +2,15 @@
 
 The cluster's linux part comes from ``hpc run gather``; a local run's part comes from here, so both are
 one kind of run record and post as one kind of ``tests/<platform>`` part
-(:mod:`lab_commons.dev.platformparts`). The ids are assigned by the commit's platform table exactly as
-:func:`lab_commons.dev.platformparts.select` assigns them: an id assigned to this platform carries its
-outcome, every other id is handed off ``not-covered``.
+(:mod:`lab_commons.dev.platformparts`). A local verify runs EVERY collected id, so its record COVERS
+every id it judged that the commit's platform table lets this platform run, and hands off ``not-covered``
+only the ids this platform cannot run -- measured 2026-10-11: assigning by the cluster's rule left a
+windows full verify of lab-commons (no platform markers, so every id is linux's) covering nothing, and
+neither a fresh nor a cited PASS ever posted a part.
+
+The record is written where ``[tool.lab_commons.parts] output`` declares
+(:func:`lab_commons.dev.platformparts.record_directory`). A CITED verdict posts from the cited run's own
+outcomes, kept beside its log: the cache already holds the evidence, so nothing re-runs.
 """
 
 from __future__ import annotations
@@ -16,15 +22,13 @@ from typing import TYPE_CHECKING, Any
 
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
-from lab_commons.dev.platformparts import PartRefusal, post, split, this_platform
+from lab_commons.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory, this_platform
 from lab_commons.hpc.platforms import PLATFORMS, cannot_run, runnable, table_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
-
-    from lab_commons.dev.verdict import Verdict
 
 __all__ = ['local_record', 'post_local', 'post_part']
 
@@ -45,13 +49,15 @@ def local_record(
 ) -> dict[str, Any]:
     """The run record of a LOCAL run, in the cluster record's shape, so it posts as the same kind of part.
 
-    The ids are the ones the run reported; each is assigned by the commit's table exactly as
-    :func:`select` assigns them (*collect* is asked only for the marker expressions the table declares).
-    An id assigned to *platform* carries its outcome; every other id is handed off, ``not-covered``.
+    The ids are the ones the run reported (*collect* is asked only for the marker expressions the table
+    declares). An id *platform* can run carries its outcome; an id it cannot run is handed off,
+    ``not-covered``, with the platforms that can.
     """
     table = table_at(root, sha)
     cannot = {name: set(collect(expr)) for name in PLATFORMS if (expr := cannot_run(table, name))}
-    mine, handed = split(runnable(list(outcomes), cannot), platform)
+    can = runnable(list(outcomes), cannot)
+    mine = [node for node, platforms in can.items() if platform in platforms]
+    handed = {node: platforms for node, platforms in can.items() if platform not in platforms}
     return {
         'sha': sha,
         'platform': platform,
@@ -72,13 +78,19 @@ def post_local(root: Path, record: Mapping[str, Any], directory: Path) -> str:
         return f'[platformparts] not posted: {why}'
 
 
-def post_part(root: Path, verdict: Verdict, commit: str | None, arguments: tuple[str, ...]) -> str:
-    """Post a settled run as this platform's ``tests/<platform>`` part of *commit*; one line says what happened."""
+def post_part(root: Path, log: Path, commit: str | None, arguments: tuple[str, ...], *, settled: bool) -> str:
+    """Post the run judged in *log* as this platform's ``tests/<platform>`` part of *commit*; one line says what.
+
+    *log* is a fresh verdict's log or a CITED run's evidence; its outcomes sit beside it.
+    """
     if commit is None:
         return 'part: not posted -- the tree was dirty or moved, so this run is about no commit'
-    if not verdict.result.outcome.settled:
+    if not settled:
         return 'part: not posted -- an INCONCLUSIVE run is no part'
-    directory = outcomes_dir(verdict.log.path)
+    try:
+        directory = record_directory(root, commit)
+    except UndeclaredPart as why:
+        return f'part: not posted -- {why}'
 
     def collect(expression: str) -> list[str]:
         argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
@@ -86,14 +98,15 @@ def post_part(root: Path, verdict: Verdict, commit: str | None, arguments: tuple
         done = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
         return parse_ids(done.stdout)
 
+    judged = outcomes_dir(log)
     record = local_record(
         root,
         sha=commit,
         platform=this_platform(),
         scope=INCREMENTAL if arguments else FULL,
-        req=verdict.log.path.stem,
-        outcomes=read_outcomes(directory),
-        reasons=read_reasons(directory),
+        req=log.stem,
+        outcomes=read_outcomes(judged),
+        reasons=read_reasons(judged),
         collect=collect,
     )
     return post_local(root, record, directory)

@@ -162,6 +162,19 @@ def _strings(value: object, name: str, key: str, example: str, *, required: bool
     return list(value)
 
 
+def record_directory(root: Path, head: str) -> Path:
+    """The dated directory *head*'s run records go to, under ``[tool.lab_commons.parts] output``.
+
+    Raises:
+        UndeclaredPart: the output is not declared; the message names the key.
+
+    """
+    declared = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8')).get('tool', {})
+    parts = declared.get('lab_commons', {}).get('parts', {})
+    output = _text(parts, 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
+    return dated_log(root, head, base=output, kind=_RECORD_KIND)
+
+
 def part_argv(root: Path, platform: str, head: str, *, scope: str, os_name: str) -> list[str]:
     """The ONE fully filled argv producing *platform*'s part of commit *head* at *scope* (module docstring).
 
@@ -186,10 +199,9 @@ def part_argv(root: Path, platform: str, head: str, *, scope: str, os_name: str)
     hpc, name = declared.get('hpc', {}), 'tool.lab_commons.hpc'
     _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)  # read at --sha by hpc run submit
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
-    output = _text(declared.get('parts', {}), 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
+    directory = record_directory(root, head)
     forge = forge_from_remote(root)
     python = str(checkout_interpreter(root, os_name=os_name))
-    directory = dated_log(root, head, base=output, kind=_RECORD_KIND)
     return [
         python, '-m', 'lab_commons.dev.platformparts', 'cluster', '--sha', head,
         '--repo-url', f'https://{forge.host}/{forge.owner}/{forge.repo}.git',

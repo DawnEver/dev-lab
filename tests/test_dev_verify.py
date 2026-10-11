@@ -36,10 +36,11 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev import localpart, verify
+from lab_commons.dev import localpart, platformparts, verify
 from lab_commons.dev.cpuseat import CPU_POOL
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
+from lab_commons.dev.platformparts import part_of
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.dev.reports import (
     SKIP_CEILING,
@@ -54,6 +55,7 @@ from lab_commons.dev.runcache import CachedRun, runs
 from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
+from lab_commons.hpc.records import read_record
 from lab_commons.resources import Basis, Exhausted
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
@@ -869,6 +871,7 @@ def _patched_main(
 ) -> list:
     """Drive ``main`` with the run and the git readings replaced, recording what reaches the status queue."""
     posted: list = []
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
     monkeypatch.setattr(verify, 'box_directory', lambda: tmp_path / 'inflight')
     monkeypatch.setattr(verify, 'cache_path', lambda _root: tmp_path / 'runs.jsonl')
@@ -973,7 +976,55 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
     assert verify.main(['--no-status']) == EXIT_CODES[Outcome.INCONCLUSIVE]
     assert runs(cache) == ()
-    assert localpart.post_part(tmp_path, verdict, 'a' * 40, ()) == 'part: not posted -- an INCONCLUSIVE run is no part'
+    unsettled = localpart.post_part(tmp_path, log, 'a' * 40, (), settled=verdict.result.outcome.settled)
+    assert unsettled == 'part: not posted -- an INCONCLUSIVE run is no part'
+
+
+def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str, str]) -> list[Path]:
+    """Route posting at a planted repo whose judged log has *judged* beside it; returns the records posted."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
+    (tmp_path / 'judged.outcomes').mkdir()
+    (tmp_path / 'judged.outcomes' / 'outcomes.json').write_text(json.dumps(judged), encoding='utf-8')
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
+    posted: list[Path] = []
+    monkeypatch.setattr(localpart, 'post', lambda _root, path: posted.append(path) or 'posted')
+    return posted
+
+
+def _posted_part(posted: list[Path]) -> tuple[str, int]:
+    (path,) = posted
+    assert 'out' in path.parts, 'the record is written under [tool.lab_commons.parts] output'
+    part = part_of(read_record(path))
+    return part.result, part.ran
+
+
+def test_a_fresh_pass_posts_a_part_covering_what_it_judged(monkeypatch, tmp_path: Path) -> None:
+    """Live 2026-10-11 (lab-commons ff3106e): a full windows verify posted nothing -- its record covered no test."""
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed', 't::b': 'passed'})
+    _cached(monkeypatch, tmp_path)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
+    assert verify.main([]) == ProducerExit.PASS
+    assert _posted_part(posted) == ('PASS', 2)
+
+
+def test_a_cited_pass_posts_the_cited_runs_part(monkeypatch, tmp_path: Path) -> None:
+    """Live 2026-10-11: CITED PASS exited 0 and posted nothing, so serve released it; the cache holds the evidence."""
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    cache = _cached(monkeypatch, tmp_path)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
+    key = verify.run_key(tmp_path, ())
+    run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
+    cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
+    assert verify.main([]) == ProducerExit.PASS
+    assert _posted_part(posted) == ('PASS', 1)
+
+
+def test_a_run_that_judged_no_test_still_posts_no_part(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: an empty selection is refused by name, never posted as a pass."""
+    _postable(monkeypatch, tmp_path, {})
+    monkeypatch.setattr(localpart, 'post', platformparts.post)
+    said = localpart.post_part(tmp_path, tmp_path / 'judged.log', 'a' * 40, (), settled=True)
+    assert 'covers no test' in said
 
 
 def _held(*_a: object, **_k: object) -> None:

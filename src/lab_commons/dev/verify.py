@@ -523,6 +523,10 @@ def main(argv: list[str] | None = None) -> int:
             f'verify: CITED {cited.result} -- the run cache ({cache}) already judged this tree, env and selection; '
             f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
         )
+        if not parsed.no_status:  # the cited run's outcomes are the evidence: its record posts, nothing re-runs
+            head, dirt = head_sha(root), status_paths(root)
+            cited_log, commit = root / cited.log.split('@', 1)[0], verdict_commit(head, head, dirt, dirt)
+            emit(post_part(root, cited_log, commit, arguments, settled=True))
         return EXIT_CODES[Outcome(cited.result.lower())]
 
     def lead() -> str:
@@ -580,7 +584,8 @@ def _judge(
     if run_key(root, ()).tree == key.tree:
         remember(cache, verdict, tree=key.tree, env=key.env, selector=key.selector, commit=commit or '')
     if not no_status:
-        emit(post_part(root, verdict, commit, arguments))
+        settled = verdict.result.outcome.settled
+        emit(post_part(root, verdict.log.path, commit, arguments, settled=settled))
     return EXIT_CODES[verdict.result.outcome], lines
 
 

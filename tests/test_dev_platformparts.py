@@ -331,48 +331,55 @@ def test_the_standing_is_the_one_reading_of_a_platform_result() -> None:
 
 
 def test_a_local_run_becomes_a_record_of_the_cluster_shape(tmp_path: Path, monkeypatch) -> None:
-    """A windows verify keeps the ids assigned to windows and hands every other id off, not-covered."""
+    """A local verify covers every id it judged that its platform can run, and hands off only the rest."""
     monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: read_table(PYPROJECT))
     outcomes = {'t::a': 'passed', 't::f': 'failed', 't::m': 'skipped'}
     collected = {'femm': ['t::f'], 'femm or matlab': ['t::f', 't::m']}
-    record = localpart.local_record(
-        tmp_path,
-        sha=SHA,
-        platform='windows',
-        scope='full',
-        req='verify-x',
-        outcomes=outcomes,
-        reasons={'t::m': 'no matlab here', 't::a': 'not mine'},
-        collect=collected.__getitem__,
-    )
-    assert record['outcomes'] == {'t::f': 'failed', 't::a': 'not-covered', 't::m': 'not-covered'}
-    assert record['handed'] == {'t::a': ['linux', 'windows', 'macos'], 't::m': ['linux', 'windows']}
-    assert record['reasons'] == {}
-    part = platformparts.part_of(record)
-    assert (part.platform, part.result, part.ran, part.hands) == ('windows', 'FAIL', 1, {'linux': 2})
-
-
-def test_a_local_record_with_no_table_assigns_every_id_to_linux(tmp_path: Path, monkeypatch) -> None:
-    """No table: every id runs everywhere, so the one rule assigns it to linux -- a windows run covers nothing."""
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
 
     def local(platform: str) -> dict[str, object]:
         return localpart.local_record(
             tmp_path,
             sha=SHA,
             platform=platform,
-            scope='incremental',
+            scope='full',
+            req='verify-x',
+            outcomes=outcomes,
+            reasons={'t::m': 'no matlab here', 't::f': 'no femm here'},
+            collect=collected.__getitem__,
+        )
+
+    on_linux = local('linux')
+    assert on_linux['outcomes'] == {'t::a': 'passed', 't::m': 'skipped', 't::f': 'not-covered'}
+    assert on_linux['handed'] == {'t::f': ['windows']}
+    assert on_linux['reasons'] == {'t::m': 'no matlab here'}
+    part = platformparts.part_of(on_linux)
+    assert (part.platform, part.result, part.ran, part.hands) == ('linux', 'PASS', 2, {'windows': 1})
+    on_windows = platformparts.part_of(local('windows'))
+    assert (on_windows.result, on_windows.ran, on_windows.hands) == ('FAIL', 3, {})
+
+
+def test_a_windows_verify_of_a_repo_with_no_table_covers_what_it_ran(tmp_path: Path, monkeypatch) -> None:
+    """Live 2026-10-11 (lab-commons ff3106e): no table made every id linux's and a windows verify covered nothing.
+
+    PLANTED CONTROL: a run that judged no test is still refused, so an empty part is never a pass.
+    """
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
+
+    def local(outcomes: dict[str, str]) -> dict[str, object]:
+        return localpart.local_record(
+            tmp_path,
+            sha=SHA,
+            platform='windows',
+            scope='full',
             req='r',
-            outcomes={'t::a': 'passed', 't::s': 'skipped'},
+            outcomes=outcomes,
             reasons={'t::s': 'why'},
             collect=lambda _expr: pytest.fail('no marker is declared, so nothing is collected'),
         )
 
-    on_linux = local('linux')
-    assert on_linux['outcomes'] == {'t::a': 'passed', 't::s': 'skipped'}
-    assert on_linux['reasons'] == {'t::s': 'why'}
-    assert platformparts.part_of(on_linux).hands == {}
-    on_windows = local('windows')
-    assert set(on_windows['outcomes'].values()) == {'not-covered'}
+    on_windows = local({'t::a': 'passed', 't::s': 'skipped'})
+    assert on_windows['outcomes'] == {'t::a': 'passed', 't::s': 'skipped'}
+    assert on_windows['reasons'] == {'t::s': 'why'}
+    assert platformparts.part_of(on_windows).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.part_of(on_windows)
+        platformparts.part_of(local({}))

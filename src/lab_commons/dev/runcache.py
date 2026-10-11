@@ -72,7 +72,7 @@ def remember(path: Path, verdict: Verdict, *, tree: str, env: str, selector: str
         selector,
         verdict.result.outcome.value.upper(),
         commit,
-        f'{verdict.log.path}@{verdict.log.digest}',
+        f'{verdict.log.path.resolve()}@{verdict.log.digest}',
         datetime.now(UTC).isoformat(timespec='seconds'),
     )
     path.parent.mkdir(parents=True, exist_ok=True)
