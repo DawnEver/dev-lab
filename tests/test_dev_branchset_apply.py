@@ -76,8 +76,11 @@ def test_a_merged_undeclared_branch_is_owed_to_a_human_not_a_red(tmp_path: Path)
 
 
 def test_an_archive_tag_is_a_branch_left_behind_merged_ones_go_open_ones_are_merged(tmp_path: Path) -> None:
-    """MERGE-OR-DELETE (user ruling 2026-10-11): parking a branch as an `archive/*` tag hides it from
-    everyone; a merged one is deleted, an unmerged one is listed to MERGE, never kept as a tag."""
+    """MERGE-OR-DELETE (user ruling 2026-10-11): a parked archive tag is a branch left behind.
+
+    Parking a branch as an `archive/*` tag hides it from
+    everyone; a merged one is deleted, an unmerged one is listed to MERGE, never kept as a tag.
+    """
     work = plant_checkout(tmp_path, trunk='main').work
     _run(work, 'tag', 'archive/landed')
     _run(work, 'switch', '-q', '-c', 'open')
