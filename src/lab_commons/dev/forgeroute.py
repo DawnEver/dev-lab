@@ -151,15 +151,20 @@ class Routed:
 
 
 def _find(client: Client, title: str) -> Issue | None:
-    query = {'state': 'open', 'type': 'issues', 'q': title, client.backend.page_param: str(_PAGE)}
+    """The OLDEST open issue titled *title*, read off the plain listing.
+
+    Never ``q=``: gitea answers it from a search indexer that lags a freshly created issue, so a
+    second route minutes after the first missed it and opened a duplicate (2026-10-11). The listing
+    is the database; every page is read so a duplicate never shadows the original.
+    """
+    query = {'state': 'open', 'type': 'issues', client.backend.page_param: str(_PAGE)}
+    numbers: list[int] = []
     for page in range(1, _PAGES + 1):
         listed = client.call('GET', f'{client.repo}/issues?{urllib.parse.urlencode(query | {"page": page})}')
-        for raw in listed:
-            if raw.get('title') == title and 'pull_request' not in raw:
-                return client.issue_view(raw['number'])
+        numbers += [raw['number'] for raw in listed if raw.get('title') == title and 'pull_request' not in raw]
         if len(listed) < _PAGE:
-            return None
-    return None
+            break
+    return client.issue_view(min(numbers)) if numbers else None
 
 
 def pyproject_at(root: Path, sha: str) -> str:
