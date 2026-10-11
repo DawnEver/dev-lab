@@ -150,19 +150,20 @@ def test_the_cli_refuses_a_record_whose_commit_is_absent(tmp_path: Path) -> None
 def test_the_open_issue_is_found_on_page_two_among_pulls_without_the_search_index(server) -> None:
     """PLANTED CONTROL, 2026-10-11: routing created #2432-#2436 beside the open #2427-#2431.
 
-    The lookup leaned on ``q=`` -- gitea's search INDEXER, which lags a freshly created issue -- so a
-    second route minutes later missed the first route's issues. The fake answers ``[]`` to every query
-    but the plain open-issue listing: the issue sits on page 2, behind a pull of the same title, beside a
-    newer duplicate, and the OLDEST open one is the one kept.
+    Gitea sends ``"pull_request": null`` on every ISSUE, and the lookup tested the key's presence, so it
+    threw every match away. The issues here carry that null exactly as gitea does; the one real pull of
+    the same title is skipped, the issue sits on page 2 beside a newer duplicate and the OLDEST is kept.
+    Every query but the plain listing answers ``[]`` -- a lagging search index must not matter.
     """
     record = _record({_JMAG: 'failed'})
     body, _ = render('', {_JMAG}, set(), record, 'u')
     answer('GET', f'{_ROOT}/issues', (200, []))
     pull = _issue(90, 'area:jmag', '') | {'pull_request': {'merged': False}}
-    page_one = [pull] + [_issue(100 + n, f'other {n}', '') for n in range(49)]
+    page_one = [pull] + [_issue(100 + n, f'other {n}', '') | {'pull_request': None} for n in range(49)]
     listing = f'{_ROOT}/issues?state=open&type=issues&limit=50&page='
     answer('GET', f'{listing}1', (200, page_one))
-    answer('GET', f'{listing}2', (200, [_issue(17, 'area:jmag', ''), _issue(11, 'area:jmag', '')]))
+    dups = [_issue(17, 'area:jmag', '') | {'pull_request': None}, _issue(11, 'area:jmag', '') | {'pull_request': None}]
+    answer('GET', f'{listing}2', (200, dups))
     answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', body)))
     routed = route(client(_FORGE, Loopback(server)), record, _AREAS)
     assert [(r.action, r.number) for r in routed] == [('unchanged', 11)]

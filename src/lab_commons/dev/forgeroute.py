@@ -153,15 +153,16 @@ class Routed:
 def _find(client: Client, title: str) -> Issue | None:
     """The OLDEST open issue titled *title*, read off the plain listing.
 
-    Never ``q=``: gitea answers it from a search indexer that lags a freshly created issue, so a
-    second route minutes after the first missed it and opened a duplicate (2026-10-11). The listing
-    is the database; every page is read so a duplicate never shadows the original.
+    A pull is one whose ``pull_request`` is SET: gitea sends ``"pull_request": null`` on every issue,
+    so testing the key's presence discarded every match and each route opened a duplicate
+    (#2432-#2436 beside #2427-#2431, 2026-10-11). Never ``q=`` either: gitea answers it from a search
+    indexer that can lag a fresh issue. Every page is read so a duplicate never shadows the original.
     """
     query = {'state': 'open', 'type': 'issues', client.backend.page_param: str(_PAGE)}
     numbers: list[int] = []
     for page in range(1, _PAGES + 1):
         listed = client.call('GET', f'{client.repo}/issues?{urllib.parse.urlencode(query | {"page": page})}')
-        numbers += [raw['number'] for raw in listed if raw.get('title') == title and 'pull_request' not in raw]
+        numbers += [raw['number'] for raw in listed if raw.get('title') == title and not raw.get('pull_request')]
         if len(listed) < _PAGE:
             break
     return client.issue_view(min(numbers)) if numbers else None
