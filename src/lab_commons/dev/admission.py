@@ -192,7 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout being pushed')
     parser.add_argument(
         '--remote-ref',
-        help=f'the full remote ref being updated (default: ${_PRE_COMMIT_REMOTE_REF}, which a pre-commit pre-push sets)',
+        help=f'the full remote ref being updated (default: ${_PRE_COMMIT_REMOTE_REF}, set by a pre-push hook)',
     )
     parser.add_argument('--trunk-ref', required=True, help="the trunk ref (e.g. refs/heads/main), or 'none'")
     argv = sys.argv[1:] if argv is None else list(argv)
@@ -202,7 +202,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     args.remote_ref = args.remote_ref or os.environ.get(_PRE_COMMIT_REMOTE_REF, '')
     if not args.remote_ref:
-        parser.error(f'no ref to judge: pass --remote-ref, or run as a pre-commit pre-push hook (${_PRE_COMMIT_REMOTE_REF})')
+        parser.error(
+            f'no ref to judge: pass --remote-ref, or run as a pre-commit pre-push hook (${_PRE_COMMIT_REMOTE_REF})'
+        )
     trunk = args.trunk_ref != 'none' and args.remote_ref == args.trunk_ref
     destination = TRUNK if trunk else destination_of(args.remote_ref, load_policy(args.root))
     head = _head(args.root)

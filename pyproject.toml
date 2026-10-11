@@ -67,6 +67,8 @@ dev = [
     # `tests/test_dev_gate.py` still proves by reading the import statements that no module here
     # imports it.
     "pre-commit",
+    # `tests/test_the_kit_renders_its_own_precommit_config.py` parses the rendered YAML itself.
+    "pyyaml",
 ]
 
 # THE TWO GATES FOR ``lab_commons.viz``, AND THERE ARE TWO ON PURPOSE. The plotting vocabulary

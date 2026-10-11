@@ -200,7 +200,8 @@ DELTAS: Final[dict[str, Delta]] = {
 
 #: The git hook files this repo INSTALLS, which is the half a configuration cannot answer for itself.
 #: Exactly the stages the config declares: `pre-commit` for the default, `commit-msg` for commitizen.
-#: `pre-push` since 2026-10-11 for :data:`PRECOMMIT_DELTA`'s admission hook, which runs no test. Both labs went a day with `commitizen` DECLARED at `commit-msg` and no
+#: `pre-push` since 2026-10-11 for :data:`PRECOMMIT_DELTA`'s admission hook, which runs no test.
+#: Both labs went a day with `commitizen` DECLARED at `commit-msg` and no
 #: shim installed, so every commit message went unchecked while both trees read as guarded; this
 #: constant exists so the same gap cannot open here in silence.
 INSTALLED_STAGES: Final[tuple[str, ...]] = ('commit-msg', 'pre-commit', 'pre-push')

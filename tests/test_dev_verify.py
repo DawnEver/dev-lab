@@ -41,7 +41,6 @@ from lab_commons.dev.cpuseat import CPU_POOL
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.producer import ProducerExit
-from lab_commons.resources import Basis, Exhausted
 from lab_commons.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -55,6 +54,7 @@ from lab_commons.dev.runcache import CachedRun, runs
 from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
+from lab_commons.resources import Basis, Exhausted
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -992,9 +992,9 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     monkeypatch.setattr(verify, 'family_freshness', lambda _root: ('', ''))
     monkeypatch.setattr(verify, 'hold_run_seats', lambda *_a, **_k: None)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
-    monkeypatch.setattr(verify, 'read_hooks', lambda _root, handle: clean)
+    monkeypatch.setattr(verify, 'read_hooks', lambda _root, _handle: clean)
 
-    def tee(command: list[str], *, cwd: Path, handle: io.TextIOBase, extra_env: object = None) -> int:
+    def tee(command: list[str], *, handle: io.TextIOBase, **_where: object) -> int:
         is_pytest = 'pytest' in command
         handle.write(pytest_text if is_pytest else '')
         return pytest_code if is_pytest else 0
@@ -1011,7 +1011,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     ],
 )
 def test_every_inconclusive_path_exits_3_through_the_producer_contract(
-    monkeypatch, tmp_path: Path, path: str, pytest_text: str, pytest_code: int, plant: tuple | None
+    monkeypatch, tmp_path: Path, path: str, pytest_text: str, *, pytest_code: int, plant: tuple | None
 ) -> None:
     """LIVE 2026-10-11: a held-box verify printed `inconclusive` and a `verify && push` chain went on.
 
@@ -1030,7 +1030,7 @@ def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_p
     assert verify.main(['--no-status', '--rerun']) == ProducerExit.PASS
 
 
-def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
+def test_a_held_box_exits_3_from_a_real_process() -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
     A child holds this box's CPU seat and a second ``python -m lab_commons.dev.verify --lock-wait-s 0``
@@ -1047,7 +1047,18 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
         assert holder.stdout is not None
         holder.stdout.readline()  # 'held' or the refusal: either way the seat is now taken
         done = subprocess.run(
-            [sys.executable, '-m', 'lab_commons.dev.verify', '--no-status', '--rerun', '--lock-wait-s', '0', '--', '-k', 'held_box_probe'],
+            [
+                sys.executable,
+                '-m',
+                'lab_commons.dev.verify',
+                '--no-status',
+                '--rerun',
+                '--lock-wait-s',
+                '0',
+                '--',
+                '-k',
+                'held_box_probe',
+            ],
             cwd=Path(__file__).resolve().parents[1],
             capture_output=True,
             text=True,
