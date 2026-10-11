@@ -3,7 +3,7 @@
 ``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
 state and comment reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for
 run records, ``tick`` for requests and claims, ``route <record>`` for failure routing and ``serve``
-for the whole harness sequence; anything
+for the whole harness sequence, ``promote`` / ``sync`` / ``integration`` for the branch flow; anything
 else is the issue/PR door. The verbs live in the sibling modules, which import :mod:`forge`, so
 :mod:`forge` reaches this module only from its entry point.
 """
@@ -14,12 +14,15 @@ from typing import TYPE_CHECKING
 
 from lab_commons.dev import (
     forgeauth,
+    forgeintegration,
     forgeissue,
     forgeoutbox,
+    forgepromote,
     forgerecords,
     forgeroute,
     forgeserve,
     forgestatus,
+    forgesync,
     forgetick,
     forgework,
 )
@@ -37,6 +40,9 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'route': forgeroute.main,
     'serve': forgeserve.main,
     'tick': forgetick.main,
+    'promote': forgepromote.main,
+    'sync': forgesync.main,
+    'integration': forgeintegration.main,
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.

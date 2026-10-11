@@ -1,0 +1,246 @@
+"""BRANCH FLOW: trunk by fast-forward only, every PR on integration, child branches synced from integration only.
+
+Real git repositories (a bare ``origin`` and a clone) and the loopback forge for BOTH backends; the
+evidence is the refs git holds and the requests the forge server recorded.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+from _branch_repos import advance, clone_pair, commit
+from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, serve
+
+from lab_commons.dev import forgepromote, forgesync
+from lab_commons.dev.forge import Forge
+from lab_commons.dev.forgeintegration import CONTEXT, retarget_note, tick
+from lab_commons.dev.forgepulls import comment_upsert, marker
+from lab_commons.dev.forgerecords import RECORDS_TAG, attach, listing
+from lab_commons.dev.lanepolicy import Policy, load_policy
+from lab_commons.dev.trialmerge import merged_at, trial
+
+GITEA = Forge('forge.example.org', 'o', 'r')
+GITHUB = Forge('github.com', 'o', 'r')
+GAPI, HAPI = '/api/v1/repos/o/r', '/repos/o/r'
+POLICY = Policy()
+
+
+@pytest.fixture
+def server() -> Iterator[ThreadingHTTPServer]:
+    yield from serve()
+
+
+def _part(state: str = 'success', scope: str = 'full', sid: int = 1) -> dict[str, object]:
+    return {
+        'id': sid,
+        'context': 'tests/linux',
+        'status': state,
+        'description': f'scope={scope} ran=3 hands=- nowhere=0',
+    }
+
+
+def _pr(number: int, head: str, base: str, sha: str) -> dict[str, object]:
+    return {
+        'number': number,
+        'title': 't',
+        'state': 'open',
+        'body': '',
+        'html_url': f'u/{number}',
+        'user': {'login': 'x'},
+        'head': {'ref': head, 'sha': sha},
+        'base': {'ref': base},
+    }
+
+
+# --- trial merges ---------------------------------------------------------------------------------
+
+
+def test_a_trial_merge_names_behind_and_conflicts_without_touching_the_tree(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    lane = advance(work, 'integrate/main', 'x.txt', 'ours\n')
+    run_git(work, 'checkout', '-q', '-B', 'feat/a', 'origin/main')
+    child = commit(work, 'x.txt', 'theirs\n')
+    found = trial(work, 'origin/integrate/main', child)
+    assert (found.behind, found.conflicts) == (1, ('x.txt',))
+    assert git_out(work, 'status', '--porcelain') == ''
+    assert trial(work, 'origin/integrate/main', lane).clean
+
+
+# --- promote --------------------------------------------------------------------------------------
+
+
+def test_promote_refuses_without_full_parts_and_fast_forwards_with_them(server, tmp_path: Path) -> None:
+    """PLANTED both ways: an incremental part refuses (main does not move); a full PASS fast-forwards."""
+    _, work = clone_pair(tmp_path)
+    tip = advance(work, 'integrate/main', 'f.txt', 'f\n')
+    before = git_out(work, 'rev-parse', 'origin/main')
+    built = client(GITEA, Loopback(server))
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(scope='incremental')]))
+    found = forgepromote.promote(work, built, POLICY)
+    assert found.action == 'refused'
+    assert any('scope full' in reason for reason in found.reasons)
+    run_git(work, 'fetch', '-q', 'origin')
+    assert git_out(work, 'rev-parse', 'origin/main') == before
+
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
+    assert forgepromote.promote(work, built, POLICY).action == 'promote'
+    run_git(work, 'fetch', '-q', 'origin')
+    assert git_out(work, 'rev-parse', 'origin/main') == tip
+    assert git_out(work, 'rev-list', '--merges', 'origin/main') == '', 'no merge commit on the trunk'
+    assert forgepromote.promote(work, built, POLICY).action == 'current'
+
+
+def test_promote_refuses_a_trunk_that_cannot_fast_forward(server, tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'main', 'hotfix.txt', 'h\n')
+    advance(work, 'integrate/main', 'f.txt', 'f\n')
+    found = forgepromote.decide(work, client(GITEA, Loopback(server)), POLICY)
+    assert found.action == 'refused'
+    assert 'cannot fast-forward' in found.reasons[0]
+    assert Recorder.received == [], 'parts are not even read for an impossible move'
+
+
+# --- sync -----------------------------------------------------------------------------------------
+
+
+def _child(tmp_path: Path) -> Path:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'integrate/main', 'i.txt', 'i\n')
+    advance(work, 'feat/other', 'o.txt', 'o\n')
+    run_git(work, 'checkout', '-q', '-B', 'feat/mine', 'origin/main')
+    commit(work, 'm.txt', 'm\n')
+    return work
+
+
+def test_sync_merges_integration_only_and_never_another_lane(tmp_path: Path) -> None:
+    work = _child(tmp_path)
+    _, merged = forgesync.sync(work, POLICY)
+    assert merged == ('origin/integrate/main',)
+    assert (work / 'i.txt').exists()
+    assert not (work / 'o.txt').exists(), "another lane's work never arrives sideways"
+    with pytest.raises(ValueError, match='DOWNSTREAM-SYNCS-INTEGRATION'):
+        forgesync.sync(work, POLICY, ['origin/feat/other'])
+
+
+def test_a_watched_ref_is_merged_after_integration(tmp_path: Path) -> None:
+    work = _child(tmp_path)
+    forgesync.watch(work, 'feat/mine', 'origin/feat/other')
+    assert forgesync.upstreams(work, 'feat/mine', POLICY) == ('origin/integrate/main', 'origin/feat/other')
+    _, merged = forgesync.sync(work, POLICY)
+    assert merged == ('origin/integrate/main', 'origin/feat/other')
+    forgesync.unwatch(work, 'feat/mine', 'origin/feat/other')
+    assert forgesync.upstreams(work, 'feat/mine', POLICY) == ('origin/integrate/main',)
+    assert git_out(work, 'status', '--porcelain') == '', 'the opt-in is git config, never a file'
+
+
+def test_sync_stops_on_a_conflict_naming_files_and_merges_nothing(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'integrate/main', 'x.txt', 'ours\n')
+    run_git(work, 'checkout', '-q', '-B', 'feat/mine', 'origin/main')
+    head = commit(work, 'x.txt', 'theirs\n')
+    found, merged = forgesync.sync(work, POLICY)
+    assert merged == ()
+    assert found.conflicting[0][1].conflicts == ('x.txt',)
+    assert git_out(work, 'rev-parse', 'HEAD') == head
+    assert git_out(work, 'status', '--porcelain') == ''
+
+
+def test_sync_refuses_on_the_trunk_and_on_integration(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    for branch in ('main', 'integrate/main'):
+        run_git(work, 'checkout', '-q', '-B', branch, 'origin/main')
+        with pytest.raises(ValueError, match='not a child branch'):
+            forgesync.sync(work, POLICY)
+
+
+# --- comments, retarget and the integration tick on both backends ---------------------------------
+
+
+@pytest.mark.parametrize(('forge', 'api'), [(GITEA, GAPI), (GITHUB, HAPI)])
+def test_one_comment_is_updated_never_duplicated(server, forge: Forge, api: str) -> None:
+    existing = {'id': 9, 'body': f'{marker("integration")}\nold', 'html_url': 'c/9'}
+    answer('GET', f'{api}/issues/4/comments', (200, [{'id': 1, 'body': 'hi', 'html_url': 'c/1'}, existing]))
+    answer('PATCH', f'{api}/issues/comments/9', (200, {'id': 9, 'body': 'x', 'html_url': 'c/9'}))
+    built = client(forge, Loopback(server))
+    assert comment_upsert(built, 4, subject='integration', text='new')[0] == 'updated'
+    assert [r['method'] for r in Recorder.received if r['method'] != 'GET'] == ['PATCH']
+    existing['body'] = f'{marker("integration")}\nnew'
+    assert comment_upsert(built, 4, subject='integration', text='new')[0] == 'unchanged'
+    assert [r['method'] for r in Recorder.received if r['method'] != 'GET'] == ['PATCH'], 'nothing written twice'
+
+
+@pytest.mark.parametrize(('forge', 'api'), [(GITEA, GAPI), (GITHUB, HAPI)])
+def test_the_tick_retargets_a_trunk_pr_and_reports_each_child_once(
+    server, tmp_path: Path, forge: Forge, api: str
+) -> None:
+    _, work = clone_pair(tmp_path)
+    advance(work, 'integrate/main', 'i.txt', 'i\n')
+    pr_head = advance(work, 'feat/pr', 'p.txt', 'p\n')
+    lane = advance(work, 'feat/lane', 'l.txt', 'l\n')
+    statuses = f'{api}/commits/{{}}/status' if forge is GITHUB else f'{api}/statuses/{{}}'
+    for sha in (pr_head, lane):
+        payload = {'statuses': [], 'state': 'pending'} if forge is GITHUB else []
+        answer('GET', statuses.format(sha), (200, payload))
+    answer('GET', f'{api}/pulls', (200, [_pr(4, 'feat/pr', 'main', pr_head)]))
+    answer('PATCH', f'{api}/pulls/4', (200, _pr(4, 'feat/pr', 'integrate/main', pr_head)))
+    answer('POST', f'{api}/issues/4/comments', (201, {'id': 2, 'body': 'x', 'html_url': 'c/2'}))
+    answer('GET', f'{api}/issues/4/comments', (200, []))
+    answer('GET', f'{api}/issues', (200, []))
+    answer('POST', f'{api}/statuses/{lane}', (201, {'context': CONTEXT, 'state': 'pending', 'description': 'd'}))
+    built = client(forge, Loopback(server))
+    lines = tick(work, [('origin', built)], POLICY, fetch_pull=lambda _r, _m, _n: pr_head)
+    writes = [(r['method'], r['path']) for r in Recorder.received if r['method'] != 'GET']
+    assert ('PATCH', f'{api}/pulls/4') in writes
+    assert Recorder.received[[r['method'] for r in Recorder.received].index('PATCH')]['body'] == {
+        'base': 'integrate/main'
+    }
+    comments = [r['body']['body'] for r in Recorder.received if r['path'] == f'{api}/issues/4/comments' and r['body']]
+    assert retarget_note(POLICY) in comments[0]
+    assert marker('integration') in comments[1]
+    assert 'behind `integrate/main` by 1; clean' in comments[1]
+    assert 'syncs from: `origin/integrate/main`' in comments[1]
+    assert ('POST', f'{api}/statuses/{lane}') in writes, 'a child without a PR gets a commit status'
+    assert not any(r['path'] == f'{api}/statuses/{pr_head}' and r['method'] == 'POST' for r in Recorder.received)
+    assert len(lines) == 3
+
+
+def test_a_merged_child_is_reported_at_its_merge(tmp_path: Path) -> None:
+    _, work = clone_pair(tmp_path)
+    lane = advance(work, 'feat/a', 'a.txt', 'a\n')
+    run_git(work, 'checkout', '-q', '-B', 'integ', 'origin/integrate/main')
+    commit(work, 'i.txt', 'i\n')
+    run_git(work, 'merge', '-q', '--no-ff', '--no-edit', lane)
+    merge = git_out(work, 'rev-parse', 'HEAD')
+    assert merged_at(work, 'integ', lane) == merge
+
+
+# --- run records on the GitHub backend ------------------------------------------------------------
+
+
+def test_github_run_records_are_assets_of_one_release(server, tmp_path: Path) -> None:
+    record = tmp_path / f'run-{"a" * 40}-linux-r1.json.gz'
+    record.write_bytes(b'gz')
+    answer('GET', f'{HAPI}/releases', (200, []), (200, [{'id': 77, 'tag_name': RECORDS_TAG}]))
+    answer('POST', f'{HAPI}/releases', (201, {'id': 77}))
+    asset = {'id': 5, 'name': record.name, 'browser_download_url': 'https://github.com/d/5'}
+    answer('POST', f'{HAPI}/releases/77/assets', (201, asset))
+    answer('GET', f'{HAPI}/releases/77/assets', (200, [asset]))
+    loop = Loopback(server)
+    built = client(GITHUB, loop)
+    assert attach(built, record).url == 'https://github.com/d/5'
+    assert 'uploads.github.com' in loop.asked
+    created = next(r for r in Recorder.received if r['path'] == f'{HAPI}/releases' and r['method'] == 'POST')
+    assert created['body']['tag_name'] == RECORDS_TAG
+    upload = next(r for r in Recorder.received if r['path'].startswith(f'{HAPI}/releases/77/assets?'))
+    assert upload['raw'] == b'gz'
+    assert [item.id for item in listing(built)] == [5]
+
+
+def test_the_policy_declares_integration_and_trunk(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.lab_commons.integrator]\nintegration = "stage"\ntrunk = "stable"\n', encoding='utf-8'
+    )
+    assert load_policy(tmp_path) == Policy(integration='stage', trunk='stable')

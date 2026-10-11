@@ -257,6 +257,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<platform> parts.
+* :mod:`lab_commons.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
+* :mod:`lab_commons.dev.forgepulls` -- PR list/retarget and ONE marker-found comment per subject, both forges.
+* :mod:`lab_commons.dev.forgepromote` -- ``forge promote``: the trunk FAST-FORWARDS to a full-PASS integration tip.
+* :mod:`lab_commons.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
+* :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.

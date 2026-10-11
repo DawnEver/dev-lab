@@ -22,8 +22,10 @@ class Policy:
     """What a consumer declares in ``[tool.lab_commons.integrator]``: names only, never a rule."""
 
     lane_prefixes: tuple[str, ...] = ('feat/', 'fix/')
+    #: The coordination branch: only the integrator merges into it, and every PR targets it.
     integration: str = 'integrate/main'
-    main: str = 'main'
+    #: The stable branch: moved ONLY by fast-forward to an integration commit whose parts are full PASS.
+    trunk: str = 'main'
     #: The test trees :mod:`lab_commons.dev.mergeaudit` reads when a merge is committed.
     test_roots: tuple[str, ...] = ('tests',)
 
