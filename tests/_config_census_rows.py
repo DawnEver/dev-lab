@@ -629,7 +629,7 @@ ROWS_CONSUMER_B: dict[str, Placement] = {
         'runs `python -m lab_commons.dev.githooks bump-version` -- the payload reached BY NAME after a '
         'forked copy had drifted into four separate defects, recorded in this file`s own comment. So '
         'one hook already demonstrates that the shared half is shareable. The rest of the shared half '
-        'is the base hook core (`HOOK_ID_CORE`) (commitizen plus the pre-commit-hooks whitelist) declared identically by '
+        'is the base hook core (commitizen plus the pre-commit-hooks whitelist) declared identically by '
         'all three consumers. What STAYS: `generate-changelog`, the `^\\.claude/|^experiment/` excludes, '
         'and the `_suppressions.tsv` trailing-whitespace exclusion, which exists because a formatter '
         'rewrote 351 rows of a five-column TSV -- an incident, and an incident is not portable. What '

@@ -236,7 +236,9 @@ def test_every_repo_declares_the_base_hook_core_and_every_declared_commitizen_st
     reached = reachable_repos(REPO_PATHS)
     declared = {repo: hook_ids(root) for repo, root in reached.items()}
     for repo, ids in declared.items():
-        assert set(HOOK_ID_CORE) <= ids, f'{repo} dropped part of the {len(HOOK_ID_CORE)}-hook base core: {sorted(set(HOOK_ID_CORE) - ids)}'
+        assert set(HOOK_ID_CORE) <= ids, (
+            f'{repo} dropped part of the {len(HOOK_ID_CORE)}-hook base core: {sorted(set(HOOK_ID_CORE) - ids)}'
+        )
     common_ids = set.intersection(*(set(ids) for ids in declared.values()))
     assert common_ids == set(HOOK_ID_CORE), (
         f'the four-repo hook core is now {sorted(common_ids)} against the declared {list(HOOK_ID_CORE)}. '
@@ -245,7 +247,8 @@ def test_every_repo_declares_the_base_hook_core_and_every_declared_commitizen_st
         f'core two lines below and the subset arm above bounds it from the other side. What this line '
         f'adds is the UPWARD half -- an id all four repos grew is a family hook that belongs in the '
         f'base -- and legibility, so a reader need not derive the equality from two arms. WHOSE DRIFT '
-        f'THIS ACCUSES: any of the four. The core is the base`s rows (`HOOK_ID_CORE`), so its size is derived, never restated.'
+        f'THIS ACCUSES: any of the four. The core is the base`s rows (`HOOK_ID_CORE`), so its size '
+        f'is derived, never restated.'
     )
     assert declared['lab-commons'] == set(HOOK_ID_CORE), (
         f'lab-commons declares {sorted(declared["lab-commons"])} against the family core '
