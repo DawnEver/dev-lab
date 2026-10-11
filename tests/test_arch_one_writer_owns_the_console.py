@@ -67,7 +67,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: RE-MEASURED 2026-10-08: the scan read 203 once ``lab_commons.hpc`` (and ``width``) became tracked,
 #: eight past the 195 this pair allowed. The new modules write through ``emit`` like every other;
 #: the floor is re-taken at the same ~80% and THE HEADROOM STAYS AT 45. 150 -> 160.
-MODULE_FLOOR = 200  # re-taken 2026-10-11 at 237+: the branch-flow modules (promote, sync, integration, pulls)
+MODULE_FLOOR = 210  # re-taken 2026-10-11 at 247: branch-flow plus the cluster tick (forgerun, forgealarm, hpc.account)
 MODULE_HEADROOM = 45
 
 

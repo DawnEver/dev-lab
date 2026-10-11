@@ -6,6 +6,7 @@ The race and the lease are decided from the forge's own post order, so they are 
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -21,7 +22,6 @@ from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import (
     CLAIMED,
     DONE,
-    HELD,
     MINE,
     OPEN,
     STALE,
@@ -34,36 +34,36 @@ from lab_commons.dev.forgetick import (
 )
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.producer import ProducerExit, release_reason
-from lab_commons.hpc.grants import Grant, workstation
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.grants import workstation
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 LATER = NOW + timedelta(hours=6)
 ME = Claim('G', 'alice', LATER)
 API = '/api/v1/repos/o/r'
-GRANT = Grant(user='alice', hosts=('login.ada',), slurm_account='acct42', cpus=4)
+SEAT = ClusterAccount('ada', 'alice')
+#: NOW as the forge's Date header says it.
+NOW_HTTP = 'Sat, 10 Oct 2026 12:00:00 GMT'
 
 
 @pytest.fixture
 def server() -> Iterator[ThreadingHTTPServer]:
-    yield from serve()
+    for httpd in serve():
+        Recorder.date = NOW_HTTP  # the forge's clock; the host's is never read
+        yield httpd
 
 
 def _pending(claim: Claim, status_id: int, platform: str = 'windows') -> Status:
     return Status(f'tests/{platform}', 'pending', claim.description(), '', status_id, claim.login)
 
 
-WINDOWS = Serving('windows')
-
-
-def _assess(
-    history: list[Status], serve: Serving = WINDOWS, hpc_ids: frozenset[str] = frozenset()
-) -> tuple[str, Claim | None]:
-    return assess(history, serve, me=ME, now=NOW, hpc_ids=hpc_ids)
+def _assess(history: list[Status], platform: str = 'windows') -> tuple[str, Claim | None]:
+    return assess(history, platform, me=ME, now=NOW)
 
 
 def test_a_claim_round_trips_through_its_description() -> None:
-    cluster = Claim('', 'bob', LATER, 'bob:acct42')
-    assert cluster.description() == 'claim machine=- login=bob until=2026-10-10T18:00:00Z hpc=bob:acct42'
+    cluster = Claim('', 'bob', LATER, 'ada/bob')
+    assert cluster.description() == 'claim machine=- login=bob until=2026-10-10T18:00:00Z hpc=ada/bob'
     assert Claim.parse(cluster.description()) == cluster
     assert Claim.parse('scope=full ran=1 hands=- nowhere=0') is None
     assert Claim.parse('claim machine=G login=a until=not-a-time hpc=-') is None
@@ -99,23 +99,36 @@ def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None
     assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 
 
-def test_a_stale_cluster_claim_is_retaken_only_under_the_same_grant() -> None:
-    """The jobs keep running under the claimant's account; only that grant's holder can gather them."""
-    dead = Claim('H', 'alice', NOW - timedelta(minutes=1), 'alice:acct42')
-    history = [_pending(dead, 3, 'linux')]
-    linux = Serving('linux', 'alice:acct42')
-    assert _assess(history, linux, frozenset({'alice:acct42'})) == (STALE, dead)
-    assert _assess(history, linux, frozenset({'carol:acct7'})) == (HELD, dead)
+def test_a_lapsed_cluster_claim_is_retaken_by_another_account_and_a_live_one_never() -> None:
+    """Only the owner renews, so a lapsed lease means the owner is gone. PLANTED CONTROL: a minute earlier, held."""
+    dead = Claim('hpclogin02', 'bob', NOW - timedelta(minutes=1), 'ada/bob')
+    assert _assess([_pending(dead, 3, 'linux')], 'linux') == (STALE, dead)
+    live = dataclasses.replace(dead, until=NOW + timedelta(minutes=1))
+    assert _assess([_pending(live, 3, 'linux')], 'linux') == (CLAIMED, live)
+
+
+def test_two_login_hosts_of_one_account_are_two_owners() -> None:
+    """One account cannot win a race against itself: the earlier host holds, the later stands down."""
+    me = Claim('hpclogin02', 'alice', LATER, 'ada/alice')
+    other_host = dataclasses.replace(me, machine='hpclogin01')
+    history = [_pending(other_host, 1, 'linux'), _pending(me, 2, 'linux')]
+    assert assess(history, 'linux', me=me, now=NOW) == (CLAIMED, other_host)
+
+
+def test_my_holding_claim_is_my_latest_renewal() -> None:
+    renewal = dataclasses.replace(ME, until=LATER + timedelta(hours=2))
+    assert _assess([_pending(ME, 1), _pending(renewal, 2)]) == (MINE, renewal)
 
 
 def test_a_foreign_pending_status_is_not_a_claim() -> None:
     assert _assess([Status('tests/windows', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
 
 
-def test_a_box_serves_its_platform_and_linux_through_a_grant() -> None:
-    assert serving('windows', ()) == (Serving('windows'),)
-    assert serving('windows', (GRANT,)) == (Serving('windows'), Serving('linux', 'alice:acct42'))
-    assert serving('linux', (GRANT,)) == (Serving('linux'),), 'a linux box runs linux itself'
+def test_a_box_serves_only_its_own_platform_and_never_a_cluster_over_ssh() -> None:
+    assert serving('windows', None) == Serving('windows')
+    assert serving('windows', SEAT) == Serving('windows'), 'a workstation never claims for a cluster'
+    assert serving('linux', SEAT) == Serving('linux', 'ada/alice'), 'on a cluster: a cluster run'
+    assert serving('linux', None) == Serving('linux'), 'a linux box off a cluster runs locally'
 
 
 def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
@@ -154,11 +167,10 @@ def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetic
         repo,
         kwargs.pop('mode', 'integrate'),
         client=lambda _root: client(forge, Loopback(server)),
-        now=NOW,
         machine='G',
-        grants=kwargs.pop('grants', ()),
+        seat=kwargs.pop('seat', None),
         fetch=lambda _root: None,
-        host='windows',
+        host=kwargs.pop('host', 'windows'),
         os_name='nt',
         **kwargs,
     )
@@ -227,7 +239,7 @@ def test_a_quiet_checkout_never_fetches_and_never_claims(tmp_path: Path) -> None
     def touched(_root: Path) -> None:
         pytest.fail('a quiet checkout touched origin')
 
-    report = tick(repo, 'quiet', client=touched, now=NOW, machine='G', grants=(), fetch=touched, host='windows')
+    report = tick(repo, 'quiet', client=touched, machine='G', seat=None, fetch=touched, host='windows')
     assert report.work == ()
     assert 'quiet' in report.lines[-1]
 
@@ -258,8 +270,7 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
         env=credential_env(tmp_path),
         transport=Loopback(server),
         fetch=lambda _root: None,
-        now=NOW,
-        grants=(),
+        seat_of=lambda: None,
         host='windows',
     )
     assert code == 0
@@ -283,11 +294,81 @@ def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, cap
         env=credential_env(tmp_path),
         transport=Loopback(server),
         fetch=lambda _root: None,
-        now=NOW,
-        grants=(),
+        seat_of=lambda: None,
         host='windows',
         os_name='nt',
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed['claimed'] == [{'ref': 'integrate/main', 'sha': sha, 'platform': 'windows', 'argv': _argv(repo)}]
+
+
+def _post(status_id: int, claim: Claim, platform: str = 'windows') -> dict[str, object]:
+    return {'id': status_id, 'context': f'tests/{platform}', 'status': 'pending', 'description': claim.description()}
+
+
+def test_two_claimants_interleaved_on_one_forge_exactly_one_produces(server, tmp_path: Path) -> None:
+    """Both read "no claim", both post, then both re-read: the lowest status id holds, the other stands down."""
+    repo, tips = _origin(tmp_path)
+    sha = tips['integrate/main']
+    alice, bob = ME, Claim('G', 'bob', LATER)
+    both = [_post(1, alice), _post(2, bob)]
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}), (200, {'login': 'bob'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, both), (200, []), (200, both))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    first, second = _tick(repo, server), _tick(repo, server)
+    assert [(w.state, w.holder) for w in first.claimed] == [(MINE, alice)]
+    assert second.claimed == (), 'the loser produces nothing'
+    assert [(w.state, w.holder) for w in second.work] == [(CLAIMED, alice)]
+    assert len([r for r in Recorder.received if r['method'] == 'POST']) == 2, 'both posted: a post is not a lock'
+
+
+def test_a_lapsed_lease_by_the_forges_clock_lets_another_claim_whatever_the_hosts_clock(server, tmp_path: Path) -> None:
+    """CLOCK SKEW: the lease is judged on the forge's Date. PLANTED CONTROL: a minute earlier it still holds."""
+    repo, tips = _origin(tmp_path)
+    sha = tips['integrate/main']
+    bob = Claim('H', 'bob', NOW + timedelta(minutes=1))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, [_post(1, bob)]))
+    held = _tick(repo, server)
+    assert held.claimed == ()
+    assert [(w.state, w.holder) for w in held.work] == [(CLAIMED, bob)]
+    Recorder.received.clear()
+    Recorder.date = 'Sat, 10 Oct 2026 12:02:00 GMT'  # the forge is two minutes on; the bob lease has lapsed
+    later = NOW + timedelta(minutes=2)
+    mine = Claim('G', 'alice', later + forgetick.DEFAULT_LEASE)
+    answer('GET', f'{API}/statuses/{sha}', (200, [_post(1, bob)]), (200, [_post(1, bob), _post(2, mine)]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    taken = _tick(repo, server)
+    assert [(w.state, w.holder) for w in taken.claimed] == [(MINE, mine)]
+    posted = next(r for r in Recorder.received if r['method'] == 'POST')
+    assert posted['body']['description'] == mine.description(), 'until = the forge time plus the lease'
+
+
+def test_a_cluster_seat_claims_a_cluster_part_and_no_argv(server, tmp_path: Path) -> None:
+    repo, tips = _origin(tmp_path)
+    sha = tips['integrate/main']
+    (repo / 'pyproject.toml').write_text(
+        '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n',
+        encoding='utf-8',
+    )
+    me = Claim('G', 'alice', LATER, 'ada/alice')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, seat=SEAT, host='linux')
+    (claimed,) = report.claimed
+    assert (claimed.platform, claimed.state, claimed.holder, claimed.argv) == ('linux', MINE, me, ())
+    assert claimed.cluster is not None
+    assert claimed.cluster.repo_url == 'https://forge.example.org/o/r.git'
+    assert any(line == 'produce tests/linux: a cluster run as ada/alice' for line in report.lines)
+
+
+def test_a_run_in_flight_claims_nothing_more(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the open request the first tick test claims."""
+    repo, tips = _origin(tmp_path)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))
+    report = _tick(repo, server, in_flight=True)
+    assert report.claimed == ()
+    assert [w.state for w in report.work] == [OPEN]

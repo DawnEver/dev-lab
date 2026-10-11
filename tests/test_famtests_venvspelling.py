@@ -81,7 +81,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-10-10 AT 226 when ``forgecli`` split out of ``forge``. 185 sat exactly 40 below
 #: 225, so the next module redded; 195 leaves the band room on both sides.
 #: RE-MEASURED 2026-10-11 AT 238 after the branch-flow modules: floor 205.
-FILE_FLOOR = 205
+FILE_FLOOR = 220  # re-taken 2026-10-11 at 248: branch-flow plus the cluster tick (forgerun, forgealarm, hpc.account)
 
 
 def _tree() -> dict[str, str]:
