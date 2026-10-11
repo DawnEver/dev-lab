@@ -37,7 +37,7 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
         path='pyproject.toml',
-        line=224,
+        line=236,
         evidence='extras = "dev viz-mpl viz-bokeh"',
         selected=('dev', 'viz-mpl', 'viz-bokeh'),
         scope='COMPLETE',
@@ -73,7 +73,7 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, int], str] = {
-    ('lab-commons', 'pyproject.toml', 297): (
+    ('lab-commons', 'pyproject.toml', 309): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '

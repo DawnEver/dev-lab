@@ -129,4 +129,4 @@ def test_a_pruning_command_planted_into_a_real_door_is_found() -> None:
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
     planted = {('lab-commons', 'planted'): text.replace('uv run --no-sync', 'uv run')}
     assert ('lab-commons', 'planted', 309) in pruning_sites(planted)
-    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', 297),)
+    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', 309),)
