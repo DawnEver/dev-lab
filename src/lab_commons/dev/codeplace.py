@@ -45,6 +45,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TextIO
 
+from lab_commons.dev.reportplace import refuse_report
 from lab_commons.log import emit
 
 __all__ = [
@@ -253,7 +254,7 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     path = Path(target)
     if not path.is_absolute():
         path = Path(payload.get('cwd') or Path.cwd()) / path
-    reason = refuse_write(path)
+    reason = refuse_report(path) or refuse_write(path)
     if reason is not None:
         decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}
         emit(json.dumps({'hookSpecificOutput': decision}))
