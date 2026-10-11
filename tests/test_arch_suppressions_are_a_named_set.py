@@ -129,8 +129,15 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
-        'def _request(self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found) -> Any:',
-    ): 'the retry loop under call and upload returns their parsed JSON unchanged',
+        ') -> Any:',
+    ): 'the retry loop under call, upload and upload_raw (the end of its wrapped signature) returns their '
+    'parsed JSON unchanged',
+    (
+        'src/lab_commons/dev/forgework.py',
+        'ANN401',
+        'def upload_raw(self, host: str, path: str, *, content: bytes, landed: _Found = None) -> Any:',
+    ): "GitHub's release-asset upload returns the parsed JSON answer, normalized by its one caller "
+    '(forgerecords.Attachment)',
     (
         'src/lab_commons/dev/docsite.py',
         'arg-type',

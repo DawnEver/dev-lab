@@ -171,4 +171,32 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_hooks.py', 'tests/test_dev_agenthooks.py'),
     ),
+    (
+        'DOWNSTREAM-SYNCS-INTEGRATION',
+        (
+            'A child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch; '
+            'another child`s work reaches it once, through integration. The owner may opt in to watch named '
+            'refs, recorded in the checkout`s own git config (`branch.<child>.labUpstream`), never in a file. '
+            '`forge sync` merges integration first, then the watched refs, and refuses any other ref by name.'
+        ),
+        ('tests/test_dev_branchflow.py',),
+    ),
+    (
+        'TRUNK-MOVES-BY-FAST-FORWARD',
+        (
+            'The trunk moves only by fast-forward to an integration commit whose every required '
+            '`tests/<platform>` part stands PASS at scope full, through `forge promote`; it refuses with the '
+            'missing parts named, and refuses a trunk that cannot fast-forward rather than merging into it.'
+        ),
+        ('tests/test_dev_branchflow.py', 'tests/test_dev_admission.py'),
+    ),
+    (
+        'PRS-TARGET-INTEGRATION',
+        (
+            'Every pull request targets the integration branch; one opened against the trunk is retargeted '
+            'with a comment saying why. Each child branch carries ONE integration comment (or, without a PR, '
+            'one `integration` commit status) updated in place by `forge integration`, never a new one per tick.'
+        ),
+        ('tests/test_dev_branchflow.py',),
+    ),
 )

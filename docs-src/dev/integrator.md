@@ -52,10 +52,19 @@ Only names, in its `pyproject.toml`; every key is optional and an unknown key is
 [tool.lab_commons.integrator]
 lane_prefixes = ["feat/", "fix/"]   # which origin branches are lanes
 integration = "integrate/main"      # the branch lanes merge into
-main = "main"                       # the branch full PASS parts promote to
+trunk = "main"                      # the stable branch; moved only by `forge promote`
 ```
 
 - The predicate, the order and the queue are the family's and are not configurable: a consumer that could redefine "ready" would be a second source of it.
+
+## The branch flow — trunk, integration, children
+
+- **User design 2026-10-11.** `trunk` is stable, `integration` coordinates, every other branch is a CHILD owned by whoever made it. Each layer has exactly one verb that moves it, and nobody else writes it.
+- **The trunk** moves only through `python -m lab_commons.dev.forge promote`: a fast-forward push to the integration tip when every required `tests/<platform>` part stands PASS at scope `full` — the same `platformparts.standing` reading trunk admission makes. It refuses with the missing parts named, and refuses a trunk that is not an ancestor of integration instead of merging (`TRUNK-MOVES-BY-FAST-FORWARD`). No merge commit ever lands on the trunk.
+- **Integration** is merged into only by the integrator. Every pull request targets it; one opened against the trunk is retargeted with a comment saying why (`PRS-TARGET-INTEGRATION`).
+- **A child branch syncs from integration ONLY** (`DOWNSTREAM-SYNCS-INTEGRATION`, user ruling 2026-10-11). The owner's agent runs `python -m lab_commons.dev.forge sync` in develop mode: it trial-merges each upstream ref with `git merge-tree --write-tree`, reports behind count and conflicts, and — only when every one is clean — merges integration first, then each watched ref, by merge (never rebase). On a conflict it merges nothing and names the files. It never pushes: the owner runs their tests and pushes. Another child's work arrives once, through integration; to opt in to a specific ref, `forge sync --watch origin/<branch>` (`--unwatch`, `--list`), stored as the multi-valued `branch.<child>.labUpstream` git config of that checkout — never a file, never committed. Any other ref is refused by name.
+- **The integration tick** `python -m lab_commons.dev.forge integration` fetches origin (and each PR head as `pull/N/head`, including PRs on a GitHub mirror remote, whose feedback goes on GitHub), then per child branch says: merged into integration at `<sha>` or deferred and why; behind N, clean or the conflicting files; its upstream set; the head's `tests/<platform>` states with the open `area:*` issues citing it; promoted to the trunk once the trunk holds the merge. On a PR that is ONE comment found by a hidden marker and edited in place; without a PR, an `integration` commit status on the head, posted only when it changed. The integrator never writes a child branch.
+- The upstream set the tick reports is read from the INTEGRATOR's checkout config, so an owner's local opt-in is visible only on the owner's box; the tick's line states the default unless the integrator's checkout watches more.
 
 ## A merge names every test it lost or rewrote (`MERGE-DEVIATIONS-NAMED`)
 

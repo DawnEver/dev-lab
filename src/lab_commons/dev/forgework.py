@@ -47,6 +47,7 @@ from typing import Any, Final
 
 from lab_commons.dev import forge as _forge
 from lab_commons.dev._forge_landed import LOOKBACK, find_landed, since
+from lab_commons.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Forge, Transport, forge_from_remote, https_transport
 from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 from lab_commons.log import emit
@@ -54,6 +55,7 @@ from lab_commons.log import emit
 __all__ = [
     'GITEA',
     'GITHUB',
+    'GITHUB_HOST',
     'Backend',
     'Client',
     'Comment',
@@ -62,12 +64,11 @@ __all__ = [
     'PullRequest',
     'backend_for',
     'client_for',
+    'comment_of',
     'main',
     'provenance',
+    'pull_of',
 ]
-
-#: The one host that is GitHub. Every other host is treated as the Gitea-shaped forge.
-GITHUB_HOST: Final = 'github.com'
 
 #: Statuses below this are answers; at or above it the call failed.
 _HTTP_ERROR_FLOOR: Final = 400
@@ -93,54 +94,6 @@ class ForgeCallFailed(OSError):
         last = report.attempts[-1].returncode if report.attempts else 0
         super().__init__(f'{report.remedy}. {_forge.AUTH_REMEDY}' if last in _forge.AUTH_REFUSED else report.remedy)
         self.report = report
-
-
-@dataclass(frozen=True)
-class Backend:
-    """What differs between forges: where the API lives, how it authenticates, how it lists issues."""
-
-    name: str
-    api_root: str
-    auth_scheme: str
-    list_query: str
-    fixed_host: str | None = None
-    headers: tuple[tuple[str, str], ...] = ()
-    page_param: str = 'limit'
-
-    def host(self, forge: Forge) -> str:
-        """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
-        return self.fixed_host or forge.host
-
-    def repo_path(self, forge: Forge) -> str:
-        """The repository's API collection."""
-        return f'{self.api_root}/repos/{forge.owner}/{forge.repo}'
-
-
-GITEA: Final = Backend(
-    name='gitea',
-    api_root='/api/v1',
-    auth_scheme='token',
-    list_query='state={state}&type=issues&limit={limit}',
-)
-
-GITHUB: Final = Backend(
-    name='github',
-    api_root='',
-    auth_scheme='Bearer',
-    list_query='state={state}&per_page={limit}',
-    fixed_host='api.github.com',
-    page_param='per_page',
-    headers=(
-        ('Accept', 'application/vnd.github+json'),
-        ('X-GitHub-Api-Version', '2022-11-28'),
-        ('User-Agent', 'lab-commons-forgework'),
-    ),
-)
-
-
-def backend_for(forge: Forge) -> Backend:
-    """GitHub for ``github.com``, the Gitea-shaped forge for every other host."""
-    return GITHUB if forge.host.lower() == GITHUB_HOST else GITEA
 
 
 @dataclass(frozen=True)
@@ -176,6 +129,8 @@ class PullRequest:
     author: str
     head: str
     base: str
+    #: The head's commit; a fork's head branch is not in this repository, its commit is (``pull/N/head``).
+    head_sha: str = ''
 
 
 def _issue(raw: Mapping[str, Any]) -> Issue:
@@ -184,12 +139,16 @@ def _issue(raw: Mapping[str, Any]) -> Issue:
     )
 
 
-def _pull(raw: Mapping[str, Any]) -> PullRequest:
+def pull_of(raw: Mapping[str, Any]) -> PullRequest:
+    """A forge's pull-request JSON as a :class:`PullRequest`."""
     issue = _issue(raw)
-    return PullRequest(*dataclasses.astuple(issue), raw['head']['ref'], raw['base']['ref'])
+    return PullRequest(
+        *dataclasses.astuple(issue), raw['head']['ref'], raw['base']['ref'], raw['head'].get('sha') or ''
+    )
 
 
-def _comment(raw: Mapping[str, Any]) -> Comment:
+def comment_of(raw: Mapping[str, Any]) -> Comment:
+    """A forge's comment JSON as a :class:`Comment`."""
     return Comment(raw['id'], raw.get('body') or '', raw['html_url'])
 
 
@@ -244,11 +203,13 @@ class Client:
         """The backend this repository's host selects."""
         return backend_for(self.forge)
 
-    def _once(self, method: str, path: str, data: bytes | None, content_type: str) -> tuple[int, bytes]:
+    def _once(
+        self, method: str, path: str, data: bytes | None, content_type: str, host: str | None
+    ) -> tuple[int, bytes]:
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         headers = {'Authorization': auth, 'Content-Type': content_type}
-        conn = self.transport(backend.host(self.forge), self.timeout)
+        conn = self.transport(host or backend.host(self.forge), self.timeout)
         try:
             conn.request(method, path, body=data, headers=headers | dict(backend.headers))
             response = conn.getresponse()
@@ -279,11 +240,17 @@ class Client:
         data = head + content + f'\r\n--{boundary}--\r\n'.encode()
         return self._request('POST', path, data, f'multipart/form-data; boundary={boundary}', landed)
 
-    def _request(self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found) -> Any:  # noqa: ANN401 -- JSON
+    def upload_raw(self, host: str, path: str, *, content: bytes, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
+        """A raw ``application/octet-stream`` POST to *host* -- GitHub's release-asset upload shape."""
+        return self._request('POST', path, content, 'application/octet-stream', landed, host=host)
+
+    def _request(
+        self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found, *, host: str | None = None
+    ) -> Any:  # noqa: ANN401 -- JSON
         made: list[Attempt] = []
         for index in range(1, DEFAULT_ATTEMPTS + 1):
             try:
-                status, payload = self._once(method, path, data, content_type)
+                status, payload = self._once(method, path, data, content_type, host)
             except OSError as exc:
                 status, payload = 0, str(exc).encode()
             if 0 < status < _HTTP_ERROR_FLOOR:
@@ -337,7 +304,7 @@ class Client:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
         path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
         recent = self._landed(f'{path}?since={since(self.clock())}', **payload)
-        return _comment(self.call('POST', path, payload, recent))
+        return comment_of(self.call('POST', path, payload, recent))
 
     def issue_edit(self, number: int, body: str) -> Issue:
         """Replace an issue's body; the body is state, so no provenance line is added."""
@@ -351,11 +318,11 @@ class Client:
         """A new pull request from *head* into *base*."""
         payload = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
         recent = self._landed(self._recent('pulls'), title=title, body=payload['body'])
-        return _pull(self.call('POST', f'{self.repo}/pulls', payload, recent))
+        return pull_of(self.call('POST', f'{self.repo}/pulls', payload, recent))
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""
-        return _pull(self.call('GET', f'{self.repo}/pulls/{number}'))
+        return pull_of(self.call('GET', f'{self.repo}/pulls/{number}'))
 
 
 def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
@@ -412,9 +379,11 @@ def _render(item: Issue | PullRequest | Comment) -> str:
     return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
-def client_for(root: Path, *, env: Mapping[str, str] | None = None, transport: Transport = https_transport) -> Client:
-    """The client for *root*'s ``origin``, its token and its provenance stamp -- what every CLI verb builds."""
-    forge = forge_from_remote(root)
+def client_for(
+    root: Path, *, env: Mapping[str, str] | None = None, transport: Transport = https_transport, remote: str = 'origin'
+) -> Client:
+    """The client for *root*'s *remote*, its token and its provenance stamp -- what every CLI verb builds."""
+    forge = forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
     username, secret = _forge.credential_for(forge.host, cwd=root, env=env)
     return Client(forge, secret, transport=transport, username=username, stamp=stamp)

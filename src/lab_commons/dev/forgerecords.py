@@ -12,8 +12,10 @@ someone's business: the tip of any ``origin`` branch (a lane, the integration br
 one of the newest ``--keep-trunk`` first-parent commits of the trunk. Everything else is deleted --
 a sha nobody can push or cite any more needs no evidence on the server.
 
-GITEA ONLY. The attachment API used here is Gitea's; GitHub is a read-only mirror for this family and
-holds no records, so asking it is refused by name rather than sent somewhere it cannot land.
+ONE STORE, TWO FORGES. Gitea keeps the records as attachments of the closed :data:`RECORDS_TITLE`
+issue; GitHub, which has no issue attachments, keeps them as assets of ONE prerelease tagged
+:data:`RECORDS_TAG`. Both answer an asset as ``{id, name, browser_download_url}``, so :func:`listing`,
+:func:`attach` and :func:`prune` read the same for either, and a caller never branches on the forge.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
@@ -36,6 +38,7 @@ from lab_commons.log import emit
 
 __all__ = [
     'DEFAULT_KEEP_TRUNK',
+    'RECORDS_TAG',
     'RECORDS_TITLE',
     'Attachment',
     'attach',
@@ -44,6 +47,7 @@ __all__ = [
     'main',
     'prune',
     'records_issue',
+    'records_release',
     'sha_of',
 ]
 
@@ -55,6 +59,12 @@ _RECORDS_BODY: Final = (
     'status can link its evidence without a ref or a git object. Pruned by '
     '`python -m lab_commons.dev.forge records prune`; nothing else belongs on this issue.'
 )
+
+#: The tag of the one GitHub release whose assets are the run records.
+RECORDS_TAG: Final = 'run-records'
+
+#: GitHub serves release-asset uploads from its own host.
+_GITHUB_UPLOADS: Final = 'uploads.github.com'
 
 #: How many first-parent trunk commits keep their records by default.
 DEFAULT_KEEP_TRUNK: Final = 20
@@ -82,15 +92,17 @@ def sha_of(name: str) -> str | None:
     return found['sha'] if found else None
 
 
-def _gitea_only(client: Client) -> None:
-    if client.backend is GITHUB:
-        msg = 'run records live on the gitea forge; this origin is GitHub, which holds none'
-        raise ValueError(msg)
+@dataclass(frozen=True)
+class _Store:
+    """Where the records live on this forge: the asset collection, and the path one asset is deleted at."""
+
+    assets: str
+    delete: str
+    upload_host: str | None
 
 
 def records_issue(client: Client, *, create: bool) -> int | None:
-    """The number of the :data:`RECORDS_TITLE` issue, created (and closed) when *create* and absent."""
-    _gitea_only(client)
+    """Gitea's home: the number of the :data:`RECORDS_TITLE` issue, created (and closed) when *create* and absent."""
     query = f'state=all&type=issues&q={RECORDS_TITLE.replace(" ", "+")}&limit=50'
     found = [raw for raw in client.call('GET', f'{client.repo}/issues?{query}') if raw.get('title') == RECORDS_TITLE]
     if found:
@@ -102,30 +114,54 @@ def records_issue(client: Client, *, create: bool) -> int | None:
     return number
 
 
-def listing(client: Client) -> tuple[Attachment, ...]:
-    """Every attachment on the records issue, oldest first; none when the issue does not exist yet."""
-    number = records_issue(client, create=False)
+def records_release(client: Client, *, create: bool) -> int | None:
+    """GitHub's home: the id of the :data:`RECORDS_TAG` prerelease, created when *create* and absent."""
+    listed = client.call('GET', f'{client.repo}/releases?per_page=100')
+    found = [int(raw['id']) for raw in listed if raw.get('tag_name') == RECORDS_TAG]
+    if found:
+        return min(found)
+    if not create:
+        return None
+    body = {'tag_name': RECORDS_TAG, 'name': RECORDS_TITLE, 'body': _RECORDS_BODY, 'prerelease': True}
+    return int(client.call('POST', f'{client.repo}/releases', body)['id'])
+
+
+def _store(client: Client, *, create: bool) -> _Store | None:
+    if client.backend is GITHUB:
+        release = records_release(client, create=create)
+        if release is None:
+            return None
+        return _Store(f'{client.repo}/releases/{release}/assets', f'{client.repo}/releases/assets/', _GITHUB_UPLOADS)
+    number = records_issue(client, create=create)
     if number is None:
+        return None
+    return _Store(f'{client.repo}/issues/{number}/assets', f'{client.repo}/issues/{number}/assets/', None)
+
+
+def listing(client: Client) -> tuple[Attachment, ...]:
+    """Every run-record asset on the forge, oldest first; none when the records home does not exist yet."""
+    store = _store(client, create=False)
+    if store is None:
         return ()
-    raw = client.call('GET', f'{client.repo}/issues/{number}/assets')
+    raw = client.call('GET', store.assets)
     return tuple(sorted((_attachment(item) for item in raw), key=lambda item: item.id))
 
 
 def attach(client: Client, path: Path) -> Attachment:
-    """Upload *path* to the records issue; returns the attachment (its ``url`` is the status target).
+    """Upload *path* to the records home; returns the attachment (its ``url`` is the status target).
 
-    A retry after a lost response first looks for an attachment of the same name, so one upload is
-    never stored twice.
+    A retry after a lost response first looks for an asset of the same name, so one upload is never
+    stored twice.
     """
-    number = records_issue(client, create=True)
-    assets = f'{client.repo}/issues/{number}/assets'
+    store = cast('_Store', _store(client, create=True))  # create=True always yields a home
 
     def landed() -> Mapping[str, Any] | None:
-        return next((raw for raw in client.call('GET', assets) if raw.get('name') == path.name), None)
+        return next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)
 
-    raw = client.upload(
-        f'{assets}?name={path.name}', field='attachment', filename=path.name, content=path.read_bytes(), landed=landed
-    )
+    target = f'{store.assets}?name={path.name}'
+    if store.upload_host is not None:
+        return _attachment(client.upload_raw(store.upload_host, target, content=path.read_bytes(), landed=landed))
+    raw = client.upload(target, field='attachment', filename=path.name, content=path.read_bytes(), landed=landed)
     return _attachment(raw)
 
 
@@ -157,13 +193,13 @@ def prune(client: Client, keep: Collection[str], *, dry_run: bool = False) -> tu
 
     A file on the records issue that is not a run record is never touched.
     """
-    number = records_issue(client, create=False)
-    if number is None:
+    store = _store(client, create=False)
+    if store is None:
         return ()
     doomed = tuple(item for item in listing(client) if (sha := sha_of(item.name)) is not None and sha not in keep)
     if not dry_run:
         for item in doomed:
-            client.call('DELETE', f'{client.repo}/issues/{number}/assets/{item.id}')
+            client.call('DELETE', f'{store.delete}{item.id}')
     return doomed
 
 
@@ -199,7 +235,7 @@ def main(
                 emit(f'{item.id}  {item.name}  {item.url}')
             return 0
         fetch(root)
-        keep = kept_shas(root, trunk=load_policy(root).main, keep_trunk=args.keep_trunk)
+        keep = kept_shas(root, trunk=load_policy(root).trunk, keep_trunk=args.keep_trunk)
         doomed = prune(client, keep, dry_run=args.dry_run)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)

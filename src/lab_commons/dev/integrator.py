@@ -163,7 +163,7 @@ def read_refs(root: Path, policy: Policy) -> tuple[LaneRef, ...]:
         ref, tip, at = line.split(' ')
         branch = ref.removeprefix(_TRACKING)
         if branch == policy.integration:
-            target = policy.main
+            target = policy.trunk
         elif branch.startswith(policy.lane_prefixes):
             target = policy.integration
         else:

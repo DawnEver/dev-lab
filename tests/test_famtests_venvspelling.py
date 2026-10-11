@@ -80,7 +80,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-10-10 AT 225 after the forge outbox, records, tick and route landed: floor 185, margin unchanged.
 #: RE-MEASURED 2026-10-10 AT 226 when ``forgecli`` split out of ``forge``. 185 sat exactly 40 below
 #: 225, so the next module redded; 195 leaves the band room on both sides.
-FILE_FLOOR = 195
+#: RE-MEASURED 2026-10-11 AT 238 after the branch-flow modules: floor 205.
+FILE_FLOOR = 205
 
 
 def _tree() -> dict[str, str]:
