@@ -10,6 +10,14 @@ one part per platform with the argv producing it); run each claimed argv in the 
 part's argv submits, waits and posts by itself, a local part's runner posts its own part; flush the
 outbox again; route every run record a cluster part wrote (:mod:`lab_commons.dev.forgeroute`).
 
+PARTS ON DIFFERENT SEATS RUN AT ONCE (live finding 2026-10-11: a windows full part ran for hours while
+the linux cluster part, using no local CPU, sat unsubmitted and its claim aged). A part's seat is its
+cluster grant or this box's CPU; seats run concurrently, parts on one seat in turn. Every producer's
+output streams as it comes, prefixed ``[platform]``, so a long part never looks dead. WHILE A PRODUCER
+LIVES ITS CLAIM IS RENEWED -- the same pending claim re-posted with a new ``until`` every third of the
+lease -- and when it ends with its context still pending (it crashed before posting) the claim is
+RELEASED as ``error`` naming the exit code, so nobody waits out a lease for a dead producer.
+
 A CONTRACT BREAK FAILS LOUDLY. A produced argv exiting 2 -- argparse's usage error, which is what a
 renamed flag or verb looks like -- is a FAILURE of this call (exit 2) with the argv shown, never a
 quiet skip. A part that ran and is red is not a failure of the harness: it is a posted FAIL part.
@@ -18,20 +26,24 @@ quiet skip. A part that ran and is red is not a failure of the harness: it is a 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import subprocess
 import sys
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from lab_commons.dev.forge import Transport, fetch_origin, https_transport
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeroute import pyproject_at, route
+from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgetick import DEFAULT_LEASE, MODES, Work, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
+from lab_commons.dev.platformparts import part_context
 from lab_commons.hpc.grants import Grant, load_grants, workstation
 from lab_commons.hpc.records import read_record
 from lab_commons.log import emit
@@ -85,30 +97,123 @@ def serve(
     grants: Sequence[Grant],
     lease: timedelta = DEFAULT_LEASE,
     fetch: Callable[[Path], None] = fetch_origin,
-    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    spawn: Callable[..., Any] = subprocess.Popen,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    say: Callable[[str], None] = emit,
+    renew_s: float | None = None,
 ) -> ServeReport:
-    """Tick, produce every claimed part, publish, route -- the module docstring's order."""
+    """Tick, produce every claimed part, publish, route -- the module docstring's order.
+
+    Parts on different seats (:func:`_seat`) run CONCURRENTLY, parts sharing one run in turn. Each
+    producer's output streams through *say* prefixed ``[platform]``; its claim is renewed every
+    *renew_s* (a third of the lease by default) while it lives, and released when it ends still pending.
+    """
     ticked = tick(root, mode, client=client, now=now, machine=machine, grants=grants, lease=lease, fetch=fetch)
-    produced: list[Produced] = []
-    broken: list[str] = []
-    for item in ticked.claimed:
-        produced.append(_produce(root, item, client=client, run=run))
-        if produced[-1].returncode == USAGE_ERROR:
-            broken.append(f'{item.platform} {item.sha[:12]}: the producer refused its argv: {" ".join(item.argv)}')
+    for line in ticked.lines:
+        say(line)
+    every = lease.total_seconds() / 3 if renew_s is None else renew_s
+    seats: dict[str, list[int]] = {}
+    for index, item in enumerate(ticked.claimed):
+        seats.setdefault(_seat(item), []).append(index)
+    done: dict[int, Produced] = {}
+
+    def one_seat(indices: list[int]) -> None:
+        for index in indices:
+            done[index] = _produce(
+                root,
+                ticked.claimed[index],
+                client=client,
+                spawn=spawn,
+                clock=clock,
+                say=say,
+                lease=lease,
+                renew_s=every,
+            )
+
+    threads = [threading.Thread(target=one_seat, args=(indices,), daemon=True) for indices in seats.values()]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    produced = tuple(done[index] for index in sorted(done))
+    broken = tuple(
+        f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
+        for p in produced
+        if p.returncode == USAGE_ERROR
+    )
     published = tuple(flush(root, client=client))
-    return ServeReport(tuple(ticked.lines), tuple(produced), published, tuple(broken))
+    return ServeReport(tuple(ticked.lines), produced, published, broken)
+
+
+def _seat(item: Work) -> str:
+    """The resource a part occupies: its cluster grant, or this box's CPU when it runs here."""
+    return f'hpc:{item.holder.hpc}' if item.holder is not None and item.holder.hpc else 'local'
+
+
+def _pump(stream: Any, platform: str, say: Callable[[str], None]) -> None:  # noqa: ANN401 -- a text stream
+    for line in stream:
+        say(f'[{platform}] {line.rstrip()}')
 
 
 def _produce(
-    root: Path, item: Work, *, client: Callable[[Path], Client], run: Callable[..., subprocess.CompletedProcess[str]]
+    root: Path,
+    item: Work,
+    *,
+    client: Callable[[Path], Client],
+    spawn: Callable[..., Any],
+    clock: Callable[[], datetime],
+    say: Callable[[str], None],
+    lease: timedelta,
+    renew_s: float,
 ) -> Produced:
-    done = run(list(item.argv), cwd=root, check=False, timeout=PRODUCE_WALL_S)
+    """Run one part's argv, streaming it and holding its claim alive; release a claim it left pending."""
+    context = part_context(item.platform)
+    say(f'[{item.platform}] start: {" ".join(item.argv)}')
+    proc = spawn(
+        list(item.argv),
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+    )
+    pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say), daemon=True)
+    pump.start()
+    started = clock()
+    while True:
+        try:
+            returncode = proc.wait(timeout=renew_s)
+            break
+        except subprocess.TimeoutExpired:
+            if (clock() - started).total_seconds() > PRODUCE_WALL_S:
+                proc.kill()
+                returncode = proc.wait()
+                say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
+                break
+            if item.holder is not None:  # the heartbeat: the same claim, a new until
+                renewed = dataclasses.replace(item.holder, until=clock() + lease)
+                _post(client(root), item, 'pending', renewed.description(), say)
+    pump.join(timeout=5)
+    say(f'[{item.platform}] exit={returncode}')
+    posts = [status for status in status_history(client(root), item.sha) if status.context == context]
+    if posts and posts[-1].state == 'pending':
+        _post(client(root), item, 'error', f'released: producer exited {returncode}', say)
     routed: list[str] = []
     for path in _records(item.argv, item.sha):
         record = read_record(path)
         found = route(client(root), record, pyproject_at(root, record['sha']))
         routed.extend(f'{one.area} {one.action}' + (f' #{one.number}' if one.number else '') for one in found)
-    return Produced(item.ref, item.sha, item.platform, item.argv, done.returncode, tuple(routed))
+    return Produced(item.ref, item.sha, item.platform, item.argv, returncode, tuple(routed))
+
+
+def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:
+    try:
+        status_post(client, item.sha, context=part_context(item.platform), state=state, description=description)
+    except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
+        say(f'[{item.platform}] could not post {state}: {failed}')
+    else:
+        say(f'[{item.platform}] {state}: {description}')
 
 
 def main(
@@ -142,6 +247,7 @@ def main(
             machine=workstation() or '',
             grants=grants,
             lease=timedelta(hours=args.lease_hours),
+            say=lambda line: emit(line, err=args.json, flush=True),
         )
     except (ForgeCallFailed, PostFailed, OSError) as failed:
         emit(f'[serve] {failed}', err=True)
@@ -149,10 +255,7 @@ def main(
     if args.json:
         emit(json.dumps(asdict(report), indent=2))
     else:
-        for line in (
-            *report.tick,
-            *(f'produced {p.platform} {p.sha[:12]} exit={p.returncode}' for p in report.produced),
-        ):
+        for line in (*(f'produced {p.platform} {p.sha[:12]} exit={p.returncode}' for p in report.produced),):
             emit(line)
         for line in (*report.published, *(f'routed {r}' for p in report.produced for r in p.routed)):
             emit(line)
