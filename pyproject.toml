@@ -82,6 +82,18 @@ pruned_paths = ['.claude/worktrees']
 [tool.lab_commons.hpc]
 install = "uv sync --all-extras"
 
+# The run record's root, and the argv producing each platform's part (`forge tick`, scope full).
+# linux has no argv here: its producer is `platformparts cluster`, filled from [tool.lab_commons.hpc].
+[tool.lab_commons.parts]
+output = "output/logs"
+produce.windows.full = ["-m", "lab_commons.dev.verify"]
+
+# The family branch flow: integrate/main coordinates; main moves only by `forge promote` (fast-forward)
+# once every tests/<platform> part of an integration commit stands PASS at scope full.
+[tool.lab_commons.integrator]
+trunk = "main"
+integration = "integrate/main"
+
 # This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
 # `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
 [[tool.lab_commons.hooks.pre-commit]]
@@ -102,9 +114,9 @@ run = ["python", "-m", "lab_commons.dev.admission", "--trunk-ref", "refs/heads/m
 always_run = true
 
 [tool.lab_commons.branchset]
-# ONE-BRANCH-PER-SESSION: the trunk is the one long-lived branch; a session's lane merges and is deleted.
+# ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
-sessions = []
+sessions = ['integrate/main']
 
 [tool.lab_commons.doors]
 # This repo's exits, keyed by deny-rule ID. The agent guard runs from whichever project a session
