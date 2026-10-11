@@ -13,9 +13,11 @@ from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.producer import ProducerExit
+from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
+from lab_commons.hpc.run import NotSubmitted
 
 SHA = 'a' * 40
 
@@ -268,6 +270,44 @@ def test_cluster_exits_by_the_producer_contract(tmp_path: Path, monkeypatch) -> 
     assert _cluster_main(tmp_path, monkeypatch, refused) == ProducerExit.INCONCLUSIVE
     assert _cluster_main(tmp_path, monkeypatch, lambda *_a, **_k: (ProducerExit.FAIL, 'x')) == ProducerExit.FAIL
     assert _cluster_main(tmp_path, monkeypatch, lambda *_a, **_k: (ProducerExit.PASS, 'x')) == ProducerExit.PASS
+
+
+def test_a_failed_native_build_is_inconclusive_and_names_its_log(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A build that submitted nothing exits 3 through the real ``hpc run submit`` and names its log.
+
+    Live 2026-10-11 (5cd95e5c0a): the native build lacked cmake, nothing was submitted, and the producer
+    exited 1 -- a FAIL for a commit no test ran on. PLANTED CONTROL: a gathered red record is still 1.
+    """
+    log = '/home/u/ci/native/k.log'
+
+    def failed_build(*_a: object, **_k: object) -> NoReturn:
+        msg = f'the build for {SHA[:12]} failed on h, nothing was submitted; log={log}'
+        raise NotSubmitted(msg)
+
+    monkeypatch.setattr(hpc_cli, 'load_grants', lambda: None)
+    monkeypatch.setattr(hpc_cli, 'builds_at', lambda *_a, **_k: ())
+    monkeypatch.setattr(hpc_cli, 'table_at', lambda *_a: {})
+    monkeypatch.setattr(hpc_cli, 'submit_run', failed_build)
+    flags = ['--repo-url', 'u', '--collect', 't']
+    assert hpc_cli.main(['run', 'submit', '--sha', SHA, '--scope', 'full', *flags]) == ProducerExit.INCONCLUSIVE
+    assert log in capsys.readouterr().err
+
+    real_cluster = platformparts.cluster
+
+    def chain(*_a: object, **_k: object) -> tuple[ProducerExit, str]:
+        return real_cluster(tmp_path, sha=SHA, hpc_args=flags, output=tmp_path, hpc=hpc_cli.main)
+
+    assert _cluster_main(tmp_path, monkeypatch, chain) == ProducerExit.INCONCLUSIVE
+    assert log in capsys.readouterr().err, 'the refusal the claim is released with names the build log'
+
+    def red_run(argv: list[str]) -> int:
+        if argv[1] == 'gather':
+            write_record(_record({'t::a': 'failed'}), tmp_path)
+        return 0
+
+    monkeypatch.setattr(platformparts, 'post', lambda _root, _path: 'posted')
+    produced = real_cluster(tmp_path, sha=SHA, hpc_args=flags, output=tmp_path, hpc=red_run)
+    assert produced[0] == ProducerExit.FAIL, 'a test failure is still a FAIL'
 
 
 def _status(platform: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
