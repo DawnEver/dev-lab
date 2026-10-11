@@ -10,10 +10,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _forge_fake import git_out, run_git
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgerun, forgeserve
-from lab_commons.dev.forgealarm import AUTH, IDLE, RUN
+from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
+from lab_commons.dev.forgeschedule import Candidate, Headroom, Ranked
 from lab_commons.dev.forgetick import OPEN, Claim, TickReport, Work
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
@@ -72,11 +74,14 @@ def _serve(
     *,
     seat: ClusterAccount | None = None,
     cluster=lambda: None,
+    cards: list | None = None,
+    host: str | None = None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
     forge = forge or _Forge()
     seen: dict[str, object] = {}
+    cards = cards if cards is not None else []
 
     def tick(*_a: object, **kwargs: object) -> TickReport:
         seen.update(kwargs)
@@ -88,6 +93,7 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
     monkeypatch.setattr(forgeserve, 'status_post', forge.post)
     monkeypatch.setattr(forgeserve, 'status_history', forge.history)
+    monkeypatch.setattr(forgeserve, 'publish', lambda _client, card: cards.append(card) or 'updated')
     report = forgeserve.serve(
         tmp_path,
         'integrate',
@@ -100,9 +106,27 @@ def _serve(
         say=said.append,
         alarm=alarms.append,
         renew_s=0.01,
+        box_room=lambda: Headroom(cores=4),
+        table={},
+        fetch=lambda _root: None,
+        host=host,
     )
     said.append(f'in_flight={seen.get("in_flight")}')
     return report, said, alarms
+
+
+class _Slurm:
+    """The Slurm side as serve reads it before the tick: a standing, and jobs it may cancel."""
+
+    def __init__(self) -> None:
+        self.cancelled: list[str] = []
+
+    def standing(self) -> forgerun.Standing:
+        return forgerun.Standing(Headroom(cores=64, submits=10), {}, {'partitions': {'defq': 2880}})
+
+    def cancel(self, run: forgerun.Run) -> list[str]:
+        self.cancelled += run.job_ids
+        return list(run.job_ids)
 
 
 def _claimed(*work: Work) -> TickReport:
@@ -190,12 +214,12 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
         return run
 
     monkeypatch.setattr(forgerun, 'advance', advance)
-    report, said, _alarms = _serve(monkeypatch, tmp_path, _claimed(work), seat=SEAT, cluster=lambda: 'slurm')
+    report, said, _alarms = _serve(monkeypatch, tmp_path, _claimed(work), seat=SEAT, cluster=_Slurm)
     assert report.produced == (), 'a cluster part is never a blocking process'
     assert advanced == [(forgerun.CLAIMED_PHASE, 'ada/alice')]
     assert report.in_flight == (SHA,)
     assert 'in_flight=False' in said
-    report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=lambda: 'slurm')
+    report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
     assert 'in_flight=True' in said, 'the next tick reads the run back from disk and claims nothing more'
     assert len(advanced) == 2
 
@@ -238,6 +262,81 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
     alarms: list = []
     with pytest.raises(ForgeCallFailed):
         forgeserve.serve(
-            tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append
-        )
+            tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
+            box_room=lambda: Headroom(cores=4), table={},
+        )  # fmt: skip
     assert [a.kind for a in alarms] == [AUTH]
+
+
+def _waiting(kind: str, waited_h: float, blocked: str) -> Ranked:
+    one = Candidate('o/r', 'feat/x', SHA, 'windows', kind, NOW - timedelta(hours=waited_h))
+    return Ranked(one, 60.0, 4.0, 15.0, waited_h, blocked)
+
+
+def test_a_candidate_waiting_past_its_bound_raises_a_starved_alarm_naming_why(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROLS: the same wait unblocked, and a blocked wait under the bound, raise nothing."""
+    jammed = TickReport((), (), ('tick',), (), (_waiting('pr', 13, 'outranked by integrate/main@x'),))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, jammed)
+    (alarm,) = alarms
+    assert (alarm.kind, alarm.about) == (STARVED, f'feat/x@{SHA[:12]}:windows')
+    assert 'waited 13.0 h, past its 12 h bound' in alarm.body
+    assert 'outranked by integrate/main@x' in alarm.body
+    calm = TickReport((), (), ('tick',), (), (_waiting('pr', 13, ''), _waiting('pr', 11, 'outranked by y')))
+    assert _serve(monkeypatch, tmp_path, calm)[2] == []
+
+
+def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
+    """Who it is, what it serves, its headroom and facts, and why each candidate waits."""
+    cards: list = []
+    ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'no headroom: no free core here'),))
+    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='linux')
+    (card,) = cards
+    assert (card.host, card.login, card.platform) == ('ada/alice', 'alice', 'linux')
+    assert card.headroom == {'cores': 64, 'submits': 10}
+    assert card.facts == {'partitions': {'defq': 2880}}
+    assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
+    assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'no headroom: no free core here'}
+
+
+def _moved_on(tmp_path: Path) -> str:
+    """*tmp_path* as a checkout whose origin integrate/main moved past :data:`SHA`; the new tip."""
+    run_git(tmp_path, 'init', '-q')
+    run_git(tmp_path, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x')
+    tip = git_out(tmp_path, 'rev-parse', 'HEAD')
+    run_git(tmp_path, 'update-ref', 'refs/remotes/origin/integrate/main', tip)
+    return tip
+
+
+def test_a_superseded_cluster_run_is_cancelled_and_released(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the ref still at the run's sha -- the run is kept and advanced."""
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    forge = _Forge()
+    monkeypatch.setattr(forgerun, 'status_post', forge.post)
+    monkeypatch.setattr(forgerun, 'advance', lambda _root, run, **_k: run)
+    run = forgerun.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), ME.description(),
+                       phase=forgerun.SUBMITTED, job_ids=('77',))  # fmt: skip
+    forgerun.save(run)
+    kept, _said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
+    assert kept.in_flight == (SHA,)
+    tip = _moved_on(tmp_path)
+    slurm = _Slurm()
+    report, said, _alarms = _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), forge, seat=SEAT, cluster=lambda: slurm
+    )
+    assert report.in_flight == ()
+    assert slurm.cancelled == ['77']
+    assert forge.posts[-1] == ('tests/linux', 'error', f'superseded by {tip[:12]}')
+    assert forgerun.live('https://f/o/r.git') == ()
+    assert any('superseded' in line for line in said)
+
+
+def test_a_superseded_local_producer_is_stopped_and_released(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: a heartbeat on an unmoved ref only renews (the renewal test above)."""
+    tip = _moved_on(tmp_path)
+    forge = _Forge()
+    item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    proc = _Proc(0, beats=5)
+    report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(item), {'verify': proc}, forge)
+    assert report.produced[0].returncode == 0
+    assert proc.beats == 0, 'killed at the first heartbeat'
+    assert forge.posts[-1] == ('tests/windows', 'error', f'superseded by {tip[:12]}')

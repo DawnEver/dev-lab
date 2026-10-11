@@ -19,11 +19,12 @@ import pytest
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import LEASE, Alarm
-from lab_commons.dev.forgetick import Claim, Work
+from lab_commons.dev.forgetick import DESCRIPTION_LIMIT, Claim, Work
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal
 from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.hpc.progress import Progress
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -81,6 +82,8 @@ class _Slurm:
         self.submits = 0
         self.done = False
         self.record = record
+        self.phrase = 'queued 4/4'
+        self.cancelled: list[str] = []
 
     def submitted(self, _run: forgerun.Run) -> list[str]:
         return list(self.recorded)
@@ -95,6 +98,13 @@ class _Slurm:
 
     def gather(self, _run: forgerun.Run) -> Path | None:
         return self.record if self.done else None
+
+    def progress(self, _run: forgerun.Run) -> str:
+        return self.phrase
+
+    def cancel(self, run: forgerun.Run) -> list[str]:
+        self.cancelled += run.job_ids
+        return list(run.job_ids)
 
 
 @pytest.fixture
@@ -202,11 +212,14 @@ def test_only_the_owner_renews_and_only_once_a_third_of_the_lease_has_passed(hom
     store, slurm = _Store(), _Slurm(home / 'r')
     _start(home, store)
     _tick(store, slurm)
-    assert len(store.posts) == 1, 'a fresh claim is not re-posted every five minutes'
+    posted = len(store.posts)  # the claim, then its progress: building, queued 4/4
+    _tick(store, slurm)
+    assert len(store.posts) == posted, 'a fresh claim with unchanged progress is not re-posted every five minutes'
     store.now = NOW + timedelta(hours=2, minutes=1)
     _tick(store, slurm)
-    assert len(store.posts) == 2
-    assert Claim.parse(store.posts[-1]['description']) == dataclasses.replace(HERE, until=store.now + HOURS6)
+    assert len(store.posts) == posted + 1
+    renewed = dataclasses.replace(HERE, until=store.now + HOURS6, progress='queued 4/4')
+    assert Claim.parse(store.posts[-1]['description']) == renewed, 'the renewal still shows the progress'
 
 
 def test_a_lease_that_cannot_be_renewed_alarms_and_keeps_the_run(home: Path) -> None:
@@ -256,3 +269,47 @@ def test_the_state_is_keyed_by_repo_sha_platform_and_scope(home: Path) -> None:
     assert forgerun.live(run.repo_url) == (run,)
     assert forgerun.live(other.repo_url) == (other,)
     assert len(list(forgerun.directory().glob('*.json'))) == 2
+
+
+def _progress(store: _Store) -> list[str]:
+    return [found.progress for post in store.posts if (found := Claim.parse(post['description'])) and found.progress]
+
+
+def test_a_run_in_flight_shows_its_progress_on_the_forge_and_a_repeat_posts_nothing(home: Path) -> None:
+    """Any machine reading the claim sees where the run is. PLANTED CONTROL: an unchanged phrase is not re-posted."""
+    store, slurm = _Store(), _Slurm(home / 'r')
+    _start(home, store)
+    _tick(store, slurm)
+    assert _progress(store) == ['building', 'queued 4/4']
+    _tick(store, slurm)
+    assert _progress(store) == ['building', 'queued 4/4'], 'the same progress is not posted twice'
+    slurm.phrase = 'running 3/4 done 1/4'
+    _tick(store, slurm)
+    assert _progress(store)[-1] == 'running 3/4 done 1/4'
+    latest = Claim.parse(store.posts[-1]['description'])
+    assert latest is not None
+    assert latest.same_owner(HERE), 'progress never changes who owns the claim'
+
+
+def test_progress_text_reads_the_slurm_counts() -> None:
+    assert forgerun.progress_text(Progress('s', '1', 4, pending=4)) == 'queued 4/4'
+    assert forgerun.progress_text(Progress('s', '1', 4, pending=1, running=2)) == 'running 2/4 done 1/4'
+    assert forgerun.progress_text(Progress('s', '1', 4, finished=True)) == 'gathering'
+
+
+def test_a_long_progress_is_cut_to_what_every_forge_stores() -> None:
+    long = dataclasses.replace(HERE, progress='x' * 300)
+    assert len(long.description()) == DESCRIPTION_LIMIT
+    assert Claim.parse(long.description()) is not None
+
+
+def test_a_superseded_run_is_cancelled_released_and_dropped(home: Path) -> None:
+    store, slurm = _Store(), _Slurm(home / 'r')
+    _start(home, store)
+    run = _tick(store, slurm)
+    assert run is not None
+    forgerun.supersede(run, 'd' * 40, client=_Client(store), cluster=slurm, say=lambda _line: None)
+    assert slurm.cancelled == ['4242']
+    assert store.posts[-1]['description'] == f'superseded by {"d" * 12}'
+    assert store.posts[-1]['status'] == 'error'
+    assert forgerun.live('https://f/o/r.git') == ()

@@ -1,10 +1,12 @@
 """A FAILURE NOBODY WATCHES MUST REACH A HUMAN -- the alarms ``forge serve`` raises from an unattended host.
 
-A cron tick on a cluster login node logs into a file nobody reads. Four failures there are SILENT
+A cron tick on a cluster login node logs into a file nobody reads. Five failures there are SILENT
 unless raised: the forge refusing the stored credential (``auth``: a 401/403, an expired token, or none
 stored), a claim whose lease cannot be renewed (``lease``: the forge refused the post, another owner
 holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot advance (``run``), and
-an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight).
+an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
+and a traffic jam: a candidate waiting past its class's bound (``starved``,
+:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -34,7 +36,7 @@ from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
-__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'REPEAT', 'RUN', 'Alarm', 'sound']
+__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'REPEAT', 'RUN', 'STARVED', 'Alarm', 'sound']
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
 EVENT: Final = 'lab_commons.forge.alarm'
@@ -44,6 +46,8 @@ AUTH: Final = 'auth'
 LEASE: Final = 'lease'
 IDLE: Final = 'idle'
 RUN: Final = 'run'
+#: A candidate waited past its class's bound (:mod:`lab_commons.dev.forgeschedule`).
+STARVED: Final = 'starved'
 
 #: How long one ``(kind, repo)`` delivery waits before it is delivered again.
 REPEAT: Final = timedelta(hours=6)
@@ -51,12 +55,16 @@ REPEAT: Final = timedelta(hours=6)
 
 @dataclass(frozen=True)
 class Alarm:
-    """One silent failure, named: its kind, the repo it concerns, a one-line subject and the remedy."""
+    """One silent failure, named: its kind, the repo it concerns, a one-line subject and the remedy.
+
+    *about* names WHICH thing of its kind (a starved candidate), so two of one kind repeat independently.
+    """
 
     kind: str
     repo: str
     subject: str
     body: str
+    about: str = ''
 
 
 def _state() -> Path:
@@ -85,7 +93,7 @@ def sound(
     now = now or datetime.now(UTC)
     table = section('alerts') if alerts is None else alerts
     deliver = send or Notifier({'alerts': table}).send
-    key = f'{alarm.kind}:{alarm.repo}'
+    key = ':'.join(filter(None, (alarm.kind, alarm.repo, alarm.about)))
     path = _state()
     last = _last(path)
     due = key not in last or now - datetime.fromisoformat(last[key]) >= REPEAT

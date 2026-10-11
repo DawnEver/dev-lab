@@ -34,9 +34,10 @@ A claim whose ``until`` has passed is stale and may be retaken by anyone serving
 its owner renews it, so a lapsed lease means the owner is gone.
 
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
-``quiet``, fetch ``origin``, list every request this box could serve with its state, claim at most
-one (newest ref first) unless a run of its platform is already in flight here, and give the claimed
-part what produces it: a local argv (:func:`lab_commons.dev.platformparts.part_argv`) or a cluster
+``quiet``, fetch ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
+value per cost, each waiting one naming why), claim the best feasible one unless a run is already in
+flight here, and give the claimed part what produces it: a local argv
+(:func:`lab_commons.dev.platformparts.part_argv`) or a cluster
 part (:func:`lab_commons.dev.platformparts.cluster_part`). A part whose producer the repo does not
 declare is not claimed; its refusal names the pyproject key to add. It runs nothing itself.
 """
@@ -46,21 +47,19 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import re
 import shlex
 import socket
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from lab_commons.dev.forge import (
-    _GIT,
-    _GIT_TIMEOUT_S,
     NoCredential,
     Transport,
     UnreadableRemote,
@@ -68,13 +67,30 @@ from lab_commons.dev.forge import (
     https_transport,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
+from lab_commons.dev.forgeschedule import (
+    NO_HOST,
+    OUTRANKED,
+    OVER_BUDGET,
+    REQUEST,
+    Candidate,
+    Headroom,
+    Ranked,
+    Schedule,
+    candidates,
+    expected_cost,
+    load_schedule,
+    rank,
+    ref_usage,
+    repo_name,
+)
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.lanepolicy import Policy, load_policy
+from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import (
     ClusterPart,
     UndeclaredPart,
     cluster_part,
+    origin_url,
     part_argv,
     part_context,
     this_platform,
@@ -84,6 +100,7 @@ from lab_commons.dev.venvpath import current_os_name
 from lab_commons.hpc.account import ClusterAccount, cluster_account
 from lab_commons.hpc.cluster import local_runner
 from lab_commons.hpc.grants import workstation
+from lab_commons.hpc.learned import learned
 from lab_commons.hpc.platforms import LINUX
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
@@ -104,7 +121,6 @@ __all__ = [
     'claim',
     'forge_now',
     'main',
-    'requests',
     'serving',
     'this_machine',
     'this_seat',
@@ -126,24 +142,34 @@ _CLAIMABLE: Final = frozenset({OPEN, STALE})
 
 _NOBODY: Final = '-'
 _CLAIM: Final = re.compile(
-    r'^claim machine=(?P<machine>\S+) login=(?P<login>\S+) until=(?P<until>\S+) hpc=(?P<hpc>\S+)$'
+    r'^claim machine=(?P<machine>\S+) login=(?P<login>\S+) until=(?P<until>\S+) hpc=(?P<hpc>\S+)'
+    r'(?: -- (?P<progress>.+))?$'
 )
-_TRACKING: Final = 'refs/remotes/origin/'
+#: The longest status description every forge stores whole (GitHub's limit); progress is cut to fit.
+DESCRIPTION_LIMIT: Final = 140
 
 
 @dataclass(frozen=True)
 class Claim:
-    """Who serves a part and until when; ``machine``/``hpc`` are ``''`` when absent."""
+    """Who serves a part and until when; ``machine``/``hpc`` are ``''`` when absent.
+
+    *progress* is where the run stands (``queued 0/93``, ``running 40/93``), carried after `` -- `` so any
+    machine with a forge credential reads it; it never identifies the owner.
+    """
 
     machine: str
     login: str
     until: datetime
     hpc: str = ''
+    progress: str = ''
 
     def description(self) -> str:
-        """The pending status's description (module docstring)."""
+        """The pending status's description (module docstring), progress cut to :data:`DESCRIPTION_LIMIT`."""
         until = self.until.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-        return f'claim machine={self.machine or _NOBODY} login={self.login} until={until} hpc={self.hpc or _NOBODY}'
+        head = f'claim machine={self.machine or _NOBODY} login={self.login} until={until} hpc={self.hpc or _NOBODY}'
+        if not self.progress:
+            return head
+        return f'{head} -- {self.progress}'[:DESCRIPTION_LIMIT]
 
     @classmethod
     def parse(cls, description: str) -> Claim | None:
@@ -156,7 +182,7 @@ class Claim:
         except ValueError:
             return None
         machine, hpc = (found[key] if found[key] != _NOBODY else '' for key in ('machine', 'hpc'))
-        return cls(machine, found['login'], until, hpc)
+        return cls(machine, found['login'], until, hpc, found['progress'] or '')
 
     def same_owner(self, other: Claim) -> bool:
         """The same person, on the same machine, under the same cluster account (module docstring)."""
@@ -200,36 +226,6 @@ def this_seat() -> ClusterAccount | None:
 def this_machine(seat: ClusterAccount | None) -> str:
     """``$HARNESS_MACHINE``; else on a cluster the login host (one account, two hosts: two owners); else ``''``."""
     return workstation() or (socket.gethostname().split('.')[0] if seat is not None else '')
-
-
-def requests(root: Path, mode: str, policy: Policy) -> tuple[tuple[str, str], ...]:
-    """``(ref, tip sha)`` of every ``origin`` ref *mode* serves, newest commit first. Fetches nothing."""
-    if mode == 'quiet':
-        return ()
-    listed = subprocess.run(
-        [
-            _GIT,
-            '-C',
-            str(root),
-            'for-each-ref',
-            '--sort=-committerdate',
-            '--format=%(refname) %(objectname)',
-            _TRACKING,
-        ],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=True,
-        timeout=_GIT_TIMEOUT_S,
-    ).stdout
-    found = []
-    for line in listed.splitlines():
-        ref, sha = line.split(' ')
-        branch = ref.removeprefix(_TRACKING)
-        wanted = branch == policy.integration if mode == 'integrate' else branch.startswith(policy.lane_prefixes)
-        if wanted:
-            found.append((branch, sha))
-    return tuple(found)
 
 
 def assess(history: Sequence[Status], platform: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
@@ -277,12 +273,16 @@ def claim(client: Client, work: Work, me: Claim) -> Work:
 
 @dataclass(frozen=True)
 class TickReport:
-    """What a tick saw and did: every request with its state, the ones it claimed, and its lines."""
+    """What a tick saw and did: every request with its state, the ones it claimed, its lines, and the queue.
+
+    *queue* is every candidate still waiting, ranked, each naming what blocks it (:mod:`forgeschedule`).
+    """
 
     work: tuple[Work, ...]
     claimed: tuple[Work, ...]
     lines: tuple[str, ...]
     refused: tuple[str, ...] = ()
+    queue: tuple[Ranked, ...] = ()
 
 
 def tick(
@@ -298,8 +298,18 @@ def tick(
     host: str | None = None,
     os_name: str | None = None,
     in_flight: bool = False,
+    headroom: Headroom | None = None,
+    usage: Mapping[str, float] | None = None,
+    weights: Mapping[str, float] | None = None,
+    measured: Mapping[str, Any] | None = None,
 ) -> TickReport:
-    """One tick, in the order the module docstring gives; with a run *in_flight* here it lists and claims nothing."""
+    """One tick, in the order the module docstring gives; with a run *in_flight* here it claims nothing.
+
+    *headroom* is what this host can take now (default: a box's cores); *usage* the core-hours each run
+    sha12 used in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
+    *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
+    (default: :func:`lab_commons.hpc.learned.learned`).
+    """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
         raise ValueError(msg)
@@ -317,24 +327,21 @@ def tick(
     now = forge_now(built)
     serve = serving(host or this_platform(), seat)
     me = Claim(machine, login, now + lease, serve.hpc)
-    work: list[Work] = []
-    claimed: list[Work] = []
-    refused: list[str] = []
-    taken = in_flight
-    for ref, sha in requests(root, mode, load_policy(root)):
-        state, holder = assess(status_history(built, sha), serve.platform, me=me, now=now)
-        found = Work(ref, sha, serve.platform, state, holder)
-        if state in _CLAIMABLE and not taken and not dry_run:
-            try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
-                found = _producer(root, found, serve, os_name or current_os_name())
-            except (UndeclaredPart, FileNotFoundError) as why:
-                refused.append(f'{part_context(serve.platform)}: not claimed -- {why}')
-                taken = True
-            else:
-                found = claim(built, found, me)
-                taken = found.state == MINE
-                claimed += [found] if taken else []
-        work.append(found)
+    schedule, repo = load_schedule(root), repo_name(built)
+    found = candidates(
+        root, mode, built, repo=repo, platforms=(serve.platform,), schedule=schedule, policy=load_policy(root), now=now
+    )
+    cores = 1 if serve.hpc else os.cpu_count() or 1
+    learned_now = learned(origin_url(root)) if measured is None else measured
+    cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
+    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
+    taken = _Taking(
+        root, built, serve, me, now, schedule, usage, dry_run, os_name or current_os_name(),
+        room=(headroom or Headroom(cores=cores)).why_not(), winner='a run in flight here' if in_flight else '',
+    )  # fmt: skip
+    for item in ranked:
+        taken.consider(item)
+    work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
     for item in work:
         who = f' by {item.holder.login}@{item.holder.machine or _NOBODY}' if item.holder else ''
         lines.append(f'{item.state:<7} {part_context(item.platform):<14} {item.ref}  {item.sha[:12]}{who}')
@@ -342,7 +349,69 @@ def tick(
         how = f'a cluster run as {serve.hpc}' if item.cluster else shlex.join(item.argv)
         lines.append(f'produce {part_context(item.platform)}: {how}')
     lines += [f'refused {reason}' for reason in refused]
-    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused))
+    lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
+    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue))
+
+
+@dataclass
+class _Taking:
+    """The claim pass over the ranked queue: the first unblocked candidate is claimed, the rest say why not."""
+
+    root: Path
+    client: Client
+    serve: Serving
+    me: Claim
+    now: datetime
+    schedule: Schedule
+    usage: Mapping[str, float] | None
+    dry_run: bool
+    os_name: str
+    room: str = ''
+    winner: str = ''
+    work: list[Work] = dataclasses.field(default_factory=list)
+    claimed: list[Work] = dataclasses.field(default_factory=list)
+    refused: list[str] = dataclasses.field(default_factory=list)
+    queue: list[Ranked] = dataclasses.field(default_factory=list)
+
+    def consider(self, item: Ranked) -> None:
+        """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
+        wanted = item.candidate
+        if wanted.kind == REQUEST:  # requests are ranked and shown; no producer claims one yet
+            self.queue.append(dataclasses.replace(item, blocked=f'{NO_HOST} claims requests yet'))
+            return
+        state, holder = assess(status_history(self.client, wanted.sha), self.serve.platform, me=self.me, now=self.now)
+        one = Work(wanted.ref, wanted.sha, self.serve.platform, state, holder)
+        blocked = self._blocked(wanted) if state in _CLAIMABLE else ''
+        if state in _CLAIMABLE and not blocked and not self.dry_run:
+            one, blocked = self._take(one, wanted)
+        self.work.append(one)
+        if one.state in _CLAIMABLE:
+            self.queue.append(dataclasses.replace(item, blocked=blocked))
+
+    def _blocked(self, wanted: Candidate) -> str:
+        outranked = f'{OUTRANKED} by {self.winner}' if self.winner else ''
+        return outranked or self.room or _over_budget(self.root, wanted, self.schedule, self.usage)
+
+    def _take(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
+        try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
+            one = _producer(self.root, one, self.serve, self.os_name)
+        except (UndeclaredPart, FileNotFoundError) as why:
+            self.refused.append(f'{part_context(self.serve.platform)}: not claimed -- {why}')
+            self.room = f'{NO_HOST} can produce it: {why}'
+            return one, self.room
+        one = claim(self.client, one, self.me)
+        if one.state == MINE:
+            self.claimed.append(one)
+            self.winner = wanted.key
+        return one, ''
+
+
+def _over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mapping[str, float] | None) -> str:
+    cap = schedule.daily_budget_core_h.get(wanted.kind)
+    if cap is None or usage is None:
+        return ''
+    used = ref_usage(root, wanted.ref, usage)
+    return f'{OVER_BUDGET}: {wanted.ref} used {used:.1f} of {cap:g} core-h in 24 h' if used >= cap else ''
 
 
 def _producer(root: Path, work: Work, serve: Serving, os_name: str) -> Work:
