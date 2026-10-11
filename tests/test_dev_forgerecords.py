@@ -81,9 +81,11 @@ def test_prune_deletes_only_records_of_shas_nobody_keeps(server) -> None:
     assert [r['path'] for r in Recorder.received if r['method'] == 'DELETE'] == [f'{API}/issues/3/assets/2']
 
 
-def test_github_holds_no_records() -> None:
-    with pytest.raises(ValueError, match='gitea'):
-        records_issue(client(Forge('github.com', 'o', 'r'), Loopback.__new__(Loopback)), create=False)
+def test_github_records_live_on_the_prerelease_never_an_issue(server) -> None:
+    answer('GET', '/repos/o/r/releases', (200, [{'id': 9, 'tag_name': forgerecords.RECORDS_TAG}]))
+    answer('GET', '/repos/o/r/releases/9/assets', (200, [_asset(4, f'run-{LIVE}-linux-r1.json.gz')]))
+    assert [a.id for a in listing(client(Forge('github.com', 'o', 'r'), Loopback(server)))] == [4]
+    assert not [r for r in Recorder.received if '/issues' in r['path']], 'GitHub never reads an issue for records'
 
 
 def _history(tmp_path: Path) -> tuple[Path, list[str]]:
