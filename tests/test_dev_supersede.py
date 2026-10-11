@@ -82,7 +82,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 # headroom -- a floor the population has outgrown refuses only a total collapse and passes a walk
 # that lost a third of its corpus. RE-TAKEN rather than the headroom widened; that direction is the
 # waiver nothing uses.
-KIT_FLOOR = 100
+KIT_FLOOR = 115  # re-taken 2026-10-11 at 128 after the five-lane integration
 KIT_HEADROOM = 25
 
 #: Both halves of the validation need a population or the separation is vacuous. MEASURED over the
