@@ -30,6 +30,7 @@ __all__ = ['PROVENANCE']
 
 PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'ab_bench': ('original',),
+    'producer': ('original',),
     'envseat': ('original',),
     'agent_guard': ('original',),
     # ORIGINAL rather than a supersession: the three repos' allow blocks were hand-written and

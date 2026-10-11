@@ -33,6 +33,7 @@ from lab_commons.dev.forgetick import (
     tick,
 )
 from lab_commons.dev.lanepolicy import Policy
+from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.grants import Grant, workstation
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
@@ -88,6 +89,14 @@ def test_a_stale_local_claim_is_retaken_by_anyone_serving_the_platform() -> None
     """PLANTED CONTROL: the claimant died mid-run; its lease lapsed."""
     dead = Claim('H', 'bob', NOW - timedelta(minutes=1))
     assert _assess([_pending(dead, 3)]) == (STALE, dead)
+
+
+def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None:
+    """PLANTED CONTROL: the same ``error`` state released for any other reason stays done."""
+    outage = Status('tests/windows', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
+    inconclusive = Status('tests/windows', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
+    assert _assess([_pending(ME, 1), outage]) == (OPEN, None)
+    assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 
 
 def test_a_stale_cluster_claim_is_retaken_only_under_the_same_grant() -> None:

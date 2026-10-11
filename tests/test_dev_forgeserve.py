@@ -13,6 +13,7 @@ import pytest
 
 from lab_commons.dev import forgeserve
 from lab_commons.dev.forgetick import Claim, TickReport, Work
+from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc.records import write_record
 
 SHA = 'a' * 40
@@ -117,7 +118,7 @@ def test_every_claimed_part_is_produced_then_published_then_its_records_routed(m
 def test_a_producer_refusing_its_argv_is_a_broken_contract_not_a_skip(monkeypatch, tmp_path: Path) -> None:
     """PLANTED: a renamed flag makes argparse exit 2; that must surface as a failure with the argv shown."""
     stale = Work('integrate/main', SHA, 'linux', 'mine', argv=('cluster', '--install', 'x'))
-    report, _calls, _said = _serve(monkeypatch, tmp_path, (stale,), {'cluster': _Proc(forgeserve.USAGE_ERROR)})
+    report, _calls, _said = _serve(monkeypatch, tmp_path, (stale,), {'cluster': _Proc(ProducerExit.USAGE)})
     assert len(report.broken) == 1
     assert 'cluster --install x' in report.broken[0]
 
@@ -125,7 +126,7 @@ def test_a_producer_refusing_its_argv_is_a_broken_contract_not_a_skip(monkeypatc
 def test_the_cli_exits_two_on_a_broken_contract(monkeypatch, tmp_path: Path, capsys) -> None:
     broken = forgeserve.ServeReport((), (), (), ('linux aaaa: the producer refused its argv: cluster --x',))
     monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: broken)
-    assert forgeserve.main(['--mode', 'integrate'], cwd=tmp_path) == forgeserve.USAGE_ERROR
+    assert forgeserve.main(['--mode', 'integrate'], cwd=tmp_path) == ProducerExit.USAGE
     assert 'CONTRACT BROKEN' in capsys.readouterr().err
     with pytest.raises(SystemExit):
         forgeserve.main(['--mode', 'nonsense'], cwd=tmp_path)
@@ -172,7 +173,7 @@ def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> N
     local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     _serve(monkeypatch, tmp_path, (local,), {'verify': _Proc(-9)}, forge)
-    assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer exited -9')
+    assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9)')
 
 
 def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Path) -> None:
@@ -181,3 +182,27 @@ def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Pa
     local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, (local,), {'verify': _Proc(1)}, forge)
     assert forge.posts == [('tests/windows', 'failure', 'FAIL')]
+
+
+def test_an_inconclusive_producer_is_released_not_called_a_broken_contract(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED (live 2026-10-11): a runner over its wall said INCONCLUSIVE; serve said "refused its argv"."""
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
+    procs = {'verify': _Proc(ProducerExit.INCONCLUSIVE)}
+    report, _calls, _said = _serve(monkeypatch, tmp_path, (local,), procs, forge)
+    assert report.broken == ()
+    assert forge.posts[-1] == ('tests/windows', 'error', release_reason(ProducerExit.INCONCLUSIVE))
+
+
+def test_unreachable_infrastructure_releases_the_claim_as_retryable_not_red(monkeypatch, tmp_path: Path) -> None:
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/linux', state='pending', description=GRANT.description())
+    cluster = Work('integrate/main', SHA, 'linux', 'mine', holder=GRANT, argv=('cluster',))
+    procs = {'cluster': _Proc(ProducerExit.UNREACHABLE)}
+    report, _calls, _said = _serve(monkeypatch, tmp_path, (cluster,), procs, forge)
+    assert report.broken == ()
+    context, state, description = forge.posts[-1]
+    assert (context, state) == ('tests/linux', 'error')
+    assert description.startswith(RETRYABLE)
+    assert not any(s == 'failure' for _c, s, _d in forge.posts), 'an outage is never a red part'

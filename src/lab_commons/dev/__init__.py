@@ -143,6 +143,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per platform it ran on (linux
   from the cluster, windows/macos from a box), each a ``tests/<platform>`` status on the forge.
+* :mod:`lab_commons.dev.producer` -- the producer exit contract: what a part producer's exit code
+  means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE), one source.
 * :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
   STATE rather than by command TEXT: no verdict may cite an environment it did not run in, so a
   mutation DURING a run is PREVENTED against the box lock and a mutation BETWEEN runs RETIRES the

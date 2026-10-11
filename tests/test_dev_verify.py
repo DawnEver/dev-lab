@@ -455,7 +455,7 @@ class TestTheVerdict:
         verdict = _verdict(reports, log)
         assert verdict.result.outcome is Outcome.INCONCLUSIVE
         assert 'pytest' in verdict.result.reason, 'the silent step must be named, not counted'
-        assert EXIT_CODES[verdict.result.outcome] == 2
+        assert EXIT_CODES[verdict.result.outcome] == 3, 'the producer contract: 2 is a refused argv'
         assert EXIT_CODES[Outcome.FAIL] != EXIT_CODES[Outcome.INCONCLUSIVE], 'the two remedies differ'
 
     def test_a_step_that_never_launched_is_silent_by_name(self, log: Path) -> None:

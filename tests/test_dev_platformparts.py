@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from _forge_fake import make_repo
 
 from lab_commons.dev import localpart, platformparts
+from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.producer import ProducerExit
+from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
 
@@ -223,7 +228,8 @@ def test_cluster_submits_gathers_and_posts_the_record(tmp_path: Path, monkeypatc
     posted: list[Path] = []
     monkeypatch.setattr(platformparts, 'post', lambda _root, path: posted.append(path) or 'posted')
     flags = ['--repo-url', 'https://f/o/r.git', '--collect', 'tests']
-    assert platformparts.cluster(tmp_path, sha=SHA, hpc_args=flags, output=output, hpc=hpc) == 'posted'
+    produced = platformparts.cluster(tmp_path, sha=SHA, hpc_args=flags, output=output, hpc=hpc)
+    assert produced == (ProducerExit.FAIL, 'posted'), 'the exit names the posted part'
     assert calls[0] == ['run', 'submit', '--sha', SHA, '--scope', 'full', '--repo', str(tmp_path), *flags]
     assert calls[1] == ['run', 'gather', '--sha', SHA, '-o', str(output), '--wait']
     assert posted == [output / f'run-{SHA}-linux-t0.json.gz'], 'a red run is still posted as a FAIL part'
@@ -237,6 +243,31 @@ def test_cluster_refuses_a_failed_submit_and_a_gather_without_a_record(tmp_path:
     assert seen == ['submit'], 'nothing is gathered after a failed submit'
     with pytest.raises(platformparts.PartRefusal, match='no linux record'):
         platformparts.cluster(tmp_path, sha=SHA, hpc_args=[], output=tmp_path / 'none', hpc=lambda _a: 0)
+
+
+def _raising(error: Exception) -> Callable[..., NoReturn]:
+    def cluster(*_args: object, **_kwargs: object) -> NoReturn:
+        raise error
+
+    return cluster
+
+
+def _cluster_main(tmp_path: Path, monkeypatch, cluster) -> int:
+    monkeypatch.setattr(platformparts, 'cluster', cluster)
+    argv = ['cluster', '--sha', SHA, '-o', str(tmp_path), '--repo-url', 'u', '--collect', 't', '--root', str(tmp_path)]
+    return platformparts.main(argv)
+
+
+def test_cluster_exits_by_the_producer_contract(tmp_path: Path, monkeypatch) -> None:
+    """An unreachable cluster is NOT a red part (live 2026-10-11); PLANTED CONTROL: a posted FAIL is 1."""
+    unreachable = _raising(Unreachable('no login host answered'))
+    forge_down = _raising(PostFailed('forge did not answer'))
+    refused = _raising(platformparts.PartRefusal('run gather wrote no linux record'))
+    assert _cluster_main(tmp_path, monkeypatch, unreachable) == ProducerExit.UNREACHABLE
+    assert _cluster_main(tmp_path, monkeypatch, forge_down) == ProducerExit.UNREACHABLE
+    assert _cluster_main(tmp_path, monkeypatch, refused) == ProducerExit.INCONCLUSIVE
+    assert _cluster_main(tmp_path, monkeypatch, lambda *_a, **_k: (ProducerExit.FAIL, 'x')) == ProducerExit.FAIL
+    assert _cluster_main(tmp_path, monkeypatch, lambda *_a, **_k: (ProducerExit.PASS, 'x')) == ProducerExit.PASS
 
 
 def _status(platform: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:

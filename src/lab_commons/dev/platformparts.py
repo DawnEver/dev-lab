@@ -66,8 +66,10 @@ from typing import TYPE_CHECKING, Any, Final
 from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
+from lab_commons.dev.producer import ProducerExit
 from lab_commons.dev.venvpath import checkout_interpreter
 from lab_commons.hpc.__main__ import main as hpc_main
+from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
@@ -396,11 +398,12 @@ def cluster(
     hpc_args: Sequence[str],
     output: Path,
     hpc: Callable[[list[str]], int] = hpc_main,
-) -> str:
+) -> tuple[ProducerExit, str]:
     """Produce the linux part of *sha*: ``hpc run submit`` (full), ``run gather --wait``, then :func:`post`.
 
     *hpc_args* are the submit flags :func:`part_argv` filled. The newest record gathered into *output*
-    is posted -- a red run is a FAIL part and still posted; no record at all is refused.
+    is posted -- a red run is a FAIL part and still posted; no record at all is refused. Returns the
+    posted part's exit (PASS or FAIL) and the lines; an outage raises :class:`Unreachable`.
     """
     submitted = hpc(['run', 'submit', '--sha', sha, '--scope', FULL, '--repo', str(root), *hpc_args])
     if submitted != 0:
@@ -411,7 +414,8 @@ def cluster(
     if not records:
         msg = f'run gather wrote no linux record for {sha} into {output}; its output above says why'
         raise PartRefusal(msg)
-    return post(root, records[-1])
+    result = part_of(read_record(records[-1])).result
+    return (ProducerExit.PASS if result == 'PASS' else ProducerExit.FAIL), post(root, records[-1])
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -436,13 +440,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.verb == 'post':
             emit(post(args.root, args.record))
-        else:
-            flags = ['--repo-url', args.repo_url, '--collect', args.collect]
-            emit(cluster(args.root, sha=args.sha, hpc_args=flags, output=args.output))
-    except (PartRefusal, PostFailed) as why:
+            return 0
+        flags = ['--repo-url', args.repo_url, '--collect', args.collect]
+        code, lines = cluster(args.root, sha=args.sha, hpc_args=flags, output=args.output)
+    except (Unreachable, PostFailed) as why:  # infrastructure, not code: the claim is released retryable
+        emit(f'[platformparts] unreachable: {why}', err=True)
+        return ProducerExit.UNREACHABLE
+    except PartRefusal as why:
         emit(f'[platformparts] refused: {why}', err=True)
-        return 1
-    return 0
+        return ProducerExit.INCONCLUSIVE if args.verb == 'cluster' else 1
+    emit(lines)
+    return code
 
 
 def this_platform() -> str:

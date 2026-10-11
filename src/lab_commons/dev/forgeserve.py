@@ -15,12 +15,14 @@ the linux cluster part, using no local CPU, sat unsubmitted and its claim aged).
 cluster grant or this box's CPU; seats run concurrently, parts on one seat in turn. Every producer's
 output streams as it comes, prefixed ``[platform]``, so a long part never looks dead. WHILE A PRODUCER
 LIVES ITS CLAIM IS RENEWED -- the same pending claim re-posted with a new ``until`` every third of the
-lease -- and when it ends with its context still pending (it crashed before posting) the claim is
-RELEASED as ``error`` naming the exit code, so nobody waits out a lease for a dead producer.
+lease -- and when it ends with its context still pending the claim is RELEASED as ``error`` with
+the reason its exit code names, so nobody waits out a lease for a dead producer.
 
-A CONTRACT BREAK FAILS LOUDLY. A produced argv exiting 2 -- argparse's usage error, which is what a
-renamed flag or verb looks like -- is a FAILURE of this call (exit 2) with the argv shown, never a
-quiet skip. A part that ran and is red is not a failure of the harness: it is a posted FAIL part.
+EXIT CODES ARE READ BY ONE CONTRACT, :mod:`lab_commons.dev.producer`: 0/1 a posted PASS/FAIL part,
+2 the argv refused, 3 INCONCLUSIVE (released, a human decides), 4 UNREACHABLE infrastructure
+(released retryable -- the next tick claims it again; an outage is never a red part), else a crash.
+A CONTRACT BREAK FAILS LOUDLY: a produced argv exiting 2 -- what a renamed flag or verb looks like --
+is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 """
 
 from __future__ import annotations
@@ -44,14 +46,12 @@ from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgetick import DEFAULT_LEASE, MODES, Work, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import part_context
+from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.grants import Grant, load_grants, workstation
 from lab_commons.hpc.records import read_record
 from lab_commons.log import emit
 
-__all__ = ['USAGE_ERROR', 'Produced', 'ServeReport', 'main', 'serve']
-
-#: argparse's exit code for a usage error: a produced argv the producer no longer understands.
-USAGE_ERROR: Final = 2
+__all__ = ['Produced', 'ServeReport', 'main', 'serve']
 
 #: How long a produced part may run before it is called hung, in seconds: a cluster part waits for its jobs.
 PRODUCE_WALL_S: Final = 24 * 3600
@@ -139,7 +139,7 @@ def serve(
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
-        if p.returncode == USAGE_ERROR
+        if p.returncode == ProducerExit.USAGE
     )
     published = tuple(flush(root, client=client))
     return ServeReport(tuple(ticked.lines), produced, published, broken)
@@ -198,7 +198,7 @@ def _produce(
     say(f'[{item.platform}] exit={returncode}')
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if posts and posts[-1].state == 'pending':
-        _post(client(root), item, 'error', f'released: producer exited {returncode}', say)
+        _post(client(root), item, 'error', release_reason(returncode), say)
     routed: list[str] = []
     for path in _records(item.argv, item.sha):
         record = read_record(path)
@@ -261,4 +261,4 @@ def main(
             emit(line)
     for line in report.broken:
         emit(f'[serve] CONTRACT BROKEN -- {line}', err=True)
-    return USAGE_ERROR if report.broken else 0
+    return ProducerExit.USAGE if report.broken else 0

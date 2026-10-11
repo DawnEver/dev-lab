@@ -60,6 +60,7 @@ from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import UndeclaredPart, part_argv, part_context, this_platform
+from lab_commons.dev.producer import RETRYABLE
 from lab_commons.dev.venvpath import current_os_name
 from lab_commons.hpc.grants import Grant, load_grants, workstation
 from lab_commons.hpc.platforms import LINUX
@@ -210,8 +211,8 @@ def assess(
     """
     context = part_context(serve.platform)
     posts = [status for status in history if status.context == context]
-    if posts and posts[-1].state != 'pending':
-        return DONE, None
+    if posts and posts[-1].state != 'pending':  # a claim released by an outage is open again
+        return (OPEN if posts[-1].description.startswith(RETRYABLE) else DONE), None
     settled = max((index for index, status in enumerate(posts) if status.state != 'pending'), default=-1)
     claims = [found for status in posts[settled + 1 :] if (found := Claim.parse(status.description)) is not None]
     if not claims:

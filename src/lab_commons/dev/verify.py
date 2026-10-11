@@ -26,8 +26,10 @@ EXIT CODES, and the two non-zero ones are DIFFERENT ON PURPOSE:
 
 * ``0`` -- PASS. The proof held and nothing failed.
 * ``1`` -- FAIL. The proof held and the failures are NAMED. Fix the code.
-* ``2`` -- INCONCLUSIVE. The run cannot say. Re-run it, or fix what truncated it. A caller that
-  collapses 1 and 2 has rebuilt the bug the verdict algebra exists to end.
+* ``3`` -- INCONCLUSIVE. The run cannot say. Re-run it, or fix what truncated it. A caller that
+  collapses 1 and 3 has rebuilt the bug the verdict algebra exists to end.
+
+``2`` stays argparse's refused argv: these are the producer exit contract (:mod:`lab_commons.dev.producer`).
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
+from lab_commons.dev.producer import ProducerExit
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import (
     MalformedAllowance,
@@ -145,7 +148,7 @@ OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.outcomes')
 
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
-EXIT_CODES: Final[dict[Outcome, int]] = {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}
+EXIT_CODES: Final[dict[Outcome, int]] = {outcome: ProducerExit[outcome.name] for outcome in Outcome}
 
 #: The line that separates the ruff half of the log from the pytest half. The pytest parser is fed
 #: what comes AFTER it and never the whole log, because ruff's own output can carry a ``FAILED``
@@ -495,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',
         description='Run ruff check, ruff format --check and pytest, and print a citable verdict.',
-        epilog='Exit codes: 0 pass, 1 fail (the failures are named), 2 inconclusive (the run cannot say).',
+        epilog='Exit codes: 0 pass, 1 fail (failures named), 2 refused argv, 3 inconclusive (the run cannot say).',
     )
     parser.add_argument(
         '--lock-wait-s',
