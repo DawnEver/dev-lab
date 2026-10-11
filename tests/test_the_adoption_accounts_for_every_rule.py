@@ -95,6 +95,11 @@ _ENFORCED = {
     # verify's publish for VERDICT-AS-STATUS, the derived-state door for ISSUE-IS-INTENT.
     'VERDICT-AS-STATUS': (guard('tests/test_dev_forgestatus.py'), guard('tests/test_dev_verify.py')),
     'ISSUE-IS-INTENT': (guard('tests/test_dev_forgeissue.py'),),
+    # The branch flow is enforced by its doors (forge promote / sync / integration), proved on real
+    # repositories against both forge backends.
+    'TRUNK-MOVES-BY-FAST-FORWARD': (guard('tests/test_dev_branchflow.py'), guard('tests/test_dev_admission.py')),
+    'PRS-TARGET-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
+    'DOWNSTREAM-SYNCS-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
     'FLOOR-ON-EVERY-SCAN': (
         guard('tests/test_arch_every_scan_binds_a_floor.py'),
         guard('tests/_arch_corpus.py'),

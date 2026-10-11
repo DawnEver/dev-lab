@@ -128,6 +128,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeoutbox': ('original',),
     'forgerecords': ('original',),
     'forgetick': ('original',),
+    'forgeintegration': ('original',),
+    'forgepromote': ('original',),
+    'forgepulls': ('original',),
+    'forgesync': ('original',),
+    'trialmerge': ('original',),
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'admission': ('original',),
     'forgeissue': ('original',),

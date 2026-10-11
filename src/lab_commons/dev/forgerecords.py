@@ -29,7 +29,7 @@ import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
@@ -153,8 +153,7 @@ def attach(client: Client, path: Path) -> Attachment:
     A retry after a lost response first looks for an asset of the same name, so one upload is never
     stored twice.
     """
-    store = _store(client, create=True)
-    assert store is not None  # create=True always yields a home  # noqa: S101 -- narrowing, not a check
+    store = cast('_Store', _store(client, create=True))  # create=True always yields a home
 
     def landed() -> Mapping[str, Any] | None:
         return next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)

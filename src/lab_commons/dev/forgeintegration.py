@@ -198,9 +198,9 @@ def tick(
     children: list[Child] = []
     with_pr: set[str] = set()
     for remote, client in venues:
-        for pr in pr_list(client):
-            if pr.base == policy.trunk:
-                pr = _retarget(client, pr, policy)  # noqa: PLW2901 -- the PR as it now stands
+        for listed in pr_list(client):
+            pr = _retarget(client, listed, policy) if listed.base == policy.trunk else listed
+            if pr is not listed:
                 lines.append(f'{remote} #{pr.number} retargeted {policy.trunk} -> {policy.integration}')
             if pr.base != policy.integration:
                 continue
