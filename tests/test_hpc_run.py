@@ -29,7 +29,7 @@ from lab_commons.hpc.measured import Measured
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.progress import parse_queue, where
-from lab_commons.hpc.pytest_item import canonical, outcome_of, read_stream
+from lab_commons.hpc.pytest_item import canonical, outcome_of, pytest_argv, read_stream
 from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
 from lab_commons.hpc.run import RETRIES, gather_run, submit_run
 from lab_commons.hpc.shell import (
@@ -206,7 +206,7 @@ def test_every_awkward_id_that_ran_is_reported_under_its_collected_id(
     assert result['done']['wall'] > 0
 
 
-def test_a_pytest_that_dies_mid_item_closes_the_stream_and_names_only_the_rest_missing(
+def test_a_pytest_that_dies_mid_item_names_the_test_it_was_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runner = _item_runner(tmp_path, monkeypatch)
@@ -214,7 +214,31 @@ def test_a_pytest_that_dies_mid_item_closes_the_stream_and_names_only_the_rest_m
     ids = _tree(tmp_path, body)
     result = runner.run({'ids': ids, 'stream': '.lab-ci/t/0.jsonl'})
     assert result['outcomes'] == {ids[0]: 'passed'}
-    assert result['done']['done'] == 3, 'it closed, so b and c are missing -- re-running would crash again'
+    assert result['done']['done'] == 3
+    assert result['started'] == ids[1], 'the plugin streams a START line, so the in-flight id is known'
+
+
+def test_a_clean_exit_mid_item_fails_the_in_flight_id_and_requeues_only_the_ids_after_it() -> None:
+    items = [{'ids': ['t.py::a', 't.py::b', 't.py::c', 't.py::d']}]
+    streams = {
+        0: '{"start": "t.py::a"}\n{"id": "t.py::a", "outcome": "passed", "s": 0}\n'
+        '{"start": "t.py::b"}\n{"done": 1, "wall": 2.0, "peak_mb": null}\n'
+    }
+    outcomes: dict[str, str] = {}
+    reasons: dict[str, str] = {}
+    pending, killed, _ = fold(items, streams, outcomes, Measured.of({}), reasons, shards=[(0, 1)], walls=[60.0])
+    assert outcomes == {'t.py::a': 'passed', 't.py::b': 'failed'}, 'nothing is missing when the in-flight id is known'
+    assert 'exited 1' in reasons['t.py::b']
+    assert sorted(node for part in pending for node in part) == ['t.py::c', 't.py::d']
+    assert not killed
+
+
+def test_the_scope_timeout_reaches_the_pytest_argv() -> None:
+    files = ['tests/test_a.py']
+    with_ceiling = pytest_argv({'ids': [], 'timeout_s': 3000}, files)
+    assert with_ceiling[with_ceiling.index('--timeout') + 1] == '3000'
+    assert with_ceiling[-1] == 'tests/test_a.py'
+    assert '--timeout' not in pytest_argv({'ids': []}, files), 'undeclared: the repo default stands'
 
 
 # -- the measured plan -----------------------------------------------------------------------------------
@@ -953,3 +977,14 @@ def test_a_workstation_never_submits_or_gathers_over_ssh(monkeypatch: pytest.Mon
     monkeypatch.setattr(cluster_module, 'local_runner', shell)
     assert cli.main(['run', 'gather', '--sha', SHA, '-o', 'out']) == 1, 'it ran here, and here had no run'
     assert reached, 'on a cluster the step runs in this login node shell'
+
+
+def test_every_item_carries_the_timeout_its_scope_declares() -> None:
+    timeouts = {'incremental': 300, 'full': 3000}
+    builds = Builds(install='true', env_key='k1', timeout_s=timeouts)
+    full, incremental = FakeRunCluster(), FakeRunCluster()
+    submit_run(RunSpec(sha=SHA, repo_url='u', builds=builds), MACHINE, lambda _g: full, cost=COST, policy=POLICY)
+    narrowed = RunSpec(sha=SHA, repo_url='u', builds=builds, only=frozenset({'tests/b.py::t4'}))
+    submit_run(narrowed, MACHINE, lambda _g: incremental, cost=COST, policy=POLICY)
+    assert {i['timeout_s'] for i in full.manifests[0]['items']} == {3000}
+    assert {i['timeout_s'] for i in incremental.manifests[0]['items']} == {300}

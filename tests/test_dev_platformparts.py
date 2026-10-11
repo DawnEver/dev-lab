@@ -289,3 +289,10 @@ def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, mon
 
     monkeypatch.setattr(platformparts, 'flush', down)
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE
+
+
+def test_this_repo_assigns_its_dev_checkout_tests_off_the_cluster() -> None:
+    """The cluster's linux tree is no developer checkout: a ``dev_checkout`` test is assigned, never skipped."""
+    table = read_table((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8'))
+    assert cannot_run(table, 'linux') == 'dev_checkout'
+    assert assign([p for p in ('linux', 'windows', 'macos') if p in table['dev_checkout']]) == 'windows'

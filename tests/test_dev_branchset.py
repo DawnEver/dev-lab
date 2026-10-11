@@ -130,6 +130,7 @@ def test_the_shipped_planted_control_passes(tmp_path: Path) -> None:
 _PENDING_DELETION: frozenset[str] = frozenset({'feat/hpc'})
 
 
+@pytest.mark.dev_checkout
 def test_this_repo_carries_only_its_declared_branches() -> None:
     """lab-commons adopts its own rule: origin carries the declared set plus the named pending deletions."""
     root = Path(__file__).resolve().parents[1]
