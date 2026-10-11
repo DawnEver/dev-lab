@@ -208,7 +208,7 @@ def test_selector_covers_resolves_the_linter_before_the_digits() -> None:
     assert not selector_covers('PLC0415', 'PLC0414'), 'the digits match by PREFIX, not by string start'
 
 
-def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() -> None:
+def test_every_repo_declares_the_base_hook_core_and_every_declared_commitizen_stage_is_wired() -> None:
     """THE RATCHET'S OTHER SIDE for the pre-commit rows: DECLARED is not INSTALLED.
 
     This assertion has now earned its place TWICE, in opposite directions, and the second time is
@@ -236,7 +236,7 @@ def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() 
     reached = reachable_repos(REPO_PATHS)
     declared = {repo: hook_ids(root) for repo, root in reached.items()}
     for repo, ids in declared.items():
-        assert set(HOOK_ID_CORE) <= ids, f'{repo} dropped part of the 11-hook core: {sorted(set(HOOK_ID_CORE) - ids)}'
+        assert set(HOOK_ID_CORE) <= ids, f'{repo} dropped part of the {len(HOOK_ID_CORE)}-hook base core: {sorted(set(HOOK_ID_CORE) - ids)}'
     common_ids = set.intersection(*(set(ids) for ids in declared.values()))
     assert common_ids == set(HOOK_ID_CORE), (
         f'the four-repo hook core is now {sorted(common_ids)} against the declared {list(HOOK_ID_CORE)}. '
@@ -245,7 +245,7 @@ def test_the_hook_core_is_eleven_and_every_declared_commitizen_stage_is_wired() 
         f'core two lines below and the subset arm above bounds it from the other side. What this line '
         f'adds is the UPWARD half -- an id all four repos grew is a family hook that belongs in the '
         f'base -- and legibility, so a reader need not derive the equality from two arms. WHOSE DRIFT '
-        f'THIS ACCUSES: any of the four. Re-measured 2026-09-19: eleven live, eleven declared.'
+        f'THIS ACCUSES: any of the four. The core is the base`s rows (`HOOK_ID_CORE`), so its size is derived, never restated.'
     )
     assert declared['lab-commons'] == set(HOOK_ID_CORE), (
         f'lab-commons declares {sorted(declared["lab-commons"])} against the family core '

@@ -361,7 +361,7 @@ HOOK_ID_CORE: tuple[str, ...] = (
 )
 
 #: THE PRE-COMMIT DELTA IN THE UNIT ITS CEILING HAS TO BE STATED IN: the hook ids each repo declares
-#: BEYOND the eleven-hook core, exact and per repo, MEASURED 2026-09-18 over 11 / 22 / 19 / 18
+#: BEYOND the base hook core, exact and per repo, MEASURED 2026-09-18 over 11 / 22 / 19 / 18
 #: declared ids. Read by `test_the_precommit_delta_is_counted_in_hooks.py`, which drives the kit's own
 #: `hook_delta` over the live files.
 #:
@@ -629,7 +629,7 @@ ROWS_CONSUMER_B: dict[str, Placement] = {
         'runs `python -m lab_commons.dev.githooks bump-version` -- the payload reached BY NAME after a '
         'forked copy had drifted into four separate defects, recorded in this file`s own comment. So '
         'one hook already demonstrates that the shared half is shareable. The rest of the shared half '
-        'is the 11-hook core (commitizen plus the pre-commit-hooks whitelist) declared identically by '
+        'is the base hook core (`HOOK_ID_CORE`) (commitizen plus the pre-commit-hooks whitelist) declared identically by '
         'all three consumers. What STAYS: `generate-changelog`, the `^\\.claude/|^experiment/` excludes, '
         'and the `_suppressions.tsv` trailing-whitespace exclusion, which exists because a formatter '
         'rewrote 351 rows of a five-column TSV -- an incident, and an incident is not portable. What '
@@ -789,7 +789,7 @@ ROWS_CONSUMER_A: dict[str, Placement] = {
         'git`s own resolution: a worktree`s hooks are the PARENT checkout`s, and reading '
         '`<worktree>/.git/hooks` as a directory reports zero). Both labs have the pre-commit half and '
         'neither has `commit-msg`, so this is the only repo where the commitizen declaration executes. '
-        'THE SEAM: it declares the same 11-hook core as the labs, which is the shared half. What '
+        'THE SEAM: it declares the same base hook core as the labs, which is the shared half. What '
         'STAYS is the entire pre-push half -- `gate`, `pyright-clean-leaf`, `bump-version` and '
         '`commitizen-branch`, every one wrapped in `scripts/hooks/branch-push-only.sh`, plus the '
         '`default_stages` discipline and the `.dxf` exclusions on the rewriting hooks. Those encode '
