@@ -14,7 +14,8 @@ Three questions are asked of it, all through local refs (fetch first; the remote
 * :func:`census` -- which ORIGIN branches are undeclared (debt), which LOCAL branches are undeclared
   and hold nothing origin lacks (debt), and which local ones hold UNPUSHED work (reported, never
   deleted: unpushed work exists nowhere else).
-* :func:`merge_candidates` -- every undeclared branch, local and on origin, and whether it may be
+* :func:`merge_candidates` -- every undeclared branch, local and on origin, and every branch PARKED as an
+  ``archive/*`` tag (MERGE-OR-DELETE: a tag nobody reads is not a place to keep work), and whether it may be
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
   first. ``python -m lab_commons.dev.branchset [--root R]`` prints this list; it deletes nothing.
 
@@ -32,6 +33,7 @@ from lab_commons.dev.checkout import authority_for, git_out, origin_branches
 from lab_commons.log import emit
 
 __all__ = [
+    'ARCHIVE_PREFIX',
     'BranchSet',
     'BranchSetNotDeclared',
     'Candidate',
@@ -44,6 +46,11 @@ __all__ = [
 ]
 
 _TABLE = '[tool.lab_commons.branchset]'
+
+#: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
+#: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
+#: like an undeclared branch: merged -> deleted, unmerged -> merged. A release tag is never this shape.
+ARCHIVE_PREFIX = 'archive/'
 
 
 class BranchSetNotDeclared(ValueError):
@@ -146,15 +153,25 @@ def _holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:
     return tuple(refs)
 
 
+def _archive_tags(root: Path) -> tuple[str, ...] | None:
+    out = git_out(root, 'for-each-ref', '--format=%(refname:short)', f'refs/tags/{ARCHIVE_PREFIX}')
+    return None if out is None else tuple(sorted(n for n in out.splitlines() if n))
+
+
 def merge_candidates(root: Path, branchset: BranchSet) -> tuple[Candidate, ...] | None:
-    """Every undeclared branch, local then origin, and whether its tip is already held by a declared one."""
+    """Every undeclared branch (local, origin) and parked tag, and whether its tip is held by a declared one."""
     remote = origin_branches(root, protected=frozenset({'HEAD'}))
     local = _local_branches(root)
-    if remote is None or local is None:
+    parked = _archive_tags(root)
+    if remote is None or local is None or parked is None:
         return None
     holders = _holders(root, branchset)
     rows: list[Candidate] = []
-    for where, names, prefix in (('local', local, 'refs/heads/'), ('origin', remote, 'refs/remotes/origin/')):
+    for where, names, prefix in (
+        ('local', local, 'refs/heads/'),
+        ('origin', remote, 'refs/remotes/origin/'),
+        ('tag', parked, 'refs/tags/'),
+    ):
         for name in names:
             if name in branchset.declared:
                 continue
@@ -190,6 +207,9 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
             hint = f'(human: git push origin --delete {row.name})' if row.deletable else '(merge first)'
             out.append(f'listed   origin  {row.name}  {hint}')
             continue
+        if row.where == 'tag':
+            out.append(_drop_tag(root, row, holders))
+            continue
         ref = f'refs/heads/{row.name}'
         sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
         if not row.deletable or row.name in branchset.declared or not sha:
@@ -202,6 +222,20 @@ def apply_local(root: Path, branchset: BranchSet) -> tuple[str, ...] | None:
             done = git_out(root, 'update-ref', '-d', ref, sha) is not None
             out.append(f'{"deleted " if done else "FAILED  "} local   {row.name}  ({sha[:10]})')
     return tuple(out)
+
+
+def _drop_tag(root: Path, row: Candidate, holders: tuple[str, ...]) -> str:
+    """A parked ``archive/*`` tag: deleted when merged (fresh ancestry, pinned sha), else listed to MERGE."""
+    ref = f'refs/tags/{row.name}'
+    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}') or '').strip()
+    if not row.deletable or not sha:
+        return f'kept     tag     {row.name}  (unmerged: merge it into a declared branch, then delete the tag)'
+    if not any(git_out(root, 'merge-base', '--is-ancestor', sha, h) is not None for h in holders):
+        return f'kept     tag     {row.name}  (ancestry re-check failed)'
+    tag_sha = (git_out(root, 'rev-parse', '--verify', '--quiet', ref) or '').strip()
+    done = git_out(root, 'update-ref', '-d', ref, tag_sha) is not None
+    hint = f'(human, if pushed: git push origin --delete refs/tags/{row.name})'
+    return f'{"deleted " if done else "FAILED  "} tag     {row.name}  {hint}'
 
 
 def main(argv: list[str] | None = None) -> int:
