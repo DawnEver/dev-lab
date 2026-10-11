@@ -19,6 +19,7 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
+from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc import learned, outstanding
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
@@ -807,7 +808,8 @@ def _outstanding_cli(fake: FakeRunCluster, tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'machine' / 'config.toml'))
     monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
-    monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: fake)
+    monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: fake)  # run status: a human's read, over ssh
+    monkeypatch.setattr(cli, 'submitter', lambda: lambda _g: fake)  # gather/watch: this login node's shell
     slept: list[float] = []
     monkeypatch.setattr(cli, '_sleep', slept.append)
     state = _submit(fake)
@@ -932,3 +934,22 @@ def test_history_is_no_flag_and_its_spelling_is_refused_with_the_remedy(capsys: 
     with pytest.raises(SystemExit):
         cli.main(['run', 'submit', '--sha', SHA, '--repo-url', 'u', '--scope', 'full', '--history', 'r.json.gz'])
     assert 'lab_commons.hpc.learned' in capsys.readouterr().err
+
+
+def test_a_workstation_never_submits_or_gathers_over_ssh(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    """PLANTED CONTROL: the same step on a box with sbatch reaches the local shell (and fails there, not here)."""
+    monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
+    monkeypatch.setattr(cluster_module.shutil, 'which', lambda _name: None)
+    assert cli.main(['run', 'gather', '--sha', SHA, '-o', 'out']) == 2
+    assert 'no sbatch' in capsys.readouterr().err
+    reached: list[str] = []
+
+    def shell(command: str, _stdin: str | None = None, **_kw: object) -> str:
+        reached.append(command)
+        msg = 'no state here'
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(cluster_module.shutil, 'which', lambda _name: '/usr/bin/sbatch')
+    monkeypatch.setattr(cluster_module, 'local_runner', shell)
+    assert cli.main(['run', 'gather', '--sha', SHA, '-o', 'out']) == 1, 'it ran here, and here had no run'
+    assert reached, 'on a cluster the step runs in this login node shell'

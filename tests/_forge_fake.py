@@ -62,6 +62,12 @@ class Recorder(BaseHTTPRequestHandler):
     answers: ClassVar[dict[tuple[str, str], list[tuple[int | None, Any]]]] = {}
     #: When set, a request whose Authorization header it rejects is answered 401 -- the forge's credential check.
     accept: ClassVar[Callable[[str], bool] | None] = None
+    #: When set, the ``Date`` every answer carries -- the forge's clock, skewed from the host's at will.
+    date: ClassVar[str | None] = None
+
+    def date_time_string(self, timestamp: float | None = None) -> str:
+        """The answer's ``Date``: :attr:`date` when a test set one, else the server's own clock."""
+        return type(self).date or super().date_time_string(timestamp)
 
     def _serve(self, method: str) -> None:
         length = int(self.headers.get('Content-Length') or 0)
@@ -113,6 +119,7 @@ def serve() -> Iterator[ThreadingHTTPServer]:
     Recorder.received = []
     Recorder.answers = {}
     Recorder.accept = None
+    Recorder.date = None
     httpd = ThreadingHTTPServer(('127.0.0.1', 0), Recorder)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

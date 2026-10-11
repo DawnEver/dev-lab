@@ -337,3 +337,15 @@ def test_the_forge_module_is_the_cli_door() -> None:
     )
     assert done.returncode == 0, done.stderr
     assert all(verb in done.stdout for verb in ('list', 'view', 'create', 'comment', 'close'))
+
+
+def test_the_forge_clock_is_the_date_the_forge_answered_with_not_the_hosts(server) -> None:
+    """PLANTED CONTROL: the forge's Date is a year from this host's clock; a lease is judged on the forge's."""
+    _Recorder.date = 'Sat, 10 Oct 2026 12:00:00 GMT'
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    built = _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server))
+    built.clock = lambda: datetime(2027, 10, 10, tzinfo=UTC)
+    assert built.forge_now() == datetime(2026, 10, 10, 12, tzinfo=UTC), 'read from an answer, never the host'
+    _Recorder.date = 'Sat, 10 Oct 2026 12:05:00 GMT'
+    built.whoami()
+    assert built.forge_now() == datetime(2026, 10, 10, 12, 5, tzinfo=UTC), 'the latest answer is the clock'

@@ -99,7 +99,7 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
         return real_popen(argv, *args, **kw)  # type: ignore[call-overload]
 
     monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
-    monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: have_after_pack)
+    monkeypatch.setattr(cli, 'submitter', lambda: lambda _g: have_after_pack)
     monkeypatch.setattr(subprocess, 'Popen', spy)
     machine_dir = tmp_path_factory.mktemp('machine')
     monkeypatch.setenv(CONFIG_ENV, str(machine_dir / 'config.toml'))

@@ -1,7 +1,8 @@
 """THE PRODUCER EXIT CONTRACT -- what a part producer's exit code MEANS to ``forge serve``. One source.
 
-A producer is the argv ``forge tick`` hands out for a claimed part (``platformparts cluster``, a local
-runner, ``verify``). Serve cannot read its mind, only its exit code, so every code means ONE thing:
+A producer is the argv ``forge tick`` hands out for a claimed LOCAL part (a local runner, ``verify``); a
+cluster part is no process but a resumable run (:mod:`lab_commons.dev.forgerun`). Serve cannot read a
+producer's mind, only its exit code, so every code means ONE thing:
 
 * ``0`` PASS -- the part was judged PASS (and posted when the tree allowed it).
 * ``1`` FAIL -- the part was judged FAIL and the failures are named (posted likewise). A red part.

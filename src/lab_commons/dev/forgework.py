@@ -42,6 +42,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -238,11 +239,26 @@ class Client:
     sleep: Callable[[float], None] = time.sleep
     timeout: float = 30.0
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    #: The ``Date`` of the forge's latest answer -- see :meth:`forge_now`.
+    answered_at: datetime | None = None
 
     @property
     def backend(self) -> Backend:
         """The backend this repository's host selects."""
         return backend_for(self.forge)
+
+    def forge_now(self) -> datetime:
+        """The FORGE's time: the ``Date`` of its latest answer, asking it once when none came yet.
+
+        A claim's lease is judged on this clock, never the host's: two claimants on two hosts with
+        skewed clocks would otherwise disagree about whether one lease has expired.
+        """
+        if self.answered_at is None:
+            self.whoami()
+        if self.answered_at is None:
+            msg = f'{self.forge.host} answered without a Date header, so no lease can be judged against its clock'
+            raise OSError(msg)
+        return self.answered_at
 
     def _once(self, method: str, path: str, data: bytes | None, content_type: str) -> tuple[int, bytes]:
         backend = self.backend
@@ -252,6 +268,8 @@ class Client:
         try:
             conn.request(method, path, body=data, headers=headers | dict(backend.headers))
             response = conn.getresponse()
+            if date := response.getheader('Date'):
+                self.answered_at = parsedate_to_datetime(date).astimezone(UTC)
             return response.status, response.read()
         finally:
             conn.close()
