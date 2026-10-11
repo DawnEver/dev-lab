@@ -245,6 +245,7 @@ the tranche at 387 lines against a 400-line band, so the reasoning stays in each
 docstring rather than being copied here -- and the NEXT module to arrive must split this inventory.
 
 * :mod:`lab_commons.dev.codeplace` -- code only under DECLARED roots; a scratch one-off archived or promoted.
+* :mod:`lab_commons.dev.reportplace` -- no agent-written Markdown under ``output/``; a written report is a memory entry.
 * :mod:`lab_commons.dev.datedlog` -- one dated log layout; the base has NO DEFAULT (four repos, four answers).
 * :mod:`lab_commons.dev.shards` -- a partition, the AND over a shard set, and a required population FLOOR.
 * :mod:`lab_commons.dev.bypath` -- a by-path load as a CALL: one object per FILE, nothing to suppress.
