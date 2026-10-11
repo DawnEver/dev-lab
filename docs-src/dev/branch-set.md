@@ -1,6 +1,6 @@
 # One branch per session
 
-Rule `ONE-BRANCH-PER-SESSION` (statement in `lab_commons.dev.rules`). Each working session maintains exactly ONE long-lived branch and merges its work into it; every other branch is merged and then deleted, never left behind.
+Rule `ONE-BRANCH-PER-SESSION` (statement in `lab_commons.dev.rules`). Each working session maintains exactly ONE long-lived branch and merges its work into it; every other branch is merged and then deleted, never left behind. Rule `MERGE-OR-DELETE` closes the third door: a merged branch is deleted, an unmerged one is merged, and parking it as an `archive/*` tag is refused as debt -- `python -m lab_commons.dev.branchset` lists such tags beside the branches, and `--apply` deletes the merged ones.
 
 ## Why
 

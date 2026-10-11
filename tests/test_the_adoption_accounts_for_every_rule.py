@@ -135,6 +135,7 @@ _ENFORCED = {
     'NO-LAZY-IMPORT': (lint('PLC0415'),),
     'NO-REFLECTION': (guard('tests/test_arch_production_carries_no_reflection.py'),),
     'ONE-BRANCH-PER-SESSION': (guard('tests/test_dev_branchset.py'),),
+    'MERGE-OR-DELETE': (guard('tests/test_dev_branchset_apply.py'),),
     'ONE-RUN-AFTER-INTEGRATION': (
         guard('tests/test_dev_admission.py'),
         guard('tests/test_dev_inflight.py'),

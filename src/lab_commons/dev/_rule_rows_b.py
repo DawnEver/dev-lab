@@ -98,6 +98,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_branchset.py',),
     ),
     (
+        'MERGE-OR-DELETE',
+        (
+            'A branch that is merged is DELETED; a branch that is not merged is MERGED. There is no third '
+            'state: parking work as an `archive/*` tag (or a renamed branch nobody tracks) hides it from '
+            'everyone and is debt exactly like an undeclared branch -- `branchset` lists it, deletes it when '
+            'its tip is held by a declared branch, and names it to merge otherwise.'
+        ),
+        ('tests/test_dev_branchset_apply.py',),
+    ),
+    (
         'MERGE-DEVIATIONS-NAMED',
         (
             'A merge may not lose or rewrite a test in silence. Every test whose body in the merge differs from '

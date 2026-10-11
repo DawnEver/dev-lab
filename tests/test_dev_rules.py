@@ -70,6 +70,7 @@ _IDS = frozenset(
         'ONE-RUN-AFTER-INTEGRATION',
         'ONE-BOX-ONE-LOCK',
         'ONE-BRANCH-PER-SESSION',
+        'MERGE-OR-DELETE',
         'MERGE-DEVIATIONS-NAMED',
         'AUTO-MODE-RUNS-THE-DOORS',
         'PLANTED-CONTROL',
