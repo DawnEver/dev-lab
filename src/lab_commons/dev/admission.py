@@ -37,6 +37,7 @@ disagreed. :mod:`lab_commons.dev.famtests.localadmission` refuses a consumer tha
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -91,6 +92,9 @@ TRUNK: Final = 'trunk'
 TRUNK_SCOPE: Final = 'full'
 
 _GIT_TIMEOUT_S: Final = 120
+
+#: The full remote ref pre-commit hands a pre-push hook, which receives no argv for it.
+_PRE_COMMIT_REMOTE_REF: Final = 'PRE_COMMIT_REMOTE_BRANCH'
 
 
 @dataclass(frozen=True)
@@ -186,13 +190,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     """``0`` admit, ``1`` refuse -- the CLI a consumer's pre-push hook delegates to."""
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.admission', description=__doc__.splitlines()[0])
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout being pushed')
-    parser.add_argument('--remote-ref', required=True, help='the full remote ref being updated')
+    parser.add_argument(
+        '--remote-ref',
+        help=f'the full remote ref being updated (default: ${_PRE_COMMIT_REMOTE_REF}, which a pre-commit pre-push sets)',
+    )
     parser.add_argument('--trunk-ref', required=True, help="the trunk ref (e.g. refs/heads/main), or 'none'")
     argv = sys.argv[1:] if argv is None else list(argv)
     for word in argv:
         if refused := refusal('admission', word.split('=', 1)[0]):
             parser.error(refused)
     args = parser.parse_args(argv)
+    args.remote_ref = args.remote_ref or os.environ.get(_PRE_COMMIT_REMOTE_REF, '')
+    if not args.remote_ref:
+        parser.error(f'no ref to judge: pass --remote-ref, or run as a pre-commit pre-push hook (${_PRE_COMMIT_REMOTE_REF})')
     trunk = args.trunk_ref != 'none' and args.remote_ref == args.trunk_ref
     destination = TRUNK if trunk else destination_of(args.remote_ref, load_policy(args.root))
     head = _head(args.root)
