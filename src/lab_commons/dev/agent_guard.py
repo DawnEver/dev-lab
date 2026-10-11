@@ -1,9 +1,9 @@
 """AGENT-GUARD-IS-LIVE: is the deny registry a repo DECLARES actually ENFORCED in that repo?
 
 THE SAME GAP :mod:`lab_commons.dev.hook_install` closes, one layer up and measured the same week.
-There, a ``.pre-commit-config.yaml`` was a DECLARATION and ``pre-commit install`` a separate act on a
-separate machine, with nothing linking the two -- and three repos declared a full configuration with
-ZERO hooks on disk. Here the declaration is ``.claude/hooks/deny-rules.json``, rendered from the
+There, a hook table is a DECLARATION and installing its shims a separate act on a separate
+machine, with nothing linking the two -- and three repos declared a full set of hooks with ZERO
+hooks on disk. Here the declaration is ``.claude/hooks/deny-rules.json``, rendered from the
 shared registry by :func:`lab_commons.dev.hook_adoption.render`, and the separate act is installing
 an ENGINE and pointing a ``PreToolUse`` matcher at it. MEASURED 2026-09-17: the registry existed, the
 recipe existed, and the engine existed in exactly ONE repo of four. A rendered ``deny-rules.json`` in
@@ -86,7 +86,7 @@ RULES_REL: Final = '.claude/hooks/deny-rules.json'
 SETTINGS_REL: Final = '.claude/settings.json'
 
 #: The hook command line, DERIVED from the two paths above rather than spelled twice -- the lesson
-#: :func:`lab_commons.dev.hook_install.install_command` records: a restatement of a path is a place
+#: :data:`lab_commons.dev.hook_install.INSTALL_COMMAND` records: a restatement of a path is a place
 #: for the real one to move away from.
 HOOK_COMMAND: Final = f'node {ENGINE_REL} {RULES_REL}'
 

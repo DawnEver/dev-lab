@@ -42,17 +42,14 @@ This generalises the per-consumer `ORIGIN_BRANCHES` / `LOCAL_ONLY_BRANCHES` pins
 
 Everything above runs AFTER the push, which is too late for the thing the rule is about. Measured 2026-10-05/06: a session pushed seven `work/*` lane branches to origin while the census naming exactly that hazard was green -- because it had not run yet. The rule now has an enforcement point where the decision is still open, as a pre-push hook:
 
-```yaml
-      - id: branchset-push
-        name: every pushed branch is declared
-        entry: lab-with-venv
-        args: ['lab_commons.dev.githooks', 'branchset-push']
-        stages: [pre-push]
-        always_run: true
-        pass_filenames: false
+```toml
+[[tool.lab_commons.hooks.pre-push]]
+id = "branchset-push"
+run = ["python", "-m", "lab_commons.dev.githooks", "script", "branchset-push"]
+always_run = true
 ```
 
-`lab_commons.dev.branchset_push` reads the refspec from **stdin** (git's own pre-push protocol: `<local ref> <local sha> <remote ref> <remote sha>`) and falls back to `PRE_COMMIT_REMOTE_BRANCH`, which is what pre-commit exports because it consumes that stdin. Measured on a real bare origin: a raw hook is handed every ref on stdin; a pre-commit hook is handed one, in the environment. Every `refs/heads/**` ref is judged; tags and machine refs such as `refs/ci/**` pass.
+`lab_commons.dev.branchset_push` reads the refspec from **stdin** (git's own pre-push protocol: `<local ref> <local sha> <remote ref> <remote sha>`) which the family runner (`python -m lab_commons.dev.githooks run pre-push`) pipes to every pre-push hook, one line per pushed ref. Every `refs/heads/**` ref is judged; tags and machine refs such as `refs/ci/**` pass.
 
 | push | verdict |
 |---|---|
@@ -64,4 +61,4 @@ Everything above runs AFTER the push, which is too late for the thing the rule i
 
 There is no bypass: no flag, no environment variable, and no `--force` spelling relaxes it. The one documented way to push a new long-lived branch is to add it to `sessions` in `pyproject.toml` -- a reviewed edit in the repo that argues for the branch, which is the point.
 
-Two limits, stated rather than left to be discovered. Pre-commit runs **no hook at all** for a push that only deletes a branch (measured twice), so a deletion passes there by not being asked; a raw hook IS asked, and recognises a deletion by the all-zero local object name. And pre-commit reports one ref per push, so a multi-ref `git push <branch> <tag>` is judged on its branch.
+A deletion is recognised by the all-zero local object name and ALLOWED (deleting an undeclared branch is the remedy); a multi-ref `git push <branch> <tag>` hands every ref to the hook and each `refs/heads/**` one is judged.

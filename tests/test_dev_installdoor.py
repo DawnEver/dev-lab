@@ -45,8 +45,8 @@ _KIT: tuple[str, ...] = ('lab-commons',)
 #: THE MEASURED ROWS, verbatim. Left column: the command as it was written. Right: what it delivered
 #: against a venv holding dev40 with the remote at dev42, measured 2026-09-17 with uv 0.12.5.
 _MEASURED: tuple[tuple[str, Delivery], ...] = (
-    # consumer-b/.pre-commit-config.yaml, pre-push. Reverted the kit on every push.
-    ('uv run python -m lab_commons.dev.githooks bump-version', Delivery.REVERTS),
+    # consumer-b's pre-push hook. Reverted the kit on every push.
+    ('uv run python -m lab_commons.dev.githooks script bump-version', Delivery.REVERTS),
     # consumer-b/scripts/githooks/generate-changelog.sh. Reverted it on every commit.
     ('uv run python -m commitizen changelog', Delivery.REVERTS),
     # consumer-b/Makefile install-dev -- the door everyone suspected, and it was never the defect.

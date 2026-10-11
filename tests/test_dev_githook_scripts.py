@@ -13,11 +13,10 @@ where a guard's silence is the interesting half -- ``git-env-repair`` leaving a 
 ``GIT_CONFIG_*`` set alone, ``cz-push-range`` not invoking the checker on an empty range -- the
 silent side is asserted from the child's side too.
 
-THE SEAM THESE ARMS PIN. ``branch-push-only.sh`` and ``cz-push-range.sh`` each need one fact this
-package cannot know -- which ref takes more than a branch push, and which ref an unpublished lane is
-measured against. Both arrive as an environment variable with NO DEFAULT, and the arms that assert
-the refusal when it is missing are the ones that keep it that way: a default would make every other
-repo silently inherit the repo these scripts came from.
+THE SEAM THESE ARMS PIN. ``cz-push-range.sh`` needs one fact this package cannot know -- which ref an
+unpublished lane is measured against. It arrives as an environment variable (a hook row`s ``env``)
+with NO DEFAULT, and the arm that asserts the refusal when it is missing keeps it that way. The
+push increment arrives as git's own pre-push lines on stdin.
 """
 
 from __future__ import annotations
@@ -61,10 +60,13 @@ def _git(root: Path, *args: str) -> str:
     return done.stdout.strip()
 
 
-def _run(script: str, args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    script: str, args: list[str], cwd: Path, env: dict[str, str], stdin: str | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [BASH, sh(githooks.hook_path(script)), *args],
         cwd=cwd,
+        input=stdin,
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -129,7 +131,7 @@ def module_dir(tmp_path: Path) -> Path:
 
 def test_every_shipped_script_declares_what_it_is() -> None:
     """A script is a HOOK, a WRAPPER or a FRAGMENT, and the directory and the registry must agree."""
-    floor = 5
+    floor = 4
     assert len(githooks.SCRIPTS) >= floor, (
         f'the payload scan reached {githooks.SCRIPTS}; an unread tree is not a clean one'
     )
@@ -138,7 +140,7 @@ def test_every_shipped_script_declares_what_it_is() -> None:
     # one arrived. `branchset-push` joined on 2026-10-06 -- ONE-BRANCH-PER-SESSION refused AT PUSH
     # TIME, where the decision is still open, rather than only by the census that runs afterwards.
     assert set(githooks.HOOKS) == {'branchset-push', 'bump-version', 'cz-push-range'}, githooks.HOOKS
-    assert set(githooks.scripts_of_kind(githooks.WRAPPER)) == {'branch-push-only', 'with-venv'}
+    assert set(githooks.scripts_of_kind(githooks.WRAPPER)) == {'with-venv'}
 
 
 def test_a_planted_registry_reds_on_every_side() -> None:
@@ -167,7 +169,7 @@ def test_a_fragment_refuses_to_be_run_and_a_wrapper_does_not(repo: Path) -> None
 def test_the_script_set_is_listable_by_kind() -> None:
     """A consumer wiring a hook must be able to ask which scripts are hooks at all."""
     listed = subprocess.run(
-        [sys.executable, '-m', 'lab_commons.dev.githooks', '--list', '--kind', 'fragment'],
+        [sys.executable, '-m', 'lab_commons.dev.githooks', 'script', '--list', '--kind', 'fragment'],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -356,8 +358,13 @@ def _plant_commitizen(root: Path, tmp_path: Path) -> tuple[Path, Path]:
     return where, argv_log
 
 
-def _cz(repo: Path, **env: str) -> subprocess.CompletedProcess[str]:
-    return _run('cz-push-range', [], cwd=repo, env=env)
+def _cz(repo: Path, stdin: str | None = None, **env: str) -> subprocess.CompletedProcess[str]:
+    return _run('cz-push-range', [], cwd=repo, env=env, stdin=stdin)
+
+
+def _line(remote_sha: str, local_sha: str) -> str:
+    """One line of git's pre-push protocol, as the runner pipes it."""
+    return f'refs/heads/feat {local_sha} refs/heads/feat {remote_sha}\n'
 
 
 def test_the_base_ref_has_NO_DEFAULT_and_its_absence_refuses(repo: Path, tmp_path: Path) -> None:
@@ -377,12 +384,12 @@ def test_the_increment_is_the_range_the_checker_receives(repo: Path, tmp_path: P
     _git(repo, 'add', '-A')
     _git(repo, 'commit', '-m', 'feat: second')
     head = _git(repo, 'rev-parse', 'HEAD')
-    done = _cz(repo, LAB_CZ_BASE_REF='origin/main', PRE_COMMIT_FROM_REF=first, PRE_COMMIT_TO_REF=head)
+    done = _cz(repo, _line(first, head), LAB_CZ_BASE_REF='origin/main')
     assert done.returncode == 0, done.stdout + done.stderr
     assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range {first}..{head}', argv_log.read_text(
         encoding='utf-8'
     )
-    assert 'as pre-commit computed it' in done.stdout
+    assert 'as git stated it' in done.stdout
 
 
 def test_an_all_zero_remote_side_falls_back_to_the_declared_base(repo: Path, tmp_path: Path) -> None:
@@ -392,15 +399,11 @@ def test_an_all_zero_remote_side_falls_back_to_the_declared_base(repo: Path, tmp
     (repo / 'g.txt').write_text('y', encoding='utf-8')
     _git(repo, 'add', '-A')
     _git(repo, 'commit', '-m', 'feat: second')
-    done = _cz(
-        repo,
-        LAB_CZ_BASE_REF='base-for-test',
-        PRE_COMMIT_FROM_REF='0' * 40,
-        PRE_COMMIT_TO_REF=_git(repo, 'rev-parse', 'HEAD'),
-    )
+    head = _git(repo, 'rev-parse', 'HEAD')
+    done = _cz(repo, _line('0' * 40, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'new branch' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').strip() == 'check --rev-range base-for-test..HEAD'
+    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range base-for-test..{head}'
 
 
 def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path, tmp_path: Path) -> None:
@@ -410,161 +413,18 @@ def test_a_sha_this_checkout_does_not_have_falls_back_and_SAYS_SO(repo: Path, tm
     (repo / 'g.txt').write_text('y', encoding='utf-8')
     _git(repo, 'add', '-A')
     _git(repo, 'commit', '-m', 'feat: second')
-    done = _cz(
-        repo,
-        LAB_CZ_BASE_REF='base-for-test',
-        PRE_COMMIT_FROM_REF='b' * 40,
-        PRE_COMMIT_TO_REF='c' * 40,
-    )
+    head = _git(repo, 'rev-parse', 'HEAD')
+    done = _cz(repo, _line('b' * 40, head), LAB_CZ_BASE_REF='base-for-test')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'does not have' in done.stdout, done.stdout
-    assert argv_log.read_text(encoding='utf-8').strip() == 'check --rev-range base-for-test..HEAD'
+    assert argv_log.read_text(encoding='utf-8').strip() == f'check --rev-range base-for-test..{head}'
 
 
 def test_an_EMPTY_increment_is_nothing_to_judge(repo: Path, tmp_path: Path) -> None:
     """Measured: ``commitizen check`` exits 3 on an empty range, which made an up-to-date branch unpushable."""
     _, argv_log = _plant_commitizen(repo, tmp_path)
     head = _git(repo, 'rev-parse', 'HEAD')
-    done = _cz(repo, LAB_CZ_BASE_REF='origin/main', PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=head)
+    done = _cz(repo, _line(head, head), LAB_CZ_BASE_REF='origin/main')
     assert done.returncode == 0, done.stdout + done.stderr
     assert 'nothing to check' in done.stdout
     assert not argv_log.is_file(), 'the checker was invoked on an empty range'
-
-
-# ----------------------------------------------------------------------------- branch-push-only.sh
-
-
-def _wrapped(tmp_path: Path) -> tuple[list[str], Path]:
-    """A wrapped command that leaves a marker -- the only way to tell "ran" from "declined"."""
-    marker = tmp_path / 'wrapped-ran'
-    return [BASH, '-c', f'echo yes > "{sh(marker)}"'], marker
-
-
-def _bpo(repo: Path, tmp_path: Path, **env: str) -> tuple[subprocess.CompletedProcess[str], Path]:
-    command, marker = _wrapped(tmp_path)
-    return _run('branch-push-only', ['probe', *command], cwd=repo, env=env), marker
-
-
-DECLARED_NONE = {'LAB_PUSH_PROTECTED_REF': 'none'}
-
-
-def test_a_branch_push_RUNS_the_wrapped_command(repo: Path, tmp_path: Path) -> None:
-    """The accepting side. Without it every arm below passes for a wrapper that declines everything."""
-    done, marker = _bpo(repo, tmp_path, PRE_COMMIT_REMOTE_BRANCH='refs/heads/feat/x', **DECLARED_NONE)
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert marker.is_file(), done.stdout + done.stderr
-
-
-#: The three non-branch refs the decline path is driven over, hoisted out of the decorator so the
-#: arm can check that the message names THIS one and not one of its siblings. ``ref in done.stdout``
-#: alone cannot see that: the ref is handed to the hook and the hook prints it back, so the clause
-#: held whatever the hook did with it. Named set rather than a count, and rather than one string.
-DECLINING_REFS = ('refs/tags/v1.2.3', 'refs/notes/commits', 'refs/ci/heartbeat/box/1')
-
-
-@pytest.mark.parametrize('ref', DECLINING_REFS)
-def test_a_push_that_updates_no_branch_DECLINES(repo: Path, tmp_path: Path, ref: str) -> None:
-    """The axis: decided on the REMOTE ref, which is the only one that differs between these pushes."""
-    done, marker = _bpo(repo, tmp_path, PRE_COMMIT_REMOTE_BRANCH=ref, **DECLARED_NONE)
-    assert done.returncode == 0, 'declining is not refusing: a tag push must still succeed'
-    assert not marker.is_file(), f'{ref} reached the wrapped command'
-    assert 'DECLINED' in done.stdout, done.stdout
-    named = {candidate for candidate in DECLINING_REFS if candidate in done.stdout}
-    assert named == {ref}, f'the decline names {sorted(named)} and the push was of {ref}: {done.stdout}'
-
-
-def test_no_remote_ref_in_the_environment_RUNS(repo: Path, tmp_path: Path) -> None:
-    """A manual invocation carries no pre-commit environment, and must not silently check nothing."""
-    env = {k: v for k, v in os.environ.items() if k != 'PRE_COMMIT_REMOTE_BRANCH'}
-    command, marker = _wrapped(tmp_path)
-    done = subprocess.run(
-        [BASH, sh(githooks.hook_path('branch-push-only')), 'probe', *command],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        check=False,
-        timeout=180,
-        env={**env, **DECLARED_NONE},
-    )
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert marker.is_file(), done.stdout
-
-
-def test_the_protected_ref_RUNS_ITS_GUARD_and_a_refusal_stops_the_push(repo: Path, tmp_path: Path) -> None:
-    """The repo-shaped half, supplied from outside: a failing tier must fail the push."""
-    done, marker = _bpo(
-        repo,
-        tmp_path,
-        PRE_COMMIT_REMOTE_BRANCH='refs/heads/main',
-        LAB_PUSH_PROTECTED_REF='refs/heads/main',
-        LAB_PUSH_PROTECTED_CMD='echo no-verdict-for-this-tree; exit 1',
-        LAB_PUSH_PROTECTED_NAME='heavy',
-    )
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert not marker.is_file(), 'the wrapped command ran despite the guard refusing'
-    assert 'heavy' in done.stdout, f'the refusal must NAME the tier that declined: {done.stdout!r}'
-    assert 'no-verdict-for-this-tree' in done.stdout, "the guard's own reason must reach the reader"
-
-
-def test_a_PASSING_guard_lets_the_protected_push_through(repo: Path, tmp_path: Path) -> None:
-    """The accepting side of the same pair: the guard is consulted, not a gate that always shuts."""
-    done, marker = _bpo(
-        repo,
-        tmp_path,
-        PRE_COMMIT_REMOTE_BRANCH='refs/heads/main',
-        LAB_PUSH_PROTECTED_REF='refs/heads/main',
-        LAB_PUSH_PROTECTED_CMD='echo verdict=PASS',
-    )
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert marker.is_file(), done.stdout + done.stderr
-
-
-def test_an_UNPROTECTED_branch_does_not_run_the_guard(repo: Path, tmp_path: Path) -> None:
-    """Scope: the guard belongs to ONE ref, and a lane push must not pay for it."""
-    done, marker = _bpo(
-        repo,
-        tmp_path,
-        PRE_COMMIT_REMOTE_BRANCH='refs/heads/feat/x',
-        LAB_PUSH_PROTECTED_REF='refs/heads/main',
-        LAB_PUSH_PROTECTED_CMD='exit 1',
-    )
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert marker.is_file(), "a lane push was judged by the protected ref's guard"
-
-
-def test_a_repo_that_DECLARES_no_protected_ref_pushes_its_trunk_normally(repo: Path, tmp_path: Path) -> None:
-    """``none`` is a declaration, not a default: the trunk becomes an ordinary branch push."""
-    done, marker = _bpo(repo, tmp_path, PRE_COMMIT_REMOTE_BRANCH='refs/heads/main', **DECLARED_NONE)
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert marker.is_file()
-
-
-@pytest.mark.parametrize(
-    ('env', 'named'),
-    [
-        ({}, 'LAB_PUSH_PROTECTED_REF'),
-        ({'LAB_PUSH_PROTECTED_REF': 'refs/heads/main'}, 'LAB_PUSH_PROTECTED_CMD'),
-    ],
-)
-def test_an_UNANSWERED_repo_fact_refuses_and_names_it(
-    repo: Path, tmp_path: Path, env: dict[str, str], named: str
-) -> None:
-    """THE NO-DEFAULT ARM, both halves: a protection nothing enforces is a declaration that lies."""
-    ambient = {k: v for k, v in os.environ.items() if not k.startswith('LAB_PUSH_')}
-    command, marker = _wrapped(tmp_path)
-    done = subprocess.run(
-        [BASH, sh(githooks.hook_path('branch-push-only')), 'probe', *command],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        check=False,
-        timeout=180,
-        env={**ambient, 'PRE_COMMIT_REMOTE_BRANCH': 'refs/heads/main', **env},
-    )
-    assert done.returncode == 1, done.stdout + done.stderr
-    assert named in done.stderr, done.stderr
-    assert not marker.is_file(), 'a misconfigured hook ran the command it could not judge'

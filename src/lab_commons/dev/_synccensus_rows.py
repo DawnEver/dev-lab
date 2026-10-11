@@ -36,16 +36,16 @@ __all__ = [
 ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
-        path='.github/workflows/ci.yml',
-        line=51,
-        evidence="extras: 'dev viz-mpl viz-bokeh'",
+        path='pyproject.toml',
+        line=224,
+        evidence='extras = "dev viz-mpl viz-bokeh"',
         selected=('dev', 'viz-mpl', 'viz-bokeh'),
         scope='COMPLETE',
         stranded=frozenset(),
         why=(
             'THE CALLER SIDE OF THE SHARED WORKFLOW. This line is the whole input to the `for extra '
             'in ...` loop that builds `$extra_flags`, so it decides what the reusable workflow syncs '
-            'in THIS repo. `dev` here is pytest, pytest-mock, ruff and pre-commit -- the extra that '
+            'in THIS repo. `dev` here is pytest, pytest-mock, ruff and commitizen -- the extra that '
             'gates `lab_commons.dev` -- and this manifest names no pytest plugin in `addopts`, so '
             'the verdict set is pytest and ruff and both arrive. Dropping `dev` from this one line '
             'would leave CI green-looking and unable to run a single test. '
@@ -62,6 +62,8 @@ ROWS: tuple[ScopeRow, ...] = (
             'and `bokeh` arrive with it, no test module imports either one unguarded (every adapter '
             'test holds a module-scope `pytest.importorskip`), so the scope stays COMPLETE and '
             'nothing is stranded.'
+            ' MOVED 2026-10-11 to `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml: the workflow is '
+            'rendered from that TOML, so the selection is read where it is made.'
         ),
     ),
 )
@@ -71,7 +73,7 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, int], str] = {
-    ('lab-commons', '.github/workflows/python-verify.yml', 119): (
+    ('lab-commons', 'pyproject.toml', 297): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '
@@ -81,7 +83,8 @@ SITES: dict[tuple[str, str, int], str] = {
         'REPOINTED 2026-09-19 FROM LINE 83: the OS-matrix merge added a `runner-os` input, a matrix '
         'axis and a 30-line comment block above this step, moving the command down 36 lines. The '
         'command TEXT is unchanged, so what this key says about the family is unchanged and only '
-        'the position was re-measured.'
+        'the position was re-measured. MOVED 2026-10-11 into `[tool.lab_commons.ci."python-verify.yml"]`, '
+        'the TOML the workflow is rendered from.'
     ),
 }
 

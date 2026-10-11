@@ -5,10 +5,8 @@ existed since 2026-10-04 -- it was a rule whose every enforcement point ran AFTE
 tests below are about the moment the decision is still open, and they are driven through the REAL
 ``refusal`` and the REAL shipped script rather than through a restatement of the rule.
 
-BOTH DOORS ARE COVERED, because they are different mechanisms and only one of them is the one the
-family wires up: a raw hook gets git's refspec on stdin (measured on a real push), and a pre-commit
-hook gets an empty stdin and ``PRE_COMMIT_REMOTE_BRANCH`` instead. A test that covered one and
-assumed the other would have said nothing about the door the four repos actually push through.
+THE REFSPEC ARRIVES ON STDIN, git's own pre-push protocol, which the family runner pipes to every
+pre-push hook; the module is driven over a real line through ``main``.
 """
 
 from __future__ import annotations
@@ -121,21 +119,9 @@ def test_stdin_carries_the_refspec_and_the_deletion_flag() -> None:
     )
 
 
-def test_the_environment_door_is_the_pre_commit_one() -> None:
-    """MEASURED: under pre-commit stdin reads EOF and only this variable names the ref."""
-    assert pushed_refs([], {'PRE_COMMIT_REMOTE_BRANCH': 'refs/heads/work/bar'}) == (_ref('refs/heads/work/bar'),)
-
-
-def test_stdin_wins_over_the_environment() -> None:
-    """A raw hook is handed several refs; the environment names at most one. Order matters."""
-    environ = {'PRE_COMMIT_REMOTE_BRANCH': 'refs/heads/feat/session'}
-    lines = [f'HEAD {_HEAD} refs/heads/work/foo {_ZERO}']
-    assert pushed_refs(lines, environ) == (_ref('refs/heads/work/foo'),)
-
-
 def test_a_hook_handed_nothing_judges_nothing() -> None:
     """The FLOOR's other side: this is the state the assertion above must be able to tell apart."""
-    assert pushed_refs([], {}) == ()
+    assert pushed_refs([]) == ()
 
 
 # ---------------------------------------------------------------------------
@@ -263,17 +249,12 @@ def test_the_dispatcher_hands_the_hook_its_own_interpreter(tmp_path: Path) -> No
     assert PYTHON_ENV == 'LAB_PYTHON'
 
 
-def test_the_module_refuses_when_it_is_handed_nothing_on_stdin(tmp_path: Path) -> None:
-    """``main`` over an empty stdin and a pre-commit environment still judges the checkout.
-
-    The stdin is a STRING, not the terminal and not pytest's captured stream: ``main`` reads the
-    refspec from stdin by design, and handing it a real one here is what exercises the environment
-    door rather than the read.
-    """
+def test_the_module_refuses_an_undeclared_branch_read_from_stdin(tmp_path: Path) -> None:
+    """``main`` reads git's refspec line off stdin and refuses the undeclared branch it names."""
     root = _planted(tmp_path / 'main-door')
     monkeypatched = pytest.MonkeyPatch()
-    monkeypatched.setenv('PRE_COMMIT_REMOTE_BRANCH', 'refs/heads/work/foo')
-    monkeypatched.setattr(sys, 'stdin', io.StringIO(''))
+    line = f'refs/heads/work/foo {"a" * 40} refs/heads/work/foo {"0" * 40}\n'
+    monkeypatched.setattr(sys, 'stdin', io.StringIO(line))
     monkeypatched.chdir(root)
     try:
         assert main([]) == REFUSED

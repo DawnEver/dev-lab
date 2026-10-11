@@ -46,20 +46,7 @@ DOORS: tuple[DoorRow, ...] = (
     ),
     DoorRow(
         repo='lab-commons',
-        path='.github/workflows/ci.yml',
-        commands=0,
-        deliveries=frozenset(),
-        why=(
-            'ZERO IS THE MEASUREMENT, not a miss. This file is a thin caller: its only job is `uses: '
-            './.github/workflows/python-verify.yml`, and every command of substance is in that '
-            'reusable workflow. A repo-level floor cannot tell a file that legitimately holds no '
-            'command from a file the scan stopped reading, and this row is where that distinction '
-            'is recorded -- if a `run:` step is ever inlined here, the count moves and this reds.'
-        ),
-    ),
-    DoorRow(
-        repo='lab-commons',
-        path='.github/workflows/python-verify.yml',
+        path='pyproject.toml',
         commands=4,
         deliveries=frozenset({'INERT'}),
         why=(
@@ -68,7 +55,10 @@ DOORS: tuple[DoorRow, ...] = (
             'no floating requirement. This workflow RUNS in every caller checkout, where the kit IS '
             'floating -- so the honest classification is the SharedDoor row, and this one exists to '
             'pin that the file still holds exactly those four commands. 4 since 2026-10-10: a '
-            '`uv run --no-sync ... hook_install --install` step, a door added, not a delivery changed.'
+            '`uv run --no-sync ... hook_install --install` step, a door added, not a delivery changed. '
+            'MOVED 2026-10-11 from `.github/workflows/python-verify.yml` to this TOML: the workflow is '
+            'rendered from `[tool.lab_commons.ci]` here (lab_commons.dev.ciworkflows), so the commands are '
+            'read at their source; the thin caller `ci.yml` holds no command and has no row.'
         ),
     ),
 )
@@ -78,7 +68,7 @@ DOORS: tuple[DoorRow, ...] = (
 SHARED: tuple[SharedDoor, ...] = (
     SharedDoor(
         repo='lab-commons',
-        path='.github/workflows/python-verify.yml',
+        path='pyproject.toml',
         caller_floats=('lab-commons',),
         deliveries=frozenset({'INERT', 'REVERTS'}),
         why=(
@@ -102,4 +92,4 @@ REPO_FLOOR: int = 1
 
 #: How few rows it may read. MEASURED 2026-10-02 at 3 (the kit's three door files); set at that
 #: count because a table this small has no slack to give -- one row lost is one door unwatched.
-DOOR_FLOOR: int = 3
+DOOR_FLOOR: int = 2

@@ -7,8 +7,7 @@ somebody else's programs and somebody therefore thought about where they live. P
 nobody did, and the path got written out by hand wherever it was needed.
 
 MEASURED 2026-09-19 across the family, and the shape is the point rather than the count. The LIVE
-code in this kit was already right: :data:`CANDIDATE_RELATIVE_PATHS` -- which moved here from
-``githooks.bootstrap``, where it was authored -- probes BOTH layouts and has since it landed. What
+code in this kit was already right: :data:`CANDIDATE_RELATIVE_PATHS` probes BOTH layouts. What
 was wrong was the PROSE. The consumption recipe in
 :mod:`lab_commons.dev.hook_adoption`'s module docstring spells ``.venv/Scripts/python.exe``, and
 that recipe was copied VERBATIM into ``scripts/deny_rules.py`` in two consuming repos, where it is
@@ -95,11 +94,10 @@ VENV_LAYOUTS: Final[dict[str, tuple[str, ...]]] = {
 
 #: Both layouts as relative path parts, PROBED rather than switched on: a checkout mounted from
 #: another platform, or a venv built by a cross-tool, has the layout it has and not the one this
-#: process would have chosen. AUTHORED in ``githooks.bootstrap`` and moved here unchanged -- that
-#: module was already correct, and this is a move so that the two adoption modules can consult the
-#: same data instead of spelling one half of it.
+#: process would have chosen. The hook shim
+#: (:func:`lab_commons.dev.hook_install.shim`) and the adoption modules consult this one row.
 #:
-#: Windows first, and the order is load-bearing rather than alphabetical: ``bootstrap`` returns the
+#: Windows first, and the order is load-bearing rather than alphabetical: the shim execs the
 #: first candidate that EXISTS, and on a box where both somehow exist the native one is meant.
 CANDIDATE_RELATIVE_PATHS: Final[tuple[tuple[str, ...], ...]] = (
     VENV_LAYOUTS['nt'],

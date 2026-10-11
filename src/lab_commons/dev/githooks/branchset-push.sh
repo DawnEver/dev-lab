@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Refuse a push that would put an UNDECLARED branch on origin. A HOOK, wired as a pre-commit
-# `pre-push` entry:
+# Refuse a push that would put an UNDECLARED branch on origin. A HOOK, declared as a
+# `pre-push` row of [tool.lab_commons.hooks]:
 #
-#   python -m lab_commons.dev.githooks branchset-push
+#   python -m lab_commons.dev.githooks script branchset-push
 #
 # THE DECISION IS NOT MADE HERE. It is `lab_commons.dev.branchset_push`, which reads the declared
 # branch set out of the pushed checkout's `pyproject.toml` with the same reader the census and the
@@ -13,7 +13,7 @@
 #
 # WHICH INTERPRETER, AND WHY IT IS NOT GUESSED. The check must run where `lab_commons` is importable,
 # and the only process that KNOWS which interpreter that is is the dispatcher that started this file:
-# `python -m lab_commons.dev.githooks branchset-push` was itself run by the consumer's venv, and it
+# `python -m lab_commons.dev.githooks script branchset-push` was itself run by the consumer's venv, and it
 # exports that interpreter as LAB_PYTHON. Resolving one here instead would be a second opinion about
 # the environment -- and a hook that ran under a bare `python` would fail to import the package and
 # report it as a policy refusal, which is the misattribution `with-venv.sh` and `git-env-repair.sh`
@@ -48,7 +48,7 @@ PYTHON="${LAB_PYTHON-}"
 if [ -n "${PYTHON}" ] && ! "${PYTHON}" -c 'import lab_commons.dev.branchset_push' >/dev/null 2>&1; then
   echo "[branchset-push] MISCONFIGURED -- LAB_PYTHON names ${PYTHON}, which cannot import" >&2
   echo "[branchset-push]   lab_commons.dev.branchset_push. Run this hook through its dispatcher:" >&2
-  echo "[branchset-push]   python -m lab_commons.dev.githooks branchset-push" >&2
+  echo "[branchset-push]   python -m lab_commons.dev.githooks script branchset-push" >&2
   exit 2
 fi
 if [ -z "${PYTHON}" ]; then
@@ -57,7 +57,7 @@ fi
 if [ -z "${PYTHON}" ]; then
   echo "[branchset-push] REFUSED -- no interpreter here can import lab_commons.dev.branchset_push," >&2
   echo "[branchset-push]   so this hook judged nothing. Wire it as" >&2
-  echo "[branchset-push]   'python -m lab_commons.dev.githooks branchset-push' so it inherits the" >&2
+  echo "[branchset-push]   'python -m lab_commons.dev.githooks script branchset-push' so it inherits the" >&2
   echo "[branchset-push]   consumer's own interpreter." >&2
   exit 2
 fi

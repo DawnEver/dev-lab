@@ -9,21 +9,6 @@ requires-python = ">=3.12"
 # The base install is the standard library; every capability that needs a package is an extra.
 dependencies = []
 
-[project.scripts]
-# THE ONE CONSOLE SCRIPT, AND IT EXISTS FOR EXACTLY ONE CALLER. A `.pre-commit-config.yaml` entry is
-# exec'd, never evaluated, so its FIRST TOKEN must already be runnable -- and measured against a real
-# `pre-commit.exe` (2026-09-17, see `lab_commons.dev.githooks.bootstrap`), a `language: system` or
-# `language: script` hook inherits a PATH with no venv on it at all, where `python` resolves to the
-# Microsoft Store stub. `language: python` prepends pre-commit's OWN managed environment, so a
-# console script installed there IS nameable with nothing in front of it. That is the only measured
-# way for this package to be reached from a hook without a file committed in the consumer, and it is
-# why the name is spelled after the shell wrapper it replaces: a consumer's entry reads
-# `lab-with-venv ruff check` where it used to read `bash scripts/hooks/with-venv.sh ruff check`.
-lab-with-venv = "lab_commons.dev.githooks.bootstrap:main"
-# The commit-msg issue-reference check, run in pre-commit's managed environment on purpose: it must
-# never block, and `lab-with-venv` exits 1 where no venv exists (see `lab_commons.dev.issueref`).
-lab-issue-ref = "lab_commons.dev.issueref:main"
-
 [project.urls]
 Homepage = "https://github.com/DawnEver/lab-commons"
 
@@ -59,16 +44,9 @@ dev = [
     "pytest",
     "pytest-mock",
     "ruff",
-    # `lab_commons.dev.hook_install.install_command` RETURNS `['-m', 'pre_commit', 'install', ...]`,
-    # derived from the consumer's own config so that nobody has to restate the stage list. That argv
-    # is only runnable if the extra gating the dev layer supplies the module it names -- and until
-    # 2026-09-17 it did not, in the repo that ships the function. Declared here rather than left to
-    # each consumer to notice: it is DRIVEN as an executable, exactly as pytest and ruff are, and
-    # `tests/test_dev_gate.py` still proves by reading the import statements that no module here
-    # imports it.
-    "pre-commit",
-    # `tests/test_the_kit_renders_its_own_precommit_config.py` parses the rendered YAML itself.
-    "pyyaml",
+    # `cz check` is the base commit-msg hook (`lab_commons/dev/githooks/base.toml`), run in this venv
+    # like every hook -- DRIVEN as an executable, exactly as pytest and ruff are.
+    "commitizen",
 ]
 
 # THE TWO GATES FOR ``lab_commons.viz``, AND THERE ARE TWO ON PURPOSE. The plotting vocabulary
@@ -103,6 +81,25 @@ pruned_paths = ['.claude/worktrees']
 # It installs the project itself: the venv must import lab_commons.dev.envkey to report its env key.
 [tool.lab_commons.hpc]
 install = "uv sync --all-extras"
+
+# This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
+# `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
+[[tool.lab_commons.hooks.pre-commit]]
+id = "ruff"
+run = ["ruff", "check", "--force-exclude"]
+files = '\.pyi?$'
+pass_files = true
+
+[[tool.lab_commons.hooks.pre-commit]]
+id = "ruff-format"
+run = ["ruff", "format", "--check", "--force-exclude"]
+files = '\.pyi?$'
+pass_files = true
+
+[[tool.lab_commons.hooks.pre-push]]
+id = "admission"
+run = ["python", "-m", "lab_commons.dev.admission", "--trunk-ref", "refs/heads/main"]
+always_run = true
 
 [tool.lab_commons.branchset]
 # ONE-BRANCH-PER-SESSION: the trunk is the one long-lived branch; a session's lane merges and is deleted.
@@ -215,3 +212,192 @@ ignore = [
     "S101",    # assert IS the test vocabulary; src/ carries this rule unwaived
     "SLF001",  # a test that cannot read a private member cannot pin a private invariant
 ]
+
+# THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m lab_commons.dev.ciworkflows render`
+# (the family base is lab_commons/dev/ci_base.toml). ci.yml is the base caller, pointed at the reusable
+# workflow beside it; python-verify.yml is THE family CI definition, which every repo's ci.yml calls.
+[tool.lab_commons.ci."ci.yml".jobs.verify]
+uses = "./.github/workflows/python-verify.yml"
+
+[tool.lab_commons.ci."ci.yml".jobs.verify.with]
+runner-os = '["ubuntu-latest", "windows-latest", "macos-latest"]'
+extras = "dev viz-mpl viz-bokeh"
+guard-targets = "adoption"
+
+[tool.lab_commons.ci."python-verify.yml"]
+name = "Python verify (reusable)"
+
+[tool.lab_commons.ci."python-verify.yml".on.workflow_call.inputs.python-versions]
+description = "JSON array of Python versions to run the matrix over."
+required = false
+default = "[\"3.12\", \"3.13\"]"
+type = "string"
+
+[tool.lab_commons.ci."python-verify.yml".on.workflow_call.inputs.runner-os]
+description = '''JSON array of GitHub-hosted runner labels to run the verify matrix over. Crossed with `python-versions`, so the job count is the PRODUCT -- the default is 3 x 2 = 6 legs.
+THE DEFAULT IS THE WHOLE SET, AND THAT IS THE COVERAGE GUARD. This family develops on Windows, shipped a CI that ran only Ubuntu, and claims macOS support; a coverage claim that silently shrinks is its named defect. An opt-IN axis reproduces that exactly -- the callers that never pass it stay on one platform and nothing says so. Defaulting to the full set inverts it: narrowing becomes an explicit JSON array in the CALLER's workflow, which is a line in a diff a reviewer reads. No test can assert that a platform actually ran; a default that must be typed over to shrink is the strongest guard this file holds.
+COST, MEASURED 2026-09-19: both consuming repositories (DawnEver/lab-commons, DawnEver/consumer-c) answer the UNAUTHENTICATED GitHub API with 200, so both are PUBLIC and GitHub-hosted minutes on all three platforms are FREE -- the 2x Windows and 10x macOS multipliers apply to PRIVATE repositories only and are not being paid here. The real budget is WALL CLOCK, and the legs run in parallel, so 6 legs cost the slowest one rather than the sum. Should either repo go private, THIS is the input to narrow, and the trade to weigh then is the full python matrix on one OS plus a single python on the others (4 legs) -- a saving bought only by giving up coverage that is currently free.
+'''
+required = false
+default = "[\"ubuntu-latest\", \"windows-latest\", \"macos-latest\"]"
+type = "string"
+
+[tool.lab_commons.ci."python-verify.yml".on.workflow_call.inputs.extras]
+description = "Space-separated optional-dependency extras to sync (each becomes --extra X)."
+required = false
+default = "dev"
+type = "string"
+
+[tool.lab_commons.ci."python-verify.yml".on.workflow_call.inputs.guard-targets]
+description = '''Space-separated `make` targets run as their OWN named steps after `verify`, so that a named architectural guard is legible from the job list instead of buried in a pytest summary. Each is already inside `verify`; re-running one is cheap and the point is the label. Every target must exist in the caller's Makefile.
+'''
+required = false
+default = ""
+type = "string"
+
+[tool.lab_commons.ci."python-verify.yml".on.workflow_call.inputs.report-failures]
+description = '''File / update / close a tracking issue in the CALLING repository. Requires the caller to grant `issues: write` -- a reusable workflow can never widen the permissions it was given, so if the caller forgets, this silently cannot file and the mechanism reads as working while doing nothing. Leave it on and grant the permission.
+'''
+required = false
+default = true
+type = "boolean"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.verify]
+runs-on = "${{ matrix.os }}"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.verify.strategy]
+fail-fast = false
+
+[tool.lab_commons.ci."python-verify.yml".jobs.verify.strategy.matrix]
+os = "${{ fromJSON(inputs.runner-os) }}"
+python-version = "${{ fromJSON(inputs.python-versions) }}"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.verify.defaults.run]
+shell = "bash"
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
+uses = "actions/checkout@v4"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps.with]
+fetch-depth = 0
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
+name = "Install uv"
+uses = "astral-sh/setup-uv@v5"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps.with]
+enable-cache = true
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
+name = "Sync the environment"
+run = '''extra_flags=""
+for extra in ${{ inputs.extras }}; do
+  extra_flags="$extra_flags --extra $extra"
+done
+uv sync --python ${{ matrix.python-version }} $extra_flags
+'''
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
+name = "Install the declared git hooks"
+run = '''
+uv run --no-sync python -m lab_commons.dev.hook_install --install
+'''
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
+name = "make verify"
+run = '''
+uv run --no-sync make verify
+'''
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
+name = "Named guards"
+if = "inputs.guard-targets != ''"
+run = '''for target in ${{ inputs.guard-targets }}; do
+  echo "::group::make $target"
+  uv run --no-sync make "$target"
+  echo "::endgroup::"
+done
+'''
+
+[tool.lab_commons.ci."python-verify.yml".jobs.report]
+needs = "verify"
+if = "${{ always() && inputs.report-failures && github.event_name == 'push' }}"
+runs-on = "ubuntu-latest"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.report.permissions]
+contents = "read"
+issues = "write"
+
+[[tool.lab_commons.ci."python-verify.yml".jobs.report.steps]]
+uses = "actions/github-script@v7"
+
+[tool.lab_commons.ci."python-verify.yml".jobs.report.steps.with]
+script = '''// `github.repository` and GITHUB_TOKEN resolve to the CALLER's repository: a reusable
+// workflow runs in the caller's context, so consumer-c's red opens an issue in
+// consumer-c, not here.
+const {owner, repo} = context.repo;
+const branch = context.ref.replace('refs/heads/', '');
+const title = `CI failing on ${branch}`;
+const label = 'ci-failure';
+const runUrl =
+  `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+const failed = '${{ needs.verify.result }}' !== 'success';
+
+// THE LABEL MUST EXIST BEFORE IT IS APPLIED, and this is not defensive noise -- it
+// is the one link in this chain that had never been exercised. MEASURED 2026-09-16:
+// neither caller repository has a `ci-failure` label, because no build has gone red
+// since this job was written, so the first red would have been the first time the
+// `labels: [label]` below was ever evaluated. Whether the REST API auto-creates a
+// missing label on issue creation is a detail to look up, not to assume, and the cost
+// of assuming wrong is precisely the failure this job exists to prevent: a
+// notification that never arrives while the mechanism reads as working. Created
+// explicitly, tolerating the 422 that means somebody already made it.
+try {
+  await github.rest.issues.createLabel({
+    owner, repo, name: label, color: 'b60205',
+    description: 'Opened, updated and closed by CI itself. See .github/workflows.',
+  });
+} catch (error) {
+  if (error.status !== 422) throw error;   // 422 = already_exists, which is the goal
+}
+
+// The STABLE KEY is the exact title. Matching on it is what makes this
+// create-or-update rather than create-every-time. A label filter that matches nothing
+// returns an empty list rather than a 404, so a first run finds no existing issue and
+// creates one, which is the intended path.
+const open = await github.paginate(github.rest.issues.listForRepo, {
+  owner, repo, state: 'open', labels: label, per_page: 100,
+});
+const existing = open.find((issue) => issue.title === title);
+
+const body = [
+  `\`${{ needs.verify.result }}\` on \`${branch}\`.`,
+  '',
+  `* run: ${runUrl}`,
+  `* commit: \`${context.sha}\``,
+  `* failing job: \`verify\` (see the run for which matrix leg)`,
+  '',
+  'This issue is opened, updated and CLOSED by CI itself. Closing it by hand does not',
+  'fix anything; the next green run on this branch closes it.',
+].join('\n');
+
+if (failed) {
+  if (existing) {
+    await github.rest.issues.createComment({
+      owner, repo, issue_number: existing.number, body,
+    });
+  } else {
+    await github.rest.issues.create({
+      owner, repo, title, body, labels: [label],
+    });
+  }
+} else if (existing) {
+  await github.rest.issues.createComment({
+    owner, repo, issue_number: existing.number,
+    body: `Green again on \`${context.sha}\`. ${runUrl}`,
+  });
+  await github.rest.issues.update({
+    owner, repo, issue_number: existing.number, state: 'closed',
+  });
+}
+'''

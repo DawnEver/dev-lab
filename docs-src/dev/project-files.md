@@ -11,6 +11,15 @@ Rule `PROJECT-FILES-HAVE-ONE-SOURCE` (statement in `lab_commons.dev.rules`). Use
   - `assert_every_project_file_is_accounted_for(root=, owned_here=)` -- the list is complete for this repo; an `owned_here` entry restating a family row, carrying no reason, or naming an untracked file is refused.
   - `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)` -- every famconfig base is declared, no delta restates a base line (`delta_problems`), every file on disk is base plus delta. It composes the `famtests.configrender` bodies.
 
+## Git hooks and CI workflows are TOML (user ruling 2026-10-11)
+
+Every configuration file is TOML; a file a third party forces into another format is RENDERED from TOML and never parsed back.
+
+- **Git hooks** are declared once per layer and nothing is rendered: the family base is `lab_commons/dev/githooks/base.toml`; a repo adds or narrows rows under `[[tool.lab_commons.hooks.<stage>]]` in `pyproject.toml` (same `id` merges key by key, a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter), `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only: a regex over the pushed remote refs). Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
+- **One runner**: `python -m lab_commons.dev.githooks run <stage> [git args]`. pre-commit selects among the STAGED paths and fails a hook that rewrites the working tree; commit-msg appends the message file; pre-push reads git's ref lines from stdin once and pipes them (the matching ones, under `refs`) to every hook.
+- **One install**: `python -m lab_commons.dev.hook_install --install` writes one shim per declared stage into the hooks directory git consults; the shim finds the checkout's venv and execs the runner. The verify step `hooks-installed` reports a missing (`declared-but-absent`), stale or foreign shim with that remedy.
+- **CI workflows**: the base is `lab_commons/dev/ci_base.toml`; a repo opts in with `[tool.lab_commons.ci."<file>.yml"]` (deep-merged over the base) or declares a workflow of its own. `python -m lab_commons.dev.ciworkflows render` writes `.github/workflows/*.yml` as a stamped JSON document (JSON is YAML); `check` compares rendered bytes to the files and refuses a hand edit or an undeclared workflow, naming the render command.
+
 ## Inventory, measured 2026-10-03
 
 Repos: LC = lab-commons, MS = consumer-a, OL = consumer-c, WL = consumer-b (the aliases the rest of this kit uses).
@@ -18,7 +27,7 @@ Repos: LC = lab-commons, MS = consumer-a, OL = consumer-c, WL = consumer-b (the 
 | file | LC | MS | OL | WL | shared vs own | family mechanism |
 |---|---|---|---|---|---|---|
 | `.gitignore` | yes | yes | yes | yes | 14-pattern consumer core + 9 mandated lines; deltas 1 / ~140 / ~25 / ~65 | `famconfig` RENDERED -- MS, OL, WL already stamped; LC adopted 2026-10-03 |
-| `.pre-commit-config.yaml` | yes | yes | yes | yes | 12-id hook core | `famconfig` RENDERED, all four stamped |
+| git hooks | yes | yes | yes | yes | TOML base + `[tool.lab_commons.hooks]` | `lab_commons.dev.githooks` runs them; nothing rendered |
 | `Makefile` | yes | yes | yes | yes | 9 target headers + the `verify` recipe; no other shared recipe | `famconfig` REQUIRED, all four |
 | `.gitattributes` | yes | yes | -- | -- | no shared line; one family reason (`*.sh text eol=lf`, the shipped bash payloads) | `famconfig` RENDERED, NEW 2026-10-03; LC adopted |
 | `ruff.toml` / `[tool.ruff*]` | pyproject | `ruff.toml` | pyproject | pyproject | select set and shared ignores | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
@@ -26,8 +35,8 @@ Repos: LC = lab-commons, MS = consumer-a, OL = consumer-c, WL = consumer-b (the 
 | `.claude/settings.json` | -- | yes | yes | yes | the PreToolUse hook wiring + derived allow rows | `agent_guard.wire_settings`, `allow_adoption` |
 | `.claude/hooks/deny-commands.js` | -- | yes | yes | yes | byte-identical engine | `agent_guard` install |
 | `.claude/hooks/deny-rules.json` | -- | yes | yes | yes | the deny registry, minus rules whose remedy a repo lacks | `hook_adoption.render` |
-| `.github/workflows/python-verify.yml` | yes | -- | -- | -- | THE family CI definition | hosted in LC, called by every repo |
-| `.github/workflows/ci.yml` | yes | -- | yes | -- | a thin caller | calls LC's reusable workflow; checks are `make verify` |
+| `.github/workflows/python-verify.yml` | yes | -- | -- | -- | THE family CI definition | `ciworkflows` RENDERED from LC's `[tool.lab_commons.ci]` |
+| `.github/workflows/ci.yml` | yes | -- | yes | -- | a thin caller | `ciworkflows` RENDERED: `ci_base.toml` + the repo's `[tool.lab_commons.ci."ci.yml"]` |
 | `docs-src/dev/index.md` pointer table | yes | yes | yes | yes | the family page table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
 | always-loaded rule pages | yes | yes | yes | yes | rule statements | `lab_commons.dev.rules` IDs, `famtests.rulespages` |
 | `LICENSE` | MIT | -- | Apache-2.0 | LGPL-3.0 | nothing | REPO-OWNED: the licence is the repo's decision |

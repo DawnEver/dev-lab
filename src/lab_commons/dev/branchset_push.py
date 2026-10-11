@@ -7,30 +7,12 @@ exactly that hazard was green the whole time because it had not run yet. A verdi
 the operation it judges is a report, not a guard, so this module runs where the decision is still
 open: the ``pre-push`` hook, before git has sent anything.
 
-THE REFSPEC ARRIVES THROUGH ONE OF TWO DOORS, and which one is a MEASUREMENT rather than a guess.
-Git's own ``pre-push`` protocol writes ``<local ref> <local sha> <remote ref> <remote sha>`` on
-STDIN, one line per ref, so a hook installed directly into ``.git/hooks`` reads it there. But this
-family wires its hooks through pre-commit, and pre-commit CONSUMES that stdin to compute the diff
-range. MEASURED 2026-10-06 on a real bare origin, both ways:
-
-    raw pre-push hook      stdin carries the line; env carries no PRE_COMMIT_*
-    pre-commit pre-push    stdin reads EOF; env carries PRE_COMMIT_REMOTE_BRANCH=refs/heads/<b>
-
-So stdin is read FIRST and the environment is the fallback, and neither door may silently report a
-pass: a hook that judged nothing because it was handed nothing is the failure this module was written
-for, arriving from the other end.
-
-WHAT THE TWO DOORS CANNOT SEE, stated because the difference is load-bearing:
-
-* pre-commit runs NO hook at all for a push that only DELETES a branch -- measured, twice, on a real
-  origin. A deletion therefore passes there by not being asked, which is the outcome the rule wants.
-* A raw hook IS asked, and a deletion is recognisable: git writes the all-zero object name as the
-  local sha and the literal ``(delete)`` as the local ref. Deletions are ALLOWED -- cleaning up an
-  undeclared branch is the remedy this guard's own message asks for, and a guard that refused its own
-  remedy would leave the debt in place.
-* pre-commit reports ONE ref per push, the branch; a raw hook reports every ref in the refspec,
-  including tags. This module judges every ``refs/heads/**`` line it is given and passes anything
-  else: a tag names a commit that was judged when its branch was pushed.
+THE REFSPEC ARRIVES ON STDIN, git's own ``pre-push`` protocol: ``<local ref> <local sha> <remote ref>
+<remote sha>``, one line per ref (the family runner, :mod:`lab_commons.dev.githooks.runner`, pipes it
+to every pre-push hook). A deletion is recognisable -- git writes the all-zero object name as the
+local sha -- and is ALLOWED: cleaning up an undeclared branch is the remedy this guard`s own message
+asks for. Only ``refs/heads/**`` lines are judged; a tag names a commit judged when its branch was
+pushed. No line at all judges nothing and passes nothing silently: there is then nothing to push.
 
 THERE IS NO BYPASS. No flag, no environment variable, no ``--force`` spelling relaxes the check.
 The one documented way to push a new long-lived branch is to DECLARE it -- which is a reviewed edit
@@ -44,9 +26,8 @@ it one layer down.
 
 from __future__ import annotations
 
-import os
 import sys
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -78,11 +59,8 @@ _DELETED_SHA: Final = '0' * 40
 _REFSPEC_FIELDS: Final = 4
 
 #: The one ref namespace this guard judges. Everything else -- tags, ``refs/ci/**`` and the machine
-#: refs the family's own ``branch-push-only.sh`` was written about -- names no branch and passes.
+#: refs -- names no branch and passes.
 _BRANCHES: Final = 'refs/heads/'
-
-#: What pre-commit exports for the ref being pushed. MEASURED 2026-10-06, and it is the FULL ref.
-_PRE_COMMIT_REMOTE: Final = 'PRE_COMMIT_REMOTE_BRANCH'
 
 
 @dataclass(frozen=True)
@@ -108,33 +86,9 @@ def _from_stdin(lines: Iterable[str]) -> Iterator[PushedRef]:
         yield PushedRef(remote_ref, deleted=local_sha == _DELETED_SHA)
 
 
-def pushed_refs(
-    lines: Iterable[str] = (),
-    environ: Mapping[str, str] | None = None,
-) -> tuple[PushedRef, ...]:
-    """What this push would move, read from stdin first and the environment second.
-
-    THE ORDER IS THE MEASUREMENT. Under a raw ``pre-push`` hook stdin carries the refspec; under
-    pre-commit it has already been consumed, and the only trace of the push left is
-    ``PRE_COMMIT_REMOTE_BRANCH``. Reading the environment FIRST would work in the pre-commit case and
-    quietly ignore a multi-ref push in the raw one, where several lines arrive and the environment
-    says nothing at all.
-
-    Args:
-        lines: The refspec lines, as git writes them.
-        environ: The process environment; ``os.environ`` when omitted.
-
-    Returns:
-        One entry per ref, with no entry at all when the hook was handed nothing to judge.
-
-    """
-    found = tuple(_from_stdin(lines))
-    if found:
-        return found
-    ref = (os.environ if environ is None else environ).get(_PRE_COMMIT_REMOTE, '')
-    # NO DELETION CAN ARRIVE HERE, and that is a measurement rather than an omission: pre-commit runs
-    # no hook for a delete-only push, so a ref this door reports is always an update.
-    return (PushedRef(ref),) if ref else ()
+def pushed_refs(lines: Iterable[str] = ()) -> tuple[PushedRef, ...]:
+    """What this push would move: one entry per refspec line git wrote on stdin."""
+    return tuple(_from_stdin(lines))
 
 
 def undeclared(refs: Iterable[PushedRef], branchset: BranchSet) -> tuple[str, ...]:
@@ -173,18 +127,16 @@ def refusal(
     root: Path,
     *,
     lines: Iterable[str] = (),
-    environ: Mapping[str, str] | None = None,
     branchset: BranchSet | None = None,
 ) -> tuple[int, str]:
     """The verdict for one push: an exit code and the text to print.
 
-    Separated from :func:`main` -- which owns stdin, the environment and the exit -- so a test can
+    Separated from :func:`main` -- which owns stdin and the exit -- so a test can
     drive the DECISION on a planted repository without a subprocess and without a real push.
 
     Args:
         root: The checkout being pushed; its ``pyproject.toml`` carries the declaration.
         lines: The refspec lines, as git would write them.
-        environ: The process environment; ``os.environ`` when omitted.
         branchset: The declared set; read from *root* when omitted.
 
     Returns:
@@ -203,7 +155,7 @@ def refusal(
             f'guard, and passing here would rebuild -- one layer down -- exactly the defect this hook '
             f'was written for.\n'
         )
-    rows = undeclared(pushed_refs(lines, environ), declared)
+    rows = undeclared(pushed_refs(lines), declared)
     return (REFUSED, _refusal(rows, declared)) if rows else (ALLOWED, '')
 
 
@@ -217,7 +169,7 @@ def _stdin_lines() -> tuple[str, ...]:
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m lab_commons.dev.branchset_push [--root R]`` -- the pre-push entry point.
 
-    Reads the refspec git writes on stdin, falls back to what pre-commit exports, and exits
+    Reads the refspec git writes on stdin and exits
     :data:`ALLOWED`, :data:`REFUSED` or :data:`COULD_NOT_JUDGE`. ``argv`` is accepted for a caller
     that wants a different checkout than the one git ran the hook in; the hook itself passes nothing.
     """

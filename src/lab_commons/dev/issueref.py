@@ -12,12 +12,8 @@ nothing to repair with a follow-up ``Refs #N``. So :func:`main` returns 0 on eve
 the ones where it cannot read the message -- and SAYS so, because a silent skip reads the same as a
 clean message.
 
-WHY IT RUNS IN PRE-COMMIT'S OWN ENVIRONMENT, unlike every other hook the family wires through
-``lab-with-venv``. That launcher exits 1 when no venv provides the module, which is right for a
-judging hook and wrong for this one: "never block" must hold on a fresh clone with no venv yet.
-This module imports only the standard library and :mod:`lab_commons.log`, so the cached copy in
-pre-commit's managed environment can run it; the price is that a change here reaches a consumer
-when its pre-commit cache is rebuilt, which is acceptable for a pattern this small and stable.
+It runs in the repo venv like every hook (``lab_commons/dev/githooks/base.toml``) and imports only
+the standard library and :mod:`lab_commons.log`.
 
 The verbs are the derivation's, from one place: :data:`CLOSING_VERBS` and :data:`REF_VERBS` are
 what :mod:`lab_commons.dev.forgeissue` matches, so the check cannot accept a spelling the derivation

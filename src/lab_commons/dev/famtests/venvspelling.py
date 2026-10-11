@@ -72,7 +72,7 @@ __all__ = [
 #: repair for a disagreement is to make the module consult the resolver, never to raise the digit.
 #:
 #: Exactly one entry, and that is the claim. :mod:`lab_commons.dev.venvpath` holds the layouts as
-#: data; ``githooks.bootstrap`` authored them and now re-exports, which is why it is NOT here.
+#: data, and every other module consults it.
 SANCTIONED_SPELLERS: Final[frozenset[str]] = frozenset({'lab_commons/dev/venvpath.py'})
 
 #: A concrete venv interpreter. Spelled INDEPENDENTLY of the resolver's own pattern, deliberately:

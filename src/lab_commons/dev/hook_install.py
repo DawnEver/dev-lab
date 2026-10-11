@@ -1,115 +1,82 @@
-"""HOOKS-ARE-WIRED: are the hooks a repo DECLARES actually in the directory git consults?
+"""HOOKS-ARE-WIRED: is every stage a repo declares backed by a live shim in the directory git consults?
 
-THE GAP THIS CLOSES, AND IT IS NOT HYPOTHETICAL IN ANY OF THESE TREES. A
-``.pre-commit-config.yaml`` is a DECLARATION; ``pre-commit install`` is a separate act on a separate
-machine; nothing links the two. Measured in consumer-a on 2026-08-12: two checkouts declared
-pre-push hooks and ZERO hook files existed on disk in either -- every push had run none of them,
-while the tree read as guarded. Measured again on 2026-09-16, one level out: ``consumer-b`` and
-``consumer-c`` each declare a full ``.pre-commit-config.yaml`` and each have ZERO hooks installed.
-Three repos, one defect, and the mechanism that could see it lived in exactly one of them
-(``consumer-a/scripts/repo/_hooks.py``), which is why it is here now.
+THE GAP THIS CLOSES, AND IT IS NOT HYPOTHETICAL IN ANY OF THESE TREES. A hook table is a
+DECLARATION; installing is a separate act on a separate machine; nothing links the two. Measured in
+consumer-a on 2026-08-12: two checkouts declared pre-push hooks and ZERO hook files existed on disk
+in either -- every push had run none of them, while the tree read as guarded. Measured again on
+2026-09-16 in two more repos, each with every hook declared and none installed.
 
-THIS IS THE FAMILY HALF ONLY. What stays with a repo is the configuration's NAME and the tree it
-asks about; what is universal is resolving the hooks directory THROUGH GIT rather than string-
-building ``.git/hooks``, reading the declared set out of the configuration instead of taking a
-caller's word for it, and telling ``declared-but-absent`` apart from ``present-but-stale`` apart
-from ``present-but-not-pre-commit's``.
+WHAT IS INSTALLED IS A SHIM, ONE PER STAGE, and the shim holds no decision. It finds THIS checkout's
+venv interpreter (the layouts of :data:`lab_commons.dev.venvpath.CANDIDATE_RELATIVE_PATHS`) and execs
+``python -m lab_commons.dev.githooks run <stage>``, which reads the hook table
+(:mod:`lab_commons.dev.githooks.table`) at that moment. So a hook added to the table is live at the
+next commit with nothing re-installed, and the shim text is a constant per stage -- INSTALLED means
+byte-equal to :func:`shim`, and anything else in a declared slot is STALE (an older shim of ours) or
+FOREIGN (somebody else's file, which an install refuses to overwrite).
 
-IT REPORTS AND NEVER REPAIRS ITSELF. A hooks directory is shared by every worktree of a checkout --
-git gives a lane none of its own -- so a silent install is a mutation another party learns about by
-accident, and it would also make ``unprotected`` unobservable. So the default is read-only and
-prints the exact argv, and installing is a separate EXPLICIT request. THE REMEDY IS DERIVED, NEVER
-SPELLED: :func:`install_command` builds it from the configuration, because a stage added to the
-configuration must not leave a restatement quietly wrong -- the half-configured state this module
-exists to make visible, one level up.
-
-Provenance: the installation half of consumer-a's ``scripts/repo/_hooks.py``, migrated
-2026-09-16. The formatting half (format-before-staging) stayed: its subject is that repo's commit
-loop, not the family's.
+THE HOOKS DIRECTORY IS ASKED OF GIT, never string-built: ``core.hooksPath`` redirects it and every
+worktree shares its main checkout's one directory. Reporting is read-only; installing is the
+explicit ``--install`` act, safe from any worktree because it is idempotent.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 import subprocess
-import sys
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
+from lab_commons.dev.githooks.table import hook_table
+from lab_commons.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 from lab_commons.log import emit
 
 __all__ = [
     'ABSENT',
-    'DEFAULT_CONFIG_NAME',
     'FOREIGN',
     'INSTALLED',
+    'INSTALL_COMMAND',
     'NOTHING_DECLARED',
     'PROTECTED',
+    'SHIM_MARKER',
     'STALE',
     'UNPROTECTED',
     'HookInstallError',
     'InstallReport',
     'StageReport',
     'declared_stages',
-    'generated_hook',
     'hook_installation',
     'hooks_dir',
     'install',
-    'install_command',
     'report_installation',
+    'shim',
 ]
 
-#: The verdict for ONE stage. Four values, and the middle two are the point of the whole module: a
-#: hook that is present but points at another configuration protects nothing while looking like it
-#: does, and a hook somebody hand-wrote must not be silently overwritten by an install.
-INSTALLED = 'installed'
-ABSENT = 'declared-but-absent'
-STALE = 'present-but-stale'
-FOREIGN = 'present-but-not-pre-commits'
+#: The verdict for ONE stage.
+INSTALLED: Final = 'installed'
+ABSENT: Final = 'declared-but-absent'
+STALE: Final = 'present-but-stale'
+FOREIGN: Final = 'present-but-not-ours'
 
-#: The three-valued TOP answer. ``NOTHING_DECLARED`` is not a pass and not a failure -- it is the
-#: absence of a question, and a caller that wants a configuration to EXIST must say so itself.
-#: Folding it into ``PROTECTED`` would let a repo that lost its configuration report exactly as
-#: reassuringly as one that is fully installed.
-PROTECTED = 'protected'
-UNPROTECTED = 'unprotected'
-NOTHING_DECLARED = 'nothing-declared'
+#: The three-valued TOP answer. ``NOTHING_DECLARED`` is the absence of a question, never a pass.
+PROTECTED: Final = 'protected'
+UNPROTECTED: Final = 'unprotected'
+NOTHING_DECLARED: Final = 'nothing-declared'
 
-#: Where pre-commit's own documentation puts the declaration. A DEFAULT, not a law: the adopting
-#: repo names its own, so a rename shows up as a change in that repo rather than as this module
-#: silently answering about a file that no longer exists.
-DEFAULT_CONFIG_NAME = '.pre-commit-config.yaml'
+#: The line every shim carries: present means ours (installed or stale), absent means FOREIGN.
+SHIM_MARKER: Final = '# lab_commons.dev.githooks shim'
 
-#: pre-commit stamps every file it generates with this line. Its absence means somebody else's hook
-#: is in that slot -- a DIFFERENT finding from "stale", because re-installing would DELETE a
-#: hand-written hook rather than refresh a managed one.
-_GENERATED_MARKER = 'File generated by pre-commit'
+#: The one remedy, a constant: the stage list is read from the table at install time, never restated.
+INSTALL_COMMAND: Final = 'python -m lab_commons.dev.hook_install --install'
 
-#: pre-commit's own deprecated stage spellings. A configuration using them installs the same hook
-#: TYPE, so reading them as distinct stages would report a hook absent that is in fact present.
-_STAGE_ALIASES = {'commit': 'pre-commit', 'push': 'pre-push', 'merge-commit': 'pre-merge-commit'}
-
-#: A hook entry naming no ``stages:`` runs at pre-commit -- pre-commit's own default.
-_DEFAULT_STAGE = 'pre-commit'
-
-#: The two arguments the generated hook carries in its templated ``ARGS=(...)`` line.
-_ARG = re.compile(r'--(config|hook-type)=([^\s)]+)')
-
-#: Resolved once rather than spelled: a bare name is a PATH lookup at every call site, and a PATH
-#: that answers differently between a terminal and a detached launcher is how a report ends up
-#: describing an environment nobody meant.
-_GIT = shutil.which('git') or 'git'
-
-#: Long enough that a cold filesystem answers, short enough that a hung child cannot park a suite.
-_GIT_TIMEOUT_S = 60
+_GIT: Final = shutil.which('git') or 'git'
+_GIT_TIMEOUT_S: Final = 60
 
 
 @dataclass(frozen=True)
 class StageReport:
-    """One git hook type: what the configuration declares for it, and what is on disk."""
+    """One git hook type: the hook ids the table declares for it, and what is on disk."""
 
     stage: str
     hook_ids: tuple[str, ...]
@@ -124,31 +91,27 @@ class InstallReport:
 
     repo: Path
     hooks_dir: Path
-    config: Path | None
     stages: tuple[StageReport, ...]
 
     @property
     def verdict(self) -> str:
-        """``PROTECTED`` only when EVERY declared stage has a live hook pointing at this config."""
-        if self.config is None:
+        """``PROTECTED`` only when EVERY declared stage has a live shim."""
+        if not self.stages:
             return NOTHING_DECLARED
         return PROTECTED if all(stage.status == INSTALLED for stage in self.stages) else UNPROTECTED
 
     @property
     def failing(self) -> tuple[StageReport, ...]:
-        """Declared stages whose hook is absent, stale, or somebody else's."""
+        """Declared stages whose shim is absent, stale, or somebody else's."""
         return tuple(stage for stage in self.stages if stage.status != INSTALLED)
 
 
-def hooks_dir(repo: Path) -> Path:
-    """The directory git will ACTUALLY consult for hooks in *repo*.
+class HookInstallError(RuntimeError):
+    """The install act could not leave the checkout protected, and says which stage and why."""
 
-    ASKED OF GIT, NEVER STRING-BUILT. ``core.hooksPath`` redirects it repository-wide, and a
-    worktree resolves to the main checkout's single shared directory rather than getting one of its
-    own -- so a guard that appends ``.git/hooks`` to a path answers about a directory git is not
-    using, and from a worktree it answers about a directory that does not exist at all. Both
-    directions are wrong and only one of them is loud.
-    """
+
+def hooks_dir(repo: Path) -> Path:
+    """The directory git will ACTUALLY consult for hooks in *repo* -- asked of git, never string-built."""
     out = subprocess.run(
         [_GIT, '-C', str(repo), 'rev-parse', '--git-path', 'hooks'],
         capture_output=True,
@@ -158,239 +121,121 @@ def hooks_dir(repo: Path) -> Path:
         check=True,
         timeout=_GIT_TIMEOUT_S,
     ).stdout.strip()
-    # `--git-path` answers relative to the repository when it can, absolute when it cannot.
     return Path(out) if Path(out).is_absolute() else (repo / out)
 
 
-def declared_stages(config: Path) -> dict[str, tuple[str, ...]]:
-    """Map git hook type -> the hook ids *config* declares for it.
-
-    SCOPE OF THIS PARSER, stated because a reader would otherwise supply "it reads YAML": it reads
-    the ``id:`` and ``stages:`` keys of the block-sequence form a ``.pre-commit-config.yaml`` is
-    written in, which is the only form pre-commit's own documentation uses. It does NOT implement
-    YAML -- no anchors, no multi-document streams, no flow mappings. Rather than guess at a file it
-    does not understand it RAISES: a configuration whose ``repos:`` skeleton is missing, or that
-    yields no hook id at all, is an UNREAD file, and reporting one as "declares nothing" would
-    collapse two facts into one -- the same defect this module exists to refuse, one level up.
-
-    Raises:
-        ValueError: when the file is not a configuration this parser can read.
-
-    """
-    raw = config.read_text(encoding='utf-8').splitlines()
-    lines = ['' if line.lstrip().startswith('#') else line.rstrip() for line in raw]
-
-    if not any(line.startswith('repos:') for line in lines):
-        msg = f'{config}: no top-level `repos:` -- not a pre-commit configuration this can read'
-        raise ValueError(msg)
-
-    # (hook id, its declared stages). Accumulated first, resolved to hook types second, so the
-    # scanner has one job and the stage-defaulting rule lives in one readable place.
-    hooks: list[tuple[str, list[str]]] = []
-    open_indent = -1
-
-    for line in lines:
-        if not line.strip():
-            continue
-        indent = len(line) - len(line.lstrip())
-        stripped = line.strip()
-        # A new list item at or left of the current hook's indent ends it -- the next hook, or the
-        # next `- repo:` block entirely.
-        if hooks and stripped.startswith('- ') and indent <= open_indent:
-            open_indent = -1
-        if stripped.startswith('- id:'):
-            hooks.append((stripped.split(':', 1)[1].strip(), []))
-            open_indent = indent
-        elif open_indent >= 0 and stripped.startswith('stages:'):
-            value = stripped.split(':', 1)[1].strip()
-            hooks[-1][1][:] = [item.strip().strip('\'"') for item in value.strip('[]').split(',') if item.strip()]
-
-    by_stage: dict[str, list[str]] = {}
-    for hook_id, stages in hooks:
-        for stage in stages or [_DEFAULT_STAGE]:
-            by_stage.setdefault(_STAGE_ALIASES.get(stage, stage), []).append(hook_id)
-
-    if not by_stage:
-        msg = f'{config}: parsed no hook ids -- refusing to report an unread file as an empty one'
-        raise ValueError(msg)
-    return {stage: tuple(ids) for stage, ids in sorted(by_stage.items())}
+def declared_stages(repo: Path) -> dict[str, tuple[str, ...]]:
+    """Map git hook type -> the hook ids *repo*'s merged table declares for it."""
+    return {stage: tuple(hook.id for hook in hooks) for stage, hooks in hook_table(repo).items()}
 
 
-def _inspect(path: Path, *, stage: str, config_name: str) -> tuple[str, str]:
-    """Classify one hook file on disk. Returns ``(status, detail)``."""
+def shim(stage: str) -> str:
+    """The ``.git/hooks/<stage>`` file: find this checkout's venv, run the stage's declared hooks there."""
+    candidates = ' '.join('/'.join(parts) for parts in CANDIDATE_RELATIVE_PATHS)
+    return (
+        '#!/bin/sh\n'
+        f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
+        '# (lab_commons/dev/githooks/base.toml + [tool.lab_commons.hooks] in pyproject.toml).\n'
+        'top=$(git rev-parse --show-toplevel) || exit 1\n'
+        f'for rel in {candidates}; do\n'
+        '  if [ -x "$top/$rel" ]; then\n'
+        f'    exec "$top/$rel" -m lab_commons.dev.githooks run {stage} "$@"\n'
+        '  fi\n'
+        'done\n'
+        f'echo "[githooks] {stage}: no venv interpreter in $top ({candidates}); this checkout ran no hook." >&2\n'
+        'echo "[githooks]   Remedy: build the venv (python -m lab_commons.dev.dep --bootstrap <checkout>), '
+        'then commit or push again." >&2\n'
+        'exit 1\n'
+    )
+
+
+def _inspect(path: Path, stage: str) -> tuple[str, str]:
     if not path.exists():
-        return ABSENT, 'no file at this path -- this hook has never been installed, or was removed'
+        return ABSENT, 'no file at this path -- never installed, or removed'
     text = path.read_text(encoding='utf-8', errors='ignore')
-    if _GENERATED_MARKER not in text:
-        return FOREIGN, 'a hook file exists but pre-commit did not generate it; installing would overwrite it'
-    args = dict(_ARG.findall(text))
-    if 'config' not in args:
-        return STALE, 'generated with no --config argument, so it cannot be shown to point at this configuration'
-    if Path(args['config']).name != config_name:
-        return STALE, f'points at {args["config"]}, not {config_name}'
-    if args.get('hook-type') != stage:
-        return STALE, f'installed as --hook-type={args["hook-type"]!r} while occupying the {stage} slot'
-    return INSTALLED, f'pre-commit, --config={args["config"]} --hook-type={stage}'
+    if text == shim(stage):
+        return INSTALLED, f'the lab_commons shim for {stage}'
+    if SHIM_MARKER in text:
+        return STALE, 'a lab_commons shim, but not the current one for this slot'
+    return FOREIGN, 'a hook file lab_commons did not write; installing would overwrite it'
 
 
-def hook_installation(repo: Path, *, config_name: str = DEFAULT_CONFIG_NAME) -> InstallReport:
-    """Answer, for *repo*, whether every stage its configuration declares has a live hook file."""
+def hook_installation(repo: Path) -> InstallReport:
+    """Answer, for *repo*, whether every stage its table declares has a live shim."""
     directory = hooks_dir(repo)
-    config = repo / config_name
-    if not config.exists():
-        return InstallReport(repo=repo, hooks_dir=directory, config=None, stages=())
     reports = []
-    for stage, ids in declared_stages(config).items():
+    for stage, ids in declared_stages(repo).items():
         path = directory / stage
-        status, detail = _inspect(path, stage=stage, config_name=config_name)
+        status, detail = _inspect(path, stage)
         reports.append(StageReport(stage=stage, hook_ids=ids, status=status, detail=detail, path=path))
-    return InstallReport(repo=repo, hooks_dir=directory, config=config, stages=tuple(reports))
+    return InstallReport(repo=repo, hooks_dir=directory, stages=tuple(reports))
 
 
-def install_command(repo: Path, *, config_name: str = DEFAULT_CONFIG_NAME) -> list[str]:
-    """The exact ``pre-commit install`` argv that satisfies THIS repository, from its own config.
+def install(repo: Path) -> InstallReport:
+    """Write the shim of every declared stage of *repo*, idempotently -- the ONE act every bootstrap calls.
 
-    THE STAGE LIST HAS ONE SOURCE, and it is the configuration. Restating it costs what a
-    restatement always costs: consumer-a's ``Makefile`` named two of the three stages
-    (measured 2026-09-02 on a fresh box), so every ``stages: [pre-commit]`` hook was declared and
-    never installed while the hooks directory looked populated. Callers that need the command ASK
-    for it; nobody spells it.
-
-    Returns:
-        The argv AFTER the interpreter -- ``['-m', 'pre_commit', 'install', ...]`` -- so a caller
-        supplies the interpreter it means rather than inheriting one from PATH.
-
-    """
-    report = hook_installation(repo, config_name=config_name)
-    stages = [stage.stage for stage in report.stages]
-    return ['-m', 'pre_commit', 'install', '--install-hooks', *[arg for s in stages for arg in ('-t', s)]]
-
-
-class HookInstallError(RuntimeError):
-    """The install act could not leave the checkout protected, and says which stage and why."""
-
-
-def _run_install(argv: list[str], cwd: Path) -> int:
-    return subprocess.run(argv, cwd=cwd, check=False, timeout=600).returncode
-
-
-def install(
-    repo: Path,
-    *,
-    config_name: str = DEFAULT_CONFIG_NAME,
-    run: Callable[[list[str], Path], int] = _run_install,
-) -> InstallReport:
-    """Install every declared stage of *repo*, idempotently -- the ONE act every bootstrap calls.
-
-    THE CHECK STILL NEVER REPAIRS ITSELF; this is the explicit act a bootstrap or seed path asks for
-    (user directive 2026-09-23: hooks are guaranteed by mechanism, not by a human reading a red).
-    Safe to call from every worktree, because a worktree shares its main checkout's hooks directory:
-
-    * a PROTECTED checkout runs nothing, so a second caller never rewrites live files;
-    * a FOREIGN hook (somebody else's) is REFUSED before anything runs, never overwritten;
-    * the returned report is RE-MEASURED after the act, so a runner that exits 0 and installs
-      nothing raises instead of reading as a pass.
-
-    Args:
-        repo: the checkout (main tree or worktree) to install for.
-        config_name: the configuration holding the declaration.
-        run: executes ``argv`` in ``cwd`` and returns its exit code; injected for tests only.
-
-    Returns:
-        The report measured after the act: ``PROTECTED``, or ``NOTHING_DECLARED`` when there is
-        no configuration and so nothing to install.
+    A FOREIGN file in a declared slot is REFUSED before anything is written, never overwritten. The
+    returned report is RE-MEASURED after the act, so a write that did not land raises.
 
     Raises:
-        HookInstallError: a foreign hook occupies a declared slot, the installer exited non-zero,
-            or the checkout is still unprotected afterwards.
+        HookInstallError: a foreign hook occupies a declared slot, or the checkout is still unprotected.
 
     """
-    before = hook_installation(repo, config_name=config_name)
+    before = hook_installation(repo)
     if before.verdict != UNPROTECTED:
         return before
     foreign = [stage for stage in before.failing if stage.status == FOREIGN]
     if foreign:
         paths = ', '.join(f'{stage.stage} ({stage.path})' for stage in foreign)
         msg = (
-            f'refusing to install over a hook pre-commit did not write: {paths}. Move it aside or fold '
-            f'it into {config_name}, then re-run; an install here would displace a hook somebody else wrote.'
+            f'refusing to install over a hook lab_commons did not write: {paths}. Move it aside (or declare '
+            f'what it does as a row of [tool.lab_commons.hooks]), then re-run `{INSTALL_COMMAND}`.'
         )
         raise HookInstallError(msg)
-    argv = [sys.executable, *install_command(repo, config_name=config_name)]
-    code = run(argv, repo)
-    if code != 0:
-        msg = f'{" ".join(argv)} exited {code} in {repo}; the hooks were not installed'
-        raise HookInstallError(msg)
-    after = hook_installation(repo, config_name=config_name)
+    before.hooks_dir.mkdir(parents=True, exist_ok=True)
+    for stage in before.failing:
+        stage.path.write_text(shim(stage.stage), encoding='utf-8', newline='\n')
+        stage.path.chmod(0o755)
+    after = hook_installation(repo)
     if after.verdict != PROTECTED:
         listing = ', '.join(f'{stage.stage}={stage.status}' for stage in after.failing)
-        msg = f'{" ".join(argv)} exited 0 and {after.hooks_dir} is still unprotected: {listing}'
+        msg = f'the shims were written and {after.hooks_dir} is still unprotected: {listing}'
         raise HookInstallError(msg)
     return after
 
 
-def generated_hook(*, config_name: str, hook_type: str) -> str:
-    """The shim pre-commit generates, reduced to the marker and ARGS that carry its identity.
-
-    HERE RATHER THAN IN EACH ADOPTING REPO'S TEST, because a planted control is only a control if
-    it plants what the real reader reads: a fixture spelled beside the test drifts from
-    :func:`hook_installation` silently, and a control that has drifted agrees with everything.
-    """
-    return (
-        '#!/usr/bin/env bash\n'
-        f'# {_GENERATED_MARKER}: https://pre-commit.com\n'
-        '\n# start templated\n'
-        "INSTALL_PYTHON=''\n"
-        f'ARGS=(hook-impl --config={config_name} --hook-type={hook_type})\n'
-        '# end templated\n'
-    )
-
-
 def report_installation(argv: list[str] | None = None) -> int:
-    """CLI. Exit 0 = every declared hook is live, 1 = at least one is not, 2 = nothing is declared.
-
-    THREE EXIT CODES BECAUSE THERE ARE THREE ANSWERS, and the refusal NAMES ITS REMEDY: the
-    unprotected report ends with the derived install command, so a reader is never left to guess a
-    stage list.
-    """
+    """CLI. Exit 0 = every declared stage is live, 1 = at least one is not, 2 = nothing is declared."""
     parser = argparse.ArgumentParser(description='Are the hooks this repository declares installed?')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
-    parser.add_argument('--config-name', default=DEFAULT_CONFIG_NAME)
-    parser.add_argument(
-        '--install',
-        action='store_true',
-        help='install the declared stages instead of only reporting them (an EXPLICIT request)',
-    )
+    parser.add_argument('--install', action='store_true', help='write the shims (an EXPLICIT request)')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
 
     if args.install:
-        # THE CHECK STILL NEVER REPAIRS ITSELF. What is refused is a SILENT fix; an explicitly
-        # requested install is neither silent nor a repair of somebody else's tree.
         try:
-            done = install(root, config_name=args.config_name)
+            done = install(root)
         except HookInstallError as exc:
             emit(f'[hooks-installed] NOT INSTALLED -- {exc}')
             return 1
         emit(f'[hooks-installed] {done.verdict} -- {done.hooks_dir}')
         return 0 if done.verdict == PROTECTED else 2
 
-    report = hook_installation(root, config_name=args.config_name)
+    report = hook_installation(root)
     emit(f'[hooks-installed] the hooks directory git will use: {report.hooks_dir}')
     if report.verdict == NOTHING_DECLARED:
-        emit(f'[hooks-installed] NOTHING DECLARED -- no {args.config_name} in {report.repo}')
+        emit(f'[hooks-installed] NOTHING DECLARED -- {report.repo} runs no hook stage')
         return 2
     for stage in report.stages:
-        emit(f'  {stage.stage:<18} {stage.status:<28} {stage.detail}')
-        emit(f'  {"":<18} declares: {", ".join(stage.hook_ids)}')
+        emit(f'  {stage.stage:<12} {stage.status:<22} {stage.detail}')
+        emit(f'  {"":<12} declares: {", ".join(stage.hook_ids)}')
     if report.verdict == PROTECTED:
-        emit('[hooks-installed] OK -- every declared stage has a live hook.')
+        emit('[hooks-installed] OK -- every declared stage has a live shim.')
         return 0
-    remedy = ' '.join(install_command(root, config_name=args.config_name)[2:])
     emit(
         f'[hooks-installed] UNPROTECTED -- {len(report.failing)} of {len(report.stages)} declared stage(s) '
         f'are not live. Every commit or push through this checkout ran none of them.\n'
-        f'  Install with:  python -m pre_commit {remedy}'
+        f'  Install with:  {INSTALL_COMMAND}'
     )
     return 1
 

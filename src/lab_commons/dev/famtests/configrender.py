@@ -22,22 +22,13 @@ real base in ``tests/test_dev_famconfig.py``, and the consumer half of each is e
 :func:`assert_delta_is_not_a_fork`. Copying them here would be a fifth spelling of a kit test living
 in four consumer trees, so they are NOT here, and this paragraph is why.
 
-THE STAGE ENGINE ARRIVES AS AN ARGUMENT AND HAS NO DEFAULT, and two reasons force it independently:
-a hook with no ``stages:`` key inherits them from the UPSTREAM manifest of the repo it came from, so
-a table computed by parsing a consumer's YAML here would be a guess about ANOTHER repository wearing
-a measurement's clothes; and ``pre_commit`` is not a dependency of this package and must not become
-one, since ``lab_commons.dev``'s inventory records that the layer is stdlib plus tier 1.
-
 THE READINGS LIVE IN :mod:`lab_commons.dev.famtests._configrender_readings` and are re-exported here,
 so a consumer has ONE import surface while the split stays real: everything there is a READING and
 everything here is a VERDICT that adds a floor, a comparison and a remedy. That is the same seam
 :mod:`lab_commons.dev._famconfig_survey` runs on one layer down, and the import runs one way.
 
-EVERY OTHER REPO-SHAPED FACT ARRIVES THE SAME WAY: the root, the repo name, the delta table, the
-re-render command, the hook floor, the ids the anchor carries, which hooks narrowed and which kept
-pre-push, and whether this checkout HAS a pre-push hook. That last is the worked example -- one lab's
-narrowing is free precisely because no pre-push hook is installed and the other's is a real loss
-precisely because one is, so a default would hand one repo the other's premise and report it measured.
+EVERY OTHER REPO-SHAPED FACT ARRIVES THE SAME WAY: the root, the repo name, the delta table and the
+re-render command.
 """
 
 from __future__ import annotations
@@ -60,45 +51,28 @@ from lab_commons.dev.famconfig import (
     ruff_config_path,
 )
 from lab_commons.dev.famtests._configrender_readings import (
-    HookStages,
     Reopening,
-    StagePartition,
-    StageResolver,
-    UnresolvedHooks,
     assert_floor,
-    declared_hook_ids,
     reopenings,
-    resolved_stages,
-    stage_partition,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
 
     from lab_commons.dev.famconfig import Base, Delta, SectionDelta
 
 __all__ = [
-    'HookStages',
     'Reopening',
-    'StagePartition',
-    'StageResolver',
-    'UnresolvedHooks',
     'assert_artefact_is_rendered',
-    'assert_declared_ids_survive',
     'assert_delta_is_not_a_fork',
     'assert_every_base_is_accounted_for',
     'assert_every_section_is_owned',
     'assert_modes_are_as_agreed',
     'assert_no_base_line_left_undeclared',
     'assert_no_rule_is_reopened',
-    'assert_pre_push_premise',
     'assert_render_round_trips',
-    'assert_stage_declaration',
-    'declared_hook_ids',
     'reopenings',
-    'resolved_stages',
-    'stage_partition',
 ]
 
 
@@ -129,7 +103,7 @@ def assert_artefact_is_rendered(
     measured today, one lab runs a Makefile target and the other an inline interpreter line -- and a
     guessed remedy is a refusal nobody can act on, which is how a refusal gets routed around.
     """
-    base = artefact_base(artefact, root)
+    base = artefact_base(artefact)
     report = inspect_file(root / artefact, base, deltas[artefact])
     if report.status == INSTALLED:
         return
@@ -200,90 +174,6 @@ def assert_no_rule_is_reopened(*, base: Base, delta: Delta, repo: str, directory
         raise AssertionError(msg)
 
 
-def assert_declared_ids_survive(*, config: Path, extra_hook_ids: Iterable[str], hook_floor: int) -> None:
-    """The named set's SUBJECT, read off the live artefact rather than restated from the declaration.
-
-    A set that only ever agreed with itself stays green through losing every hook it names. The floor
-    is what stops the subset check passing against a file that parsed to nothing.
-    """
-    declared = declared_hook_ids(config)
-    if declared is None:
-        msg = f'{config} could not be read, so no hook id was checked. That is INCONCLUSIVE, not clean.'
-        raise AssertionError(msg)
-    assert_floor(len(declared), hook_floor, f'{config.name} hook ids')
-    missing = sorted(set(extra_hook_ids) - declared)
-    if missing:
-        msg = (
-            f"{missing} are declared as this repo's extra hook ids and {config.name} no longer carries "
-            f'them. Either the block shrank, so correct the named set, or an upgrade lost the hooks.'
-        )
-        raise AssertionError(msg)
-
-
-def assert_stage_declaration(
-    *,
-    config: Path,
-    resolve: StageResolver,
-    hook_floor: int,
-    narrowed: frozenset[str],
-    keeps_pre_push: frozenset[str],
-) -> None:
-    """The behaviour change a ``default_stages`` adoption made, MEASURED against the real engine.
-
-    BOTH SETS ARE EQUALITIES, not subsets, and that is the whole shape. A declaration listing only what
-    moved cannot see a hook silently JOINING the move, and one listing only what survived cannot see a
-    hook silently leaving. An EMPTY set is a legitimate declaration and must be SPELLED: "we measured
-    and none narrowed" is a different act from never asking, and only the first can be checked.
-    """
-    hooks = resolved_stages(config, resolve=resolve)
-    if len(hooks) < hook_floor:
-        msg = (
-            f'the engine resolved {len(hooks)} hooks from {config.name}, below the {hook_floor} floor. A '
-            f'stage table read off a config that resolved to nothing agrees with every claim about it.'
-        )
-        raise UnresolvedHooks(msg)
-    measured = stage_partition(hooks)
-    for label, live, declared in (
-        ('narrowed to pre-commit alone', measured.narrowed, narrowed),
-        ('still reaching pre-push', measured.pre_push, keeps_pre_push),
-    ):
-        if live != declared:
-            msg = (
-                f'the hooks {label} are {sorted(live)} and this repo declares {sorted(declared)}. Extra in '
-                f'the engine ({sorted(live - declared)}) is a hook whose stages moved with nobody saying '
-                f'so; extra in the declaration ({sorted(declared - live)}) outlived its cause.'
-            )
-            raise AssertionError(msg)
-
-
-def assert_pre_push_premise(*, hooks_dir: Path, pre_push_installed: bool) -> None:
-    """WHETHER THIS CHECKOUT HAS A PRE-PUSH HOOK, pinned in whichever direction the repo declared.
-
-    The premise a stage narrowing rests on, and this file's clearest no-default fact: one lab adopts
-    ``default_stages: [pre-commit]`` for free because nothing runs at push there, and the other records
-    the identical change as a REAL loss because something does. The difference is the INSTALLATION, not
-    the config, so BOTH directions red -- installing a hook where none was declared is the right moment
-    to re-decide the narrowing rather than to discover it later as a miss.
-    """
-    if not hooks_dir.is_dir():
-        msg = f'no hooks directory at {hooks_dir}; this guard looked nowhere and is not reporting a clean tree'
-        raise AssertionError(msg)
-    live = (hooks_dir / 'pre-push').exists()
-    if live and not pre_push_installed:
-        msg = (
-            f'a pre-push hook is installed at {hooks_dir} and this repo declares none. Every stage the base '
-            f'takes off a stock hook has stopped being free: re-measure the adoption, declare `stages:` on '
-            f'what this repo wants at push, or record the loss as a drop with its reason.'
-        )
-        raise AssertionError(msg)
-    if pre_push_installed and not live:
-        msg = (
-            f'this repo declares a pre-push hook and none is installed at {hooks_dir}. The premise that made '
-            f'the stage declaration a real loss is gone; its measurement describes a checkout that is gone.'
-        )
-        raise AssertionError(msg)
-
-
 def assert_modes_are_as_agreed(*, modes: Mapping[str, str]) -> None:
     """The mode each artefact is judged under is the one this repo agreed to, named rather than taken.
 
@@ -314,7 +204,7 @@ def assert_no_base_line_left_undeclared(*, root: Path, artefact: str, repo: str)
     ratchet as the rendered-bytes property by a route that does not go through the bytes, so a base line
     leaving is visible even where the mode is the weaker one.
     """
-    survey = measured_delta(root / artefact, artefact_base(artefact, root), repo)
+    survey = measured_delta(root / artefact, artefact_base(artefact), repo)
     if survey.dropped:
         msg = (
             f'the survey reports {sorted(survey.dropped)} absent from {artefact} on disk with no declared '

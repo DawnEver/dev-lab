@@ -2,8 +2,8 @@
 # Resolve THIS checkout's own interpreter, never another checkout's, and exec through it.
 # A WRAPPER rather than a hook: it takes the command to run as its arguments.
 #
-#   python -m lab_commons.dev.githooks with-venv pytest -q
-#   python -m lab_commons.dev.githooks with-venv scripts/some_tool.py --flag
+#   python -m lab_commons.dev.githooks script with-venv pytest -q
+#   python -m lab_commons.dev.githooks script with-venv scripts/some_tool.py --flag
 #
 # EACH WORKTREE OWNS ITS `.venv`. A lane's own environment is
 # the isolated case: a dependency change belongs to the lane instead of being a change to everyone's

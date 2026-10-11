@@ -77,7 +77,7 @@ def test_a_reverting_door_planted_into_a_live_repo_is_refused() -> None:
     caller's real floating names. No environment is touched and nothing is installed; this is a
     statement about command text, which is the only kind this layer ever makes.
     """
-    home = _ROOT / '.github' / 'workflows' / 'python-verify.yml'
+    home = _ROOT / 'pyproject.toml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
     assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'REVERTS'}

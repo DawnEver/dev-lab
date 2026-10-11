@@ -124,9 +124,9 @@ def test_a_pruning_command_planted_into_a_real_door_is_found() -> None:
     of THIS census, so removing it must make the file appear as a pruning site. No environment is
     touched; the plant is a string replacement on a copy of the text.
     """
-    home = _ROOT / '.github' / 'workflows' / 'python-verify.yml'
+    home = _ROOT / 'pyproject.toml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
     planted = {('lab-commons', 'planted'): text.replace('uv run --no-sync', 'uv run')}
-    assert ('lab-commons', 'planted', 147) in pruning_sites(planted)
-    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', 119),)
+    assert ('lab-commons', 'planted', 309) in pruning_sites(planted)
+    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', 297),)

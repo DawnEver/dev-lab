@@ -1,57 +1,7 @@
 r"""lab-commons' own DELTAS against the family config bases -- data, computed by nothing.
 
-THE GAP THIS CLOSES. This repo SHIPS the hook machinery -- `dev.hook_install` (is a declared hook
-actually in the directory git consults), `dev.hooks` and `dev.hook_adoption` (the denied shapes and
-their remedies), `dev.githooks` and the `lab-with-venv` bootstrap -- and until 2026-09-17 ran NONE of
-it on itself: no `.pre-commit-config.yaml`, no installed hook, no commit-time enforcement at all. The
-config census carried that as its own row, and the row's last sentence was the complaint: the one
-repo whose tests assert that a config without an install is a lie had neither half.
-
-THE DELTA IS EMPTY, AND THAT IS THE DECISION RATHER THAN THE DEFAULT. Both labs adopted the same base
-the same day with deltas of 8 and 62 lines. This repo declares ZERO, and every base line was checked
-against this tree before it was accepted rather than taken because the base holds it:
-
-* `check-ast`, `check-case-conflict`, `check-merge-conflict`, `debug-statements`,
-  `end-of-file-fixer`, `mixed-line-ending`, `trailing-whitespace`, `check-added-large-files` -- a
-  Python tree of 170 formatted files and a git history; every one has a live subject here.
-* `check-toml` -- `pyproject.toml`, the only TOML tracked, and the file every consumer installs from.
-* `check-json` -- MEASURED: this repo tracks NO `.json` file at all today. It is kept anyway, and
-  that is the one line where "no subject" is not "wrong here": the hook is a no-op with nothing to
-  check and becomes live the moment a JSON file arrives, which is exactly when a reader would not
-  think to add it. A DROP is for a base line that would be WRONG here, not for one that is idle.
-* `commitizen` at `commit-msg` -- this family commits in imperative conventional form and this repo
-  had no check on it. There is no `[tool.commitizen]` block here, so the hook runs commitizen's
-  default `cz_conventional_commits`, which is the convention the family already writes.
-* `fail_fast: false` and `default_stages: [pre-commit]` -- the base's two scalars. The narrowing
-  `default_stages` performs costs this checkout nothing beyond what it declares, because the stages
-  installed here are exactly `pre-commit` and `commit-msg` and `commitizen` names its own.
-
-WHAT WAS CONSIDERED AND REFUSED, because a delta's reasoning is only checkable if the rejected lines
-are named. `check-shebang-scripts-are-executable` (consumer-c declares it) looks like an obvious fit
-for a repo shipping five `.sh` payloads -- and it is REFUSED ON MEASUREMENT: all five are mode 100644
-in this index, so the hook would red on the first run against a tree whose `.gitattributes` already
-owns the property that actually matters here (`*.sh text eol=lf`, so bash does not read a `\r`). A
-base line adopted into a red is a hook that gets `--no-verify`'d, which is worse than no hook.
-
-AND NO LOCAL `- repo: local` BLOCK, which is the whole reason this delta is empty where consumer-b's is
-62 lines. That lab's local hooks are a changelog generator, a version bumper and a ruff pair; this
-repo mints its versions from tags through hatch-vcs, publishes no changelog, and has ONE verdict --
-`make verify`, which is `lint fmt-check test` and which `lab_commons.dev.verify` ships as code. A
-pre-push hook re-running that is the "a push must never block development" shape the family kills on
-sight, and the census row already records that this repo genuinely has no pre-push gate.
-
-THE `Makefile` BASE IS ADOPTED HERE AS OF 2026-09-18, and the reason is that the kit was the one repo
-not meeting the contract it publishes. `MAKEFILE_BASE` demands nine target headers plus the one
-portable recipe; MEASURED before this adoption, this repo's Makefile carried `fmt`, `lint`, `test`,
-`fmt-check`, `adoption` and `verify` -- FIVE of the nine headers absent (`all`, `clean`, `install`,
-`install-dev`, `test-parallel`) and the `verify` recipe a hand-written `lint fmt-check test` chain
-rather than the `python -m lab_commons.dev.verify` the base names and this package ships. Both halves
-are the same shape one layer apart: the kit held to less than what it shipped.
-
-THE DROP MAP IS EMPTY AND THAT IS A MEASUREMENT rather than a default. After the adoption the kit's
-own survey reports 26 added lines and ZERO dropped, so every one of the nine base lines is on disk
-under its own recipe. A drop is the honest alternative for a target this repo genuinely cannot have,
-and there is none.
+GIT HOOKS ARE NOT A DELTA HERE: they are TOML (`[tool.lab_commons.hooks]` in pyproject.toml over
+`lab_commons/dev/githooks/base.toml`) and nothing is rendered for them.
 
 `.gitignore` IS ADOPTED AS OF 2026-10-03, on the user's ruling that every project-level file has ONE
 source in this package. The base grew the family-mandated lines (`_famconfig_rows.GITIGNORE_FAMILY_LINES`)
@@ -66,7 +16,6 @@ from __future__ import annotations
 
 from typing import Final
 
-from lab_commons.dev._famconfig_rows import HOOK_LAB_COMMONS
 from lab_commons.dev.famconfig import Delta
 
 __all__ = [
@@ -75,13 +24,9 @@ __all__ = [
     'GITATTRIBUTES_DELTA',
     'GITIGNORE',
     'GITIGNORE_DELTA',
-    'INSTALLED_STAGES',
     'MAKEFILE',
     'MAKEFILE_DELTA',
     'MAKE_TARGET_FLOOR',
-    'PRECOMMIT',
-    'PRECOMMIT_DELTA',
-    'PRECOMMIT_HOOK_FLOOR',
     'REPO',
     'RGIGNORE',
 ]
@@ -89,37 +34,8 @@ __all__ = [
 #: How this repo names itself in a rendered file's drop and anchor comments.
 REPO: Final = 'lab-commons'
 
-#: The two artefacts this repo has adopted, each spelled once.
-PRECOMMIT: Final = '.pre-commit-config.yaml'
+#: The Makefile, spelled once.
 MAKEFILE: Final = 'Makefile'
-
-#: NOTHING ADDED, NOTHING DROPPED -- the module docstring is the evidence for each half. A ceiling of
-#: ONE HOOK, `admission`, since 2026-10-11, and the ceiling is its line count. MEASURED that day: this
-#: repo's `git push origin main` of 3e46f63 was admitted with no `tests/<platform>` part on the forge,
-#: because no pre-push stage existed here -- the trunk rule in `lab_commons.dev.admission` was the kit's
-#: and was never run on the kit. The old reason for having none ("a pre-push re-running `make verify`
-#: would block every push") no longer describes the hook: admission runs NO test, it reads HEAD's parts
-#: off the forge; a lane or tag push is admitted at once, and the trunk needs every part a full PASS
-#: (no part at all is refused, naming the linux producer). The trunk ref is `[tool.lab_commons.branchset]`.
-PRECOMMIT_DELTA: Final = Delta(
-    repo=REPO,
-    added=(
-        '  - hooks:',
-        '      - id: admission',
-        '        name: push admission over the forge parts (lab_commons.dev.admission)',
-        '        entry: lab-with-venv',
-        "        args: ['lab_commons.dev.admission', '--trunk-ref', 'refs/heads/main']",
-        '        language: python',
-        f"        additional_dependencies: ['{HOOK_LAB_COMMONS}']",
-        '        always_run: true',
-        '        pass_filenames: false',
-        '        verbose: true',
-        '        stages: [pre-push]',
-        '    repo: local',
-    ),
-    dropped={},
-    ceiling=12,
-)
 
 #: This repo's OWN Makefile lines -- everything the family base does not name. MEASURED 2026-09-18 by
 #: the kit's survey against the adopted file: 26 lines, 0 drops. The ceiling IS the measurement rather
@@ -191,23 +107,8 @@ RGIGNORE_DELTA: Final = Delta(repo=REPO, added=(), dropped={}, ceiling=0)
 
 #: Every artefact this repo declares a delta against -- every one of the kit's bases.
 DELTAS: Final[dict[str, Delta]] = {
-    PRECOMMIT: PRECOMMIT_DELTA,
     MAKEFILE: MAKEFILE_DELTA,
     GITIGNORE: GITIGNORE_DELTA,
     GITATTRIBUTES: GITATTRIBUTES_DELTA,
     RGIGNORE: RGIGNORE_DELTA,
 }
-
-#: The git hook files this repo INSTALLS, which is the half a configuration cannot answer for itself.
-#: Exactly the stages the config declares: `pre-commit` for the default, `commit-msg` for commitizen.
-#: `pre-push` since 2026-10-11 for :data:`PRECOMMIT_DELTA`'s admission hook, which runs no test.
-#: Both labs went a day with `commitizen` DECLARED at `commit-msg` and no
-#: shim installed, so every commit message went unchecked while both trees read as guarded; this
-#: constant exists so the same gap cannot open here in silence.
-INSTALLED_STAGES: Final[tuple[str, ...]] = ('commit-msg', 'pre-commit', 'pre-push')
-
-#: How many hook ids the rendered config must carry before a subset check over it means anything.
-#: THIRTEEN is the family core and this repo adds none, so the floor IS the count; a file that parsed
-#: to nothing would otherwise satisfy every id assertion vacuously. RE-TAKEN 11 -> 12 on 2026-10-01
-#: (`issue-ref`) and 12 -> 13 on 2026-10-10 (`merge-audit`, the commit-time merge audit).
-PRECOMMIT_HOOK_FLOOR: Final = 13
