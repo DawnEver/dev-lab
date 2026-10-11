@@ -39,7 +39,7 @@ def checkout(tmp_path: Path) -> Path:
         ('outputs/x.md', False),
     ],
 )
-def test_markdown_under_output_is_refused_and_memory_is_admitted(checkout: Path, rel: str, refused: bool) -> None:
+def test_markdown_under_output_is_refused_and_memory_is_admitted(checkout: Path, rel: str, *, refused: bool) -> None:
     reason = refuse_report(checkout / rel)
     assert (reason is not None) is refused, rel
     if refused:

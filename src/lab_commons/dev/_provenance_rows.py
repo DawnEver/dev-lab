@@ -187,6 +187,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # release carrying this module reaches that repo -- the row is the claim, not the landing.
     'pytestout': ('supersedes', 'scripts/gate/_transcript.py'),
     'reports': ('original',),
+    'reportplace': ('original',),
     # ADOPTED_BY, AND NOT `supersedes`, BECAUSE BOTH FILES STAY AND BOTH DELEGATE: the reader half of
     # `tests/_config_census.py` moved here under a spelling-complete table, leaving that file its
     # placement machinery, and `tests/test_a_waiver_wider_than_an_ignore_is_declared.py` kept its

@@ -35,6 +35,6 @@ REPORTS_LIVE_IN_MEMORY: dict[str, object] = {
         'git log > output/logs/26/10/11/merge/log.txt',
         'echo x > .claude/memory/2026/10/11/audit.md',
         'cat output/logs/26/10/10/audit/test-suite-audit.md',
-        'python -m pkg.run --out output/logs/26/10/11/case/comparison.md',
+        'cargo run -- --out output/logs/26/10/11/case/comparison.md',
     ),
 }
