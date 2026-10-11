@@ -138,13 +138,14 @@ def base_rows() -> dict[str, tuple[dict[str, Any], ...]]:
     return _rows(tomllib.loads(BASE_PATH.read_text(encoding='utf-8')), str(BASE_PATH))
 
 
-def repo_rows(root: Path) -> dict[str, tuple[dict[str, Any], ...]]:
-    """A repo's own layer, raw, by stage -- empty when its ``pyproject.toml`` declares none."""
+def repo_rows(root: Path) -> dict[str, tuple[dict[str, Any], ...]] | None:
+    """A repo's own layer, raw, by stage; ``None`` when it does not opt in (no ``[tool.lab_commons.hooks]``)."""
     pyproject = root / 'pyproject.toml'
     if not pyproject.is_file():
-        return {}
+        return None
     data = tomllib.loads(pyproject.read_text(encoding='utf-8'))
-    return _rows(data.get('tool', {}).get('lab_commons', {}).get('hooks', {}), str(pyproject))
+    hooks = data.get('tool', {}).get('lab_commons', {}).get('hooks')
+    return None if hooks is None else _rows(hooks, str(pyproject))
 
 
 def merge(
@@ -173,5 +174,11 @@ def merge(
 
 
 def hook_table(root: Path) -> dict[str, tuple[Hook, ...]]:
-    """Every hook *root* runs, by stage: the family base with the repo's layer merged over it."""
-    return merge(base_rows(), repo_rows(root), origin=str(root / 'pyproject.toml'))
+    """Every hook *root* runs, by stage: the family base with the repo's layer merged over it.
+
+    A repo OPTS IN by declaring ``[tool.lab_commons.hooks]`` (an empty table takes the base as is); one
+    that does not runs no hook and declares no stage, so a checkout that is not a family project is
+    never reported unprotected.
+    """
+    layer = repo_rows(root)
+    return {} if layer is None else merge(base_rows(), layer, origin=str(root / 'pyproject.toml'))

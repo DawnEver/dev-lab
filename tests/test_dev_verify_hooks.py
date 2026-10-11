@@ -21,6 +21,7 @@ _GIT = shutil.which('git') or 'git'
 def _repo(at: Path) -> Path:
     at.mkdir(parents=True)
     subprocess.run([_GIT, 'init', '-q', str(at)], check=True, capture_output=True, timeout=60)
+    (at / 'pyproject.toml').write_text('[tool.lab_commons.hooks]\n', encoding='utf-8')
     return at
 
 
@@ -37,4 +38,12 @@ def test_a_protected_checkout_reports_clean(tmp_path: Path) -> None:
     install(repo)
     report = read_hooks(repo, handle=io.StringIO())
     assert report.reported == (HOOKS_STEP,)
+    assert report.failures == ()
+
+
+def test_a_checkout_that_does_not_opt_in_has_nothing_to_guard(tmp_path: Path) -> None:
+    at = tmp_path / 'r'
+    at.mkdir()
+    subprocess.run([_GIT, 'init', '-q', str(at)], check=True, capture_output=True, timeout=60)
+    report = read_hooks(at, handle=io.StringIO())
     assert report.failures == ()

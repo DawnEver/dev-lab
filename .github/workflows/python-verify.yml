@@ -72,11 +72,11 @@
         },
         {
           "name": "Install the declared git hooks",
-          "run": "uv run --no-sync python -m lab_commons.dev.hook_install --install"
+          "run": "uv run --no-sync python -m lab_commons.dev.hook_install --install\n"
         },
         {
           "name": "make verify",
-          "run": "uv run --no-sync make verify"
+          "run": "uv run --no-sync make verify\n"
         },
         {
           "name": "Named guards",

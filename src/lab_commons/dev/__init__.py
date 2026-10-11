@@ -95,6 +95,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   have" exactly and without a network call. Measured against the REMOTE and never a local pointer,
   and with ``git cherry`` rather than ancestry, because those are the two ways this audit has
   actually been observed to lie.
+* :mod:`lab_commons.dev.filechecks` -- the base pre-commit rows' per-file checks (stdlib, report and
+  never rewrite).
+* :mod:`lab_commons.dev.ciworkflows` -- GitHub workflows declared in TOML (``ci_base.toml`` plus
+  ``[tool.lab_commons.ci]``) and rendered to ``.github/workflows``; ``check`` refuses a hand edit.
 * :mod:`lab_commons.dev.githooks` -- the TOML hook table, its one runner (``python -m
   lab_commons.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
   reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a

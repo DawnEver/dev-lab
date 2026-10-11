@@ -22,7 +22,9 @@ _GIT = shutil.which('git') or 'git'
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run([_GIT, '-C', str(root), *args], capture_output=True, text=True, check=True).stdout
+    return subprocess.run(
+        [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=True
+    ).stdout
 
 
 @pytest.fixture
@@ -33,6 +35,7 @@ def repo(tmp_path: Path) -> Path:
     _git(root, 'config', 'user.email', 't@example.invalid')
     _git(root, 'config', 'user.name', 't')
     _git(root, 'config', 'core.autocrlf', 'false')
+    (root / 'pyproject.toml').write_text('[tool.lab_commons.hooks]\n', encoding='utf-8')
     return root
 
 
@@ -99,6 +102,11 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         encoding='utf-8',
     )
     assert [hook.id for hook in hook_table(tmp_path)['pre-push']] == ['admission']
+
+
+def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
+    assert hook_table(tmp_path) == {}
 
 
 def test_python_resolves_to_this_interpreter_and_a_tool_beside_it_first() -> None:

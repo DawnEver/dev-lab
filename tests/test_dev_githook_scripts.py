@@ -169,7 +169,7 @@ def test_a_fragment_refuses_to_be_run_and_a_wrapper_does_not(repo: Path) -> None
 def test_the_script_set_is_listable_by_kind() -> None:
     """A consumer wiring a hook must be able to ask which scripts are hooks at all."""
     listed = subprocess.run(
-        [sys.executable, '-m', 'lab_commons.dev.githooks', '--list', '--kind', 'fragment'],
+        [sys.executable, '-m', 'lab_commons.dev.githooks', 'script', '--list', '--kind', 'fragment'],
         capture_output=True,
         text=True,
         encoding='utf-8',

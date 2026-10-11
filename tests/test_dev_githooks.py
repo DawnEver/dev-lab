@@ -91,7 +91,7 @@ def test_the_hook_resolves_through_the_installed_package() -> None:
     assert path.is_file()
     assert path.parent == Path(githooks.__file__).resolve().parent, 'the payload must ship inside the package'
     printed = subprocess.run(
-        [sys.executable, '-m', 'lab_commons.dev.githooks', '--path', 'bump-version'],
+        [sys.executable, '-m', 'lab_commons.dev.githooks', 'script', '--path', 'bump-version'],
         capture_output=True,
         text=True,
         encoding='utf-8',

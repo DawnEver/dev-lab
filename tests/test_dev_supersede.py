@@ -482,7 +482,7 @@ SPELLING_HEADROOM = 3
 #: the floor rather than either factor alone: a parametrisation that lost one whole spelling still
 #: reports a full green over the other two, which is the shape that let this defect live twice.
 # RE-MEASURED 2026-09-19 at 207 (69 modules x 3 spellings), 7 past the old ceiling of 110 + 90.
-CASE_FLOOR = 270  # re-taken 2026-10-10 at 351+: seats split, run cache, parts, forge serve
+CASE_FLOOR = 330  # re-taken 2026-10-11 at 366: TOML hooks and rendered workflows
 CASE_HEADROOM = 90
 
 #: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.

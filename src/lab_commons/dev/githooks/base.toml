@@ -1,6 +1,7 @@
 # THE FAMILY'S GIT HOOKS -- the base every repo runs, as data. Read by lab_commons.dev.githooks.table.
 #
-# A repo layers its own rows on top in its pyproject.toml, under [[tool.lab_commons.hooks.<stage>]]:
+# A repo OPTS IN by declaring [tool.lab_commons.hooks] in its pyproject.toml (an empty table takes
+# this base as is) and layers its own rows on top under [[tool.lab_commons.hooks.<stage>]]:
 # a row whose `id` is new is APPENDED to the stage; a row whose `id` names a base row is MERGED over
 # it key by key (e.g. one `exclude`). Keys, all optional except `id` and `run`:
 #

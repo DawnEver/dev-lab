@@ -47,6 +47,9 @@ __all__ = [
 #: The object name git writes for the absent side of a ref: a deleted ref, or one the remote lacks.
 ZERO_SHA: Final = '0' * 40
 
+#: The fields of one pre-push line: local ref, local sha, remote ref, remote sha.
+_PUSH_FIELDS: Final = 4
+
 _GIT: Final = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S: Final = 120
 
@@ -76,7 +79,9 @@ class PushLine:
 
 def parse_push_lines(text: str) -> tuple[PushLine, ...]:
     """Git's pre-push stdin, one :class:`PushLine` per four-field line; anything else is not a ref line."""
-    return tuple(PushLine(*fields) for fields in (line.split() for line in text.splitlines()) if len(fields) == 4)  # noqa: PLR2004 -- git's four fields
+    return tuple(
+        PushLine(*fields) for fields in (line.split() for line in text.splitlines()) if len(fields) == _PUSH_FIELDS
+    )
 
 
 def _git(root: Path, *args: str) -> str:
@@ -154,7 +159,9 @@ Runner = Callable[[list[str], Path, str | None, Mapping[str, str]], int]
 
 
 def _subprocess_runner(argv: list[str], cwd: Path, stdin: str | None, env: Mapping[str, str]) -> int:
-    return subprocess.run(argv, cwd=cwd, input=stdin, text=True, check=False, env={**os.environ, **env}).returncode
+    return subprocess.run(
+        argv, cwd=cwd, input=stdin, text=True, encoding='utf-8', check=False, env={**os.environ, **env}
+    ).returncode
 
 
 def _argvs(hook: Hook, stage: str, git_args: Sequence[str], chosen: Sequence[str]) -> list[list[str]]:

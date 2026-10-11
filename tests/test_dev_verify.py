@@ -992,7 +992,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     monkeypatch.setattr(verify, 'family_freshness', lambda _root: ('', ''))
     monkeypatch.setattr(verify, 'hold_run_seats', lambda *_a, **_k: None)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
-    monkeypatch.setattr(verify, 'read_hooks', lambda _root, _handle: clean)
+    monkeypatch.setattr(verify, 'read_hooks', lambda _root, **_kw: clean)
 
     def tee(command: list[str], *, handle: io.TextIOBase, **_where: object) -> int:
         is_pytest = 'pytest' in command
@@ -1042,6 +1042,7 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding='utf-8',
     )
     try:
         assert holder.stdout is not None
@@ -1062,6 +1063,7 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
             cwd=Path(__file__).resolve().parents[1],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             timeout=600,
             check=False,
         )

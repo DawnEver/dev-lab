@@ -57,6 +57,7 @@ WHYS=()
 # git's pre-push protocol on stdin; a deleted ref (local sha all-zero) publishes no commit.
 if [ ! -t 0 ]; then
   while read -r _local_ref local_sha _remote_ref remote_sha; do
+    remote_sha="${remote_sha%$'\r'}"
     [ -n "${remote_sha:-}" ] || continue
     [ "${local_sha}" = "${ZERO}" ] && continue
     if [ "${remote_sha}" = "${ZERO}" ]; then
