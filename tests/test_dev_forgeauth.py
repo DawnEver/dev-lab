@@ -7,6 +7,7 @@ through ``GIT_CONFIG_GLOBAL`` with the system config masked -- so ``git credenti
 
 from __future__ import annotations
 
+import base64
 import io
 import subprocess
 import sys
@@ -15,9 +16,10 @@ from pathlib import Path
 import pytest
 from test_dev_forgework import _answer, _Loopback, _Recorder, _repo, server
 
-from lab_commons.dev.forge import Forge, token_for
+from lab_commons.dev.forge import Forge, store_credential, token_for
 from lab_commons.dev.forgeauth import main
-from lab_commons.dev.forgework import Client
+from lab_commons.dev.forgework import Client, ForgeCallFailed
+from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, Disposition
 
 __all__ = ['server']
 
@@ -142,3 +144,63 @@ def test_the_forge_module_routes_auth_to_this_door() -> None:
     assert done.returncode == 0, done.stderr
     assert 'login' in done.stdout
     assert 'status' in done.stdout
+
+
+def _basic(username: str, secret: str) -> str:
+    return 'Basic ' + base64.b64encode(f'{username}:{secret}'.encode()).decode()
+
+
+def _store_password(tmp_path: Path, env: dict[str, str], host: str, username: str, secret: str) -> None:
+    store_credential(host, username, secret, cwd=tmp_path, env=env)
+
+
+@pytest.mark.parametrize(('host', 'path'), [('f.example', '/api/v1/user'), ('github.com', '/user')])
+def test_status_presents_the_stored_credential_as_git_does_basic_with_its_username(
+    server, tmp_path, capsys, host, path
+) -> None:
+    env, _ = _isolated_store(tmp_path)
+    _store_password(tmp_path, env, host, 'alice', 'a-password')
+    _Recorder.accept = lambda header: header == _basic('alice', 'a-password')
+    _answer('GET', path, (200, {'login': 'alice'}))
+    assert main(['status', '--host', host], cwd=tmp_path, env=env, transport=_Loopback(server)) == 0
+    assert 'authenticated as alice' in capsys.readouterr().out
+
+
+def test_planted_control_a_basic_only_server_refuses_the_token_header(server) -> None:
+    _Recorder.accept = lambda header: header.startswith('Basic ')
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    client = Client(Forge('f.example', 'o', 'r'), 'a-password', transport=_Loopback(server), sleep=lambda _s: None)
+    with pytest.raises(ForgeCallFailed):
+        client.whoami()
+
+
+def test_planted_control_a_token_header_only_server_refuses_basic(server) -> None:
+    _Recorder.accept = lambda header: header == f'token {_PAT}'
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    transport = _Loopback(server)
+    assert Client(Forge('f.example', 'o', 'r'), _PAT, transport=transport).whoami() == 'alice'
+    basic = Client(Forge('f.example', 'o', 'r'), _PAT, username='alice', transport=transport, sleep=lambda _s: None)
+    with pytest.raises(ForgeCallFailed):
+        basic.whoami()
+
+
+@pytest.mark.parametrize('code', [401, 403])
+def test_an_auth_refusal_is_asked_once_and_names_the_remedy(server, tmp_path, capsys, code) -> None:
+    env, _ = _isolated_store(tmp_path)
+    _store_password(tmp_path, env, 'f.example', 'alice', 'stale')
+    _answer('GET', '/api/v1/user', (code, {'message': 'invalid username, password or token'}))
+    assert main(['status', '--host', 'f.example'], cwd=tmp_path, env=env, transport=_Loopback(server)) == 1
+    assert len(_Recorder.received) == 1
+    err = capsys.readouterr().err
+    assert 'transient' not in err
+    assert 'auth login' in err
+    assert 'stale' not in err
+
+
+def test_a_server_error_stays_transient_and_is_retried(server) -> None:
+    _answer('GET', '/api/v1/user', (503, {'message': 'down'}))
+    client = Client(Forge('f.example', 'o', 'r'), _PAT, transport=_Loopback(server), sleep=lambda _s: None)
+    with pytest.raises(ForgeCallFailed) as failed:
+        client.whoami()
+    assert failed.value.report.disposition is Disposition.EXHAUSTED
+    assert len(_Recorder.received) == DEFAULT_ATTEMPTS

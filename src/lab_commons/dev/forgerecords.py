@@ -202,7 +202,7 @@ def main(
         keep = kept_shas(root, trunk=load_policy(root).main, keep_trunk=args.keep_trunk)
         doomed = prune(client, keep, dry_run=args.dry_run)
     except ForgeCallFailed as failed:
-        emit(f'[forge] {failed.report.remedy}', err=True)
+        emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
     except (OSError, ValueError) as failed:

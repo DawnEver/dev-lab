@@ -39,13 +39,14 @@ assertion no checker can verify is the declaration that lies.
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.dev.netverb import run_network_verb
 
@@ -55,6 +56,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     'APPLIED',
+    'AUTH_REFUSED',
+    'AUTH_REMEDY',
     'INERT',
     'NOT_APPLIED',
     'UNREADABLE',
@@ -66,6 +69,8 @@ __all__ = [
     'UnreadableRemote',
     'apply_protection',
     'assess',
+    'authorization',
+    'credential_for',
     'fetch_origin',
     'forge_from_remote',
     'https_transport',
@@ -262,19 +267,43 @@ def fetch_origin(root: Path) -> None:
         raise OSError(report.remedy)
 
 
-def token_for(host: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
-    """The credential the git transport already holds for *host*; never returned to a log.
+#: HTTP statuses that refuse the presented credential: permanent, the remedy is a re-stored credential.
+AUTH_REFUSED: Final = frozenset({401, 403})
 
-    An EMPTY password is refused rather than returned: a header would carry it, the forge would
-    reject it, and a missing credential would be reported as a forge problem.
+#: The remedy an auth refusal names.
+AUTH_REMEDY: Final = 'the forge refused the stored credential; re-store it: python -m lab_commons.dev.forge auth login'
+
+
+def credential_for(host: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> tuple[str, str]:
+    """``(username, secret)`` the git transport already holds for *host*; never returned to a log.
+
+    The username travels with the secret because git presents BOTH (HTTP Basic): a stored gitea
+    PASSWORD authenticates only that way, and a token does too, so presenting them as git does is
+    the one form every stored credential passes. An EMPTY password is refused rather than returned:
+    a header would carry it, the forge would reject it, and a missing credential would be reported
+    as a forge problem.
     """
     done = _credential('fill', {'host': host}, cwd=cwd, env=env)
-    for line in done.stdout.splitlines():
-        key, _, value = line.partition('=')
-        if key == 'password' and value:
-            return value
+    fields = dict(line.partition('=')[::2] for line in done.stdout.splitlines())
+    if fields.get('password'):
+        return fields.get('username', ''), fields['password']
     msg = f'no stored credential for {host}: the git transport must be able to authenticate first'
     raise NoCredential(msg)
+
+
+def authorization(username: str, secret: str, scheme: str) -> str:
+    """HTTP Basic with the credential's username, exactly as git presents it; ``<scheme> <secret>`` only without one.
+
+    A secret with no username is a bare token handed to ``auth login`` -- the one case Basic cannot carry.
+    """
+    if username:
+        return 'Basic ' + base64.b64encode(f'{username}:{secret}'.encode()).decode()
+    return f'{scheme} {secret}'
+
+
+def token_for(host: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
+    """The secret half of :func:`credential_for`."""
+    return credential_for(host, cwd=cwd, env=env)[1]
 
 
 def store_credential(host: str, username: str, secret: str, *, cwd: Path, env: Mapping[str, str] | None = None) -> None:

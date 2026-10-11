@@ -354,7 +354,7 @@ def main(
             os_name=os_name,
         )
     except ForgeCallFailed as failed:
-        emit(f'[tick] {failed.report.remedy}', err=True)
+        emit(f'[tick] {failed}', err=True)
         return 1
     except (NoCredential, UnreadableRemote, OSError) as failed:
         emit(f'[tick] {failed}', err=True)

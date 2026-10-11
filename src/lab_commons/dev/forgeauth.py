@@ -27,10 +27,10 @@ from lab_commons.dev.forge import (
     Forge,
     NoCredential,
     Transport,
+    credential_for,
     forge_from_remote,
     https_transport,
     store_credential,
-    token_for,
 )
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.log import emit
@@ -66,7 +66,8 @@ def status(
         ForgeCallFailed: a token was found and the forge did not accept it.
 
     """
-    return Client(forge, token_for(forge.host, cwd=cwd, env=env), transport=transport).whoami()
+    username, secret = credential_for(forge.host, cwd=cwd, env=env)
+    return Client(forge, secret, transport=transport, username=username).whoami()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -110,7 +111,7 @@ def main(
     try:
         who = login(forge, token, cwd=root, env=env, transport=transport)
     except ForgeCallFailed as failed:
-        emit(f'[forge] {forge.host} did not accept the token; it was NOT stored. {failed.report.remedy}', err=True)
+        emit(f'[forge] {forge.host} did not accept the token; it was NOT stored. {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
     except NoCredential as refused:
@@ -127,7 +128,7 @@ def _status(forge: Forge, root: Path, env: Mapping[str, str] | None, transport: 
         emit(f'[forge] {forge.host}: no token. Run: python -m lab_commons.dev.forge auth login', err=True)
         return 1
     except ForgeCallFailed as failed:
-        emit(f'[forge] {forge.host}: the token did not authenticate. {failed.report.remedy}', err=True)
+        emit(f'[forge] {forge.host}: the token did not authenticate. {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
     emit(f'[forge] {forge.host}: token from git credential; authenticated as {who}')

@@ -190,7 +190,7 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
                 built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
             )
         except ForgeCallFailed as exc:
-            failures.append(f'{post.context} on {post.sha[:12]} ({exc.report.diagnosis.value}): {exc.report.remedy}')
+            failures.append(f'{post.context} on {post.sha[:12]} ({exc.report.diagnosis.value}): {exc}')
             continue
         except (OSError, ValueError, KeyError) as exc:
             failures.append(f'{post.context} on {post.sha[:12]}: {exc!r}')

@@ -176,7 +176,9 @@ def test_the_cli_posts_and_lists_with_json(server, tmp_path: Path, capsys) -> No
     argv = ['post', _SHA, '--context', 'lab/test', '--state', 'pending', '--description', 'probe', '--json']
     assert main(argv, cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0
     assert json.loads(capsys.readouterr().out)['context'] == 'lab/test'
-    assert Recorder.received[-1]['headers']['Authorization'] == 'token T'
+    assert (
+        Recorder.received[-1]['headers']['Authorization'] == 'Basic dTpU'
+    )  # u:T, the helper's username and secret, as git presents them
     assert not Recorder.received[-1]['body']['description'].startswith('['), 'status writes carry no provenance'
     answer('GET', f'/api/v1/repos/o/r/statuses/{_SHA}', (200, [{'id': 1, 'context': 'lab/test', 'status': 'pending'}]))
     assert main(['list', _SHA], cwd=repo, env=credential_env(tmp_path), transport=Loopback(server)) == 0

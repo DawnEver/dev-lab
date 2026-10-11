@@ -230,7 +230,7 @@ def main(
         areas_text = pyproject_at(root, record['sha'])
         routed = route(client_for(root, env=env, transport=transport), record, areas_text)
     except ForgeCallFailed as failed:
-        emit(f'[forge] {failed.report.remedy}', err=True)
+        emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
     except ValueError as exc:

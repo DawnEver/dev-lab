@@ -12,7 +12,7 @@ import json
 import shutil
 import subprocess
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
@@ -60,6 +60,8 @@ class Recorder(BaseHTTPRequestHandler):
 
     received: ClassVar[list[dict[str, Any]]] = []
     answers: ClassVar[dict[tuple[str, str], list[tuple[int | None, Any]]]] = {}
+    #: When set, a request whose Authorization header it rejects is answered 401 -- the forge's credential check.
+    accept: ClassVar[Callable[[str], bool] | None] = None
 
     def _serve(self, method: str) -> None:
         length = int(self.headers.get('Content-Length') or 0)
@@ -70,6 +72,9 @@ class Recorder(BaseHTTPRequestHandler):
             {'method': method, 'path': self.path, 'body': body, 'raw': raw, 'headers': dict(self.headers)}
         )
         answers = type(self).answers
+        accept = type(self).accept
+        if accept is not None and not accept(self.headers.get('Authorization') or ''):
+            answers = {(method, self.path): [(401, {'message': 'invalid username, password or token'})]}
         found = answers.get((method, self.path)) or answers.get((method, self.path.split('?')[0]))
         queue = found or [(404, {'message': 'not found'})]
         status, payload = queue.pop(0) if len(queue) > 1 else queue[0]
@@ -107,6 +112,7 @@ def serve() -> Iterator[ThreadingHTTPServer]:
     """A fresh recorder and a running server, shut down after the test."""
     Recorder.received = []
     Recorder.answers = {}
+    Recorder.accept = None
     httpd = ThreadingHTTPServer(('127.0.0.1', 0), Recorder)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

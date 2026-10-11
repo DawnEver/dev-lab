@@ -45,8 +45,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.dev import forge as _forge
 from lab_commons.dev._forge_landed import LOOKBACK, find_landed, since
-from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Forge, Transport, forge_from_remote, https_transport, token_for
+from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Forge, Transport, forge_from_remote, https_transport
 from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 from lab_commons.log import emit
 
@@ -88,8 +89,9 @@ class ForgeCallFailed(OSError):
     """A forge call that did not succeed within the bound; :attr:`report` is netverb's report of it."""
 
     def __init__(self, report: Report) -> None:
-        """Carry the report; the message is its derived remedy."""
-        super().__init__(report.remedy)
+        """Carry the report; the message is its derived remedy, plus the auth remedy on a 401/403."""
+        last = report.attempts[-1].returncode if report.attempts else 0
+        super().__init__(f'{report.remedy}. {_forge.AUTH_REMEDY}' if last in _forge.AUTH_REFUSED else report.remedy)
         self.report = report
 
 
@@ -211,7 +213,14 @@ def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
 
 
 def _diagnose(status: int, text: str) -> Diagnosis:
-    """Read through netverb's table first; an answered 4xx it does not know is a refusal, never a transient."""
+    """Read through netverb's table first; an answered 4xx it does not know is a refusal, never a transient.
+
+    A 401/403 from the API is an ANSWER about the presented credential and is refused before the
+    table is read: the table's 401-is-transient row was measured on ``git`` (a credential helper
+    mid-flight), and an API call's header is fixed, so asking again cannot change the answer.
+    """
+    if status in _forge.AUTH_REFUSED:
+        return Diagnosis.FORGE_REFUSED
     found = classify(f'error: {status} {text}')
     answered = _HTTP_ERROR_FLOOR <= status < _HTTP_SERVER_FLOOR and status not in _HTTP_RETRYABLE_4XX
     return Diagnosis.FORGE_REFUSED if found is Diagnosis.UNCLASSIFIED and answered else found
@@ -224,6 +233,7 @@ class Client:
     forge: Forge
     token: str
     transport: Transport = https_transport
+    username: str = ''
     stamp: str | None = None
     sleep: Callable[[float], None] = time.sleep
     timeout: float = 30.0
@@ -236,7 +246,8 @@ class Client:
 
     def _once(self, method: str, path: str, data: bytes | None, content_type: str) -> tuple[int, bytes]:
         backend = self.backend
-        headers = {'Authorization': f'{backend.auth_scheme} {self.token}', 'Content-Type': content_type}
+        auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
+        headers = {'Authorization': auth, 'Content-Type': content_type}
         conn = self.transport(backend.host(self.forge), self.timeout)
         try:
             conn.request(method, path, body=data, headers=headers | dict(backend.headers))
@@ -405,7 +416,8 @@ def client_for(root: Path, *, env: Mapping[str, str] | None = None, transport: T
     """The client for *root*'s ``origin``, its token and its provenance stamp -- what every CLI verb builds."""
     forge = forge_from_remote(root)
     stamp = provenance(root, os.environ if env is None else env)
-    return Client(forge, token_for(forge.host, cwd=root, env=env), transport=transport, stamp=stamp)
+    username, secret = _forge.credential_for(forge.host, cwd=root, env=env)
+    return Client(forge, secret, transport=transport, username=username, stamp=stamp)
 
 
 def main(
@@ -421,7 +433,7 @@ def main(
     try:
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:
-        emit(f'[forge] {failed.report.remedy}', err=True)
+        emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
         return 1
     items = result if isinstance(result, tuple) else (result,)
