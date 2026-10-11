@@ -291,6 +291,8 @@ class FakeRunCluster:
             self.state = stdin or ''
             return ''
         if 'squeue -h -r -j' in command:
+            if isinstance(self.queue, Exception):
+                raise self.queue
             return self.queue
         if 'state.json' in command:
             return self.state
@@ -830,6 +832,28 @@ def test_gather_without_wait_says_where_the_run_is_and_exits_pending(
     assert 'queued 1 for 3 min' in ''.join(capsys.readouterr())
     assert slept == []
     assert cli.main(['run', 'gather', '--sha', SHA, '--wait', '-o', str(tmp_path / 'out')]) == 0
+
+
+def test_a_job_id_slurm_has_forgotten_is_a_finished_run_for_status_and_watch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PLANTED CONTROL, 2026-10-11: squeue forgets a finished job and refuses its id; that is DONE, not a crash."""
+    fake = FakeRunCluster(active=1)
+    fake.queue = RuntimeError('ssh exited 1: slurm_load_jobs error: Invalid job id specified')
+    cli, _ = _outstanding_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'status']) == 0
+    assert 'finished' in ''.join(capsys.readouterr())
+    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0
+    assert len(list((tmp_path / 'out').iterdir())) == 1
+
+
+def test_any_other_squeue_failure_still_raises() -> None:
+    """The other half of the control: only the forgotten-id refusal reads as finished."""
+    fake = FakeRunCluster()
+    _submit(fake)
+    fake.queue = RuntimeError('ssh exited 1: slurm_load_jobs error: Unable to contact slurm controller')
+    with pytest.raises(RuntimeError, match='Unable to contact'):
+        where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
 
 
 def test_a_red_record_makes_watch_exit_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
