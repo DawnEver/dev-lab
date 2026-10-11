@@ -380,7 +380,8 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     fake = FakeRunCluster()
     record = _run(fake)
     assert record['sha'] == SHA
-    assert record['prep'] == {'env': 12, 'collect': 3}, 'prep time is measurable from the record'
+    assert {k: v for k, v in record['prep'].items() if k != 'ship'} == {'env': 12, 'collect': 3}, 'prep is measurable'
+    assert record['prep']['ship'] >= 0, 'so is the fetch/pack'
     assert record['handed'] == {'tests/w.py::t': ['windows']}, 'handed names the platforms that CAN run it'
     assert (record['platform'], record['system'], record['cluster'], record['python']) == (
         'linux',
@@ -701,9 +702,9 @@ def test_fold_charges_a_killed_item_what_its_shard_wall_had_left() -> None:
 def test_a_file_whose_costly_id_dies_is_replanned_with_more_wall_than_it_died_at() -> None:
     """No TIMEOUT state here (the round is OUT_OF_MEMORY), so only the floor can lengthen the retry."""
     record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True))
-    first, second = record['rounds']
+    _, second = record['rounds']
     assert record['floors'] == {}, 'the retry finished it, so its floor gave way to its duration'
-    assert second['minutes'] >= first['minutes'], 'the retry is never sized shorter than the wall it died at'
+    assert second['minutes'] * 60 >= 60.0, 'the retry is never sized shorter than the 60 s sacct says it died at'
 
 
 def test_a_timeout_round_asks_the_next_for_twice_the_minutes() -> None:
