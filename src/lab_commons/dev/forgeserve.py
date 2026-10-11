@@ -10,7 +10,8 @@ THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons
 a run of another state schema refused); :func:`lab_commons.dev.forgetick.tick` (flush the outbox,
 fetch, claim at most one part -- none while a run is in flight); start a claimed cluster part as a run,
 or produce a claimed LOCAL part inline; advance every cluster run one step
-(:func:`lab_commons.dev.forgerun.advance`: submit, gather, publish, route, release -- whatever is due);
+(:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
+release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgerun.tidy`);
 flush the outbox again.
 
 A LOCAL PRODUCER RUNS INLINE AND HOLDS ITS CLAIM: its output streams prefixed ``[platform]``, its
@@ -141,6 +142,11 @@ def serve(
     left = _advance(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, cluster=cluster, say=say, alarm=alarm
     )
+    if seat is not None:  # the cluster host is the artefact stores' single writer: it cleans them each tick
+        try:
+            forgerun.tidy(root, client(root), say=say)
+        except (OSError, ValueError) as why:
+            alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
     if mode != 'quiet' and pending and not ticked.claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'

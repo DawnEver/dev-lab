@@ -7,6 +7,13 @@ So each ``forge serve`` invocation ADVANCES ON-DISK STATE and returns:
 
     claimed -> submitted (Slurm job ids) -> gathered (the run record) -> published -> released
 
+DECLARED OUTPUTS SHIP WITH THE RECORD. The outputs a part declares (``[tool.lab_commons.hpc] outputs``,
+captured in the run when it is claimed -- declared at REQUEST time) are packed from the run's work
+tree and put in the artefact store (:mod:`lab_commons.dev.artefacts`) after the record is gathered and
+before it is posted; the record's ``artefacts`` manifest names them. A declared output that is missing
+releases the part as an error and alarms. Each serve tick on a cluster also cleans the stores
+(:func:`tidy`): this host is their single writer.
+
 One file per run, keyed by repo + sha + platform + scope, under ``forge-runs/`` beside the machine
 file (:func:`directory`) -- in the account's home, so any login host of that account sees it.
 
@@ -41,7 +48,22 @@ from pathlib import Path
 from typing import Final, Protocol
 
 from lab_commons.config import config_path
-from lab_commons.dev.forgealarm import LEASE, Alarm
+from lab_commons.dev.artefacts import (
+    ARCHIVE,
+    ArtefactStore,
+    ForgeStore,
+    MissingOutput,
+    clean,
+    collect,
+    large_store,
+    load_config,
+    pack,
+    pinned,
+    run_id,
+    store_for,
+)
+from lab_commons.dev.forge import forge_from_remote
+from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgeroute import pyproject_at, route
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgetick import DONE, MINE, Claim, Work, assess, claim, forge_now
@@ -55,7 +77,7 @@ from lab_commons.hpc.cluster import Runner, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
 from lab_commons.hpc.platforms import table_at
-from lab_commons.hpc.records import read_record
+from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.run import load_state, submit_run
 from lab_commons.hpc.shell import FULL, RunSpec
 from lab_commons.hpc.watch import PENDING, settle
@@ -77,6 +99,7 @@ __all__ = [
     'save',
     'slurm_cluster',
     'start',
+    'tidy',
 ]
 
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
@@ -92,6 +115,9 @@ PUBLISHED: Final = 'published'
 _ADVANCE: Final = 'advance'
 _WAIT: Final = 'wait'
 _GONE: Final = 'gone'
+
+#: A status description is short on every forge.
+_DESCRIPTION_MAX: Final = 140
 
 
 class ForeignSchema(RuntimeError):
@@ -113,6 +139,9 @@ class Cluster(Protocol):
     def gather(self, run: Run) -> Path | None:
         """One short gather: the record written into ``run.output``, or ``None`` while Slurm still runs it."""
 
+    def tree(self, run: Run) -> Path:
+        """The run's work tree as this login node sees it -- where its declared outputs are globbed."""
+
 
 @dataclass(frozen=True)
 class Run:
@@ -129,6 +158,8 @@ class Run:
     record: str = ''
     platform: str = 'linux'
     scope: str = FULL
+    outputs: tuple[str, ...] = ()  # declared at request time; only these are packed
+    artefact: str = ''  # the artefact run id, fixed before the first put so a resumed tick re-puts the same key
     schema: int = SCHEMA
 
     @property
@@ -156,7 +187,7 @@ def save(run: Run) -> Path:
     target = _path(run)
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix('.tmp')
-    partial.write_text(json.dumps({**asdict(run), 'job_ids': list(run.job_ids)}, indent=2), encoding='utf-8')
+    partial.write_text(json.dumps(asdict(run), indent=2), encoding='utf-8')
     partial.replace(target)
     return target
 
@@ -179,7 +210,7 @@ def live(repo_url: str) -> tuple[Run, ...]:
             )
             raise ForeignSchema(msg)
         if raw['repo_url'] == repo_url:
-            found.append(Run(**{**raw, 'job_ids': tuple(raw['job_ids'])}))
+            found.append(Run(**{**raw, 'job_ids': tuple(raw['job_ids']), 'outputs': tuple(raw.get('outputs', ()))}))
     return tuple(found)
 
 
@@ -195,6 +226,7 @@ def start(work: Work, owner: Claim) -> Run:
         collect=work.cluster.collect,
         output=str(work.cluster.output),
         owner=owner.description(),
+        outputs=work.cluster.outputs,
     )
     save(run)
     return run
@@ -234,20 +266,76 @@ def advance(
             return run
         run = _step(run, phase=GATHERED, record=str(record))
     if run.phase == GATHERED:
-        try:
-            say(post(root, Path(run.record)))
-        except PartRefusal as why:  # an inconclusive record is never a part
-            say(f'{tag}: {why}')
-            _release(client, run, release_reason(ProducerExit.INCONCLUSIVE), say)
-            drop(run)
+        published = _publish(root, run, client=client, cluster=cluster, say=say, alarm=alarm, tag=tag)
+        if published is None:
             return None
-        run = _step(run, phase=PUBLISHED)
+        run = published
     record = read_record(Path(run.record))
     for one in route(client, record, pyproject_at(root, run.sha)):
         say(f'{tag}: routed {one.area} {one.action}' + (f' #{one.number}' if one.number else ''))
     drop(run)
     say(f'{tag}: published and released')
     return None
+
+
+def _publish(
+    root: Path,
+    run: Run,
+    *,
+    client: Client,
+    cluster: Cluster,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], None],
+    tag: str,
+) -> Run | None:
+    """Store the declared outputs, then post the record; ``None`` once the part is released instead."""
+    try:
+        run = _ship(root, run, client=client, cluster=cluster, say=say, tag=tag)
+        say(post(root, Path(run.record)))
+    except MissingOutput as missing:  # a declared output is part of the request: its absence fails the run
+        alarm(Alarm(RUN, run.repo_url, f'the run of {run.sha[:12]} lacks a declared output', str(missing)))
+        say(f'{tag}: {missing}')
+        _release(client, run, f'declared output missing: {missing}'[:_DESCRIPTION_MAX], say)
+    except PartRefusal as why:  # an inconclusive record is never a part
+        say(f'{tag}: {why}')
+        _release(client, run, release_reason(ProducerExit.INCONCLUSIVE), say)
+    else:
+        return _step(run, phase=PUBLISHED)
+    drop(run)
+    return None
+
+
+def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callable[[str], None], tag: str) -> Run:
+    """Pack the declared outputs, put them, and name them in the record's ``artefacts``; idempotent per run."""
+    record = read_record(Path(run.record))
+    if not run.outputs or 'artefacts' in record:
+        return run
+    if not run.artefact:
+        run = _step(run, artefact=run_id(run.sha, run.platform, forge_now(client)))
+    tree = cluster.tree(run)
+    archive = pack(tree, collect(tree, run.outputs), Path(run.output) / f'{run.artefact}{ARCHIVE}')
+    store = store_for(load_config(root), client, forge_from_remote(root).repo, size=archive.stat().st_size)
+    ref = store.put(run.artefact, archive)
+    archive.unlink()
+    run = _step(run, record=str(write_record({**record, 'artefacts': [ref.manifest()]}, Path(run.record).parent)))
+    say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.key} ({ref.bytes} bytes)')
+    return run
+
+
+def tidy(root: Path, client: Client, *, say: Callable[[str], None]) -> tuple[str, ...]:
+    """Clean every artefact store this repo writes: past ``retain_days``, then down to ``cap_gb``; pins stay."""
+    config = load_config(root)
+    stores: list[ArtefactStore] = [ForgeStore(client)]
+    large = large_store(config, forge_from_remote(root).repo)
+    stores += [large] if large is not None else []
+    keep, now = pinned(client), forge_now(client)
+    gone = []
+    for store in stores:
+        cap = config.cap_bytes if store is large else 0
+        for ref in clean(store, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
+            gone.append(f'{ref.backend}:{ref.key}')
+            say(f'[artefacts] deleted {ref.backend}:{ref.key}')
+    return tuple(gone)
 
 
 def _step(run: Run, **changes: object) -> Run:
@@ -378,6 +466,10 @@ class SlurmCluster:
         ids = [one['job_id'] for one in state['rounds']]
         outstanding.add(run.sha, repo=run.repo_url, grant=state['rounds'][0]['grant'], job_ids=ids)
         return ids
+
+    def tree(self, run: Run) -> Path:
+        """``~/ci/trees/<sha>`` in this account's home (:attr:`lab_commons.hpc.shell.RunSpec.tree`)."""
+        return Path(f'~/ci/trees/{run.sha}').expanduser()
 
     def gather(self, run: Run) -> Path | None:
         """One :func:`lab_commons.hpc.watch.settle` without waiting: the record it wrote, or ``None`` while pending."""

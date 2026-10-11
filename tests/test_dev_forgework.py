@@ -350,3 +350,16 @@ def test_the_forge_clock_is_the_date_the_forge_answered_with_not_the_hosts(serve
     _Recorder.date = 'Sat, 10 Oct 2026 12:05:00 GMT'
     built.whoami()
     assert forge_now(built) == datetime(2026, 10, 10, 12, 5, tzinfo=UTC), 'the latest answer is the clock'
+
+
+def test_download_returns_the_raw_bytes_with_the_credential_and_a_refusal_raises(server) -> None:
+    """PLANTED CONTROL: the same call on a path the server does not hold raises instead of returning a body."""
+    forge = Forge('forge.example.org', 'o', 'r')
+    transport = _Loopback(server)
+    _answer('GET', '/attachments/u1', (200, {'k': 1}))
+    got = _client(forge, transport).download('https://forge.example.org/attachments/u1')
+    assert got == json.dumps({'k': 1}).encode()
+    assert _Recorder.received[-1]['headers']['Authorization'] == 'token T'
+    assert transport.asked[-1] == 'forge.example.org'
+    with pytest.raises(ForgeCallFailed):
+        _client(forge, transport).download('https://forge.example.org/attachments/absent')

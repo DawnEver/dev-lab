@@ -170,6 +170,18 @@ def test_the_cluster_part_is_filled_from_the_declarations_alone(tmp_path: Path) 
     assert (part.repo_url, part.collect) == ('https://forge.example.org/o/r.git', 'tests')
     assert part.output.relative_to(repo).parts[:2] == ('output', 'logs')
     assert part.output.relative_to(repo).parts[-2:] == ('parts', SHA)
+    assert part.outputs == (), 'nothing is uploaded by default'
+
+
+def test_the_cluster_part_carries_the_declared_outputs_and_a_malformed_list_is_refused(tmp_path: Path) -> None:
+    declared = DECLARED.replace(
+        'install = "uv sync --extra dev"\n', 'install = "uv sync --extra dev"\noutputs = ["f/*.h5"]\n'
+    )
+    repo, _python = _checkout(tmp_path / 'ok', declared)
+    assert platformparts.cluster_part(repo, SHA).outputs == ('f/*.h5',)
+    repo, _python = _checkout(tmp_path / 'bad', declared.replace('["f/*.h5"]', '"f/*.h5"'))
+    with pytest.raises(platformparts.UndeclaredPart, match=r'\[tool\.lab_commons\.hpc\] outputs'):
+        platformparts.cluster_part(repo, SHA)
 
 
 def test_a_local_part_runs_the_declared_producer_per_scope(tmp_path: Path) -> None:

@@ -72,6 +72,7 @@ def _serve(
     *,
     seat: ClusterAccount | None = None,
     cluster=lambda: None,
+    tidy=lambda _root, _client, **_kw: (),
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
@@ -88,6 +89,7 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
     monkeypatch.setattr(forgeserve, 'status_post', forge.post)
     monkeypatch.setattr(forgeserve, 'status_history', forge.history)
+    monkeypatch.setattr(forgerun, 'tidy', tidy)
     report = forgeserve.serve(
         tmp_path,
         'integrate',
@@ -241,3 +243,27 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
             tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append
         )
     assert [a.kind for a in alarms] == [AUTH]
+
+
+def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_alarms(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """PLANTED CONTROL: the same serve off a cluster (no seat) never cleans -- a workstation only reads."""
+    cleaned: list[Path] = []
+
+    def tidy(root: Path, _client: object, *, say: object) -> tuple[str, ...]:
+        del say
+        cleaned.append(root)
+        return ()
+
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=None, tidy=tidy)
+    assert cleaned == []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, tidy=tidy)
+    assert cleaned == [tmp_path]
+
+    def broken(_root: Path, _client: object, **_kw: object) -> tuple[str, ...]:
+        msg = 'rclone lsjson exited 1'
+        raise OSError(msg)
+
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, tidy=broken)
+    assert [a.kind for a in alarms] == [RUN]
