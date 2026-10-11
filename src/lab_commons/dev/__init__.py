@@ -253,6 +253,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin, claims as pending statuses with a lease.
+* :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
+* :mod:`lab_commons.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.

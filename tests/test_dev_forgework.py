@@ -29,6 +29,7 @@ from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
 from lab_commons.dev.forge import Forge, NoCredential
+from lab_commons.dev.forgetick import forge_now
 from lab_commons.dev.forgework import (
     GITEA,
     GITHUB,
@@ -345,7 +346,7 @@ def test_the_forge_clock_is_the_date_the_forge_answered_with_not_the_hosts(serve
     _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     built = _client(Forge('forge.example.org', 'o', 'r'), _Loopback(server))
     built.clock = lambda: datetime(2027, 10, 10, tzinfo=UTC)
-    assert built.forge_now() == datetime(2026, 10, 10, 12, tzinfo=UTC), 'read from an answer, never the host'
+    assert forge_now(built) == datetime(2026, 10, 10, 12, tzinfo=UTC), 'read from an answer, never the host'
     _Recorder.date = 'Sat, 10 Oct 2026 12:05:00 GMT'
     built.whoami()
-    assert built.forge_now() == datetime(2026, 10, 10, 12, 5, tzinfo=UTC), 'the latest answer is the clock'
+    assert forge_now(built) == datetime(2026, 10, 10, 12, 5, tzinfo=UTC), 'the latest answer is the clock'

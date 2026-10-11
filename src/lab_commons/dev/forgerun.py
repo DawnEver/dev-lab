@@ -38,13 +38,13 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Final, Protocol
 
 from lab_commons.config import config_path
 from lab_commons.dev.forgealarm import LEASE, Alarm
 from lab_commons.dev.forgeroute import pyproject_at, route
 from lab_commons.dev.forgestatus import status_history, status_post
-from lab_commons.dev.forgetick import DONE, MINE, Claim, Work, assess, claim
+from lab_commons.dev.forgetick import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context, post
 from lab_commons.dev.producer import ProducerExit, release_reason
@@ -250,7 +250,7 @@ def advance(
     return None
 
 
-def _step(run: Run, **changes: Any) -> Run:  # noqa: ANN401 -- dataclass fields
+def _step(run: Run, **changes: object) -> Run:
     moved = dataclasses.replace(run, **changes)
     save(moved)
     return moved
@@ -271,7 +271,7 @@ def _hold(
     A live claim of its own is renewed only once a third of the lease has passed, so a five-minute cron
     does not post a status every five minutes.
     """
-    now = client.forge_now()
+    now = forge_now(client)
     owner = run.claim
     state, holder = assess(status_history(client, run.sha), run.platform, me=owner, now=now)
     if state == DONE:

@@ -28,7 +28,7 @@ holds it. Two machines claiming at once both read the same order, so exactly one
 other claimant stands down without producing. A status post is not compare-and-swap; this is.
 
 A LEASE IS JUDGED ON THE FORGE'S CLOCK. ``until`` is the forge's time (the ``Date`` of its answer,
-:meth:`lab_commons.dev.forgework.Client.forge_now`) plus the lease, and expiry is judged against that
+:func:`forge_now`) plus the lease, and expiry is judged against that
 same clock -- a host whose clock runs fast never retakes a live claim, nor a slow one holds a dead one.
 A claim whose ``until`` has passed is stale and may be retaken by anyone serving that platform; only
 its owner renews it, so a lapsed lease means the owner is gone.
@@ -54,6 +54,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Final
 
@@ -101,6 +102,7 @@ __all__ = [
     'Work',
     'assess',
     'claim',
+    'forge_now',
     'main',
     'requests',
     'serving',
@@ -251,6 +253,16 @@ def assess(history: Sequence[Status], platform: str, *, me: Claim, now: datetime
     return STALE, claims[-1]
 
 
+def forge_now(client: Client) -> datetime:
+    """The FORGE's time: the ``Date`` of its latest answer, asking it once when none came yet (module docstring)."""
+    if not client.answered:
+        client.whoami()
+    if not client.answered:
+        msg = f'{client.forge.host} answered without a Date header, so no lease can be judged against its clock'
+        raise OSError(msg)
+    return parsedate_to_datetime(client.answered).astimezone(UTC)
+
+
 def claim(client: Client, work: Work, me: Claim) -> Work:
     """Post *me* as the claim on *work*, then re-read the forge's order; the work as it now stands.
 
@@ -259,7 +271,7 @@ def claim(client: Client, work: Work, me: Claim) -> Work:
     earlier live claim of another owner stands.
     """
     status_post(client, work.sha, context=part_context(work.platform), state='pending', description=me.description())
-    state, holder = assess(status_history(client, work.sha), work.platform, me=me, now=client.forge_now())
+    state, holder = assess(status_history(client, work.sha), work.platform, me=me, now=forge_now(client))
     return dataclasses.replace(work, state=state, holder=holder)
 
 
@@ -302,7 +314,7 @@ def tick(
     fetch(root)
     built = client(root)
     login = built.whoami()
-    now = built.forge_now()
+    now = forge_now(built)
     serve = serving(host or this_platform(), seat)
     me = Claim(machine, login, now + lease, serve.hpc)
     work: list[Work] = []
@@ -389,7 +401,7 @@ def main(
         payload = {
             'work': [
                 {'ref': item.ref, 'sha': item.sha, 'platform': item.platform, 'state': item.state}
-                | {'holder': _holder(item)}
+                | {'holder': item.holder.description() if item.holder else None}
                 for item in report.work
             ],
             'claimed': [
@@ -403,7 +415,3 @@ def main(
         for line in report.lines:
             emit(line)
     return 0
-
-
-def _holder(item: Work) -> str | None:
-    return item.holder.description() if item.holder else None

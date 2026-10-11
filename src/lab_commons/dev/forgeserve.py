@@ -50,7 +50,18 @@ from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_t
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgestatus import status_history, status_post
-from lab_commons.dev.forgetick import DEFAULT_LEASE, MODES, OPEN, STALE, Claim, Work, this_machine, this_seat, tick
+from lab_commons.dev.forgetick import (
+    DEFAULT_LEASE,
+    MODES,
+    OPEN,
+    STALE,
+    Claim,
+    Work,
+    forge_now,
+    this_machine,
+    this_seat,
+    tick,
+)
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url, part_context
 from lab_commons.dev.producer import ProducerExit, release_reason
@@ -160,7 +171,7 @@ def _advance(
     if not runs:
         return []
     built = client(root)
-    me = Claim(machine, built.whoami(), built.forge_now() + lease, str(seat) if seat else '')
+    me = Claim(machine, built.whoami(), forge_now(built) + lease, str(seat) if seat else '')
     try:
         slurm = cluster()
     except (RuntimeError, ValueError) as why:  # not on a cluster, or no grant for this account
@@ -227,7 +238,7 @@ def _produce(
             if item.holder is not None:  # the heartbeat: the same claim, until the FORGE's time plus the lease
                 built = client(root)
                 try:
-                    renewed = dataclasses.replace(item.holder, until=built.forge_now() + lease)
+                    renewed = dataclasses.replace(item.holder, until=forge_now(built) + lease)
                 except (ForgeCallFailed, OSError) as failed:
                     say(f'[{item.platform}] could not read the forge clock to renew: {failed}')
                     continue

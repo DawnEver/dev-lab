@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import subprocess
 from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -59,7 +60,7 @@ class _Forge:
 
 
 def _client(_root: Path) -> SimpleNamespace:
-    return SimpleNamespace(forge_now=lambda: FORGE_NOW, whoami=lambda: 'alice')
+    return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 
 
 def _serve(
@@ -183,7 +184,9 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     advanced: list[tuple[str, str]] = []
 
     def advance(_root: Path, run: forgerun.Run, **kwargs: object) -> forgerun.Run:
-        advanced.append((run.phase, kwargs['me'].hpc))  # type: ignore[attr-defined]
+        me = kwargs['me']
+        assert isinstance(me, Claim)
+        advanced.append((run.phase, me.hpc))
         return run
 
     monkeypatch.setattr(forgerun, 'advance', advance)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -56,10 +57,11 @@ class _Client:
     def __init__(self, store: _Store) -> None:
         self.store = store
 
-    def forge_now(self) -> datetime:
-        return self.store.now
+    @property
+    def answered(self) -> str:
+        return format_datetime(self.store.now, usegmt=True)
 
-    def call(self, method: str, _path: str, body: dict[str, str] | None = None) -> Any:  # noqa: ANN401 -- JSON
+    def call(self, method: str, _path: str, body: dict[str, str] | None = None) -> object:
         if method == 'POST':
             if self.store.refuse:
                 attempt = Attempt(1, 403, 'forbidden', Diagnosis.FORGE_REFUSED)
@@ -116,7 +118,7 @@ def _tick(store: _Store, slurm: _Slurm, *, me: Claim = HERE, alarms: list[Alarm]
     return forgerun.advance(
         Path(),
         run,
-        client=_Client(store),  # type: ignore[arg-type]
+        client=_Client(store),
         me=me,
         lease=HOURS6,
         cluster=slurm,
