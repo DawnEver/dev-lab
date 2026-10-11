@@ -13,6 +13,10 @@ or produce a claimed LOCAL part inline; advance every cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, publish, route, release -- whatever is due);
 flush the outbox again.
 
+SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
+claimed part in its environment (:func:`lab_commons.dev.producer.producing`), and a full tier refuses to
+run in any process without it.
+
 A LOCAL PRODUCER RUNS INLINE AND HOLDS ITS CLAIM: its output streams prefixed ``[platform]``, its
 claim is renewed (the same claim, ``until`` = the forge's time plus the lease) every third of the
 lease while it lives, and when it ends with its context still pending the claim is RELEASED as
@@ -35,6 +39,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -64,7 +69,7 @@ from lab_commons.dev.forgetick import (
 )
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url, part_context
-from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
@@ -216,6 +221,7 @@ def _produce(
     proc = spawn(
         list(item.argv),
         cwd=root,
+        env=os.environ | producing(context, item.sha),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
