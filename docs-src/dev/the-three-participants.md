@@ -6,9 +6,9 @@
 ## Who does what
 
 - **The human** sets goals, reviews, adjusts, and accepts; a task is DONE only when ITS OWN tests pass, never when an agent says so.
-- **The human is the ACCEPTOR of the heavy tier, not its runner** — the agent runs it and records what it said. This was written as "the runner is the human" until 2026-09-07, and that phrasing was read as "an agent may not run heavy": measured on the 2026-09-06/07 integration session, an agent went most of a day without running the tier that gates `main` while believing it was forbidden to.
-- **A dev agent** plans in a tracked file, implements on its own branch under TDD (one feature per commit, the commit being the state-file boundary), gates its own tree, pushes, and reports SHAs, measured verification and files touched.
-- **The coordinator agent** takes a lane whose tip has moved, pulls that work into its OWN integration worktree, re-gates the combination, repairs the shared pins, and advances `main` on a heavy PASS.
+- **Nobody at a keyboard runs the full tiers** — the forge's producer host does, once per sha, after the push (`VERDICTS-FROM-THE-FORGE`); the human ACCEPTS what its parts say, and agents read them with `forge status list <sha>`.
+- **A dev agent** plans in a tracked file, implements on its own branch under TDD (one feature per commit, the commit being the state-file boundary), measures what it touched, pushes, and reports SHAs, measured verification and files touched.
+- **The coordinator agent** takes a lane whose tip has moved, pulls that work into its OWN integration worktree, pushes the combination, repairs the shared pins against its forge parts, and advances `main` when every part of HEAD is a PASS of scope `full`.
 - **Readiness is REF MOVEMENT, not a message.** Given "push each green commit" and "one commit completes one feature", the tip of a lane branch is integration-ready by construction; detection is listing the remote's lane refs and then asking `git cherry` which of their commits the integration branch does not hold, whose plus lines ARE the merge list. A chat notification is a PRIORITY HINT and may never be the trigger, because a trigger living only in chat contradicts "origin is the only shared medium".
 - The dev agents keep working while the coordinator integrates, so divergence is expected and deliberately unbounded — absorbing it is the coordinator's job, not a failure state.
 
@@ -34,5 +34,5 @@
 ## What keeps the picture honest
 
 - A verdict names its tree and its environment, so a stale or cross-environment verdict cannot be quoted.
-- A skipped test is green and a tier nobody runs rots, so the heavy tier has no flag to be unset and no wall to hide behind — and because it blocks no push, the only thing that makes it run is an agent choosing to run it.
-- No hook or guard knows the integration branch's prefix, so the coordinator's discipline is exactly the re-gate and nothing enforces it for them.
+- A skipped test is green and a tier nobody runs rots, so the heavy tier has no flag to be unset and no wall to hide behind — and because it blocks no push, what makes it run is the forge: every pushed sha lacking a part IS the request for it.
+- No hook or guard knows the integration branch's prefix, so the coordinator's discipline is reading the combined tip's parts and nothing enforces it for them.

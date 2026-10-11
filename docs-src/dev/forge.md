@@ -9,7 +9,7 @@
 
 - **`main` accepts only a tree that the HEAVY tier has judged** — user directive 2026-08-27: the integrator does the merge, and a heavy PASS is the standard it merges on.
 - **A gate PASS is NOT sufficient, and the difference is not academic**: the heavy partition excludes the integration-test layer and every live vendor engine from the gate, so a gate PASS is SILENT about business acceptance. Measured the same day, 15 integration failures sat behind a green gate all day because no gate tier ran them.
-- The local enforcement is a pre-push check that refuses unless a stored verdict holds a heavy PASS whose tree is this clean HEAD and whose environment is this environment.
+- The enforcement reads the forge: a trunk push is admitted when every `tests/<platform>` part of HEAD is a PASS of scope `full` (`lab_commons.dev.admission`); no pre-push hook runs a test.
 
 ## Layer A — the push whitelist (REQUIRED, no token needed)
 

@@ -61,8 +61,8 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## PUSH-NO-VERIFY
 
-- **Why it is refused.** `--no-verify` skips the pre-push hook, and the hook is where the verdict is taken. A push that skipped it vouches for nothing, while looking exactly like one that did not -- the commit lands with no evidence attached and nobody downstream can tell which kind it was.
-- **The exit.** Take the verdict first, and push once it is green: {remedy}
+- **Why it is refused.** `--no-verify` skips the pre-push hooks -- admission and the trunk proof -- so the push publishes what no hook checked, while looking exactly like one that did not. No pre-push hook runs a test (VERDICTS-FROM-THE-FORGE), so the flag saves nothing.
+- **The exit.** Push without the flag; the forge produces the part after the push. To check a change first, measure what you touched: {remedy}
 
 ## RAW-PROCESS-KILL
 
@@ -94,10 +94,10 @@ When a command targets another repo, the engine adds one header line naming that
 - **Why it is refused.** User ruling 2026-10-11: `output/` holds only what a program can regenerate (run logs, run records, measurements, charts, caches). A report a person or agent writes -- audit, analysis, design, plan, findings, workflow write-up -- cannot be regenerated, so under `output/` it is aged out, swept, and never indexed. Refused: a Write/Edit of a `*.md` under any `output/` segment (`lab_commons.dev.reportplace`, via the `codeplace` write hook) and a shell redirect, `tee`, `Out-File` or `Set-Content` creating one. A program writing its own Markdown is unaffected: it writes through no agent tool.
 - **The exit.** Write it as a dated memory entry: `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` with the MEMORY-SHAPE frontmatter (name, description, created, accessed, tags, metadata).
 
-## SUBAGENT-NO-HEAVY-NO-PUSH
+## SUBAGENT-NO-PUSH
 
-- **Why it is refused.** Scoped to subagents: the engine judges this row only when the hook payload carries a non-empty `agent_id`, which Claude Code sends only inside a subagent call (forks included; a main session launched with `--agent` carries `agent_type` but no `agent_id`). MEASURED 2026-10-08 in one consumer repo: 95 of 98 runner logs that day were the same `(tree, env, selector)`, re-launched by agents polling a held box. Under ONE-RUN-AFTER-INTEGRATION a lane's broad verdict is a duplicate of the one run the main session makes on the merged tree, and a push is the main session's outward action. Refused: `git push` (also `git -C X push`), `with-retry.sh push`, a runner's `gate`/`heavy` tier, `--with-heavy`, and hook skipping (`SKIP=`, `--no-verify`).
-- **The exit.** Commit on your lane and hand the commit SHA back to the main session. It merges every ready lane into one integration tree, runs the gate once, and pushes. A targeted `measure` of the tests you wrote or touched stays yours.
+- **Why it is refused.** Scoped to subagents: the engine judges this row only when the hook payload carries a non-empty `agent_id`, which Claude Code sends only inside a subagent call (forks included; a main session launched with `--agent` carries `agent_type` but no `agent_id`). MEASURED 2026-10-08 in one consumer repo: 95 of 98 runner logs that day were the same `(tree, env, selector)`, re-launched by agents polling a held box. A push is the main session's outward action, and a skipped hook publishes what nobody checked. Refused: `git push` (also `git -C X push`), `with-retry.sh push`, and hook skipping (`SKIP=`, `--no-verify`). A full tier is refused to everyone at the runner instead (VERDICTS-FROM-THE-FORGE).
+- **The exit.** Commit on your lane and hand the commit SHA back to the main session. It merges every ready lane and pushes; the forge produces the verdict. A targeted `measure` of the tests you wrote or touched stays yours.
 
 ## Cross-repo refusals
 

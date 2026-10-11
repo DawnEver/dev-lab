@@ -362,7 +362,7 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
     """END TO END through the shipped engine: the same command, with and without ``agent_id``."""
     inside = agenthooks.decide('git push origin HEAD', rules, agent_id='a1')
     assert inside is not None
-    assert inside.startswith('SUBAGENT-NO-HEAVY-NO-PUSH:'), inside
+    assert inside.startswith('SUBAGENT-NO-PUSH:'), inside
     assert 'hand the commit SHA back' in inside
     outside = agenthooks.decide('git push origin HEAD', rules)
     assert outside is not None
@@ -372,7 +372,7 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
 def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
     reason = agenthooks.decide('git push origin HEAD', rules, tool='PowerShell', agent_id='a1')
     assert reason is not None
-    assert reason.startswith('SUBAGENT-NO-HEAVY-NO-PUSH:')
+    assert reason.startswith('SUBAGENT-NO-PUSH:')
 
 
 def test_a_subagent_keeps_its_targeted_measure(rules: Path) -> None:
@@ -389,5 +389,5 @@ def test_a_hook_skip_prefix_is_seen_by_the_engine(rules: Path) -> None:
     """``SKIP=`` is an env prefix the engine used to strip before any rule saw it."""
     reason = agenthooks.decide('SKIP=ruff git commit -m "x"', rules, agent_id='a1')
     assert reason is not None
-    assert reason.startswith('SUBAGENT-NO-HEAVY-NO-PUSH:')
+    assert reason.startswith('SUBAGENT-NO-PUSH:')
     assert agenthooks.decide('SKIP=ruff git commit -m "x"', rules) is None, 'the main session was refused'
