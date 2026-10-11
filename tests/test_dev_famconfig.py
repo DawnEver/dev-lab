@@ -37,12 +37,9 @@ from lab_commons.dev._famconfig_rows import (
     GITIGNORE_CLAUDE_SECTION,
     GITIGNORE_CONSUMER_CORE,
     GITIGNORE_FAMILY_LINES,
-    HOOK_LAB_COMMONS,
-    HOOK_LAB_COMMONS_REV,
     MAKE_TARGET_CONSUMER_CORE,
     MAKEFILE_BASE,
     MAKEFILE_RESIDUAL_SIGNALS,
-    PRECOMMIT_BASE,
 )
 from lab_commons.dev.famconfig import (
     ABSENT,
@@ -50,7 +47,6 @@ from lab_commons.dev.famconfig import (
     DRIFTED,
     FOREIGN,
     GITIGNORE_FLOOR,
-    HOOK_ID_CORE,
     INSTALLED,
     MAKE_TARGET_CORE,
     ORDER_SENSITIVE_ARTEFACTS,
@@ -69,7 +65,6 @@ from lab_commons.dev.famconfig import (
     delta_problems,
     floating_subject,
     fork_signals,
-    hook_requirement,
     inspect_file,
     meaningful_lines,
     measured_delta,
@@ -115,14 +110,6 @@ def test_the_gitignore_base_is_the_measured_core_plus_the_mandated_lines() -> No
     assert sorted(_SORTED) == list(_SORTED), 'sorted, so the measurement is re-derivable'
 
 
-def test_every_shared_hook_id_survives_into_the_rendered_precommit_base() -> None:
-    """The base's SUBJECT checked against its SPELLING: valid YAML that lost a hook would be green."""
-    assert len(HOOK_ID_CORE) >= ARTEFACT_FLOOR
-    text = '\n'.join(PRECOMMIT_BASE)
-    missing = [hook for hook in HOOK_ID_CORE if f'id: {hook}' not in text]
-    assert missing == [], f'the pre-commit base no longer declares {missing}'
-
-
 def test_every_shared_make_target_survives_into_the_makefile_base() -> None:
     """Same property, other artefact -- and over BOTH readings, the all-four core and the wider one.
 
@@ -146,11 +133,6 @@ def test_the_residual_fork_signals_are_named_and_stay_out_of_the_base() -> None:
     assert len(MAKEFILE_RESIDUAL_SIGNALS) >= ARTEFACT_FLOOR
     promoted = [line for line in MAKEFILE_RESIDUAL_SIGNALS if line in MAKEFILE_BASE]
     assert promoted == [], f'{promoted} is both declined and taken -- delete the residual row with the decision'
-
-
-def test_the_precommit_base_declares_the_line_every_consumer_holds() -> None:
-    """`fail_fast: false` is in the base because the anti-fork arm named it on its first live run."""
-    assert 'fail_fast: false' in PRECOMMIT_BASE
 
 
 def test_every_declared_artefact_has_a_mode_and_a_non_empty_base() -> None:
@@ -402,9 +384,31 @@ _ID_ANCHOR: Final = '      - id: check-added-large-files'
 _TW_ANCHOR: Final = '      - id: trailing-whitespace'
 
 
-def _precommit() -> Base:
-    """The real `.pre-commit-config.yaml` base -- the artefact both labs are blocked on."""
-    return artefact_base('.pre-commit-config.yaml')
+#: A NESTED artefact: a block-structured base whose structural lines repeat, which is the shape
+#: `Delta.anchored` exists for (an addition INSIDE a block, where an append cannot reach).
+_NESTED_LINES: Final = (
+    'fail_fast: false',
+    '',
+    'repos:',
+    '  - repo: https://example.invalid/checks',
+    '    hooks:',
+    '      - id: check-added-large-files',
+    '      - id: check-ast',
+    '      - id: trailing-whitespace',
+    '',
+    '  - repo: https://github.com/commitizen-tools/commitizen',
+    '    hooks:',
+    '      - id: commitizen',
+    '',
+    '  - repo: local',
+    '    hooks:',
+    '      - id: merge-audit',
+)
+
+
+def _nested_base() -> Base:
+    """The planted nested base every anchored arm below drives."""
+    return Base('nested.cfg', _NESTED_LINES, RENDERED)
 
 
 def _nested() -> Delta:
@@ -421,9 +425,9 @@ def _nested() -> Delta:
     )
 
 
-def test_the_precommit_base_really_does_repeat_its_structural_lines() -> None:
+def test_the_nested_base_really_does_repeat_its_structural_lines() -> None:
     """THE FLOOR UNDER THE WHOLE SECTION. Finding no collision would make every arm below vacuous."""
-    base = _precommit()
+    base = _nested_base()
     assert base.lines.count('    hooks:') == 3, base.lines
     assert base.lines.count('') >= 1, 'no blank base line, so the content_lines distinction has no subject'
     assert base.lines.count(_ID_ANCHOR) == 1, 'the id anchor is not unique, so anchoring on it is ambiguous'
@@ -436,7 +440,7 @@ def test_a_blank_base_line_is_not_a_restatement() -> None:
     `content_lines` exists for exactly this distinction and every other site already reads it. A
     blank cannot be the base copied into the delta, because it carries nothing to copy.
     """
-    base = _precommit()
+    base = _nested_base()
     assert '' in base.lines, 'no blank base line to plant against'
     assert '' not in base.content_lines
     problems = delta_problems(base, Delta(repo='planted-repo', added=('',), dropped={}, ceiling=4))
@@ -450,7 +454,7 @@ def test_restating_a_structural_content_line_is_still_refused_and_the_refusal_na
     correctly, since a second copy of the block is the base re-forming inside the delta. What changes
     is that the refusal now NAMES the remedy instead of failing opaquely.
     """
-    base = _precommit()
+    base = _nested_base()
     delta = Delta(repo='planted-repo', added=('    hooks:',), dropped={}, ceiling=4)
     problems = delta_problems(base, delta)
     assert any('already has it' in problem for problem in problems), problems
@@ -461,7 +465,7 @@ def test_restating_a_structural_content_line_is_still_refused_and_the_refusal_na
 
 def test_the_real_blocked_delta_is_expressible_and_lands_inside_the_block() -> None:
     """DEFECT 2. The seven extra ids and the `exclude:` go where they belong, restating nothing."""
-    base, delta = _precommit(), _nested()
+    base, delta = _nested_base(), _nested()
     assert delta_problems(base, delta) == (), delta_problems(base, delta)
     lines = rendered_lines(base, delta)
     commitizen = lines.index('  - repo: https://github.com/commitizen-tools/commitizen')
@@ -473,8 +477,8 @@ def test_the_real_blocked_delta_is_expressible_and_lands_inside_the_block() -> N
 
 def test_a_nested_delta_round_trips_and_a_hand_edit_to_an_anchored_line_reds(tmp_path: Path) -> None:
     """PLANTED, BOTH DIRECTIONS. The rendering installs, and breaking one anchored line drifts."""
-    base, delta = _precommit(), _nested()
-    path = tmp_path / '.pre-commit-config.yaml'
+    base, delta = _nested_base(), _nested()
+    path = tmp_path / 'nested.cfg'
     path.write_text(render(base, delta), encoding='utf-8')
     assert inspect_file(path, base, delta).status == INSTALLED
 
@@ -488,14 +492,14 @@ def test_an_anchor_naming_a_line_the_base_does_not_have_is_refused() -> None:
     """THE ANCHOR'S RATCHET, the same side as a drop's: a declaration cannot outlive its subject."""
     delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={'      - id: gone': ('x',)})
     with pytest.raises(ForkedDelta, match='the base does not have that line'):
-        render(_precommit(), delta)
+        render(_nested_base(), delta)
 
 
 def test_an_ambiguous_anchor_is_refused_by_count() -> None:
     """A base line that occurs twice names no position, and silently picking one is a coin flip."""
     delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={'    hooks:': ('      - id: x',)})
     with pytest.raises(ForkedDelta, match='3 times'):
-        render(_precommit(), delta)
+        render(_nested_base(), delta)
 
 
 def test_an_anchor_on_a_dropped_line_is_refused() -> None:
@@ -508,22 +512,22 @@ def test_an_anchor_on_a_dropped_line_is_refused() -> None:
         anchored={_TW_ANCHOR: (_EXCLUDE,)},
     )
     with pytest.raises(ForkedDelta, match='drops it and anchors'):
-        render(_precommit(), delta)
+        render(_nested_base(), delta)
 
 
 def test_an_anchor_carrying_no_lines_is_refused() -> None:
     """A ratchet's other side: an anchor that adds nothing is a waiver nothing uses."""
     delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=4, anchored={_TW_ANCHOR: ()})
     with pytest.raises(ForkedDelta, match='anchors no lines'):
-        render(_precommit(), delta)
+        render(_nested_base(), delta)
 
 
 def test_anchored_lines_count_against_the_ceiling() -> None:
     """Otherwise the ceiling is escapable by anchoring, which is an escape hatch with no ceiling."""
     delta = Delta(repo='planted-repo', added=(), dropped={}, ceiling=2, anchored={_TW_ANCHOR: (_EXCLUDE, 'a', 'b')})
     with pytest.raises(ForkedDelta, match='past its ceiling'):
-        render(_precommit(), delta)
-    assert delta_problems(_precommit(), _nested()) == ()
+        render(_nested_base(), delta)
+    assert delta_problems(_nested_base(), _nested()) == ()
 
 
 def test_fork_signals_names_a_line_every_delta_anchors() -> None:
@@ -762,44 +766,3 @@ def test_planted_a_banned_line_in_a_delta_is_refused(banned: str) -> None:
     problems = delta_problems(_base(), _delta(added=('target/', banned)))
     assert any('no repo in the family may' in problem and banned in problem for problem in problems), problems
     assert not delta_problems(_base(), _delta(added=('target/',))), 'the control line itself is clean'
-
-
-def test_a_repo_declaring_a_private_source_renders_it_into_its_hook_environment(tmp_path: Path) -> None:
-    """ONE declaration: the ``[tool.uv]`` override a private repo makes is what its hooks install, at the one pin."""
-    gitea = 'https://gitea.example.org/Team/lab-commons.git'
-    (tmp_path / 'pyproject.toml').write_text(
-        f'[tool.uv]\noverride-dependencies = ["dep-a @ git+https://x/o.git", "lab-commons @ git+{gitea}"]\n',
-        encoding='utf-8',
-    )
-    assert hook_requirement(tmp_path) == f'lab-commons @ git+{gitea}@{HOOK_LAB_COMMONS_REV}'
-    lines = artefact_base('.pre-commit-config.yaml', tmp_path).lines
-    assert any(f'git+{gitea}@{HOOK_LAB_COMMONS_REV}' in line for line in lines)
-    assert not any('github.com' in line and 'lab-commons @' in line for line in lines)
-
-
-def test_a_repo_with_no_private_source_renders_the_public_pin(tmp_path: Path) -> None:
-    """PLANTED OTHER SIDE: no override, or an override pinned to a ref, still yields one requirement at one pin."""
-    assert hook_requirement(tmp_path) == HOOK_LAB_COMMONS
-    assert hook_requirement(None) == HOOK_LAB_COMMONS
-    assert any(HOOK_LAB_COMMONS in line for line in artefact_base('.pre-commit-config.yaml', tmp_path).lines)
-    (tmp_path / 'pyproject.toml').write_text(
-        '[tool.uv]\noverride-dependencies = ["lab-commons[dev] @ git+https://g.example/T/lab-commons.git@main"]\n',
-        encoding='utf-8',
-    )
-    assert hook_requirement(tmp_path) == f'lab-commons @ git+https://g.example/T/lab-commons.git@{HOOK_LAB_COMMONS_REV}'
-
-
-def test_a_locked_repo_renders_the_lab_commons_its_venv_runs(tmp_path: Path) -> None:
-    """The lock wins: the hook installs the resolved url at the locked commit, never a second revision."""
-    commit = 'c' * 40
-    (tmp_path / 'pyproject.toml').write_text(
-        '[tool.uv]\noverride-dependencies = ["lab-commons @ git+https://gitea.example.org/T/lab-commons.git"]\n',
-        encoding='utf-8',
-    )
-    (tmp_path / 'uv.lock').write_text(
-        '[[package]]\nname = "numpy"\nversion = "2"\n'
-        '[[package]]\nname = "lab-commons"\nversion = "0.3"\n'
-        f'source = {{ git = "https://gitea.example.org/T/lab-commons.git#{commit}" }}\n',
-        encoding='utf-8',
-    )
-    assert hook_requirement(tmp_path) == f'lab-commons @ git+https://gitea.example.org/T/lab-commons.git@{commit}'

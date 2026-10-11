@@ -37,7 +37,6 @@ disagreed. :mod:`lab_commons.dev.famtests.localadmission` refuses a consumer tha
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import subprocess
 import sys
@@ -49,6 +48,7 @@ from lab_commons.dev.forge import _GIT, NoCredential, UnreadableRemote
 from lab_commons.dev.forgeoutbox import unprompted_client
 from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.dev.githooks.runner import parse_push_lines
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.logref import MARKER
 from lab_commons.dev.platformparts import standing
@@ -92,9 +92,6 @@ TRUNK: Final = 'trunk'
 TRUNK_SCOPE: Final = 'full'
 
 _GIT_TIMEOUT_S: Final = 120
-
-#: The full remote ref pre-commit hands a pre-push hook, which receives no argv for it.
-_PRE_COMMIT_REMOTE_REF: Final = 'PRE_COMMIT_REMOTE_BRANCH'
 
 
 @dataclass(frozen=True)
@@ -192,7 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout being pushed')
     parser.add_argument(
         '--remote-ref',
-        help=f'the full remote ref being updated (default: ${_PRE_COMMIT_REMOTE_REF}, set by a pre-push hook)',
+        help="the full remote ref being updated, judged at HEAD (default: git's pre-push lines on stdin)",
     )
     parser.add_argument('--trunk-ref', required=True, help="the trunk ref (e.g. refs/heads/main), or 'none'")
     argv = sys.argv[1:] if argv is None else list(argv)
@@ -200,17 +197,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         if refused := refusal('admission', word.split('=', 1)[0]):
             parser.error(refused)
     args = parser.parse_args(argv)
-    args.remote_ref = args.remote_ref or os.environ.get(_PRE_COMMIT_REMOTE_REF, '')
-    if not args.remote_ref:
-        parser.error(
-            f'no ref to judge: pass --remote-ref, or run as a pre-commit pre-push hook (${_PRE_COMMIT_REMOTE_REF})'
-        )
-    trunk = args.trunk_ref != 'none' and args.remote_ref == args.trunk_ref
-    destination = TRUNK if trunk else destination_of(args.remote_ref, load_policy(args.root))
-    head = _head(args.root)
-    decided = admit(destination, head=head, statuses=lambda: status_list(unprompted_client(args.root), head))
-    emit(decided.message)
-    return 0 if decided.allowed else 1
+    if args.remote_ref:
+        pushes = [(args.remote_ref, _head(args.root))]
+    else:
+        stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+        pushes = [(line.remote_ref, line.local_sha) for line in parse_push_lines(stdin) if not line.deleted]
+    if not pushes:
+        parser.error("no ref to judge: pass --remote-ref, or run as a pre-push hook (git's ref lines on stdin)")
+    policy = load_policy(args.root)
+    allowed = True
+    for remote_ref, head in pushes:
+        trunk = args.trunk_ref != 'none' and remote_ref == args.trunk_ref
+        destination = TRUNK if trunk else destination_of(remote_ref, policy)
+        decided = admit(destination, head=head, statuses=lambda h=head: status_list(unprompted_client(args.root), h))
+        emit(decided.message)
+        allowed = allowed and decided.allowed
+    return 0 if allowed else 1
 
 
 if __name__ == '__main__':

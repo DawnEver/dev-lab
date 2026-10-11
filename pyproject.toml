@@ -9,21 +9,6 @@ requires-python = ">=3.12"
 # The base install is the standard library; every capability that needs a package is an extra.
 dependencies = []
 
-[project.scripts]
-# THE ONE CONSOLE SCRIPT, AND IT EXISTS FOR EXACTLY ONE CALLER. A `.pre-commit-config.yaml` entry is
-# exec'd, never evaluated, so its FIRST TOKEN must already be runnable -- and measured against a real
-# `pre-commit.exe` (2026-09-17, see `lab_commons.dev.githooks.bootstrap`), a `language: system` or
-# `language: script` hook inherits a PATH with no venv on it at all, where `python` resolves to the
-# Microsoft Store stub. `language: python` prepends pre-commit's OWN managed environment, so a
-# console script installed there IS nameable with nothing in front of it. That is the only measured
-# way for this package to be reached from a hook without a file committed in the consumer, and it is
-# why the name is spelled after the shell wrapper it replaces: a consumer's entry reads
-# `lab-with-venv ruff check` where it used to read `bash scripts/hooks/with-venv.sh ruff check`.
-lab-with-venv = "lab_commons.dev.githooks.bootstrap:main"
-# The commit-msg issue-reference check, run in pre-commit's managed environment on purpose: it must
-# never block, and `lab-with-venv` exits 1 where no venv exists (see `lab_commons.dev.issueref`).
-lab-issue-ref = "lab_commons.dev.issueref:main"
-
 [project.urls]
 Homepage = "https://github.com/DawnEver/lab-commons"
 
@@ -59,16 +44,9 @@ dev = [
     "pytest",
     "pytest-mock",
     "ruff",
-    # `lab_commons.dev.hook_install.install_command` RETURNS `['-m', 'pre_commit', 'install', ...]`,
-    # derived from the consumer's own config so that nobody has to restate the stage list. That argv
-    # is only runnable if the extra gating the dev layer supplies the module it names -- and until
-    # 2026-09-17 it did not, in the repo that ships the function. Declared here rather than left to
-    # each consumer to notice: it is DRIVEN as an executable, exactly as pytest and ruff are, and
-    # `tests/test_dev_gate.py` still proves by reading the import statements that no module here
-    # imports it.
-    "pre-commit",
-    # `tests/test_the_kit_renders_its_own_precommit_config.py` parses the rendered YAML itself.
-    "pyyaml",
+    # `cz check` is the base commit-msg hook (`lab_commons/dev/githooks/base.toml`), run in this venv
+    # like every hook -- DRIVEN as an executable, exactly as pytest and ruff are.
+    "commitizen",
 ]
 
 # THE TWO GATES FOR ``lab_commons.viz``, AND THERE ARE TWO ON PURPOSE. The plotting vocabulary
@@ -103,6 +81,25 @@ pruned_paths = ['.claude/worktrees']
 # It installs the project itself: the venv must import lab_commons.dev.envkey to report its env key.
 [tool.lab_commons.hpc]
 install = "uv sync --all-extras"
+
+# This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
+# `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
+[[tool.lab_commons.hooks.pre-commit]]
+id = "ruff"
+run = ["ruff", "check", "--force-exclude"]
+files = '\.pyi?$'
+pass_files = true
+
+[[tool.lab_commons.hooks.pre-commit]]
+id = "ruff-format"
+run = ["ruff", "format", "--check", "--force-exclude"]
+files = '\.pyi?$'
+pass_files = true
+
+[[tool.lab_commons.hooks.pre-push]]
+id = "admission"
+run = ["python", "-m", "lab_commons.dev.admission", "--trunk-ref", "refs/heads/main"]
+always_run = true
 
 [tool.lab_commons.branchset]
 # ONE-BRANCH-PER-SESSION: the trunk is the one long-lived branch; a session's lane merges and is deleted.

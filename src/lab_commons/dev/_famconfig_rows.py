@@ -12,17 +12,15 @@ files, never by line count. The numbers below are re-derivable with a five-line 
 of them is quoted with what it was measured over, because a base is a claim about three other repos
 and a claim about somebody else's tree ages fastest.
 
-THE THREE ARTEFACTS ARE NOT THE SAME KIND OF THING, AND THAT IS THE FINDING THIS FILE EXISTS TO
+GIT HOOKS ARE NOT HERE: they are TOML data (`lab_commons/dev/githooks/base.toml` plus each repo`s
+`[tool.lab_commons.hooks]`), run by `lab_commons.dev.githooks` and never rendered to a file.
+
+THE ARTEFACTS ARE NOT THE SAME KIND OF THING, AND THAT IS THE FINDING THIS FILE EXISTS TO
 RECORD. Reading the census rows one would expect three tables of shared lines. Measured, only two of
 the three artefacts share LINES at all:
 
 * `.gitignore` -- 14 shared patterns out of 61/30/73. A pattern is a whole statement, so the shared
   half renders verbatim. RENDERED.
-* `.pre-commit-config.yaml` -- 11 shared hook ids out of 22/19/18, drawn from exactly two upstream
-  repos. The ids are shared and the SPELLING is not: the labs write the `repos:` list unindented and
-  consumer-a indents it, and the three disagree on both pins (`pre-commit-hooks` v6.0.0 / v5.0.0 /
-  v5.0.0, `commitizen` v4.13.9 / v4.6.0 / v4.6.0). Three spellings of one whitelist is precisely the
-  hand-maintenance this base removes, so the base fixes ONE spelling and ONE pin pair. RENDERED.
 * `Makefile` -- 3 target NAMES in all four repos, 8 in all three CONSUMERS, and NO shared recipe at
   all. lab-commons and consumer-c are byte-identical on `fmt`, `lint` and `test`; consumer-b's `lint`
   also runs `cargo fmt` and `cargo clippy`, and
@@ -59,17 +57,12 @@ __all__ = [
     'GITIGNORE_CONSUMER_CORE',
     'GITIGNORE_FAMILY_LINES',
     'GITIGNORE_FLOOR',
-    'HOOK_ID_CORE',
-    'HOOK_LAB_COMMONS',
-    'HOOK_LAB_COMMONS_REV',
-    'LAB_COMMONS_PUBLIC_URL',
     'MAKEFILE_BASE',
     'MAKEFILE_RESIDUAL_SIGNALS',
     'MAKE_TARGET_CONSUMER_CORE',
     'MAKE_TARGET_CORE',
     'ORDERED_SECTIONS',
     'ORDER_SENSITIVE_ARTEFACTS',
-    'PRECOMMIT_BASE',
     'REPO_FLOOR',
     'STAMP',
 ]
@@ -227,123 +220,6 @@ ORDER_SENSITIVE_ARTEFACTS: Final[dict[str, int]] = {'.gitignore': 2}
 #: table, it is not a second pin on the count.
 GITIGNORE_FLOOR: Final = 10
 
-# --------------------------------------------------------------- .pre-commit-config.yaml
-
-#: The 11 hook ids declared by ALL THREE consumers, MEASURED over 22 / 19 / 18 declared ids. This is
-#: the base's SUBJECT, held separately from the YAML lines that express it so that the rendered text
-#: can be checked against the thing it is supposed to say. A base that lost a hook while still
-#: rendering valid YAML would be green everywhere else.
-HOOK_ID_CORE: Final[tuple[str, ...]] = (
-    'check-added-large-files',
-    'check-ast',
-    'check-case-conflict',
-    'check-json',
-    'check-merge-conflict',
-    'check-toml',
-    'commitizen',
-    'debug-statements',
-    'end-of-file-fixer',
-    'issue-ref',
-    'merge-audit',
-    'mixed-line-ending',
-    'trailing-whitespace',
-)
-
-#: THE ONE PIN of the lab-commons revision every rendered hook environment installs. pre-commit keys its
-#: cached environment by the requirement STRING, so an unpinned URL keeps whatever revision first
-#: installed it. Bump it here, with the kit; every repo's render follows.
-HOOK_LAB_COMMONS_REV: Final = '97b2764a45c99e97890e679d7fd192ac716895a5'
-
-#: Where lab-commons resolves when a repo declares no source of its own: the public mirror.
-LAB_COMMONS_PUBLIC_URL: Final = 'https://github.com/DawnEver/lab-commons.git'
-
-#: The requirement a hook environment installs, for a repo that declares no private source. A repo
-#: that declares one (``[tool.uv] override-dependencies``) renders THAT url instead, at the same pin --
-#: :func:`lab_commons.dev.famconfig.artefact_base` substitutes it from the repo's single declaration.
-HOOK_LAB_COMMONS: Final = f'lab-commons @ git+{LAB_COMMONS_PUBLIC_URL}@{HOOK_LAB_COMMONS_REV}'
-
-
-#: The base as YAML BODY LINES. Two upstream repos, one pin each, the 11 measured core ids -- plus
-#: `issue-ref`, the twelfth, which was never measured in a consumer because the family WROTE it
-#: (2026-10-01, the approved issue design): a commit-msg check that WARNS on a malformed
-#: `Refs #N` / `Closes #N` / `Fixes #N` and never blocks. It runs `lab-issue-ref` in pre-commit's own
-#: environment rather than through `lab-with-venv`, because that launcher exits 1 with no venv and
-#: "never blocks" has to hold on a fresh clone -- see :mod:`lab_commons.dev.issueref`. `verbose` is
-#: load-bearing: pre-commit hides a PASSING hook's output, and this hook only ever passes.
-#:
-#: THE BLOCK IS INDENTED TWO LESS THAN EVERY OTHER HOOK ON PURPOSE (a sequence at its key's own
-#: column is valid YAML). At the usual depth its attribute lines -- `language: python`,
-#: `verbose: true`, `stages: [commit-msg]` -- are byte-equal to lines consumer deltas already carry,
-#: so each such delta would read as RE-STATING the base and `stages: [commit-msg]` would stop being a
-#: unique anchor: measured 2026-10-01, three refusals from one consumer's delta. A flow-style one-line
-#: spelling was tried first and rejected, because every hook-id reader in the family matches
-#: `- id: <name>` at the start of a line.
-#:
-#: THE PINS ARE THE NEWEST MEASURED, and choosing is the point: the three consumers hold
-#: `pre-commit-hooks` at v6.0.0 / v5.0.0 / v5.0.0 and `commitizen` at v4.13.9 / v4.6.0 / v4.6.0, and
-#: no repo has a reason on record for being behind. A base that carried three pins would be the
-#: hand-maintenance it replaces, wearing a shared file as a disguise.
-#:
-#: `fail_fast: false` IS HERE BECAUSE THE INSTRUMENT FOUND IT. The first cut of this base held only
-#: the hook ids; running :func:`lab_commons.dev.famconfig.fork_signals` over the three measured
-#: deltas named `fail_fast: false` as a line ALL THREE consumers add, which is the definition of a
-#: base line that was never promoted. It is the anti-fork arm correcting its own author on first
-#: run, and that is the argument for keeping the arm rather than a note about one line.
-#:
-#: `default_stages` IS DECLARED HERE because leaving it out is not neutral: without it a hook's
-#: stage comes from the UPSTREAM manifest, which is a decision taken in another repository. Only
-#: consumer-a declares it today. `commitizen` overrides it to `commit-msg` inline, which is the stage
-#: it must run at -- and MEASURED 2026-09-17 neither lab has a `commit-msg` hook installed, so in
-#: both labs this is the one declaration nothing executes. The base cannot fix that; installation is
-#: `lab_commons.dev.hook_install`'s question and is named here so the two are not confused.
-PRECOMMIT_BASE: Final[tuple[str, ...]] = (
-    'fail_fast: false',
-    'default_stages: [pre-commit]',
-    '',
-    'repos:',
-    '  - repo: https://github.com/pre-commit/pre-commit-hooks',
-    '    rev: v6.0.0',
-    '    hooks:',
-    '      - id: check-added-large-files',
-    '      - id: check-ast',
-    '      - id: check-case-conflict',
-    '      - id: check-json',
-    '      - id: check-merge-conflict',
-    '      - id: check-toml',
-    '      - id: debug-statements',
-    '      - id: end-of-file-fixer',
-    '      - id: mixed-line-ending',
-    '      - id: trailing-whitespace',
-    '',
-    '  - repo: https://github.com/commitizen-tools/commitizen',
-    '    rev: v4.13.9',
-    '    hooks:',
-    '      - id: commitizen',
-    '        stages: [commit-msg]',
-    '',
-    '  - repo: local',
-    '    hooks:',
-    # PINNED: pre-commit keys its cached env by this STRING, so an unpinned URL keeps whatever rev
-    # first installed it (measured 2026-10-09: an env whose issueref imported structlog crashed on
-    # Windows without colorama). 97b2764 made lab_commons.log stdlib-only. Bump with the kit.
-    '    - id: issue-ref',
-    '      name: issue references are well-formed (warns, never blocks)',
-    '      entry: lab-issue-ref',
-    '      language: python',
-    f"      additional_dependencies: ['{HOOK_LAB_COMMONS}']",
-    '      stages: [commit-msg]',
-    '      verbose: true',
-    # MERGE-DEVIATIONS-NAMED, checked when the merge is COMMITTED: the check reads this checkout's
-    # git objects and its own lab_commons, so it runs through the launcher in the repo's venv.
-    '    - id: merge-audit',
-    '      name: a merge names every test it lost or rewrote',
-    '      entry: lab-with-venv',
-    "      args: ['lab_commons.dev.mergeaudit']",
-    '      language: python',
-    f"      additional_dependencies: ['{HOOK_LAB_COMMONS}']",
-    '      stages: [commit-msg]',
-)
-
 # ---------------------------------------------------------------------------------- Makefile
 
 #: The three targets present in ALL FOUR repos, MEASURED over 6 / 18 / 14 / 15 declared targets.
@@ -360,7 +236,7 @@ MAKE_TARGET_CORE: Final[tuple[str, ...]] = ('fmt', 'lint', 'test')
 #: - The consequence is worth stating rather than leaving for a reader to notice: this tuple is now
 #:   EQUAL to `MAKE_TARGET_CORE`, the all-four set. They are kept as two names because they answer two
 #:   QUESTIONS -- what the consumers share, and what the whole family shares -- and today's answer is
-#:   that the kit adopted its own base with an empty delta. That is the same shape `HOOK_ID_CORE`
+#:   that the kit adopted its own base with an empty delta. That is the same shape the hook core
 #:   reached on 2026-09-17, and it is what a base looks like once it has actually landed.
 #:
 #: THE ANTI-FORK ARM ARGUED FOR THIS SET AND THE FIRST CUT OF THIS FILE DID NOT HAVE IT. Run over the
@@ -461,7 +337,6 @@ RGIGNORE_BASE: Final[tuple[str, ...]] = ('attic/',)
 #: table owns is WHICH lines, and nothing else.
 BASES: Final[dict[str, tuple[str, ...]]] = {
     '.gitignore': GITIGNORE_BASE,
-    '.pre-commit-config.yaml': PRECOMMIT_BASE,
     'Makefile': MAKEFILE_BASE,
     '.gitattributes': GITATTRIBUTES_BASE,
     '.rgignore': RGIGNORE_BASE,

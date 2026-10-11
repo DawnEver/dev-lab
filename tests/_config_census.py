@@ -55,8 +55,6 @@ __all__ = [
     'dev_pages',
     'gitignore_patterns',
     'head_sha',
-    'hook_ids',
-    'installed_hook_names',
     'make_targets',
     'names_at_head',
     'reachable_repos',
@@ -140,8 +138,8 @@ def read_at_head(root: Path, relpath: str) -> str | None:
     WHAT THIS DELIBERATELY GIVES UP, so nobody reads it as free. A lane's uncommitted work is INVISIBLE
     here, so the census describes the last published state rather than the one its author is looking
     at. That is the correct trade for a guard whose whole subject is what the family has AGREED, and
-    it is the wrong trade for a guard about what this BOX has -- see :func:`installed_hook_names`,
-    which stays on the filesystem for exactly that reason and says so.
+    it is the wrong trade for a guard about what this BOX has -- see :mod:`lab_commons.dev.hook_install`,
+    which reads the filesystem for exactly that reason.
     """
     found = subprocess.run(
         [_GIT, '-C', str(root), 'show', f'HEAD:{relpath}'],
@@ -300,53 +298,6 @@ def make_targets(root: Path) -> frozenset[str]:
         msg = f'{root} declares no committed Makefile at {head_sha(root)}'
         raise UnreadableTree(msg)
     return frozenset(_TARGET.findall(text)) - {'.PHONY'}
-
-
-_HOOK_ID = re.compile(r'(?m)^\s*-\s*id:\s*(\S+)')
-
-
-def hook_ids(root: Path) -> frozenset[str]:
-    """Hook ids DECLARED in ``.pre-commit-config.yaml``; empty when there is no such file.
-
-    Commented-out hooks are dropped before the scan: all three consumers carry blocks of them, and a
-    hook nobody runs is not a hook the repo declares.
-    """
-    config = root / '.pre-commit-config.yaml'
-    if not config.is_file():
-        return frozenset()
-    lines = [line for line in config.read_text(encoding='utf-8').splitlines() if not line.strip().startswith('#')]
-    return frozenset(_HOOK_ID.findall('\n'.join(lines)))
-
-
-#: The names git actually invokes. A hooks DIRECTORY is shared by every worktree of a checkout,
-#: which is why this reports and never repairs -- the reason `lab_commons.dev.hook_install` gives.
-_GIT_HOOKS: Final = ('pre-commit', 'pre-push', 'commit-msg', 'prepare-commit-msg', 'post-checkout')
-
-
-def installed_hook_names(root: Path) -> frozenset[str]:
-    """Which of git's hook files are PRESENT -- the half a configuration cannot answer for itself.
-
-    THE ONE READER THAT STAYS ON THE FILESYSTEM, and it is a decision rather than an omission. Every
-    other reader here moved to :func:`read_at_head` on 2026-09-18 because a DECLARATION is a committed
-    fact. An installed hook is not a declaration: it is a fact about THIS BOX, it is never committed
-    anywhere, and reading it at HEAD would answer nothing at all. The rule is that the tree a reader
-    consults must match the kind of fact it is about, not that one tree is always right.
-
-    A worktree's ``.git`` is a FILE pointing at the parent checkout's git dir, and the hooks it runs
-    are that checkout's. Resolving it is not a detail: reading ``<worktree>/.git/hooks`` as a
-    directory reports every worktree in the family as having zero hooks, which is the opposite of
-    what the consumer-a lane measured.
-    """
-    marker = root / '.git'
-    if marker.is_dir():
-        hooks_dir = marker / 'hooks'
-    elif marker.is_file():
-        gitdir = Path(marker.read_text(encoding='utf-8').split(':', 1)[1].strip())
-        common = gitdir.parent.parent if gitdir.parent.name == 'worktrees' else gitdir
-        hooks_dir = common / 'hooks'
-    else:
-        return frozenset()
-    return frozenset(name for name in _GIT_HOOKS if (hooks_dir / name).is_file())
 
 
 def dev_pages(root: Path) -> frozenset[str]:

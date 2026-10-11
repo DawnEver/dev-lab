@@ -7,9 +7,9 @@ A base nothing runs over a real tree is the shape this family's taste rule alrea
 capability that disappears, or a waiver nothing uses, is as wrong as its opposite" -- so this file is
 the consumer side of that base, and the suite beside it is what drives it.
 
-WHY THE KIT DECLARES THREE OTHER REPOS' DELTAS. It already does, twice, for the same reason: a base
-is a claim about four trees, and a claim nobody re-derives ages fastest. `PRECOMMIT_OWN_HOOKS` and
-`CONSUMER_IGNORE_DELTA` in `_config_census_rows.py` are the precedent, and the suite beside this file
+WHY THE KIT DECLARES THREE OTHER REPOS' DELTAS. It already does, for the same reason: a base
+is a claim about four trees, and a claim nobody re-derives ages fastest. `CONSUMER_IGNORE_DELTA` in
+`_config_census_rows.py` is the precedent, and the suite beside this file
 re-measures every entry here against the live checkouts rather than trusting it.
 
 WHAT WAS MEASURED, by parsing the live ruff config of `lab-commons`, `consumer-b`, `consumer-c` and the

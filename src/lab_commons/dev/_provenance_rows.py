@@ -422,11 +422,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'countpins': ('supersedes', 'tests/architecture/test_a_pin_is_a_named_set.py'),
     'venvspelling': ('original',),
     # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
-    # not a forked file. `CANDIDATE_RELATIVE_PATHS` moved here from `githooks.bootstrap`, which is
-    # in-kit and therefore not provenance -- that row below still supersedes `with-venv.sh`.
+    # not a forked file.
     'venvpath': ('original',),
     'worktreeplace': ('original',),
     'famfiles': ('original',),
-    # -- `lab_commons.dev.githooks`.
-    'bootstrap': ('supersedes', 'scripts/hooks/with-venv.sh'),
+    # -- `lab_commons.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
+    'table': ('original',),
+    'runner': ('original',),
+    'filechecks': ('original',),
+    'ciworkflows': ('original',),
 }

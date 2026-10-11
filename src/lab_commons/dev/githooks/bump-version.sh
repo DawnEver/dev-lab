@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Auto-tag the repo patch version on push. Wired as a pre-commit `pre-push` hook via
-#   entry: python -m lab_commons.dev.githooks bump-version
+# Auto-tag the repo patch version on push. Declared as a `pre-push` row of [tool.lab_commons.hooks]:
+#   run = python -m lab_commons.dev.githooks script bump-version
 # Versioning is SCM/tag-driven (hatch-vcs / setuptools-scm, tag format v$version), so "bumping" is
 # creating the next tag.
 #

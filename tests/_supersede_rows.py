@@ -59,8 +59,8 @@ spellings the fix had just added. Re-driving both readers over all three consume
 `497dfb7b5`, consumer-b `71e184a1`, consumer-c `e66a32e`, 173 files that mention the kit -- moves SEVEN
 import sets and exactly TWO grades, both in consumer-a: `tests/architecture/layering/_tests_placement.py`
 NAMED_ONLY -> PARTIAL against `density`, and `tests/architecture/gate/test_an_empty_venv_stub_does_
-not_win_the_interpreter.py` UNTOUCHED -> CONSULTS against `githooks.bootstrap`, which is the same
-defect in the OTHER sub-package. NO ROW HELD HERE MOVES: these fifteen were captured from `scripts/`
+not_win_the_interpreter.py` UNTOUCHED -> CONSULTS against the githooks venv resolver (since retired), the
+same defect in the OTHER sub-package. NO ROW HELD HERE MOVES: these fifteen were captured from `scripts/`
 and from one consumer-c test, none of which adopts a sub-package module in the deep form. That is the
 re-measurement, not a re-labelling, and a row that did not move is not thereby certified fresh.
 

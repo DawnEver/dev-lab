@@ -1,0 +1,87 @@
+# THE FAMILY'S GIT HOOKS -- the base every repo runs, as data. Read by lab_commons.dev.githooks.table.
+#
+# A repo layers its own rows on top in its pyproject.toml, under [[tool.lab_commons.hooks.<stage>]]:
+# a row whose `id` is new is APPENDED to the stage; a row whose `id` names a base row is MERGED over
+# it key by key (e.g. one `exclude`). Keys, all optional except `id` and `run`:
+#
+#   run         argv, run from the repo root in the repo's own venv. A leading "python" is the venv
+#               interpreter; any other first word is looked up in the venv's scripts directory first.
+#   files       regex (re.search) over repo-relative POSIX paths; a hook with none sees every file.
+#   exclude     regex removing paths that `files` admitted.
+#   pass_files  append the selected paths to `run` (pre-commit and pre-push stages).
+#   always_run  run even when no path is selected.
+#   env         a table of environment variables the command runs with (a script's repo facts).
+#   refs        pre-push only: regex over the pushed REMOTE refs; the hook runs only for matching
+#               refs and reads only their lines on stdin.
+#
+# What each stage hands a hook is git's own contract: pre-commit selects among the STAGED paths;
+# commit-msg appends the message file to `run`; pre-push pipes git's ref lines to stdin and selects
+# among the paths those pushes change. The checks below report and never rewrite a file.
+
+[[pre-commit]]
+id = "check-added-large-files"
+run = ["python", "-m", "lab_commons.dev.filechecks", "large-files"]
+pass_files = true
+
+[[pre-commit]]
+id = "check-ast"
+run = ["python", "-m", "lab_commons.dev.filechecks", "ast"]
+files = '\.pyi?$'
+pass_files = true
+
+[[pre-commit]]
+id = "check-case-conflict"
+run = ["python", "-m", "lab_commons.dev.filechecks", "case-conflict"]
+pass_files = true
+
+[[pre-commit]]
+id = "check-json"
+run = ["python", "-m", "lab_commons.dev.filechecks", "json"]
+files = '\.json$'
+pass_files = true
+
+[[pre-commit]]
+id = "check-merge-conflict"
+run = ["python", "-m", "lab_commons.dev.filechecks", "merge-conflict"]
+pass_files = true
+
+[[pre-commit]]
+id = "check-toml"
+run = ["python", "-m", "lab_commons.dev.filechecks", "toml"]
+files = '\.toml$'
+pass_files = true
+
+[[pre-commit]]
+id = "debug-statements"
+run = ["python", "-m", "lab_commons.dev.filechecks", "debug-statements"]
+files = '\.pyi?$'
+pass_files = true
+
+[[pre-commit]]
+id = "end-of-file"
+run = ["python", "-m", "lab_commons.dev.filechecks", "end-of-file"]
+pass_files = true
+
+[[pre-commit]]
+id = "mixed-line-ending"
+run = ["python", "-m", "lab_commons.dev.filechecks", "mixed-line-ending"]
+pass_files = true
+
+[[pre-commit]]
+id = "trailing-whitespace"
+run = ["python", "-m", "lab_commons.dev.filechecks", "trailing-whitespace"]
+pass_files = true
+
+[[commit-msg]]
+id = "commitizen"
+run = ["cz", "check", "--allow-abort", "--commit-msg-file"]
+
+# Warns on a malformed `Refs #N` / `Closes #N` / `Fixes #N` and never blocks (lab_commons.dev.issueref).
+[[commit-msg]]
+id = "issue-ref"
+run = ["python", "-m", "lab_commons.dev.issueref"]
+
+# MERGE-DEVIATIONS-NAMED, checked when the merge is committed (lab_commons.dev.mergeaudit).
+[[commit-msg]]
+id = "merge-audit"
+run = ["python", "-m", "lab_commons.dev.mergeaudit"]

@@ -45,16 +45,12 @@ __all__ = [
     'CONSUMER_SELECT',
     'COUNTER_DIRECTION_CODES',
     'GROUPS_THE_KIT_DOES_NOT_LINT',
-    'HOOK_ID_CORE',
-    'INSTALLED_HOOKS',
     'KIT_IGNORE',
     'KIT_PER_FILE_WAIVERS',
     'KIT_SELECT',
     'KIT_SELECT_BEFORE_R1',
     'MAKE_TARGET_CORE',
     'PARTITIONS',
-    'PRECOMMIT_LINE_DELTA',
-    'PRECOMMIT_OWN_HOOKS',
     'REPOS',
     'REPO_PATHS',
     'SHARED_GITIGNORE_CORE',
@@ -87,7 +83,6 @@ ARTEFACTS: tuple[str, ...] = (
     'ruff-config',
     '.gitignore',
     'Makefile',
-    '.pre-commit-config.yaml',
     'docs-src/dev/',
 )
 
@@ -337,157 +332,6 @@ MAKE_TARGET_CORE: tuple[str, ...] = (
     'verify',
 )
 
-#: Hook ids declared by all three CONSUMERS. Eleven of 22/19/18 -- and as of 2026-09-17 also the
-#: complete set lab-commons declares, because the kit adopted the family base with an EMPTY delta
-#: (`tests/_famconfig_delta.py`). So this tuple is no longer "the shared part of three files"; it is
-#: the shared part of three files and the whole of a fourth, which is what a base looks like once
-#: the repo that publishes it runs it. TWELVE since 2026-10-01: the base gained `issue-ref`, the
-#: commit-msg issue-reference check, and all four repos render it. THIRTEEN since 2026-10-10: the
-#: base gained `merge-audit`, MERGE-DEVIATIONS-NAMED checked when a merge is committed.
-HOOK_ID_CORE: tuple[str, ...] = (
-    'check-added-large-files',
-    'check-ast',
-    'check-case-conflict',
-    'check-json',
-    'check-merge-conflict',
-    'check-toml',
-    'commitizen',
-    'debug-statements',
-    'end-of-file-fixer',
-    'issue-ref',
-    'merge-audit',
-    'mixed-line-ending',
-    'trailing-whitespace',
-)
-
-#: THE PRE-COMMIT DELTA IN THE UNIT ITS CEILING HAS TO BE STATED IN: the hook ids each repo declares
-#: BEYOND the base hook core, exact and per repo, MEASURED 2026-09-18 over 11 / 22 / 19 / 18
-#: declared ids. Read by `test_the_precommit_delta_is_counted_in_hooks.py`, which drives the kit's own
-#: `hook_delta` over the live files.
-#:
-#: WHY THIS EXISTS BESIDE THE LINE COUNT BELOW rather than instead of it: the two disagree about who
-#: the biggest delta in the family is, and the disagreement is the evidence. See `PRECOMMIT_LINE_DELTA`.
-#:
-#: BOTH SIDES. A hook ARRIVING reds here and a hook DISAPPEARING reds here, because the recorded set
-#: is exact rather than a subset -- a local hook quietly dropped is a verdict that stopped running
-#: while the config still reads as guarded, and no other constant in this file would notice.
-PRECOMMIT_OWN_HOOKS: dict[str, tuple[str, ...]] = {
-    'lab-commons': (),
-    'consumer-b': (
-        'bump-api-version',
-        'check-builtin-literals',
-        'check-illegal-windows-names',
-        'check-symlinks',
-        'check-vcs-permalinks',
-        'destroyed-symlinks',
-        'fix-byte-order-marker',
-        'fmt-python',
-        'generate-changelog',
-        'lint-python',
-        'requirements-txt-fixer',
-    ),
-    'consumer-c': (
-        'check-builtin-literals',
-        'check-illegal-windows-names',
-        'check-shebang-scripts-are-executable',
-        'check-symlinks',
-        'check-vcs-permalinks',
-        'destroyed-symlinks',
-        'fix-byte-order-marker',
-        'requirements-txt-fixer',
-    ),
-    'consumer-a': (
-        'bump-version',
-        'commitizen-branch',
-        'gate',
-        'primary-checkout',
-        'pyright-clean-leaf',
-        'ruff',
-        'ruff-format',
-    ),
-}
-
-#: THE SAME DELTA SIZED IN LINES, by the kit's `measured_delta` against the 21-line base, MEASURED
-#: 2026-09-18. It is recorded so the two units can be COMPARED rather than so either is trusted:
-#:
-#:     repo               line delta   own hooks   lines per own hook
-#:     consumer-b                    38          11                 3.5
-#:     consumer-c                  8           8                 1.0
-#:     consumer-a           87           7                12.4
-#:
-#: By lines consumer-a is the largest delta in the family by a factor of two, and `Delta.ceiling`'s own
-#: words -- "the point at which this repo's delta has stopped being a delta" -- read 88-against-21 as
-#: a fork. By HOOKS it is the SMALLEST of the three consumers. Nothing about its relationship to the
-#: base differs between the readings: all 11 core ids are present and 19 of the 21 base lines match
-#: literally. The unit moved, not the repo. A pre-commit hook is a YAML MAPPING costing one line when
-#: pulled from an upstream repo and ten to twelve when declared `- repo: local`, so a line ceiling
-#: scores hook SOURCING and not distance from the base.
-#:
-#: THE VERDICT THIS SETTLES, recorded here because a conclusion in a report is not a deliverable:
-#: `.pre-commit-config.yaml` IS adoptable for consumer-a and is NOT past the ceiling. It is not
-#: FREE -- the 2 base lines it does not match are `rev:` pins (`v5.0.0` -> `v6.0.0`, `v4.6.0` ->
-#: `v4.13.9`), a real upstream version bump changing what runs on every commit there, which belongs in
-#: its own commit saying so. Neither this repo nor that test performs it.
-#: RE-TAKEN 2026-10-01 for consumer-a: 88, with its own-hook set unchanged. 87 was read from the
-#: retired lane worktree `REPO_PATHS` used to name; the primary checkout's file is byte-identical to
-#: its 2026-09-18 adoption commit and measures 88 there too.
-PRECOMMIT_LINE_DELTA: dict[str, int] = {
-    'lab-commons': 0,
-    'consumer-b': 38,
-    'consumer-c': 8,
-    'consumer-a': 88,
-}
-
-#: Git hooks actually INSTALLED, per repo, measured 2026-09-17 -- the ratchet's other side for the
-#: `.pre-commit-config.yaml` rows, since a configuration cannot answer for its own installation.
-#:
-#: TWO CORRECTIONS ARE RECORDED IN THIS ONE CONSTANT, and both were made by the test rather than by
-#: review. The first is mine: a hand `ls .git/hooks` run from the wrong working directory reported
-#: ZERO for every repo, and the test refused it -- git's hooks directory must be resolved through
-#: git (`--absolute-git-dir`, and for a WORKTREE the common dir one level up), which is exactly the
-#: mechanism `lab_commons.dev.hook_install` exists to supply and which a shell one-liner does not
-#: have. The second is upstream's: `hook_install`'s docstring records ZERO installed hooks in
-#: consumer-b and consumer-c on 2026-09-16, and a day later both have them, so that measurement is now
-#: historical and this table is the live one.
-#:
-#: THE MISSING STAGE WAS CLOSED THE SAME DAY IT WAS RECORDED, and how it was found is the part worth
-#: keeping. This paragraph used to read "both labs declare `commitizen`, whose stage is `commit-msg`,
-#: and NEITHER has a `commit-msg` hook file". That was true, and nothing was looking for it: both
-#: repos read as guarded while EVERY COMMIT MESSAGE WENT UNCHECKED. What surfaced it was not a hunt.
-#: The family pre-commit base spells `stages: [commit-msg]` out where both labs had left it implicit,
-#: and `hook_install.declared_stages` reads the config TEXT -- so making an implicit declaration
-#: EXPLICIT turned `test_the_declared_hooks_are_installed` red and named the shim nobody had
-#: installed. The RESOLVED stage never moved; upstream already said `commit-msg`. Writing down what
-#: was already true is what made the gap visible, which is the argument for stating a thing rather
-#: than relying on it.
-#:
-#: lab-commons LEFT ZERO ON 2026-09-17, and the sentence this replaces is worth keeping in view: it
-#: read "lab-commons stays at ZERO and that is its own row rather than an oversight". That was an
-#: accurate description and a bad resting place. The repo shipping `hook_install`, `hooks`,
-#: `hook_adoption`, `githooks` and the `lab-with-venv` bootstrap ran NONE of it on itself, so every
-#: commit here went through no check of any kind while this table judged three other repos on
-#: exactly that property. It now renders the family `.pre-commit-config.yaml` with an EMPTY delta and
-#: installs the two stages that config declares.
-#:
-#: TWO STAGES, NOT THREE, and the missing one is a decision rather than a gap: there is no `pre-push`
-#: here because `make verify` is this repo's whole verdict and a hook re-running it would block every
-#: push. `tests/test_the_kit_renders_its_own_precommit_config.py` pins that absence in BOTH
-#: directions, so installing one later is a red rather than a discovery.
-#:
-#: THE INTERPRETER IN THE SHIM IS NOT THIS REPO'S VENV, measured at install: `pre-commit` is a
-#: user-level `uv tool`, so `INSTALL_PYTHON` names the tool's environment. That is deliberate --
-#: installing into `.venv` would move an environment other worktrees gate against, mid-run -- and it
-#: is why `pre-commit` is declared in the `dev` extra anyway: the extra states what a CONSUMER needs
-#: to run `hook_install.install_command`, which is a different question from what this box happens
-#: to have on PATH.
-INSTALLED_HOOKS: dict[str, tuple[str, ...]] = {
-    'lab-commons': ('commit-msg', 'pre-commit'),
-    'consumer-b': ('commit-msg', 'pre-commit', 'pre-push'),
-    'consumer-c': ('commit-msg', 'pre-commit'),
-    'consumer-a': ('commit-msg', 'pre-commit', 'pre-push'),
-}
-
-
 # ------------------------------------------------------------------ lab-commons: the kit itself
 
 ROWS_LAB_COMMONS: dict[str, Placement] = {
@@ -540,28 +384,6 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         'rules-adoption test BY PATH -- it names a test file, and a path into a tree is the one thing '
         'a shared Makefile cannot carry. What breaks if the remaining two moved: a shared file would '
         'name a test that exists in one repo. Still SPLITS, but on a base that is now thick.',
-    ),
-    'lab-commons::.pre-commit-config.yaml': Placement(
-        SPLITS,
-        'ABSENT UNTIL 2026-09-17, AND THE ABSENCE WAS THE ROW. This repo SHIPS the hook machinery -- '
-        '`dev.hook_install` (is a declared hook actually in the directory git consults), `dev.hooks` '
-        'and `dev.hook_adoption` (the denied shapes and their remedies), `dev.githooks` (the '
-        'bump-version payload consumer-b now calls BY NAME rather than by copy), the `lab-with-venv` '
-        'bootstrap -- and ran none of it on itself: no config, no installed hook, no commit-time check '
-        'of any kind. It was finding 1 one layer out, the kit held to less than what it ships. IT IS '
-        'NOW A SPLIT WHOSE REPO HALF IS EMPTY, and that is the whole repair: the artefact is the '
-        'family base rendered by `famconfig` with a delta of ZERO lines, so every line of this file '
-        'came from `_famconfig_rows` and NOTHING is repo-shaped. THE SEAM is therefore the entire '
-        'file, which is the strongest form this row could take and the reason the side did not change '
-        'to MOVES -- a lab-commons row may not say MOVES, because this IS where a shared artefact '
-        'goes. The delta is empty by DECISION and not by '
-        'default -- each of the eleven base ids was checked against this tree, '
-        '`check-shebang-scripts-are-executable` was considered and refused on measurement (the five '
-        'shipped `.sh` payloads are mode 100644 here, so it would red on the first run), and the '
-        'pre-push gate the labs have is genuinely absent because `make verify` is this repo`s whole '
-        'verdict. Both declared stages are INSTALLED, which is the half a configuration cannot answer '
-        'for itself. What broke while it was absent: nothing reds, which was the complaint -- the one '
-        'repo whose own tests assert that a config without an install is a lie had neither.',
     ),
     'lab-commons::docs-src/dev/': Placement(
         STAYS,
@@ -623,20 +445,6 @@ ROWS_CONSUMER_B: dict[str, Placement] = {
         'moved: nothing, provided `verify` keeps its meaning; what breaks if `serve` moved is that a '
         'shared Makefile would reference a backend three of the four repos do not have.',
     ),
-    'consumer-b::.pre-commit-config.yaml': Placement(
-        SPLITS,
-        'THE SEAM IS ALREADY HALF-CUT HERE, AND IT IS THE PROOF THE OTHER ROWS REST ON: `bump-api-version` '
-        'runs `python -m lab_commons.dev.githooks bump-version` -- the payload reached BY NAME after a '
-        'forked copy had drifted into four separate defects, recorded in this file`s own comment. So '
-        'one hook already demonstrates that the shared half is shareable. The rest of the shared half '
-        'is the base hook core (commitizen plus the pre-commit-hooks whitelist) declared identically by '
-        'all three consumers. What STAYS: `generate-changelog`, the `^\\.claude/|^experiment/` excludes, '
-        'and the `_suppressions.tsv` trailing-whitespace exclusion, which exists because a formatter '
-        'rewrote 351 rows of a five-column TSV -- an incident, and an incident is not portable. What '
-        'breaks TODAY: the commit-msg half only. `pre-commit` and `pre-push` ARE installed here (measured '
-        '2026-09-17), but no `commit-msg` hook is, and `commitizen` runs at that stage -- so the '
-        'message-format half of this 98-line file governs nothing while the rest of it works.',
-    ),
     'consumer-b::docs-src/dev/': Placement(
         MOVES,
         'ALREADY MOVED, AND THE "1" IS THE EVIDENCE RATHER THAN THE GAP. The single page is 30 lines and '
@@ -695,18 +503,6 @@ ROWS_CONSUMER_C: dict[str, Placement] = {
         'path into a tree cannot be shared, because the tree is what differs. What breaks if `verify` '
         'moved: nothing -- it would become one line calling the module this repo already depends on, '
         'and the three-repo drift in what `verify` MEANS would stop being possible.',
-    ),
-    'consumer-c::.pre-commit-config.yaml': Placement(
-        SPLITS,
-        'THE THINNEST LIVE CONFIG OF THE THREE, AND ALMOST ALL OF IT IS THE SHARED HALF: 19 declared '
-        'hooks, of which 11 are the consumer core and the rest are the remainder of the same upstream '
-        'pre-commit-hooks whitelist. Everything repo-shaped in it is COMMENTED OUT -- the whole local '
-        'lint/format/mypy/pytest block is dead text, so this repo declares NO local hook at all and '
-        'runs no ruff at commit time. THE SEAM: the core plus the whitelist is shareable as it stands; '
-        'what would stay is a local block that does not yet exist. What breaks today: `pre-commit` is '
-        'installed (measured 2026-09-17) and runs the upstream whitelist, but `commit-msg` is NOT, and '
-        '`commitizen` -- the one hook here that is not from that whitelist -- runs at that stage. So '
-        'the only repo-specific thing this file declares is the one part of it nothing executes.',
     ),
     'consumer-c::docs-src/dev/': Placement(
         MOVES,
@@ -781,29 +577,6 @@ ROWS_CONSUMER_A: dict[str, Placement] = {
         '{measure|gate|heavy}` knows cases, solvers and the live vendor engines and separates '
         'INCONCLUSIVE from PASS/FAIL, none of which the kit`s portable remainder models or should. '
         'That divergence is correct and consumer-a now declares it with a test.',
-    ),
-    'consumer-a::.pre-commit-config.yaml': Placement(
-        SPLITS,
-        'THE ONLY CONFIG IN THE FAMILY WHOSE EVERY DECLARED STAGE IS WIRED -- `commit-msg`, `pre-commit` '
-        'and `pre-push` are all present in the checkout`s hooks directory (measured 2026-09-17, through '
-        'git`s own resolution: a worktree`s hooks are the PARENT checkout`s, and reading '
-        '`<worktree>/.git/hooks` as a directory reports zero). Both labs have the pre-commit half and '
-        'neither has `commit-msg`, so this is the only repo where the commitizen declaration executes. '
-        'THE SEAM: it declares the same base hook core as the labs, which is the shared half. What '
-        'STAYS is the entire pre-push half -- `gate`, `pyright-clean-leaf`, `bump-version` and '
-        '`commitizen-branch`, every one wrapped in `scripts/hooks/branch-push-only.sh`, plus the '
-        '`default_stages` discipline and the `.dxf` exclusions on the rewriting hooks. Those encode '
-        'this repo`s verdict model and its data formats. What breaks if the pre-push half moved: a repo '
-        'with no gate runner inherits a hook that invokes one, which is a refusal with no exit -- the '
-        'failure `lab_commons.dev.hook_adoption` exists to refuse. '
-        'THE CEILING QUESTION IS SETTLED AND THE ANSWER IS ADOPT: sized in LINES this delta is 87 '
-        'against a 21-line base, the largest in the family and arguably past what `Delta.ceiling` '
-        'calls a delta at all; sized in HOOKS it is SEVEN, the SMALLEST of the three consumers. The '
-        'unit moved, not the repo -- see `PRECOMMIT_LINE_DELTA` for the table and '
-        '`test_the_precommit_delta_is_counted_in_hooks.py` for the arm that re-derives it. What is '
-        'NOT free: 2 of the 21 base lines are `rev:` pins this repo runs behind (`v5.0.0`, `v4.6.0` '
-        'against `v6.0.0`, `v4.13.9`), so adoption is a real upstream version bump that changes what '
-        'runs on every commit here and belongs in its own commit stating that.',
     ),
     'consumer-a::docs-src/dev/': Placement(
         SPLITS,

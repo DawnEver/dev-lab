@@ -35,8 +35,6 @@ from _config_census import (
     Placement,
     compose,
     dev_pages,
-    hook_ids,
-    installed_hook_names,
     reachable_repos,
     read_at_head,
     ruff_ignore,
@@ -49,8 +47,6 @@ from _config_census_rows import (
     CONSUMER_SELECT,
     COUNTER_DIRECTION_CODES,
     GROUPS_THE_KIT_DOES_NOT_LINT,
-    HOOK_ID_CORE,
-    INSTALLED_HOOKS,
     KIT_IGNORE,
     KIT_SELECT,
     KIT_SELECT_BEFORE_R1,
@@ -206,76 +202,6 @@ def test_selector_covers_resolves_the_linter_before_the_digits() -> None:
     assert not selector_covers('F', 'FBT003'), 'Pyflakes F must not swallow flake8-boolean-trap'
     assert not selector_covers('F', 'FIX001')
     assert not selector_covers('PLC0415', 'PLC0414'), 'the digits match by PREFIX, not by string start'
-
-
-def test_every_repo_declares_the_base_hook_core_and_every_declared_commitizen_stage_is_wired() -> None:
-    """THE RATCHET'S OTHER SIDE for the pre-commit rows: DECLARED is not INSTALLED.
-
-    This assertion has now earned its place TWICE, in opposite directions, and the second time is
-    why the name changed.
-
-    First: a hand `ls` reported zero installed hooks in every repo; the reader here -- which
-    resolves the hooks directory through git, and a worktree's through its parent -- found
-    `pre-commit` in three of them and refused the recorded zero.
-
-    Second, 2026-09-17: this arm used to assert that the labs' `commit-msg` stage was UNWIRED, which
-    was true and meant EVERY COMMIT MESSAGE IN BOTH LABS WENT UNCHECKED while both trees read as
-    guarded. It was closed the same day, so the arm is now its mirror: the stage IS wired, and this
-    line is what reds if it is ever unwired again. A ratchet has two sides, and an arm that only
-    ever asserted the gap would have gone green forever the moment the gap closed -- silent about
-    the regression it exists to catch.
-
-    Third, the same day: the kit's own half. This arm used to assert `hook_ids(lab-commons) ==
-    frozenset()` and its message named the repair it was waiting for -- "lab-commons grew a
-    .pre-commit-config.yaml ... rewrite the row to describe what landed rather than deleting this
-    assertion". That is what happened, so the assertion turned the way it was written to turn: the
-    kit is no longer the exception, and the core check below now covers ALL FOUR repos instead of
-    excluding the one that publishes the core. An arm phrased as "this repo has nothing" cannot
-    survive the repair it asks for; one phrased as "this repo has the core" survives and keeps biting.
-    """
-    reached = reachable_repos(REPO_PATHS)
-    declared = {repo: hook_ids(root) for repo, root in reached.items()}
-    for repo, ids in declared.items():
-        assert set(HOOK_ID_CORE) <= ids, (
-            f'{repo} dropped part of the {len(HOOK_ID_CORE)}-hook base core: {sorted(set(HOOK_ID_CORE) - ids)}'
-        )
-    common_ids = set.intersection(*(set(ids) for ids in declared.values()))
-    assert common_ids == set(HOOK_ID_CORE), (
-        f'the four-repo hook core is now {sorted(common_ids)} against the declared {list(HOOK_ID_CORE)}. '
-        f'Stated as an EQUALITY for the reason the other cores now are, with one honest caveat: this '
-        f'one could not have drifted DOWN silently, because the kit`s own set is pinned EQUAL to the '
-        f'core two lines below and the subset arm above bounds it from the other side. What this line '
-        f'adds is the UPWARD half -- an id all four repos grew is a family hook that belongs in the '
-        f'base -- and legibility, so a reader need not derive the equality from two arms. WHOSE DRIFT '
-        f'THIS ACCUSES: any of the four. The core is the base`s rows (`HOOK_ID_CORE`), so its size '
-        f'is derived, never restated.'
-    )
-    assert declared['lab-commons'] == set(HOOK_ID_CORE), (
-        f'lab-commons declares {sorted(declared["lab-commons"])} against the family core '
-        f'{list(HOOK_ID_CORE)}. The kit adopted the base with an EMPTY delta on 2026-09-17, so its set '
-        f'IS the core exactly -- an extra id here is a repo-shaped line that belongs in '
-        f'`tests/_famconfig_delta.py` with a raised ceiling, and a missing one is the base losing a hook.'
-    )
-    for repo, root in reached.items():
-        assert installed_hook_names(root) == set(INSTALLED_HOOKS[repo]), (
-            f'{repo}: installed hooks are now {sorted(installed_hook_names(root))}, recorded '
-            f'{list(INSTALLED_HOOKS[repo])}. A config nobody installed is a declaration that lies, and '
-            f'this line is the only thing in the family that would notice it changing.'
-        )
-    for repo in ('lab-commons', 'consumer-b', 'consumer-c'):
-        if repo not in reached:
-            continue
-        assert 'commitizen' in declared[repo], f'{repo} stopped declaring commitizen'
-        assert 'commit-msg' in installed_hook_names(reached[repo]), (
-            f'{repo} declares commitizen at the commit-msg stage and has no commit-msg hook file, so '
-            f'every commit message here goes UNCHECKED while the tree reads as guarded. That gap was '
-            f'open in both labs until 2026-09-17 and nothing was looking for it; this line is what '
-            f'looks. Re-wire it (`pre-commit install -t commit-msg`) rather than relaxing this arm.'
-        )
-    if 'consumer-a' in reached:
-        assert 'commit-msg' in installed_hook_names(reached['consumer-a']), (
-            'consumer-a is the row that says every declared stage is wired; its commit-msg hook is gone'
-        )
 
 
 def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:

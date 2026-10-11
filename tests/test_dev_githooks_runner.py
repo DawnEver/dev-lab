@@ -1,0 +1,207 @@
+"""The TOML hook table and its one runner -- driven through planted repositories, never a restatement.
+
+Planted controls: a staged-file filter that must hand a hook exactly the staged paths it selects, a
+pre-push refusal that must reach git's exit through the runner, and a ref filter that must skip a hook
+whose refs were not pushed.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from lab_commons.dev.githooks import main as githooks_main
+from lab_commons.dev.githooks.runner import ZERO_SHA, parse_push_lines, resolve, run_stage
+from lab_commons.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
+
+_GIT = shutil.which('git') or 'git'
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run([_GIT, '-C', str(root), *args], capture_output=True, text=True, check=True).stdout
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    root = tmp_path / 'repo'
+    root.mkdir()
+    _git(root, 'init', '-q', '-b', 'main')
+    _git(root, 'config', 'user.email', 't@example.invalid')
+    _git(root, 'config', 'user.name', 't')
+    _git(root, 'config', 'core.autocrlf', 'false')
+    return root
+
+
+class _Recorder:
+    def __init__(self, code: int = 0) -> None:
+        self.calls: list[tuple[list[str], str | None]] = []
+        self.code = code
+
+    def __call__(self, argv: list[str], cwd: Path, stdin: str | None, env: dict | None = None) -> int:
+        self.calls.append((argv, stdin))
+        self.env = env
+        return self.code
+
+
+# ------------------------------------------------------------------------------------------- table
+
+
+def test_the_base_declares_the_family_stages_with_a_floor() -> None:
+    table = merge(base_rows(), {})
+    assert set(table) == {'pre-commit', 'commit-msg'}
+    assert {hook.id for hook in table['commit-msg']} == {'commitizen', 'issue-ref', 'merge-audit'}
+    assert len(table['pre-commit']) >= 8, 'a floor: a base that lost its file checks would read as clean'
+
+
+def test_a_repo_row_merges_over_a_base_row_by_id_and_appends_a_new_one() -> None:
+    layer = {
+        'pre-commit': ({'id': 'trailing-whitespace', 'exclude': r'\.tsv$'}, {'id': 'ruff', 'run': ['ruff', 'check']}),
+    }
+    table = merge(base_rows(), layer)
+    by_id = {hook.id: hook for hook in table['pre-commit']}
+    assert by_id['trailing-whitespace'].exclude == r'\.tsv$'
+    assert by_id['trailing-whitespace'].run[-1] == 'trailing-whitespace', 'the merge kept the base run'
+    assert table['pre-commit'][-1].id == 'ruff'
+
+
+@pytest.mark.parametrize(
+    ('stage', 'row', 'needle'),
+    [
+        ('pre-commit', {'id': 'x', 'run': ['a'], 'stages': ['pre-push']}, 'unknown key'),
+        ('pre-commit', {'id': 'x'}, 'needs `run`'),
+        ('pre-commit', {'id': 'x', 'run': ['uv', 'run', 'ruff']}, 'interpreter of its own'),
+        ('commit-msg', {'id': 'x', 'run': ['a'], 'files': 'y'}, 'selects paths'),
+        ('pre-commit', {'id': 'x', 'run': ['a'], 'refs': 'y'}, 'only a push names refs'),
+        ('pre-commit', {'id': 'x', 'run': ['a'], 'files': '('}, 'invalid `files` regex'),
+    ],
+)
+def test_a_declaration_the_runner_cannot_honour_raises(stage: str, row: dict, needle: str) -> None:
+    assert stage in STAGES
+    with pytest.raises(HookTableError, match=needle):
+        merge({}, {stage: (row,)})
+
+
+def test_a_stage_git_runs_and_the_family_does_not_raises(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[[tool.lab_commons.hooks.post-merge]]\nid = "x"\nrun = ["a"]\n', encoding='utf-8'
+    )
+    with pytest.raises(HookTableError, match='unknown hook stage'):
+        hook_table(tmp_path)
+
+
+def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[[tool.lab_commons.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
+        encoding='utf-8',
+    )
+    assert [hook.id for hook in hook_table(tmp_path)['pre-push']] == ['admission']
+
+
+def test_python_resolves_to_this_interpreter_and_a_tool_beside_it_first() -> None:
+    assert resolve(['python', '-m', 'x']) == [sys.executable, '-m', 'x']
+    ruff = resolve(['ruff', 'check'])[0]
+    assert Path(ruff).parent == Path(sys.executable).parent, 'the venv`s ruff, never one PATH offers first'
+
+
+# ----------------------------------------------------------------------------------------- runner
+
+
+def test_the_pre_commit_stage_hands_a_hook_only_the_staged_paths_it_selects(repo: Path) -> None:
+    """PLANTED CONTROL: a staged .py, a staged .txt and an UNSTAGED .py -- only the first may arrive."""
+    for name in ('a.py', 'b.txt', 'c.py'):
+        (repo / name).write_text('x = 1\n', encoding='utf-8')
+    _git(repo, 'add', 'a.py', 'b.txt')
+    py = Hook(stage='pre-commit', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    rust = Hook(stage='pre-commit', id='rs', run=('tool',), files=r'\.rs$', pass_files=True)
+    always = Hook(stage='pre-commit', id='always', run=('tool',), files=r'\.rs$', always_run=True)
+    seen = _Recorder()
+    assert run_stage('pre-commit', root=repo, hooks=(py, rust, always), runner=seen) == 0
+    assert [argv[1:] for argv, _ in seen.calls] == [['a.py'], []], 'rs is skipped; always runs with no paths'
+
+
+def test_a_hook_that_rewrites_the_working_tree_fails_the_commit(repo: Path) -> None:
+    (repo / 'a.py').write_text('x = 1\n', encoding='utf-8')
+    _git(repo, 'add', 'a.py')
+    _git(repo, 'commit', '-qm', 'init', '--no-verify')
+    (repo / 'a.py').write_text('x = 2\n', encoding='utf-8')
+    _git(repo, 'add', 'a.py')
+
+    def rewrite(_argv: list[str], cwd: Path, _stdin: str | None, _env: object) -> int:
+        (cwd / 'a.py').write_text('x = 3\n', encoding='utf-8')
+        return 0
+
+    fmt = Hook(stage='pre-commit', id='fmt', run=('tool',), pass_files=True)
+    assert run_stage('pre-commit', root=repo, hooks=(fmt,), runner=rewrite) == 1
+
+
+def test_the_commit_msg_stage_appends_the_message_file(repo: Path) -> None:
+    seen = _Recorder()
+    hook = Hook(stage='commit-msg', id='cz', run=('cz', 'check', '--commit-msg-file'))
+    assert run_stage('commit-msg', ['.git/COMMIT_EDITMSG'], root=repo, hooks=(hook,), runner=seen) == 0
+    assert seen.calls[0][0][-2:] == ['--commit-msg-file', '.git/COMMIT_EDITMSG']
+
+
+def _push_line(repo: Path, remote_ref: str) -> str:
+    (repo / 'a.py').write_text('x = 1\n', encoding='utf-8')
+    _git(repo, 'add', 'a.py')
+    _git(repo, 'commit', '-qm', 'init', '--no-verify')
+    head = _git(repo, 'rev-parse', 'HEAD').strip()
+    return f'refs/heads/main {head} {remote_ref} {ZERO_SHA}\n'
+
+
+def test_a_pre_push_refusal_reaches_git_through_the_runner(repo: Path) -> None:
+    """PLANTED CONTROL: a hook refusing a push to main must turn the stage's exit non-zero."""
+    stdin = _push_line(repo, 'refs/heads/main')
+    refuse = Hook(
+        stage='pre-push',
+        id='refuse-main',
+        run=('python', '-c', 'import sys; sys.exit(1 if " refs/heads/main " in sys.stdin.read() else 0)'),
+        always_run=True,
+        refs='^refs/heads/',
+    )
+    assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin=stdin, hooks=(refuse,)) == 1
+
+
+def test_a_ref_filter_skips_a_hook_whose_refs_were_not_pushed(repo: Path) -> None:
+    stdin = _push_line(repo, 'refs/tags/v1')
+    seen = _Recorder(code=1)
+    branch_only = Hook(stage='pre-push', id='b', run=('tool',), always_run=True, refs='^refs/heads/')
+    assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin=stdin, hooks=(branch_only,), runner=seen) == 0
+    assert seen.calls == []
+
+
+def test_the_pre_push_stage_selects_among_the_paths_the_push_changes(repo: Path) -> None:
+    stdin = _push_line(repo, 'refs/heads/main')
+    seen = _Recorder()
+    py = Hook(stage='pre-push', id='py', run=('tool',), files=r'\.py$', pass_files=True)
+    assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin=stdin, hooks=(py,), runner=seen) == 0
+    assert seen.calls[0][0][1:] == ['a.py']
+    assert seen.calls[0][1] == stdin, "the hook reads git's own ref lines"
+
+
+def test_push_lines_are_git_s_four_fields_and_a_deletion_is_recognised() -> None:
+    lines = parse_push_lines(f'(delete) {ZERO_SHA} refs/heads/x {"a" * 40}\nnoise\n')
+    assert len(lines) == 1
+    assert lines[0].deleted
+
+
+def test_the_run_verb_runs_the_real_base_over_a_real_staged_file(repo: Path, monkeypatch) -> None:
+    """End to end through the CLI: the base's trailing-whitespace check refuses, then passes."""
+    monkeypatch.chdir(repo)
+    (repo / 'notes.txt').write_text('trailing \n', encoding='utf-8')
+    _git(repo, 'add', 'notes.txt')
+    assert githooks_main(['run', 'pre-commit']) == 1
+    (repo / 'notes.txt').write_text('clean\n', encoding='utf-8')
+    _git(repo, 'add', 'notes.txt')
+    assert githooks_main(['run', 'pre-commit']) == 0
+
+
+def test_a_hook_s_env_table_reaches_its_command(repo: Path) -> None:
+    hook = Hook(stage='commit-msg', id='e', run=('tool',), env={'LAB_CZ_BASE_REF': 'origin/main'})
+    seen = _Recorder()
+    run_stage('commit-msg', ['m'], root=repo, hooks=(hook,), runner=seen)
+    assert seen.env == {'LAB_CZ_BASE_REF': 'origin/main'}

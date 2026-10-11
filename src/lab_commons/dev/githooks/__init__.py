@@ -1,4 +1,9 @@
-"""The git hook SCRIPTS the family ships, and the mechanism that makes them reachable without a copy.
+"""Git hooks: the TOML-declared stages and their one runner, plus the hook SCRIPTS the family ships.
+
+``python -m lab_commons.dev.githooks run <stage>`` runs every hook :mod:`~lab_commons.dev.githooks.table`
+declares for a stage (:mod:`~lab_commons.dev.githooks.runner`); it is what each installed
+``.git/hooks/<stage>`` shim execs in the repo venv (:mod:`lab_commons.dev.hook_install`). The rest of
+this module ships bash payloads a hook row may run with ``script <name>``.
 
 WHY A PAYLOAD AND NOT A DOCUMENTED FILE TO COPY. ``bump-version.sh`` existed twice -- once in
 consumer-a, once in consumer-b -- and the two had drifted for months in one direction only: every
@@ -6,7 +11,7 @@ fix landed in the copy whose author hit the defect. A "shared" script each repo 
 it claims to remove, wearing a new name, so the shared thing here is an INSTALLED FILE. A consumer
 declares ``lab-commons[dev]`` and names a MODULE:
 
-    python -m lab_commons.dev.githooks bump-version
+    python -m lab_commons.dev.githooks script bump-version
 
 That line resolves through the interpreter already running, cannot go stale against a checkout it
 never reads, and updates with the dependency. There is no path for a consumer to write down and no
@@ -22,18 +27,9 @@ WHAT THE SCRIPTS MAY NOT DO is assume a repo. Every repo-specific decision a hoo
 an environment variable, and each script's own header names them. A hook that branched on a repo
 name would be the fork again, one indirection along. A decision that is DERIVABLE here carries a
 default (the release branch reads from the remote's HEAD); a decision that is a FACT ABOUT ONE REPO
-carries none, and the script refuses when it is missing -- ``branch-push-only.sh``'s protected ref
-and ``cz-push-range.sh``'s base ref are both of that second kind, because a default would hand every
-other repo one repo's answer while looking like it worked.
-
-AND THE CONSUMER-SIDE BOOTSTRAP IS :mod:`lab_commons.dev.githooks.bootstrap`, which is what makes the
-paragraph above true for pre-commit and not only for a caller that already has an interpreter. A
-``.pre-commit-config.yaml`` entry is exec'd rather than evaluated, so its first token must already be
-runnable -- and measured against a real ``pre-commit.exe``, a ``language: system`` hook inherits a
-PATH with no venv on it at all. That module ships as the ``lab-with-venv`` console script and is
-reached under ``language: python``, where pre-commit supplies the interpreter in front of it; it then
-resolves the CONSUMER's own venv and hands the command over, so the environment pre-commit caches
-stays a launcher rather than becoming a second install of this package.
+carries none, and the script refuses when it is missing -- ``cz-push-range.sh``'s base ref is of that
+second kind, because a default would hand every other repo one repo's answer while looking like it
+worked. A hook row passes them with its ``env`` table.
 
 NOT EVERY SHIPPED SCRIPT IS A HOOK, and the distinction is enforced rather than left to a reader.
 ``with-venv.sh`` is a WRAPPER -- it takes the command to run as its arguments -- and
@@ -54,6 +50,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.githooks import runner
+from lab_commons.dev.githooks.table import STAGES
+from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 __all__ = [
@@ -80,7 +79,7 @@ __all__ = [
 #: Every shipped script is a bash script; the suffix is what :data:`SCRIPTS` is derived through.
 HOOK_SUFFIX: Final = '.sh'
 
-#: Runnable as a git hook entry: pre-commit invokes it and reads its exit code.
+#: Runnable as a hook row`s command: the runner invokes it and reads its exit code.
 HOOK: Final = 'hook'
 #: Takes the command to run as its arguments; a hook entry wraps a real command in it.
 WRAPPER: Final = 'wrapper'
@@ -98,7 +97,6 @@ SCRIPTS: Final[tuple[str, ...]] = tuple(sorted(p.stem for p in _HERE.glob(f'*{HO
 #: What each shipped script IS. The registry owns this; the directory owns which scripts exist, and
 #: :func:`undeclared` is where the two are made to agree in both directions.
 KINDS: Final[dict[str, str]] = {
-    'branch-push-only': WRAPPER,
     'branchset-push': HOOK,
     'bump-version': HOOK,
     'cz-push-range': HOOK,
@@ -121,9 +119,8 @@ PYTHON_ENV: Final = 'LAB_PYTHON'
 class HookNotShipped(LookupError):
     """A hook was asked for by a name this package does not ship.
 
-    Its own class rather than ``KeyError`` because the caller it is aimed at is a consumer's
-    ``.pre-commit-config.yaml``, and the fix is to correct the name or to ship the hook here -- not
-    to guard the lookup.
+    Its own class rather than ``KeyError`` because the caller it is aimed at is a consumer's hook
+    row, and the fix is to correct the name or to ship the hook here -- not to guard the lookup.
     """
 
 
@@ -259,7 +256,7 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
     if kind(name) == FRAGMENT:
         msg = (
             f'{name!r} is a {FRAGMENT}: it is SOURCED into a shell (`. "$(python -m '
-            f'lab_commons.dev.githooks --path {name})"`), never run. Running it would exit 0 having '
+            f'lab_commons.dev.githooks script --path {name})"`), never run. Running it would exit 0 having '
             f'done nothing, which reads exactly like a hook that passed.'
         )
         raise NotRunnable(msg)
@@ -273,22 +270,36 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m lab_commons.dev.githooks <script> [args...]`` -- the consumer-side entry point."""
+    """``python -m lab_commons.dev.githooks run <stage> [git args]`` | ``script <name> [args]``.
+
+    ``run`` executes a stage's declared hooks (:mod:`lab_commons.dev.githooks.runner`) -- what an
+    installed ``.git/hooks/<stage>`` shim calls. ``script`` runs, locates or lists a shipped script.
+    """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.githooks',
-        description='Run, or locate, a git hook script shipped by lab-commons.',
+        description='Run a git hook stage declared in TOML, or a hook script shipped by lab-commons.',
     )
-    parser.add_argument('hook', nargs='?', help=f'which script ({", ".join(SCRIPTS) or "none shipped"})')
-    parser.add_argument('args', nargs=argparse.REMAINDER, help='arguments forwarded to the script')
-    parser.add_argument('--path', action='store_true', help='print the script path instead of running it')
-    parser.add_argument('--list', action='store_true', help='print every shipped script, one per line')
-    parser.add_argument(
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    run = verbs.add_parser('run', help='run every hook declared for a stage')
+    run.add_argument('stage', choices=STAGES)
+    run.add_argument('args', nargs=argparse.REMAINDER, help="git's own hook arguments")
+    script = verbs.add_parser('script', help='run, locate or list a shipped script')
+    script.add_argument('hook', nargs='?', help=f'which script ({", ".join(SCRIPTS) or "none shipped"})')
+    script.add_argument('args', nargs=argparse.REMAINDER, help='arguments forwarded to the script')
+    script.add_argument('--path', action='store_true', help='print the script path instead of running it')
+    script.add_argument('--list', action='store_true', help='print every shipped script, one per line')
+    script.add_argument(
         '--kind',
         choices=(HOOK, WRAPPER, FRAGMENT),
         help=f'with --list, only scripts of this kind; a {FRAGMENT} is sourced rather than run',
     )
-    parsed = parser.parse_args(argv)
+    words = list(sys.argv[1:] if argv is None else argv)
+    if words and (refused := refusal('lab_commons.dev.githooks', words[0])):
+        parser.error(refused)
+    parsed = parser.parse_args(words)
 
+    if parsed.verb == 'run':
+        return runner.main(parsed.stage, parsed.args)
     if parsed.list:
         listed = SCRIPTS if parsed.kind is None else scripts_of_kind(parsed.kind)
         emit('\n'.join(listed))

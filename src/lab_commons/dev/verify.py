@@ -51,7 +51,7 @@ from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
-from lab_commons.dev.hook_install import UNPROTECTED, hook_installation, install_command
+from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
@@ -295,7 +295,7 @@ def read_hooks(root: Path, *, handle: IO[str]) -> StepReport:
     for stage in report.failing:
         handle.write(f'  {stage.stage:<12} {stage.status:<28} {stage.detail}\n')
     if report.verdict == UNPROTECTED:
-        handle.write(f'  remedy: python {" ".join(install_command(root))}\n')
+        handle.write(f'  remedy: {INSTALL_COMMAND}\n')
     handle.flush()
     failed = (HOOKS_STEP,) if report.verdict == UNPROTECTED else ()
     return StepReport(name=HOOKS_STEP, reported=(HOOKS_STEP,), failures=failed)

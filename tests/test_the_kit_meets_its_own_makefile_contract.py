@@ -7,8 +7,8 @@ four repos. This repo declared no Makefile delta and met five of the nine: `all`
 chain rather than the module this package ships for exactly that job. The repo publishing the
 contract was the one repo outside it, which is the shape the config census found at every layer.
 
-WHY THIS IS A SEPARATE MODULE FROM THE PRE-COMMIT ONE. The two artefacts are judged under different
-MODES and the difference is the whole point of there being two: `.pre-commit-config.yaml` is RENDERED
+WHY THIS IS A SEPARATE MODULE FROM THE GITIGNORE ONE. The two artefacts are judged under different
+MODES and the difference is the whole point of there being two: `.gitignore` is RENDERED
 and its bytes must equal base-plus-delta, while `Makefile` is REQUIRED and only the base LINES must
 be present, because the four measured repos share target NAMES and no recipe. Filing both under a
 module named for the rendered one would bury that.

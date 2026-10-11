@@ -70,9 +70,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   code. The injected-document corpus (``AGENTS.md``/``CLAUDE.md`` by basename, ``.claude/rules/**``,
   ``.claude/memory/`` excluded) is DATA a consumer may override, and the ratchet shape is the same
   named-set declaration as :mod:`lab_commons.dev.cjk`.
-* :mod:`lab_commons.dev.hook_install` — HOOKS-ARE-WIRED, and the half a ``.pre-commit-config.yaml``
-  cannot answer for itself: a configuration DECLARES hooks, ``pre-commit install`` is a separate act
-  on a separate machine, and nothing links the two. Measured 2026-09-16: ``consumer-b`` and
+* :mod:`lab_commons.dev.hook_install` — HOOKS-ARE-WIRED, and the half a hook table cannot answer
+  for itself: the TOML DECLARES hooks, installing their shims is a separate act on a separate
+  machine, and nothing links the two. Measured 2026-09-16: ``consumer-b`` and
   ``consumer-c`` each declared a full configuration and had ZERO hooks installed. It reports and
   never repairs itself -- a hooks directory is shared by every worktree of a checkout -- and its
   refusal names a remedy DERIVED from the configuration rather than restated beside it.
@@ -95,13 +95,14 @@ are too unqualified to survive being flattened into a namespace this wide.
   have" exactly and without a network call. Measured against the REMOTE and never a local pointer,
   and with ``git cherry`` rather than ancestry, because those are the two ways this audit has
   actually been observed to lie.
-* :mod:`lab_commons.dev.githooks` -- the git hook SCRIPTS themselves, shipped as a package payload
-  and reached by NAME (``python -m lab_commons.dev.githooks bump-version``). Five scripts as of R4,
-  and they are not all hooks: ``with-venv`` and ``branch-push-only`` are WRAPPERS that take the
+* :mod:`lab_commons.dev.githooks` -- the TOML hook table, its one runner (``python -m
+  lab_commons.dev.githooks run <stage>``), and the hook SCRIPTS shipped as a package payload and
+  reached by NAME (``... githooks script bump-version``). They are not all hooks: ``with-venv`` is a
+  WRAPPER that takes the
   command to run as arguments, and ``git-env-repair`` is a FRAGMENT that is SOURCED -- running one
   exits 0 having done nothing, which reads exactly like a hook that passed, so ``KINDS`` declares
   what each is and ``run_hook`` refuses the fragment. A repo fact a script cannot derive arrives as
-  an environment variable with NO DEFAULT (``LAB_PUSH_PROTECTED_REF``, ``LAB_CZ_BASE_REF``), the
+  an environment variable with NO DEFAULT (``LAB_CZ_BASE_REF``, passed by a hook row`s ``env``), the
   shape :mod:`~lab_commons.dev.dep` already uses. Not re-exported below: it is run, not imported.
 * :mod:`lab_commons.dev.agenthooks` -- the agent-guard ENGINE itself, shipped as a package payload
   the way ``githooks`` ships its scripts, and JavaScript because a ``PreToolUse`` hook is a command
@@ -298,8 +299,8 @@ reader guessing which of two unrelated answers they are holding. Import them by 
 
 NOR ARE THE MODULES THAT NEED AN EXTRA: :mod:`~lab_commons.dev.profile`, :mod:`~lab_commons.dev.rules`,
 :mod:`~lab_commons.dev.reports` and :mod:`~lab_commons.dev.quantity_values` reach ``platformdirs``, ``rtoml`` or
-``pint``. Every submodule import runs this file first, so re-exporting them here made the stdlib-only hook
-launcher (:mod:`lab_commons.dev.githooks.bootstrap`) fail in an environment installed without extras.
+``pint``. Every submodule import runs this file first, so re-exporting them here would make the stdlib-only
+hook runner (:mod:`lab_commons.dev.githooks`) fail in an environment installed without extras.
 Import them by module.
 
 WHAT IS DELIBERATELY NOT HERE YET: the five architecture mechanisms (public-surface declaration,

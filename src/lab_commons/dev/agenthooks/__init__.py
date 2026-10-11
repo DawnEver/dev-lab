@@ -24,7 +24,7 @@ deleted stops being advertised, rather than either being a list somebody maintai
 
 WHERE THIS DIFFERS FROM ``githooks``, AND WHY -- the one place the precedent does not fit, stated
 because following it blindly would have produced a guard that is slower on EVERY tool call. A git
-hook is reached by NAME through the interpreter (``python -m lab_commons.dev.githooks bump-version``)
+hook is reached by NAME through the interpreter (``python -m lab_commons.dev.githooks script bump-version``)
 and never copied. A ``PreToolUse`` hook cannot take that route:
 
 * it runs on every single Bash tool call, and an interpreter start per call to locate a file is a

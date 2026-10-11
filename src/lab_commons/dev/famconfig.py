@@ -1,6 +1,6 @@
 r"""The family's config artefacts as ONE BASE PLUS A NAMED DELTA, and a guard that reds on a hand edit.
 
-THE DEFECT THIS CLOSES. `.gitignore`, `.pre-commit-config.yaml` and `Makefile` are hand-maintained
+THE DEFECT THIS CLOSES. `.gitignore`, `Makefile` and their siblings are hand-maintained
 three times each across the consumers of this package, and the shared halves are large and boring --
 the counts, and what each was measured over, are in :mod:`lab_commons.dev._famconfig_rows`, which is
 DATA and computes nothing. Nothing links the copies, so a fix in one is a fix in one.
@@ -27,9 +27,9 @@ drop as a comment, so the removal is legible to a reader of the artefact and not
 this package.
 
 AND AN APPEND CANNOT REACH INSIDE A BLOCK, which is the same limit pointing the other way and it
-blocked `.pre-commit-config.yaml` in both labs until 2026-09-17. Their extra `pre-commit-hooks` ids,
-and the `exclude:` one of them must hang on `trailing-whitespace`, belong INSIDE the entry the base
-renders. So an addition may be ANCHORED to a base line -- see :attr:`Delta.anchored` for why that was
+blocked the retired hook configuration file in both labs until 2026-09-17: their extra hook ids,
+and the `exclude:` one of them had to hang on `trailing-whitespace`, belonged INSIDE the entry the
+base rendered. So an addition may be ANCHORED to a base line -- see :attr:`Delta.anchored` for why that was
 preferred to dropping the block and restating it, which is a fork wearing a workaround as a disguise.
 An anchor names a position by a base line's TEXT, so it is refused when the base does not have that
 line, when the base has it more than once, and when the same delta also drops it.
@@ -76,8 +76,6 @@ re-exported here, so the surface a consumer imports is still one name.
 
 from __future__ import annotations
 
-import dataclasses
-import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,9 +90,6 @@ from lab_commons.dev._famconfig_refusals import (
 from lab_commons.dev._famconfig_rows import BASES as _BASE_LINES
 from lab_commons.dev._famconfig_rows import (
     GITIGNORE_FLOOR,
-    HOOK_ID_CORE,
-    HOOK_LAB_COMMONS,
-    HOOK_LAB_COMMONS_REV,
     MAKE_TARGET_CORE,
     ORDER_SENSITIVE_ARTEFACTS,
     REPO_FLOOR,
@@ -127,11 +122,9 @@ from lab_commons.dev._famconfig_survey import (
     Delta,
     VacuousBase,
     assert_base_floor,
-    declared_hooks,
     delta_lines,
     floating_subject,
     fork_signals,
-    hook_delta,
     meaningful_lines,
     measured_delta,
     negated_base_lines,
@@ -148,7 +141,6 @@ __all__ = [
     'DRIFTED',
     'FOREIGN',
     'GITIGNORE_FLOOR',
-    'HOOK_ID_CORE',
     'INSTALLED',
     'MAKE_TARGET_CORE',
     'MIN_BASE_LINES',
@@ -178,19 +170,14 @@ __all__ = [
     'artefact_base',
     'assert_base_floor',
     'assert_base_is_order_free',
-    'declared_hooks',
     'delta_lines',
     'delta_problems',
     'expected_entries',
     'floating_subject',
     'fork_signals',
-    'hook_delta',
-    'hook_requirement',
     'inspect_file',
     'inspect_section',
-    'lab_commons_source',
     'locate_section',
-    'locked_lab_commons',
     'meaningful_lines',
     'measured_delta',
     'negated_base_lines',
@@ -224,58 +211,13 @@ FOREIGN: Final = 'FOREIGN'
 #: arrives here and a base deleted there cannot leave a live entry behind.
 BASES: Final[dict[str, Base]] = {
     '.gitignore': Base('.gitignore', _BASE_LINES['.gitignore'], RENDERED),
-    '.pre-commit-config.yaml': Base('.pre-commit-config.yaml', _BASE_LINES['.pre-commit-config.yaml'], RENDERED),
     'Makefile': Base('Makefile', _BASE_LINES['Makefile'], REQUIRED),
     '.gitattributes': Base('.gitattributes', _BASE_LINES['.gitattributes'], RENDERED),
     '.rgignore': Base('.rgignore', _BASE_LINES['.rgignore'], RENDERED),
 }
 
 
-def lab_commons_source(root: Path) -> str | None:
-    """The lab-commons git URL *root* declares in ``[tool.uv] override-dependencies``, or ``None``.
-
-    THE SINGLE DECLARATION a private-forge repo makes: an override replaces every requirement on the
-    package, so it is also what that repo's hook environments must install.
-    """
-    manifest = root / 'pyproject.toml'
-    if not manifest.is_file():
-        return None
-    overrides = tomllib.loads(manifest.read_text(encoding='utf-8')).get('tool', {}).get('uv', {})
-    for requirement in overrides.get('override-dependencies', ()):
-        name, _, source = str(requirement).partition('@')
-        if name.split('[')[0].strip() == 'lab-commons' and source.strip().startswith('git+'):
-            url = source.strip().removeprefix('git+')
-            head, at, ref = url.rpartition('@')
-            return head if at and '/' not in ref else url
-    return None
-
-
-def locked_lab_commons(root: Path) -> tuple[str, str] | None:
-    """``(url, commit)`` of lab-commons in *root*'s ``uv.lock`` -- what its venv really runs -- or ``None``."""
-    lock = root / 'uv.lock'
-    if not lock.is_file():
-        return None
-    for package in tomllib.loads(lock.read_text(encoding='utf-8')).get('package', ()):
-        source = package.get('source', {}).get('git', '')
-        if package.get('name') == 'lab-commons' and '#' in source:
-            url, _, commit = source.partition('#')
-            return url.split('?', 1)[0], commit
-    return None
-
-
-def hook_requirement(root: Path | None) -> str:
-    """The lab-commons requirement *root*'s hook environments install -- the SAME lab-commons its venv runs.
-
-    The lock first (its resolved url and commit, so a hook never judges with another revision than the
-    gate), else the declared override url at the kit's pin, else the public url at the kit's pin.
-    """
-    if root is not None and (locked := locked_lab_commons(root)) is not None:
-        return f'lab-commons @ git+{locked[0]}@{locked[1]}'
-    url = None if root is None else lab_commons_source(root)
-    return HOOK_LAB_COMMONS if url is None else f'lab-commons @ git+{url}@{HOOK_LAB_COMMONS_REV}'
-
-
-def artefact_base(artefact: str, root: Path | None = None) -> Base:
+def artefact_base(artefact: str) -> Base:
     """The base for *artefact*, or a refusal naming the ones that exist.
 
     A lookup rather than an attribute so that an artefact this package does not own fails HERE, with
@@ -294,9 +236,6 @@ def artefact_base(artefact: str, root: Path | None = None) -> Base:
         )
         raise ForkedDelta(msg)
     assert_base_is_order_free(base)
-    wanted = hook_requirement(root)
-    if wanted != HOOK_LAB_COMMONS:
-        base = dataclasses.replace(base, lines=tuple(line.replace(HOOK_LAB_COMMONS, wanted) for line in base.lines))
     return base
 
 

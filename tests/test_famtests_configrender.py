@@ -8,20 +8,11 @@ the kit's own renderer, then bends exactly one thing about it.
 EVERY REFUSAL IS PLANTED IN BOTH DIRECTIONS. A guard that only ever reds is as useless as one that
 only ever passes, and both readings look identical from a green suite, so each arm below drives the
 passing state through the SAME function first.
-
-THE RESOLVER IS THE TEST'S, AND SO IT MUST BE. ``pre_commit`` is not installed in this package and
-must not become a dependency of it -- ``lab_commons.dev``'s own inventory records that the layer is
-"stdlib plus tier 1" and that ``pip install lab-commons`` pulls nothing new. The stage engine is
-therefore a REQUIRED ARGUMENT with no default, and the arms here supply a real callable that reads a
-real file, which is also what proves the refusal fires when a caller supplies nothing usable.
 """
 
 from __future__ import annotations
 
-import json
 import re
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -36,32 +27,17 @@ from lab_commons.dev.famconfig import (
     render,
 )
 from lab_commons.dev.famtests.configrender import (
-    UnresolvedHooks,
     assert_artefact_is_rendered,
-    assert_declared_ids_survive,
     assert_delta_is_not_a_fork,
     assert_every_base_is_accounted_for,
     assert_modes_are_as_agreed,
     assert_no_base_line_left_undeclared,
     assert_no_rule_is_reopened,
-    assert_pre_push_premise,
     assert_render_round_trips,
-    assert_stage_declaration,
-    declared_hook_ids,
     reopenings,
-    resolved_stages,
-    stage_partition,
 )
 
 _REPO = 'planted-repo'
-
-
-@dataclass(frozen=True)
-class _Hook:
-    """What a stage engine hands back: an id and the stages it resolved to. Duck-typed on purpose."""
-
-    id: str
-    stages: tuple[str, ...]
 
 
 def _gitignore_delta(**over: object) -> Delta:
@@ -226,168 +202,6 @@ def test_the_reopening_scan_refuses_a_base_it_could_not_read() -> None:
     assert reopenings(empty, _gitignore_delta()).base_directories == ()
     with pytest.raises(AssertionError, match='directory rule'):
         assert_no_rule_is_reopened(base=empty, delta=_gitignore_delta(), repo=_REPO, directory_floor=1)
-
-
-# ---------------------------------------------------------------- the hook ids, read off the file
-
-
-def test_the_declared_ids_are_read_off_the_real_artefact(tmp_path: Path) -> None:
-    """A named set that only ever agrees with itself stays green through losing every hook it names."""
-    path = tmp_path / '.pre-commit-config.yaml'
-    path.write_text(
-        'repos:\n  - repo: somewhere\n    hooks:\n      - id: alpha\n      - id: beta\n        exclude: x\n',
-        encoding='utf-8',
-    )
-    assert declared_hook_ids(path) == frozenset({'alpha', 'beta'})
-    assert_declared_ids_survive(config=path, extra_hook_ids=('alpha',), hook_floor=2)
-
-    with pytest.raises(AssertionError, match='gamma'):
-        assert_declared_ids_survive(config=path, extra_hook_ids=('alpha', 'gamma'), hook_floor=2)
-
-
-def test_an_unreadable_config_answers_None_and_the_assert_refuses(tmp_path: Path) -> None:
-    """``None`` is not the empty set: a file that is not there names no ids and denies none either."""
-    assert declared_hook_ids(tmp_path / 'absent.yaml') is None
-    with pytest.raises(AssertionError, match='could not be read'):
-        assert_declared_ids_survive(config=tmp_path / 'absent.yaml', extra_hook_ids=('alpha',), hook_floor=1)
-
-
-def test_a_config_below_the_floor_is_refused_rather_than_reported_clean(tmp_path: Path) -> None:
-    """A subset check against a file that parsed to nothing agrees with every claim made about it."""
-    path = tmp_path / '.pre-commit-config.yaml'
-    path.write_text('repos: []\n', encoding='utf-8')
-    assert declared_hook_ids(path) == frozenset()
-    with pytest.raises(AssertionError, match='below the'):
-        assert_declared_ids_survive(config=path, extra_hook_ids=(), hook_floor=5)
-
-
-# ---------------------------------------------------------------- the stages, through a real engine
-
-
-def _engine(table: Path) -> Callable[[Path], tuple[_Hook, ...]]:
-    """A REAL resolver: it reads a REAL file and returns what that file says. No default exists."""
-
-    def resolve(config: Path) -> tuple[_Hook, ...]:
-        rows = json.loads((table.parent / f'{config.name}.resolved').read_text(encoding='utf-8'))
-        return tuple(_Hook(id=row['id'], stages=tuple(row['stages'])) for row in rows)
-
-    return resolve
-
-
-def _resolved(tmp_path: Path, rows: list[dict[str, object]]) -> Path:
-    config = tmp_path / '.pre-commit-config.yaml'
-    config.write_text('repos: []\n', encoding='utf-8')
-    (tmp_path / f'{config.name}.resolved').write_text(json.dumps(rows), encoding='utf-8')
-    return config
-
-
-def test_the_stage_partition_is_two_sided_on_both_sets(tmp_path: Path) -> None:
-    """A declaration that only listed what MOVED could not see a hook silently joining the move."""
-    rows = [
-        {'id': 'narrowed-one', 'stages': ['pre-commit']},
-        {'id': 'narrowed-two', 'stages': ['pre-commit']},
-        {'id': 'keeps-push', 'stages': ['pre-commit', 'pre-push', 'manual']},
-        {'id': 'commit-msg-hook', 'stages': ['commit-msg']},
-    ]
-    config = _resolved(tmp_path, rows)
-    resolve = _engine(config)
-
-    partition = stage_partition(resolved_stages(config, resolve=resolve))
-    assert partition.narrowed == frozenset({'narrowed-one', 'narrowed-two'}), partition
-    assert partition.pre_push == frozenset({'keeps-push'}), partition
-
-    assert_stage_declaration(
-        config=config,
-        resolve=resolve,
-        hook_floor=4,
-        narrowed=frozenset({'narrowed-one', 'narrowed-two'}),
-        keeps_pre_push=frozenset({'keeps-push'}),
-    )
-
-    with pytest.raises(AssertionError, match='narrowed-two'):
-        assert_stage_declaration(
-            config=config,
-            resolve=resolve,
-            hook_floor=4,
-            narrowed=frozenset({'narrowed-one'}),
-            keeps_pre_push=frozenset({'keeps-push'}),
-        )
-    with pytest.raises(AssertionError, match='keeps-push'):
-        assert_stage_declaration(
-            config=config,
-            resolve=resolve,
-            hook_floor=4,
-            narrowed=frozenset({'narrowed-one', 'narrowed-two'}),
-            keeps_pre_push=frozenset(),
-        )
-
-
-def test_a_declared_empty_narrowing_is_a_measurement_and_not_a_hole(tmp_path: Path) -> None:
-    """``frozenset()`` must be SPELLED: "we measured and none narrowed" is not "we never asked"."""
-    config = _resolved(tmp_path, [{'id': 'keeps-push', 'stages': ['pre-commit', 'pre-push']}])
-    assert_stage_declaration(
-        config=config,
-        resolve=_engine(config),
-        hook_floor=1,
-        narrowed=frozenset(),
-        keeps_pre_push=frozenset({'keeps-push'}),
-    )
-
-
-def test_an_engine_that_resolved_nothing_refuses_rather_than_agreeing(tmp_path: Path) -> None:
-    """THE FLOOR.
-
-    A stage table read off a config the engine resolved to nothing agrees with every claim made about
-    it, including a declaration that narrowed everything.
-    """
-    config = _resolved(tmp_path, [])
-    with pytest.raises(UnresolvedHooks, match='below the'):
-        assert_stage_declaration(
-            config=config,
-            resolve=_engine(config),
-            hook_floor=5,
-            narrowed=frozenset(),
-            keeps_pre_push=frozenset(),
-        )
-
-
-def test_an_engine_that_raises_is_reported_as_unresolved_and_never_as_empty(tmp_path: Path) -> None:
-    """An engine that could not answer is not an engine that answered nothing."""
-
-    def broken(config: Path) -> tuple[_Hook, ...]:
-        msg = f'the engine could not load {config}'
-        raise RuntimeError(msg)
-
-    config = _resolved(tmp_path, [{'id': 'a', 'stages': ['pre-commit']}])
-    with pytest.raises(UnresolvedHooks, match='could not load'):
-        resolved_stages(config, resolve=broken)
-
-
-# ---------------------------------------------------------------- the premise the narrowing rests on
-
-
-def test_the_pre_push_premise_is_pinned_in_whichever_direction_the_repo_declared(tmp_path: Path) -> None:
-    """The premise is the repo's, so it arrives declared, and BOTH sides red.
-
-    One lab's narrowing is free because it has NO pre-push hook; the other's is a real loss because
-    it has one.
-    """
-    hooks = tmp_path / 'hooks'
-    hooks.mkdir()
-    assert_pre_push_premise(hooks_dir=hooks, pre_push_installed=False)
-    with pytest.raises(AssertionError, match='declares a pre-push hook'):
-        assert_pre_push_premise(hooks_dir=hooks, pre_push_installed=True)
-
-    (hooks / 'pre-push').write_text('#!/bin/sh\n', encoding='utf-8')
-    assert_pre_push_premise(hooks_dir=hooks, pre_push_installed=True)
-    with pytest.raises(AssertionError, match='a pre-push hook is installed'):
-        assert_pre_push_premise(hooks_dir=hooks, pre_push_installed=False)
-
-
-def test_a_hooks_directory_that_is_not_there_is_refused(tmp_path: Path) -> None:
-    """A guard that looked nowhere reports the same green as one that looked and found nothing."""
-    with pytest.raises(AssertionError, match='looked nowhere'):
-        assert_pre_push_premise(hooks_dir=tmp_path / 'absent', pre_push_installed=False)
 
 
 # ---------------------------------------------------------------- the modes, and the survey

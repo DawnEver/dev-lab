@@ -1,6 +1,6 @@
 """PROJECT-FILES-HAVE-ONE-SOURCE: the single list of every project-level file, and who owns each one.
 
-THE RULING, 2026-10-03: `.gitignore`, `Makefile`, `.pre-commit-config.yaml`, `ruff.toml` "and the
+THE RULING, 2026-10-03: `.gitignore`, `Makefile`, the git hooks, `ruff.toml` "and the
 rest" -- every project-level file the four repos repeat -- has ONE source of truth, here. The engines
 already existed one file at a time (:mod:`lab_commons.dev.famconfig` for whole files,
 :mod:`lab_commons.dev._famconfig_sections` for config TABLES, :mod:`lab_commons.dev.agent_guard` and
@@ -81,15 +81,14 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('.gitignore', 'famconfig RENDERED: consumer core + GITIGNORE_FAMILY_LINES, plus the repo Delta'),
         _m('.gitattributes', 'famconfig RENDERED: the shipped-shell-payload line, plus the repo Delta'),
         _m('.rgignore', 'famconfig RENDERED: what ripgrep and the agent Grep tool skip (attic/), plus the repo Delta'),
-        _m('.pre-commit-config.yaml', 'famconfig RENDERED: the hook-id core, plus the repo Delta'),
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the PreToolUse hook) and allow_adoption'),
         _m('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
         _m('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
-        _m('.github/workflows/python-verify.yml', 'THE family CI definition, hosted here and called by every repo'),
-        _m('.github/workflows/ci.yml', 'a thin caller of lab-commons` python-verify.yml; the checks are `make verify`'),
+        _m('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),
+        _m('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.lab_commons.ci]'),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o(
@@ -157,7 +156,7 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     """
     out: list[str] = []
     for artefact in sorted(deltas):
-        base = artefact_base(artefact, root)
+        base = artefact_base(artefact)
         path = root / artefact
         report = inspect_file(path, base, deltas[artefact])
         if report.status == INSTALLED:

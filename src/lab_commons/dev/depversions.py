@@ -9,7 +9,7 @@ resolved at ``0.1.1 @ 5127b6d8`` with its remote **174 commits** ahead of that v
 the two other libraries the family vendors sat **85** and **688** commits behind theirs. The cost
 was already being paid, MEASURED the same day: one consumer's virtualenv held this library at
 ``0.1.1``, which predates ``lab_commons.dev`` entirely, so the pre-push hook that runs
-``uv run --no-sync python -m lab_commons.dev.githooks bump-version`` died with
+``uv run --no-sync python -m lab_commons.dev.githooks script bump-version`` died with
 ``ModuleNotFoundError`` and that checkout could not be pushed at all.
 
 WHY THIS IS A FAMILY MODULE AND NOT A PER-REPO GUARD. The three drifts above are three different
