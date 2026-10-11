@@ -31,7 +31,7 @@ import json
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -150,7 +150,7 @@ def _seat(item: Work) -> str:
     return f'hpc:{item.holder.hpc}' if item.holder is not None and item.holder.hpc else 'local'
 
 
-def _pump(stream: Any, platform: str, say: Callable[[str], None]) -> None:  # noqa: ANN401 -- a text stream
+def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None]) -> None:
     for line in stream:
         say(f'[{platform}] {line.rstrip()}')
 
