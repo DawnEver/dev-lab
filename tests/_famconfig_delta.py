@@ -66,6 +66,7 @@ from __future__ import annotations
 
 from typing import Final
 
+from lab_commons.dev._famconfig_rows import HOOK_LAB_COMMONS
 from lab_commons.dev.famconfig import Delta
 
 __all__ = [
@@ -93,10 +94,32 @@ PRECOMMIT: Final = '.pre-commit-config.yaml'
 MAKEFILE: Final = 'Makefile'
 
 #: NOTHING ADDED, NOTHING DROPPED -- the module docstring is the evidence for each half. A ceiling of
-#: ZERO is the ratchet: this repo runs no hook of its own today, so the next line anybody adds has to
-#: raise the ceiling in the same edit and say what it is for, rather than arriving as a diff that
-#: looks like the base growing.
-PRECOMMIT_DELTA: Final = Delta(repo=REPO, added=(), dropped={}, ceiling=0)
+#: ONE HOOK, `admission`, since 2026-10-11, and the ceiling is its line count. MEASURED that day: this
+#: repo's `git push origin main` of 3e46f63 was admitted with no `tests/<platform>` part on the forge,
+#: because no pre-push stage existed here -- the trunk rule in `lab_commons.dev.admission` was the kit's
+#: and was never run on the kit. The old reason for having none ("a pre-push re-running `make verify`
+#: would block every push") no longer describes the hook: admission runs NO test, it reads HEAD's parts
+#: off the forge; a lane or tag push is admitted at once, and the trunk needs every part a full PASS
+#: (no part at all is refused, naming the linux producer). The trunk ref is `[tool.lab_commons.branchset]`.
+PRECOMMIT_DELTA: Final = Delta(
+    repo=REPO,
+    added=(
+        '  - hooks:',
+        '      - id: admission',
+        '        name: push admission over the forge parts (lab_commons.dev.admission)',
+        '        entry: lab-with-venv',
+        "        args: ['lab_commons.dev.admission', '--trunk-ref', 'refs/heads/main']",
+        '        language: python',
+        f"        additional_dependencies: ['{HOOK_LAB_COMMONS}']",
+        '        always_run: true',
+        '        pass_filenames: false',
+        '        verbose: true',
+        '        stages: [pre-push]',
+        '    repo: local',
+    ),
+    dropped={},
+    ceiling=12,
+)
 
 #: This repo's OWN Makefile lines -- everything the family base does not name. MEASURED 2026-09-18 by
 #: the kit's survey against the adopted file: 26 lines, 0 drops. The ceiling IS the measurement rather
@@ -177,11 +200,10 @@ DELTAS: Final[dict[str, Delta]] = {
 
 #: The git hook files this repo INSTALLS, which is the half a configuration cannot answer for itself.
 #: Exactly the stages the config declares: `pre-commit` for the default, `commit-msg` for commitizen.
-#: NO `pre-push` -- see the docstring; `make verify` is this repo's whole verdict and a hook re-running
-#: it would block every push. Both labs went a day with `commitizen` DECLARED at `commit-msg` and no
+#: `pre-push` since 2026-10-11 for :data:`PRECOMMIT_DELTA`'s admission hook, which runs no test. Both labs went a day with `commitizen` DECLARED at `commit-msg` and no
 #: shim installed, so every commit message went unchecked while both trees read as guarded; this
 #: constant exists so the same gap cannot open here in silence.
-INSTALLED_STAGES: Final[tuple[str, ...]] = ('commit-msg', 'pre-commit')
+INSTALLED_STAGES: Final[tuple[str, ...]] = ('commit-msg', 'pre-commit', 'pre-push')
 
 #: How many hook ids the rendered config must carry before a subset check over it means anything.
 #: THIRTEEN is the family core and this repo adds none, so the floor IS the count; a file that parsed

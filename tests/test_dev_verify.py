@@ -31,13 +31,17 @@ import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final
 
 import pytest
 
 from lab_commons.dev import localpart, verify
+from lab_commons.dev.cpuseat import CPU_POOL
 from lab_commons.dev.inflight import claim_path
-from lab_commons.dev.logref import LogRef, verify_log
+from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
+from lab_commons.dev.producer import ProducerExit
+from lab_commons.resources import Basis, Exhausted
 from lab_commons.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -970,3 +974,103 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
     assert verify.main(['--no-status']) == EXIT_CODES[Outcome.INCONCLUSIVE]
     assert runs(cache) == ()
     assert localpart.post_part(tmp_path, verdict, 'a' * 40, ()) == 'part: not posted -- an INCONCLUSIVE run is no part'
+
+
+def _held(*_a: object, **_k: object) -> None:
+    raise Exhausted(CPU_POOL, 'box_seats', needed=1, available=0, basis=Basis.CONSERVATIVE_DEFAULT, what='heavy')
+
+
+def _unreadable(_path: Path) -> LogRef:
+    msg = 'the log is empty'
+    raise UnverifiableLog(msg)
+
+
+def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_text: str, pytest_code: int) -> None:
+    """Run the REAL ``main`` and ``run_verify`` with the seat free, the hooks clean and the steps planted."""
+    _cached(monkeypatch, tmp_path)
+    (tmp_path / 'tests').mkdir()
+    monkeypatch.setattr(verify, 'family_freshness', lambda _root: ('', ''))
+    monkeypatch.setattr(verify, 'hold_run_seats', lambda *_a, **_k: None)
+    clean = StepReport(name='hooks', reported=('hooks',), failures=())
+    monkeypatch.setattr(verify, 'read_hooks', lambda _root, handle: clean)
+
+    def tee(command: list[str], *, cwd: Path, handle: io.TextIOBase, extra_env: object = None) -> int:
+        is_pytest = 'pytest' in command
+        handle.write(pytest_text if is_pytest else '')
+        return pytest_code if is_pytest else 0
+
+    monkeypatch.setattr(verify, '_tee', tee)
+
+
+@pytest.mark.parametrize(
+    ('path', 'pytest_text', 'pytest_code', 'plant'),
+    [
+        ('held box', '', 0, ('hold_run_seats', _held)),
+        ('empty selection', 'no tests ran in 0.01s\n', 5, None),
+        ('unusable log', '1 passed in 0.1s\n', 0, ('LogRef', SimpleNamespace(of=_unreadable))),
+    ],
+)
+def test_every_inconclusive_path_exits_3_through_the_producer_contract(
+    monkeypatch, tmp_path: Path, path: str, pytest_text: str, pytest_code: int, plant: tuple | None
+) -> None:
+    """LIVE 2026-10-11: a held-box verify printed `inconclusive` and a `verify && push` chain went on.
+
+    INCONCLUSIVE is ``ProducerExit.INCONCLUSIVE`` (3) on every path: never 0 (a chain proceeds), never 1
+    (a red nobody measured -- what ``raise SystemExit(<str>)`` exits with).
+    """
+    _planted_steps(monkeypatch, tmp_path, pytest_text=pytest_text, pytest_code=pytest_code)
+    if plant is not None:
+        monkeypatch.setattr(verify, *plant)
+    assert verify.main(['--no-status', '--rerun']) == ProducerExit.INCONCLUSIVE, path
+
+
+def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_path: Path) -> None:
+    """THE CONTROL for the paths above: the harness can say PASS, so their 3 is each path's own."""
+    _planted_steps(monkeypatch, tmp_path, pytest_text='1 passed in 0.1s\n', pytest_code=0)
+    assert verify.main(['--no-status', '--rerun']) == ProducerExit.PASS
+
+
+def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
+    """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
+
+    A child holds this box's CPU seat and a second ``python -m lab_commons.dev.verify --lock-wait-s 0``
+    runs; whatever already holds the seat on this box (a sibling's heavy run) only makes the wait real.
+    Its selection is its own, so the run key differs from any enclosing verify and it cannot attach to it.
+    """
+    holder = subprocess.Popen(
+        [sys.executable, '-c', _HOLD_SEAT],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None
+        holder.stdout.readline()  # 'held' or the refusal: either way the seat is now taken
+        done = subprocess.run(
+            [sys.executable, '-m', 'lab_commons.dev.verify', '--no-status', '--rerun', '--lock-wait-s', '0', '--', '-k', 'held_box_probe'],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+        )
+    finally:
+        holder.kill()
+        holder.wait(timeout=30)
+    assert done.returncode == ProducerExit.INCONCLUSIVE, done.stdout + done.stderr
+    assert 'this box is held and nothing was measured' in done.stderr
+
+
+#: A child that takes the box's CPU seat and holds it until killed (the seat may already be held).
+_HOLD_SEAT: Final = (
+    'import sys, time\n'
+    'from lab_commons.dev.cpuseat import CpuSeat\n'
+    'from lab_commons.resources import Exhausted\n'
+    'try:\n'
+    "    with CpuSeat('planted-holder', wait_s=0).held():\n"
+    "        print('held', flush=True)\n"
+    '        time.sleep(600)\n'
+    'except Exhausted:\n'
+    "    print('already held', flush=True)\n"
+    '    time.sleep(600)\n'
+)

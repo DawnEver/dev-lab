@@ -418,10 +418,11 @@ def run_verify(
         MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
         Exhausted: the box was held by another run for the whole of *wait_s*. Nothing was measured,
             so there is no verdict to return; :func:`main` renders it as INCONCLUSIVE.
-        SystemExit: the log came out empty or unreadable, so no verdict may rest on it.
+        UnverifiableLog: the log came out empty or unreadable, so no verdict may rest on it.
             :class:`~lab_commons.dev.logref.LogRef` refuses an empty log, and this refuses with it
-            rather than stamping a verdict whose evidence says nothing -- the two are the same
-            decision, made once, where the log is written.
+            rather than stamping a verdict whose evidence says nothing; :func:`main` renders it as
+            INCONCLUSIVE. It was a ``SystemExit(<str>)`` until 2026-10-11, which Python exits as 1 --
+            a FAIL nobody measured.
 
     """
     allowed = declared_skips(root)
@@ -456,17 +457,12 @@ def run_verify(
             )
         )
     )
-    try:
-        log = LogRef.of(path)
-    except UnverifiableLog as exc:
-        msg = f'verify wrote no usable log: {exc}'
-        raise SystemExit(msg) from exc
     return build_verdict(
         tuple(reports),
         tree=content_address(root, MEASURED_TARGETS),
         env=env_key(env_manifest()),
         spec=' '.join(('verify', *pytest_args)),
-        log=log,
+        log=LogRef.of(path),
     )
 
 
@@ -568,6 +564,10 @@ def _judge(
             f'{holders_line(exc)}. Wait for it, or stop that holder, then re-run; '
             f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait.'
         )
+        emit(line, err=True)
+        return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
+    except UnverifiableLog as exc:
+        line = f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'
         emit(line, err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
     verdict.stamp()
