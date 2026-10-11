@@ -19,13 +19,14 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
-from lab_commons.hpc import outstanding
+from lab_commons.hpc import learned, outstanding
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.measured import Measured
-from lab_commons.hpc.plan import Plan, make_plan
+from lab_commons.hpc.phases import describe, phases
+from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, outcome_of, read_stream
 from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
@@ -326,7 +327,13 @@ class FakeRunCluster:
             return '\n'.join(f'1_{i}|RUNNING' for i in range(9)) + '\n'
         if 'sacct' in command:
             state = 'OUT_OF_MEMORY' if self.oom and len(self.manifests) == 1 else 'TIMEOUT'
-            return '\n'.join(f'1_{i}|{state if i == 0 else "COMPLETED"}' for i in range(9)) + '\n'
+            hour = 1 + len(self.manifests)
+            rows = (
+                f'1_{i}|{state if i == 0 else "COMPLETED"}|2026-10-11T0{hour}:00:00|2026-10-11T0{hour}:01:00'
+                f'|2026-10-11T0{hour}:{2 + i:02d}:00|{60 + 60 * i}|1'
+                for i in range(9)
+            )
+            return '\n'.join(rows) + '\n'
         if '*.jsonl' in command:
             return self._streams()
         return ''
@@ -373,7 +380,8 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     fake = FakeRunCluster()
     record = _run(fake)
     assert record['sha'] == SHA
-    assert record['prep'] == {'env': 12, 'collect': 3}, 'prep time is measurable from the record'
+    assert {k: v for k, v in record['prep'].items() if k != 'ship'} == {'env': 12, 'collect': 3}, 'prep is measurable'
+    assert record['prep']['ship'] >= 0, 'so is the fetch/pack'
     assert record['handed'] == {'tests/w.py::t': ['windows']}, 'handed names the platforms that CAN run it'
     assert (record['platform'], record['system'], record['cluster'], record['python']) == (
         'linux',
@@ -683,8 +691,9 @@ def test_fold_charges_a_killed_item_what_its_shard_wall_had_left() -> None:
         1: json.dumps({'id': 'b.py::fast', 'outcome': 'passed', 's': 20.0}),
     }
     measured, outcomes = Measured(), {}
-    pending, killed = fold(items, streams, outcomes, measured, {}, shards=[(0, 3)], wall=1000.0)
+    pending, killed, busy = fold(items, streams, outcomes, measured, {}, shards=[(0, 3)], walls=[1000.0])
     assert not killed
+    assert busy == 100.0, 'only the closed item reports its wall'
     assert pending == [['b.py::slow'], ['c.py::never']]
     assert measured.floors == {'b.py::slow': 880.0}, '1000 s wall - 100 s item 0 - 20 s finished'
     assert 'c.py::never' not in measured.floors, 'an item after the kill never started'
@@ -693,9 +702,9 @@ def test_fold_charges_a_killed_item_what_its_shard_wall_had_left() -> None:
 def test_a_file_whose_costly_id_dies_is_replanned_with_more_wall_than_it_died_at() -> None:
     """No TIMEOUT state here (the round is OUT_OF_MEMORY), so only the floor can lengthen the retry."""
     record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True))
-    first, second = record['rounds']
+    _, second = record['rounds']
     assert record['floors'] == {}, 'the retry finished it, so its floor gave way to its duration'
-    assert second['minutes'] >= first['minutes'], 'the retry is never sized shorter than the wall it died at'
+    assert second['minutes'] * 60 >= 60.0, 'the retry is never sized shorter than the 60 s sacct says it died at'
 
 
 def test_a_timeout_round_asks_the_next_for_twice_the_minutes() -> None:
@@ -860,3 +869,66 @@ def test_a_red_record_makes_watch_exit_nonzero(tmp_path: Path, monkeypatch: pyte
     """Planted control beside the green watch: same path, failing ids, exit 1."""
     cli, _ = _outstanding_cli(_RedCluster(), tmp_path, monkeypatch)
     assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 1
+
+
+# -- efficiency: measured phases, carried measurements, balanced shards (census 2026-10-11) ----------------
+
+
+def test_a_kill_is_charged_the_seconds_slurm_says_the_shard_ran_not_its_planned_wall() -> None:
+    """Measured 2026-10-11: a shard killed after 7 s was charged its 216-min plan; one id got a 12960 s floor."""
+    items = [{'ids': ['a.py::dies', 'a.py::after']}]
+    measured = Measured()
+    fold(items, {}, {}, measured, {}, shards=[(0, 1)], walls=[7.0])
+    assert measured.floors == {'a.py::dies': 7.0}
+    planted = Measured()
+    fold(items, {}, {}, planted, {}, shards=[(0, 1)], walls=[12960.0])
+    assert planted.floors == {'a.py::dies': 12960.0}, 'PLANTED CONTROL: the wall given is the wall charged'
+
+
+def test_every_round_keeps_slurms_clock_and_the_record_breaks_its_wall_down() -> None:
+    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'})))
+    first, second = (r['clock'] for r in record['rounds'])
+    assert first['queue_s'] == 60.0, 'median start minus submit'
+    assert first['core_s'] == sum(60 + 60 * i for i in range(9))
+    assert first['tail_s'] == 540.0 - 300.0, 'the longest task minus the median'
+    assert record['prep']['ship'] >= 0
+    breakdown = phases(record)
+    assert breakdown['retry_s'] == second['wall_s'] + (second['submit'] - first['end'])
+    assert breakdown['utilisation'] == pytest.approx(
+        (first['busy_s'] + second['busy_s']) / (first['core_s'] + second['core_s']), rel=1e-12, abs=0.0
+    )
+    assert describe(breakdown).startswith('phases: wall ')
+    assert describe(phases({'prep': {'env': 60}})) == 'phases: prep 1.0 min, no round finished yet'
+
+
+def test_lpt_refills_the_same_shards_so_the_heavy_items_are_not_neighbours() -> None:
+    seconds = [100.0, 90.0, 80.0, 1.0, 1.0, 1.0]
+    order, shards = balance(seconds, ((0, 3), (3, 6)))
+    loads = [sum(seconds[order[i]] for i in range(a, b)) for a, b in shards]
+    assert len(shards) == 2
+    assert max(loads) == 170.0, 'LPT: 100 with the three 1 s items, 90 + 80 beside it'
+    assert sorted(order) == list(range(6)), 'a permutation: no item lost or doubled'
+    balanced = [10.0, 10.0, 10.0, 10.0]
+    assert balance(balanced, ((0, 2), (2, 4))) == ([0, 1, 2, 3], ((0, 2), (2, 4))), (
+        'PLANTED CONTROL: a refill no faster than the input keeps the input'
+    )
+
+
+def test_a_gathered_record_plans_the_next_submit_of_its_repo_and_no_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Measured 2026-10-11: --history was optional, nobody passed it, and 4441 of 4441 files planned blind."""
+    fake = FakeRunCluster()
+    cli, _ = _outstanding_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0
+    assert learned.learned('https://g/r.git')['durations'], 'the record taught its repository'
+    assert learned.learned('https://g/other.git') == {}, 'PLANTED CONTROL: another repository learned nothing'
+    state = _submit(FakeRunCluster(), history=learned.learned('https://g/r.git'))
+    assert state['rounds'][0]['unmeasured'] == []
+    assert _submit(FakeRunCluster())['rounds'][0]['unmeasured'] == ['tests/a.py', 'tests/b.py']
+
+
+def test_history_is_no_flag_and_its_spelling_is_refused_with_the_remedy(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(['run', 'submit', '--sha', SHA, '--repo-url', 'u', '--scope', 'full', '--history', 'r.json.gz'])
+    assert 'lab_commons.hpc.learned' in capsys.readouterr().err
