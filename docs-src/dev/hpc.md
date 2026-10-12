@@ -55,17 +55,18 @@ Two short calls, RUN ON THE CLUSTER LOGIN NODE with its own shell (`cluster.subm
 
 ## Deployment on a cluster: one more `forge serve` host
 
-The cluster PULLS its work over HTTPS (egress 443); nothing reaches it inbound, so the VPN leaves the loop. The deployment is DATA in the account holder's home, never a file of any repo.
+The cluster PULLS its work over HTTPS (egress 443); nothing reaches it inbound, so the VPN leaves the loop. WHAT is deployed is data in the account's machine file (`lab_commons.config`, table `[deploy]`: the login `host`, the checkout `root` in the home, the uv-managed `python`, the `serve` arguments and the served `repos` with their HTTPS urls and refs) -- never a tracked file, because the forge, its repos and the host are private to the deployment. The first run declares it from its flags; every later run reads it. The deployment itself (checkouts, venvs, crontab, run state) lives in the account holder's home.
 
+- **One thing, then one line.** Store your forge token once (the credential bullet below), then on the login host you chose paste:
+
+  ```
+  F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main ...
+  ```
+
+  The same line re-run is the upgrade (the flags must match the stored declaration, or drop them). `lab_commons.hpc` is stdlib-only, so the line needs no venv (a login node's system `python3` may be far older; uv supplies 3.13). `deploy` (`lab_commons.hpc.deploy`) refuses off the declared host, checks every served repo with `git ls-remote` before changing anything (a refusal names `~/.git-credentials`), clones or fast-forwards each checkout under `~/<root>`, builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build (a uv-managed CPython with `UV_PYTHON_PREFERENCE=only-managed`, so manylinux wheels run on glibc 2.28; skipped while the key of its declared inputs is unchanged), installs `cmake` with `uv tool install cmake` when a repo's `needs` names it and the host has none, replaces its marked crontab lines (`# lab-commons-deploy:<repo>`, one per repo, every 5 minutes under `flock -n`; no other line is touched), and runs one tick of each, printing it. `--dry-run` prints every action and changes nothing; `--remove` deletes the marked lines only.
 - **One host per account.** Cron is per login host and `flock` on GPFS does NOT lock across hosts, so each account runs its crontab on ONE login host. The real guard is the idempotent run state (`forge-runs/` in the account's home): a second host that finds a live run owned by another host of its account does nothing, and adopts it only after that owner's lease has lapsed by the forge's clock. Two hosts claiming at once are two owners; the forge's order lets exactly one proceed.
-- **Crontab line** (`crontab -e` on that host; `flock -n` only stops this host overlapping itself), in a checkout of each served repo:
-
-  ```
-  */5 * * * * cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve --mode integrate >> ~/.cache/lab-forge-<repo>.log 2>&1
-  ```
-
-  Route the log's `lab_commons.forge.alarm` lines, or enable the machine file's `[alerts]` table (`telegram`, `email`, `webhook`) so the tick delivers them itself.
+- **The crontab line `deploy` writes**, per repo (`flock -n` only stops this host overlapping itself): `*/5 * * * * PATH=~/.local/bin:~/.cargo/bin:...; cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve --mode integrate >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>` (home paths written absolute). Route the log's `lab_commons.forge.alarm` lines, or enable the machine file's `[alerts]` table (`telegram`, `email`, `webhook`) so the tick delivers them itself.
 - **Identity is read, never typed.** The claim names `<cluster>/<account>` from `scontrol show config` (`ClusterName`) and `id -un`; the machine file still holds the account's `[[hpc.grant]]` (with `user` equal to that login) for its `slurm_account`, share, partitions and `setup`.
 - **Credential: the holder's OWN forge token, through `git credential`** (no machine accounts). `git config --global credential.helper store` keeps it in `~/.git-credentials`; `chmod 600 ~/.git-credentials`. Scope: repo read, commit status write, attachment upload. Store it once with `python -m lab_commons.dev.forge auth login`; nothing logs it. A 401/403 raises an `auth` alarm.
-- **Venv on glibc 2.28.** Build the checkout's `.venv` on the login node itself (`uv sync --extra dev` with a uv-managed CPython, which ships manylinux wheels that run on glibc 2.28); a venv built elsewhere is not portable. `git` and `uv` must be on the cron `PATH` (`module load` lines go in the crontab command or `~/.bashrc`, since `run submit` uses `bash -lc`).
+- **Venv on glibc 2.28.** `deploy` builds each `.venv` on the login node itself; a venv built elsewhere is not portable. `git`, `uv` and `cargo` must be on the cron `PATH` (the line puts `~/.local/bin` and `~/.cargo/bin` there; `module load` lines go in `~/.bashrc`, since `run submit` uses `bash -lc`).
 - **Upgrading the tool** never happens under a live run of another schema: the tick refuses it naming the file and the remedy.
