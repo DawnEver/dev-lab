@@ -82,19 +82,6 @@ pruned_paths = ['.claude/worktrees']
 [tool.lab_commons.hpc]
 install = "uv sync --all-extras"
 
-# The cluster deployment (`deploy` verb of lab_commons.hpc): the ONE login host whose crontab serves
-# an account (cron is per host), the served checkouts under ~/<root>, and the repos they follow.
-[tool.lab_commons.deploy]
-host = "hpclogin02"
-root = "src"
-python = "3.13"
-serve = ["--mode", "integrate"]
-repos = [
-  { name = "lab-commons", url = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", ref = "integrate/main" },
-  { name = "motronics-studio", url = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/motronics-studio.git", ref = "integrate/main" },
-  { name = "wdg-lab", url = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/wdg-lab.git", ref = "integrate/main" },
-]
-
 # The run record's root, and the argv producing each platform's part (`forge tick`, scope full).
 # linux has no argv here: `forge serve` on the cluster login node advances its run, from [tool.lab_commons.hpc].
 [tool.lab_commons.parts]
