@@ -42,6 +42,7 @@ from lab_commons.dev.forgeschedule import (
 )
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
+from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
@@ -461,3 +462,47 @@ def test_over_budget_or_no_headroom_is_not_claimed_and_says_so(server, tmp_path:
     assert full.claimed == ()
     assert 'QOS' in full.queue[0].blocked
     assert not [r for r in Recorder.received if r['method'] == 'POST']
+
+
+def _integrate(server, tmp_path: Path, notes: list[str]) -> set[tuple[str, str]]:
+    tmp_path.mkdir(exist_ok=True)
+    repo, _ = _origin(tmp_path)
+    built = client(Forge('forge.example.org', 'o', 'r'), Loopback(server))
+    found = candidates(
+        repo, 'integrate', built, repo='o/r', platforms=('windows',), schedule=load_schedule(repo),
+        policy=Policy(), now=NOW, say=notes.append,
+    )  # fmt: skip
+    return {(c.ref, c.kind) for c in found}
+
+
+_NOT_FOUND = (404, {'message': 'not found'})
+
+
+def test_a_repo_with_pull_requests_disabled_has_no_pr_candidates(server, tmp_path: Path) -> None:
+    """Gitea answers ``/pulls`` 404 when the repo disables PRs. PLANTED CONTROL: PRs enabled, the 404 is said."""
+    answer('GET', f'{API}/pulls', _NOT_FOUND)
+    answer('GET', API, (200, {'has_pull_requests': False}))
+    notes: list[str] = []
+    assert ('integrate/main', INTEGRATION) in _integrate(server, tmp_path / 'off', notes)
+    assert notes == [], 'disabled PRs are no candidates, not a fault'
+    answer('GET', f'{API}/pulls', _NOT_FOUND)
+    answer('GET', API, (200, {'has_pull_requests': True}))
+    assert ('integrate/main', INTEGRATION) in _integrate(server, tmp_path / 'on', notes)
+    assert len(notes) == 1, notes
+    assert 'pull requests' in notes[0]
+
+
+def test_a_failed_optional_listing_never_hides_the_integration_head(server, tmp_path: Path) -> None:
+    """The request issues fail with 500: said, and the head still a candidate."""
+    answer('GET', f'{API}/issues', (500, 'boom'), (500, 'boom'), (500, 'boom'))
+    notes: list[str] = []
+    assert ('integrate/main', INTEGRATION) in _integrate(server, tmp_path, notes)
+    assert len(notes) == 1, notes
+    assert 'request issues' in notes[0]
+
+
+def test_a_credential_refusal_on_an_optional_listing_still_raises(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL for the two above: a 401 is the auth alarm's, never a skipped listing."""
+    answer('GET', f'{API}/pulls', (401, {'message': 'token is required'}))
+    with pytest.raises(ForgeCallFailed):
+        _integrate(server, tmp_path, [])

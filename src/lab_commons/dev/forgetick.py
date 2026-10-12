@@ -147,7 +147,15 @@ def tick(
     me = Claim(machine, login, now + lease, serve.hpc)
     schedule, repo = load_schedule(root), repo_name(built)
     found = candidates(
-        root, mode, built, repo=repo, platforms=(serve.platform,), schedule=schedule, policy=load_policy(root), now=now
+        root,
+        mode,
+        built,
+        repo=repo,
+        platforms=(serve.platform,),
+        schedule=schedule,
+        policy=load_policy(root),
+        now=now,
+        say=lines.append,
     )
     cores = 1 if serve.hpc else os.cpu_count() or 1
     learned_now = learned(origin_url(root)) if measured is None else measured

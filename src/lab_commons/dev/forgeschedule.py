@@ -43,17 +43,17 @@ import re
 import subprocess
 import tomllib
 import urllib.parse
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.cpuseat import CpuSeat
-from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
+from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
-from lab_commons.dev.forgework import Client
+from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.hpc.shell import FULL
 
@@ -352,15 +352,30 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
 _REQUEST_PLATFORM: Final = re.compile(r'^\s*platform\s*=\s*["\'](?P<platform>[\w-]+)["\']', re.MULTILINE)
 
 
+def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[str], None]) -> Sequence[T]:
+    """An OPTIONAL listing: one that fails is said and served as empty; a credential refusal still raises.
+
+    The integration head and the claims are ESSENTIAL -- without them nothing can be produced, so they
+    raise. Open PRs and request issues only ADD candidates: losing them must not cost the head its part.
+    """
+    try:
+        return listing()
+    except ForgeCallFailed as failed:
+        if failed.report.attempts and failed.report.attempts[-1].returncode in AUTH_REFUSED:
+            raise
+        say(f'[serve] skipped the {what}: {failed}')
+        return ()
+
+
 def _part_refs(
-    root: Path, mode: str, client: Client, schedule: Schedule, policy: Policy
+    root: Path, mode: str, client: Client, schedule: Schedule, policy: Policy, *, say: Callable[[str], None]
 ) -> list[tuple[str, str, str, tuple[str, ...], int]]:
     """``(ref, newest sha, class, labels, PR number)`` of every ref *mode* serves."""
     tips = _tips(root)
     if mode != 'integrate':
         return [(b, s, BRANCH, (), 0) for b, s in sorted(tips.items()) if b.startswith(policy.lane_prefixes)]
     refs = [(policy.integration, tips[policy.integration], INTEGRATION, (), 0)] if policy.integration in tips else []
-    for pull in pr_list(client):
+    for pull in optional('open pull requests', lambda: pr_list(client), say):
         sha = tips.get(pull.head, pull.head_sha)
         if pull.base == policy.integration and pull.head != policy.integration and sha:
             refs.append((pull.head, sha, PR, pull.labels, pull.number))
@@ -397,21 +412,23 @@ def candidates(
     schedule: Schedule,
     policy: Policy,
     now: datetime,
+    say: Callable[[str], None] = lambda _: None,
 ) -> tuple[Candidate, ...]:
     """Every candidate *mode* serves, ONE per ref and platform: the ref's newest sha (coalesced). Fetches nothing.
 
     ``integrate``: the integration branch, every open PR into it (labels from the PR), every opted-in
-    branch, and every request issue. ``develop``: the lanes, as class ``branch``. ``quiet``: none.
+    branch, and every request issue -- PRs and requests
+    :func:`optional`, a failure said through *say*. ``develop``: the lanes, as class ``branch``. ``quiet``: none.
     """
     if mode == 'quiet':
         return ()
     found = [
         Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), labels=labels, number=number)
-        for ref, sha, kind, labels, number in _part_refs(root, mode, client, schedule, policy)
+        for ref, sha, kind, labels, number in _part_refs(root, mode, client, schedule, policy, say=say)
         for platform in platforms
     ]
     if mode == 'integrate':
-        found += _requests(client, repo, schedule, now)
+        found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
     return tuple(found)
 
 

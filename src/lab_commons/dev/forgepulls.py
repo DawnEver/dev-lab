@@ -16,7 +16,7 @@ from __future__ import annotations
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.dev.forgework import Comment, PullRequest, comment_of, pull_of
+from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, pull_of
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
@@ -25,6 +25,7 @@ __all__ = ['comment_list', 'comment_upsert', 'marker', 'pr_list', 'pr_retarget']
 
 _PAGE: Final = 50
 _PAGES: Final = 20
+_NOT_FOUND: Final = 404
 
 
 def marker(subject: str) -> str:
@@ -44,8 +45,18 @@ def _pages(client: Client, path: str, query: dict[str, str]) -> list[Any]:
 
 
 def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
-    """Every pull request in *state*, lowest number first."""
-    raw = _pages(client, f'{client.repo}/pulls', {'state': state})
+    """Every pull request in *state*, lowest number first; none when the repository disables pull requests.
+
+    Gitea answers ``/pulls`` 404 for a repository with PRs switched off. That 404 is read back against the
+    repository's own ``has_pull_requests`` flag, so a 404 for any other reason still raises.
+    """
+    try:
+        raw = _pages(client, f'{client.repo}/pulls', {'state': state})
+    except ForgeCallFailed as failed:
+        last = failed.report.attempts[-1].returncode if failed.report.attempts else 0
+        if last == _NOT_FOUND and client.call('GET', client.repo).get('has_pull_requests') is False:
+            return ()
+        raise
     return tuple(sorted((pull_of(item) for item in raw), key=lambda pr: pr.number))
 
 
