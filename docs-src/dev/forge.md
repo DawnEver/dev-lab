@@ -34,6 +34,14 @@ makes on a producer host. Each tick it:
 
 - `--mode integrate` serves the integration branch, open PRs into it and opted-in branches; `--mode develop`
   serves the lanes. `forge tick` is the same claim step without producing (`--dry-run` to preview).
+- **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
+  `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `~/.cache/lab-forge/serve.lock` elsewhere.
+- **A Windows workstation serves from a Scheduled Task**: `python -m lab_commons.dev.servetask [--dry-run]`,
+  run in the checkout, writes `lab-forge-serve` (every 5 min, IgnoreNew, as you, only while logged on);
+  `--dry-run` prints the exact `schtasks` command. **To stop it**, disable the Task --
+  `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
+  `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
+  `error: stopped`.
 - **The producer argv is declared**, never typed: `[tool.lab_commons.parts] produce.<platform>.<full|incremental>`
   in the repo's `pyproject.toml`, filled by `platformparts.part_argv`. A part whose producer is undeclared is
   not claimed, and the refusal names the key.
