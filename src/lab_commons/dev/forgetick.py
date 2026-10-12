@@ -84,7 +84,7 @@ from lab_commons.dev.platformparts import (
 )
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.learned import learned
-from lab_commons.hpc.platforms import Table, table_at
+from lab_commons.hpc.platforms import Table, declared_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
@@ -209,7 +209,7 @@ class _Taking:
     winner: str = ''
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     provides: Mapping[str, Any] = dataclasses.field(default_factory=dict)
-    tables: dict[str, Table] = dataclasses.field(default_factory=dict)
+    tables: dict[str, tuple[Table, str]] = dataclasses.field(default_factory=dict)
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
@@ -231,10 +231,11 @@ class _Taking:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
 
     def _blocked(self, wanted: Candidate) -> str:
-        table = self.tables.setdefault(wanted.sha, table_at(self.root, wanted.sha))
+        table, refused = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
         outranked = f'{OUTRANKED} by {self.winner}' if self.winner else ''
         return (
-            lacking(needs(table, wanted.platform), self.provides)
+            refused
+            or lacking(needs(table, wanted.platform), self.provides)
             or outranked
             or self.room
             or _over_budget(self.root, wanted, self.schedule, self.usage)
