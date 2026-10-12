@@ -23,7 +23,9 @@ from lab_commons.dev import agent_guard, agenthooks
 from lab_commons.dev.hook_adoption import HookAdoption, render
 from lab_commons.dev.hooks import Remedy
 
-NODE = agenthooks.node_executable()
+# THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
+# whose boxes carry it ([tool.lab_commons.platforms]). Where it runs and node is absent, `NoNode` still reds.
+pytestmark = pytest.mark.node
 
 #: A minimal but REAL declaration: one rule with an exit that exists as a command.
 ADOPTION = HookAdoption(
@@ -167,7 +169,7 @@ def _ask(repo: Path, wired: list[str], command: str) -> str | None:
     """Run the hook EXACTLY as the tool would: the wired argv, from the repo, payload on stdin."""
     payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(repo)}
     done = subprocess.run(
-        [NODE, *wired[1:]],
+        [agenthooks.node_executable(), *wired[1:]],
         cwd=repo,
         input=json.dumps(payload),
         capture_output=True,

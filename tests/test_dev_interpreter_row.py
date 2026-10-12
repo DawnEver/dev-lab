@@ -52,6 +52,7 @@ def _rules(tmp_path: Path, remedies: dict[str, Remedy]) -> Path:
         'uv run mycli run cases/x',
     ],
 )
+@pytest.mark.node
 def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY: both concrete layouts and the allow row, read off the owner."""
     reason = agenthooks.decide(command, _rules(tmp_path, {}))
@@ -75,11 +76,13 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
         'echo "a; python x.py"',
     ],
 )
+@pytest.mark.node
 def test_the_venv_spelling_is_allowed(tmp_path: Path, command: str) -> None:
     """The exit itself must not be refused, or the rule seals the road it names."""
     assert agenthooks.decide(command, _rules(tmp_path, {})) is None, command
 
 
+@pytest.mark.node
 def test_a_repo_cli_is_opened_only_by_that_repos_delta(tmp_path: Path) -> None:
     """The per-repo opening: `uv run <its cli>` passes there, and `uv run python` still does not."""
     rules = _rules(tmp_path, {INTERPRETER_RULE: CLI_OPENING})

@@ -31,6 +31,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev.agent_guard import ENGINE_REL, RULES_REL, install_guard
+from lab_commons.dev.agenthooks import NoNode, node_executable
 from lab_commons.dev.famtests.agentguard import (
     GuardNotLive,
     assert_committed_rules_are_rendered,
@@ -102,6 +103,15 @@ def test_node_is_available_here_and_the_refusal_is_not_a_skip() -> None:
             assert_node_is_available()
         return
     assert_node_is_available()
+
+
+def test_a_box_planted_without_node_is_refused_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED: the cluster compute node's PATH, which carries no ``node`` -- named, never quiet."""
+    monkeypatch.setenv('PATH', str(tmp_path))
+    with pytest.raises(NoNode, match='no `node` on PATH'):
+        node_executable()
+    with pytest.raises(GuardNotLive, match='unguarded'):
+        assert_node_is_available()
 
 
 # --------------------------------------------------------------------------------------------
@@ -180,6 +190,7 @@ def test_the_shipped_set_is_pinned_by_name_in_both_directions(tmp_path: Path) ->
         assert_the_shipped_set_is_pinned(root=root, declared=frozenset({'NETWORK-VERB', 'GIT-STASH', 'PUSH-FORCE'}))
 
 
+@pytest.mark.node
 def test_an_empty_rules_file_refuses_nothing_and_the_pin_is_what_says_so(tmp_path: Path) -> None:
     """THE VACUOUS GREEN, PLANTED. Every sanctioned arm passes over a guard that refuses nothing."""
     root, adoption = _repo(tmp_path, rules=())
@@ -195,6 +206,7 @@ def test_an_empty_rules_file_refuses_nothing_and_the_pin_is_what_says_so(tmp_pat
 # does it actually refuse, and by which rule
 
 
+@pytest.mark.node
 def test_a_forbidden_shape_is_refused_by_the_rule_that_owns_it(tmp_path: Path) -> None:
     """Driven through the REAL engine on the REAL installed files, not a Python restatement."""
     root, _ = _repo(tmp_path, rules=(_STASH, _NETWORK))
@@ -202,6 +214,7 @@ def test_a_forbidden_shape_is_refused_by_the_rule_that_owns_it(tmp_path: Path) -
     assert_refused_by(root=root, command='git fetch origin', rule='NETWORK-VERB')
 
 
+@pytest.mark.node
 def test_a_sanctioned_shape_is_allowed(tmp_path: Path) -> None:
     """The other side of the ratchet: a guard refusing everything would pass every arm above."""
     root, _ = _repo(tmp_path, rules=(_STASH, _NETWORK))
@@ -211,6 +224,7 @@ def test_a_sanctioned_shape_is_allowed(tmp_path: Path) -> None:
         assert_sanctioned(root=root, command='git stash')
 
 
+@pytest.mark.node
 def test_a_shadowed_rule_passes_the_weak_arm_and_is_caught_by_the_named_one(tmp_path: Path) -> None:
     """THE MEASURED DEFECT, PLANTED BOTH WAYS.
 

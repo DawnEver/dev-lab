@@ -47,6 +47,7 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'git worktree add --detach "../lab commons wt" HEAD',
     ],
 )
+@pytest.mark.node
 def test_the_engine_refuses_a_misplaced_tree_and_names_the_allowed_form(rules: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY: the reason carries the exact allowed path form."""
     reason = agenthooks.decide(command, rules)
@@ -62,6 +63,7 @@ def test_the_engine_refuses_a_misplaced_tree_and_names_the_allowed_form(rules: P
         'git worktree list --porcelain',
     ],
 )
+@pytest.mark.node
 def test_the_engine_permits_a_tree_inside_its_repository(rules: Path, command: str) -> None:
     """The other side: a guard that refuses the allowed form gets routed around."""
     assert agenthooks.decide(command, rules) is None, command

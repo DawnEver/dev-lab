@@ -6,9 +6,9 @@ by eye is exactly the reasoning this shared body replaces with a measurement, so
 renders a real ``deny-rules.json`` from the real registry, installs the real engine with
 :func:`lab_commons.dev.agent_guard.install_guard`, and lets ``node`` decide.
 
-NODE IS ASSERTED AT MODULE SCOPE RATHER THAN SKIPPED, for the reason
-:class:`lab_commons.dev.agenthooks.NoNode` gives: the hook entry starts with ``node``, so a box
-without one runs NO guard in every repo on it. Reporting that as a skip is reporting silence.
+NODE IS A REQUIREMENT OF THE HOST, NEVER A SKIP: the ``node`` marker assigns this file to the parts
+whose boxes carry it, and where it runs without one :class:`lab_commons.dev.agenthooks.NoNode` reds --
+the hook entry starts with ``node``, so such a box runs NO guard in every repo on it.
 
 BOTH DIRECTIONS ARE PLANTED EVERYWHERE, because every assertion here can be satisfied by an
 instrument that stopped working: a contradiction that must be SEEN sits beside a harmless row that
@@ -50,8 +50,9 @@ from lab_commons.dev.famtests.allowguard import (
 from lab_commons.dev.hook_adoption import HookAdoption, render
 from lab_commons.dev.hooks import Remedy
 
-# ASSERTED, NOT SKIPPED: see the module docstring.
-NODE = agenthooks.node_executable()
+# THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
+# whose boxes carry it ([tool.lab_commons.platforms]). Where it runs and node is absent, `NoNode` still reds.
+pytestmark = pytest.mark.node
 
 #: An adoption remedying every rule that needs a repo artefact, so the rendered file carries the whole
 #: registry and a probe drawn from it is judged against all of it rather than against a subset.

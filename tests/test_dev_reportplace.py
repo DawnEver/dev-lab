@@ -84,6 +84,7 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'cd sub && echo x > "output/findings.md"',
     ],
 )
+@pytest.mark.node
 def test_a_shell_redirect_creating_a_report_under_output_is_refused(rules: Path, command: str) -> None:
     reason = agenthooks.decide(command, rules)
     assert reason is not None, command
@@ -100,6 +101,7 @@ def test_a_shell_redirect_creating_a_report_under_output_is_refused(rules: Path,
         'python -m pkg.run --out output/logs/26/10/11/case/comparison.md',
     ],
 )
+@pytest.mark.node
 def test_memory_reads_and_program_written_output_are_unaffected(rules: Path, command: str) -> None:
     reason = agenthooks.decide(command, rules)
     assert reason is None or 'REPORTS-LIVE-IN-MEMORY' not in reason, (command, reason)

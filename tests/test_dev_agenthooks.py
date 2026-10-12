@@ -41,9 +41,9 @@ from lab_commons.dev import agenthooks
 from lab_commons.dev.hook_adoption import HookAdoption, render
 from lab_commons.dev.hooks import DENY_RULES, Remedy
 
-# ASSERTED AT MODULE SCOPE RATHER THAN SKIPPED, for the reason `NoNode` gives: the hook entry starts
-# with `node`, so a box without one runs NO guard -- in every repo on it. That is the finding.
-NODE = agenthooks.node_executable()
+# THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
+# whose boxes carry it ([tool.lab_commons.platforms]). Where it runs and node is absent, `NoNode` still reds.
+pytestmark = pytest.mark.node
 
 #: An adoption that remedies EVERY rule needing a repo artefact, so the rendered file carries the
 #: whole registry. The commands are this repo's own real ones where they exist; what matters to the

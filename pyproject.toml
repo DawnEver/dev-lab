@@ -136,12 +136,17 @@ OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name>
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["dev_checkout: asserts a developer-checkout invariant (hooks installed, branches on origin, worktree placement)"]
+markers = [
+    "dev_checkout: asserts a developer-checkout invariant (hooks installed, branches on origin, worktree placement)",
+    "node: drives the agent-guard engine through a real `node`, which the cluster's compute nodes do not carry",
+]
 
 # Which platforms can run a marked test (lab_commons.hpc.platforms). The cluster's linux tree is a bare
 # worktree of one sha, not a developer checkout: a dev_checkout test is assigned to the windows part.
 [tool.lab_commons.platforms]
 dev_checkout = ["windows", "macos"]
+# Ada's compute nodes carry no `node` (measured 2026-10-12); the engine runs where an agent does.
+node = ["windows", "macos"]
 
 [tool.ruff]
 line-length = 120
