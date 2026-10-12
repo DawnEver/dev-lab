@@ -261,6 +261,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.
+* :mod:`lab_commons.dev.forgecred` -- the forge credential git already holds for a host, and why one is absent.
 * :mod:`lab_commons.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.
 * :mod:`lab_commons.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`lab_commons.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
