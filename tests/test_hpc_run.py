@@ -29,7 +29,7 @@ from lab_commons.hpc.measured import Measured
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.progress import parse_queue, where
-from lab_commons.hpc.pytest_item import canonical, outcome_of, pytest_argv, read_stream
+from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
 from lab_commons.hpc.run import RETRIES, gather_run, submit_run
 from lab_commons.hpc.shell import (
@@ -235,10 +235,10 @@ def test_a_clean_exit_mid_item_fails_the_in_flight_id_and_requeues_only_the_ids_
 
 def test_the_scope_timeout_reaches_the_pytest_argv() -> None:
     files = ['tests/test_a.py']
-    with_ceiling = pytest_argv({'ids': [], 'timeout_s': 3000}, files)
+    with_ceiling = item_argv({'ids': [], 'timeout_s': 3000}, files)
     assert with_ceiling[with_ceiling.index('--timeout') + 1] == '3000'
     assert with_ceiling[-1] == 'tests/test_a.py'
-    assert '--timeout' not in pytest_argv({'ids': []}, files), 'undeclared: the repo default stands'
+    assert '--timeout' not in item_argv({'ids': []}, files), 'undeclared: the repo default stands'
 
 
 # -- the measured plan -----------------------------------------------------------------------------------
