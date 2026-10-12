@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import os
 import sys
 import tarfile
 import textwrap
@@ -47,7 +46,7 @@ _FAKE_RCLONE = """
 import json, os, shutil, sys
 from pathlib import Path
 base = Path(os.environ['FAKE_RCLONE_ROOT'])
-args = [a for a in sys.argv[1:] if not a.startswith('--')]
+args = [a for a in sys.argv[1:] if not a.startswith('-')]
 flags = [a for a in sys.argv[1:] if a.startswith('--')]
 with open(base / 'calls.jsonl', 'a') as log:
     log.write(json.dumps(sys.argv[1:]) + '\\n')
@@ -270,15 +269,13 @@ def test_list_older_than_reads_the_day_folder(tmp_path: Path) -> None:
 # --- credentials --------------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='POSIX file modes')
 def test_an_rclone_config_readable_by_others_is_refused(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same file at mode 600 is accepted."""
     conf = tmp_path / 'rclone.conf'
     conf.write_text('[drive]\n', encoding='utf-8')
-    conf.chmod(0o644)
     with pytest.raises(ArtefactRefused, match='600'):
-        artefacts.check_rclone_config(conf, repo=tmp_path / 'repo')
-    conf.chmod(0o600)
-    artefacts.check_rclone_config(conf, repo=tmp_path / 'repo')
+        artefacts.check_rclone_config(conf, repo=tmp_path / 'repo', mode_of=lambda _p: 0o644)
+    artefacts.check_rclone_config(conf, repo=tmp_path / 'repo', mode_of=lambda _p: 0o600)
 
 
 def test_an_rclone_config_inside_the_repo_is_refused(tmp_path: Path) -> None:

@@ -177,6 +177,8 @@ def test_the_cluster_part_carries_the_declared_outputs_and_a_malformed_list_is_r
     declared = DECLARED.replace(
         'install = "uv sync --extra dev"\n', 'install = "uv sync --extra dev"\noutputs = ["f/*.h5"]\n'
     )
+    for name in ('ok', 'bad'):
+        (tmp_path / name).mkdir()
     repo, _python = _checkout(tmp_path / 'ok', declared)
     assert platformparts.cluster_part(repo, SHA).outputs == ('f/*.h5',)
     repo, _python = _checkout(tmp_path / 'bad', declared.replace('["f/*.h5"]', '"f/*.h5"'))

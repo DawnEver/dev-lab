@@ -295,7 +295,7 @@ def _publish(
     except MissingOutput as missing:  # a declared output is part of the request: its absence fails the run
         alarm(Alarm(RUN, run.repo_url, f'the run of {run.sha[:12]} lacks a declared output', str(missing)))
         say(f'{tag}: {missing}')
-        _release(client, run, f'declared output missing: {missing}'[:_DESCRIPTION_MAX], say)
+        _release(client, run, f'declared outputs missing: {missing}'[:_DESCRIPTION_MAX], say)
     except PartRefusal as why:  # an inconclusive record is never a part
         say(f'{tag}: {why}')
         _release(client, run, release_reason(ProducerExit.INCONCLUSIVE), say)

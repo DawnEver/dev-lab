@@ -302,7 +302,6 @@ def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted
     monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
     store = _Store()
     _start(home, store, outputs=('fields/*.h5',))
-    _tick(store, slurm, root=root)
     assert _tick(store, slurm, root=root) is None
     (entry,) = records.read_record(posted[0])['artefacts']
     (ref,) = artefacts.FolderStore(big, 'r').list(None)
@@ -319,7 +318,6 @@ def test_planted_control_nothing_declared_stores_nothing(home: Path, monkeypatch
     monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
     store = _Store()
     _start(home, store)
-    _tick(store, slurm, root=root)
     assert _tick(store, slurm, root=root) is None
     assert 'artefacts' not in records.read_record(posted[0])
     assert not big.exists()
@@ -331,7 +329,6 @@ def test_a_missing_declared_output_fails_the_run_loudly(home: Path, monkeypatch)
     monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
     store, alarms = _Store(), []
     _start(home, store, outputs=('fields/*.h5', 'fields/*.vtu'))
-    _tick(store, slurm, root=root)
     assert _tick(store, slurm, root=root, alarms=alarms) is None
     assert posted == [], 'a run missing a declared output never posts a part'
     assert store.posts[-1]['status'] == 'error'

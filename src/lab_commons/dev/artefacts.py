@@ -43,7 +43,7 @@ import subprocess
 import tarfile
 import tempfile
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -176,7 +176,7 @@ def collect(tree: Path, outputs: Sequence[str]) -> list[Path]:
             missing.append(pattern)
         found.update(matched)
     if missing:
-        msg = f'declared outputs matched nothing in {tree}: {", ".join(missing)}'
+        msg = f'{", ".join(missing)} matched nothing in {tree}'  # names first: a status description is short
         raise MissingOutput(msg)
     return sorted(found)
 
@@ -358,13 +358,19 @@ class FolderStore:
 # --- rclone ---------------------------------------------------------------------------------------
 
 
-def check_rclone_config(path: Path, *, repo: Path) -> None:
-    """Refuse an rclone config inside *repo*, or (on POSIX) readable by anyone but its owner."""
+def _posix_mode(path: Path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def check_rclone_config(
+    path: Path, *, repo: Path, mode_of: Callable[[Path], int] | None = _posix_mode if os.name != 'nt' else None
+) -> None:
+    """Refuse an rclone config inside *repo*, or readable by anyone but its owner (*mode_of* None: no POSIX modes)."""
     resolved, top = path.resolve(), repo.resolve()
     if resolved == top or top in resolved.parents:
         msg = f'the rclone config is never in a repo: move it out of {repo} (e.g. ~/.config/rclone/rclone.conf)'
         raise ArtefactRefused(msg)
-    if os.name != 'nt' and stat.S_IMODE(resolved.stat().st_mode) & 0o077:
+    if mode_of is not None and mode_of(resolved) & 0o077:
         msg = f'the rclone config {path} must be mode 600 (it holds the drive token): chmod 600 {path}'
         raise ArtefactRefused(msg)
 
@@ -476,8 +482,8 @@ class ForgeStore:
         try:
             manifest = scratch / (ident + MANIFEST)
             manifest.write_text(json.dumps(new.manifest()), encoding='utf-8')
-            if new.key not in assets:
-                attach(self.client, path)
+            if new.key not in assets:  # an attachment is named by its file: the archive goes up as <run-id>.tar.zst
+                attach(self.client, Path(shutil.copyfile(path, scratch / new.key)))
             attach(self.client, manifest)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
