@@ -25,11 +25,11 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.worktreeplace import main_checkout
+from lab_commons.log import emit
 
 __all__ = ['RULE', 'main', 'refusal', 'staleness']
 
@@ -96,12 +96,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     if args.mode == 'report':
-        sys.stdout.write((staleness(args.root) or 'integration-home: the main checkout is current.') + '\n')
+        emit(staleness(args.root) or 'integration-home: the main checkout is current.')
         return 0
     reason = refusal(args.root)
     if reason is None:
         return 0
-    sys.stderr.write(f'\n  REFUSED: {reason}\n\n')
+    emit(f'\n  REFUSED: {reason}\n', err=True)
     return 1
 
 

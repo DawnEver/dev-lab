@@ -35,8 +35,8 @@ SEAT = ClusterAccount('ada', 'alice')
 class _Proc:
     """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*."""
 
-    def __init__(self, code: int, lines: tuple[str, ...] = (), beats: int = 0) -> None:
-        self.code, self.beats = code, beats
+    def __init__(self, code: int, lines: tuple[str, ...] = (), beats: int = 0, pid: int | None = None) -> None:
+        self.code, self.beats, self.pid = code, beats, pid
         self.stdout = iter(f'{line}\n' for line in lines)
 
     def wait(self, timeout: float | None = None) -> int:
@@ -409,8 +409,7 @@ def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch
     forge = _Forge()
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    proc = _Proc(1)
-    proc.pid = 77  # type: ignore[attr-defined]
+    proc = _Proc(1, pid=77)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == 77)
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
     assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')

@@ -113,7 +113,7 @@ def produce(
     say(f'[{item.platform}] exit={returncode}')
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if superseded or (posts and posts[-1].state == 'pending'):
-        stopped = getattr(proc, 'pid', None) is not None and was_stopped(proc.pid)  # by stoprun, on purpose
+        stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
         reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)

@@ -56,7 +56,7 @@ class _Recorder:
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
     assert set(table) == {'pre-commit', 'commit-msg'}
-    assert {hook.id for hook in table['commit-msg']} == {'commitizen', 'issue-ref', 'merge-audit'}
+    assert {hook.id for hook in table['commit-msg']} == {'commitizen', 'integration-home', 'issue-ref', 'merge-audit'}
     assert len(table['pre-commit']) >= 8, 'a floor: a base that lost its file checks would read as clean'
 
 

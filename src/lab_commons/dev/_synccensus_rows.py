@@ -37,7 +37,7 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
         path='pyproject.toml',
-        line=253,
+        line=254,
         evidence='extras = "dev viz-mpl viz-bokeh"',
         selected=('dev', 'viz-mpl', 'viz-bokeh'),
         scope='COMPLETE',
@@ -65,7 +65,8 @@ ROWS: tuple[ScopeRow, ...] = (
             ' MOVED 2026-10-11 to `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml: the workflow is '
             'rendered from that TOML, so the selection is read where it is made.'
             ' REPOINTED 2026-10-12, 242 -> 253, text unchanged: the platform marker table and the '
-            'cluster-run comments grew above it.'
+            'cluster-run comments grew above it. REPOINTED 2026-10-12, 253 -> 254: the platform table '
+            'split into its capability axis, one comment line longer.'
         ),
     ),
 )
@@ -75,7 +76,7 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, int], str] = {
-    ('lab-commons', 'pyproject.toml', 326): (
+    ('lab-commons', 'pyproject.toml', 327): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '
@@ -87,6 +88,7 @@ SITES: dict[tuple[str, str, int], str] = {
         'command TEXT is unchanged, so what this key says about the family is unchanged and only '
         'the position was re-measured. MOVED 2026-10-11 into `[tool.lab_commons.ci."python-verify.yml"]`, '
         'the TOML the workflow is rendered from. REPOINTED 2026-10-12, 315 -> 326, command text unchanged.'
+        ' REPOINTED 2026-10-12, 326 -> 327: the capability axis split, command text unchanged.'
     ),
 }
 

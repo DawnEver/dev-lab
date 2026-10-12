@@ -32,10 +32,9 @@ branch from a linked worktree is refused by the `integration-home` commit-msg ho
 start, `python -m lab_commons.dev.integrationhome report` says how far the main checkout's branch is
 behind its origin and names `sh scripts/hooks/with-retry.sh pull --ff-only` to fix it.
 
-To adopt it: a repo on the TOML hooks gets the row from `base.toml` and needs no change. A repo using a
-rendered `.pre-commit-config.yaml` adds a local `commit-msg` hook that runs
-`python -m lab_commons.dev.integrationhome commit-msg`. It also prints the `report` line from its
-SessionStart hook (or worktree-debris report). Before the first commit, move any integration worktree
+To adopt it: the row comes from `base.toml`, which every repo's hook table merges over, so the hook
+needs no change. A repo also prints the `report` line from its SessionStart hook (or worktree-debris
+report). Before the first commit, move any integration worktree
 back into the main checkout.
 
 ## Child branches sync from integration

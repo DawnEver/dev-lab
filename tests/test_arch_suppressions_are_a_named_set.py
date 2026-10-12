@@ -169,6 +169,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'global _run_date',
     ): 'the per-run date is memoized the same way, so a run straddling midnight keeps one folder',
     (
+        'src/lab_commons/dev/servelock.py',
+        'PLC0415',
+        'import msvcrt',
+    ): 'the Windows lock primitive: msvcrt exists only on Windows, so a top-level import breaks POSIX',
+    (
+        'src/lab_commons/dev/servelock.py',
+        'PLC0415',
+        'import fcntl',
+    ): 'the POSIX lock primitive: fcntl exists only on POSIX, so a top-level import breaks Windows',
+    (
         'src/lab_commons/structured.py',
         'ARG001',
         'def redact_secrets_processor(logger: object, method_name: str, event_dict: dict) -> dict:',
