@@ -336,7 +336,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-10 AT 519 after the claimed-part argv (part_argv and its tests): 429 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 524 after the seats split, the run cache and forge serve: 440 keeps 84.
 #: RE-MEASURED 2026-10-11 AT 532 after the branch-flow modules: 460 keeps 72.
-CONSTANT_FLOOR = 460
+#: RE-MEASURED 2026-10-12 AT 560 after the forge owners, issue routing and hygiene modules: 490 keeps 70.
+CONSTANT_FLOOR = 490
 CONSTANT_HEADROOM = 90
 
 

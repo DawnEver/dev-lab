@@ -6,6 +6,7 @@ repo's own answers -- which tree, which floor -- and the controls that prove the
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,6 @@ from lab_commons.dev.venvpath import (
     VENV_INTERPRETER_GLOB,
     VENV_LAYOUTS,
     UnknownPlatform,
-    checkout_interpreter,
     current_os_name,
     hardcoded_spellings,
     portable,
@@ -81,7 +81,8 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-10-10 AT 226 when ``forgecli`` split out of ``forge``. 185 sat exactly 40 below
 #: 225, so the next module redded; 195 leaves the band room on both sides.
 #: RE-MEASURED 2026-10-11 AT 238 after the branch-flow modules: floor 205.
-FILE_FLOOR = 220  # re-taken 2026-10-11 at 248: branch-flow plus the cluster tick (forgerun, forgealarm, hpc.account)
+#: RE-TAKEN 2026-10-11 AT 248 (branch-flow plus the cluster tick): floor 220.
+FILE_FLOOR = 230  # re-taken 2026-10-12 at 262: the forge owners, issue routing and hygiene modules
 
 
 def _tree() -> dict[str, str]:
@@ -190,9 +191,14 @@ def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
     READS NO VERSION, and that is deliberate too: ``importlib.metadata.version`` and the live
     import disagree in this very checkout, because the install is editable. This arm asks the
     filesystem about a path and nothing else, so neither answer can steer it.
+
+    ASKS THE RUNNING VENV, NOT THE CHECKOUT (2026-10-12): the cluster judges a bare per-sha tree from
+    an environment kept outside it (``~/ci/envs/<key>``), so ``<checkout>/.venv`` is a developer-checkout
+    fact, and the contract this arm checks is the layout of whatever venv the suite is running in.
     """
-    root = SOURCE.parent
-    resolved = checkout_interpreter(root, os_name=current_os_name())
+    venv = Path(sys.prefix)
+    assert venv != Path(sys.base_prefix), f'the suite runs outside any venv ({sys.executable}); the contract is unread'
+    resolved = venv / Path(venv_interpreter(os_name=current_os_name())).relative_to('.venv')
     assert resolved.is_file(), (
         f'{resolved} does not exist. VENV_LAYOUTS says this platform (os.name='
         f'{current_os_name()!r}) keeps its venv interpreter there, and the filesystem disagrees -- '
