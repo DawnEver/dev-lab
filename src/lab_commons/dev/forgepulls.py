@@ -13,8 +13,7 @@ idempotent: running it twice leaves one comment, not two.
 
 from __future__ import annotations
 
-import urllib.parse
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, pull_of
 
@@ -23,25 +22,12 @@ if TYPE_CHECKING:
 
 __all__ = ['comment_list', 'comment_upsert', 'marker', 'pr_list', 'pr_retarget']
 
-_PAGE: Final = 50
-_PAGES: Final = 20
 _NOT_FOUND: Final = 404
 
 
 def marker(subject: str) -> str:
     """The hidden line a comment about *subject* is found by."""
     return f'<!-- lab-commons:{subject} -->'
-
-
-def _pages(client: Client, path: str, query: dict[str, str]) -> list[Any]:
-    found: list[Any] = []
-    for page in range(1, _PAGES + 1):
-        params = query | {client.backend.page_param: str(_PAGE), 'page': str(page)}
-        listed = client.call('GET', f'{path}?{urllib.parse.urlencode(params)}')
-        found += listed
-        if len(listed) < _PAGE:
-            break
-    return found
 
 
 def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
@@ -51,7 +37,7 @@ def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
     repository's own ``has_pull_requests`` flag, so a 404 for any other reason still raises.
     """
     try:
-        raw = _pages(client, f'{client.repo}/pulls', {'state': state})
+        raw = client.pages(f'{client.repo}/pulls', {'state': state})
     except ForgeCallFailed as failed:
         last = failed.report.attempts[-1].returncode if failed.report.attempts else 0
         if last == _NOT_FOUND and client.call('GET', client.repo).get('has_pull_requests') is False:
@@ -67,7 +53,7 @@ def pr_retarget(client: Client, number: int, base: str) -> PullRequest:
 
 def comment_list(client: Client, number: int) -> tuple[Comment, ...]:
     """Every comment on issue or PR *number*, oldest first."""
-    return tuple(comment_of(raw) for raw in _pages(client, f'{client.repo}/issues/{number}/comments', {}))
+    return tuple(comment_of(raw) for raw in client.pages(f'{client.repo}/issues/{number}/comments', {}))
 
 
 def comment_upsert(client: Client, number: int, *, subject: str, text: str) -> tuple[str, Comment | None]:

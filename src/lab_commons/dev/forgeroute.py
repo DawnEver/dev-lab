@@ -25,7 +25,6 @@ import re
 import subprocess
 import sys
 import tomllib
-import urllib.parse
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,8 +55,6 @@ DEFAULT_AREA: Final = 'unowned'
 RED: Final = frozenset({'failed', 'error', 'lost', 'missing'})
 _GREEN: Final = frozenset({'passed', 'xfailed', 'skipped'})
 _ROW: Final = re.compile(r'^- \[( |x)\] `([^`]+)`(.*)$', re.MULTILINE)
-_PAGE: Final = 50
-_PAGES: Final = 20
 _REASON_CHARS: Final = 200
 
 
@@ -158,13 +155,7 @@ def _find(client: Client, title: str) -> Issue | None:
     (#2432-#2436 beside #2427-#2431, 2026-10-11). Never ``q=`` either: gitea answers it from a search
     indexer that can lag a fresh issue. Every page is read so a duplicate never shadows the original.
     """
-    query = {'state': 'open', 'type': 'issues', client.backend.page_param: str(_PAGE)}
-    numbers: list[int] = []
-    for page in range(1, _PAGES + 1):
-        listed = client.call('GET', f'{client.repo}/issues?{urllib.parse.urlencode(query | {"page": page})}')
-        numbers += [raw['number'] for raw in listed if raw.get('title') == title and not raw.get('pull_request')]
-        if len(listed) < _PAGE:
-            break
+    numbers = [raw['number'] for raw in client.issues(state='open') if raw.get('title') == title]
     return client.issue_view(min(numbers)) if numbers else None
 
 

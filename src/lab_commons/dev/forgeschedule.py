@@ -53,7 +53,7 @@ from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
-from lab_commons.dev.forgework import Client, ForgeCallFailed
+from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.hpc.shell import FULL
 
@@ -346,7 +346,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     """Open issues carrying *label*, raw (pull requests excluded) -- one call shape on gitea and GitHub."""
     query = client.backend.list_query.format(state='open', limit=50) + '&labels=' + urllib.parse.quote(label)
     listed = client.call('GET', f'{client.repo}/issues?{query}')
-    return tuple(raw for raw in listed if 'pull_request' not in raw and label in _labels(raw))
+    return tuple(raw for raw in listed if not is_pull(raw) and label in _labels(raw))
 
 
 _REQUEST_PLATFORM: Final = re.compile(r'^\s*platform\s*=\s*["\'](?P<platform>[\w-]+)["\']', re.MULTILINE)

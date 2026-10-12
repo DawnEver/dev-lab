@@ -17,7 +17,8 @@ a commit status in context :data:`CONTEXT` on the head, posted only when it diff
 against the trunk is first RETARGETED to integration, with a comment saying why.
 
 The tick FETCHES (origin, and each PR head) through the retry wrapper; everything after is a read
-of the object store and the forge.
+of the object store and the forge. Last, the repo's declared issue hygiene runs
+(:func:`lab_commons.dev.forgetidy.tidy`), so finished issues are closed on the integrator's cadence.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_
 from lab_commons.dev.forgepulls import comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgestatus import Status, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
-from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, PullRequest, client_for
+from lab_commons.dev.forgetidy import load_hygiene, tidy
+from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, ListingIncomplete, PullRequest, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
@@ -248,8 +250,10 @@ def main(
     root = Path.cwd() if cwd is None else cwd
     try:
         fetch(root)
-        lines = tick(root, _venues(root), load_policy(root))
-    except ForgeCallFailed as failed:
+        venues = _venues(root)
+        lines = tick(root, venues, load_policy(root))
+        lines += [f'tidy: {line}' for line in tidy(dict(venues)['origin'], load_hygiene(root))]
+    except (ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
         return 1
     except (OSError, ValueError) as exc:

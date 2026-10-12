@@ -265,6 +265,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`lab_commons.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`lab_commons.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
+* :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: close the issues a repo declared finished; never delete.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`lab_commons.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the

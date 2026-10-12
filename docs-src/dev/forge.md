@@ -106,9 +106,15 @@ progress, every host card (stale flagged) and every starved candidate. It posts 
 
 - **Blocking reasons**: `no host serves <platform>`, `over budget: <ref> used X of Y core-h in 24 h`,
   `no headroom: ...`, `outranked by <candidate>`, `no host can produce it: <undeclared key>`.
-- **Host cards** (`forgehosts`): each serving host edits one comment on the open issue `forge hosts`: who it
+- **Host cards** (`forgehosts`): each serving host edits one comment on the ONE `forge hosts` issue: who it
   is, its platform, headroom, cluster facts (partitions, quota, QOS), its last tick, what it holds and why each
-  candidate it saw waits. A card older than three of its own ticks is stale.
+  candidate it saw waits. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
+  the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
+  listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
+- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge integration`): closes what
+  `[tool.lab_commons.forge.issue_hygiene]` declares finished -- `host_duplicates` (every hosts issue but the
+  oldest), `green_areas` (an `area:*` issue with no `- [ ]` row), `request_max_age_days` -- and says so in ONE
+  comment on the hosts issue. It never deletes; absent the table, it reads nothing.
 - `forgeschedule.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
 
 ## Alarms

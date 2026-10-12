@@ -62,10 +62,12 @@ __all__ = [
     'Comment',
     'ForgeCallFailed',
     'Issue',
+    'ListingIncomplete',
     'PullRequest',
     'backend_for',
     'client_for',
     'comment_of',
+    'is_pull',
     'main',
     'provenance',
     'pull_of',
@@ -82,6 +84,25 @@ _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
 
 #: A create's read-back before a retry -- its own landed object, or ``None`` -- or no read-back at all.
 _Found = Callable[[], Any] | None
+
+#: A listing's page size, and the pages read before it is refused as incomplete.
+_LIST_PAGE: Final = 50
+_LIST_PAGES: Final = 100
+
+
+class ListingIncomplete(RuntimeError):
+    """A listing still full at its page bound: what it did not read may hold the object being looked for."""
+
+
+def is_pull(raw: Mapping[str, Any]) -> bool:
+    """Whether a listed issue is a pull request: its ``pull_request`` is SET, not merely present.
+
+    Gitea sends ``"pull_request": null`` on every plain issue, so testing the key's presence read
+    every issue as a pull: ``issue list`` printed nothing and the hosts lookup found no issue and
+    opened a new one every tick (128 ``forge hosts`` issues on three repos, 2026-10-12).
+    """
+    return bool(raw.get('pull_request'))
+
 
 #: The separator in the provenance line, spelled once.
 _DOT: Final = ' · '
@@ -311,7 +332,24 @@ class Client:
         """Issues in *state*, pull requests excluded (GitHub lists both under ``issues``)."""
         query = self.backend.list_query.format(state=state, limit=limit)
         listed = self.call('GET', f'{self.repo}/issues?{query}')
-        return tuple(_issue(raw) for raw in listed if 'pull_request' not in raw)
+        return tuple(_issue(raw) for raw in listed if not is_pull(raw))
+
+    def pages(self, path: str, query: Mapping[str, str]) -> list[Any]:
+        """Every page of the listing at *path*; one still full at the bound is :class:`ListingIncomplete`."""
+        found: list[Any] = []
+        for page in range(1, _LIST_PAGES + 1):
+            params = dict(query) | {self.backend.page_param: str(_LIST_PAGE), 'page': str(page)}
+            listed = self.call('GET', f'{path}?{urllib.parse.urlencode(params)}')
+            found += listed
+            if len(listed) < _LIST_PAGE:
+                return found
+        msg = f'{path} still lists past {_LIST_PAGES} pages of {_LIST_PAGE}; refusing a partial read'
+        raise ListingIncomplete(msg)
+
+    def issues(self, *, state: str = 'all') -> tuple[Mapping[str, Any], ...]:
+        """Every issue in *state*, raw, off the listing (never the lagging search index), pulls excluded."""
+        listed = self.pages(f'{self.repo}/issues', {'state': state, 'type': 'issues'})
+        return tuple(raw for raw in listed if not is_pull(raw))
 
     def issue_view(self, number: int) -> Issue:
         """One issue."""
