@@ -64,117 +64,86 @@ class Page(NamedTuple):
     subject: str
 
 
-#: One row per page under :data:`CANONICAL_TREE`. ORDER IS READING ORDER, not alphabetical: a reader
-#: arriving at the family's process for the first time needs the participants before the verdict they
+#: One row per page under :data:`CANONICAL_TREE`. ORDER IS READING ORDER, not alphabetical: the migration
+#: page first for a workstation arriving from the old model, then the participants before the verdict they
 #: all cite, and the verdict before the branch layers that spend it.
 PAGES: Final[tuple[Page, ...]] = (
     Page(
+        'migrate',
+        'Migrating a workstation',
+        'Start here if you used to run the gate before a push: what to stop, and the five commands that replace it',
+    ),
+    Page(
         'the-three-participants',
         'The three participants',
-        'Who does what: the human, the concurrent dev agents, the coordinator that absorbs their work',
+        'Who does what: the human, the authors, the producers and the integrator',
     ),
     Page(
         'verdict-model',
         'The verdict model',
-        'What a verdict IS, why it starts INCONCLUSIVE, the three tiers and the destination each one gates',
+        'What a verdict is, the tiers, and which destination needs which forge parts',
     ),
     Page(
         'testing-discipline',
         'Testing discipline',
-        'The lightweight/heavy partition, xfail never skip, one test session at a time',
+        'The lightweight/heavy partition, xfail never skip, one test session per box',
     ),
     Page(
         'branch-layers',
         'Branch layers',
-        'What a lane, an integration branch and `main` each PROVE, and why one cannot substitute for another',
+        'Trunk, integration and child branches: what each proves and the one verb that moves it',
     ),
-    Page(
-        'alignment',
-        'Alignment',
-        'The framework every branch develops against so an integration conflicts on CODE, never on bookkeeping',
-    ),
-    Page(
-        'fanout',
-        'Fan-out',
-        'Parallel lanes in worktrees: environments, subagent bases, the shared hazards, landing',
-    ),
+    Page('alignment', 'Alignment', 'How every branch keeps shared bookkeeping out of merge conflicts'),
+    Page('fanout', 'Fan-out', 'Parallel work in worktrees: environments, subagent bases, measuring, landing'),
     Page(
         'shared-checkout',
         'The shared checkout',
-        "Where a tool's correctness argument stops transferring when the checkout is not exclusive",
+        'What breaks when several parties write one checkout, and the habits that prevent it',
     ),
     Page(
-        'orphans',
-        'Killed runs and orphans',
-        'What survives a stopped run, why a lock does not time out, and the census a reaper needs',
+        'orphans', 'Killed runs and orphans', 'What survives a stopped run, why a lock judges liveness, and how to reap'
     ),
     Page(
-        'hpc',
-        'HPC grants and remote runs',
-        "Per-machine shares of shared Slurm accounts, usage read from job comments, a commit's suite on a cluster",
+        'box-resources', 'Box resources', 'What one workstation rations, and the broker every run declares its cost to'
     ),
     Page(
-        'box-resources',
-        'Box resources',
-        'What one workstation rations, the four defects measured in doing it by hand, and the broker shape',
-    ),
-    Page(
-        'forge',
-        'The forge',
-        'How `main` is protected on a self-hosted forge: the push whitelist, the status check, branch disposal',
-    ),
-    Page(
-        'issues',
-        'Issues',
-        (
-            'An issue is intent; todo/in-progress/ready/done are derived from origin refs and the lane parts, '
-            'claims are comments'
-        ),
+        'forge', 'The forge', 'Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict'
     ),
     Page(
         'integrator',
         'The integrator',
-        'Woken or self-polling, one derived merge queue: the ready predicate over the `tests/<platform>` parts',
+        'The integration tick, PRs into integration, `forge sync`, `forge promote`, the merge audit',
     ),
     Page(
-        'retirement',
-        'Retirement',
-        'An archive and a retired-spelling registry are a PLACE and a RULE, and why the rule cannot live in the place',
+        'issues',
+        'Issues',
+        'An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments',
     ),
+    Page('hpc', 'HPC clusters', 'A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records'),
+    Page('artefacts', 'Artefacts', "A run's declared outputs: the store, its layout and its retention"),
+    Page('retirement', 'Retirement', 'The archive keeps old code, the registry keeps a dead spelling dead'),
     Page(
         'docs-pipeline',
         'The docs pipeline',
-        'The three properties a docs builder must hold, and why an unbuilt sub-site is announced rather than silent',
+        'The three properties a docs builder holds, and why a skipped sub-site is announced',
     ),
     Page(
         'translations',
         'Translations',
-        'Why a `<stem>.zh.md` beside its `<stem>.md` escapes the CJK guard, and the non-ASCII goal',
+        'How a `<stem>.zh.md` beside its `<stem>.md` passes the CJK guard, and the non-ASCII goal',
     ),
-    Page(
-        'worktrees',
-        'Worktrees stay inside',
-        'Every checkout lives under `<repo>/.claude/worktrees/<name>`: the deny row, the detector, the ignore line',
-    ),
-    Page(
-        'branch-set',
-        'One branch per session',
-        'One long-lived branch per session: the declared branch set, the census, and the merge-and-delete list',
-    ),
+    Page('worktrees', 'Worktrees stay inside', 'Every checkout lives under `<repo>/.claude/worktrees/<name>`'),
+    Page('branch-set', 'One branch per session', 'The declared branch set, merge-or-delete, and the push-time check'),
     Page(
         'auto-doors',
         'Auto mode runs the doors',
-        'Local cleanup and own-run stops are checked doors both clients allow; pushes and remote deletes stay human',
+        'Local cleanup and run stops are checked doors both clients allow unprompted',
     ),
-    Page(
-        'refusals',
-        'Refusals',
-        'Every deny refusal is a clause, a door and a pointer; the full reasoning and history of each row',
-    ),
+    Page('refusals', 'Refusals', 'Every deny refusal is a clause, a door and a pointer; the full text of each row'),
     Page(
         'project-files',
         'Project files',
-        'Every project-level file is rendered from a family base plus a delta, or owned by the repo with a reason',
+        'Every project file is rendered from a family base plus a delta, or owned by the repo; hooks and CI are TOML',
     ),
 )
 

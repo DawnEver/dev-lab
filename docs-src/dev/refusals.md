@@ -1,18 +1,18 @@
 # Refusals
 
-Rule `INJECTED-TEXT-IS-PROGRESSIVE` (statement in `lab_commons.dev.rules`). Text the family injects into an agent's context is the short essential. The reasoning, history and incidents sit here, one hop away.
+When a deny hook refuses a command, it prints three lines: what was refused and why, the command to run instead,
+and a `details:` pointer to a section of this page. Run the command it names. Each section below holds the full
+reasoning for one universal row (`INJECTED-TEXT-IS-PROGRESSIVE`); a repo-local row is on that repo's own page.
 
 ## The shape of a refusal
 
-User directive, 2026-10-05: clean up all hook-deny text, and apply progressive disclosure to everything lab-commons injects into an agent. Before that day a deny refusal was one paragraph: 13 universal rows averaged about 600 characters and the longest ran past 1,000, with incident dates and measurements the agent paid for on every refusal.
-
-A refusal now has three lines, and the budget is declared data in `lab_commons.dev.disclosure.BUDGETS`:
+The budget is declared data in `lab_commons.dev.disclosure.BUDGETS`:
 
 - `<ID>: <what was refused and why, as one clause>`
 - the exact command to run instead (the door);
 - `details: docs-src/dev/refusals.md#<id> (lab-commons)`, which points at the section below.
 
-When a command targets another repo, the engine adds one header line naming that repo. `lab_commons.dev.famtests.injectedtext` runs the budget in a consumer's suite. Each section below keeps the full text a refusal used to carry. `{remedy}` in an exit is the consuming repo's own door.
+When a command targets another repo, the engine adds one header line naming that repo. `lab_commons.dev.famtests.injectedtext` runs the budget in a consumer's suite. `{remedy}` in an exit is the consuming repo's own door.
 
 ## BARE-TEST-INVOCATION
 
@@ -102,5 +102,3 @@ When a command targets another repo, the engine adds one header line naming that
 ## Cross-repo refusals
 
 When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `lab_commons.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.lab_commons.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.
-
-The text that header used to carry, in full: `[<ID>: this command targets <repo>, which declares no door for this rule in its pyproject [tool.lab_commons.doors]; any repo file named below belongs to <session repo> and may not exist there] <reason>`, and, with a door, `<ID>: refused. This command targets <repo>, so its exit is that repo's own door (pyproject [tool.lab_commons.doors]): <door>`.

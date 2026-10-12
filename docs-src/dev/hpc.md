@@ -1,74 +1,123 @@
-# HPC: grants, shared accounts and remote runs
+# HPC clusters
 
-- **Two files, two owners.** The JOB file (`-c hpc.toml`, travels with the project) says WHAT runs: `[job]` entry/items/setup/workdir, `[cost]` of one item, `[policy]` for cutting. The MACHINE file says WHERE this box may run: the `[hpc]` table of `~/.config/lab-commons/config.toml` (`lab_commons.config`; `$LAB_COMMONS_CONFIG` overrides the path), holding one `[[hpc.grant]]` per share it holds; the workstation name is `$HARNESS_MACHINE` when the machine harness sets it, else absent (the retired `[hpc] workstation` key is refused by name). Partitions and QOS are cluster facts, so they live on the grant, not the job. A leftover `~/.config/lab-commons/hpc.toml` is refused by name: move it under `[hpc]`.
+A Slurm cluster is one more `forge serve` host. Its login node pulls work from the forge over HTTPS, submits a
+commit's suite as a Slurm array, gathers the record and posts the `linux` part; nothing reaches it inbound.
+To serve a cluster account, store your forge token there and paste the one deploy line below. To see what a
+cluster is doing, run `forge queue` from anywhere; ssh is only a human's debugging door.
 
-```toml
-[hpc]
+## Deploy: one line per account
 
-[[hpc.grant]]
-user = "me"                          # ssh user; keys stay in ~/.ssh/config
-hosts = ["login2.cluster", "login1.cluster"]   # login hosts of ONE cluster, tried in order
-slurm_account = "acct-free"
-cpus = 64                            # this box's share of the account's CPU quota
-priority = 0                         # optional tie-break
-partitions = ["shortq", "defq"]      # optional, in preference order
-qos = { devq = "dev" }               # optional
+On the login host you chose, store your own forge token once (`git config --global credential.helper store`,
+`chmod 600 ~/.git-credentials`, then `python -m lab_commons.dev.forge auth login`), then paste:
+
+```
+F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main
 ```
 
-- **An account is `(user, slurm_account)`; its hosts are doors.** Quota and the `lc:ws=` usage tags are per account. The runner tries each host with `ssh -o BatchMode=yes -o ConnectTimeout=10`; exit 255 (unreachable, the command never ran) fails over to the next host and logs it, and the first host that answers stays chosen. A command that ran and failed is NOT a failover. All hosts share Slurm and home, so `status`/`gather`/`retry` read back through any of them (`<job>.submission.json` records the targets).
-- **Many-to-many, refused by name.** A box may hold several grants; an account may be shared by several boxes, each with its own share. No `[hpc]` table, a duplicate account, an empty `hosts` or a non-positive share is refused with the file and the key named. No secrets in the file.
-- **Usage is READ, never stored.** Every job carries `--comment=lc:ws=<workstation>`. The one-round-trip probe also runs `squeue -h --me -A <acct> -o "%C %k"` and sums CPUs per tag (an untagged job counts as someone else's). `--me` matters: a university free-tier account carries thousands of other people's jobs that count against nothing of ours.
-- **Allocation is pure** (`plan.allocate`). Per grant: `headroom = min(share, quota - CPUs held by OTHER workstations) - CPUs held by this one`; plan on that headroom with the existing planner; take the grant whose plan finishes earliest (tie: higher `priority`, then file order). No headroom anywhere raises naming every account and why. A cluster host publishes its grant's headroom, partitions and quota on its forge host card each tick (`python -m lab_commons.dev.forge queue` reads it from anywhere).
-- **Verbs.** `python -m lab_commons.hpc {plan,submit,status,gather,retry} -c job.toml`; `submit` records the grant it chose in `<job>.submission.json`, so `status`/`gather`/`retry` go back to the same cluster.
+- **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
+  file: host, root, python, served repos); later runs read it, and flags that disagree with it are refused.
+- **What it does** (`lab_commons.hpc.deploy`): refuses off the declared host; checks every served repo with
+  `git ls-remote` before changing anything; clones or fast-forwards each checkout; builds each `.venv` with the
+  repo's own `[tool.lab_commons.hpc] install` and `native` build on a uv-managed CPython (skipped while its
+  inputs are unchanged); installs `cmake` through `uv tool` when a repo needs it and the host lacks it;
+  replaces its own marked crontab lines; runs one tick of each repo and prints it.
+- `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
+- **The crontab line**, per repo, every 5 minutes:
+  `cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve --mode integrate >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+  Route its alarm lines, or enable `[alerts]` in the machine file.
+- **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
+  hosts. A second host finding a live run owned by another host of its account leaves it alone until that
+  owner's lease lapses on the forge's clock.
+- **Identity is read, never typed**: the claim names `<cluster>/<account>` from Slurm's `ClusterName` and
+  `id -un` (`lab_commons.hpc.account`).
+- `git`, `uv` and `cargo` must be on the cron `PATH`; `module load` lines go in `~/.bashrc`.
 
-## Remote run
+## Grants: the machine file
 
-Nouns (forge plan P1, user ruling 2026-10-09): a **run** is one execution of a test set on one platform at one sha; a **part** is a platform's result for a sha, composed of runs (an incremental part = its base part + the re-run ids); an **admission** is computed from parts and never stored. Retired spellings are refused by name with their replacement (`lab_commons.hpc.retired`).
+The account's `[hpc]` table in `~/.config/lab-commons/config.toml` (`$LAB_COMMONS_CONFIG` overrides the path)
+holds one `[[hpc.grant]]` per Slurm share. Partitions, QOS and compute-node set-up are cluster facts, so they
+live on the grant.
 
-Two short calls, RUN ON THE CLUSTER LOGIN NODE with its own shell (`cluster.submitter`; design 2026-10-11: the cluster is one more `forge serve` host). On a box without `sbatch`, `run submit|gather` refuse (exit 2) -- no workstation submits over ssh, and none asks over ssh where a run is: each run's progress travels on its forge claim and each host's headroom on its host card, both read by `python -m lab_commons.dev.forge queue`. `forge serve` drives both calls, one step per tick (see Deployment below):
+```toml
+[[hpc.grant]]
+user = "me"                          # equal to the login on that cluster
+hosts = ["login2.cluster", "login1.cluster"]
+slurm_account = "acct-free"
+cpus = 64                            # this account's share of the CPU quota
+partitions = ["shortq", "defq"]      # optional, in preference order
+qos = { devq = "dev" }               # optional
+setup = ["module load git/2.42.0"]   # optional, prepended to every array task
+```
 
-1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> --install "<cmd>" [--needs cargo,cc] [--only ids.txt] [--collect "<pytest paths>"] [--select "<marker expr>"] [--python 3.13] [--repo <local repo>] [-c job.toml]` -- checks the login node's prerequisites, fetches, builds, collects, plans and submits round 0, writes the run's state ON THE CLUSTER at `~/ci/runs/<sha>/state.json`, prints the run id (the sha) and returns in minutes. `--scope incremental` requires `--only` (the re-run ids); `--scope full` refuses it. The array asks for EVERY declared partition of the grant that admits its shard under one QOS (`--partition=shortq,defq`) -- measured 2026-10-10, array 7660516 named `shortq` alone and pended for hours beside an idle `defq`. Between grants with equal makespan the one with more measured headroom (pending jobs included) builds; spreading ONE run over two users' grants would need a build of the tree in each home, so it is not done.
-2. `python -m lab_commons.hpc run gather --sha <40-hex> [-c job.toml] -o <dir> [--wait]` -- ONE short call: still running prints where the run is (queued with Slurm's reason and for how long, running k of n, done) and exits 3; a finished round is folded and, if a killed shard left ids unfinished, they are re-submitted as the next round (pending again) -- RETRIES ARE DRIVEN BY GATHER CALLS; once nothing is left the record is written gzipped to `<dir>/run-<sha>-<platform>-<req>.json.gz` (`<req>` is the submission stamp), and the exit is 1 if any id is failed/error/lost/missing. `--wait` polls every `[policy] poll_seconds` until the record. `forge serve` makes the same call for every run it owns, one step a tick. A task pending past `[policy] stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy (`scontrol update ... Partition=<all declared>` when the job does not name them all, else Slurm's own reason, which is then not capacity). Then `python -m lab_commons.dev.platformparts post <that file>`.
+- A missing table, a duplicate account, an empty `hosts` or a non-positive share is refused with the key named.
+  No secrets in the file.
+- **Usage is read, never stored.** Every job carries `--comment=lc:ws=<host>`; headroom is the share minus what
+  the account's jobs hold, read from `squeue --me`.
+- Each tick the host publishes its headroom, partitions and quota on its forge host card.
 
-- **The workstation is untouched** (`tests/test_arch_hpc_leaves_the_workstation_untouched.py`): `lab_commons.hpc` imports nothing of `lab_commons.dev` (no box lock, no environment seat), runs no pytest or interpreter locally, and its only local subprocesses are READ-ONLY git (`show`, `for-each-ref`, `pack-objects`, `rev-parse`, `ls-remote`). A commit off the remote ships as `git pack-objects --revs --stdout` (`<sha>` minus every remote-tracking ref) -- the `git bundle` this replaced needed a temporary ref written into the caller's checkout. The cluster `index-pack`s it into its cache and names `refs/lab-ci/<sha>` THERE.
-- **Preparation is reused by its real inputs, never by commit** (`lab_commons.hpc.builds`). The repo declares them once in its pyproject: `[tool.lab_commons.hpc] dependency_inputs = ["pyproject.toml", "uv.lock"]`, `source_roots = ["src"]`, `timeout_s = {incremental = 300, full = 3000}` (pytest `--timeout` per run scope, passed to every item; a scope absent keeps the repo's own default), `native = { inputs = ["rust"], build = "<shell writing importable modules into $LAB_CI_NATIVE>" }`. The venv lives in `~/ci/envs/<key>` (key: the inputs' git object ids at the commit + `--install` + `--python`), the native build in `~/ci/native/<key>`, each built once under a `flock`; a sha is only a `git worktree` whose source roots reach them through `PYTHONPATH` (`.lab-ci/env.sh` in the tree, sourced by collection and every array task). A fresh sha with unchanged inputs builds nothing. A git dependency that FLOATS (`name @ git+<url>[@<ref>]`, or a `[tool.uv.sources]` `git` table without `rev`) adds its remote tip (`git ls-remote`, read-only) to the env key, so a new upstream tip rebuilds and an unchanged one reuses -- the pyproject is the one list; a 40-hex pin is already hashed with it. Every env build shares `UV_CACHE_DIR=~/ci/uv-cache`, every native build `CARGO_TARGET_DIR=~/ci/cargo-target` under a `flock`, so a Rust edit compiles only the crates it touched. Each prep step (`env`, `native`, `collect`) prints `@@@ time <step>=<s>s`, appends it to `.lab-ci/prep.log` in the tree, and the record carries them as `prep`. Undeclared, the tree builds its own `.venv` as before.
-- **Collection is cached per test file** (`lab_commons.hpc.collect`, shipped as `~/ci/bin/lab_ci_collect.py`): a file's ids are kept under `~/ci/collect/<global key>/<blob id>.json`, the global key hashing the build keys, the marker expression, `pyproject.toml` and every `conftest.py`; only files with no entry are collected, in one pytest call, and a file that failed to collect is never cached. Used when `--collect` is paths only (test files = tracked `test_*.py`/`*_test.py`); an option in it falls back to one plain `pytest --collect-only`.
-- **`--only <ids-file>`** (one node id per line) runs just the ids the caller selected -- the selection is the repo's.
-- **Prerequisites are named up front**: `git`, `uv` and every `--needs` command must be on the login node's `PATH`, else submit refuses naming them before anything is fetched. **A failed build stops the run**: the install runs in its own `bash -eo pipefail`, its output is kept at `~/ci/trees/<sha>/.lab-ci/build.log`, and a non-zero exit (or no `.venv/bin/python` after it) refuses with the log's tail -- measured 2026-10-09: a build that failed for want of `cargo` went on to submit 276 shards that all died on `.venv/bin/activate`.
+## Runs on the cluster
 
-- Everything on the cluster lives under `~/ci/`: `cache.git` (bare, fetched read-only over HTTPS), `packs/<sha>.pack` (only when the commit is not on the remote: a read-only pack from `--repo`, base64 over the runner's stdin), `runs/<sha>/state.json` (the run between gathers), `trees/<sha>` (a worktree with its OWN `.venv`, built once on the login node and reused), `bin/lab_ci_pytest_item.py` (the item runner, shipped from this checkout so its parser does not depend on the tested project's `lab_commons` pin). A day-to-day `~/<repo>` checkout is never touched.
-- Node ids come from `pytest --collect-only -q` in the tree (`--select` and the platform expression join into ONE `-m`, since pytest keeps only the last); one item per test file. Each item runs `pytest <its files> -p no:cacheprovider -p lab_ci_pytest_item -q [-n 0]` and the plugin keeps only its ids (`LAB_CI_IDS`) -- ids never go on the command line, because pytest cannot parse back every id it prints (a `::` or an escaped non-ASCII character inside a parameter) and one it cannot parse aborts the file with `no tests ran` -- the runner is also the pytest PLUGIN, and `-n 0` (when xdist is installed) keeps an item on its one CPU instead of starting a worker interpreter per file.
-- **Outcomes are STREAMED, keyed by pytest's own `nodeid`.** The plugin appends one JSON line per test phase to `.lab-ci/<stamp>-r<round>/<item>.jsonl` as pytest reports it; the runner closes the file with `{"done": rc, "wall": s, "peak_mb": m}`. The run reads the streams (one `cat` per round), not the shards' end-of-run files. An xdist `@<group>` suffix is stripped back to the collected id. Measured on a real cluster (a downstream run, 2026-10-09): the junit file this replaced keyed on `(classname, name)`, `--dist loadgroup` had renamed grouped tests `<name>@group_0`, and 8786 tests that RAN were recorded `missing`.
-- **A kill costs only the unfinished.** An item whose stream never closed (a shard Slurm killed for `TIMEOUT`/`OUT_OF_MEMORY`) keeps what it reported; its remaining ids are re-submitted split in halves, for up to `run.RETRIES` (2) more rounds, the next round asking for twice the memory after an `OUT_OF_MEMORY`. Only what is still unfinished after that is `lost`. Same run: 23 of 99 shards hit the 2h09 limit and 3 were OOM-killed at 6 GB, and the old atomic results file made all 13751 of their ids `lost`.
-- **The plan is measured.** The record carries `durations` (seconds per id), `overheads` (per file: wall minus its tests -- interpreter and imports) and `peaks_mb` (per file). `run submit` reads them back from the repository's last record (`lab_commons.hpc.learned`, written by every gathered record): an item costs ONE overhead (the worst of its files') plus its ids' durations -- whole files are packed into items of up to `shard_minutes_min / safety` so start-up is paid per item, not per file -- shards are packed consecutively by that time inside the `[policy]` window, the wall limit is the slowest shard's sum times `policy.safety`, and the memory is the worst measured peak times `policy.safety`. `[cost]` prices only files never measured, and each round's plan names them as `unmeasured`. Same run: a flat `seconds = 120` per file planned 129-min shards that ran 1h25-2h07.
-- **Compute-node set-up is the grant's.** `setup = ["module load ..."]` in `[[hpc.grant]]` is prepended to every array task that grant submits, before the job's own set-up (e.g. `module load git/2.42.0` -- its compute nodes have no `git`, and 126 git-calling tests errored `FileNotFoundError: 'git'` on the same run).
-- The record `{sha, req, scope, platform, system, env, account, job_ids, cluster, python, prep, plan, rounds, outcomes, reasons, handed, durations, overheads, peaks_mb}` is written under `-o` (`platform` is the part, `linux`; `system` the box it ran on; `env` the tree venv's `lab_commons.dev.envkey` hash -- a venv that cannot report it is refused before any job; `account` the Slurm account; `job_ids` every round's array; `reasons` the crash line of each failed/error id; `plan` is round 0's). Outcomes: `passed`, `failed`, `error`, `skipped`, `xfailed`, `not-covered` (assigned to another part, by the platform table and rule below), `lost` (unfinished after every retry), `missing` (its item's pytest closed without reporting it -- a crash mid-file, or an id the collection no longer yields). Only `passed` means passed. `handed` maps each `not-covered` id to the platforms that CAN run it (`[]`: none).
-- The tested tree's venv must provide `lab_commons.hpc.worker` (any `lab-commons` since the hpc tier); the array task runs `python -m lab_commons.hpc.worker` there.
+`forge serve` drives two short calls on the login node, one step per tick. They refuse (exit 2) on a box
+without `sbatch`.
 
-## Platform parts: one result composed per platform
+1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--python 3.13]`
+   checks the login node's prerequisites, fetches, builds, collects, plans and submits round 0, writes
+   `~/ci/runs/<sha>/state.json` and returns in minutes. `incremental` needs `--only`; `full` refuses it.
+2. `python -m lab_commons.hpc run gather --sha <40-hex> -o <dir> [--wait]`: still running, it prints where the
+   run is and exits 3; a finished round is folded and its unfinished ids re-submitted as the next round; once
+   nothing is left it writes `<dir>/run-<sha>-<platform>-<req>.json.gz` and exits 1 if any id is red, lost or
+   missing.
 
-- ONE declaration, per marker, in the tested repo's pyproject, read AT `--sha` (`lab_commons.hpc.platforms`): `[tool.lab_commons.platforms]` `femm = ["windows"]`, `matlab = ["windows", "linux"]`. A marker not listed runs everywhere; platforms are `linux`, `windows`, `macos`. A host requirement is a marker too: `dev_checkout = ["windows"]` assigns a test asserting a developer checkout (hooks installed, branches on origin, worktree placement) to a part that runs in one, never to the cluster's bare per-sha tree. There is no `--not-covered` flag: the table is the one source.
-- A part is named for the platform it RAN ON. The record `run gather` wrote becomes its platform's part: `python -m lab_commons.dev.platformparts post <run record>` queues it as the `tests/<platform>` commit status on the forge (description `scope=<full|incremental> ran=<n> hands=<platform>:<n>,... nowhere=<n>`) with the record attached as its `target_url` (`lab_commons.dev.forgerecords`), posted once the commit is on origin (`lab_commons.dev.forgeoutbox`), STRICTLY -- PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is FAIL; ANY `lost`/`missing` id makes the part INCONCLUSIVE and it is refused, never recorded (a FAIL claims the code failed; measured 2026-10-09, 50349 lost ids from a build that made no venv were recorded as a linux FAIL); a record covering nothing is refused, and so is one handing off an id assigned to its own platform. The record keeps the env (cluster, system, python); the status is about the commit.
-- **Every collected id is ASSIGNED to exactly one part, by one rule** (`lab_commons.hpc.platforms.assign`): the first of `linux`, `windows`, `macos` that can run it. A part's selection is a pure function of the commit's table and its collected ids, so every part can start at any time and in parallel; no part reads another part's record. The cluster's linux run uses the same rule for its `not-covered` set.
-- Any other part calls `platformparts.select(root, sha, platform, collect=...)` (`collect` maps a marker expression to the ids it collects in that checkout), runs its assigned ids, and records what it `handed`: every other id with the platforms that can run it. A consumer exposes it as its gate runner's `--platform <name>`.
-- Admission (`lab_commons.dev.admission`) accepts a whole local run for HEAD OR the newest part per platform for HEAD when every id any part handed is assigned to a recorded part, in whichever order the parts were recorded. A FAIL part composes a FAIL (integration admits it and writes the gap; the trunk refuses). A missing part is refused naming the part and its command; an id no declared platform can run, or one a part handed though it is assigned to that very part, is refused by name. The trunk counts a composition only when every part is a PASS of a trunk tier.
+The cluster run state is a resumable tick (`forgerun`): `claimed -> submitted -> gathered -> published`, kept
+per repo + sha + platform + scope in `forge-runs/` beside the machine file. Slurm is the truth: jobs named
+`run-<sha12>` with no recorded state are orphans, alarmed and never resubmitted.
 
-## Deployment on a cluster: one more `forge serve` host
+### What a run reuses
 
-The cluster PULLS its work over HTTPS (egress 443); nothing reaches it inbound, so the VPN leaves the loop. WHAT is deployed is data in the account's machine file (`lab_commons.config`, table `[deploy]`: the login `host`, the checkout `root` in the home, the uv-managed `python`, the `serve` arguments and the served `repos` with their HTTPS urls and refs) -- never a tracked file, because the forge, its repos and the host are private to the deployment. The first run declares it from its flags; every later run reads it. The deployment itself (checkouts, venvs, crontab, run state) lives in the account holder's home.
+- **Preparation is keyed by its inputs, never by commit** (`lab_commons.hpc.builds`), declared once:
+  `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
+  `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
+  with unchanged inputs builds nothing. A floating git dependency adds its remote tip to the key.
+- Everything lives under `~/ci/` in the account's home: `cache.git`, `envs/<key>`, `native/<key>`,
+  `trees/<sha>`, `runs/<sha>`, `collect/`, `uv-cache`, `cargo-target`. A day-to-day checkout is never touched.
+- **Collection is cached per test file** (`lab_commons.hpc.collect`); only files with no entry are collected.
+- **A failed build stops the run** with the tail of `~/ci/trees/<sha>/.lab-ci/build.log`; prerequisites
+  missing from the login node's `PATH` are named before anything is fetched.
 
-- **One thing, then one line.** Store your forge token once (the credential bullet below), then on the login host you chose paste:
+### How a run is planned and executed
 
-  ```
-  F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main ...
-  ```
+- **The plan is measured.** Each record carries `durations`, `overheads` and `peaks_mb`; the next submit reads
+  them back (`lab_commons.hpc.learned`), packs whole files into shards inside the `[policy]` window, and sets the
+  wall limit and memory from the slowest shard and worst peak times `policy.safety`.
+- The array asks for every declared partition that admits its shard (`--partition=shortq,defq`). A task pending
+  past `stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy.
+- **Outcomes are streamed**, one JSON line per test phase keyed by pytest's `nodeid`, so a killed shard keeps
+  what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with doubled memory
+  after an out-of-memory kill; only what is still unfinished after that is `lost`.
+- The record holds `{sha, req, scope, platform, system, env, account, job_ids, cluster, python, prep, plan,
+  rounds, outcomes, reasons, handed, durations, overheads, peaks_mb}`. Outcomes: `passed`, `failed`, `error`,
+  `skipped`, `xfailed`, `not-covered`, `lost`, `missing`. Only `passed` means passed.
 
-  The same line re-run is the upgrade (the flags must match the stored declaration, or drop them). `lab_commons.hpc` is stdlib-only, so the line needs no venv (a login node's system `python3` may be far older; uv supplies 3.13). `deploy` (`lab_commons.hpc.deploy`) refuses off the declared host, checks every served repo with `git ls-remote` before changing anything (a refusal names `~/.git-credentials`), clones or fast-forwards each checkout under `~/<root>`, builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build (a uv-managed CPython with `UV_PYTHON_PREFERENCE=only-managed`, so manylinux wheels run on glibc 2.28; skipped while the key of its declared inputs is unchanged), installs `cmake` with `uv tool install cmake` when a repo's `needs` names it and the host has none, replaces its marked crontab lines (`# lab-commons-deploy:<repo>`, one per repo, every 5 minutes under `flock -n`; no other line is touched), and runs one tick of each, printing it. `--dry-run` prints every action and changes nothing; `--remove` deletes the marked lines only.
-- **One host per account.** Cron is per login host and `flock` on GPFS does NOT lock across hosts, so each account runs its crontab on ONE login host. The real guard is the idempotent run state (`forge-runs/` in the account's home): a second host that finds a live run owned by another host of its account does nothing, and adopts it only after that owner's lease has lapsed by the forge's clock. Two hosts claiming at once are two owners; the forge's order lets exactly one proceed.
-- **The crontab line `deploy` writes**, per repo (`flock -n` only stops this host overlapping itself): `*/5 * * * * PATH=~/.local/bin:~/.cargo/bin:...; cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve --mode integrate >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>` (home paths written absolute). Route the log's `lab_commons.forge.alarm` lines, or enable the machine file's `[alerts]` table (`telegram`, `email`, `webhook`) so the tick delivers them itself.
-- **Identity is read, never typed.** The claim names `<cluster>/<account>` from `scontrol show config` (`ClusterName`) and `id -un`; the machine file still holds the account's `[[hpc.grant]]` (with `user` equal to that login) for its `slurm_account`, share, partitions and `setup`.
-- **Credential: the holder's OWN forge token, through `git credential`** (no machine accounts). `git config --global credential.helper store` keeps it in `~/.git-credentials`; `chmod 600 ~/.git-credentials`. Scope: repo read, commit status write, attachment upload. Store it once with `python -m lab_commons.dev.forge auth login`; nothing logs it. A 401/403 raises an `auth` alarm.
-- **Venv on glibc 2.28.** `deploy` builds each `.venv` on the login node itself; a venv built elsewhere is not portable. `git`, `uv` and `cargo` must be on the cron `PATH` (the line puts `~/.local/bin` and `~/.cargo/bin` there; `module load` lines go in `~/.bashrc`, since `run submit` uses `bash -lc`).
-- **Upgrading the tool** never happens under a live run of another schema: the tick refuses it naming the file and the remedy.
+## Platform parts
 
-**SSH is a human's debugging door, never a tool path.** Nothing in this family reaches a cluster over ssh to learn where a run is: `forge queue` answers that from the forge. A human with VPN access may still `ssh` to a login node and read `squeue --me`, `~/ci/runs/<sha>/state.json`, the forge-runs state files and the tick's log, exactly as any shell user would.
+- **One table**, per marker, in the tested repo's `pyproject.toml`, read at the sha (`lab_commons.hpc.platforms`):
+  `[tool.lab_commons.platforms] femm = ["windows"]`. An unlisted marker runs everywhere. A host requirement is a
+  marker too: `dev_checkout = ["windows"]` sends a test that needs a developer checkout to a part that runs in one.
+- **Every id is assigned to exactly one part**: the first of `linux`, `windows`, `macos` that can run it
+  (`platforms.assign`). Parts are independent and can run in any order, in parallel.
+- **A part is strict**: PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is
+  FAIL; any `lost`/`missing` id makes it INCONCLUSIVE and it is not posted.
+- A non-cluster part calls `platformparts.select(root, sha, platform, collect=...)`, runs its assigned ids and
+  records what it handed to other platforms. A consumer exposes it as its runner's `--platform <name>`.
+
+## Job files
+
+`python -m lab_commons.hpc {plan,submit,status,gather,retry} -c job.toml` runs a non-test workload described
+by a job file (`[job]`, `[cost]`, `[policy]`) on the grant whose plan finishes earliest. `submit` records the
+grant it chose in `<job>.submission.json`, so the other verbs return to the same cluster. These verbs reach the
+login host over ssh and are not how a commit's suite runs.
+
+## Debugging by hand
+
+A human with VPN access may ssh to the login node and read `squeue --me`, `~/ci/runs/<sha>/state.json`, the
+`forge-runs/` state files and `~/.cache/lab-forge-<repo>.log`. No tool path does this.

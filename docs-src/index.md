@@ -1,5 +1,6 @@
 # lab-commons documentation
 
-- This repo is the FAMILY's shared half: the code four labs import, and the MECHANISM DOCS four labs read.
-- [Development mechanism](dev/index.md) is the whole of it today: how a verdict is produced, how lanes fan out, how a merge lands, what the box rations.
-- There is no generated API sub-site here and no build step: `docs-src/` is the source and it is also what a reader reads, because markdown is the one format a human and a model both edit without a toolchain.
+- This repo is the family's shared half: the code the labs import, and the mechanism docs they read.
+- [Development mechanism](dev/index.md): how a change is written, proved on the forge, integrated and promoted.
+  Arriving from the old local-gate model? Start with [Migrating a workstation](dev/migrate.md).
+- There is no build step here: `docs-src/` is the source and also what a reader reads.

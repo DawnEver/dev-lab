@@ -1,118 +1,173 @@
-# The forge — how `main` is protected, and how to configure it
+# The forge
 
-- This page is the CONFIGURATION of the forge side; the local half is [the verdict model](verdict-model.md) (what a verdict is) and [branch layers](branch-layers.md) (how a lane lands).
-- **The forge is a REMOTE, cloud-hosted service: nothing in any repo here starts, stops or restarts it.** Everything below is configuration applied THROUGH its API or web UI, and a forge-side failure is diagnosed and REPORTED, never waited on for a restart that nobody here can perform.
-- **A network verb goes through the retry wrapper, three times, and a write that still fails is REPORTED with its diagnosis rather than hammered** — three retries of a server-side failure is an hour of CPU for the same answer.
-- Everything below was measured against this family's self-hosted forge on 2026-08-27, using `consumer-a` as the repo under protection. The other repos in the family have the same forge and the same accounts, so the configuration transfers; only the repo name changes.
+The forge (a self-hosted Gitea, or GitHub) is where every verdict lives. A pushed sha that lacks a
+`tests/<platform>` status is work; a `forge serve` host claims it, runs the suite once and posts the result.
+You push, then read `python -m lab_commons.dev.forge queue` or `forge status list <sha>`. You never run a full
+suite to learn whether a sha is green, and you never wait for one to push.
 
-## The rule being enforced
+## Parts
 
-- **`main` accepts only a tree that the HEAVY tier has judged** — user directive 2026-08-27: the integrator does the merge, and a heavy PASS is the standard it merges on.
-- **A gate PASS is NOT sufficient, and the difference is not academic**: the heavy partition excludes the integration-test layer and every live vendor engine from the gate, so a gate PASS is SILENT about business acceptance. Measured the same day, 15 integration failures sat behind a green gate all day because no gate tier ran them.
-- The enforcement reads the forge: a trunk push is admitted when every `tests/<platform>` part of HEAD is a PASS of scope `full` (`lab_commons.dev.admission`); no pre-push hook runs a test.
+- **A part** is one platform's result for one sha, posted as the commit status `tests/<platform>` (`linux`,
+  `windows`, `macos`): `success` is PASS, `failure` is FAIL, `pending` is a claim. The description is
+  `scope=<full|incremental> ran=<n> hands=<platform>:<n>,... nowhere=<n>`; `target_url` links the run record.
+- **A run** is one execution of a test set on one platform at one sha; its record is
+  `run-<sha>-<platform>-<req>.json.gz`. An incremental part is its base part plus the re-run ids.
+- **Admission** is computed from parts and never stored (`lab_commons.dev.admission`): a lane and the
+  integration branch need no part; the trunk needs every required part of HEAD a PASS at scope `full`. An
+  unreadable forge makes the trunk wait.
+- **One reader.** The integrator, issue readiness and admission all read parts through
+  `lab_commons.dev.platformparts.standing`.
+- An INCONCLUSIVE run is no part and posts nothing. Which ids each platform runs is the repo's
+  `[tool.lab_commons.platforms]` table ([HPC clusters](hpc.md#platform-parts)).
 
-## Layer A — the push whitelist (REQUIRED, no token needed)
+## Producing parts: `forge serve`
 
-- The integrator updates `main` directly; nothing goes through a pull request.
-- **Run the script; do not click.** One command reports every clause and whether it MEETS the target; the same command with an apply flag sets the push permission and the whitelist.
-- **Prose could not fire, and this is the measurement that proves it**: on 2026-08-27 the rule everyone believed was in place was push DISABLED with an EMPTY whitelist, and no amount of reading a page would have said so.
-- A second machine joining the forge runs the same command rather than re-typing a checklist, which is how two machines end up differently protected.
-- **Add a machine's account to the whitelist constant in the script, not by hand in the UI**, so the whitelist is reviewable and travels with the repo.
-- The credential comes from the git credential helper the transport already uses — no new secret, no environment variable — and **only its hash prefix is ever printed**.
-- What this buys: the "heavy judged this tree" rule still holds, enforced by the CLIENT-SIDE hook. What it does not buy: **a client-side check shares fate with the client.**
+`python -m lab_commons.dev.forge serve --mode integrate|develop|quiet` is the one call a crontab or harness
+makes on a producer host. Each tick it:
 
-## Layer C — the server-side status check (REQUIRED once more than one machine writes)
+1. flushes the status outbox (`quiet` stops here);
+2. fetches origin and builds the queue for its own platform ([scheduling](#scheduling));
+3. claims the best feasible candidate by posting `pending`;
+4. runs a claimed local part inline (streamed, its claim renewed every third of the lease), or advances a
+   cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
+5. posts the part with its record attached, and edits its host card.
 
-- **Why it is not optional under multi-machine, multi-agent iteration.** The layer-A guarantee lives in a hook inside ONE checkout. A second machine whose hooks are not installed has an unobstructed path to putting an unjudged commit on `main`, and nothing on the server would notice. A script can report whether a checkout's hooks are live, but only about the checkout it runs in.
-- **What it does:** the server refuses any `main` update whose commit does not carry a green status in a NAMED context, so the rule stops depending on what each client happens to run.
-- Configuration, in order:
-1. Enable the status check on the branch protection rule for `main`.
-2. Name the required contexts: one `tests/<platform>` per platform the repo's parts run on.
-3. Grant the integrator a personal access token with write scope.
-4. Each run posts its part as a commit status in its `tests/<platform>` context (`lab_commons.dev.platformparts`).
-- **Steps 3 and 4 now exist; steps 1 and 2 are a separate, human-confirmed forge change.** Step 3 is `auth login` below. Step 4 is the door `python -m lab_commons.dev.forge status post <sha> --context <ctx> --state success|failure|pending --description <text>` (and `status list <sha>`, latest per context), on Gitea and GitHub alike. Its writes carry no provenance line: a status description is the machine verdict line, cut to the 140-character forge limit.
-- **One name for a platform result: the part.** `tests/<platform>` (`linux`, `windows`, `macos`), state `success` (PASS) or `failure` (FAIL), description `scope= ran= hands= nowhere=`, the run record attached and linked. A cluster run posts the linux part (`forge serve` on the cluster login node, `forgerun`); a local verify posts its own platform's part. An INCONCLUSIVE run is no part and posts nothing. The lane queue, issue readiness and trunk admission all read the parts through one function, `platformparts.standing`. The retired contexts are registered in `lab_commons.hpc.retired`.
-- **`python -m lab_commons.dev.verify` posts its part by itself** after a settled run (scope `full` bare, `incremental` with a selection), on HEAD, and only when the tree was clean before and after the run and HEAD did not move: a run about a dirty tree is about no commit. A refused or failed post prints one line and changes neither the verdict nor the exit code. `--no-status` opts out.
-- **Do not enable the status check before real `tests/<platform>` parts exist on `main`'s tip.** A required context that nothing ever publishes can never go green, which blocks `main` for everyone including the human. Measured hazard, not hypothetical — this is why the check was turned off again on 2026-08-27. Enabling it is a forge setting and is the human's to confirm.
+- `--mode integrate` serves the integration branch, open PRs into it and opted-in branches; `--mode develop`
+  serves the lanes. `forge tick` is the same claim step without producing (`--dry-run` to preview).
+- **The producer argv is declared**, never typed: `[tool.lab_commons.parts] produce.<platform>.<full|incremental>`
+  in the repo's `pyproject.toml`, filled by `platformparts.part_argv`. A part whose producer is undeclared is
+  not claimed, and the refusal names the key.
+- **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
+  argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
+  tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
+- **A full tier runs only inside this producer.** Anywhere else it refuses and names the remedy: push.
 
-## Branch deletion after a merge
+## Claims
 
-- The rule is: once a lane's change is on `main`, delete the origin branch.
-- **`main` here means the REMOTE one, never the local**, and the distinction is load-bearing. Measured 2026-08-27: two branches showed **0** unmerged commits against local `main` and **352** and **162** against the remote, because local `main` was 380 commits ahead and unpushed. Deleting on the local reading would have removed the only published copy of that work.
-- The question is "is this CHANGE on the remote main", so the instrument is `git cherry` against the remote — **not the ancestor test**, which asks whether a COMMIT is an ancestor and answers no for anything cherry-picked or rebased.
+- A claim is a `pending` status: `claim machine=<m> login=<forge login> until=<UTC> hpc=<cluster>/<account>|-`.
+  The owner is machine + login + hpc, so two login hosts of one account are two claimants.
+- A status post is not compare-and-swap: after posting, the claimant re-reads and the earliest live claim
+  (lowest status id) holds; every other claimant stands down.
+- `until` is the forge's clock plus the lease. Only the owner renews; a lapsed claim is retaken by anyone
+  serving the platform.
+- **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
+  ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
+- **Supersede.** When a ref moves on, its in-flight run is cancelled and released `superseded by <sha12>`.
 
-## Issues and pull requests — `python -m lab_commons.dev.forge`
+## Scheduling
 
-- **Agents collaborate through these verbs and nothing else; no `gh` or `tea` binary is needed.** `lab_commons.dev.forgework` speaks the REST API directly: `issue list [--state open|closed|all] [--limit N]`, `issue view N`, `issue create --title T [--body B]`, `issue comment N --body B`, `issue close N`, `pr create --title T --head H --base B [--body B]`, `pr view N`; plus `issue claim N` / `issue status N` (see [issues](issues.md)), `issue comments N [--since ISO8601]` and the repo-wide `issue comments-since ISO8601` (every issue's comments updated since then, as `{issue, id, author, body, created}` rows: what a poller reads instead of walking every issue) and `status post|list` (layer C above). Every verb takes `--json`; the result is the same `Issue` / `Comment` / `PullRequest` shape whichever forge answered.
-- **The backend is read off `origin`**: host `github.com` is GitHub REST (`api.github.com`), every other host is the Gitea-shaped forge this page configures (`<host>/api/v1`). Nothing is configured per repo.
-- **Auth, per machine, never on disk in a repo**: the credential the git transport already holds for that host (`git credential fill`, the layer-A route) and nothing else -- no token environment variable is read (user ruling 2026-10-09: the person's own credential; a global variable is inherited by every process and agent the shell starts). That credential is sent as a TOKEN header, so it must be a personal access token: a stored account password authenticates the transport but newer Gitea refuses it for the API. `auth login` below is how it becomes one.
+One work queue, derived from git and the forge every tick and never stored. Each candidate is a part a ref's
+newest commit lacks, or a request issue.
 
-## Set up a token on a new machine
+- **Candidates** (`forgeschedule.candidates`): in integrate mode the integration branch (`integration`), every
+  open PR into it (`pr`), every opted-in branch (`branch`), every open issue labelled `forge:request`
+  (`request`; platform from `platform = "<p>"` in the body, else linux). In develop mode, the lanes.
+- **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
+  `weight[repo] * value / expected_cost` (weighted shortest job first). Aging grows without bound, so no
+  class starves forever.
+- **Cost** is the repo's last measured run (`lab_commons.hpc.learned`), in core-hours on a cluster and
+  wall-hours on a box; unmeasured work costs `prior_cost_h`.
+- **Priority is a forge label** on the PR or issue: `priority:user` adds the declared boost, `priority:<n>`
+  adds `n`.
+- **Budgets.** A cluster charges each run's core-hours to its ref; a ref at its class's `daily_budget_core_h`
+  is not claimed. A box meters no core-hours.
+- **Feasibility.** A claimer considers its own platform only: a cluster needs one free core of its grant and
+  one QOS submission; a box needs its CPU seat free.
+- **Starvation.** A candidate waiting past its class's `starve_after_hours` raises a `starved` alarm naming
+  it, its wait and its blocking reason.
 
-One command per forge host, run from any checkout whose `origin` is on that host (or pass `--host`):
+The numbers are data, `[tool.lab_commons.schedule]` over the family default
+(`lab_commons.dev.forgeschedule.Schedule`), overridden key by key:
+
+```toml
+[tool.lab_commons.schedule]
+classes = {integration = 100, pr = 60, branch = 30, request = 20}
+aging_rate = 10                                    # value per hour waited
+starve_after_hours = {integration = 6, pr = 12, branch = 24, request = 48}
+daily_budget_core_h = {}                           # class -> core-hours one ref may use per 24 h
+boosts = {"priority:user" = 1000}                  # label -> value; `priority:<n>` adds n
+branches = []                                      # opted-in child branches
+request_label = "forge:request"
+prior_cost_h = 4.0
+```
+
+A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
+(absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
+
+## The queue
+
+```
+python -m lab_commons.dev.forge queue [--json]
+```
+
+The one status command, from the forge alone, on any machine with a forge credential. It fetches origin and
+prints the queue (class, value, cost, score, wait, blocking reason), every run in flight with its owner and
+progress, every host card (stale flagged) and every starved candidate. It posts nothing.
+
+- **Blocking reasons**: `no host serves <platform>`, `over budget: <ref> used X of Y core-h in 24 h`,
+  `no headroom: ...`, `outranked by <candidate>`, `no host can produce it: <undeclared key>`.
+- **Host cards** (`forgehosts`): each serving host edits one comment on the open issue `forge hosts`: who it
+  is, its platform, headroom, cluster facts (partitions, quota, QOS), its last tick, what it holds and why each
+  candidate it saw waits. A card older than three of its own ticks is stale.
+- `forgeschedule.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
+
+## Alarms
+
+`forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
+"delivered", "repeat"}` to stderr for: `auth` (401/403 or no credential), `lease` (a lease lost or not
+renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
+pending) and `starved`. The machine file's `[alerts]` table (telegram, email, webhook) delivers them; one
+`(kind, repo[, candidate])` is delivered at most once per 6 h.
+
+## Records and the outbox
+
+- **Statuses wait in an outbox** (`output/forge/outbox/` of the main checkout) until the commit is on origin.
+  `python -m lab_commons.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
+- **Run records are attachments** of one closed issue titled `run records`, never refs.
+  `python -m lab_commons.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin
+  tip and the newest N trunk commits.
+- `python -m lab_commons.dev.platformparts post <run-record>` turns a record into its part.
+- `python -m lab_commons.dev.forge route <record>` files the record's reds as `area:<name>` issues
+  ([issues](issues.md#reds-are-area-issues)).
+- A run's declared outputs travel separately, through [the artefact store](artefacts.md).
+
+## Issues and pull requests: the door
+
+Agents read and write the forge only through `python -m lab_commons.dev.forge` (`FORGE-THROUGH-THE-DOOR`);
+no `gh` or `tea` binary is needed.
+
+- Verbs: `issue list|view|create|comment|close|claim|status|comments`, `issue comments-since ISO8601`,
+  `pr create|view`, `status post|list`. Every verb takes `--json` and returns the same shape on either forge.
+- The backend is read off `origin`: `github.com` is GitHub REST, any other host is Gitea (`<host>/api/v1`).
+- When `HARNESS_MACHINE` and `HARNESS_AGENT` are set, every created body opens with
+  `[<machine> · <agent> · <branch>]`, so a write says which agent made it.
+- Every call retries three times and then reports. A create whose answer was lost is read back before a retry,
+  so a retry never makes a twin.
+
+## Credentials
+
+One command per forge host, run from a checkout whose `origin` is on it (or pass `--host`):
 
 ```
 python -m lab_commons.dev.forge auth login      # prompts for the token, input hidden
 python -m lab_commons.dev.forge auth status     # where the token comes from, and who it is
 ```
 
-- **What `login` does**: reads the token without echo (or from stdin with `--token-stdin`, for scripts), sends it to `GET /api/v1/user` (Gitea) or `GET /user` (GitHub), and **only if the forge accepts it** stores it with `git credential approve` as `https://<host>`, username = the login the forge returned. A rejected token is reported with the forge's answer and is NOT stored, so a typo never replaces a credential that worked.
-- **Where it lives**: wherever the machine's `credential.helper` keeps secrets — Git Credential Manager on Windows, the keychain on macOS. Nothing is written to any file in a repo and the token is never printed; `status` shows the login only.
-- **What else uses it**: the same stored credential is what `git push` / `git fetch` over https present to that host, so after `login` the transport and the forge verbs authenticate with one token. An environment variable, if set, still wins for the verbs (`login` says so when one is).
-- **Gitea** — create the token at **User Settings → Applications → Manage Access Tokens → Generate Token**. Scopes: `write:issue` (issues and comments), `write:repository` (pull requests, and git push over https), `read:user` (so `login`/`status` can ask who the token is). Copy it once; Gitea does not show it again.
-- **GitHub** — either a **fine-grained token** (Settings → Developer settings → Personal access tokens → Fine-grained) scoped to the repositories, with *Issues* and *Pull requests* read/write and *Contents* read/write for pushing, then `auth login --host github.com`; or let **Git Credential Manager's OAuth** sign-in store the credential on the first `git push`, after which `auth status --host github.com` should name `git credential` and your login with no `login` step at all.
-- **Rotating or revoking**: generate a new token and run `auth login` again — it overwrites the stored one for that host and login. A revoked token shows up as a failing `auth status`.
-- **Every call is retry-then-report in netverb's vocabulary**: three attempts, an answered 4xx (other than 401/408/429) is REFUSED at once, a 5xx or dropped connection is retried, and a failure exits 1 with the remedy. A create whose response was lost may still have landed, so before RETRYING one the door reads the newest objects back and returns the token's own identical one from the last five minutes (same title and body for an issue or PR, same body for a comment) instead of creating a twin; if that read fails, the create is reported rather than sent again. A MANUAL re-run is not covered — read before re-running.
-- **Provenance contract**: when `HARNESS_MACHINE` and `HARNESS_AGENT` are both set (an agent launcher exports them), every created issue body, PR body and comment opens with one line `[<machine> · <agent> · <branch>]`, the branch omitted on a detached HEAD. With either unset nothing is added, so a human's text is never marked.
+- `login` checks the token against the forge and stores it with `git credential approve` only if accepted.
+  The same credential then serves `git push`/`fetch` over https and the forge verbs. No environment variable
+  is read, nothing is written into a repo, and only a hash prefix is ever printed.
+- **Gitea**: User Settings -> Applications -> Generate Token, scopes `write:issue`, `write:repository`,
+  `read:user`. **GitHub**: a fine-grained token with Issues, Pull requests and Contents read/write, or let Git
+  Credential Manager's OAuth store it on the first push.
+- Rotate by running `auth login` again; a revoked token shows as a failing `auth status`.
 
-## What is needed from a human
+## Protecting `main` on the server
 
-| # | need | blocks | notes |
-|---|---|---|---|
-| 1 | the layer-A whitelist | every update of `main` | done 2026-08-27 |
-| 2 | the status check DISABLED until layer C is wired | `main` updates, if it was enabled | done 2026-08-27 |
-| 3 | a write-scoped personal access token for the integrator | layer C only | store it with `auth login` (see *Set up a token on a new machine*); **it is never written to a log, a commit, or a memory file — this family records secrets as hashes only** |
-| 4 | confirmation that the token is a token, not the account password | layer C only | newer forge versions reject password basic-auth for the API, so a stored password authenticates the transport and fails the API |
+Configuration applied through the forge's API or web UI; enabling it is the human's decision.
 
-- Reading the OS credential store to reuse the existing credential was attempted and refused by the sandbox, **and that refusal is correct**: extracting a secret is a decision for the human, not a convenience for the agent.
-
-## Parts, records, requests and claims — `publish`, `records`, `tick`
-
-- **A part is a commit status** `tests/<platform>` (`lab_commons.dev.platformparts`): `success`/`failure`, description `scope=<full|incremental> ran=<n> hands=<platform>:<n>,... nowhere=<n>`, `target_url` = its run record. `python -m lab_commons.dev.platformparts post <run-record>` produces it.
-- **Statuses wait in an outbox** (`output/forge/outbox/` of the main checkout) until the commit is on `origin`; `python -m lab_commons.dev.forge publish` posts what is reachable. verify and every tick flush it too.
-- **Run records are attachments** of one closed issue titled `run records` -- no ref, no git object. `python -m lab_commons.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin tip and the newest N first-parent trunk commits.
-- **Admission** (`python -m lab_commons.dev.admission --remote-ref R --trunk-ref refs/heads/main`): lanes and integration need no part; the trunk needs every part of HEAD a `full` PASS on the forge. Forge unreadable: the trunk waits.
-- **`python -m lab_commons.dev.forge tick --mode integrate|develop|quiet [--dry-run] [--lease-hours H] [--json]`**: flush the outbox; `quiet` stops there; else fetch origin, list every ref tip of the mode (integration branch, or the lanes) lacking the part this box serves -- ITS OWN platform only; no box claims for a cluster it reaches over ssh -- and claim the highest-scoring feasible one (see Scheduling below) by posting `pending` with `claim machine=<HARNESS_MACHINE | login host on a cluster | -> login=<forge login> until=<UTC> hpc=<cluster>/<account>|->`. `hpc` is read from Slurm (`ClusterName`) and the login (`id -un`), never typed (`lab_commons.hpc.account`). The OWNER is machine + login + hpc, so two login hosts of one account are two claimants. A status post is not compare-and-swap: after posting, the claimant re-reads and the EARLIEST live claim (lowest status id) holds; every other claimant stands down without producing. `until` is the FORGE's time (the `Date` of its answer, `Client.forge_now`) plus the lease, and expiry is judged on that clock, never the host's. Only the owner renews; a lapsed claim is retaken by anyone serving the platform. A local part carries ONE fully filled `argv` (`platformparts.part_argv`: the checkout venv python + `[tool.lab_commons.parts.produce.<platform>] full|incremental`); a linux box ON a cluster claims a cluster part instead (`platformparts.cluster_part`: origin as https, `[tool.lab_commons.hpc] install` required and `collect`, records under `datedlog` of `[tool.lab_commons.parts] output`, kind `parts`). A part whose producer is undeclared is not claimed; the refusal names the key.
-- **`python -m lab_commons.dev.forge serve --mode M`** (`forgeserve`) is the one call a harness or crontab makes: tick, produce a claimed local part inline (streamed `[platform]`, its claim renewed every third of the lease, released `error` with its exit's reason if it left the claim pending), and advance every cluster run one step (`forgerun`). A CLUSTER PART IS A RESUMABLE TICK, never a blocking process: state per repo + sha + platform + scope in `forge-runs/` beside the machine file, phases `claimed -> submitted (Slurm ids) -> gathered (record) -> published`, then released (file removed). Slurm is the truth: `submitted` is read from `~/ci/runs/<sha>/state.json`, gathering asks `sacct`; jobs named `run-<sha12>` with no recorded state are ORPHANS -- alarmed, never resubmitted. While a run is in flight the tick claims nothing more. The file carries `schema`; a live run of another schema is refused with the remedy (finish it with the tool that started it, or delete it once `squeue --me` shows none of its jobs).
-- **Alarms** (`forgealarm`): a 401/403 or missing credential (`auth`), a lease that cannot be renewed or was lost, or orphaned jobs (`lease`), a cluster run that cannot advance (`run`), and an account idle with work pending (`idle`), and a candidate starved past its class's bound (`starved`, keyed by the candidate) each write ONE line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body", "delivered", "repeat"}` to stderr -- the contract a consumer (cc-config's Telegram/system notify) routes on -- and are delivered through the machine file's `[alerts]` table (`supervise.alert.Notifier`: telegram, email, webhook) when one is enabled. One `(kind, repo[, candidate])` is delivered at most once per 6 h; the line says `"repeat": true` inside that window.
-- **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`, the one source): every claimed argv exits `0` PASS (part posted), `1` FAIL (part posted, failures named), `2` argv refused (argparse's own code; `forge serve` fails loudly), `3` INCONCLUSIVE (ran, cannot say -- the claim is released `error`, not re-claimed), `4` UNREACHABLE (infrastructure did not answer -- released `error` with `released: unreachable`, which the next tick reads as open again; never a red part); any other code is a crash. A consumer runner that is a producer maps its own verdicts onto these codes; a runner returning `2` for INCONCLUSIVE is read as a refused argv.
-
-## Scheduling — what is produced, and in what order
-
-ONE work queue, derived from git and the forge every tick and never stored: each candidate is a part a ref's newest commit lacks, or an issue request. A candidate's value is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the feasible candidate with the highest `weight[repo] * value / expected_cost` (weighted shortest job first). Every waiting candidate names why it waits; one waiting past its class's bound raises a `starved` alarm; and `python -m lab_commons.dev.forge queue` shows the whole picture, from the forge alone, on any machine with a forge credential.
-
-- **Candidates (`forgeschedule.candidates`), one per ref and platform -- the ref's NEWEST sha (coalesced).** `--mode integrate`: the integration branch (class `integration`), every open PR into it (`pr`), every opted-in branch (`branch`, the `branches` fnmatch patterns), and every open issue labelled `request_label` (`request`; its platform is the body's `platform = "<p>"`, else linux). `--mode develop`: the lanes, as `branch`. Requests are ranked and shown; no producer claims one yet.
-- **Value, cost, score -- the numbers are data**, `[tool.lab_commons.schedule]` over the family default in `lab_commons.dev.forgeschedule.Schedule`, overridden key by key (a table key by table key):
-
-  ```toml
-  [tool.lab_commons.schedule]
-  classes = {integration = 100, pr = 60, branch = 30, request = 20}   # an open set
-  aging_rate = 10                                                      # value per hour waited
-  starve_after_hours = {integration = 6, pr = 12, branch = 24, request = 48}
-  daily_budget_core_h = {}             # class -> core-hours ONE ref may use per 24 h; absent = unbounded
-  boosts = {"priority:user" = 1000}    # label -> value added; `priority:<n>` adds n undeclared
-  branches = []                        # opted-in child branches
-  request_label = "forge:request"
-  prior_cost_h = 4.0                   # the cost of work nothing has measured yet
-  ```
-
-  `expected_cost` is the repository's last measured run (`lab_commons.hpc.learned`: durations + overheads) in core-hours on a cluster, divided by the box's cores (wall-hours) on a box; nothing measured is `prior_cost_h`. The aging term grows without bound, so no class starves forever: with the defaults a request outranks a fresh integration head after 8 h.
-- **User designation is a forge label** on the PR or issue -- `priority:user` (the declared boost) or `priority:<n>` -- so every host sees it, on gitea and GitHub alike.
-- **Host weights.** A host serving several repositories declares `[schedule] weights = {"owner/name" = 2.0}` in its machine file (absent = 1); the host owner shares the host, each project ranks its own work. `[schedule] tick_minutes` (default 5) is the period its card is judged stale against.
-- **Feasibility.** A claimer considers only its own platform. Cluster: headroom read locally each tick (`forgerun.SlurmCluster.standing`: free cores of the grant, the QOS's remaining submissions) -- one core and one submission are the floor; the last day's core-hours per run from `sacct` (job name `run-<sha12>`) are charged to the ref whose recent commits they ran, and a ref at its class's `daily_budget_core_h` is not claimed. Box: its cores, none while a run holds its CPU seat; a box meters no core-hours, so no budget binds there.
-- **Blocking reasons**, the text every waiting candidate carries: `no host serves <platform>` (no fresh host card serves it), `over budget: <ref> used X of Y core-h in 24 h`, `no headroom: ...`, `outranked by <candidate>` (another was claimed, or a run is in flight here), `no host can produce it: <undeclared key>`.
-- **Starvation.** After each tick, `forge serve` raises a `starved` alarm for every blocked candidate whose wait exceeds its class's `starve_after_hours`, naming the candidate, its wait and its blocking reason.
-- **Supersede.** A cluster run whose ref moved on is cancelled (`scancel` of every recorded round and any `run-<sha12>` job) and released `error` with `superseded by <sha12>`; a local producer whose ref moved on is stopped at its next heartbeat and released the same way. The run cache is untouched, so a newer commit with an already-judged tree still cites it.
-- **Live progress travels on the claim.** The owner re-posts its pending claim with ` -- <progress>` whenever where the run stands changes (`building`, `queued 3/93`, `running 40/93 done 12/93`, `publishing`), cut to the 140 characters every forge stores; the final status links the run record.
-- **Host cards** (`forgehosts`): each serving host edits ONE comment, found by a hidden marker, on the open issue titled `forge hosts` (opened by the first host): who it is (`<cluster>/<account>` or the machine), its platform, headroom, the cluster facts read locally (partitions, quota, QOS), its last tick on the forge's clock, what it holds with progress, and why each candidate it saw waits. A card older than 3 of its own ticks is STALE.
-- **`python -m lab_commons.dev.forge queue [--json]`** (`forgequeue`): fetch origin, then print the queue (class, value, cost, score, wait, blocking reason), every run in flight with its owner and progress, every host card (stale flagged) and every starved candidate. It posts nothing. `rank` (`forgeschedule.rank`) is the one pure ordering rule; an optimiser replaces it without touching I/O.
+- **Push whitelist**: only the integrator's accounts may update `main`. A consumer's protection script applies
+  it from a declared constant, so a new machine's account is added in code, not in the UI.
+- **Required status check**: one `tests/<platform>` context per platform the repo's parts run on. Enable it
+  only once real parts exist on `main`'s tip; a required context nothing publishes blocks `main` for everyone.
+- The client side of the same rule is `forge promote`, which moves `main` only by fast-forward to a fully green
+  integration tip ([the integrator](integrator.md#promoting-the-trunk)).

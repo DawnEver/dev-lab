@@ -1,64 +1,59 @@
 # One branch per session
 
-Rule `ONE-BRANCH-PER-SESSION` (statement in `lab_commons.dev.rules`). Each working session maintains exactly ONE long-lived branch and merges its work into it; every other branch is merged and then deleted, never left behind. Rule `MERGE-OR-DELETE` closes the third door: a merged branch is deleted, an unmerged one is merged, and parking it as an `archive/*` tag is refused as debt -- `python -m lab_commons.dev.branchset` lists such tags beside the branches, and `--apply` deletes the merged ones.
-
-## Why
-
-User directive, 2026-10-04: lab-commons alone carried six merged branches on origin and three local branches with unpushed commits, each in its own worktree. A branch nobody declared is a branch nobody owns, and nothing said which of them still held work.
+Each working session keeps exactly ONE long-lived branch, declared in `pyproject.toml`, and merges its work into
+it (`ONE-BRANCH-PER-SESSION`). Every other branch is merged and then deleted (`MERGE-OR-DELETE`): there is no
+third state, and a parked tag or renamed branch is the same debt. Run `python -m lab_commons.dev.branchset` to see
+what to merge and what to delete, and `--apply` to delete the merged local ones.
 
 ## The declaration
 
-The branches a repo may carry long-term are DATA, in one place -- `pyproject.toml`:
-
 ```toml
 [tool.lab_commons.branchset]
-trunk = 'main'                 # required; a guessed trunk finds nothing and reads every checkout clean
-sessions = ['integrate/main']  # one per declared session or lane owner; [] when there are none
+trunk = 'main'                 # required
+sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
 ```
 
-Read by `lab_commons.dev.branchset.declared_branchset(root)`; a missing or malformed table raises `BranchSetNotDeclared`.
+Read by `lab_commons.dev.branchset.declared_branchset(root)`; a missing or malformed table raises
+`BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 ## The census and the candidates
 
-All reads are local refs, so fetch with `--prune` first: the remote is the authority.
+Every read is of local refs, so `git fetch --prune` first: the remote is the authority.
 
-| function | answers |
+| call | answers |
 |---|---|
-| `census(root, branchset)` | `undeclared_origin` (debt), `local_debt` (undeclared, nothing origin lacks), `unpushed` (undeclared, holds commits no origin ref has) |
-| `merge_candidates(root, branchset)` | every undeclared branch, local and on origin, `deletable` when its tip is an ancestor of the trunk's authority or of a session branch; anything else is merged first |
+| `census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
+| `merge_candidates(root, branchset)` | every undeclared branch and parked tag, `deletable` when its tip is in the trunk's authority or a session branch; anything else is merged first |
 | `python -m lab_commons.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
+| `python -m lab_commons.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists origin's for a human |
+
+- **Merged means merged into the REMOTE authority.** A local `main` that is ahead and unpushed answers "merged"
+  about work whose only published copy is the branch you are about to delete.
+- The question is whether the CHANGE is there, so the instrument is `git cherry` against the remote, which sees
+  through cherry-picks and rebases; the ancestor test does not.
+- Deleting a branch on origin is a human's action: the door prints `git push origin --delete <b>`.
 
 ## The assertions consumers run
 
 `lab_commons.dev.famtests.branchset`:
 
-- `assert_origin_branches_declared(root=, branchset=)` -- red on an undeclared origin branch that is NOT contained in HEAD, `origin/<trunk>` or a session branch. A MERGED one is not a red (ruling 2026-10-04: remote deletion is never automatic, and a red here once made an agent delete on origin so its push could verify); it is RETURNED and warned as "merged, deletion owed to a human" with `git push origin --delete <b>`. The local check treats a merged local branch the same way, pointing at `branchset --apply`. `merged_owed(root=, branchset=)` lists both.
-- `assert_local_branches_declared(root=, branchset=)` -- red on an undeclared local branch origin already holds; RETURNS (and warns about) the ones holding unpushed work, which are never a red because they are the only copy.
-- `assert_the_planted_branchset_is_policed(tmp_path, trunk=)` -- the planted control on a real bare origin: clean first, then a stray branch on both sides, unpushed work, and the deletable list.
+- `assert_origin_branches_declared(root=, branchset=)`: red on an undeclared origin branch not contained in HEAD,
+  `origin/<trunk>` or a session branch. A merged one is returned and warned as "deletion owed to a human".
+- `assert_local_branches_declared(root=, branchset=)`: red on an undeclared local branch origin already holds;
+  one holding unpushed work is returned and warned, never red, because it is the only copy.
+- `assert_the_planted_branchset_is_policed(tmp_path, trunk=)`: the planted control on a real bare origin.
 
-This generalises the per-consumer `ORIGIN_BRANCHES` / `LOCAL_ONLY_BRANCHES` pins of `famtests.visibility`: a consumer declares its sessions in the manifest and delegates here.
+## The push-time check
 
-## The push-time interception
-
-Everything above runs AFTER the push, which is too late for the thing the rule is about. Measured 2026-10-05/06: a session pushed seven `work/*` lane branches to origin while the census naming exactly that hazard was green -- because it had not run yet. The rule now has an enforcement point where the decision is still open, as a pre-push hook:
-
-```toml
-[[tool.lab_commons.hooks.pre-push]]
-id = "branchset-push"
-run = ["python", "-m", "lab_commons.dev.githooks", "script", "branchset-push"]
-always_run = true
-```
-
-`lab_commons.dev.branchset_push` reads the refspec from **stdin** (git's own pre-push protocol: `<local ref> <local sha> <remote ref> <remote sha>`) which the family runner (`python -m lab_commons.dev.githooks run pre-push`) pipes to every pre-push hook, one line per pushed ref. Every `refs/heads/**` ref is judged; tags and machine refs such as `refs/ci/**` pass.
+A pre-push hook judges every pushed `refs/heads/**` ref (`lab_commons.dev.branchset_push`, reading git's ref lines
+from stdin through the family hook runner):
 
 | push | verdict |
 |---|---|
-| a branch the declared set names | allowed |
-| a branch the set does not name | **refused**, naming the branch and both remedies |
-| a deletion (`local sha` all zeros) | allowed -- deleting a stray branch IS the remedy, and a guard may not refuse its own |
+| a branch the set names | allowed |
+| a branch the set does not name | refused, naming the branch and both remedies |
+| a deletion | allowed: deleting a stray branch is the remedy |
 | a tag, or a machine ref | allowed |
-| a checkout whose manifest declares no branch set | **refused** -- a guard that cannot judge must not read as a guard that acquitted |
+| a checkout with no declared branch set | refused: a guard that cannot judge must not read as one that acquitted |
 
-There is no bypass: no flag, no environment variable, and no `--force` spelling relaxes it. The one documented way to push a new long-lived branch is to add it to `sessions` in `pyproject.toml` -- a reviewed edit in the repo that argues for the branch, which is the point.
-
-A deletion is recognised by the all-zero local object name and ALLOWED (deleting an undeclared branch is the remedy); a multi-ref `git push <branch> <tag>` hands every ref to the hook and each `refs/heads/**` one is judged.
+There is no bypass flag; the way to push a new long-lived branch is to add it to `sessions`.

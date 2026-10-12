@@ -1,38 +1,51 @@
-# The three participants — the human, the dev agents, the coordinator
+# The three participants
 
-- Every repo in this family is worked the same way, and it is genuinely three participants: a human, several dev agents working concurrently, and one coordinator agent that absorbs their work.
-- The branch layers those three produce are on [branch layers](branch-layers.md); the verdict they all cite is on [the verdict model](verdict-model.md).
+Every repo here is worked by a human, by agents writing code concurrently, and by one integrator session that
+absorbs their work; producer hosts prove it. A box may play several roles: capability decides, not identity.
+Find your role below and do only what it says. Origin and the forge are the only shared media: a chat message is
+a hint, never a trigger.
 
-## Who does what
+## The roles
 
-- **The human** sets goals, reviews, adjusts, and accepts; a task is DONE only when ITS OWN tests pass, never when an agent says so.
-- **Nobody at a keyboard runs the full tiers** — the forge's producer host does, once per sha, after the push (`VERDICTS-FROM-THE-FORGE`); the human ACCEPTS what its parts say, and agents read them with `forge status list <sha>`.
-- **A dev agent** plans in a tracked file, implements on its own branch under TDD (one feature per commit, the commit being the state-file boundary), measures what it touched, pushes, and reports SHAs, measured verification and files touched.
-- **The coordinator agent** takes a lane whose tip has moved, pulls that work into its OWN integration worktree, pushes the combination, repairs the shared pins against its forge parts, and advances `main` when every part of HEAD is a PASS of scope `full`.
-- **Readiness is REF MOVEMENT, not a message.** Given "push each green commit" and "one commit completes one feature", the tip of a lane branch is integration-ready by construction; detection is listing the remote's lane refs and then asking `git cherry` which of their commits the integration branch does not hold, whose plus lines ARE the merge list. A chat notification is a PRIORITY HINT and may never be the trigger, because a trigger living only in chat contradicts "origin is the only shared medium".
-- The dev agents keep working while the coordinator integrates, so divergence is expected and deliberately unbounded — absorbing it is the coordinator's job, not a failure state.
+| role | does | never |
+|---|---|---|
+| human | sets goals, reviews, accepts; decides forge settings and remote deletions | accepts "done" from an agent without its tests |
+| author (any box, the weakest included) | edits in a worktree on its session branch, measures what it touched, commits, pushes | runs a full suite; merges another child's branch |
+| producer (a box with capacity, or a cluster) | runs `forge serve`: claims a sha lacking its part, runs it, posts `tests/<platform>` | produces a part it did not claim |
+| integrator (one session) | `forge integration`, pushes integration, `forge promote` | runs tests; writes a child branch |
+| owner (per area) | fixes the reds in its `area:<name>` issue on its own branch | is interrupted by another area's reds |
 
-## The four facts everything else follows from
+- A **subagent** is an author that never publishes: it commits on its lane and hands the SHA back to its main
+  session (`SUBAGENT-NO-PUSH`), which pushes.
+- A task is done when its own tests pass, never when an agent says so.
 
-1. **The verdict is not the feedback loop.** A measurement answers "where am I" and runs dirty; a verdict answers "may this land" and needs a tree it can name.
-2. **A branch is the unit of parallel work** — environments, shared hazards and landing are on [fan-out](fanout.md).
-3. **The box has shared resources and at least one of them is locked** — two CPU-saturating runs cannot proceed at once; see [box resources](box-resources.md).
-4. **The file is the truth, not the agent's memory.** Every commit lands its state/memory file, and every "merged" claim is answered by `git merge-base --is-ancestor` or `git cherry`, saying which one answered.
+## One change, end to end
 
-## Contention — the cases that actually occur
+1. The author commits on its branch and pushes. Seconds.
+2. `forge sync` keeps that branch current with integration ([the integrator](integrator.md)).
+3. A producer claims the pushed sha and posts its parts ([the forge](forge.md)).
+4. `forge route` files the reds as `area:*` issues for their owners ([issues](issues.md)).
+5. The integrator merges children whose parts stand PASS, pushes integration, and producers prove that tip.
+6. When every part of the integration tip is a full PASS, `forge promote` fast-forwards `main`.
+7. A merged branch is deleted ([one branch per session](branch-set.md)).
 
-| situation | what the architecture does |
+Every arrow is a forge event, not someone remembering: push, missing status, claim, status, issue, fix, push.
+
+## What follows from it
+
+1. **The verdict is not the feedback loop.** A measurement runs dirty and answers "where am I"; a verdict is a
+   fact about a sha and is produced once ([the verdict model](verdict-model.md)).
+2. **A branch is the unit of parallel work** ([fan-out](fanout.md)).
+3. **The box has shared resources, and the CPU is one of them** ([box resources](box-resources.md)).
+4. **The file is the truth, not an agent's memory.** Every commit lands its state or memory file, and every
+   "merged" claim is answered by `git merge-base --is-ancestor` or `git cherry`, saying which one answered.
+
+## When participants collide
+
+| situation | what happens |
 |---|---|
-| two agents touch disjoint files | both gate and land; each verdict is about its own tree |
-| two agents touch the same file | git detects it exactly at merge; the loser rebases. No pre-emptive lock |
-| two agents each move a shared ratchet pin by one | both merge cleanly and the merged number is wrong with neither at fault; the coordinator re-measures it on the merged tree |
-| a human edits while an agent gates | allowed; the cost is load, and load is the named worker-death trigger. Never compare two configurations from one run each |
-| a human and an agent both want the box | one lock, first holder wins, the other is REFUSED and told who holds it |
-| a participant dies | the lock releases to the OS; a missing run log means "not finished", never "not started" |
-| the box is shared | count orphans before quoting any timing; a busy-box timing is not a property of the file |
-
-## What keeps the picture honest
-
-- A verdict names its tree and its environment, so a stale or cross-environment verdict cannot be quoted.
-- A skipped test is green and a tier nobody runs rots, so the heavy tier has no flag to be unset and no wall to hide behind — and because it blocks no push, what makes it run is the forge: every pushed sha lacking a part IS the request for it.
-- No hook or guard knows the integration branch's prefix, so the coordinator's discipline is reading the combined tip's parts and nothing enforces it for them.
+| two authors touch disjoint files | both merge cleanly; the integration tip's parts judge the combination |
+| two authors touch the same file | git detects it at merge; the later author resolves it on its own branch after `forge sync` |
+| two authors each move a shared count by one | the merged number is wrong with neither at fault; [alignment](alignment.md) removes such counts |
+| a human and an agent both want the box | one CPU seat; a measure waits briefly, then is refused naming the holder |
+| a participant dies | its lock releases with its process; its claim lapses and is retaken |

@@ -1,64 +1,72 @@
 # Project files
 
-Rule `PROJECT-FILES-HAVE-ONE-SOURCE` (statement in `lab_commons.dev.rules`). User ruling, 2026-10-03: every project-level file the four repos repeat has ONE source of truth in lab-commons.
+Every project-level file a repo tracks (ignore and attribute files, the Makefile, hook and lint configuration,
+agent hook wiring, CI) is either RENDERED from a family base plus the repo's delta, or OWNED by the repo with a
+written reason (`PROJECT-FILES-HAVE-ONE-SOURCE`). Every configuration is TOML; a file a third party forces into
+another format is rendered from TOML and never parsed back. To change one, edit its base or the repo's delta and
+re-render; never hand-edit a rendered file.
 
 ## The shape
 
-- **One list.** `lab_commons.dev.famfiles.PROJECT_FILES` names every project-level file the family knows, each either MANAGED (the row names the mechanism) or REPO-OWNED (the row names the reason). A repo adds its own files to an `owned_here` mapping, each with a reason. A tracked file in neither is refused.
-- **One engine.** The mechanisms the rows name already existed one file at a time and are reused, not paralleled: `lab_commons.dev.famconfig` renders a whole file from a BASE plus the repo's declared `Delta` (`RENDERED` = byte equality, `REQUIRED` = base lines present); `_famconfig_sections` does the same for a config TABLE inside a file somebody else owns (`pyproject.toml`, `ruff.toml`); `agent_guard` / `hook_adoption` install and render the agent hook files.
-- **One command.** `python -m lab_commons.dev.famfiles --deltas <the repo's DELTAS module> [--check]` re-renders every RENDERED artefact the repo declares and reports the REQUIRED ones (not written: a Makefile's recipes are the repo's own). `--check` writes nothing and exits 1 if anything would change.
+- **One list.** `lab_commons.dev.famfiles.PROJECT_FILES` names every project-level file the family knows, each
+  MANAGED (the row names its mechanism) or REPO-OWNED (the row names its reason). A repo adds its own files to
+  an `owned_here` mapping, each with a reason. A tracked file in neither is refused.
+- **One engine.** `lab_commons.dev.famconfig` renders a whole file from a BASE plus the repo's `Delta`
+  (`RENDERED` = byte equality, `REQUIRED` = base lines present); `_famconfig_sections` does the same for a table
+  inside a file somebody else owns (`pyproject.toml`, `ruff.toml`); `agent_guard` and `hook_adoption` install
+  and render the agent hook files.
+- **One command.** `python -m lab_commons.dev.famfiles --deltas <the repo's DELTAS module> [--check]` re-renders
+  every RENDERED artefact and reports the REQUIRED ones. `--check` writes nothing and exits 1 on any change.
 - **One check.** `lab_commons.dev.famtests.famfiles`:
-  - `assert_every_project_file_is_accounted_for(root=, owned_here=)` -- the list is complete for this repo; an `owned_here` entry restating a family row, carrying no reason, or naming an untracked file is refused.
-  - `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)` -- every famconfig base is declared, no delta restates a base line (`delta_problems`), every file on disk is base plus delta. It composes the `famtests.configrender` bodies.
+  `assert_every_project_file_is_accounted_for(root=, owned_here=)` and
+  `assert_every_managed_file_is_rendered(root=, deltas=, repo=, rerender_hint=)`.
 
-## Git hooks and CI workflows are TOML (user ruling 2026-10-11)
+## Git hooks and CI workflows are TOML
 
-Every configuration file is TOML; a file a third party forces into another format is RENDERED from TOML and never parsed back.
+- **Hooks are declared, not rendered.** The family base is `lab_commons/dev/githooks/base.toml`; a repo adds or
+  narrows rows under `[[tool.lab_commons.hooks.<stage>]]` in `pyproject.toml` (the same `id` merges key by key,
+  a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter),
+  `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only).
+  Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
+- **One runner**: `python -m lab_commons.dev.githooks run <stage> [git args]`. At commit it selects among the
+  STAGED paths and fails a hook that rewrites the working tree; at commit-msg it appends the message file; at
+  pre-push it reads git's ref lines once and pipes the matching ones to every hook. No hook runs a test suite.
+- **One install**: `python -m lab_commons.dev.hook_install --install --repo .` writes one shim per declared stage
+  into the directory git consults; the shim finds the checkout's venv and runs the runner. A worktree may point
+  `core.hooksPath` at its own directory with `git config --worktree`. The `hooks-installed` verify step reports a
+  missing, stale or foreign shim.
+- **CI workflows**: the base is `lab_commons/dev/ci_base.toml`; a repo opts in with
+  `[tool.lab_commons.ci."<file>.yml"]` (deep-merged over the base) or declares its own.
+  `python -m lab_commons.dev.ciworkflows render` writes `.github/workflows/*.yml` as stamped JSON (JSON is YAML);
+  `check` refuses a hand edit or an undeclared workflow, naming the render command.
 
-- **Git hooks** are declared once per layer and nothing is rendered: the family base is `lab_commons/dev/githooks/base.toml`; a repo adds or narrows rows under `[[tool.lab_commons.hooks.<stage>]]` in `pyproject.toml` (same `id` merges key by key, a new `id` appends). Keys: `id`, `run` (argv; a leading `python` is the repo venv's interpreter), `files`/`exclude` (regexes over repo paths), `pass_files`, `always_run`, `env`, and `refs` (pre-push only: a regex over the pushed remote refs). Stages: `pre-commit`, `commit-msg`, `pre-push`. `uv`/`uvx` as `run[0]` is refused.
-- **One runner**: `python -m lab_commons.dev.githooks run <stage> [git args]`. pre-commit selects among the STAGED paths and fails a hook that rewrites the working tree; commit-msg appends the message file; pre-push reads git's ref lines from stdin once and pipes them (the matching ones, under `refs`) to every hook.
-- **One install**: `python -m lab_commons.dev.hook_install --install` writes one shim per declared stage into the hooks directory git consults; the shim finds the checkout's venv and execs the runner. The verify step `hooks-installed` reports a missing (`declared-but-absent`), stale or foreign shim with that remedy.
-- **CI workflows**: the base is `lab_commons/dev/ci_base.toml`; a repo opts in with `[tool.lab_commons.ci."<file>.yml"]` (deep-merged over the base) or declares a workflow of its own. `python -m lab_commons.dev.ciworkflows render` writes `.github/workflows/*.yml` as a stamped JSON document (JSON is YAML); `check` compares rendered bytes to the files and refuses a hand edit or an undeclared workflow, naming the render command.
+## The files
 
-## Inventory, measured 2026-10-03
-
-Repos: LC = lab-commons, MS = consumer-a, OL = consumer-c, WL = consumer-b (the aliases the rest of this kit uses).
-
-| file | LC | MS | OL | WL | shared vs own | family mechanism |
-|---|---|---|---|---|---|---|
-| `.gitignore` | yes | yes | yes | yes | 14-pattern consumer core + 9 mandated lines; deltas 1 / ~140 / ~25 / ~65 | `famconfig` RENDERED -- MS, OL, WL already stamped; LC adopted 2026-10-03 |
-| git hooks | yes | yes | yes | yes | TOML base + `[tool.lab_commons.hooks]` | `lab_commons.dev.githooks` runs them; nothing rendered |
-| `Makefile` | yes | yes | yes | yes | 9 target headers + the `verify` recipe; no other shared recipe | `famconfig` REQUIRED, all four |
-| `.gitattributes` | yes | yes | -- | -- | no shared line; one family reason (`*.sh text eol=lf`, the shipped bash payloads) | `famconfig` RENDERED, NEW 2026-10-03; LC adopted |
-| `ruff.toml` / `[tool.ruff*]` | pyproject | `ruff.toml` | pyproject | pyproject | select set and shared ignores | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
-| `pyproject.toml` | yes | yes | yes | yes | `[project]` and `[tool.pytest.ini_options]` keys shared; the rest per repo | section bases; `build-system`, `commitizen`, `coverage`, `hatch`, `pyright`, `lab_commons`, `optional-dependencies` declined with the measurement in `PYPROJECT_DECLINED` |
-| `.claude/settings.json` | -- | yes | yes | yes | the PreToolUse hook wiring + derived allow rows | `agent_guard.wire_settings`, `allow_adoption` |
-| `.claude/hooks/deny-commands.js` | -- | yes | yes | yes | byte-identical engine | `agent_guard` install |
-| `.claude/hooks/deny-rules.json` | -- | yes | yes | yes | the deny registry, minus rules whose remedy a repo lacks | `hook_adoption.render` |
-| `.github/workflows/python-verify.yml` | yes | -- | -- | -- | THE family CI definition | `ciworkflows` RENDERED from LC's `[tool.lab_commons.ci]` |
-| `.github/workflows/ci.yml` | yes | -- | yes | -- | a thin caller | `ciworkflows` RENDERED: `ci_base.toml` + the repo's `[tool.lab_commons.ci."ci.yml"]` |
-| `docs-src/dev/index.md` pointer table | yes | yes | yes | yes | the family page table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
-| always-loaded rule pages | yes | yes | yes | yes | rule statements | `lab_commons.dev.rules` IDs, `famtests.rulespages` |
-| `LICENSE` | MIT | -- | Apache-2.0 | LGPL-3.0 | nothing | REPO-OWNED: the licence is the repo's decision |
-| `README.md` | yes | yes | yes | yes | nothing | REPO-OWNED: subject is the repo |
-| `AGENTS.md` | -- | yes | -- | yes | nothing | REPO-OWNED: architecture; shared rules are cited by ID |
-| `CLAUDE.md` | -- | yes | -- | yes | a pointer to AGENTS.md, spelled two ways | REPO-OWNED for now; candidate for a REQUIRED base (`@AGENTS.md`) once LC and OL carry an AGENTS.md |
-| `CHANGELOG.md` | -- | -- | -- | yes | nothing | REPO-OWNED |
-| `.editorconfig` | -- | -- | -- | -- | none exists anywhere | nothing to unify |
-| `dependencies.observed.toml` | -- | yes | -- | -- | one repo | MS `owned_here` |
-| `.python-version`, `.rgignore`, `Cargo.toml` | -- | -- | -- | yes | one repo | WL `owned_here` |
+| file | how it is kept |
+|---|---|
+| `.gitignore` | `famconfig` RENDERED: the family core plus mandated lines, plus the repo's delta |
+| `.gitattributes` | `famconfig` RENDERED |
+| `Makefile` | `famconfig` REQUIRED: the shared target headers and the `verify` recipe; other recipes are the repo's |
+| git hooks | `[tool.lab_commons.hooks]` over `githooks/base.toml`, run by `lab_commons.dev.githooks` |
+| `.github/workflows/*.yml` | `ciworkflows` RENDERED from `[tool.lab_commons.ci]` over `ci_base.toml` |
+| `ruff.toml` / `[tool.ruff*]` | section bases `[tool.ruff]`, `[tool.ruff.lint]`, `[tool.ruff.format]` |
+| `pyproject.toml` | section bases for `[project]` and `[tool.pytest.ini_options]`; the rest declined in `PYPROJECT_DECLINED` |
+| `.claude/settings.json` | `agent_guard.wire_settings` and `allow_adoption` |
+| `.claude/hooks/deny-commands.js`, `deny-rules.json` | `agent_guard` install and `hook_adoption.render` |
+| `docs-src/dev/index.md` pointer table | `devdocs.pointer_table`, asserted by `famtests.devdocs` |
+| always-loaded rule pages | rule IDs from `lab_commons.dev.rules`, `famtests.rulespages` |
+| `LICENSE`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `CHANGELOG.md` | REPO-OWNED: their subject is the repo |
 
 ## Adopting it in a repo
 
-1. Keep the repo's `DELTAS` module where it is (`tests/_famconfig_delta.py` in LC, `tests/architecture/ratchets/_famconfig.py` in consumer-a, `tests/architecture/_famconfig.py` in consumer-b and consumer-c) and add a `Delta` for every base the kit publishes -- the completeness arm refuses a missing one.
-2. Remove from each delta every line the base now holds (a restatement is refused at render time).
+1. Keep the repo's `DELTAS` module and add a `Delta` for every base the kit publishes; a missing one is refused.
+2. Remove from each delta every line the base now holds; a restatement is refused at render time.
 3. `python -m lab_commons.dev.famfiles --deltas <that module>`; commit the rendered files.
 4. One test file calling both `famtests.famfiles` bodies, with `owned_here` naming the repo's own files and why.
 
 ## The interpreter spelling
 
-One owner: `lab_commons.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`, `INTERPRETER_ALLOW_ENTRY`). Rendered from it:
-
-- the `permissions.allow` row `Bash(.venv/*/python* *)` -- `allow_adoption.derived_entries` puts it in every repo's allow block, so the settings check every consumer already runs refuses a block without it;
-- the deny row `BARE-INTERPRETER` (`_deny_interpreter_row`): it refuses `uv run ...`, `uvx`, and a bare `python`/`python3`/`py`, including behind wrappers and heredocs (the engine unwraps `uv run` and the row fires on either position). The refusal names `.venv/Scripts/python.exe` / `.venv/bin/python`, and for a worktree with no `.venv` the main checkout's. `python -m pytest` stays with `BARE-TEST-INVOCATION`: one shape, one row;
-- a repo whose user-facing CLI runs through `uv run` (consumer-a: `uv run <cli>`) opens exactly that with its own `Remedy.allow` for `BARE-INTERPRETER` -- a per-repo delta, never a hole in the base row.
+One owner: `lab_commons.dev.venvpath` (`VENV_LAYOUTS`, `VENV_INTERPRETER_GLOB`, `INTERPRETER_ALLOW_ENTRY`).
+Rendered from it: the allow row `Bash(.venv/*/python* *)`, and the deny row `BARE-INTERPRETER`, which refuses
+`uv run`, `uvx` and a bare `python`/`python3`/`py` and names the venv interpreter instead. A repo whose
+user-facing CLI runs through `uv run` opens exactly that with its own `Remedy.allow`.

@@ -1,76 +1,121 @@
-# The integrator — two ways to wake, one queue
+# The integrator
 
-- This page is how the integrator (the coordinator of [the three participants](the-three-participants.md)) finds work. What a lane, the integration branch and `main` each prove is on [branch layers](branch-layers.md); the statuses it reads are published as described on [the forge](forge.md), layer C.
-- **User directive 2026-10-02: two work modes, one merge queue, one definition of "ready".** WOKEN: an event (a lane's parts went green) wakes the integrator's session. SELF-POLLING: the integrator fetches every origin branch on a cadence and reads their `tests/<platform>` parts.
-- **The modes differ only in WHAT STARTS a pass, never in what the pass computes.** Both run `git fetch --prune origin` through the retry wrapper, then `python -m lab_commons.dev.integrator queue [--json]`. A wake carries no readiness — it means "re-derive now" — which keeps the existing rule that a notification is a priority hint and origin is the only shared medium.
+The integrator is the one session that merges child branches into the integration branch and moves the trunk.
+It runs no tests: it reads `tests/<platform>` parts from the forge. Its loop is `forge integration` (merge
+what is ready, report on every child), push, and `forge promote` when integration is fully green. Everyone
+else syncs their branch with `forge sync` and opens pull requests into integration.
+
+## The branch flow
+
+| branch | who writes it | the one verb that moves it |
+|---|---|---|
+| trunk (`main`) | nobody by hand | `forge promote`: fast-forward to a fully green integration tip |
+| integration (`integrate/main`) | the integrator | merges of child branches, then a push |
+| a child (lane, feat branch, PR head) | its owner | the owner's commits, and `forge sync` from integration |
+
+Declared once in the consumer's `pyproject.toml`; every key is optional and an unknown key is refused:
+
+```toml
+[tool.lab_commons.integrator]
+lane_prefixes = ["feat/", "fix/"]   # which origin branches are children
+integration = "integrate/main"      # the branch children merge into
+trunk = "main"                      # moved only by `forge promote`
+test_roots = ["tests"]              # what the merge audit reads
+```
+
+## Child branches sync from integration
+
+`DOWNSTREAM-SYNCS-INTEGRATION`: a child merges only integration. Another child's work reaches it once, through
+integration.
+
+```
+python -m lab_commons.dev.forge sync                       # merge integration (and watched refs) if clean
+python -m lab_commons.dev.forge sync --watch origin/<ref>  # opt in to one more upstream; --unwatch, --list
+```
+
+- It trial-merges each upstream with `git merge-tree --write-tree`, reports how far behind and which files
+  conflict, and merges (never rebases) only when every merge is clean: integration first, then each watched ref.
+- On a conflict it merges nothing and names the files; resolve with a plain `git merge`.
+- It never pushes. The owner measures what they touched and pushes.
+- The watched set is the checkout's git config `branch.<child>.labUpstream`, never a committed file.
+
+## Pull requests target integration
+
+`PRS-TARGET-INTEGRATION`: every pull request targets integration; one opened against the trunk is retargeted
+with a comment saying why. Each child carries one PR at most.
+
+## The integration tick
+
+```
+python -m lab_commons.dev.forge integration
+```
+
+- Fetches origin and each PR head (`pull/N/head`, including PRs on a GitHub mirror remote).
+- Per child, says: merged into integration at `<sha>`, or deferred and why; behind N, clean or the conflicting
+  files; its upstream set; the head's `tests/<platform>` states and the open `area:*` issues citing it;
+  promoted once the trunk holds the merge.
+- **The report is one comment per PR**, found by a hidden marker and edited in place. A child without a PR gets
+  an `integration` commit status on its head, posted only when it changed.
+- The integrator never writes a child branch.
 
 ## The ready predicate
 
-- Inputs: the remote-tracking refs (`refs/remotes/origin/*`, with each tip's committer time), `git cherry` of each tip against its target, and the LATEST status per context on each un-absorbed tip.
-- A **lane** is an origin branch under a declared prefix. It is skipped when ABSORBED: `git cherry <origin/integration> <tip>` prints no `+` line, so a cherry-picked or rebased lane whose content is present is not re-queued (the ancestor test would say no).
-- An un-absorbed lane is `merge` when its tip's parts stand PASS (any scope), `blocked` on a FAIL part, `waiting` otherwise (no part, a claim, a missing platform). `lane_ready(statuses, head=)` is the one spelling of that rule, and `forgeissue`'s `ready` state calls the same function; both read `platformparts.standing`, as trunk admission does.
-- The **integration branch**, when its change is not on `main`, is `promote` when its parts stand PASS at scope `full` (what the trunk admits), `blocked` on a FAIL part, `parts-needed` otherwise.
-- Everything else (`main`, undeclared prefixes) is never queued.
+`python -m lab_commons.dev.integrator queue [--json]` derives the merge queue from origin every time; nothing
+stores it, so a duplicate or lost wake changes nothing.
 
-## The queue
+- **A child is absorbed** when `git cherry <origin/integration> <tip>` prints no `+` line; absorbed children
+  are skipped, including cherry-picked or rebased ones.
+- An un-absorbed child is `merge` when its tip's parts stand PASS (any scope), `blocked` on a FAIL part,
+  `waiting` otherwise. `lane_ready(statuses, head=)` is the one spelling of that rule.
+- Integration is `promote` when its parts stand PASS at scope `full`, `blocked` on a FAIL, `parts-needed`
+  otherwise.
+- Order: oldest tip commit first, ties by branch name.
+- The predicate, the order and the queue are the family's and are not configurable.
 
-- **It lives nowhere. It is recomputed from origin every pass**, by `ready_lanes(refs, statuses, policy)` — a pure function over the inputs above. No file, no daemon state, no comment thread holds it, so there is nothing to go stale and nothing two modes can disagree on.
-- **Idempotent by construction**: a duplicate wake, a wake lost in transit, and a wake racing a poll all print the same queue, because none of them is an input. A merged lane drops out on the next pass because `git cherry` now absorbs it.
-- **Order**: oldest tip commit time first (the lane that finished first merges first), ties by branch name, so two passes over the same refs print byte-identical queues. The integrator merges the `merge` rows in that order, pushes the combination, lets `forge tick` produce its full parts when the row reads `parts-needed`, and fast-forwards `main` on `promote`.
+## Promoting the trunk
 
-## Mode (a) — woken
+```
+python -m lab_commons.dev.forge promote
+```
 
-- The observer is the bridge daemon's `observer.mjs` (per machine, in the user's Claude Code config tree, not in this family). It already fetches each observed repo, follows a pushed tip until its `tests/<platform>` parts appear, and posts the result into that session's Telegram Topic.
-- **The wake is one more sink for the event it already detects.** When a lane tip's parts stand PASS, the observer also calls its host adapter's `inject(id, text)` for the session whose branch is the declared integration branch in that repo, with the text `integrator: wake <repo> <branch> <sha>`. The Claude adapter delivers that as a channel message, which starts a turn in the integrator's session; its handler is "fetch, then `queue`".
-- **The adapter is documented, not shipped here.** The observer lives outside this family's repos and its inject path needs a live channel-connected session, which no test in this repo can stand up. What it needs: identify the integrator session by `branch == integration` (it already reads each session's branch), and coalesce — at most one wake per repo per poll.
-- Inside Claude Code, a session that is not channel-connected is reachable by cross-session `SendMessage` from another agent; that is the fallback if the bridge is down, with the same one-line payload.
+`TRUNK-MOVES-BY-FAST-FORWARD`: a fast-forward push of the trunk to the integration tip when every required
+`tests/<platform>` part stands PASS at scope `full`. It refuses naming the missing parts, and refuses a trunk
+that is not an ancestor of integration rather than merging. No merge commit ever lands on the trunk.
 
-## Mode (b) — self-polling
+## The merge audit
 
-- The integrator schedules itself (`/loop` or `ScheduleWakeup`). Each tick: fetch through the wrapper, `queue --json`, act on the first actionable row, reschedule.
-- **Cadence: 10 minutes idle, immediate re-run after a pass that merged something.** A gate on the integration branch costs the whole lightweight suite (about 13 minutes measured on branch layers), so polling faster than a gate takes buys nothing.
-- **Cost per tick**: one `git fetch` (one network round trip, refs only when nothing moved), one `git cherry` per declared ref (local), and one forge API call per UN-ABSORBED tip — absorbed lanes are never asked about. Ten open lanes is ten small GETs per tick.
-- Woken and polling coexist: a wake simply brings the next tick forward. Polling is the floor that makes a lost wake harmless.
+`MERGE-DEVIATIONS-NAMED`: a merge may not lose or rewrite a test in silence.
+
+- `lab_commons.dev.mergeaudit` computes, per test, what a clean three-way merge would hold. A deviation is
+  `LOST`, `ALTERED` or `CONFLICTED`, and each is named in the merge commit message:
+  `Merge-Audit: <KIND> <test> -- <reason>`. A clean merge needs no line; a line naming no real deviation is
+  refused.
+- It runs as the family base's `merge-audit` commit-msg hook, on both `git merge` and the commit that
+  concludes a conflicted one, and refuses with the unnamed list and the remedy.
+- Integrate by merge only: a rebase leaves no merge commit to audit.
+- Not seen: a fixture or helper changed under an unchanged test body.
+
+## Resolving a conflict
+
+- Take the newer STRUCTURE, then re-express your own content inside it. When upstream extracted or split a
+  file, your edits go to the new home.
+- A shared count or pin that conflicts is arithmetic to redo on the merged tree, never a side to pick
+  ([alignment](alignment.md)).
+- Price a batch before touching a tree: `git merge-tree --write-tree --name-only <integration> origin/<branch>`
+  lists a merge's conflicts without a checkout.
+
+## Waking the integrator
+
+The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by an observer when a child's
+parts turn green. A wake carries no state: it only means "derive again now". Polling is the floor that makes a
+lost wake harmless.
 
 ## Failure modes
 
 | failure | what happens |
 |---|---|
-| stale status — the lane moved after its gate | the green is on the old sha; the new tip has no status and reads `waiting` until its own gate publishes |
-| force-pushed lane | same as above: statuses are keyed on the sha, so a rewritten tip starts unjudged; nothing to detect |
-| stale refs — the caller forgot to fetch | the tips are printed in every row, so the answer is visibly old; the module never fetches (network belongs to the retry wrapper) |
-| forge unreachable | the `queue` call exits non-zero with the forge door's remedy; nothing is merged on a guess |
-| seat contention — gate/heavy already holds the box | the pass waits on the box seat like any verdict; a wake arriving meanwhile is coalesced into the next pass, never queued twice |
-| two integrators on one repo | not prevented here; the forge's push whitelist and the fast-forward-only `main` update make the loser's push fail, and it re-derives |
-| a lane blocked on `failure` | listed under `held` with its tip; it is the lane's to fix, the integrator does not retry it |
-
-## What a consumer declares
-
-Only names, in its `pyproject.toml`; every key is optional and an unknown key is refused:
-
-```toml
-[tool.lab_commons.integrator]
-lane_prefixes = ["feat/", "fix/"]   # which origin branches are lanes
-integration = "integrate/main"      # the branch lanes merge into
-trunk = "main"                      # the stable branch; moved only by `forge promote`
-```
-
-- The predicate, the order and the queue are the family's and are not configurable: a consumer that could redefine "ready" would be a second source of it.
-
-## The branch flow — trunk, integration, children
-
-- **User design 2026-10-11.** `trunk` is stable, `integration` coordinates, every other branch is a CHILD owned by whoever made it. Each layer has exactly one verb that moves it, and nobody else writes it.
-- **The trunk** moves only through `python -m lab_commons.dev.forge promote`: a fast-forward push to the integration tip when every required `tests/<platform>` part stands PASS at scope `full` — the same `platformparts.standing` reading trunk admission makes. It refuses with the missing parts named, and refuses a trunk that is not an ancestor of integration instead of merging (`TRUNK-MOVES-BY-FAST-FORWARD`). No merge commit ever lands on the trunk.
-- **Integration** is merged into only by the integrator. Every pull request targets it; one opened against the trunk is retargeted with a comment saying why (`PRS-TARGET-INTEGRATION`).
-- **A child branch syncs from integration ONLY** (`DOWNSTREAM-SYNCS-INTEGRATION`, user ruling 2026-10-11). The owner's agent runs `python -m lab_commons.dev.forge sync` in develop mode: it trial-merges each upstream ref with `git merge-tree --write-tree`, reports behind count and conflicts, and — only when every one is clean — merges integration first, then each watched ref, by merge (never rebase). On a conflict it merges nothing and names the files. It never pushes: the owner runs their tests and pushes. Another child's work arrives once, through integration; to opt in to a specific ref, `forge sync --watch origin/<branch>` (`--unwatch`, `--list`), stored as the multi-valued `branch.<child>.labUpstream` git config of that checkout — never a file, never committed. Any other ref is refused by name.
-- **The integration tick** `python -m lab_commons.dev.forge integration` fetches origin (and each PR head as `pull/N/head`, including PRs on a GitHub mirror remote, whose feedback goes on GitHub), then per child branch says: merged into integration at `<sha>` or deferred and why; behind N, clean or the conflicting files; its upstream set; the head's `tests/<platform>` states with the open `area:*` issues citing it; promoted to the trunk once the trunk holds the merge. On a PR that is ONE comment found by a hidden marker and edited in place; without a PR, an `integration` commit status on the head, posted only when it changed. The integrator never writes a child branch.
-- The upstream set the tick reports is read from the INTEGRATOR's checkout config, so an owner's local opt-in is visible only on the owner's box; the tick's line states the default unless the integrator's checkout watches more.
-
-## A merge names every test it lost or rewrote (`MERGE-DEVIATIONS-NAMED`)
-
-- The tests ARE the feature inventory, so the one regression a gate cannot see is a resolution that deletes or rewrites the test that would have caught it. `lab_commons.dev.mergeaudit` computes, per test, what a clean three-way merge would hold, and reads git objects only.
-- A deviation is `LOST` (expected, absent), `ALTERED` (a body or presence the clean merge would not hold) or `CONFLICTED` (both sides changed it differently). Each is named in the merge commit: `Merge-Audit: <KIND> <test> -- <reason>`. A clean merge needs no line; a line naming no real deviation is refused too.
-- `ALTERED` passes on the merging agent's one-line reason and is audited afterwards (user ruling 2026-10-07).
-- Checked when the merge is COMMITTED: the family base's `merge-audit` commit-msg hook (`python -m lab_commons.dev.mergeaudit`, `lab_commons/dev/githooks/base.toml`) audits the index against HEAD and `MERGE_HEAD` over `test_roots` in `[tool.lab_commons.integrator]` (default `["tests"]`) and refuses the commit with the unnamed list and the remedy. Both `git merge` and the `git commit` that concludes a conflicted one run it. A push does no audit work (user ruling 2026-10-10: a push must never block development).
-- Integrate by MERGE only: a rebase resolves conflicts with no merge commit to audit.
-- Not seen: a fixture or helper changed under an unchanged test body. It still runs under the gate.
+| the child moved after its part was posted | the new tip has no part and reads `waiting` until a producer posts one |
+| stale refs (no fetch) | every row prints its tip, so the staleness is visible; the module never fetches |
+| forge unreachable | the command exits non-zero with the remedy; nothing is merged on a guess |
+| two integrators on one repo | the push whitelist and fast-forward-only promote make the loser's push fail |
+| a child blocked on `failure` | listed with its tip; it is the owner's to fix, through its `area:*` issue |
