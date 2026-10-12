@@ -237,9 +237,15 @@ def test_a_given_env_keeps_what_git_and_its_helper_need_on_every_platform(
     Measured 2026-10-12, twice: on Ada a replaced env lost ``LD_LIBRARY_PATH`` and git exited 127; on
     Windows a blanked ``PATH`` hid ``git-credential-manager`` and ``forge queue`` reported a stored
     credential as missing. Every variable is planted, so each platform's need is asserted on every box.
+
+    A plant is a real directory, and the loader path is EXTENDED, not replaced: a junk value would
+    break the very git under test on a host whose git needs its ``LD_LIBRARY_PATH`` (Ada, 2026-10-12).
     """
     for name in _HOST_VARS:
-        monkeypatch.setenv(name, f'planted-{name}')
+        planted = tmp_path / f'planted-{name}'
+        planted.mkdir()
+        kept = os.environ.get(name) if name == 'LD_LIBRARY_PATH' else None
+        monkeypatch.setenv(name, os.pathsep.join(filter(None, (kept, str(planted)))))
     repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
     echoed = '/'.join(f'${{{name}}}' for name in _HOST_VARS)
     env = _helper_config(tmp_path, f'!f() {{ echo username=u; echo password={echoed}; }}; f')
