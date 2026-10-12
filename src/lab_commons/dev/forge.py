@@ -46,17 +46,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from lab_commons.dev.forgecred import (
-    _GIT,
-    _GIT_TIMEOUT_S,
-    AUTH_REFUSED,
-    AUTH_REMEDY,
-    NoCredential,
-    authorization,
-    credential_for,
-    store_credential,
-    token_for,
-)
+from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
+from lab_commons.dev.forgecred import AUTH_REFUSED, AUTH_REMEDY, authorization, token_for
 from lab_commons.dev.netverb import run_network_verb
 
 if TYPE_CHECKING:
