@@ -44,7 +44,7 @@ import shutil
 import subprocess
 import tarfile
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -77,8 +77,8 @@ from lab_commons.dev.artefactstores import (
     sorted_refs,
     verified_copy,
 )
-from lab_commons.dev.forgepulls import pulls_off
-from lab_commons.dev.forgework import Client, ForgeCallFailed, pull_of
+from lab_commons.dev.forgepulls import pages, pulls_off
+from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull, pull_of
 from lab_commons.hpc.rclone import probe
 
 __all__ = [
@@ -315,23 +315,27 @@ def resolve(entry: dict[str, Any], dest: Path, *, client: Client, repo: str) -> 
 # --- cleanup --------------------------------------------------------------------------------------
 
 
-def pinned(client: Client) -> frozenset[str]:
+def pinned(client: Client, *, say: Callable[[str], None]) -> frozenset[str]:
     """The sha12s a ``keep``-labelled issue or pull request names: shas in its body, and a PR's head.
 
-    A repository with pull requests switched off still lists its old PRs among its issues, but answers
-    their ``/pulls`` read 404 (:func:`~lab_commons.dev.forgepulls.pulls_off`): such a PR pins by its body.
+    The labelled set is read through the one paged listing and told apart by the one
+    :func:`~lab_commons.dev.forgework.is_pull` -- gitea's ``"pull_request": null`` marks a plain issue.
+    A ``/pulls/N`` read the forge refuses (a repository with pull requests switched off, or any other
+    refusal of that one number) skips that number with a named reason: its body still pins.
     """
     found: set[str] = set()
-    for item in client.call('GET', f'{client.repo}/issues?state=all&labels=keep&limit=50'):
+    for item in pages(client, f'{client.repo}/issues', {'state': 'all', 'labels': 'keep'}):
         found.update(token[:12] for token in _SHA_TOKEN.findall(item.get('body') or ''))
-        if 'pull_request' in item:
-            try:
-                head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
-            except ForgeCallFailed as failed:  # a PR labelled before the repo switched pull requests off
-                if not pulls_off(client, failed):
-                    raise
-                continue
-            found.update([head[:12]] if head else [])
+        if not is_pull(item):
+            continue
+        try:
+            head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
+        except ForgeCallFailed as failed:
+            status = failed.report.attempts[-1].returncode if failed.report.attempts else 0
+            why = f'HTTP {status}, pull requests are off' if pulls_off(client, failed) else f'HTTP {status}: {failed}'
+            say(f'[artefacts] keep #{item["number"]} pins by its body only: its pull read was refused ({why})')
+            continue
+        found.update([head[:12]] if head else [])
     return frozenset(found)
 
 

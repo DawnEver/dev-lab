@@ -329,12 +329,14 @@ class _Forge:
         self.heads: dict[int, str] = {}
         self.pulls_off = False  # every /pulls/N read answers 404
         self.has_pull_requests = True  # the repository's own flag
+        self.calls: list[str] = []
 
     repo = '/api/v1/repos/o/r'
 
     backend = GITEA
 
     def call(self, method: str, path: str, body: object = None) -> object:
+        self.calls.append(path)
         if 'issues?' in path and 'labels=keep' in path:
             return self.labelled
         if path.endswith('/issues?state=all&type=issues&q=run+records&limit=50'):
@@ -342,6 +344,8 @@ class _Forge:
         if path == self.repo:
             return {'has_pull_requests': self.has_pull_requests}
         if '/pulls/' in path and self.pulls_off:  # gitea: the pulls unit is off, so every PR read is 404
+            raise ForgeCallFailed(Report(('GET', path), (Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED),), 1))
+        if '/pulls/' in path and int(path.rsplit('/', 1)[1]) not in self.heads:  # gitea: an issue is no pull
             raise ForgeCallFailed(Report(('GET', path), (Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED),), 1))
         if '/pulls/' in path:
             return {
@@ -384,6 +388,10 @@ def test_the_forge_backend_is_write_once_and_verified_too(tmp_path: Path) -> Non
     assert store.list(None) == ()
 
 
+def _pinned(forge: _Forge, said: list[str] | None = None) -> frozenset[str]:
+    return artefacts.pinned(cast('Client', forge), say=(said if said is not None else []).append)
+
+
 def test_keep_labels_pin_the_shas_their_issue_or_pr_names() -> None:
     forge = _Forge()
     forge.labelled = [
@@ -391,7 +399,20 @@ def test_keep_labels_pin_the_shas_their_issue_or_pr_names() -> None:
         {'number': 4, 'body': '', 'pull_request': {}},
     ]
     forge.heads[4] = 'd' * 40
-    assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12, 'd' * 12})
+    assert _pinned(forge) == frozenset({'c' * 12, 'd' * 12})
+
+
+def test_a_gitea_issue_with_a_null_pull_request_is_never_read_as_a_pull() -> None:
+    forge = _Forge()
+    forge.labelled = [{'number': 2492, 'body': f'host card {"e" * 40}', 'pull_request': None}]
+    assert _pinned(forge) == frozenset({'e' * 12})
+    assert not [path for path in forge.calls if '/pulls/' in path], 'an issue is never read through /pulls/N'
+
+
+def test_the_keep_listing_is_read_through_the_one_paged_listing() -> None:
+    forge = _Forge()
+    _pinned(forge)
+    assert any('page=1' in path for path in forge.calls if 'labels=keep' in path)
 
 
 def test_a_repo_with_pull_requests_off_pins_by_body_and_never_fails_the_cleanup() -> None:
@@ -401,15 +422,21 @@ def test_a_repo_with_pull_requests_off_pins_by_body_and_never_fails_the_cleanup(
         {'number': 3, 'body': f'results of {"c" * 40} please'},
         {'number': 7, 'body': '', 'pull_request': {}},  # a PR labelled keep before the unit was switched off
     ]
-    assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12})
+    assert _pinned(forge) == frozenset({'c' * 12})
 
 
-def test_a_pull_read_refused_for_another_reason_still_raises() -> None:
+def test_a_pull_read_refused_for_one_number_is_skipped_by_name_and_the_rest_still_pin() -> None:
     forge = _Forge()
-    forge.pulls_off = True
-    forge.labelled = [{'number': 7, 'body': '', 'pull_request': {}}]
-    with pytest.raises(ForgeCallFailed):
-        artefacts.pinned(cast('Client', forge))
+    forge.labelled = [
+        {'number': 7, 'body': '', 'pull_request': {}},  # listed as a pull, but /pulls/7 answers 404
+        {'number': 8, 'body': '', 'pull_request': {}},
+    ]
+    forge.heads[8] = 'f' * 40
+    said: list[str] = []
+    assert _pinned(forge, said) == frozenset({'f' * 12})
+    assert len(said) == 1
+    assert '#7' in said[0]
+    assert '404' in said[0]
 
 
 # --- choosing the store by size --------------------------------------------------------------------
