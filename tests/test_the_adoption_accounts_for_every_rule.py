@@ -142,7 +142,10 @@ _ENFORCED = {
     'NO-REFLECTION': (guard('tests/test_arch_production_carries_no_reflection.py'),),
     'ONE-BRANCH-PER-SESSION': (guard('tests/test_dev_branchset.py'),),
     'MERGE-OR-DELETE': (guard('tests/test_dev_branchset_apply.py'),),
-    'ONE-RUN-AFTER-INTEGRATION': (
+    'VERDICTS-FROM-THE-FORGE': (
+        guard('tests/test_dev_producer.py'),
+        guard('tests/test_dev_verify.py'),
+        guard('tests/test_dev_forgeserve.py'),
         guard('tests/test_dev_admission.py'),
         guard('tests/test_dev_inflight.py'),
         guard('tests/test_dev_runcache.py'),
@@ -165,7 +168,7 @@ _ENFORCED = {
         guard('tests/test_dev_bounded.py'),
     ),
     'PUBLIC-SURFACE-DECLARED': (guard('tests/test_arch_public_surface.py'),),
-    'SUBAGENT-NO-HEAVY-NO-PUSH': (guard('tests/test_dev_hooks.py'), guard('tests/test_dev_agenthooks.py')),
+    'SUBAGENT-NO-PUSH': (guard('tests/test_dev_hooks.py'), guard('tests/test_dev_agenthooks.py')),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'RATCHET-TWO-SIDES': (
         guard('tests/test_arch_module_size_alarm.py'),

@@ -28,7 +28,7 @@ from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.log import emit
 from lab_commons.resources import Exhausted
 
-__all__ = ['PROGRESS_S', 'WAIT_S', 'hold_run_seats', 'holders_line']
+__all__ = ['MEASURE_WAIT_S', 'PROGRESS_S', 'WAIT_S', 'hold_run_seats', 'holders_line']
 
 #: The CEILING ON THE WAIT for the box, in seconds -- 30 minutes, the same bound this family's gate
 #: tier already carries, so a run queued behind a gate cannot outlive the thing it queues behind.
@@ -39,6 +39,12 @@ __all__ = ['PROGRESS_S', 'WAIT_S', 'hold_run_seats', 'holders_line']
 #: to replace. Waiting forever converts a crash into a hang, and it also contradicts what
 #: INCONCLUSIVE means here: "nobody knows yet" is a thing a run has to RETURN in order to say.
 WAIT_S: Final = 1800.0
+
+#: The ceiling on a TARGETED run's wait -- a developer's measure, which must never block development.
+#: MEASURED 2026-10-11: measures queued 30 minutes behind a full run many times in one day. Full runs
+#: are the producer's alone now (``VERDICTS-FROM-THE-FORGE``), so a measure finding the box held is
+#: almost always behind one, and the useful answer is a fast refusal naming the holder, not a queue.
+MEASURE_WAIT_S: Final = 60.0
 
 #: How often the wait SAYS SOMETHING, in seconds. A silent queue and a hung process look identical
 #: from a terminal -- measured on this family 2026-09-16, where a frozen log mtime read as a hang for

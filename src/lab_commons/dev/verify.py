@@ -46,7 +46,7 @@ from typing import IO, Final
 
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
-from lab_commons.dev.boxwait import WAIT_S, hold_run_seats, holders_line
+from lab_commons.dev.boxwait import MEASURE_WAIT_S, WAIT_S, hold_run_seats, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.familyheads import family_freshness
@@ -56,7 +56,8 @@ from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import post_cited, post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
-from lab_commons.dev.producer import ProducerExit
+from lab_commons.dev.platformparts import part_context, this_platform
+from lab_commons.dev.producer import ProducerExit, full_suite_refusal
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import (
     MalformedAllowance,
@@ -81,6 +82,7 @@ __all__ = [
     'PYTEST_ARGS',
     'RUFF_STEPS',
     'build_verdict',
+    'is_targeted',
     'main',
     'project_root',
     'read_hooks',
@@ -499,9 +501,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--lock-wait-s',
         type=float,
-        default=WAIT_S,
+        default=None,
         metavar='SECONDS',
-        help=f'ceiling on the wait for this box (default {WAIT_S:.0f}s); 0 checks once and refuses',
+        help=(
+            f'ceiling on the wait for this box (default {MEASURE_WAIT_S:.0f}s for a selection, '
+            f'{WAIT_S:.0f}s for the producer); 0 checks once and refuses'
+        ),
     )
     parser.add_argument('--no-status', action='store_true', help='do not post the run as this platform part')
     parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
@@ -509,6 +514,12 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parser.parse_args(argv)
     root = project_root()
     arguments = tuple(parsed.pytest_args)
+    targeted = is_targeted(root, arguments)
+    refused = None if targeted else full_suite_refusal('verify', os.environ, part_context(this_platform()))
+    if refused is not None:
+        emit(refused, err=True)
+        return ProducerExit.USAGE
+    wait_s = parsed.lock_wait_s if parsed.lock_wait_s is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
     stale, offline = family_freshness(root)
     if offline:
         emit(f'verify: {offline}', err=True)
@@ -528,7 +539,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_CODES[Outcome(cited.result.lower())]
 
     def lead() -> str:
-        code, lines = _judge(root, arguments, key, cache, wait_s=parsed.lock_wait_s, no_status=parsed.no_status)
+        code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, no_status=parsed.no_status)
         return json.dumps({'code': code, 'lines': lines})
 
     answer, attached = run_once(key, lead, directory=box_directory(), poll_s=DEFAULT_POLL_S)
@@ -538,6 +549,26 @@ def main(argv: list[str] | None = None) -> int:
         for line in shared['lines']:
             emit(line)
     return int(shared['code'])
+
+
+def is_targeted(root: Path, pytest_args: tuple[str, ...]) -> bool:
+    """Whether the arguments NAME a path or node in *root* -- a bounded measure -- rather than the whole suite.
+
+    Read off the tree rather than off pytest's grammar: ``-k``/``-m`` narrow a FULL collection and still
+    collect everything, so only an argument naming a file or directory that exists makes a run targeted --
+    and never the VALUE of an option that takes one (``-k tests`` names no path).
+    """
+    values = {i + 1 for i, arg in enumerate(pytest_args) if arg in _VALUED_OPTIONS}
+    return any(
+        i not in values and not arg.startswith('-') and (root / arg.split('::')[0]).exists()
+        for i, arg in enumerate(pytest_args)
+    )
+
+
+#: The pytest options whose next argument is their value, not a selection.
+_VALUED_OPTIONS: Final = frozenset(
+    {'-k', '-m', '-p', '-o', '-c', '--deselect', '--ignore', '--rootdir', '--confcutdir'}
+)
 
 
 def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:

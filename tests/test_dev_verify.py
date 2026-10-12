@@ -37,11 +37,12 @@ from typing import Final
 import pytest
 
 from lab_commons.dev import localpart, platformparts, verify
+from lab_commons.dev.boxwait import MEASURE_WAIT_S
 from lab_commons.dev.cpuseat import CPU_POOL
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
-from lab_commons.dev.platformparts import part_of
-from lab_commons.dev.producer import ProducerExit
+from lab_commons.dev.platformparts import part_context, part_of, this_platform
+from lab_commons.dev.producer import PRODUCING_VAR, ProducerExit, producing
 from lab_commons.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -857,6 +858,44 @@ class TestTheTeeOnAColouredStep:
         assert 'progress 1' in teed, 'a bare CR still splits into lines rather than being swallowed'
         assert 'progress 2' in teed
         assert 'done' in teed
+
+
+@pytest.fixture(autouse=True)
+def _as_the_producer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most tests here drive a FULL run, which only a producer ``forge serve`` spawned may take."""
+    for name, value in producing(part_context(this_platform()), 'a' * 40).items():
+        monkeypatch.setenv(name, value)
+
+
+def test_a_full_run_outside_a_producer_is_refused_with_the_remedy(monkeypatch, tmp_path: Path, capsys) -> None:
+    """VERDICTS-FROM-THE-FORGE: no claim, no full suite -- refused before anything runs or waits."""
+    _cached(monkeypatch, tmp_path)
+    monkeypatch.delenv(PRODUCING_VAR)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a full suite ran outside a producer'))
+    assert verify.main(['--no-status', '--', '-q']) == ProducerExit.USAGE
+    assert 'push; the forge produces the part' in capsys.readouterr().err
+
+
+def test_a_selection_is_a_measure_needs_no_claim_and_waits_briefly(monkeypatch, tmp_path: Path) -> None:
+    """THE CONTROL: a named path runs without a claim, on the short measure wait, never the producer's."""
+    _cached(monkeypatch, tmp_path)
+    monkeypatch.delenv(PRODUCING_VAR)
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
+    waits: list[float] = []
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, wait_s, **_k: waits.append(wait_s) or _judged(tmp_path))
+    assert verify.main(['--no-status', '--rerun', 'tests/a.py::test_x']) == ProducerExit.PASS
+    assert waits == [MEASURE_WAIT_S]
+
+
+def test_only_an_argument_naming_the_tree_makes_a_run_targeted(tmp_path: Path) -> None:
+    (tmp_path / 'tests').mkdir()
+    assert verify.is_targeted(tmp_path, ('tests',))
+    assert not verify.is_targeted(tmp_path, ('-k', 'tests_that_do_not_exist')), '-k narrows a full collection'
+    assert not verify.is_targeted(tmp_path, ('-k', 'tests')), 'an option VALUE that happens to be a path'
+    assert verify.is_targeted(tmp_path, ('-k', 'x', 'tests'))
+    assert not verify.is_targeted(tmp_path, ('missing.py',))
+    assert not verify.is_targeted(tmp_path, ())
 
 
 def _judged(tmp_path: Path) -> Verdict:

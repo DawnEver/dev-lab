@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -18,7 +19,7 @@ from lab_commons.dev.forgetick import OPEN, Claim, TickReport, Work
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
-from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
+from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
 
 SHA = 'a' * 40
@@ -72,6 +73,7 @@ def _serve(
     *,
     seat: ClusterAccount | None = None,
     cluster=lambda: None,
+    spawned: list[dict] | None = None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
@@ -95,7 +97,7 @@ def _serve(
         machine='G',
         seat=seat,
         cluster=cluster,
-        spawn=lambda argv, **_k: (procs or {})[argv[0]],
+        spawn=lambda argv, **k: ((spawned if spawned is not None else []).append(k), (procs or {})[argv[0]])[1],
         clock=lambda: NOW,
         say=said.append,
         alarm=alarms.append,
@@ -117,6 +119,16 @@ def test_a_claimed_local_part_is_produced_inline_and_published(monkeypatch, tmp_
     assert report.broken == ()
     assert 'tick: one line' in said
     assert '[windows] collected 9' in said
+
+
+def test_the_producer_is_spawned_holding_its_claim_and_nothing_else_is(monkeypatch, tmp_path: Path) -> None:
+    """VERDICTS-FROM-THE-FORGE: serve is the one door to a full suite -- its producer carries the part it claimed."""
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    spawned: list[dict] = []
+    monkeypatch.delenv(PRODUCING_VAR, raising=False)
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, spawned=spawned)
+    assert [kwargs['env'][PRODUCING_VAR] for kwargs in spawned] == [f'tests/windows@{SHA}']
+    assert PRODUCING_VAR not in os.environ, "the claim is the child's, never leaked into serve itself"
 
 
 def test_a_producer_refusing_its_argv_is_a_broken_contract_not_a_skip(monkeypatch, tmp_path: Path) -> None:

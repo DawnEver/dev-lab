@@ -7,7 +7,14 @@ import argparse
 import pytest
 
 from lab_commons.dev import verify
-from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
+from lab_commons.dev.producer import (
+    PRODUCING_VAR,
+    RETRYABLE,
+    ProducerExit,
+    full_suite_refusal,
+    producing,
+    release_reason,
+)
 
 
 def test_every_meaning_has_its_own_code() -> None:
@@ -39,3 +46,20 @@ def test_only_unreachable_is_released_as_retryable() -> None:
     assert retryable == {ProducerExit.UNREACHABLE}
     assert len(set(reasons.values())) == len(reasons), 'every exit is released with a reason naming it'
     assert release_reason(-9) == 'released: producer crashed (exit -9)'
+
+
+def test_the_door_is_open_only_to_the_producer_forge_serve_spawned() -> None:
+    """VERDICTS-FROM-THE-FORGE: a full suite runs only under the claim ``forge serve`` hands its producer."""
+    sha = 'a' * 40
+    assert producing('tests/windows', sha) == {PRODUCING_VAR: f'tests/windows@{sha}'}
+    assert full_suite_refusal('verify', producing('tests/windows', sha), 'tests/windows') is None, 'the control'
+    refused = full_suite_refusal('verify', {}, 'tests/windows')
+    assert refused is not None
+    assert 'push; the forge produces the part' in refused
+    assert 'forge status list <sha>' in refused
+    assert 'verify -- <paths>' in refused
+
+
+def test_a_claim_for_another_platform_does_not_open_this_one() -> None:
+    """PLANTED: a linux claim leaked into a windows shell is not this box's part."""
+    assert full_suite_refusal('verify', producing('tests/linux', 'a' * 40), 'tests/windows') is not None

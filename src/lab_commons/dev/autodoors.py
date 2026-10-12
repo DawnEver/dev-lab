@@ -33,7 +33,7 @@ verbs are doors too (:data:`PUBLISH_DOORS`): ``git merge --ff-only`` (also as ``
 the push, ALWAYS RETRY-WRAPPED and never raw (GIT-NETWORK-VERB refuses a raw one): the repo's own
 wrapper (``sh <rel> *``), a sibling checkout's wrapper (``sh */<rel> push *``), or the family verb
 :mod:`lab_commons.dev.netverb` in a repo without one. A subagent is still refused every push by the
-scoped deny row SUBAGENT-NO-HEAVY-NO-PUSH, and a force push by PUSH-FORCE: a deny hook fires before
+scoped deny row SUBAGENT-NO-PUSH, and a force push by PUSH-FORCE: a deny hook fires before
 an allow row is consulted. REMOTE DELETIONS ARE STILL NEVER AUTOMATIC -- a push glob admits
 ``--delete`` and ``:<ref>``, so PUSH-REMOTE-DELETE refuses them.
 

@@ -9,8 +9,8 @@
 | tier | selection | wall | who runs it |
 |---|---|---|---|
 | measure | the paths you name, else the working tree's diff; lightweight only | seconds of feedback | the agent, after each edit |
-| gate | the push increment's reach (last-pushed sha to HEAD, else the integration branch, else `main`), lightweight only | 30 min HARD, blocking | pre-push, and anyone before committing |
-| heavy | everything, including every LOCAL live engine the repo declares | unbounded, NEVER blocking | the agent that owns the push, by hand |
+| gate | the push increment's reach (last-pushed sha to HEAD, else the integration branch, else `main`), lightweight only | 30 min HARD | the forge's producer only, never a developer |
+| heavy | everything, including every LOCAL live engine the repo declares | unbounded, NEVER blocking | the forge's producer only, never a developer |
 
 - **An engine is enabled by the TIER, never by the shell.** The heavy tier sets the live-engine environment itself, so a heavy verdict always covers the engines this box has. Do not re-copy the engine list into prose: measured in consumer-a, a prose row promised an engine whose variable was never set, and 27 plus 13 tests skipped as "opt-in" on a machine where both were installed.
 - **A skip says WHICH fact stopped it.** "Not installed on this box" is about the machine and no variable fixes it; "installed but not enabled" is about the caller. Conflating those makes every skipped line read as a choice when it is a gap.
@@ -24,14 +24,13 @@
 
 | destination | the bar | what does NOT block it |
 |---|---|---|
-| a lane (`feat/...`, `fix/...`) | NONE of its own: ONE-RUN-AFTER-INTEGRATION; a lane may run a targeted `measure` of the tests it touched | everything; the integrated tree is judged instead |
-| the integration branch | a gate PASS or FAIL recorded in the verdict ledger for HEAD and this env, run ONCE on the tree that merged every ready lane | a red; a red heavy |
-| `main` | a heavy PASS for that exact tree and environment | nothing — this is the ONE hop where everything must be green |
+| a lane (`feat/...`, `fix/...`) | NONE: the forge produces its parts after the push; a developer may run a targeted `measure` | everything |
+| the integration branch | NONE: the forge produces its parts after the push | everything |
+| `main` | every `tests/<platform>` part of HEAD a PASS of scope `full`, read from the forge | nothing — this is the ONE hop where everything must be green |
 
 - **THE BAR IS THE INCREMENT, NOT THE TREE** (user ruling 2026-09-07): a lane answers for the code it developed and a merge answers for what it brought in, so a red your increment did not cause is INVENTORY the integrator assigns, never a personal blocker.
-- **The heavy tier never blocks a push** — it is unbounded, it is YOURS to run, and its result is RECORDED rather than waited on. Run it, say what it said, push.
-- **ONE RUN AFTER INTEGRATION** (user ruling 2026-10-08): lanes and subagents never run broad verification. The main session merges every ready lane into one integration tree and runs the gate ONCE; a settled run posts its `tests/<platform>` part on the forge (`lab_commons.dev.platformparts`) and is cached on this box (`lab_commons.dev.runcache`, `output/runcache/runs.jsonl` in the main checkout) so a judged key is cited rather than re-run. Lane and integration pushes are admitted with no result; the merge audit still runs on every destination. The trunk reads the forge, never a log or a cache: every part of HEAD a PASS of scope `full`. An INCONCLUSIVE run is no part and is never cached. ONE implementation, `lab_commons.dev.admission` (library and CLI); `famtests.localadmission` refuses a consumer copy.
-- **A duplicate request never runs twice.** A runner whose box is held QUEUES (`boxwait`) instead of refusing, and a request with the same `(tree, env, selector)` as a run in flight ATTACHES to it and receives its answer (`lab_commons.dev.inflight`). A key the ledger already holds is CITED without running; `--rerun` overrides. Measured 2026-10-08 in one consumer: 95 of 98 logs that day were one key, re-launched by polling agents.
+- **No tier blocks a push, and no developer runs a full one** (`VERDICTS-FROM-THE-FORGE`, user report 2026-10-11): a full tier runs only in the producer `forge serve` spawns for a claimed part (`lab_commons.dev.producer`); anywhere else it refuses with the remedy -- push, the forge produces the part. A settled run posts its `tests/<platform>` part on the forge (`lab_commons.dev.platformparts`) and is cached on this box (`lab_commons.dev.runcache`, `output/runcache/runs.jsonl` in the main checkout) so a judged key is cited rather than re-run. Lane and integration pushes are admitted with no result; the merge audit still runs on every destination. The trunk reads the forge, never a log or a cache: every part of HEAD a PASS of scope `full`. An INCONCLUSIVE run is no part and is never cached. ONE implementation, `lab_commons.dev.admission` (library and CLI); `famtests.localadmission` refuses a consumer copy.
+- **A duplicate request never runs twice.** A producer whose box is held QUEUES (`boxwait.WAIT_S`); a measure waits at most `MEASURE_WAIT_S` and then refuses naming the holder, and a request with the same `(tree, env, selector)` as a run in flight ATTACHES to it and receives its answer (`lab_commons.dev.inflight`). A key the ledger already holds is CITED without running; `--rerun` overrides. Measured 2026-10-08 in one consumer: 95 of 98 logs that day were one key, re-launched by polling agents.
 - **Inventory is CARRIED, not asserted.** "That red was not mine" from an agent is self-certification; the honest form is an enumerated table that only shrinks, red on a NEW entry and red on a STALE one alike.
 - No mechanism distinguishes "my increment caused this red" from "this red pre-existed inside my increment's reach". The honest test is a baseline comparison — restore the prior file, re-measure, diff the residuals — and it is done BY HAND.
 

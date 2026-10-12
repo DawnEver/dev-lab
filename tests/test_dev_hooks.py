@@ -188,7 +188,7 @@ def test_the_lookup_is_the_registry_itself() -> None:
 
 def test_a_subagent_row_carries_its_scope_into_the_engine_file() -> None:
     """The scope is DATA the engine reads; a row that dropped it would refuse the main session too."""
-    row = rules_by_id(DENY_RULES)['SUBAGENT-NO-HEAVY-NO-PUSH']
+    row = rules_by_id(DENY_RULES)['SUBAGENT-NO-PUSH']
     assert row.scope == 'subagent'
     assert row.rendered()['scope'] == 'subagent'
     assert 'scope' not in rules_by_id(DENY_RULES)['GIT-STASH'].rendered(), 'an unscoped row grew a scope'
@@ -202,7 +202,7 @@ def test_a_planted_unknown_scope_is_refused() -> None:
 
 def test_a_scoped_row_binds_only_its_own_scope() -> None:
     """The Python reading agrees with the engine: the main session is not judged by a subagent row."""
-    assert denies(DENY_RULES, 'SKIP=ruff git commit -m x', scope='subagent') == 'SUBAGENT-NO-HEAVY-NO-PUSH'
+    assert denies(DENY_RULES, 'SKIP=ruff git commit -m x', scope='subagent') == 'SUBAGENT-NO-PUSH'
     assert denies(DENY_RULES, 'SKIP=ruff git commit -m x') is None
 
 
@@ -219,7 +219,7 @@ def test_main_session_publishes_and_a_subagent_is_still_refused(command: str) ->
     """MAIN-SESSION-PUBLISHES: the doors the allow rows open are free to a main session, never a subagent."""
     assert denies(DENY_RULES, command) is None
     if 'push' in command:
-        assert denies(DENY_RULES, command, scope='subagent') == 'SUBAGENT-NO-HEAVY-NO-PUSH'
+        assert denies(DENY_RULES, command, scope='subagent') == 'SUBAGENT-NO-PUSH'
 
 
 @pytest.mark.parametrize(

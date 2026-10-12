@@ -15,14 +15,45 @@ producer's mind, only its exit code, so every code means ONE thing:
 
 Any other code is a CRASH. Live finding 2026-10-11: a consumer runner returned ``2`` for INCONCLUSIVE
 and serve reported "the producer refused its argv" -- two meanings sharing one code is the bug.
+
+THE DOOR TO A FULL SUITE IS ``forge serve`` (``VERDICTS-FROM-THE-FORGE``, user report 2026-10-11:
+agents on other workstations ran full suites locally and blocked development for hours). A verdict is
+a fact about a sha, produced ONCE, after the push, by the host that claimed the part -- so a full tier
+runs only in a process serve spawned for a claim, which carries :data:`PRODUCING_VAR` naming the part
+(:func:`producing`). Everywhere else :func:`full_suite_refusal` refuses it with the remedy; there is no
+flag, because a flag is a second door a developer can walk through by habit.
 """
 
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
-__all__ = ['RETRYABLE', 'ProducerExit', 'release_reason']
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+__all__ = ['PRODUCING_VAR', 'RETRYABLE', 'ProducerExit', 'full_suite_refusal', 'producing', 'release_reason']
+
+#: Set by ``forge serve`` on the producer it spawns: the claimed part, ``tests/<platform>@<sha>``.
+PRODUCING_VAR: Final = 'LAB_COMMONS_PRODUCING'
+
+
+def producing(context: str, sha: str) -> dict[str, str]:
+    """The environment ``forge serve`` adds to the producer of part *context* at *sha*."""
+    return {PRODUCING_VAR: f'{context}@{sha}'}
+
+
+def full_suite_refusal(what: str, env: Mapping[str, str], context: str) -> str | None:
+    """``None`` inside a producer serve spawned for *context* (this box's part), else the refusal naming the remedy."""
+    if env.get(PRODUCING_VAR, '').partition('@')[0] == context:
+        return None
+    return (
+        f'{what}: refused -- a full suite is a verdict, and a verdict is produced once per sha, after the push, '
+        f'by the forge serve host that claims {context}; never by a developer or an agent. '
+        f'Remedy: push; the forge produces the part; read it with '
+        f'`python -m lab_commons.dev.forge status list <sha>` (pending parts: `forge tick --dry-run`). '
+        f'To check a change now, run a targeted selection: `python -m lab_commons.dev.verify -- <paths>`.'
+    )
 
 
 class ProducerExit(IntEnum):

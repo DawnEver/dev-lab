@@ -198,5 +198,8 @@ def main(
     if not merged:
         emit('[sync] up to date; nothing to merge')
         return 0
-    emit(f'[sync] merged {", ".join(merged)}; now run your tests, then push {found.branch}')
+    emit(
+        f'[sync] merged {", ".join(merged)}; now measure what you touched, then push {found.branch}; '
+        'the forge produces its parts'
+    )
     return 0
