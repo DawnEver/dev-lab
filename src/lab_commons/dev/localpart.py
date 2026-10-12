@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from lab_commons.dev.forgeoutbox import PostFailed
+from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
 from lab_commons.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory, this_platform
 from lab_commons.hpc.platforms import PLATFORMS, cannot_run, runnable, table_at
@@ -30,7 +31,7 @@ from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-__all__ = ['local_record', 'post_local', 'post_part']
+__all__ = ['local_record', 'post_cited', 'post_local', 'post_part']
 
 #: The record's word for an id handed to another part (the cluster record's own).
 _NOT_COVERED = 'not-covered'
@@ -76,6 +77,17 @@ def post_local(root: Path, record: Mapping[str, Any], directory: Path) -> str:
         return post(root, path)
     except (PartRefusal, PostFailed) as why:
         return f'[platformparts] not posted: {why}'
+
+
+def post_cited(
+    root: Path, cited_log: str, arguments: tuple[str, ...], *, head: str | None, dirt: tuple[str, ...]
+) -> str:
+    """Post a CITED run's part; its outcomes beside its log (``<path>@<digest>`` in the cache) are the evidence.
+
+    It is about *head* only when the tree is clean (*dirt* empty); nothing re-runs.
+    """
+    log = root / cited_log.split('@', 1)[0]
+    return post_part(root, log, verdict_commit(head, head, dirt, dirt), arguments, settled=True)
 
 
 def post_part(root: Path, log: Path, commit: str | None, arguments: tuple[str, ...], *, settled: bool) -> str:

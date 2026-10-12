@@ -239,11 +239,11 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
 
 
 def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> None:
-    """Live 2026-10-11 (motronics 5cd95e5c0a): a native build without cmake submitted nothing and was released FAIL.
+    """Live 2026-10-11 (a consumer's part): a native build lacking cmake submitted nothing and was released FAIL.
 
     PLANTED CONTROL: the same tick with a build that succeeds submits and keeps the run.
     """
-    log = 'log=/home/u/ci/native/k.log'
+    log = 'log=/ci/native/k.log'
 
     class _Unbuilt(_Slurm):
         def submit(self, _run: forgerun.Run) -> list[str]:

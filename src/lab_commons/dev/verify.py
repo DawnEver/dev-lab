@@ -53,7 +53,7 @@ from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
-from lab_commons.dev.localpart import post_part
+from lab_commons.dev.localpart import post_cited, post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from lab_commons.dev.producer import ProducerExit
@@ -524,9 +524,7 @@ def main(argv: list[str] | None = None) -> int:
             f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
         )
         if not parsed.no_status:  # the cited run's outcomes are the evidence: its record posts, nothing re-runs
-            head, dirt = head_sha(root), status_paths(root)
-            cited_log, commit = root / cited.log.split('@', 1)[0], verdict_commit(head, head, dirt, dirt)
-            emit(post_part(root, cited_log, commit, arguments, settled=True))
+            emit(post_cited(root, cited.log, arguments, head=head_sha(root), dirt=status_paths(root)))
         return EXIT_CODES[Outcome(cited.result.lower())]
 
     def lead() -> str:
@@ -584,8 +582,7 @@ def _judge(
     if run_key(root, ()).tree == key.tree:
         remember(cache, verdict, tree=key.tree, env=key.env, selector=key.selector, commit=commit or '')
     if not no_status:
-        settled = verdict.result.outcome.settled
-        emit(post_part(root, verdict.log.path, commit, arguments, settled=settled))
+        emit(post_part(root, verdict.log.path, commit, arguments, settled=verdict.result.outcome.settled))
     return EXIT_CODES[verdict.result.outcome], lines
 
 

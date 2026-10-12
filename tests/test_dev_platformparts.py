@@ -216,7 +216,7 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
 
     The tick's half is ``test_dev_forgerun::test_a_failed_build_is_released_inconclusive_naming_its_log``.
     """
-    log = '/home/u/ci/native/k.log'
+    log = '/ci/native/k.log'
 
     def failed_build(*_a: object, **_k: object) -> NoReturn:
         msg = f'the build for {SHA[:12]} failed on h, nothing was submitted; log={log}'

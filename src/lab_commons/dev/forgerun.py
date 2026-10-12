@@ -216,66 +216,39 @@ def advance(
     held, run = _hold(run, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
     if held != _ADVANCE:
         return run if held == _WAIT else None
-    if run.phase == CLAIMED_PHASE:
-        moved = _claimed(run, cluster=cluster, client=client, say=say, alarm=alarm, tag=tag)
-        if moved is None or moved.phase == CLAIMED_PHASE:
-            return moved
-        run = moved
-    if run.phase == SUBMITTED:
-        record = cluster.gather(run)
-        if record is None:
-            say(f'{tag}: running (jobs {" ".join(run.job_ids)})')
-            return run
-        run = _step(run, phase=GATHERED, record=str(record))
-    if run.phase == GATHERED:
-        try:
+    try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
+        if run.phase == CLAIMED_PHASE:
+            ids = cluster.submitted(run)
+            if not ids:
+                orphans = cluster.orphans(run)
+                if orphans:
+                    alarm(_orphaned(run, orphans))
+                    say(f'{tag}: orphaned jobs {" ".join(orphans)} -- not resubmitted')
+                    return run
+                ids = cluster.submit(run)
+                say(f'{tag}: submitted jobs {" ".join(ids)}')
+            run = _step(run, phase=SUBMITTED, job_ids=tuple(ids))
+        if run.phase == SUBMITTED:
+            record = cluster.gather(run)
+            if record is None:
+                say(f'{tag}: running (jobs {" ".join(run.job_ids)})')
+                return run
+            run = _step(run, phase=GATHERED, record=str(record))
+        if run.phase == GATHERED:
             say(post(root, Path(run.record)))
-        except PartRefusal as why:  # an inconclusive record is never a part
-            say(f'{tag}: {why}')
-            _release(client, run, release_reason(ProducerExit.INCONCLUSIVE), say)
-            drop(run)
-            return None
-        run = _step(run, phase=PUBLISHED)
+            run = _step(run, phase=PUBLISHED)
+    except (NotSubmitted, PartRefusal) as why:
+        say(f'{tag}: {why}')
+        log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
+        _release(client, run, f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}'.strip(), say)
+        drop(run)
+        return None
     record = read_record(Path(run.record))
     for one in route(client, record, pyproject_at(root, run.sha)):
         say(f'{tag}: routed {one.area} {one.action}' + (f' #{one.number}' if one.number else ''))
     drop(run)
     say(f'{tag}: published and released')
     return None
-
-
-def _claimed(
-    run: Run,
-    *,
-    cluster: Cluster,
-    client: Client,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], None],
-    tag: str,
-) -> Run | None:
-    """A claimed run moved to SUBMITTED; left CLAIMED when orphaned jobs hold it; ``None`` once released.
-
-    The jobs Slurm already recorded are adopted. A build that submitted nothing ran no test, so it is
-    released INCONCLUSIVE with its log named, never as a red part (live 2026-10-11: motronics 5cd95e5c0a,
-    no cmake on the login node).
-    """
-    ids = cluster.submitted(run)
-    if not ids:
-        orphans = cluster.orphans(run)
-        if orphans:
-            alarm(_orphaned(run, orphans))
-            say(f'{tag}: orphaned jobs {" ".join(orphans)} -- not resubmitted')
-            return run
-        try:
-            ids = cluster.submit(run)
-        except NotSubmitted as why:
-            say(f'{tag}: nothing submitted -- {why}')
-            log = next((word for word in str(why).split() if word.startswith('log=')), '')
-            _release(client, run, f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}'.strip(), say)
-            drop(run)
-            return None
-        say(f'{tag}: submitted jobs {" ".join(ids)}')
-    return _step(run, phase=SUBMITTED, job_ids=tuple(ids))
 
 
 def _step(run: Run, **changes: object) -> Run:
