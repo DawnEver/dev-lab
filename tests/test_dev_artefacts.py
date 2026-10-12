@@ -330,6 +330,7 @@ class _Forge:
         self.pulls_off = False  # every /pulls/N read answers 404
         self.has_pull_requests = True  # the repository's own flag
         self.calls: list[str] = []
+        self.refuse: int | None = None  # every /pulls/N read answers this status
 
     repo = '/api/v1/repos/o/r'
 
@@ -337,6 +338,9 @@ class _Forge:
 
     def call(self, method: str, path: str, body: object = None) -> object:
         self.calls.append(path)
+        if '/pulls/' in path and self.refuse is not None:
+            refused = Attempt(1, self.refuse, 'refused', Diagnosis.FORGE_REFUSED)
+            raise ForgeCallFailed(Report(('GET', path), (refused,), 1))
         if 'issues?' in path and 'labels=keep' in path:
             return self.labelled
         if path.endswith('/issues?state=all&type=issues&q=run+records&limit=50'):
@@ -437,6 +441,15 @@ def test_a_pull_read_refused_for_one_number_is_skipped_by_name_and_the_rest_stil
     assert len(said) == 1
     assert '#7' in said[0]
     assert '404' in said[0]
+
+
+@pytest.mark.parametrize('status', [401, 403, 500])
+def test_a_pull_read_refused_for_another_reason_still_raises(status: int) -> None:
+    forge = _Forge()
+    forge.refuse = status
+    forge.labelled = [{'number': 7, 'body': '', 'pull_request': {}}]
+    with pytest.raises(ForgeCallFailed):
+        _pinned(forge)
 
 
 # --- choosing the store by size --------------------------------------------------------------------

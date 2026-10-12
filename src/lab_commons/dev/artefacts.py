@@ -312,6 +312,9 @@ def resolve(entry: dict[str, Any], dest: Path, *, client: Client, repo: str) -> 
     return store.get(ref, dest)
 
 
+_NOT_FOUND: Final = 404
+
+
 # --- cleanup --------------------------------------------------------------------------------------
 
 
@@ -320,8 +323,8 @@ def pinned(client: Client, *, say: Callable[[str], None]) -> frozenset[str]:
 
     The labelled set is read through the one paged listing and told apart by the one
     :func:`~lab_commons.dev.forgework.is_pull` -- gitea's ``"pull_request": null`` marks a plain issue.
-    A ``/pulls/N`` read the forge refuses (a repository with pull requests switched off, or any other
-    refusal of that one number) skips that number with a named reason: its body still pins.
+    A ``/pulls/N`` read answered 404 (pull requests switched off, or no such pull) skips that number
+    with a named reason -- its body still pins; any other refusal (401, 403, 5xx) raises.
     """
     found: set[str] = set()
     for item in pages(client, f'{client.repo}/issues', {'state': 'all', 'labels': 'keep'}):
@@ -332,7 +335,9 @@ def pinned(client: Client, *, say: Callable[[str], None]) -> frozenset[str]:
             head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
         except ForgeCallFailed as failed:
             status = failed.report.attempts[-1].returncode if failed.report.attempts else 0
-            why = f'HTTP {status}, pull requests are off' if pulls_off(client, failed) else f'HTTP {status}: {failed}'
+            if status != _NOT_FOUND:  # an auth or server refusal is not about this number: it stays an alarm
+                raise
+            why = 'HTTP 404, pull requests are off' if pulls_off(client, failed) else f'HTTP 404: {failed}'
             say(f'[artefacts] keep #{item["number"]} pins by its body only: its pull read was refused ({why})')
             continue
         found.update([head[:12]] if head else [])
