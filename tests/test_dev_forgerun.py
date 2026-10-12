@@ -7,7 +7,11 @@ clock; Slurm is a fake that counts submissions. A "crash" is a new tick reading 
 from __future__ import annotations
 
 import dataclasses
+import functools
+import io
 import json
+import sys
+import tarfile
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -17,13 +21,14 @@ from typing import Any
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgerun, forgeslurm
+from lab_commons.dev import artefacts, forgerun, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, Claim, Work
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal
 from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.hpc import records
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NotSubmitted
 
@@ -107,6 +112,9 @@ class _Slurm:
         self.cancelled += run.job_ids
         return list(run.job_ids)
 
+    def tree(self, _run: forgerun.Run) -> Path:
+        return self.record.parent / 'tree'
+
 
 @pytest.fixture
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -117,17 +125,19 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _start(tmp_path: Path, store: _Store, owner: Claim = HERE) -> forgerun.Run:
+def _start(tmp_path: Path, store: _Store, owner: Claim = HERE, outputs: tuple[str, ...] = ()) -> forgerun.Run:
     store.add('pending', owner.description())
-    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts', outputs)
     return forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', owner, cluster=part), owner)
 
 
-def _tick(store: _Store, slurm: _Slurm, *, me: Claim = HERE, alarms: list[Alarm] | None = None) -> forgerun.Run | None:
+def _tick(
+    store: _Store, slurm: _Slurm, *, me: Claim = HERE, alarms: list[Alarm] | None = None, root: Path | None = None
+) -> forgerun.Run | None:
     """One serve call: read the run back from disk (a fresh process) and advance it."""
     (run,) = forgerun.live('https://f/o/r.git')
     return forgerun.advance(
-        Path(),
+        root or Path(),
         run,
         client=_Client(store),
         me=me,
@@ -337,4 +347,73 @@ def test_a_superseded_run_is_cancelled_released_and_dropped(home: Path) -> None:
     assert slurm.cancelled == ['4242']
     assert store.posts[-1]['description'] == f'superseded by {"d" * 12}'
     assert store.posts[-1]['status'] == 'error'
+    assert forgerun.live('https://f/o/r.git') == ()
+
+
+_FAKE_ZSTD = (
+    'import shutil, sys\n'
+    "with open(sys.argv[sys.argv.index('-o') + 1], 'wb') as f:\n"
+    '    shutil.copyfileobj(sys.stdin.buffer, f)\n'
+)
+
+
+def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, _Slurm]:
+    """A real record and work tree, a ``folder`` large store, and the archive just over its 1 MB threshold."""
+    zstd = home / 'zstd.py'
+    zstd.write_text(_FAKE_ZSTD, encoding='utf-8')
+    monkeypatch.setattr(forgerun, 'pack', functools.partial(artefacts.pack, zstd=(sys.executable, str(zstd))))
+    monkeypatch.setattr(forgerun, 'read_record', records.read_record)
+    monkeypatch.setattr(forgerun, 'forge_from_remote', lambda _root: SimpleNamespace(repo='r'))
+    big, root = home / 'big', home / 'repo'
+    root.mkdir()
+    table = f'[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{big.as_posix()}"\nthreshold_mb = 1\n'
+    (root / 'pyproject.toml').write_text(table, encoding='utf-8')
+    record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1'}, home / 'gathered')
+    tree = record.parent / 'tree'
+    (tree / 'fields').mkdir(parents=True)
+    (tree / 'fields' / 'b.h5').write_bytes(bytes(range(256)) * 8192)  # 2 MB: over the threshold
+    (tree / 'undeclared.log').write_bytes(b'never uploaded')
+    slurm = _Slurm(record)
+    slurm.done = True
+    return root, big, slurm
+
+
+def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted(home: Path, monkeypatch) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    posted: list[Path] = []
+    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    store = _Store()
+    _start(home, store, outputs=('fields/*.h5',))
+    assert _tick(store, slurm, root=root) is None
+    (entry,) = records.read_record(posted[0])['artefacts']
+    (ref,) = artefacts.FolderStore(big, 'r').list(None)
+    assert entry == ref.manifest()
+    assert ref.backend == 'folder'
+    fetched = artefacts.FolderStore(big, 'r').get(ref, home / 'fetched')
+    with tarfile.open(fileobj=io.BytesIO(fetched.read_bytes())) as tar:
+        assert tar.getnames() == ['fields/b.h5'], 'only the declared output; undeclared.log stays on the cluster'
+
+
+def test_planted_control_nothing_declared_stores_nothing(home: Path, monkeypatch) -> None:
+    root, big, slurm = _shipping(home, monkeypatch)
+    posted: list[Path] = []
+    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    store = _Store()
+    _start(home, store)
+    assert _tick(store, slurm, root=root) is None
+    assert 'artefacts' not in records.read_record(posted[0])
+    assert not big.exists()
+
+
+def test_a_missing_declared_output_fails_the_run_loudly(home: Path, monkeypatch) -> None:
+    root, _big, slurm = _shipping(home, monkeypatch)
+    posted: list[Path] = []
+    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    store, alarms = _Store(), []
+    _start(home, store, outputs=('fields/*.h5', 'fields/*.vtu'))
+    assert _tick(store, slurm, root=root, alarms=alarms) is None
+    assert posted == [], 'a run missing a declared output never posts a part'
+    assert store.posts[-1]['status'] == 'error'
+    assert 'fields/*.vtu' in store.posts[-1]['description']
+    assert [a.kind for a in alarms] == [forgerun.RUN]
     assert forgerun.live('https://f/o/r.git') == ()

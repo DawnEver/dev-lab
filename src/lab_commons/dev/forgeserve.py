@@ -10,7 +10,8 @@ THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons
 a run of another state schema refused); :func:`lab_commons.dev.forgetick.tick` (flush the outbox,
 fetch, claim at most one part -- none while a run is in flight); start a claimed cluster part as a run,
 or produce a claimed LOCAL part inline; advance every cluster run one step
-(:func:`lab_commons.dev.forgerun.advance`: submit, gather, publish, route, release -- whatever is due);
+(:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
+release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgerun.tidy`);
 flush the outbox again.
 
 SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
@@ -164,6 +165,7 @@ def serve(
     left = _advance(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
     )
+    _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
     if mode != 'quiet' and pending and not ticked.claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
@@ -181,6 +183,24 @@ def serve(
     )
     published = tuple(flush(root, client=client))
     return ServeReport(tuple(ticked.lines), tuple(produced), tuple(left), published, broken)
+
+
+def _tidy(
+    root: Path,
+    client: Callable[[Path], Client],
+    repo: str,
+    *,
+    seat: ClusterAccount | None,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+) -> None:
+    """On a cluster -- the artefact stores' single writer -- clean them each tick; a failure alarms, never stops it."""
+    if seat is None:
+        return
+    try:
+        forgerun.tidy(root, client(root), say=say)
+    except (OSError, ValueError) as why:
+        alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
 
 
 def _advance(

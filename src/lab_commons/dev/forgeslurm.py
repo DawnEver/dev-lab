@@ -87,6 +87,10 @@ class SlurmCluster:
         )
         return [one['job_id'] for one in state['rounds']]
 
+    def tree(self, run: Run) -> Path:
+        """``~/ci/trees/<sha>`` in this account's home (:attr:`lab_commons.hpc.shell.RunSpec.tree`)."""
+        return Path(f'~/ci/trees/{run.sha}').expanduser()
+
     def gather(self, run: Run) -> Path | None:
         """One :func:`lab_commons.hpc.watch.settle` without waiting: the record it wrote, or ``None`` while pending."""
         output = Path(run.output)

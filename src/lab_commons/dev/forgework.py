@@ -38,6 +38,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -252,6 +253,19 @@ class Client:
     def upload_raw(self, host: str, path: str, *, content: bytes, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
         """A raw ``application/octet-stream`` POST to *host* -- GitHub's release-asset upload shape."""
         return self._request('POST', path, content, 'application/octet-stream', landed, host=host)
+
+    def download(self, url: str) -> bytes:
+        """The raw bytes at an attachment's download *url*, fetched with this client's credential.
+
+        Not retried and not JSON: the caller verifies what it got (:mod:`lab_commons.dev.artefacts` checks sha256).
+        """
+        parts = urllib.parse.urlsplit(url)
+        path = parts.path + (f'?{parts.query}' if parts.query else '')
+        status, payload = self._once('GET', path, None, 'application/octet-stream', parts.netloc or None)
+        if not 0 < status < _HTTP_ERROR_FLOOR:
+            text = payload.decode(errors='replace')[:300]
+            raise ForgeCallFailed(Report(('GET', path), (Attempt(1, status or 1, text, _diagnose(status, text)),), 1))
+        return payload
 
     def _request(
         self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found, *, host: str | None = None

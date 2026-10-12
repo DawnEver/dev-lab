@@ -211,6 +211,7 @@ class ClusterPart:
     repo_url: str
     collect: str
     output: Path
+    outputs: tuple[str, ...] = ()  # declared outputs to pack and store (lab_commons.dev.artefacts); none by default
 
 
 def cluster_part(root: Path, head: str) -> ClusterPart:
@@ -226,7 +227,13 @@ def cluster_part(root: Path, head: str) -> ClusterPart:
     hpc, name = declared.get('hpc', {}), 'tool.lab_commons.hpc'
     _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
-    return ClusterPart(repo_url=origin_url(root), collect=collect, output=record_directory(root, head))
+    outputs = _strings(hpc.get('outputs'), name, 'outputs', '["output/fields/*.h5"]', required=False)
+    return ClusterPart(
+        repo_url=origin_url(root),
+        collect=collect,
+        output=record_directory(root, head),
+        outputs=tuple(outputs),
+    )
 
 
 def _elided(ids: Sequence[str]) -> str:
