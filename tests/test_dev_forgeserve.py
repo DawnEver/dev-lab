@@ -362,17 +362,17 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
     monkeypatch, tmp_path: Path
 ) -> None:
     """PLANTED CONTROL: the same serve off a cluster (no seat) never cleans -- a workstation only reads."""
-    cleaned: list[Path] = []
+    cleaned: list[tuple[Path, str]] = []
 
-    def tidy(root: Path, _client: object, *, say: object) -> tuple[str, ...]:
+    def tidy(root: Path, _client: object, *, account: str, say: object) -> tuple[str, ...]:
         del say
-        cleaned.append(root)
+        cleaned.append((root, account))
         return ()
 
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=None, tidy=tidy)
     assert cleaned == []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, tidy=tidy)
-    assert cleaned == [tmp_path]
+    assert cleaned == [(tmp_path, SEAT.account)], "it cleans its own account's runs only"
 
     def broken(_root: Path, _client: object, **_kw: object) -> tuple[str, ...]:
         msg = 'rclone lsjson exited 1'

@@ -17,14 +17,18 @@ reader side maps the same store to a local path in the MACHINE config (``[artefa
 :func:`reader`) -- a synced mirror of the remote, read, never written.
 
 CLOUD-DRIVE-SHAPED LAYOUT. ``<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.zst`` plus ``<run-id>.manifest.json``,
-``run-id = <sha12>-<platform>-<utcstamp>``: one archive per run (a synced drive pays per FILE), short
-ASCII names checked against OneDrive's forbidden characters, trailing dot/space and its path limit
+``run-id = <sha12>-<platform>-<account>-<utcstamp>``: one archive per run (a synced drive pays per FILE),
+short ASCII names checked against OneDrive's forbidden characters, trailing dot/space and its path limit
 (:func:`check_key`). WRITE-ONCE: an object is never rewritten -- a different object under an existing
 key is refused; the same bytes again is the object already landed (a resumed tick), not a write.
 
-CLEANUP BY THE SINGLE WRITER (:func:`clean`): whole runs in day folders older than ``retain_days`` go,
-unless a ``keep`` label on an issue or pull request pins their sha (:func:`pinned`); then oldest first
-until the store is under ``cap_gb``; emptied folders are removed.
+ONE SHARED LIBRARY, MANY WRITERS (user ruling 2026-10-13). Several cluster accounts, each with its own
+rclone identity, write the same store; ``<account>`` in the run id is the cluster account that wrote it
+(the claim owner's). EACH WRITER CLEANS ONLY ITS OWN (:func:`clean`): of the runs carrying its account,
+whole runs in day folders older than ``retain_days`` go, unless a ``keep`` label on an issue or pull
+request pins their sha (:func:`pinned`); then its oldest first until its own share is under ``cap_gb``;
+emptied folders are removed. A writer whose remote is unusable says so (:func:`remote_problem`) and
+claims no part whose declared outputs could need it.
 
 CREDENTIALS. The rclone config is never in a repo, never logged, and must be mode 600
 (:func:`check_rclone_config`); no argv here carries a secret.
@@ -82,6 +86,7 @@ __all__ = [
     'FORGE',
     'MANIFEST',
     'RCLONE',
+    'RCLONE_RECIPE',
     'ArtefactRefused',
     'ArtefactStore',
     'Config',
@@ -100,6 +105,7 @@ __all__ = [
     'pack',
     'pinned',
     'reader',
+    'remote_problem',
     'resolve',
     'run_id',
     'store_for',
@@ -108,6 +114,14 @@ __all__ = [
 _BACKENDS: Final = (FORGE, RCLONE, FOLDER)
 _SHA_TOKEN: Final = re.compile(r'\b[0-9a-f]{12,40}\b')
 _TABLE: Final = 'tool.lab_commons.artefacts'
+_PROBE_TIMEOUT_S: Final = 60
+
+#: How a writer creates its remote; the full recipe is docs-src/dev/artefacts.md.
+RCLONE_RECIPE: Final = (
+    'create it with `rclone config` (type onedrive, token from `rclone authorize "onedrive"` on a machine with '
+    'a browser, the SharePoint site\'s "Documents" library, drive_type = documentLibrary), then chmod 600 the '
+    'config; see docs-src/dev/artefacts.md'
+)
 
 
 def collect(tree: Path, outputs: Sequence[str]) -> list[Path]:
@@ -263,6 +277,31 @@ def large_store(config: Config, repo: str) -> ArtefactStore | None:
     return None
 
 
+def remote_problem(root: Path, *, rclone: Sequence[str] = ('rclone',)) -> str:
+    """Why this host cannot write the repo's rclone store, ``''`` when it can or none is configured.
+
+    A cheap READ-ONLY probe: ``rclone lsd <remote>: --max-depth 1`` against the remote's root.
+    """
+    try:
+        config = load_config(root)
+    except ArtefactRefused as bad:
+        return str(bad)
+    if config.backend != RCLONE:
+        return ''
+    name = config.remote.partition(':')[0]
+    try:
+        done = subprocess.run(
+            [*rclone, 'lsd', f'{name}:', '--max-depth', '1'], capture_output=True, text=True, encoding='utf-8',
+            errors='replace', check=False, timeout=_PROBE_TIMEOUT_S,
+        )  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired) as why:
+        return f'rclone cannot run here ({type(why).__name__}): {RCLONE_RECIPE}'
+    if done.returncode == 0:
+        return ''
+    tail = done.stderr.strip().splitlines()[-1:] or [f'exit {done.returncode}']
+    return f'the rclone remote {name}: is missing or unusable ({tail[0][-160:]}): {RCLONE_RECIPE}'
+
+
 def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtefactStore:
     """The forge for an archive of *size* at or under the threshold, else the configured large backend."""
     if size <= config.threshold_mb * MB:
@@ -308,10 +347,14 @@ def pinned(client: Client) -> frozenset[str]:
 
 
 def clean(
-    store: ArtefactStore, *, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
+    store: ArtefactStore, *, account: str, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
 ) -> tuple[Ref, ...]:
-    """Delete runs older than *retain_days*, then oldest first until under *cap_bytes* (0: no cap); pins stay."""
-    refs = store.list(None)
+    """Delete *account*'s old runs, then its oldest until its share is under *cap_bytes*; nobody else's.
+
+    Of *account*'s runs only: those older than *retain_days* go, then oldest first until its share is
+    under *cap_bytes* (0: no cap); pins stay, and every other writer's run is never touched.
+    """
+    refs = [ref for ref in store.list(None) if parsed_run_id(ref.run_id)['account'] == account]
     cutoff = now.astimezone(UTC).date().toordinal() - retain_days
     held = [ref for ref in refs if parsed_run_id(ref.run_id)['sha'] in pinned]
     doomed = [ref for ref in refs if ref not in held and run_time(ref.run_id).date().toordinal() < cutoff]

@@ -145,3 +145,10 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     printed = json.loads(capsys.readouterr().out)
     assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'starved'}
     assert printed['queue'][0]['blocked'] == 'no host serves windows'
+
+
+def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:
+    """PLANTED CONTROL: a card whose store works says nothing about it."""
+    why = 'the rclone remote hpc-data: is missing or unusable'
+    assert f'artefacts: {why}' in _card('ada/alice', 'linux', NOW, artefacts=why).text()
+    assert 'artefacts:' not in _card('ada/alice', 'linux', NOW).text()

@@ -6,7 +6,8 @@ now. So every ``forge serve`` tick publishes this host's CARD as ONE comment on 
 marker and edited in place (:func:`lab_commons.dev.forgepulls.comment_upsert`) -- the same shape on gitea
 and GitHub. The card says who the host is (``<cluster>/<account>`` or the machine), the platform it
 serves, its headroom and the cluster facts it read locally (partitions, quota), when it last ticked (the
-forge's clock), what it holds with live progress, and why each candidate it saw waits.
+forge's clock), what it holds with live progress, why each candidate it saw waits, and why it cannot
+write the large artefact store when it cannot.
 
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
 ``forge queue`` shows it so rather than counting it as serving.
@@ -56,6 +57,7 @@ class HostCard:
     facts: Mapping[str, Any] = field(default_factory=dict)
     holds: tuple[str, ...] = ()
     waiting: Mapping[str, str] = field(default_factory=dict)
+    artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -65,6 +67,7 @@ class HostCard:
         """The comment body: one line a human reads, then the card as JSON."""
         holds = ', '.join(self.holds) or 'nothing'
         head = f'**{self.host}** serves `{self.platform}` as {self.login}; ticked {self.ticked}; holds {holds}'
+        head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         return f'{head}\n\n```json\n{json.dumps({**asdict(self), "holds": list(self.holds)}, indent=1)}\n```'
 
 
@@ -112,6 +115,7 @@ def publish_card(
     standing: forgerun.Standing | None,
     table: Mapping[str, Any],
     say: Callable[[str], None],
+    artefacts: str = '',
 ) -> None:
     """Publish this serving host's card after a tick; a forge that refuses it is said, never a failed tick."""
     built = client(root)
@@ -127,6 +131,7 @@ def publish_card(
             facts=standing.facts if standing else {},
             holds=runs if seat is not None else tuple(f'{one.sha[:12]} {one.platform}' for one in claimed),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
+            artefacts=artefacts,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, OSError) as failed:

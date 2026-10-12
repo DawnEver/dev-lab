@@ -12,7 +12,7 @@ captured in the run when it is claimed -- declared at REQUEST time) are packed f
 tree and put in the artefact store (:mod:`lab_commons.dev.artefacts`) after the record is gathered and
 before it is posted; the record's ``artefacts`` manifest names them. A declared output that is missing
 releases the part as an error and alarms. Each serve tick on a cluster also cleans the stores
-(:func:`lab_commons.dev.forgeship.tidy`): this host is their single writer.
+(:func:`lab_commons.dev.forgeship.tidy`) of this host's own account's runs: one of several writers.
 
 One file per run, keyed by repo + sha + platform + scope, under ``forge-runs/`` beside the machine
 file (:func:`directory`) -- in the account's home, so any login host of that account sees it.
@@ -345,7 +345,8 @@ def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callab
     if not run.outputs or 'artefacts' in record:
         return run
     if not run.artefact:
-        run = _step(run, artefact=run_id(run.sha, run.platform, forge_now(client)))
+        account = run.claim.hpc.rpartition('/')[2]  # the claim owner's cluster account names the writer
+        run = _step(run, artefact=run_id(run.sha, run.platform, account, forge_now(client)))
     ref = forgeship.store_outputs(
         root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
     )

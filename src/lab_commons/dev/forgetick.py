@@ -12,7 +12,9 @@ value per cost, each waiting one naming why), claim the best feasible one unless
 flight here, and give the claimed part what produces it: a local argv
 (:func:`lab_commons.dev.platformparts.part_argv`) or a cluster part
 (:func:`lab_commons.dev.platformparts.cluster_part`). A part whose producer the repo does not declare is
-not claimed; its refusal names the pyproject key to add. It runs nothing itself.
+not claimed; its refusal names the pyproject key to add. A cluster host whose rclone
+remote is unusable (:func:`lab_commons.dev.artefacts.remote_problem`) claims no part with declared outputs
+-- they could exceed ``threshold_mb`` -- and says why; a part with none is still claimed. It runs nothing itself.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
     NoCredential,
     Transport,
@@ -101,6 +104,8 @@ class TickReport:
     lines: tuple[str, ...]
     refused: tuple[str, ...] = ()
     queue: tuple[Ranked, ...] = ()
+    #: Why this host cannot write the large artefact store, ``''`` when it can (stated on its host card).
+    artefacts: str = ''
 
 
 def tick(
@@ -120,13 +125,15 @@ def tick(
     usage: Mapping[str, float] | None = None,
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
+    probe: Callable[[Path], str] = remote_problem,
 ) -> TickReport:
     """One tick, in the order the module docstring gives; with a run *in_flight* here it claims nothing.
 
     *headroom* is what this host can take now (default: a box's cores); *usage* the core-hours each run
     sha12 used in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
-    (default: :func:`lab_commons.hpc.learned.learned`).
+    (default: :func:`lab_commons.hpc.learned.learned`). *probe* says why a cluster host cannot write the
+    repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`).
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -164,6 +171,7 @@ def tick(
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run, os_name or current_os_name(),
         room=(headroom or Headroom(cores=cores)).why_not(), winner='a run in flight here' if in_flight else '',
+        store_why=probe(root) if serve.hpc else '',
     )  # fmt: skip
     for item in ranked:
         taken.consider(item)
@@ -176,7 +184,8 @@ def tick(
         lines.append(f'produce {part_context(item.platform)}: {how}')
     lines += [f'refused {reason}' for reason in refused]
     lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
-    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue))
+    lines += [f'artefacts {taken.store_why}'] if taken.store_why else []
+    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why)
 
 
 @dataclass
@@ -194,6 +203,7 @@ class _Taking:
     os_name: str
     room: str = ''
     winner: str = ''
+    store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
@@ -225,6 +235,10 @@ class _Taking:
             self.refused.append(f'{part_context(self.serve.platform)}: not claimed -- {why}')
             self.room = f'{NO_HOST} can produce it: {why}'
             return one, self.room
+        if one.cluster is not None and one.cluster.outputs and self.store_why:
+            why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
+            self.refused.append(f'{part_context(self.serve.platform)}: not claimed -- {why}')
+            return one, why
         one = claim(self.client, one, self.me)
         if one.state == MINE:
             self.claimed.append(one)

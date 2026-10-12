@@ -175,7 +175,7 @@ def serve(
         alarm(one)
     if mode != 'quiet':
         publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
-                     standing=standing, table=table, say=say)  # fmt: skip
+                     standing=standing, table=table, artefacts=ticked.artefacts, say=say)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -194,11 +194,11 @@ def _tidy(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """On a cluster -- the artefact stores' single writer -- clean them each tick; a failure alarms, never stops it."""
+    """On a cluster -- one artefact writer -- clean its own account's runs each tick; a failure only alarms."""
     if seat is None:
         return
     try:
-        forgeship.tidy(root, client(root), say=say)
+        forgeship.tidy(root, client(root), account=seat.account, say=say)
     except (OSError, ValueError) as why:
         alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
 

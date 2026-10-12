@@ -1,9 +1,9 @@
 """DECLARED OUTPUTS ON THE SERVE PATH -- what a cluster run stores, and the cleanup its host owns.
 
 :func:`store_outputs` packs a run's declared outputs from its work tree and puts the archive in the
-store its size selects (:func:`lab_commons.dev.artefacts.store_for`); :func:`tidy` cleans every store
-this repo writes. ``forge serve`` on a cluster is their single writer
-(:mod:`lab_commons.dev.forgerun`, :mod:`lab_commons.dev.forgeserve`).
+store its size selects (:func:`lab_commons.dev.artefacts.store_for`); :func:`tidy` cleans, in every store
+this repo writes, the runs of THIS host's cluster account only -- several accounts write one shared
+library, and each cleans its own (:mod:`lab_commons.dev.forgerun`, :mod:`lab_commons.dev.forgeserve`).
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ def store_outputs(root: Path, client: Client, tree: Path, outputs: Sequence[str]
     return ref
 
 
-def tidy(root: Path, client: Client, *, say: Callable[[str], None]) -> tuple[str, ...]:
-    """Clean every artefact store this repo writes: past ``retain_days``, then down to ``cap_gb``; pins stay."""
+def tidy(root: Path, client: Client, *, account: str, say: Callable[[str], None]) -> tuple[str, ...]:
+    """Clean *account*'s runs in every store this repo writes: past ``retain_days``, then down to ``cap_gb``."""
     config = load_config(root)
     stores: list[ArtefactStore] = [ForgeStore(client)]
     large = large_store(config, forge_from_remote(root).repo)
@@ -54,7 +54,7 @@ def tidy(root: Path, client: Client, *, say: Callable[[str], None]) -> tuple[str
     gone = []
     for store in stores:
         cap = config.cap_bytes if store is large else 0
-        for ref in clean(store, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
+        for ref in clean(store, account=account, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
             gone.append(f'{ref.backend}:{ref.key}')
             say(f'[artefacts] deleted {ref.backend}:{ref.key}')
     return tuple(gone)
