@@ -539,3 +539,56 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
         assert not any(r['method'] == 'POST' for r in Recorder.received), 'no claim is posted'
         assert any('threshold_mb' in reason and _MISSING in reason for reason in report.refused)
         assert any(_MISSING in item.blocked for item in report.queue)
+
+
+CAPABLE = (
+    PRODUCE
+    + '[tool.lab_commons.parts.produce.jmag]\nfull = ["-m", "lab_commons.dev.verify", "-m", "jmag"]\n'
+    + '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
+    + '[tool.lab_commons.capabilities]\njmag = { engine = true }\ndev_checkout = { on = ["windows"] }\n'
+)
+
+
+def _capable_head(repo: Path) -> str:
+    """A new integration head whose OWN commit declares the capability table (it is read at the sha)."""
+    (repo / 'pyproject.toml').write_text(CAPABLE, encoding='utf-8')
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'capabilities')
+    sha = git_out(repo, 'rev-parse', 'HEAD')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', sha)
+    return sha
+
+
+def test_a_host_providing_an_engine_claims_its_part_and_one_lacking_it_is_never_offered(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same host, the same head, without ``[capabilities.jmag]``, serves windows alone."""
+    repo, _tips = _origin(tmp_path)
+    sha = _capable_head(repo)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    lacking = _tick(repo, server, dry_run=True, provides={'dev_checkout': {}})
+    assert [w.platform for w in lacking.work] == ['windows']
+    able = _tick(repo, server, dry_run=True, provides={'dev_checkout': {}, 'jmag': {'seats': 4}})
+    assert sorted(w.platform for w in able.work) == ['jmag', 'windows']
+
+
+def test_a_part_needing_a_capability_this_host_lacks_waits_labelled(server, tmp_path: Path) -> None:
+    repo, _tips = _origin(tmp_path)
+    sha = _capable_head(repo)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    report = _tick(repo, server, provides={})
+    assert report.claimed == ()
+    assert [item.blocked for item in report.queue] == ['no host provides dev_checkout']
+    assert not [r for r in Recorder.received if r['method'] == 'POST']
+
+
+def test_the_cluster_part_stays_claimable_by_a_host_lacking_dev_checkout(server, tmp_path: Path) -> None:
+    """The cluster case (coordinator ruling 2026-10-12): ``dev_checkout`` never makes the linux part unclaimable."""
+    repo, _tips = _origin(tmp_path)
+    sha = _capable_head(repo)
+    me = Claim('G', 'alice', LATER, 'ada/alice')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, seat=SEAT, host='linux', provides={'jmag': {'seats': 4}})
+    assert [(w.platform, w.state) for w in report.claimed] == [('linux', MINE)], 'and a cluster runs no engine part'
