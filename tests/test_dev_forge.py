@@ -217,6 +217,29 @@ def test_the_token_comes_from_a_real_credential_helper(tmp_path: Path) -> None:
     assert token_for('forge.example.org', cwd=repo, env=env) == 's3cret'
 
 
+def test_a_given_env_keeps_the_loader_variables_git_needs_to_start_and_nothing_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A given env decides git's CONFIGURATION, never where its libraries live.
+
+    THE CLUSTER INCIDENT, measured 2026-10-12 on Ada: an EasyBuild ``git`` finds ``libiconv.so.2``
+    only through ``LD_LIBRARY_PATH``. A given env REPLACED the environment, so git exited 127 before
+    reading any config, and that was reported as "no stored credential" -- 15 reds. The loader
+    variables pass through; an unrelated variable of the host still does not.
+    """
+    monkeypatch.setenv('LD_LIBRARY_PATH', 'planted-loader')
+    monkeypatch.setenv('LAB_COMMONS_HOST_ONLY', 'leaked')
+    repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
+    config = tmp_path / 'gitconfig'
+    config.write_text(
+        '[credential]\n\thelper = "!f() { echo username=u; '
+        'echo password=${LD_LIBRARY_PATH}/${LAB_COMMONS_HOST_ONLY:-hermetic}; }; f"\n',
+        encoding='utf-8',
+    )
+    env = {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+    assert token_for('forge.example.org', cwd=repo, env=env) == 'planted-loader/hermetic'
+
+
 def test_no_stored_credential_refuses_and_never_answers_the_empty_string(tmp_path: Path) -> None:
     """An empty token is a token as far as a header is concerned; it would send ``token `` and 401."""
     repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')

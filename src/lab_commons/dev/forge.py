@@ -42,6 +42,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -324,6 +325,18 @@ def store_credential(host: str, username: str, secret: str, *, cwd: Path, env: M
         raise NoCredential(msg)
 
 
+#: The variables a dynamically linked ``git`` needs to START, whatever configuration it is given. A
+#: given env decides git's CONFIGURATION, never where its libraries live: measured 2026-10-12 on Ada,
+#: an EasyBuild git finds ``libiconv.so.2`` only through ``LD_LIBRARY_PATH``, exited 127 without it,
+#: and every forge verb there reported a missing credential.
+_LOADER_VARS: Final = ('LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'LIBPATH', 'SYSTEMROOT')
+
+
+def _loader_env() -> dict[str, str]:
+    """The host's :data:`_LOADER_VARS` that are set; nothing else of the host reaches a given env."""
+    return {name: os.environ[name] for name in _LOADER_VARS if name in os.environ}
+
+
 def _credential(
     verb: str, fields: Mapping[str, str], *, cwd: Path, env: Mapping[str, str] | None
 ) -> subprocess.CompletedProcess[str]:
@@ -333,7 +346,7 @@ def _credential(
         [_GIT, 'credential', verb],
         input=payload + '\n',
         cwd=cwd,
-        env=None if env is None else {**dict(env), 'PATH': ''},
+        env=None if env is None else {**_loader_env(), **dict(env), 'PATH': ''},
         capture_output=True,
         text=True,
         encoding='utf-8',
