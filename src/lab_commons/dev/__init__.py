@@ -148,6 +148,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's vocabulary, so a local run posts the same kind of part a cluster run does.
 * :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
+* :mod:`lab_commons.dev.integrationhome` -- INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT: refuses a commit on
+  the integration branch or trunk from a linked worktree, and reports the main checkout's lag.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per platform it ran on (linux
   from the cluster, windows/macos from a box), each a ``tests/<platform>`` status on the forge.
 * :mod:`lab_commons.dev.producer` -- the producer exit contract: what a part producer's exit code

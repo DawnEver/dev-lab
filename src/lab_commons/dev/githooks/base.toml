@@ -86,3 +86,9 @@ run = ["python", "-m", "lab_commons.dev.issueref"]
 [[commit-msg]]
 id = "merge-audit"
 run = ["python", "-m", "lab_commons.dev.mergeaudit"]
+
+# INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT: a commit or MERGE commit on the declared integration branch or
+# trunk from a linked worktree (lab_commons.dev.integrationhome). commit-msg, because pre-commit skips merges.
+[[commit-msg]]
+id = "integration-home"
+run = ["python", "-m", "lab_commons.dev.integrationhome", "commit-msg"]

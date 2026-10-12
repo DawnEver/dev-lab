@@ -153,6 +153,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'issueref': ('original',),
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator': ('original',),
+    # ORIGINAL: a consumer's primary-checkout hook guarded the other direction only.
+    'integrationhome': ('original',),
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),

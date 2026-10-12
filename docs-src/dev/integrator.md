@@ -23,6 +23,21 @@ trunk = "main"                      # moved only by `forge promote`
 test_roots = ["tests"]              # what the merge audit reads
 ```
 
+## Integration lives in the main checkout
+
+The integration branch and the trunk have one home: the main checkout, whose single editor is the
+integrator. Lanes live in linked worktrees on lane branches. A commit or merge commit on either declared
+branch from a linked worktree is refused by the `integration-home` commit-msg hook
+(`lab_commons.dev.integrationhome`); commit-msg runs for merge commits, pre-commit does not. At session
+start, `python -m lab_commons.dev.integrationhome report` says how far the main checkout's branch is
+behind its origin and names `sh scripts/hooks/with-retry.sh pull --ff-only` to fix it.
+
+To adopt it: a repo on the TOML hooks gets the row from `base.toml` and needs no change. A repo using a
+rendered `.pre-commit-config.yaml` adds a local `commit-msg` hook that runs
+`python -m lab_commons.dev.integrationhome commit-msg`. It also prints the `report` line from its
+SessionStart hook (or worktree-debris report). Before the first commit, move any integration worktree
+back into the main checkout.
+
 ## Child branches sync from integration
 
 `DOWNSTREAM-SYNCS-INTEGRATION`: a child merges only integration. Another child's work reaches it once, through

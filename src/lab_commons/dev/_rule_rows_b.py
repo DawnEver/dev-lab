@@ -217,4 +217,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_branchflow.py',),
     ),
+    (
+        'INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT',
+        (
+            'The declared integration branch and trunk have ONE home, the main checkout, whose single editor is '
+            'the integrator; lanes live in linked worktrees on lane branches. A commit or merge commit on either '
+            'branch from a linked worktree is refused at commit-msg, and session start names the main checkout`s '
+            'lag behind origin with the fast-forward that clears it.'
+        ),
+        ('tests/test_dev_integrationhome.py',),
+    ),
 )
