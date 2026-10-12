@@ -71,7 +71,6 @@ __all__ = [
     'boost_of',
     'box_headroom',
     'candidates',
-    'declared_platforms',
     'expected_cost',
     'host_weights',
     'labelled_issues',
@@ -404,17 +403,10 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
         platform = declared['platform'] if declared else 'linux'
         number = int(raw['number'])
+        origin = str((raw.get('user') or {}).get('login', ''))
         found.append(
             Candidate(
-                repo,
-                f'issue/{number}',
-                '',
-                platform,
-                REQUEST,
-                since,
-                labels=_labels(raw),
-                number=number,
-                origin=str((raw.get('user') or {}).get('login', '')),
+                repo, f'issue/{number}', '', platform, REQUEST, since, labels=_labels(raw), number=number, origin=origin
             )
         )
     return found
@@ -448,18 +440,6 @@ def candidates(
     if mode == 'integrate':
         found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
     return tuple(found)
-
-
-def declared_platforms(root: Path) -> tuple[str, ...]:
-    """The platforms *root* declares a producer for: ``[tool.lab_commons.parts.produce]``, plus linux with ``hpc``."""
-    manifest = root / 'pyproject.toml'
-    if not manifest.is_file():
-        return ()
-    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('tool', {}).get('lab_commons', {})
-    found = set(declared.get('parts', {}).get('produce', {}))
-    if declared.get('hpc'):
-        found.add('linux')
-    return tuple(sorted(found))
 
 
 def repo_name(client: Client) -> str:

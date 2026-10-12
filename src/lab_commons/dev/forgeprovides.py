@@ -22,13 +22,15 @@ producer for (:func:`served_parts`); a cluster seat runs no engine part.
 
 from __future__ import annotations
 
+import tomllib
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forgeschedule import NO_HOST
 from lab_commons.hpc.platforms import PART_NAME, PLATFORMS, Table
 
-__all__ = ['NO_PROVIDER', 'lacking', 'needs', 'own_weight', 'provided', 'served_parts', 'unserved']
+__all__ = ['NO_PROVIDER', 'declared_parts', 'lacking', 'needs', 'own_weight', 'provided', 'served_parts', 'unserved']
 
 #: How a part no host may claim is labelled: ``no host provides <capability>``.
 NO_PROVIDER: Final = f'{NO_HOST} provides'
@@ -87,3 +89,15 @@ def own_weight(table: Mapping[str, Any]) -> float:
         msg = f'{_WHERE}: [serve] own_weight must be a positive number, got {weight!r}'
         raise ValueError(msg)
     return float(weight)
+
+
+def declared_parts(root: Path) -> tuple[str, ...]:
+    """The parts *root* declares a producer for: ``parts.produce`` keys, plus linux with ``hpc``."""
+    manifest = root / 'pyproject.toml'
+    if not manifest.is_file():
+        return ()
+    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('tool', {}).get('lab_commons', {})
+    found = set(declared.get('parts', {}).get('produce', {}))
+    if declared.get('hpc'):
+        found.add('linux')
+    return tuple(sorted(found))

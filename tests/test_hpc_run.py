@@ -29,6 +29,7 @@ from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.measured import Measured
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
+from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
@@ -383,7 +384,10 @@ COST, POLICY = Cost(seconds=600), Policy(shard_minutes_min=1, shard_minutes_max=
 
 def _submit(fake: FakeRunCluster, **kw: object) -> str:
     spec = RunSpec(
-        sha=SHA, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1'), table={'win': ('windows',)}
+        sha=SHA,
+        repo_url='https://g/r.git',
+        builds=Builds(install='true', env_key='k1'),
+        table=Table(rows={'win': ('windows',)}),
     )
     return submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0', **kw)
 

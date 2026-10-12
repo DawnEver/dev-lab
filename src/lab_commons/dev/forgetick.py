@@ -54,7 +54,7 @@ from lab_commons.dev.forgeclaim import (
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeprovides import lacking, needs, served_parts
+from lab_commons.dev.forgeprovides import declared_parts, lacking, needs, served_parts
 from lab_commons.dev.forgeschedule import (
     NO_HOST,
     OUTRANKED,
@@ -65,7 +65,6 @@ from lab_commons.dev.forgeschedule import (
     Ranked,
     Schedule,
     candidates,
-    declared_platforms,
     expected_cost,
     load_schedule,
     rank,
@@ -166,7 +165,7 @@ def tick(
         mode,
         built,
         repo=repo,
-        platforms=served_parts(serve.platform, provides or {}, declared_platforms(root), cluster=bool(serve.hpc)),
+        platforms=served_parts(serve.platform, provides or {}, declared_parts(root), cluster=bool(serve.hpc)),
         schedule=schedule,
         policy=load_policy(root),
         now=now,
