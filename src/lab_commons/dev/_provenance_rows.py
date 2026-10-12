@@ -123,6 +123,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # browser. Checked 2026-10-01 against every consumer's tracked files.
     'forgeauth': ('original',),
     'forgecli': ('original',),
+    'forgecred': ('original',),
     'forgework': ('original',),
     'forgestatus': ('original',),
     'forgeoutbox': ('original',),
