@@ -18,14 +18,14 @@ written is an ORPHAN -- it raises an alarm and waits for a human to ``scancel`` 
 again would double the run.
 
 ONLY THE OWNER RENEWS. Every tick re-claims the run's commit through the forge's race
-(:func:`lab_commons.dev.forgetick.claim`) before advancing it. A claim another owner now holds stands
+(:func:`lab_commons.dev.forgeclaim.claim`) before advancing it. A claim another owner now holds stands
 this run DOWN (its file is dropped, nothing is produced, an alarm says so); a live claim held by
 ANOTHER LOGIN HOST OF THIS ACCOUNT is left alone entirely -- ONE HOST PER ACCOUNT, and this is its
 guard, since ``flock`` on GPFS does not lock across hosts.
 
 PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``building``, ``queued 0/93``,
 ``running 40/93 done 12/93``, ``publishing`` -- the owner re-posts its pending claim with that progress
-(:class:`lab_commons.dev.forgetick.Claim`), so any machine with a forge credential sees it; the final
+(:class:`lab_commons.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
 status links the run record. A run whose REF MOVED ON is SUPERSEDED (:func:`supersede`): its Slurm jobs
 are cancelled and its claim released as ``superseded by <sha>``, so nothing finishes for nothing.
 
@@ -48,26 +48,15 @@ from typing import Final, Protocol
 
 from lab_commons.config import config_path
 from lab_commons.dev.forgealarm import LEASE, Alarm
+from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgeroute import pyproject_at, route
-from lab_commons.dev.forgeschedule import USAGE_COMMAND, Headroom, parse_usage
+from lab_commons.dev.forgeschedule import Headroom, tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
-from lab_commons.dev.forgetick import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context, post
 from lab_commons.dev.producer import ProducerExit, release_reason
-from lab_commons.hpc import learned
-from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.builds import builds_at
-from lab_commons.hpc.cluster import Runner, probe, submitter
-from lab_commons.hpc.config import Config
-from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
-from lab_commons.hpc.plan import headroom
-from lab_commons.hpc.platforms import table_at
-from lab_commons.hpc.progress import Progress, where
 from lab_commons.hpc.records import read_record
-from lab_commons.hpc.run import load_state, submit_run
-from lab_commons.hpc.shell import FULL, RunSpec
-from lab_commons.hpc.watch import PENDING, settle
+from lab_commons.hpc.shell import FULL
 
 __all__ = [
     'CLAIMED_PHASE',
@@ -78,17 +67,15 @@ __all__ = [
     'Cluster',
     'ForeignSchema',
     'Run',
-    'SlurmCluster',
     'Standing',
     'advance',
     'directory',
     'drop',
     'live',
-    'progress_text',
     'save',
-    'slurm_cluster',
     'start',
     'supersede',
+    'supersede_moved',
 ]
 
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
@@ -135,7 +122,7 @@ class Cluster(Protocol):
         """One short gather: the record written into ``run.output``, or ``None`` while Slurm still runs it."""
 
     def progress(self, run: Run) -> str:
-        """Where *run*'s jobs stand, one short phrase (:func:`progress_text`)."""
+        """Where *run*'s jobs stand, one short phrase (:func:`lab_commons.dev.forgeslurm.progress_text`)."""
 
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every job of *run*; the ids cancelled."""
@@ -298,15 +285,6 @@ def _report(client: Client, run: Run, progress: str, lease: timedelta, say: Call
     return _step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
 
 
-def progress_text(where_: Progress) -> str:
-    """The phrase a status description carries: ``queued 3/93``, ``running 40/93 done 12/93``, ``gathering``."""
-    if where_.finished:
-        return 'gathering'
-    if where_.running == 0 and where_.done == 0:
-        return f'queued {where_.pending}/{where_.shards}'
-    return f'running {where_.running}/{where_.shards} done {where_.done}/{where_.shards}'
-
-
 def supersede(run: Run, tip: str, *, client: Client, cluster: Cluster, say: Callable[[str], None]) -> None:
     """*run*'s ref moved on to *tip*: cancel its jobs, release its claim ``superseded by <tip>``, drop it.
 
@@ -316,6 +294,20 @@ def supersede(run: Run, tip: str, *, client: Client, cluster: Cluster, say: Call
     _release(client, run, f'superseded by {tip[:12]}', say)
     drop(run)
     say(f'[{run.platform}] {run.sha[:12]}: superseded by {tip[:12]}; cancelled {" ".join(cancelled) or "nothing"}')
+
+
+def supersede_moved(
+    root: Path, runs: list[Run], *, client: Client, cluster: Cluster, say: Callable[[str], None]
+) -> list[Run]:
+    """:func:`supersede` every run whose ref's origin tip moved on; the runs kept."""
+    kept = []
+    for run in runs:
+        tip = tip_of(root, run.ref)
+        if tip and tip != run.sha:
+            supersede(run, tip, client=client, cluster=cluster, say=say)
+        else:
+            kept.append(run)
+    return kept
 
 
 def _step(run: Run, **changes: object) -> Run:
@@ -398,100 +390,3 @@ def _orphaned(run: Run, jobs: list[str]) -> Alarm:
         f'jobs {shlex.join(jobs)} run under this account but no run state was recorded, so the tick will not '
         'resubmit. Remedy: scancel them; the next tick submits the run afresh.',
     )
-
-
-@dataclass(frozen=True)
-class SlurmCluster:
-    """:class:`Cluster` through ``lab_commons.hpc`` and this login node's own shell (:func:`slurm_cluster`)."""
-
-    root: Path
-    machine: Machine
-    config: Config
-    connect: Callable[[Grant], Runner]
-
-    def _runners(self) -> dict[tuple[str, str], Runner]:
-        return {grant.account: self.connect(grant) for grant in self.machine.grants}
-
-    def submitted(self, run: Run) -> list[str]:
-        """The job ids of every round ``hpc`` recorded for *run*'s sha; ``[]`` when it recorded none."""
-        try:
-            state, _ = load_state(run.sha, self.machine, self._runners())
-        except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
-            return []
-        return [one['job_id'] for one in state['rounds']]
-
-    def orphans(self, run: Run) -> list[str]:
-        """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>``)."""
-        shell = self.connect(self.machine.grants[0])
-        return shell(f'squeue -h --me -n run-{run.sha[:12]} -o %i', None).split()
-
-    def submit(self, run: Run) -> list[str]:
-        """Fetch, build, collect, plan and submit round 0 (:func:`lab_commons.hpc.run.submit_run`)."""
-        spec = RunSpec(
-            sha=run.sha,
-            repo_url=run.repo_url,
-            collect=run.collect,
-            table=table_at(self.root, run.sha),
-            pack_from=self.root,
-            builds=builds_at(self.root, run.sha, python=''),
-        )
-        state = submit_run(
-            spec,
-            self.machine,
-            self.connect,
-            cost=self.config.cost,
-            policy=self.config.policy,
-            history=learned.learned(run.repo_url),
-        )
-        return [one['job_id'] for one in state['rounds']]
-
-    def gather(self, run: Run) -> Path | None:
-        """One :func:`lab_commons.hpc.watch.settle` without waiting: the record it wrote, or ``None`` while pending."""
-        output = Path(run.output)
-        if settle([run.sha], self.machine, self.connect, self.config, output, sleep=None) == PENDING:
-            return None
-        records = sorted(output.glob(f'run-{run.sha}-{run.platform}-*.json.gz'), key=lambda path: path.stat().st_mtime)
-        if not records:
-            msg = f'the run of {run.sha[:12]} ended without a record in {output}; its lines above say why'
-            raise RuntimeError(msg)
-        return records[-1]
-
-    def progress(self, run: Run) -> str:
-        """Where the run's current job is, from the cluster's run state and one ``squeue``."""
-        return progress_text(where(run.sha, self.machine, self.connect, policy=self.config.policy))
-
-    def cancel(self, run: Run) -> list[str]:
-        """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
-        ids = sorted({*self.submitted(run), *run.job_ids, *self.orphans(run)})
-        if ids:
-            self.connect(self.machine.grants[0])(f'scancel {shlex.join(ids)}', None)
-        return ids
-
-    def standing(self) -> Standing:
-        """Probe the first grant locally: headroom (cores, QOS submissions), the last day's use, partitions."""
-        grant = self.machine.grants[0]
-        shell = self.connect(grant)
-        snapshot = probe(shell, grant.slurm_account)
-        qos = snapshot.quota.default_qos
-        room = Headroom(headroom(snapshot, grant.cpus, self.machine.workstation), snapshot.quota.submit_room(qos))
-        facts: dict[str, object] = {
-            'quota_cpus': snapshot.quota.cpus,
-            'qos': qos,
-            'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
-        }
-        return Standing(room, parse_usage(shell(USAGE_COMMAND, None)), facts)
-
-
-def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
-    """The cluster of *seat*, through the grants of its account only (another user's home is not this one's)."""
-    if seat is None:
-        msg = 'this box is not on a cluster (no sbatch); a cluster run advances only on its login node'
-        raise ValueError(msg)
-    grants = tuple(grant for grant in load_grants().grants if grant.user == seat.account)
-    if not grants:
-        msg = (
-            f'no [[hpc.grant]] in {config_path()} has user = "{seat.account}" (the Slurm user this runs as); '
-            'add one naming its slurm_account and share so a cluster part can be planned'
-        )
-        raise ValueError(msg)
-    return SlurmCluster(root, Machine(workstation=workstation(), grants=grants), Config(), submitter())

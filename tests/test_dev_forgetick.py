@@ -18,6 +18,18 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
+from lab_commons.dev.forgeclaim import (
+    CLAIMED,
+    DEFAULT_LEASE,
+    DONE,
+    MINE,
+    OPEN,
+    STALE,
+    Claim,
+    Serving,
+    assess,
+    serving,
+)
 from lab_commons.dev.forgeschedule import (
     INTEGRATION,
     OUTRANKED,
@@ -29,18 +41,7 @@ from lab_commons.dev.forgeschedule import (
     load_schedule,
 )
 from lab_commons.dev.forgestatus import Status
-from lab_commons.dev.forgetick import (
-    CLAIMED,
-    DONE,
-    MINE,
-    OPEN,
-    STALE,
-    Claim,
-    Serving,
-    assess,
-    serving,
-    tick,
-)
+from lab_commons.dev.forgetick import tick
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
@@ -286,7 +287,7 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
 def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, capsys) -> None:
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
-    me = Claim(workstation() or '', 'alice', NOW + forgetick.DEFAULT_LEASE)
+    me = Claim(workstation() or '', 'alice', NOW + DEFAULT_LEASE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     mine = {'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': me.description()}
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
@@ -339,7 +340,7 @@ def test_a_lapsed_lease_by_the_forges_clock_lets_another_claim_whatever_the_host
     Recorder.received.clear()
     Recorder.date = 'Sat, 10 Oct 2026 12:02:00 GMT'  # the forge is two minutes on; the bob lease has lapsed
     later = NOW + timedelta(minutes=2)
-    mine = Claim('G', 'alice', later + forgetick.DEFAULT_LEASE)
+    mine = Claim('G', 'alice', later + DEFAULT_LEASE)
     answer('GET', f'{API}/statuses/{sha}', (200, [_post(1, bob)]), (200, [_post(1, bob), _post(2, mine)]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     taken = _tick(repo, server)

@@ -3,7 +3,7 @@
 Read-only, and read from the forge, so any machine with a forge credential sees what a cluster login
 node sees: every waiting candidate with its class, value, expected cost, score, wait and what blocks it
 (:mod:`lab_commons.dev.forgeschedule`); every run in flight with its owner and the live progress its
-claim carries (:class:`lab_commons.dev.forgetick.Claim`); every host card, stale ones flagged
+claim carries (:class:`lab_commons.dev.forgeclaim.Claim`); every host card, stale ones flagged
 (:mod:`lab_commons.dev.forgehosts`); and every candidate starved past its class's bound. It fetches
 ``origin`` first so the refs it ranks are the forge's, and posts nothing.
 """
@@ -16,12 +16,14 @@ import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from lab_commons.config import section
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
-from lab_commons.dev.forgehosts import read_cards
+from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
+from lab_commons.dev.forgehosts import HostCard, read_cards
 from lab_commons.dev.forgeschedule import (
     NO_HOST,
     REQUEST,
@@ -37,7 +39,6 @@ from lab_commons.dev.forgeschedule import (
     starved,
 )
 from lab_commons.dev.forgestatus import Status, status_history
-from lab_commons.dev.forgetick import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
@@ -102,7 +103,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     }
 
 
-def _why(candidate: Candidate, cards: Sequence[Any], now: Any) -> str:  # noqa: ANN401 -- datetime
+def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     serving = [card for card in cards if card.platform == candidate.platform and not card.stale(now)]
     if not serving:
         return f'{NO_HOST} serves {candidate.platform}'

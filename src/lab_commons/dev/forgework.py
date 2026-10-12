@@ -203,7 +203,7 @@ class Client:
     sleep: Callable[[float], None] = time.sleep
     timeout: float = 30.0
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
-    #: The raw ``Date`` header of the forge's latest answer: its clock (:func:`lab_commons.dev.forgetick.forge_now`).
+    #: The raw ``Date`` header of the forge's latest answer: its clock (:func:`lab_commons.dev.forgeclaim.forge_now`).
     answered: str = ''
 
     @property

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
+import os
 import re
 import subprocess
 import tomllib
@@ -48,7 +49,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
+from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.lanepolicy import Policy
@@ -64,6 +67,7 @@ __all__ = [
     'Ranked',
     'Schedule',
     'boost_of',
+    'box_headroom',
     'candidates',
     'declared_platforms',
     'expected_cost',
@@ -75,6 +79,8 @@ __all__ = [
     'ref_usage',
     'repo_name',
     'starved',
+    'starved_alarms',
+    'tip_of',
     'value',
 ]
 
@@ -141,8 +147,9 @@ def load_schedule(root: Path) -> Schedule:
         msg = f'[tool.lab_commons.{_TABLE}] in {manifest} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
     merged: dict[str, Any] = {}
+    defaults = dataclasses.asdict(default)
     for key, given in declared.items():
-        current = getattr(default, key)
+        current = defaults[key]
         merged[key] = {**current, **given} if isinstance(current, Mapping) else given
     if 'branches' in merged:
         merged['branches'] = tuple(merged['branches'])
@@ -260,6 +267,31 @@ class Headroom:
         if self.submits is not None and self.submits < 1:
             return f'{NO_HEADROOM}: the QOS accepts no more submissions'
         return ''
+
+
+def box_headroom() -> Headroom:
+    """A box's headroom: its cores, none while a run holds its CPU seat."""
+    return Headroom(cores=0 if CpuSeat.holders() else os.cpu_count() or 1)
+
+
+def starved_alarms(queue: Sequence[Ranked], schedule: Schedule, repo: str) -> list[Alarm]:
+    """A ``starved`` alarm for every candidate of *queue* past its class's bound, naming why it waits."""
+    return [
+        Alarm(
+            STARVED,
+            repo,
+            f'{item.candidate.key} is starved',
+            f'class {item.candidate.kind} waited {item.wait_h:.1f} h, past its '
+            f'{schedule.starve_after_hours[item.candidate.kind]:g} h bound; not claimed: {item.blocked}',
+            about=item.candidate.key,
+        )
+        for item in starved(queue, {one.candidate.repo: schedule for one in queue})
+    ]
+
+
+def tip_of(root: Path, ref: str) -> str:
+    """*ref*'s tip on ``origin`` as last fetched, ``''`` when it has none."""
+    return _git(root, 'rev-parse', '--verify', '-q', f'{_TRACKING}{ref}')
 
 
 def parse_usage(sacct: str) -> dict[str, float]:

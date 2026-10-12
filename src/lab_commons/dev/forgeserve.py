@@ -42,8 +42,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import os
-import socket
 import subprocess
 import sys
 import threading
@@ -56,29 +54,17 @@ from typing import Any, Final
 from lab_commons.config import section
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun
-from lab_commons.dev.cpuseat import CpuSeat
-from lab_commons.dev.forge import _GIT, NoCredential, Transport, fetch_origin, https_transport
-from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED, Alarm, sound
-from lab_commons.dev.forgehosts import HostCard, publish
+from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
+from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
+from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
+from lab_commons.dev.forgehosts import publish_card
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeschedule import Headroom, host_weights, load_schedule, starved
+from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms, tip_of
+from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_history, status_post
-from lab_commons.dev.forgetick import (
-    DEFAULT_LEASE,
-    MODES,
-    OPEN,
-    STALE,
-    Claim,
-    TickReport,
-    Work,
-    forge_now,
-    serving,
-    this_machine,
-    this_seat,
-    tick,
-)
+from lab_commons.dev.forgetick import MODES, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.platformparts import origin_url, part_context, this_platform
+from lab_commons.dev.platformparts import origin_url, part_context
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
@@ -111,11 +97,6 @@ class ServeReport:
     broken: tuple[str, ...]
 
 
-def _box_room() -> Headroom:
-    """A box's headroom: its cores, none while a run holds its CPU seat."""
-    return Headroom(cores=0 if CpuSeat.holders() else os.cpu_count() or 1)
-
-
 def serve(
     root: Path,
     mode: str,
@@ -132,14 +113,14 @@ def serve(
     alarm: Callable[[Alarm], object] = sound,
     renew_s: float | None = None,
     host: str | None = None,
-    box_room: Callable[[], Headroom] = _box_room,
+    box_room: Callable[[], Headroom] = box_headroom,
     table: Mapping[str, Any] | None = None,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes)."""
     repo = origin_url(root)
     table = section('schedule') if table is None else table
     runs = list(forgerun.live(repo)) if seat is not None else []
-    slurm, standing, why = _cluster(cluster) if seat is not None else (None, None, '')
+    slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
         ticked = tick(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
@@ -155,7 +136,7 @@ def serve(
     for line in ticked.lines:
         say(line)
     if slurm is not None:
-        runs = _supersede(root, runs, client(root), slurm, say)
+        runs = forgerun.supersede_moved(root, runs, client=client(root), cluster=slurm, say=say)
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     produced: list[Produced] = []
     for item in ticked.claimed:
@@ -183,11 +164,11 @@ def serve(
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]}' for item in pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
-    _starving(root, ticked, repo, alarm)
+    for one in starved_alarms(ticked.queue, load_schedule(root), repo):
+        alarm(one)
     if mode != 'quiet':
-        _card(
-            root, ticked, client=client, machine=machine, seat=seat, host=host, standing=standing, table=table, say=say
-        )
+        publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
+                     standing=standing, table=table, say=say)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -195,89 +176,6 @@ def serve(
     )
     published = tuple(flush(root, client=client))
     return ServeReport(tuple(ticked.lines), tuple(produced), tuple(left), published, broken)
-
-
-def _cluster(build: Callable[[], forgerun.Cluster]) -> tuple[forgerun.Cluster | None, forgerun.Standing | None, str]:
-    """The Slurm side and its standing read locally, or why there is none (not on a cluster, no grant)."""
-    try:
-        slurm = build()
-    except (RuntimeError, ValueError) as why:
-        return None, None, str(why)
-    try:
-        return slurm, slurm.standing(), ''
-    except (RuntimeError, OSError, ValueError) as why:  # Slurm did not answer: no headroom is claimed on
-        return slurm, forgerun.Standing(Headroom(cores=0)), str(why)
-
-
-def _tip(root: Path, ref: str) -> str:
-    done = subprocess.run(
-        [_GIT, '-C', str(root), 'rev-parse', '--verify', '-q', f'refs/remotes/origin/{ref}'],
-        capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
-    )  # fmt: skip
-    return done.stdout.strip() if done.returncode == 0 else ''
-
-
-def _supersede(
-    root: Path, runs: list[forgerun.Run], client: Client, slurm: forgerun.Cluster, say: Callable[[str], None]
-) -> list[forgerun.Run]:
-    """Cancel and release every run whose ref moved on (only the newest sha of a ref is worth a run)."""
-    kept = []
-    for run in runs:
-        tip = _tip(root, run.ref)
-        if tip and tip != run.sha:
-            forgerun.supersede(run, tip, client=client, cluster=slurm, say=say)
-        else:
-            kept.append(run)
-    return kept
-
-
-def _starving(root: Path, ticked: TickReport, repo: str, alarm: Callable[[Alarm], object]) -> None:
-    """A ``starved`` alarm for every candidate waiting past its class's bound, naming why it is not claimed."""
-    schedule = load_schedule(root)
-    for item in starved(ticked.queue, {one.candidate.repo: schedule for one in ticked.queue}):
-        bound = schedule.starve_after_hours[item.candidate.kind]
-        alarm(
-            Alarm(
-                STARVED,
-                repo,
-                f'{item.candidate.key} is starved',
-                f'class {item.candidate.kind} waited {item.wait_h:.1f} h, past its {bound:g} h bound; '
-                f'not claimed: {item.blocked}',
-                about=item.candidate.key,
-            )
-        )
-
-
-def _card(
-    root: Path,
-    ticked: TickReport,
-    *,
-    client: Callable[[Path], Client],
-    machine: str,
-    seat: ClusterAccount | None,
-    host: str | None,
-    standing: forgerun.Standing | None,
-    table: Mapping[str, Any],
-    say: Callable[[str], None],
-) -> None:
-    """Publish this host's card; a forge that refuses it is said, never a failed tick."""
-    built = client(root)
-    try:
-        holds = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerun.live(origin_url(root)))
-        card = HostCard(
-            host=str(seat) if seat is not None else machine or socket.gethostname().split('.')[0],
-            login=built.whoami(),
-            platform=serving(host or this_platform(), seat).platform,
-            ticked=forge_now(built).isoformat(),
-            tick_minutes=float(table.get('tick_minutes', 5)),
-            headroom=dataclasses.asdict(standing.headroom) if standing else {},
-            facts=standing.facts if standing else {},
-            holds=holds if seat is not None else tuple(f'{w.sha[:12]} {w.platform}' for w in ticked.claimed),
-            waiting={item.candidate.key: item.blocked for item in ticked.queue if item.blocked},
-        )
-        say(f'[serve] host card {publish(built, card)}')
-    except (ForgeCallFailed, OSError) as failed:
-        say(f'[serve] could not publish the host card: {failed}')
 
 
 def _advance(
@@ -366,7 +264,7 @@ def _produce(
                 say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
                 break
             fetch(root)
-            tip = _tip(root, item.ref)
+            tip = tip_of(root, item.ref)
             if tip and tip != item.sha:
                 proc.kill()
                 returncode = proc.wait()
@@ -427,7 +325,7 @@ def main(
             client=build,
             machine=machine,
             seat=seat,
-            cluster=lambda: forgerun.slurm_cluster(root, seat),
+            cluster=lambda: slurm_cluster(root, seat),
             lease=timedelta(hours=args.lease_hours),
             say=lambda line: emit(line, err=args.json, flush=True),
         )

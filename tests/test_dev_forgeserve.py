@@ -13,10 +13,11 @@ import pytest
 from _forge_fake import git_out, run_git
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgerun, forgeserve
+from lab_commons.dev import forgehosts, forgerun, forgeserve
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
+from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeschedule import Candidate, Headroom, Ranked
-from lab_commons.dev.forgetick import OPEN, Claim, TickReport, Work
+from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
@@ -90,10 +91,11 @@ def _serve(
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     monkeypatch.setattr(forgeserve, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
     monkeypatch.setattr(forgeserve, 'status_post', forge.post)
     monkeypatch.setattr(forgeserve, 'status_history', forge.history)
-    monkeypatch.setattr(forgeserve, 'publish', lambda _client, card: cards.append(card) or 'updated')
+    monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     report = forgeserve.serve(
         tmp_path,
         'integrate',

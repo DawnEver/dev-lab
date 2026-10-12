@@ -17,9 +17,9 @@ from typing import Any
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgerun
+from lab_commons.dev import forgerun, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, Alarm
-from lab_commons.dev.forgetick import DESCRIPTION_LIMIT, Claim, Work
+from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, Claim, Work
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal
@@ -292,9 +292,9 @@ def test_a_run_in_flight_shows_its_progress_on_the_forge_and_a_repeat_posts_noth
 
 
 def test_progress_text_reads_the_slurm_counts() -> None:
-    assert forgerun.progress_text(Progress('s', '1', 4, pending=4)) == 'queued 4/4'
-    assert forgerun.progress_text(Progress('s', '1', 4, pending=1, running=2)) == 'running 2/4 done 1/4'
-    assert forgerun.progress_text(Progress('s', '1', 4, finished=True)) == 'gathering'
+    assert forgeslurm.progress_text(Progress('s', '1', 4, pending=4)) == 'queued 4/4'
+    assert forgeslurm.progress_text(Progress('s', '1', 4, pending=1, running=2)) == 'running 2/4 done 1/4'
+    assert forgeslurm.progress_text(Progress('s', '1', 4, finished=True)) == 'gathering'
 
 
 def test_a_long_progress_is_cut_to_what_every_forge_stores() -> None:

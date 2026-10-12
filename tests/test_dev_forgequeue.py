@@ -13,8 +13,8 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 
 from lab_commons.dev import forgequeue
 from lab_commons.dev.forge import Forge
+from lab_commons.dev.forgeclaim import Claim
 from lab_commons.dev.forgehosts import HOSTS_TITLE, HostCard, publish, read_cards
-from lab_commons.dev.forgetick import Claim
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 NOW_HTTP = 'Sun, 11 Oct 2026 12:00:00 GMT'
