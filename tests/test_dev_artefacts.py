@@ -508,7 +508,7 @@ def test_the_cap_binds_each_writer_on_its_own_share(tmp_path: Path) -> None:
 # --- no working remote --------------------------------------------------------------------------------
 
 
-def _rclone_repo(tmp_path: Path, remote: str = 'hpc-data:motronics') -> Path:
+def _rclone_repo(tmp_path: Path, remote: str = 'hpc-data:consumer-a') -> Path:
     return _pyproject(tmp_path / 'r', f'[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "{remote}"\n')
 
 

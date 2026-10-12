@@ -13,7 +13,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 | gate | the increment's reach; lightweight only; 30-minute wall | the forge's producer only |
 | heavy | everything, including the local live engines the repo declares | the forge's producer only |
 
-- The family entry is `python -m lab_commons.dev.verify -- <paths>`; a repo may add its own driver (motronics:
+- The family entry is `python -m lab_commons.dev.verify -- <paths>`; a repo may add its own driver (consumer-a:
   `python scripts/gate/runner.py measure <paths>`). Exit codes: `0` pass, `1` fail, `2` refused argv,
   `3` inconclusive.
 - **A full tier refuses outside the producer** (`VERDICTS-FROM-THE-FORGE`) and names the remedy: push.
