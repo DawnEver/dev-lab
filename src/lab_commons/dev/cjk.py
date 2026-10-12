@@ -321,6 +321,8 @@ def scan_files(
     corpus = frozenset(named for _, named in named_paths)
     read = 0
     for path, named in named_paths:
+        if not path.is_file():
+            continue  # not a regular file: a submodule's tracked path is a directory, never read
         if exempted(named, exempt_prefixes) or translation_exempted(named, corpus):
             skipped.append(named)
             continue
@@ -470,8 +472,8 @@ def scan_non_ascii(
     by_file: dict[str, Counter[str]] = {}
     read = 0
     for path, named in named_paths:
-        if exempted(named, exempt_prefixes) or translation_exempted(named, corpus):
-            continue
+        if not path.is_file() or exempted(named, exempt_prefixes) or translation_exempted(named, corpus):
+            continue  # a submodule's tracked path is a directory: not a regular file, never read
         try:
             text = path.read_bytes().decode('utf-8')
         except UnicodeDecodeError:

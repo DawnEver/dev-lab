@@ -356,3 +356,25 @@ def test_the_non_ascii_census_counts_per_file_and_per_class_and_reports_the_dist
     assert report.isascii()
     assert char_class(chr(0x4E2D)) == 'CJK'
     assert char_class('\u2014') == 'dash'
+
+
+def test_a_submodule_directory_among_the_tracked_paths_is_skipped_not_read(tmp_path: Path) -> None:
+    """``git ls-files`` names a submodule as a path that is a DIRECTORY; reading it raises on every OS."""
+    submodule = tmp_path / 'vendor' / 'sub'
+    submodule.mkdir(parents=True)
+    (submodule / 'inner.md').write_text('\u2014\n', encoding='utf-8')
+    dirty = tmp_path / 'dirty.md'
+    dirty.write_text('\u2014\n', encoding='utf-8')
+    scan = scan_non_ascii((submodule, dirty), root=tmp_path)
+    assert scan.files_read == 1
+    assert set(scan.by_file) == {'dirty.md'}
+
+
+def test_the_cjk_scan_skips_a_submodule_directory_too(tmp_path: Path) -> None:
+    submodule = tmp_path / 'sub'
+    submodule.mkdir()
+    clean = tmp_path / 'clean.md'
+    clean.write_text('ascii\n', encoding='utf-8')
+    scan = scan_files((submodule, clean), root=tmp_path)
+    assert scan.files_read == 1
+    assert 'sub' not in scan.exempted
