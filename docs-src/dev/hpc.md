@@ -85,6 +85,11 @@ without `sbatch`.
    nothing is left it writes `<dir>/run-<sha>-<platform>-<req>.json.gz` and exits 1 if any id is red, lost or
    missing.
 
+To run ANY entry (not pytest) at a commit, `python -m lab_commons.hpc run build --sha <40-hex> --repo-url <https>`
+on each grant's login node does step 1's fetch and build alone -- no collection, no submission, no state -- and
+prints the job-file lines that reuse that tree and env: `workdir = "~/ci/trees/<sha>"`, `setup = [". .lab-ci/env.sh"]`.
+A job file with them and `entry = "<module>:<function>"` is then submitted with `submit -c <job.toml>`.
+
 The cluster run state is a resumable tick (`forgerun`): `claimed -> submitted -> gathered -> published`, kept
 per repo + sha + platform + scope in `forge-runs/` beside the machine file. Slurm is the truth: jobs named
 `run-<sha12>` with no recorded state are orphans, alarmed and never resubmitted.

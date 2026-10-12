@@ -33,7 +33,7 @@ from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
-from lab_commons.hpc.run import RETRIES, gather_run, submit_run
+from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
@@ -1016,3 +1016,41 @@ def test_two_out_of_memory_rounds_then_a_completed_one_is_gathered_from_the_late
     asked = [c.split(' -j ')[1].split()[0] for c, _ in fake.calls if c.startswith('sacct ')]
     assert asked == ['4243', '4244', '4245'], 'each gather asks sacct about the current round only'
     assert not any(' -j ' in c for c, _ in fake.calls if 'squeue' in c), 'squeue decides no job in a gather'
+
+
+def test_build_prepares_the_tree_and_its_env_and_submits_nothing() -> None:
+    """``run build`` is ``run submit`` up to the facts, so a job-mode entry can run in the built tree (2026-10-13)."""
+    fake = FakeRunCluster()
+    spec = RunSpec(sha=SHA, repo_url='u', builds=Builds(install='true', env_key='k1'))
+    built = build_run(spec, fake, 'login.example')
+    assert built['env'] == fake.env
+    assert 'env' in built['prep'], 'the prep wall times come back with the facts'
+    assert not fake.manifests, 'nothing was submitted'
+    assert not fake.state, 'no run state: a build is not a run'
+    assert not any('--collect-only' in c or 'lab_ci_collect.py --cache' in c for c, _ in fake.calls), 'no collection'
+
+
+def _build_cli(monkeypatch: pytest.MonkeyPatch, fake: FakeRunCluster) -> None:
+    monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
+    monkeypatch.setattr(cli, 'submitter', lambda: lambda _g: fake)
+    monkeypatch.setattr(cli, 'builds_at', lambda *_a, **_k: Builds(install='true', env_key='k1'))
+
+
+def test_run_build_names_the_workdir_and_setup_a_job_file_reuses(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = FakeRunCluster()
+    _build_cli(monkeypatch, fake)
+    assert cli.main(['run', 'build', '--sha', SHA, '--repo-url', 'u']) == 0
+    out = capsys.readouterr().out
+    assert f'workdir = "~/ci/trees/{SHA}"' in out
+    assert 'setup = [". .lab-ci/env.sh"]' in out
+    assert not fake.manifests
+
+
+def test_a_failed_run_build_is_inconclusive(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _build_cli(monkeypatch, FakeRunCluster(build_fails=True))
+    assert cli.main(['run', 'build', '--sha', SHA, '--repo-url', 'u']) == 3
+    assert 'could not find `cargo`' in capsys.readouterr().err
