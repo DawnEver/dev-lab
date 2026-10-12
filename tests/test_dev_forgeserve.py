@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -80,6 +81,7 @@ def _serve(
     cards: list | None = None,
     host: str | None = None,
     tidy=lambda _root, _client, **_kw: (),
+    head: Callable[[], str] = lambda: SHA,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
@@ -100,6 +102,7 @@ def _serve(
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     monkeypatch.setattr(forgeship, 'tidy', tidy)
+    monkeypatch.setattr(forgeproduce, 'head_sha', lambda _root: head())
     report = forgeserve.serve(
         tmp_path,
         'integrate',
@@ -192,6 +195,32 @@ def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> N
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(-9)}, forge)
     assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9)')
+
+
+def test_a_tree_not_at_the_claimed_sha_produces_nothing_and_says_why(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED (live 2026-10-12, 4e394b6): a checkout elsewhere spawns nothing and the release names it.
+
+    The checkout sat at e9bc0d4, verify judged and posted THAT, and the claim on 4e394b6 was released as
+    "exited 1 (FAIL) but posted no part" -- an exit with no named cause.
+    """
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    spawned: list[dict] = []
+    stale = 'e' * 40
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1)}, forge, spawned=spawned, head=lambda: stale)
+    assert spawned == []
+    assert forge.posts[-1][1] == 'error'
+    assert f'the checkout is at {stale[:12]}, not {SHA[:12]}' in forge.posts[-1][2]
+
+
+def test_a_tree_that_moves_off_the_sha_mid_run_names_it(monkeypatch, tmp_path: Path) -> None:
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    heads = iter([SHA, 'f' * 40])
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1)}, forge, head=lambda: next(heads))
+    assert f'the checkout is at {"f" * 12}, not {SHA[:12]}' in forge.posts[-1][2]
 
 
 def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Path) -> None:

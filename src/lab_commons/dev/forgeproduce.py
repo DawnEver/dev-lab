@@ -5,6 +5,12 @@ streams prefixed ``[platform]``; the claim is renewed on the FORGE's clock every
 producer lives; a ref that moved on stops it (``superseded by <sha>``); a producer past
 :data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
 its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose.
+
+A LOCAL PRODUCER JUDGES THE CHECKOUT, NOT THE SHA: ``verify`` runs on the working tree and posts on HEAD.
+So the part is produced only while the checkout's HEAD IS the claimed sha. A checkout elsewhere spawns
+nothing, and one that moved off the sha during the run is named; either way the claim is released as
+:func:`off_the_sha` says, never as a bare "posted no part" (live 2026-10-12: the checkout sat at e9bc0d4,
+verify judged and posted that, and the claim on 4e394b6 was released with no cause).
 """
 
 from __future__ import annotations
@@ -22,13 +28,13 @@ from typing import Any, Final
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgeschedule import tip_of
-from lab_commons.dev.forgestatus import status_history, status_post
+from lab_commons.dev.forgestatus import head_sha, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import part_context
-from lab_commons.dev.producer import producing, release_reason
+from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 
-__all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
+__all__ = ['PRODUCE_WALL_S', 'Produced', 'off_the_sha', 'produce']
 
 #: How long a produced part may run before it is called hung, in seconds.
 PRODUCE_WALL_S: Final = 24 * 3600
@@ -43,6 +49,16 @@ class Produced:
     platform: str
     argv: tuple[str, ...]
     returncode: int
+
+
+def off_the_sha(head: str | None, sha: str) -> str:
+    """The release reason of a claim on *sha* whose checkout is at *head*; ``''`` when they agree."""
+    if head == sha:
+        return ''
+    return (
+        f'released: the checkout is at {(head or "no commit")[:12]}, not {sha[:12]} -- no part; '
+        f'bring the serving checkout to the claimed sha'
+    )
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None]) -> None:
@@ -68,6 +84,9 @@ def produce(
     claim is released ``superseded by <sha>``.
     """
     context = part_context(item.platform)
+    if off := off_the_sha(head_sha(root), item.sha):
+        _post(client(root), item, 'error', off, say)
+        return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
     say(f'[{item.platform}] start: {" ".join(item.argv)}')
     proc = spawn(
         list(item.argv),
@@ -114,7 +133,7 @@ def produce(
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if superseded or (posts and posts[-1].state == 'pending'):
         stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
-        reason = 'stopped' if stopped else release_reason(returncode)
+        reason = 'stopped' if stopped else off_the_sha(head_sha(root), item.sha) or release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
     return Produced(item.ref, item.sha, item.platform, item.argv, returncode)
