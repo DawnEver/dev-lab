@@ -50,7 +50,7 @@ def tidy(root: Path, client: Client, *, account: str, say: Callable[[str], None]
     stores: list[ArtefactStore] = [ForgeStore(client)]
     large = large_store(config, forge_from_remote(root).repo)
     stores += [large] if large is not None else []
-    keep, now = pinned(client), forge_now(client)
+    keep, now = pinned(client, say=say), forge_now(client)
     gone = []
     for store in stores:
         cap = config.cap_bytes if store is large else 0
