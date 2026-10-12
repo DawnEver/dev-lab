@@ -310,7 +310,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
 * :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`lab_commons.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
-* :mod:`lab_commons.dev.servetask` -- a Windows workstation as a serve host: the ``lab-forge-serve`` Scheduled Task.
+* :mod:`lab_commons.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its command and installed action.
+* :mod:`lab_commons.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.
 * :mod:`lab_commons.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`lab_commons.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

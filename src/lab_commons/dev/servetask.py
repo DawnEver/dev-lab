@@ -1,47 +1,50 @@
-"""A WINDOWS WORKSTATION AS A ``forge serve`` HOST: ``python -m lab_commons.dev.servetask [--dry-run]``.
+"""THE ONE Scheduled Task that makes a Windows workstation a ``forge serve`` host: its name, command and state.
 
-The workstation counterpart of a cluster account's crontab line (:mod:`lab_commons.hpc.deploy`): one
-Scheduled Task, ``lab-forge-serve``, run from the checkout it serves. It lives here, not in
-:mod:`lab_commons.hpc`, because what it schedules is this package's own serve and lock.
+The workstation counterpart of a cluster account's crontab lines (:mod:`lab_commons.hpc.deploy`). ONE
+Task, ``lab-forge-serve``, serves every repo the machine file declares (``[serve] repos``): its action
+runs :mod:`lab_commons.dev.workstation` ``serve`` from the lab-commons checkout, which takes the
+per-user serve lock once (:mod:`lab_commons.dev.servelock`) and serves each repo in turn from its own
+checkout and venv. One Task and not one per repo, because the lock is per host: per-repo Tasks firing
+on the same minute would either overlap (per-repo locks) or starve all but the first (one lock).
+:mod:`lab_commons.dev.workstation` ``deploy`` writes it; nothing else does.
 
 THE TASK, as one ``schtasks /Create`` command:
 
 * every 5 minutes (``/SC MINUTE /MO 5``); a tick still running when the next fires is skipped --
-  ``MultipleInstancesPolicy IgnoreNew``, the policy ``schtasks /Create`` writes -- and ``--lock`` makes
-  the serve refuse an overlap itself, whatever started it (:mod:`lab_commons.dev.servelock`);
+  ``MultipleInstancesPolicy IgnoreNew``, the policy ``schtasks /Create`` writes;
 * as THIS user, only while logged on (``/RU <user> /IT``, no stored password): the forge credential and
   a vendor's scheduler are per user, and nothing non-interactive has been measured yet;
-* the action ``cmd /c cd /d <checkout> && <its .venv python> -m lab_commons.dev.forge serve
-  --mode <mode> --lock`` -- a bare ``--lock`` is the default lock, resolved by the serve itself
-  (:func:`lab_commons.dev.servelock.default_lock`, under this user's ``%LOCALAPPDATA%``).
+* the action ``cmd /c cd /d <lab-commons checkout> && <its .venv python> -m lab_commons.dev.workstation
+  serve --mode <mode>``.
 
-``--dry-run`` prints the exact command and changes nothing. THE STOP STEP is to disable the Task --
-``schtasks /Change /TN lab-forge-serve /DISABLE`` (``/ENABLE`` resumes it) -- then stop a serve still
-running with ``python -m lab_commons.dev.stoprun --pid <pid>``, which releases its claim as ``stopped``.
+THE STOP STEP is to disable the Task -- ``schtasks /Change /TN lab-forge-serve /DISABLE`` (``/ENABLE``
+resumes it) -- then stop a serve still running with ``python -m lab_commons.dev.stoprun --pid <pid>``,
+which releases its claim as ``stopped``.
 """
 
 from __future__ import annotations
 
-import argparse
+import html
 import os
-import subprocess
-import sys
-from collections.abc import Callable, Sequence
+import re
 from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.venvpath import venv_interpreter
-from lab_commons.log import emit
 
-__all__ = ['TASK', 'create_argv', 'main', 'this_user']
+__all__ = ['DISABLE', 'TASK', 'TR_MAX', 'action_of', 'create_argv', 'installed_action', 'query_argv', 'this_user']
 
 #: The Scheduled Task's name.
 TASK: Final = 'lab-forge-serve'
 
 #: ``schtasks /TR`` refuses an action longer than this.
-_TR_MAX: Final = 261
+TR_MAX: Final = 261
 
-_DISABLE: Final = f'schtasks /Change /TN {TASK} /DISABLE'
+#: The documented stop.
+DISABLE: Final = f'schtasks /Change /TN {TASK} /DISABLE'
+
+#: The checkout's own interpreter, relative to the checkout the action changes into.
+_VENV_PYTHON: Final = venv_interpreter(os_name='nt')
 
 
 def this_user() -> str:
@@ -51,51 +54,25 @@ def this_user() -> str:
     return f'{domain}\\{user}' if domain else user
 
 
-#: The checkout's own interpreter, relative to the checkout the action changes into.
-_VENV_PYTHON: Final = venv_interpreter(os_name='nt')
+def action_of(lab: Path, *, mode: str = 'integrate') -> str:
+    """The Task's action: serve every declared repo, from the lab-commons checkout *lab*."""
+    return f'cmd /c cd /d "{lab}" && "{_VENV_PYTHON}" -m lab_commons.dev.workstation serve --mode {mode}'
 
 
-def _python(root: Path) -> Path:
-    return root / _VENV_PYTHON
-
-
-def create_argv(root: Path, *, user: str, mode: str = 'integrate') -> list[str]:
-    """The one ``schtasks /Create`` command that schedules *root*'s serve."""
-    action = f'cmd /c cd /d "{root}" && "{_VENV_PYTHON}" -m lab_commons.dev.forge serve --mode {mode} --lock'
+def create_argv(lab: Path, *, user: str, mode: str = 'integrate') -> list[str]:
+    """The one ``schtasks /Create`` command that schedules the serve of every declared repo."""
+    action = action_of(lab, mode=mode)
     return ['schtasks', '/Create', '/TN', TASK, '/SC', 'MINUTE', '/MO', '5', '/TR', action, '/RU', user, '/IT', '/F']
 
 
-def main(
-    argv: Sequence[str] | None = None,
-    *,
-    run: Callable[[list[str]], object] | None = None,
-    windows: bool = os.name == 'nt',
-) -> int:
-    """Write the Task (or print it with ``--dry-run``); 0 done, 2 refused."""
-    parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.servetask', description=__doc__.splitlines()[0])
-    parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout the Task serves (default: cwd)')
-    parser.add_argument('--mode', default='integrate', help='the serve mode (default: integrate)')
-    parser.add_argument('--dry-run', action='store_true', help='print the exact command; change nothing')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = args.root.resolve()
-    command = create_argv(root, user=this_user(), mode=args.mode)
-    if not _python(root).is_file():
-        emit(f'servetask refused: no {_python(root)}; build the checkout .venv first', err=True)
-        return 2
-    action = command[command.index('/TR') + 1]
-    if len(action) > _TR_MAX:
-        emit(f'servetask refused: the action is {len(action)} characters, schtasks takes {_TR_MAX}', err=True)
-        return 2
-    emit(subprocess.list2cmdline(command))
-    emit(f'stop: {_DISABLE}')
-    if args.dry_run:
-        return 0
-    if not windows:
-        emit('servetask refused: a Scheduled Task is Windows-only; a POSIX host serves from cron', err=True)
-        return 2
-    runner = run or (lambda argv: subprocess.run(argv, check=False).returncode)
-    return 0 if runner(command) == 0 else 2
+def query_argv() -> list[str]:
+    """The read-only query whose XML :func:`installed_action` reads."""
+    return ['schtasks', '/Query', '/TN', TASK, '/XML']
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+def installed_action(xml: str) -> str:
+    """The action of the Task whose ``schtasks /Query /XML`` is *xml*: ``<Command> <Arguments>``."""
+    command = re.search(r'<Command>(.*?)</Command>', xml, re.DOTALL)
+    arguments = re.search(r'<Arguments>(.*?)</Arguments>', xml, re.DOTALL)
+    parts = [html.unescape(found[1]).strip() for found in (command, arguments) if found]
+    return ' '.join(part for part in parts if part)

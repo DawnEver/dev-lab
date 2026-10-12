@@ -37,9 +37,10 @@ makes on a producer host. Each tick it:
   serves the lanes. `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `~/.cache/lab-forge/serve.lock` elsewhere.
-- **A Windows workstation serves from a Scheduled Task**: `python -m lab_commons.dev.servetask [--dry-run]`,
-  run in the checkout, writes `lab-forge-serve` (every 5 min, IgnoreNew, as you, only while logged on);
-  `--dry-run` prints the exact `schtasks` command. **To stop it**, disable the Task --
+- **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
+  you, only while logged on), written by [the workstation deploy](#deploy-a-windows-workstation). Its action
+  is `python -m lab_commons.dev.workstation serve`: under the one serve lock, `forge serve` in each
+  `[serve] repos` checkout in turn. **To stop it**, disable the Task --
   `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
   `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
   `error: stopped`.
@@ -66,6 +67,34 @@ makes on a producer host. Each tick it:
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
 - **A full tier runs only inside this producer.** Anywhere else it refuses and names the remedy: push.
+
+### Deploy a Windows workstation
+
+The counterpart of the cluster's `python -m lab_commons.hpc deploy`, run once per box, as the user who serves:
+
+```
+uv run --no-project --with "lab-commons @ git+<forge>/lab-commons.git@integrate/main" -- python -m lab_commons.dev.workstation deploy --forge <forge> --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 --dry-run
+```
+
+**The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/lab-commons.git`
+anywhere and sign in, or `python -m lab_commons.dev.forge auth login`). The deploy only asks `git ls-remote` with
+prompting off, so it never reads or prints the credential, and with none stored it refuses naming this step.
+
+Read the `--dry-run` output (every action, plus the machine-file diff), then run it again without `--dry-run`.
+A second run changes nothing. In order, it:
+
+1. probes for `uv` and `git`, `node` when the `node` capability is declared, and JMAG Designer's
+   `designer.Application` and `scheduler.JobApplication` COM classes when `jmag` is. Everything missing is
+   refused together, each item with its remedy;
+2. clones each repo into `--root` (default `~/src`) at `--ref` (default `integrate/main`, the branch a serving kit
+   follows), or fast-forwards an existing clean checkout. A dirty checkout is refused;
+3. bootstraps each `.venv` (`-m lab_commons.dev.dep --bootstrap`) where it is missing or the checkout moved, and
+   installs each repo's hooks where they are not live;
+4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root, own_weight` (`--own-weight`,
+   default 2) into `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
+5. writes the one `lab-forge-serve` Task, and only when its action differs.
+
+A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
 
 ## Claims
 
