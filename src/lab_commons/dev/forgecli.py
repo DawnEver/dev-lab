@@ -28,6 +28,7 @@ from lab_commons.dev import (
     forgetick,
     forgetidy,
     forgework,
+    servelock,
 )
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'publish': forgeoutbox.main,
     'records': forgerecords.main,
     'route': forgeroute.main,
-    'serve': forgeserve.main,
+    'serve': lambda argv: servelock.locked(argv, forgeserve.main),
     'tick': forgetick.main,
     'promote': forgepromote.main,
     'queue': forgequeue.main,

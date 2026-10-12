@@ -192,6 +192,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'injectedtext': ('original',),
     # ORIGINAL in code: generalises a consumer's --pid process-tree killer, kept there until adoption.
     'stoprun': ('original',),
+    'servelock': ('original',),
+    'servetask': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no
