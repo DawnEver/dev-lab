@@ -10,7 +10,17 @@ import pytest
 from _forge_fake import Loopback, Recorder, answer, client, git_out, make_repo, run_git, serve
 
 from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeroute import DEFAULT_AREA, area_of, group, main, read_areas, render, route
+from lab_commons.dev.forgeroute import (
+    DEFAULT_AREA,
+    area_of,
+    group,
+    main,
+    owners_of,
+    read_areas,
+    read_owners,
+    render,
+    route,
+)
 from lab_commons.hpc.records import write_record
 
 _FORGE = Forge('forge.example.org', 'o', 'r')
@@ -168,3 +178,32 @@ def test_the_open_issue_is_found_on_page_two_among_pulls_without_the_search_inde
     routed = route(client(_FORGE, Loopback(server)), record, _AREAS)
     assert [(r.action, r.number) for r in routed] == [('unchanged', 11)]
     assert _writes() == []
+
+
+_OWNERS = """
+[tool.lab_commons.forge.owners]
+jmag = ["alice", "bob.k"]
+"lane/*" = ["carol"]
+"""
+
+
+def test_owners_match_an_area_or_a_branch_glob_and_an_absent_table_names_nobody() -> None:
+    owners = read_owners(_OWNERS)
+    assert owners_of('jmag', 'main', owners) == ('alice', 'bob.k')
+    assert owners_of('jmag', 'lane/x', owners) == ('alice', 'bob.k', 'carol')
+    assert owners_of('triage', 'main', owners) == ()
+    assert read_owners(_AREAS) == ()
+
+
+@pytest.mark.parametrize('bad', ['["@alice"]', '["a b"]', '"alice"', '["-x"]'])
+def test_a_malformed_owner_is_refused_with_the_fix(bad: str) -> None:
+    with pytest.raises(ValueError, match=r'gitea username'):
+        read_owners(f'[tool.lab_commons.forge.owners]\njmag = {bad}\n')
+
+
+def test_a_created_area_issue_mentions_its_owners(server) -> None:
+    answer('GET', f'{_ROOT}/issues', (200, []))
+    answer('POST', f'{_ROOT}/issues', (201, _issue(11, 'area:jmag', '')))
+    route(client(_FORGE, Loopback(server)), _record({_JMAG: 'failed'}) | {'branch': 'lane/x'}, _AREAS + _OWNERS)
+    created = [body for method, _path, body in _writes() if method == 'POST']
+    assert created[0]['body'].rstrip().endswith('cc @alice @bob.k @carol')

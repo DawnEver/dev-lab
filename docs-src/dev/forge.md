@@ -135,7 +135,9 @@ pending) and `starved`. The machine file's `[alerts]` table (telegram, email, we
   tip and the newest N trunk commits.
 - `python -m lab_commons.dev.platformparts post <run-record>` turns a record into its part.
 - `python -m lab_commons.dev.forge route <record>` files the record's reds as `area:<name>` issues
-  ([issues](issues.md#reds-are-area-issues)).
+  ([issues](issues.md#reds-are-area-issues)). `[tool.lab_commons.forge.owners]` maps an area name or a
+  branch glob to gitea usernames (`jmag = ["alice"]`, `"lane/*" = ["bob"]`); each matching owner is
+  @-mentioned in a `cc` line closing the issue body. No table, no mentions; a malformed name is refused.
 - A run's declared outputs travel separately, through [the artefact store](artefacts.md).
 
 ## Issues and pull requests: the door

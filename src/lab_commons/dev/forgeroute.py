@@ -16,6 +16,10 @@ twice writes nothing the second time. Its body is the area's current list: a red
 listed earlier that THIS record ran green is ticked ``- [x]``, and an id this record did not run is left
 as it was (another platform's red is not green here). When no ``- [ ]`` row remains the issue is
 closed with a comment naming the sha. Unowned reds land in the default area, so a red is never dropped.
+
+OWNERS are data too, in ``[tool.lab_commons.forge.owners]``: a key is an area name or a branch glob
+(matched against the record's ``branch``), its value a list of gitea usernames. Every owner whose key
+matches the area or the branch is @-mentioned in a ``cc`` line closing the body; no table, no mentions.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import sys
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Final
 
@@ -43,8 +48,10 @@ __all__ = [
     'area_of',
     'group',
     'main',
+    'owners_of',
     'pyproject_at',
     'read_areas',
+    'read_owners',
     'render',
     'route',
     'title_of',
@@ -57,6 +64,7 @@ RED: Final = frozenset({'failed', 'error', 'lost', 'missing'})
 _GREEN: Final = frozenset({'passed', 'xfailed', 'skipped'})
 _ROW: Final = re.compile(r'^- \[( |x)\] `([^`]+)`(.*)$', re.MULTILINE)
 _REASON_CHARS: Final = 200
+_USER: Final = re.compile(r'[A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?\Z')
 
 
 def _glob(pattern: str) -> re.Pattern[str]:
@@ -91,6 +99,27 @@ def read_areas(text: str) -> tuple[tuple[tuple[str, tuple[re.Pattern[str], ...]]
             raise ValueError(msg)
         areas.append((name, tuple(_glob(g) for g in globs)))
     return tuple(areas), default
+
+
+def read_owners(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """``((area or branch glob, usernames), ...)`` from pyproject *text*; a malformed name is refused."""
+    raw = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get('forge', {}).get('owners', {})
+    owners = []
+    for key, names in raw.items():
+        if not isinstance(names, list) or not all(isinstance(n, str) and _USER.match(n) for n in names):
+            msg = (
+                f'[tool.lab_commons.forge.owners] {key} = {names!r}: owners are a list of gitea usernames'
+                ' (letters, digits, "._-", no leading "@") -- write e.g. ["alice", "bob.k"]'
+            )
+            raise ValueError(msg)
+        owners.append((key, tuple(names)))
+    return tuple(owners)
+
+
+def owners_of(area: str, branch: str, owners: Sequence[tuple[str, Sequence[str]]]) -> tuple[str, ...]:
+    """The usernames whose key matches *area* or *branch*, in declaration order, each once."""
+    found = (n for key, names in owners if key == area or fnmatchcase(branch, key) for n in names)
+    return tuple(dict.fromkeys(found))
 
 
 def area_of(node: str, areas: Sequence[tuple[str, Sequence[re.Pattern[str]]]], default: str) -> str:
@@ -185,19 +214,24 @@ def _unstamped(body: str) -> str:
 def route(client: Client, record: Mapping[str, Any], areas_text: str) -> tuple[Routed, ...]:
     """Bring every area *record* touched up to date on the forge; see the module docstring."""
     areas, default = read_areas(areas_text)
+    owners = read_owners(areas_text)
     forge = client.forge
     commit_url = f'https://{forge.host}/{forge.owner}/{forge.repo}/commit/{record["sha"]}'
     done = []
     for area, (reds, greens) in sorted(group(record['outcomes'], areas, default).items()):
         title = title_of(area)
+        names = owners_of(area, record.get('branch', ''), owners)
+        cc = '\ncc ' + ' '.join(f'@{n}' for n in names) + '\n' if names else ''
         found = _find(client, title)
         if found is None:
             if reds:
                 body, _ = render('', reds, greens, record, commit_url)
+                body += cc
                 done.append(Routed(area, 'created', client.issue_create(title, body).number))
             continue
         previous = _unstamped(found.body)
         body, still_red = render(previous, reds, greens, record, commit_url)
+        body += cc
         if not still_red:
             client.issue_edit(found.number, body)
             client.issue_comment(found.number, f'green at {record["sha"]} on `{record["platform"]}`: closing')
