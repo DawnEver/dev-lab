@@ -27,6 +27,7 @@ from __future__ import annotations
 import http.client
 import inspect
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -217,27 +218,57 @@ def test_the_token_comes_from_a_real_credential_helper(tmp_path: Path) -> None:
     assert token_for('forge.example.org', cwd=repo, env=env) == 's3cret'
 
 
-def test_a_given_env_keeps_the_loader_variables_git_needs_to_start_and_nothing_else(
+#: What each platform's git or credential helper needs from the host: the loader path a module-built
+#: git starts with (Ada), and the profile directories Git Credential Manager keeps its store under.
+_HOST_VARS = ('LD_LIBRARY_PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA')
+
+
+def _helper_config(tmp_path: Path, helper: str) -> dict[str, str]:
+    config = tmp_path / 'gitconfig'
+    config.write_text(f'[credential]\n\thelper = "{helper}"\n', encoding='utf-8')
+    return {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+
+
+def test_a_given_env_keeps_what_git_and_its_helper_need_on_every_platform(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A given env decides git's CONFIGURATION, never where its libraries live.
+    """A given env decides git's CONFIGURATION; it overlays the host's environment, never replaces it.
 
-    THE CLUSTER INCIDENT, measured 2026-10-12 on Ada: an EasyBuild ``git`` finds ``libiconv.so.2``
-    only through ``LD_LIBRARY_PATH``. A given env REPLACED the environment, so git exited 127 before
-    reading any config, and that was reported as "no stored credential" -- 15 reds. The loader
-    variables pass through; an unrelated variable of the host still does not.
+    Measured 2026-10-12, twice: on Ada a replaced env lost ``LD_LIBRARY_PATH`` and git exited 127; on
+    Windows a blanked ``PATH`` hid ``git-credential-manager`` and ``forge queue`` reported a stored
+    credential as missing. Every variable is planted, so each platform's need is asserted on every box.
     """
-    monkeypatch.setenv('LD_LIBRARY_PATH', 'planted-loader')
-    monkeypatch.setenv('LAB_COMMONS_HOST_ONLY', 'leaked')
+    for name in _HOST_VARS:
+        monkeypatch.setenv(name, f'planted-{name}')
     repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
-    config = tmp_path / 'gitconfig'
-    config.write_text(
-        '[credential]\n\thelper = "!f() { echo username=u; '
-        'echo password=${LD_LIBRARY_PATH}/${LAB_COMMONS_HOST_ONLY:-hermetic}; }; f"\n',
-        encoding='utf-8',
-    )
-    env = {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
-    assert token_for('forge.example.org', cwd=repo, env=env) == 'planted-loader/hermetic'
+    echoed = '/'.join(f'${{{name}}}' for name in _HOST_VARS)
+    env = _helper_config(tmp_path, f'!f() {{ echo username=u; echo password={echoed}; }}; f')
+    seen = token_for('forge.example.org', cwd=repo, env=env).split('/')
+    # CONTAINED, not equal: Git for Windows' shell rewrites HOME into a POSIX path around the value.
+    assert [name for name in _HOST_VARS if not any(f'planted-{name}' in part for part in seen)] == []
+
+
+def test_a_helper_found_only_on_path_answers_through_a_given_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Git Credential Manager shape: ``helper = <name>`` resolved as ``git-credential-<name>`` on PATH."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    script = bin_dir / 'git-credential-planted'
+    script.write_text('#!/bin/sh\necho username=u\necho password=from-path\n', encoding='utf-8', newline='\n')
+    script.chmod(0o755)
+    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
+    repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
+    env = {**os.environ, **_helper_config(tmp_path, 'planted')}
+    assert token_for('forge.example.org', cwd=repo, env=env) == 'from-path'
+
+
+def test_a_helper_that_cannot_be_started_is_named_not_reported_as_an_empty_store(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, 'https://forge.example.org/someone/something.git')
+    env = {**_helper_config(tmp_path, 'absent-helper-0b1d'), 'GIT_TERMINAL_PROMPT': '0'}
+    with pytest.raises(NoCredential, match='could not be started') as caught:
+        token_for('forge.example.org', cwd=repo, env=env)
+    assert 'no stored credential' not in str(caught.value)
 
 
 def test_no_stored_credential_refuses_and_never_answers_the_empty_string(tmp_path: Path) -> None:

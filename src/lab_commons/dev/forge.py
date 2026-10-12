@@ -294,8 +294,27 @@ def credential_for(host: str, *, cwd: Path, env: Mapping[str, str] | None = None
     fields = dict(line.partition('=')[::2] for line in done.stdout.splitlines())
     if fields.get('password'):
         return fields.get('username', ''), fields['password']
-    msg = f'no stored credential for {host}: the git transport must be able to authenticate first'
-    raise NoCredential(msg)
+    raise NoCredential(_why_no_credential(host, done))
+
+
+#: What git prints when a configured helper could not be STARTED (absent from PATH and exec-path).
+_HELPER_NOT_STARTED: Final = ('is not a git command', 'not found', 'cannot run', 'no such file')
+
+
+def _why_no_credential(host: str, done: subprocess.CompletedProcess[str]) -> str:
+    """Which of three different failures left *host* without a credential -- each has its own repair.
+
+    Measured 2026-10-12: a given env blanked ``PATH``, so git could not start ``git-credential-manager``
+    and the store that HELD the credential was reported as empty. And on Ada a git that could not load
+    its own libraries exited 127 under the same message. Neither is a missing credential.
+    Reads git's stderr only; the secret travels on stdout and is never part of this text.
+    """
+    said = ' '.join(done.stderr.split())[:300]
+    if done.returncode == _NOT_STARTED:
+        return f'git itself could not start (exit {done.returncode}): {said}'
+    if any(token in said.lower() for token in _HELPER_NOT_STARTED):
+        return f'the credential helper for {host} could not be started (is it on PATH?): {said}'
+    return f'no stored credential for {host}: the git transport must be able to authenticate first'
 
 
 def authorization(username: str, secret: str, scheme: str) -> str:
@@ -325,16 +344,8 @@ def store_credential(host: str, username: str, secret: str, *, cwd: Path, env: M
         raise NoCredential(msg)
 
 
-#: The variables a dynamically linked ``git`` needs to START, whatever configuration it is given. A
-#: given env decides git's CONFIGURATION, never where its libraries live: measured 2026-10-12 on Ada,
-#: an EasyBuild git finds ``libiconv.so.2`` only through ``LD_LIBRARY_PATH``, exited 127 without it,
-#: and every forge verb there reported a missing credential.
-_LOADER_VARS: Final = ('LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'LIBPATH', 'SYSTEMROOT')
-
-
-def _loader_env() -> dict[str, str]:
-    """The host's :data:`_LOADER_VARS` that are set; nothing else of the host reaches a given env."""
-    return {name: os.environ[name] for name in _LOADER_VARS if name in os.environ}
+#: A shell's exit code for a command it could not execute.
+_NOT_STARTED: Final = 127
 
 
 def _credential(
@@ -346,7 +357,7 @@ def _credential(
         [_GIT, 'credential', verb],
         input=payload + '\n',
         cwd=cwd,
-        env=None if env is None else {**_loader_env(), **dict(env), 'PATH': ''},
+        env=None if env is None else {**os.environ, **dict(env)},
         capture_output=True,
         text=True,
         encoding='utf-8',
