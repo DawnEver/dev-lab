@@ -71,6 +71,7 @@ class _Trees:
         self.base, self.refuse = tmp_path / 'trees', refuse
         self.opened: list[str] = []
         self.closed: list[str] = []
+        self.logs: list[str] = []
 
     def open(self, _root: Path, sha: str) -> Tree:
         self.opened.append(sha)
@@ -78,8 +79,9 @@ class _Trees:
             raise TreeFailed(self.refuse)
         return Tree(self.base / sha[:12], self.base / sha[:12] / 'python')
 
-    def close(self, _root: Path, sha: str) -> str:
+    def close(self, _root: Path, sha: str, *, log: str = '') -> str:
         self.closed.append(sha)
+        self.logs.append(log)
         return f'tree {sha[:12]}: removed'
 
 
@@ -166,6 +168,15 @@ class _Slurm:
 
 def _claimed(*work: Work) -> TickReport:
     return TickReport(work, work, ('tick: one line',))
+
+
+def test_the_producers_streamed_output_reaches_the_tree_closer(monkeypatch, tmp_path: Path) -> None:
+    """The run's log reaches :func:`close_tree`, which keeps it in the serving checkout before removing the tree."""
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    trees = _Trees(tmp_path)
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1, ('collected 9', '1 failed'))}, trees=trees)
+    assert trees.closed == [SHA]
+    assert trees.logs == ['collected 9\n1 failed\n']
 
 
 def test_a_claimed_local_part_is_produced_inline_and_published(monkeypatch, tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, make_repo, run_git
 
+from lab_commons.dev.platformparts import record_directory
 from lab_commons.dev.shatree import TREE_PREFIX, TreeFailed, close_tree, open_tree, tree_path
 from lab_commons.dev.venvpath import current_os_name, venv_interpreter
 
@@ -30,7 +31,7 @@ def _bootstrap_fakes(argv: list[str], **kwargs: object) -> subprocess.CompletedP
         python.parent.mkdir(parents=True)
         python.write_text('', encoding='utf-8')
         return subprocess.CompletedProcess(argv, 0, '', '')
-    return subprocess.run(argv, **kwargs)  # noqa: PLW1510 -- the caller passes check
+    return subprocess.run(argv, check=bool(kwargs.pop('check', False)), **kwargs)
 
 
 def test_the_tree_is_at_the_claimed_sha_whatever_the_checkout_holds(tmp_path: Path) -> None:
@@ -43,7 +44,7 @@ def test_the_tree_is_at_the_claimed_sha_whatever_the_checkout_holds(tmp_path: Pa
     assert (tree.path / 'which').read_text(encoding='utf-8') == 'claimed'
     assert tree.python == tree.path / venv_interpreter(os_name=current_os_name())
     assert git_out(repo, 'rev-parse', 'HEAD') == later, 'the serving checkout is never moved'
-    assert close_tree(repo, claimed) == f'tree {TREE_PREFIX}{claimed[:12]}: removed'
+    assert close_tree(repo, claimed).startswith(f'tree {TREE_PREFIX}{claimed[:12]}: removed; ')
     assert not tree.path.exists()
     assert close_tree(repo, claimed).endswith('none to remove')
 
@@ -54,7 +55,7 @@ def test_a_step_that_refuses_is_named_and_a_missing_environment_too(tmp_path: Pa
     def refusing(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         if '--bootstrap' in argv:
             return subprocess.CompletedProcess(argv, 1, 'resolving\n', 'no lock for extras\n')
-        return subprocess.run(argv, **kwargs)  # noqa: PLW1510 -- the caller passes check
+        return subprocess.run(argv, check=bool(kwargs.pop('check', False)), **kwargs)
 
     with pytest.raises(TreeFailed, match=r'dep --bootstrap exited 1: resolving \| no lock for extras'):
         open_tree(repo, claimed, run=refusing)
@@ -62,8 +63,44 @@ def test_a_step_that_refuses_is_named_and_a_missing_environment_too(tmp_path: Pa
     def silent(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         if '--bootstrap' in argv:
             return subprocess.CompletedProcess(argv, 0, '', '')
-        return subprocess.run(argv, **kwargs)  # noqa: PLW1510 -- the caller passes check
+        return subprocess.run(argv, check=bool(kwargs.pop('check', False)), **kwargs)
 
     with pytest.raises(TreeFailed, match='no own environment'):
         open_tree(repo, claimed, run=silent)
     close_tree(repo, claimed)
+
+
+def test_closing_keeps_the_run_record_and_the_log_in_the_serving_checkout(tmp_path: Path) -> None:
+    """PLANTED (live 2026-10-12, dd30117): the windows record lived only in the tree, and went with it.
+
+    The cluster keeps its record in the serving checkout's ``<output>/<yy>/<mm>/<dd>/parts/<sha>/``;
+    a local producer must too, BEFORE the tree is removed.
+    """
+    repo, claimed, _later = _two_commits(tmp_path)
+    (repo / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "output/logs"\n', encoding='utf-8')
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'declare')
+    claimed = git_out(repo, 'rev-parse', 'HEAD')
+    tree = open_tree(repo, claimed, run=_bootstrap_fakes)
+    judged = record_directory(tree.path, claimed)
+    judged.mkdir()
+    (judged / 'run-x-windows.json.gz').write_bytes(b'\x1f\x8bpart')
+
+    said = close_tree(repo, claimed, log='collected 9\n1 failed\n')
+
+    assert not tree.path.exists()
+    kept = record_directory(repo, claimed)
+    assert kept.relative_to(repo) == judged.relative_to(tree.path), 'the same place, in the serving checkout'
+    assert (kept / 'run-x-windows.json.gz').read_bytes() == b'\x1f\x8bpart'
+    (log,) = kept.glob('produce-*.log')
+    assert log.read_text(encoding='utf-8') == 'collected 9\n1 failed\n'
+    assert said.endswith(f'removed; record kept in {kept.relative_to(repo).as_posix()}')
+
+
+def test_a_tree_declaring_no_record_home_is_still_removed_and_says_so(tmp_path: Path) -> None:
+    repo, claimed, _later = _two_commits(tmp_path)
+    tree = open_tree(repo, claimed, run=_bootstrap_fakes)
+    said = close_tree(repo, claimed, log='x\n')
+    assert not tree.path.exists()
+    assert 'record NOT kept' in said
+    assert 'tool.lab_commons.parts' in said

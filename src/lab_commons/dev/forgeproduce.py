@@ -8,8 +8,10 @@ its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stoppe
 
 THE PART IS JUDGED AT THE CLAIMED SHA, in a tree this producer owns (:mod:`lab_commons.dev.shatree`):
 the declared argv (read at the sha) runs with that tree's own interpreter, cwd = the tree, and the tree
-is removed once the run ended. The serving checkout's HEAD decides nothing. A tree that cannot be built
-spawns nothing, and the claim is released naming the step that refused.
+is removed once the run ended -- after its record and the streamed output are kept in the serving
+checkout's ``parts/<sha>/`` (:func:`~lab_commons.dev.shatree.close_tree`). The serving checkout's HEAD
+decides nothing. A tree that cannot be built spawns nothing, and the claim is released naming the step
+that refused.
 """
 
 from __future__ import annotations
@@ -51,8 +53,9 @@ class Produced:
     returncode: int
 
 
-def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None]) -> None:
+def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
     for line in stream:
+        heard.append(line)
         say(f'[{platform}] {line.rstrip()}')
 
 
@@ -79,11 +82,12 @@ def produce(
         _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
         say(f'[{item.platform}] {close_tree(root, item.sha)}')
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
+    heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
         return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
-                    say=say, lease=lease, renew_s=renew_s, fetch=fetch)  # fmt: skip
+                    say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard)  # fmt: skip
     finally:
-        say(f'[{item.platform}] {close_tree(root, item.sha)}')
+        say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
 
 
 def _run(
@@ -99,6 +103,7 @@ def _run(
     lease: timedelta,
     renew_s: float,
     fetch: Callable[[Path], None],
+    heard: list[str],
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
@@ -112,7 +117,7 @@ def _run(
         encoding='utf-8',
         errors='replace',
     )
-    pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say), daemon=True)
+    pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say, heard), daemon=True)
     pump.start()
     started = clock()
     superseded = ''

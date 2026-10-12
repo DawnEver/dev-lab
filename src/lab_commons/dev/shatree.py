@@ -16,23 +16,30 @@ the part is posted. The serving checkout's HEAD therefore decides nothing about 
 
 WHAT SURVIVES THE TREE. The outbox and the run cache resolve through git's common directory to the
 MAIN checkout (:mod:`lab_commons.dev.forgeoutbox`, :mod:`lab_commons.dev.runcache`), so a post queued
-before its commit reached origin, and the record copied beside it, outlive the tree.
+before its commit reached origin outlives the tree. THE RUN RECORD DOES TOO, and :func:`close_tree` is
+what guarantees it (defect live 2026-10-12, dd30117: the windows part's record was written inside the
+tree and removed with it, so nothing on this box could say why the part was red). Before removing the
+tree it copies the tree's ``<output>/<yy>/<mm>/<dd>/parts/<sha>/`` and the producer's streamed output
+(``produce-<utc>.log``) into the SAME place in the SERVING checkout -- where the cluster keeps its own.
 """
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forge import _GIT
+from lab_commons.dev.platformparts import UndeclaredPart, record_directory
 from lab_commons.dev.venvpath import checkout_interpreter, current_os_name
 from lab_commons.dev.worktreeplace import WORKTREES_REL, main_checkout
 
-__all__ = ['TREE_PREFIX', 'Tree', 'TreeFailed', 'close_tree', 'open_tree', 'tree_path']
+__all__ = ['TREE_PREFIX', 'Tree', 'TreeFailed', 'close_tree', 'keep_record', 'open_tree', 'tree_path']
 
 #: A producer's tree is ``forge-<sha12>`` under the main checkout's worktrees.
 TREE_PREFIX: Final = 'forge-'
@@ -84,11 +91,35 @@ def open_tree(root: Path, sha: str, *, run: Callable[..., Any] = subprocess.run,
         raise TreeFailed(str(missing)) from None
 
 
-def close_tree(root: Path, sha: str, *, run: Callable[..., Any] = subprocess.run) -> str:
-    """Remove the tree of *sha* (it is the producer's own, so ``--force``); one line says what happened."""
+def keep_record(root: Path, sha: str, *, log: str) -> str:
+    """Copy the tree's ``parts/<sha>/`` and *log* to the same place in *root*; one line says what happened."""
+    tree = tree_path(root, sha)
+    try:
+        judged = record_directory(tree, sha)
+    except UndeclaredPart as why:
+        return f'record NOT kept: {why}'
+    except FileNotFoundError:
+        return 'record NOT kept: the tree has no pyproject.toml to declare [tool.lab_commons.parts] output'
+    kept = root / judged.relative_to(tree)
+    kept.mkdir(parents=True, exist_ok=True)
+    base = judged.parents[4]  # <output>, above <yy>/<mm>/<dd>/parts/<sha>
+    for made in base.glob(f'*/*/*/parts/{sha}/*'):  # a run may cross midnight
+        if made.is_file():
+            shutil.copy2(made, kept / made.name)
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
+    (kept / f'produce-{stamp}.log').write_text(log, encoding='utf-8')
+    return f'record kept in {kept.relative_to(root).as_posix()}'
+
+
+def close_tree(root: Path, sha: str, *, log: str = '', run: Callable[..., Any] = subprocess.run) -> str:
+    """Keep the run record of *sha* in *root*, then remove its tree (``--force``: it is the producer's own).
+
+    *log* is the producer's streamed output; it is kept beside the record. One line says what happened.
+    """
     tree = tree_path(root, sha)
     if not tree.exists():
         return f'tree {tree.name}: none to remove'
+    kept = keep_record(root, sha, log=log)
     done = run(
         [_GIT, '-C', str(root), 'worktree', 'remove', '--force', str(tree)],
         capture_output=True,
@@ -98,5 +129,6 @@ def close_tree(root: Path, sha: str, *, run: Callable[..., Any] = subprocess.run
         check=False,
     )
     if done.returncode:
-        return f'tree {tree.name}: NOT removed ({(done.stderr or "").strip() or done.returncode}); remove it by hand'
-    return f'tree {tree.name}: removed'
+        why = (done.stderr or '').strip() or done.returncode
+        return f'tree {tree.name}: NOT removed ({why}); remove it by hand; {kept}'
+    return f'tree {tree.name}: removed; {kept}'
