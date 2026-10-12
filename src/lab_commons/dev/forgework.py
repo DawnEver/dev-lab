@@ -95,13 +95,13 @@ class ListingIncomplete(RuntimeError):
 
 
 def is_pull(raw: Mapping[str, Any]) -> bool:
-    """Whether a listed issue is a pull request: its ``pull_request`` is SET, not merely present.
+    """Whether a listed issue is a pull request: its ``pull_request`` is not null -- even `{}` marks a pull.
 
     Gitea sends ``"pull_request": null`` on every plain issue, so testing the key's presence read
     every issue as a pull: ``issue list`` printed nothing and the hosts lookup found no issue and
     opened a new one every tick (128 ``forge hosts`` issues on three repos, 2026-10-12).
     """
-    return bool(raw.get('pull_request'))
+    return raw.get('pull_request') is not None
 
 
 #: The separator in the provenance line, spelled once.
@@ -374,6 +374,10 @@ class Client:
     def issue_close(self, number: int) -> Issue:
         """Close an issue; nothing is written but the state."""
         return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'state': 'closed'}))
+
+    def issue_delete(self, number: int) -> None:
+        """Delete an issue outright (gitea: repository admin rights); a refusal raises :class:`ForgeCallFailed`."""
+        self.call('DELETE', f'{self.repo}/issues/{number}')
 
     def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
         """A new pull request from *head* into *base*."""

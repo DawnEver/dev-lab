@@ -27,9 +27,10 @@ class StateForge(Client):
         self.issues_by_number: dict[int, dict[str, Any]] = {}
         self.comments: dict[int, list[dict[str, Any]]] = {}
         self.fail_lists = False
+        self.deny_delete = False
         self._next_comment = 1000
 
-    def add_issue(self, title: str, body: str = '', *, state: str = 'open', **extra: Any) -> int:  # noqa: ANN401
+    def add_issue(self, title: str, body: str = '', *, state: str = 'open', **extra: object) -> int:
         number = max(self.issues_by_number, default=0) + 1
         self.issues_by_number[number] = {
             'number': number,
@@ -45,50 +46,74 @@ class StateForge(Client):
         self.comments[number] = []
         return number
 
-    def _page(self, items: list[Any], query: dict[str, str]) -> list[Any]:
+    def titled(self, title: str, state: str = 'open') -> list[int]:
+        return [n for n, i in self.issues_by_number.items() if i['title'] == title and i['state'] == state]
+
+    @staticmethod
+    def _page(items: list[dict[str, Any]], query: dict[str, str]) -> list[dict[str, Any]]:
         size = int(query.get('limit', '30'))
         page = int(query.get('page', '1'))
         return items[(page - 1) * size : page * size]
 
-    def call(self, method: str, path: str, body: Any = None, landed: Any = None) -> Any:  # noqa: ANN401, C901, PLR0911 -- one router for the fake's whole surface
+    @staticmethod
+    def _shape(route: str) -> tuple[str, int]:
+        """The route's kind and the number in it (0 when none)."""
+        fixed = {'/api/v1/user': 'user', API: 'repo', f'{API}/issues': 'issues'}
+        if route in fixed:
+            return fixed[route], 0
+        head, _, tail = route.removeprefix(f'{API}/issues/').partition('/')
+        if head == 'comments':
+            return 'comment', int(tail)
+        return ('comments' if tail == 'comments' else 'issue'), int(head)
+
+    def _listed(self, query: dict[str, str]) -> list[dict[str, Any]]:
+        if self.fail_lists:
+            failed = Attempt(1, 502, 'bad gateway', Diagnosis.UNCLASSIFIED)
+            raise ForgeCallFailed(Report(('GET', 'issues'), (failed,), 1))
+        state = query.get('state', 'open')
+        newest = sorted(self.issues_by_number.items(), reverse=True)
+        return self._page([i for _, i in newest if state in ('all', i['state'])], query)
+
+    def _comment(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
+        self._next_comment += 1
+        made = {'id': self._next_comment, 'body': body['body'], 'html_url': f'c/{self._next_comment}'}
+        self.comments[number].append(made)
+        return made
+
+    def _edit_comment(self, comment_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        found = next(c for cs in self.comments.values() for c in cs if c['id'] == comment_id)
+        found['body'] = body['body']
+        return found
+
+    def _delete(self, number: int) -> None:
+        if self.deny_delete:  # gitea answers a non-admin token 403
+            refused = Attempt(1, 403, 'token does not have at least one of required scope(s)', Diagnosis.FORGE_REFUSED)
+            raise ForgeCallFailed(Report(('DELETE', 'issue'), (refused,), 1))
+        del self.issues_by_number[number]
+
+    def _edit_issue(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
+        self.issues_by_number[number] |= body
+        return self.issues_by_number[number]
+
+    def call(self, method: str, path: str, body: object = None, landed: object = None) -> object:
+        """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
+        del landed
         self.answered = NOW_HTTP
         route, _, raw_query = path.partition('?')
         query = dict(urllib.parse.parse_qsl(raw_query))
-        if route == '/api/v1/user':
-            return {'login': 'a'}
-        if route == API:
-            opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
-            return {'open_issues_count': opened, 'open_pr_counter': 0, 'has_pull_requests': True}
-        if route == f'{API}/issues' and method == 'GET':
-            if self.fail_lists:
-                raise ForgeCallFailed(
-                    Report(('GET', path), (Attempt(1, 502, 'bad gateway', Diagnosis.UNCLASSIFIED),), 1)
-                )
-            state = query.get('state', 'open')
-            listed = [i for n, i in sorted(self.issues_by_number.items(), reverse=True) if state in ('all', i['state'])]
-            return self._page(listed, query)
-        if route == f'{API}/issues' and method == 'POST':
-            return self.issues_by_number[self.add_issue(body['title'], body['body'])]
-        parts = route.removeprefix(f'{API}/issues/').split('/')
-        if parts[0] == 'comments' and method == 'PATCH':
-            found = next(c for cs in self.comments.values() for c in cs if c['id'] == int(parts[1]))
-            found['body'] = body['body']
-            return found
-        number = int(parts[0])
-        if parts[1:] == ['comments'] and method == 'GET':
-            return self._page(self.comments[number], query)
-        if parts[1:] == ['comments'] and method == 'POST':
-            self._next_comment += 1
-            made = {'id': self._next_comment, 'body': body['body'], 'html_url': f'c/{self._next_comment}'}
-            self.comments[number].append(made)
-            return made
-        if not parts[1:] and method == 'PATCH':
-            self.issues_by_number[number] |= body
-            return self.issues_by_number[number]
-        if not parts[1:] and method == 'GET':
-            return self.issues_by_number[number]
-        msg = f'unrouted {method} {path}'
-        raise AssertionError(msg)
-
-    def titled(self, title: str, state: str = 'open') -> list[int]:
-        return [n for n, i in self.issues_by_number.items() if i['title'] == title and i['state'] == state]
+        sent: dict[str, Any] = body if isinstance(body, dict) else {}
+        kind, number = self._shape(route)
+        opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
+        handlers = {
+            ('GET', 'user'): lambda: {'login': 'a'},
+            ('GET', 'repo'): lambda: {'open_issues_count': opened, 'open_pr_counter': 0, 'has_pull_requests': True},
+            ('GET', 'issues'): lambda: self._listed(query),
+            ('POST', 'issues'): lambda: self.issues_by_number[self.add_issue(sent['title'], sent['body'])],
+            ('GET', 'issue'): lambda: self.issues_by_number[number],
+            ('PATCH', 'issue'): lambda: self._edit_issue(number, sent),
+            ('GET', 'comments'): lambda: self._page(self.comments[number], query),
+            ('POST', 'comments'): lambda: self._comment(number, sent),
+            ('PATCH', 'comment'): lambda: self._edit_comment(number, sent),
+            ('DELETE', 'issue'): lambda: self._delete(number),
+        }
+        return handlers[method, kind]()

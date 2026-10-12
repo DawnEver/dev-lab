@@ -111,10 +111,11 @@ progress, every host card (stale flagged) and every starved candidate. It posts 
   candidate it saw waits. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
   the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
-- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge integration`): closes what
-  `[tool.lab_commons.forge.issue_hygiene]` declares finished -- `host_duplicates` (every hosts issue but the
-  oldest), `green_areas` (an `area:*` issue with no `- [ ]` row), `request_max_age_days` -- and says so in ONE
-  comment on the hosts issue. It never deletes; absent the table, it reads nothing.
+- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge integration`): removes what
+  `[tool.lab_commons.forge.issue_hygiene]` declares finished. `host_duplicates` DELETES every machine-made hosts
+  issue but the oldest (user ruling 2026-10-13; a human-written one is never touched, and a token without
+  delete rights closes instead and says so); `green_areas` (an `area:*` issue with no `- [ ]` row) and
+  `request_max_age_days` only CLOSE. It says so in ONE comment on the hosts issue; absent the table, it reads nothing.
 - `forgeschedule.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
 
 ## Alarms

@@ -42,6 +42,7 @@ from lab_commons.hpc.account import ClusterAccount
 
 __all__ = [
     'HOSTS_MARKER',
+    'HOSTS_ORIGIN',
     'HOSTS_TITLE',
     'STALE_TICKS',
     'HostCard',
@@ -59,6 +60,9 @@ HOSTS_TITLE: Final = 'forge hosts'
 
 #: The hidden line in the hosts issue's body it is found by.
 HOSTS_MARKER: Final = marker('forge-hosts')
+
+#: The text every hosts issue this module opened carries, marker or not: how a machine-made one is told apart.
+HOSTS_ORIGIN: Final = '(lab_commons.dev.forgehosts)'
 
 #: How many of its own tick periods a card may age before it is stale.
 STALE_TICKS: Final = 3
@@ -131,7 +135,7 @@ def hosts_issue(client: Client) -> int | None:
 
 def _open_hosts_issue(client: Client) -> int:
     _seen_all_open(client)
-    body = f'{HOSTS_MARKER}\nOne comment per serving host, edited in place each tick (lab_commons.dev.forgehosts).'
+    body = f'{HOSTS_MARKER}\nOne comment per serving host, edited in place each tick {HOSTS_ORIGIN}.'
     client.issue_create(HOSTS_TITLE, body)
     number = hosts_issue(client)  # the oldest, so two hosts racing to open it agree on one
     if number is None:

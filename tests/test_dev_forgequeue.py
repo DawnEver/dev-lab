@@ -46,7 +46,8 @@ def _card(host: str, platform: str, ticked: datetime, **extra: object) -> HostCa
 def test_the_first_card_opens_the_hosts_issue_and_the_next_edits_it_in_place(server) -> None:
     built = client(FORGE, Loopback(server))
     card = _card('ada/alice', 'linux', NOW, headroom={'cores': 64, 'submits': 10})
-    answer('GET', f'{API}/issues', (200, []))
+    answer('GET', f'{API}/issues', (200, []), (200, []), (200, [_issue(3, HOSTS_TITLE)]))
+    answer('GET', API, (200, {'open_issues_count': 0, 'open_pr_counter': 0}))
     answer('POST', f'{API}/issues', (201, _issue(3, HOSTS_TITLE)))
     answer('GET', f'{API}/issues/3/comments', (200, []))
     answer('POST', f'{API}/issues/3/comments', (201, _comment(10, card)))

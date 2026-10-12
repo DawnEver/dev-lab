@@ -64,6 +64,7 @@ def test_planted_control_the_old_lookup_opens_a_duplicate_every_tick() -> None:
     assert len(forge.titled(HOSTS_TITLE)) == 2, 'the control must reproduce the flood'
     assert not is_pull({'pull_request': None})
     assert is_pull({'pull_request': {'merged': False}})
+    assert is_pull({'pull_request': {}})
 
 
 def test_a_lookup_that_cannot_see_the_issue_it_just_created_refuses(monkeypatch) -> None:
