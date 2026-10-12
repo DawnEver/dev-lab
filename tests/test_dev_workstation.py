@@ -8,6 +8,8 @@ callables. No test touches this box's machine file, Scheduled Task or credential
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, replace
@@ -59,15 +61,14 @@ else: sys.exit(0 if hooked.exists() else 1)
 """
 
 FAKE_SCHTASKS: Final = r"""
-import html, pathlib, sys
+import pathlib, sys
 state = pathlib.Path(sys.argv[1]); args = sys.argv[2:]
 with (state.parent / 'calls.log').open('a') as f: f.write('schtasks ' + ' '.join(args) + '\n')
 if args[0] == '/Query':
     if not state.exists(): sys.exit(1)
     sys.stdout.write(state.read_text())
 elif args[0] == '/Create':
-    command, _, rest = args[args.index('/TR') + 1].partition(' ')
-    state.write_text(f'<Exec><Command>{command}</Command><Arguments>{html.escape(rest)}</Arguments></Exec>')
+    state.write_text(pathlib.Path(args[args.index('/XML') + 1]).read_text(encoding='utf-16'))
 """
 
 #: Every argv fragment that CHANGES something; a second run and a dry run log none of them.
@@ -110,6 +111,7 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
         which=lambda tool: f'/bin/{tool}',
         com=lambda _progid: Path('designer.exe'),
         windows=True,
+        home=tmp_path / 'home',
     )
     return Box(tmp_path / 'src', machine, task, log, programs)
 
@@ -128,9 +130,7 @@ def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: B
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['capabilities'] == {'dev_checkout': {}, 'node': {}, 'jmag': {'seats': 4}}
     assert declared['serve'] == {'repos': ['lab-commons', 'alpha', 'beta'], 'root': str(box.root), 'own_weight': 2.0}
-    action = servetask.installed_action(box.task.read_text())
-    assert action == servetask.action_of(box.root / 'lab-commons')
-    assert action.endswith('-m lab_commons.dev.workstation serve --mode integrate')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
 
 
 def test_a_second_run_changes_nothing(box: Box) -> None:
@@ -153,6 +153,7 @@ def test_a_dry_run_reads_but_touches_nothing_and_prints_the_diff(box: Box, capsy
     assert '+[serve]' in out
     assert '+[capabilities.jmag]' in out
     assert '[dry-run] schtasks /Create /TN lab-forge-serve' in out
+    assert not box.programs.home.exists(), 'the task definition is not written either'
 
 
 def test_unrelated_tables_and_comments_are_kept(box: Box) -> None:
@@ -228,9 +229,9 @@ def test_a_bad_capability_is_refused_by_name() -> None:
 
 
 def test_an_older_task_action_is_replaced(box: Box) -> None:
-    box.task.write_text('<Command>cmd</Command><Arguments>/c old serve --lock</Arguments>')
+    box.task.write_text('<Command>cmd</Command><Arguments>/c cd /d x &amp;&amp; py -m serve</Arguments>')
     assert box.deploy() == 0
-    assert servetask.installed_action(box.task.read_text()) == servetask.action_of(box.root / 'lab-commons')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
 
 
 def test_off_windows_the_deploy_is_refused(box: Box) -> None:
@@ -259,14 +260,17 @@ def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst
 ) -> None:
     root = _serving(tmp_path, monkeypatch, 'lab-commons', 'beta')
     ran: list[tuple[list[str], Path]] = []
+    spawned: list[dict[str, object]] = []
 
-    def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
+    def run(argv: list[str], *, cwd: Path, **kw: object) -> _Done:
         ran.append((argv, cwd))
+        spawned.append(kw)
         return _Done(1 if cwd.name == 'beta' else 0)
 
     assert workstation.serve('integrate', run=run, lock=tmp_path / 'serve.lock') == 2, 'alpha has no venv'
     assert [cwd.name for _, cwd in ran] == ['lab-commons', 'beta'], 'a missing venv never skips the next repo'
     argv, cwd = ran[0]
+    assert all(kw[key] == value for kw in spawned for key, value in servetask.windowless().items())
     assert argv == [str(root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve', '--mode', 'integrate']
     assert cwd == root / 'lab-commons'
 
@@ -283,3 +287,45 @@ def test_serve_does_nothing_while_another_serve_holds_the_lock(tmp_path: Path, m
 def test_serve_without_a_declaration_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'absent.toml'))
     assert workstation.serve('integrate', lock=tmp_path / 'serve.lock') == 2
+
+
+def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, 'stdout', None)  # pythonw: no console, no streams
+    monkeypatch.setattr(sys, 'stderr', None)
+    monkeypatch.setattr(servetask, 'home', lambda: tmp_path)
+    seen: dict[str, object] = {}
+
+    def serve(mode: str, *, out: object = None) -> int:
+        seen.update(mode=mode, out=out)
+        workstation.emit('[serve] reached the log')
+        return 0
+
+    monkeypatch.setattr(workstation, 'serve', serve)
+    assert workstation.main(['serve', '--mode', 'develop']) == 0
+    assert seen['mode'] == 'develop'
+    assert seen['out'] is not None, 'the children write to the same log'
+    assert '[serve] reached the log' in (tmp_path / 'serve.log').read_text(encoding='utf-8')
+
+
+REAL_DOOR: Final = r"""
+import pathlib, sys
+from lab_commons.dev._dep_project import target_root
+target_root(pathlib.Path(sys.argv[-1]), pathlib.Path.cwd())
+"""
+
+
+def test_the_bootstrap_passes_the_real_door_from_an_unrelated_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``dep --bootstrap`` refuses to move a primary checkout from elsewhere, so the deploy runs it IN the checkout."""
+    checkout, elsewhere = tmp_path / 'lab-commons', tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True)
+    door = tmp_path / 'door.py'
+    door.write_text(REAL_DOOR, encoding='utf-8')
+    monkeypatch.chdir(elsewhere)
+    programs = workstation.Programs(bootstrap=(sys.executable, str(door)))
+    step = workstation.Step(workstation.Tools(git=('git',)), dry=False)
+    assert workstation._venv(step, programs, checkout, checkout.name, moved=True) == 0

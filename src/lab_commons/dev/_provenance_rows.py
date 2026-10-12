@@ -449,6 +449,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # and it is that repo's last open roster row.
     'countpins': ('supersedes', 'tests/architecture/test_a_pin_is_a_named_set.py'),
     'venvspelling': ('original',),
+    # ORIGINAL: no consumer holds a guard it would supersede; it refuses their re-declared settings.
+    'sharedsettings': ('original',),
     # ORIGINAL for the reason `venvspelling` states one row up: what it centralises is a STRING,
     # not a forked file.
     'venvpath': ('original',),

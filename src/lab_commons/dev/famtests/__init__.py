@@ -128,6 +128,8 @@ WHAT IS HERE, one module per shared body:
   :mod:`lab_commons.dev.dep`, which already owned the MECHANISM -- the first row here whose gap was
   found by two audit lanes that did not know of each other, converging on the same two files.
 
+* :mod:`lab_commons.dev.famtests.sharedsettings` -- a setting :mod:`lab_commons.config` owns in its
+  ``[user]`` table is declared nowhere else: no consumer schema field, table key or own default.
 * :mod:`lab_commons.dev.famtests.venvspelling` -- ONE place may spell a venv interpreter, and the
   resolver is still consulted. Both sides, because a resolver nothing calls is as wrong as the
   hardcoded path it replaced and is SILENT about it. The row whose subject is not a DOCSTRING but
