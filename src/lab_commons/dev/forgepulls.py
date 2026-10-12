@@ -21,7 +21,7 @@ from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, com
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
 
-__all__ = ['comment_list', 'comment_upsert', 'marker', 'pr_list', 'pr_retarget']
+__all__ = ['comment_list', 'comment_upsert', 'marker', 'pr_list', 'pr_retarget', 'pulls_off']
 
 _PAGE: Final = 50
 _PAGES: Final = 20
@@ -47,17 +47,26 @@ def _pages(client: Client, path: str, query: dict[str, str]) -> list[Any]:
 def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
     """Every pull request in *state*, lowest number first; none when the repository disables pull requests.
 
-    Gitea answers ``/pulls`` 404 for a repository with PRs switched off. That 404 is read back against the
-    repository's own ``has_pull_requests`` flag, so a 404 for any other reason still raises.
+    Gitea answers ``/pulls`` 404 for a repository with PRs switched off (:func:`pulls_off`); a 404 for
+    any other reason still raises.
     """
     try:
         raw = _pages(client, f'{client.repo}/pulls', {'state': state})
     except ForgeCallFailed as failed:
-        last = failed.report.attempts[-1].returncode if failed.report.attempts else 0
-        if last == _NOT_FOUND and client.call('GET', client.repo).get('has_pull_requests') is False:
+        if pulls_off(client, failed):
             return ()
         raise
     return tuple(sorted((pull_of(item) for item in raw), key=lambda pr: pr.number))
+
+
+def pulls_off(client: Client, failed: ForgeCallFailed) -> bool:
+    """Whether *failed* is gitea's 404 for a repository whose pull requests are switched off.
+
+    The 404 is read back against the repository's own ``has_pull_requests`` flag, so a 404 for any
+    other reason is not mistaken for it.
+    """
+    last = failed.report.attempts[-1].returncode if failed.report.attempts else 0
+    return last == _NOT_FOUND and client.call('GET', client.repo).get('has_pull_requests') is False
 
 
 def pr_retarget(client: Client, number: int, base: str) -> PullRequest:

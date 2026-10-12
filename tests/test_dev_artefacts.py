@@ -29,7 +29,8 @@ from lab_commons.dev.artefacts import (
     RcloneStore,
     Ref,
 )
-from lab_commons.dev.forgework import GITEA, Client
+from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed
+from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 
 SHA = 'a' * 40
 WHEN = datetime(2026, 10, 11, 9, 30, 5, tzinfo=UTC)
@@ -321,6 +322,8 @@ class _Forge:
         self.blobs: dict[str, bytes] = {}
         self.labelled: list[dict[str, Any]] = []
         self.heads: dict[int, str] = {}
+        self.pulls_off = False  # every /pulls/N read answers 404
+        self.has_pull_requests = True  # the repository's own flag
 
     repo = '/api/v1/repos/o/r'
 
@@ -331,6 +334,10 @@ class _Forge:
             return self.labelled
         if path.endswith('/issues?state=all&type=issues&q=run+records&limit=50'):
             return [{'title': 'run records', 'number': 1}]
+        if path == self.repo:
+            return {'has_pull_requests': self.has_pull_requests}
+        if '/pulls/' in path and self.pulls_off:  # gitea: the pulls unit is off, so every PR read is 404
+            raise ForgeCallFailed(Report(('GET', path), (Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED),), 1))
         if '/pulls/' in path:
             return {
                 'number': 1,
@@ -380,6 +387,24 @@ def test_keep_labels_pin_the_shas_their_issue_or_pr_names() -> None:
     ]
     forge.heads[4] = 'd' * 40
     assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12, 'd' * 12})
+
+
+def test_a_repo_with_pull_requests_off_pins_by_body_and_never_fails_the_cleanup() -> None:
+    forge = _Forge()
+    forge.pulls_off, forge.has_pull_requests = True, False
+    forge.labelled = [
+        {'number': 3, 'body': f'results of {"c" * 40} please'},
+        {'number': 7, 'body': '', 'pull_request': {}},  # a PR labelled keep before the unit was switched off
+    ]
+    assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12})
+
+
+def test_a_pull_read_refused_for_another_reason_still_raises() -> None:
+    forge = _Forge()
+    forge.pulls_off = True
+    forge.labelled = [{'number': 7, 'body': '', 'pull_request': {}}]
+    with pytest.raises(ForgeCallFailed):
+        artefacts.pinned(cast('Client', forge))
 
 
 # --- choosing the store by size --------------------------------------------------------------------
