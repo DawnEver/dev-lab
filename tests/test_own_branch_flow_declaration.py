@@ -29,14 +29,9 @@ def test_a_push_to_integrate_main_needs_no_part_and_main_does() -> None:
     assert not admission.admit(admission.TRUNK, head=SHA, statuses=lambda: ()).allowed
 
 
-@pytest.mark.parametrize('platform', ['windows', 'linux'])
-def test_every_part_this_repo_needs_has_a_producer(platform: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(platformparts, 'checkout_interpreter', lambda *_a, **_k: Path('python'))
     monkeypatch.setattr(platformparts, 'dated_log', lambda *_a, **_k: Path('output'))
-    forge = type('Forge', (), {'host': 'h', 'owner': 'o', 'repo': 'r'})
-    monkeypatch.setattr(platformparts, 'forge_from_remote', lambda *_a: forge)
-    argv = platformparts.part_argv(ROOT, platform, SHA, scope='full', os_name='nt')
-    if platform == 'windows':
-        assert argv[1:] == ['-m', 'lab_commons.dev.verify']
-    else:
-        assert argv[1:5] == ['-m', 'lab_commons.dev.platformparts', 'cluster', '--sha']
+    monkeypatch.setattr(platformparts, 'origin_url', lambda *_a: 'https://h/o/r.git')
+    assert platformparts.part_argv(ROOT, 'windows', scope='full', os_name='nt')[1:] == ['-m', 'lab_commons.dev.verify']
+    assert platformparts.cluster_part(ROOT, SHA).collect == ''

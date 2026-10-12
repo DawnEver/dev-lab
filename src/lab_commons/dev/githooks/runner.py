@@ -185,6 +185,18 @@ def _run_hook(hook: Hook, argvs: list[list[str]], root: Path, stdin: str | None,
     return 0
 
 
+def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequence[PushLine]) -> tuple[Hook, ...]:
+    """The hooks of *stage* to run -- none for a pre-push with no ref line.
+
+    Git's protocol: a push whose every ref is already up to date (a retry after an attempt that
+    landed) still runs pre-push, with no ref line. It publishes nothing, so nothing is judged.
+    """
+    if stage == 'pre-push' and not push:
+        emit('[githooks] pre-push: no ref line on stdin -- this push publishes nothing, so nothing is judged')
+        return ()
+    return tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
+
+
 def run_stage(
     stage: str,
     git_args: Sequence[str] = (),
@@ -208,8 +220,8 @@ def run_stage(
     if stage not in STAGES:
         msg = f'unknown hook stage {stage!r}; the family runs {list(STAGES)}'
         raise ValueError(msg)
-    selected_hooks = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
     push = parse_push_lines(stdin) if stage == 'pre-push' else ()
+    selected_hooks = _selected(stage, root, hooks, push)
     paths: tuple[str, ...] = ()
     if stage == 'pre-commit':
         paths = staged_paths(root)

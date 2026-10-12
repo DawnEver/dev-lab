@@ -83,7 +83,7 @@ pruned_paths = ['.claude/worktrees']
 install = "uv sync --all-extras"
 
 # The run record's root, and the argv producing each platform's part (`forge tick`, scope full).
-# linux has no argv here: its producer is `platformparts cluster`, filled from [tool.lab_commons.hpc].
+# linux has no argv here: `forge serve` on the cluster login node advances its run, from [tool.lab_commons.hpc].
 [tool.lab_commons.parts]
 output = "output/logs"
 produce.windows.full = ["-m", "lab_commons.dev.verify"]

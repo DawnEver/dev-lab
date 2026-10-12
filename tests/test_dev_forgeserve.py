@@ -1,42 +1,41 @@
-"""THE HARNESS ENTRY: tick, produce, publish, route in one call -- and a contract break fails loudly."""
+"""THE HARNESS ENTRY: tick, produce or advance, publish -- a contract break fails loudly, a silent failure alarms."""
 
 from __future__ import annotations
 
 import dataclasses
 import subprocess
-import threading
 from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from lab_commons.dev import forgeserve
-from lab_commons.dev.forgetick import Claim, TickReport, Work
+from lab_commons.config import CONFIG_ENV
+from lab_commons.dev import forgerun, forgeserve
+from lab_commons.dev.forgealarm import AUTH, IDLE, RUN
+from lab_commons.dev.forgetick import OPEN, Claim, TickReport, Work
+from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.dev.netverb import Attempt, Diagnosis, Report
+from lab_commons.dev.platformparts import ClusterPart
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
-from lab_commons.hpc.records import write_record
+from lab_commons.hpc.account import ClusterAccount
 
 SHA = 'a' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
+FORGE_NOW = NOW + timedelta(minutes=7)  # the forge's clock, deliberately not the host's
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))
-GRANT = dataclasses.replace(ME, hpc='alice:acct42')
-
-
-def _record(sha: str) -> dict[str, object]:
-    return {'sha': sha, 'platform': 'linux', 'scope': 'full', 'req': 't0', 'outcomes': {'t::a': 'failed'}, 'handed': {}}
+SEAT = ClusterAccount('ada', 'alice')
 
 
 class _Proc:
-    """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*; meets *barrier* first."""
+    """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*."""
 
-    def __init__(self, code: int, lines: tuple[str, ...] = (), beats: int = 0, barrier=None) -> None:
-        self.code, self.beats, self.barrier = code, beats, barrier
+    def __init__(self, code: int, lines: tuple[str, ...] = (), beats: int = 0) -> None:
+        self.code, self.beats = code, beats
         self.stdout = iter(f'{line}\n' for line in lines)
 
     def wait(self, timeout: float | None = None) -> int:
-        if self.barrier is not None:
-            self.barrier.wait(timeout=5)  # breaks unless every producer is alive at once
-            self.barrier = None
         if self.beats:
             self.beats -= 1
             cmd = 'fake'
@@ -48,161 +47,197 @@ class _Proc:
 
 
 class _Forge:
-    """Records every status post; a part's producer may post its own verdict through *settles*."""
+    """Records every status post; a part's producer may post its own verdict."""
 
     def __init__(self) -> None:
         self.posts: list[tuple[str, str, str]] = []
 
-    def post(self, _client, sha, *, context, state, description) -> None:
+    def post(self, _client, _sha, *, context, state, description) -> None:
         self.posts.append((context, state, description))
 
-    def history(self, _client, sha) -> tuple[SimpleNamespace, ...]:
+    def history(self, _client, _sha) -> tuple[SimpleNamespace, ...]:
         return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
+
+
+def _client(_root: Path) -> SimpleNamespace:
+    return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 
 
 def _serve(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    claimed: tuple[Work, ...],
-    procs: dict[str, _Proc],
+    ticked: TickReport,
+    procs: dict[str, _Proc] | None = None,
     forge: _Forge | None = None,
-) -> tuple[forgeserve.ServeReport, list[list[str]], list[str]]:
-    calls: list[list[str]] = []
+    *,
+    seat: ClusterAccount | None = None,
+    cluster=lambda: None,
+) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
+    alarms: list = []
     forge = forge or _Forge()
-    monkeypatch.setattr(forgeserve, 'tick', lambda *_a, **_k: TickReport((), claimed, ('tick: one line',)))
-    monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/linux=failure'])
-    monkeypatch.setattr(forgeserve, 'pyproject_at', lambda _root, _sha: '')
+    seen: dict[str, object] = {}
+
+    def tick(*_a: object, **kwargs: object) -> TickReport:
+        seen.update(kwargs)
+        return ticked
+
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    monkeypatch.setattr(forgeserve, 'tick', tick)
+    monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
     monkeypatch.setattr(forgeserve, 'status_post', forge.post)
     monkeypatch.setattr(forgeserve, 'status_history', forge.history)
-    monkeypatch.setattr(
-        forgeserve,
-        'route',
-        lambda _client, _record, _areas: (SimpleNamespace(area='core', action='created', number=7),),
-    )
-
-    def spawn(argv: list[str], **_kwargs: object) -> _Proc:
-        calls.append(argv)
-        return procs[argv[0]]
-
     report = forgeserve.serve(
         tmp_path,
         'integrate',
-        client=lambda _r: None,
-        now=NOW,
+        client=_client,
         machine='G',
-        grants=(),
-        spawn=spawn,
+        seat=seat,
+        cluster=cluster,
+        spawn=lambda argv, **_k: (procs or {})[argv[0]],
         clock=lambda: NOW,
         say=said.append,
+        alarm=alarms.append,
         renew_s=0.01,
     )
-    return report, calls, said
+    said.append(f'in_flight={seen.get("in_flight")}')
+    return report, said, alarms
 
 
-def test_every_claimed_part_is_produced_then_published_then_its_records_routed(monkeypatch, tmp_path: Path) -> None:
-    out = tmp_path / 'parts'
-    write_record(_record(SHA), out)
-    cluster = Work('integrate/main', SHA, 'linux', 'mine', argv=('cluster', '--sha', SHA, '-o', str(out)))
-    local = Work('integrate/main', SHA, 'windows', 'mine', argv=('verify',))
-    report, calls, _said = _serve(monkeypatch, tmp_path, (cluster, local), {'cluster': _Proc(0), 'verify': _Proc(1)})
-    assert sorted(calls) == sorted([list(cluster.argv), list(local.argv)])
-    assert [(p.platform, p.returncode, p.routed) for p in report.produced] == [
-        ('linux', 0, ('core created #7',)),
-        ('windows', 1, ()),
-    ], 'a red local part is a posted FAIL part, not a harness failure; only the cluster wrote a record'
-    assert report.published == ('status: tests/linux=failure',)
+def _claimed(*work: Work) -> TickReport:
+    return TickReport(work, work, ('tick: one line',))
+
+
+def test_a_claimed_local_part_is_produced_inline_and_published(monkeypatch, tmp_path: Path) -> None:
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    report, said, _alarms = _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1, ('collected 9',))})
+    assert [(p.platform, p.returncode) for p in report.produced] == [('windows', 1)], 'a red part is not a failure'
+    assert report.published == ('status: tests/windows=failure',)
     assert report.broken == ()
+    assert 'tick: one line' in said
+    assert '[windows] collected 9' in said
 
 
 def test_a_producer_refusing_its_argv_is_a_broken_contract_not_a_skip(monkeypatch, tmp_path: Path) -> None:
     """PLANTED: a renamed flag makes argparse exit 2; that must surface as a failure with the argv shown."""
-    stale = Work('integrate/main', SHA, 'linux', 'mine', argv=('cluster', '--install', 'x'))
-    report, _calls, _said = _serve(monkeypatch, tmp_path, (stale,), {'cluster': _Proc(ProducerExit.USAGE)})
+    stale = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify', '--install', 'x'))
+    report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(stale), {'verify': _Proc(ProducerExit.USAGE)})
     assert len(report.broken) == 1
-    assert 'cluster --install x' in report.broken[0]
+    assert 'verify --install x' in report.broken[0]
 
 
 def test_the_cli_exits_two_on_a_broken_contract(monkeypatch, tmp_path: Path, capsys) -> None:
-    broken = forgeserve.ServeReport((), (), (), ('linux aaaa: the producer refused its argv: cluster --x',))
+    broken = forgeserve.ServeReport((), (), (), (), ('windows aaaa: the producer refused its argv: verify --x',))
     monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: broken)
-    assert forgeserve.main(['--mode', 'integrate'], cwd=tmp_path) == ProducerExit.USAGE
+    assert forgeserve.main(['--mode', 'integrate'], cwd=tmp_path, seat_of=lambda: None) == ProducerExit.USAGE
     assert 'CONTRACT BROKEN' in capsys.readouterr().err
     with pytest.raises(SystemExit):
         forgeserve.main(['--mode', 'nonsense'], cwd=tmp_path)
 
 
-def test_parts_on_different_seats_start_concurrently(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED: both fakes wait on one barrier; run in turn, the first waits alone and the barrier breaks."""
-    meet = threading.Barrier(2)
-    cluster = Work('integrate/main', SHA, 'linux', 'mine', holder=GRANT, argv=('cluster',))
-    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
-    procs = {'cluster': _Proc(0, barrier=meet), 'verify': _Proc(0, barrier=meet)}
-    report, _calls, _said = _serve(monkeypatch, tmp_path, (local, cluster), procs)
-    assert not meet.broken
-    assert [p.platform for p in report.produced] == ['windows', 'linux'], 'the report keeps the claim order'
-
-
-def test_parts_on_one_seat_run_in_turn() -> None:
-    a = Work('r', SHA, 'windows', 'mine', holder=ME)
-    b = Work('r', SHA, 'linux', 'mine', holder=GRANT)
-    assert forgeserve._seat(a) == 'local'
-    assert forgeserve._seat(b) == 'hpc:alice:acct42'
-    assert forgeserve._seat(dataclasses.replace(b, holder=ME)) == 'local'
-
-
-def test_output_streams_prefixed_by_platform(monkeypatch, tmp_path: Path) -> None:
-    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
-    _report, _calls, said = _serve(monkeypatch, tmp_path, (local,), {'verify': _Proc(0, ('collected 9',))})
-    assert 'tick: one line' in said
-    assert '[windows] collected 9' in said
-
-
-def test_a_live_producer_renews_its_claim(monkeypatch, tmp_path: Path) -> None:
+def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch, tmp_path: Path) -> None:
     forge = _Forge()
-    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
-    _serve(monkeypatch, tmp_path, (local,), {'verify': _Proc(0, beats=2)}, forge)
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0, beats=2)}, forge)
     renewed = [d for c, s, d in forge.posts if c == 'tests/windows' and s == 'pending']
     assert len(renewed) == 2
-    assert Claim.parse(renewed[0]) == dataclasses.replace(ME, until=NOW + forgeserve.DEFAULT_LEASE)
+    assert Claim.parse(renewed[0]) == dataclasses.replace(ME, until=FORGE_NOW + forgeserve.DEFAULT_LEASE)
 
 
 def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> None:
     """PLANTED: the producer dies without posting; its pending claim must not be left to age out."""
     forge = _Forge()
-    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
-    _serve(monkeypatch, tmp_path, (local,), {'verify': _Proc(-9)}, forge)
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(-9)}, forge)
     assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9)')
 
 
 def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Path) -> None:
     forge = _Forge()
     forge.post(None, SHA, context='tests/windows', state='failure', description='FAIL')
-    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
-    _serve(monkeypatch, tmp_path, (local,), {'verify': _Proc(1)}, forge)
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1)}, forge)
     assert forge.posts == [('tests/windows', 'failure', 'FAIL')]
 
 
-def test_an_inconclusive_producer_is_released_not_called_a_broken_contract(monkeypatch, tmp_path: Path) -> None:
+def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypatch, tmp_path: Path) -> None:
     """PLANTED (live 2026-10-11): a runner over its wall said INCONCLUSIVE; serve said "refused its argv"."""
-    forge = _Forge()
-    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
-    local = Work('integrate/main', SHA, 'windows', 'mine', holder=ME, argv=('verify',))
-    procs = {'verify': _Proc(ProducerExit.INCONCLUSIVE)}
-    report, _calls, _said = _serve(monkeypatch, tmp_path, (local,), procs, forge)
-    assert report.broken == ()
-    assert forge.posts[-1] == ('tests/windows', 'error', release_reason(ProducerExit.INCONCLUSIVE))
+    for code, reason in (
+        (ProducerExit.INCONCLUSIVE, release_reason(ProducerExit.INCONCLUSIVE)),
+        (ProducerExit.UNREACHABLE, RETRYABLE),
+    ):
+        forge = _Forge()
+        forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+        local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+        report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(code)}, forge)
+        assert report.broken == ()
+        assert forge.posts[-1][1] == 'error'
+        assert forge.posts[-1][2].startswith(reason)
 
 
-def test_unreachable_infrastructure_releases_the_claim_as_retryable_not_red(monkeypatch, tmp_path: Path) -> None:
-    forge = _Forge()
-    forge.post(None, SHA, context='tests/linux', state='pending', description=GRANT.description())
-    cluster = Work('integrate/main', SHA, 'linux', 'mine', holder=GRANT, argv=('cluster',))
-    procs = {'cluster': _Proc(ProducerExit.UNREACHABLE)}
-    report, _calls, _said = _serve(monkeypatch, tmp_path, (cluster,), procs, forge)
-    assert report.broken == ()
-    context, state, description = forge.posts[-1]
-    assert (context, state) == ('tests/linux', 'error')
-    assert description.startswith(RETRYABLE)
-    assert not any(s == 'failure' for _c, s, _d in forge.posts), 'an outage is never a red part'
+def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monkeypatch, tmp_path: Path) -> None:
+    cluster_claim = dataclasses.replace(ME, hpc='ada/alice')
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    work = Work('integrate/main', SHA, 'linux', 'mine', cluster_claim, cluster=part)
+    advanced: list[tuple[str, str]] = []
+
+    def advance(_root: Path, run: forgerun.Run, **kwargs: object) -> forgerun.Run:
+        me = kwargs['me']
+        assert isinstance(me, Claim)
+        advanced.append((run.phase, me.hpc))
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', advance)
+    report, said, _alarms = _serve(monkeypatch, tmp_path, _claimed(work), seat=SEAT, cluster=lambda: 'slurm')
+    assert report.produced == (), 'a cluster part is never a blocking process'
+    assert advanced == [(forgerun.CLAIMED_PHASE, 'ada/alice')]
+    assert report.in_flight == (SHA,)
+    assert 'in_flight=False' in said
+    report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=lambda: 'slurm')
+    assert 'in_flight=True' in said, 'the next tick reads the run back from disk and claims nothing more'
+    assert len(advanced) == 2
+
+
+def test_a_run_with_no_cluster_to_advance_on_alarms_and_waits(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', ME, cluster=part), ME)
+
+    def no_grant() -> None:
+        msg = 'no [[hpc.grant]] has user = "alice"'
+        raise ValueError(msg)
+
+    report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=no_grant)
+    assert [a.kind for a in alarms] == [RUN]
+    assert report.in_flight == (SHA,)
+    assert len(forgerun.live('https://f/o/r.git')) == 1, 'the run is kept for the next tick'
+
+
+def test_an_account_idle_with_work_pending_alarms(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same pending request, claimed, raises nothing."""
+    pending = Work('integrate/main', SHA, 'windows', OPEN)
+    idle = TickReport((pending,), (), ('tick',), ('tests/windows: not claimed -- no produce declared',))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
+    assert [a.kind for a in alarms] == [IDLE]
+    assert 'not claimed' in alarms[0].body
+    claimed = dataclasses.replace(pending, state='mine', holder=ME, argv=('verify',))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, _claimed(claimed), {'verify': _Proc(0)})
+    assert alarms == []
+
+
+def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path) -> None:
+    refused = Report(('GET', '/api/v1/user'), (Attempt(1, 401, 'unauthorized', Diagnosis.FORGE_REFUSED),), 3)
+
+    def tick(*_a: object, **_k: object) -> TickReport:
+        raise ForgeCallFailed(refused)
+
+    monkeypatch.setattr(forgeserve, 'tick', tick)
+    monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
+    alarms: list = []
+    with pytest.raises(ForgeCallFailed):
+        forgeserve.serve(
+            tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append
+        )
+    assert [a.kind for a in alarms] == [AUTH]

@@ -174,6 +174,20 @@ def test_a_pre_push_refusal_reaches_git_through_the_runner(repo: Path) -> None:
     assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin=stdin, hooks=(refuse,)) == 1
 
 
+def test_a_push_that_publishes_nothing_runs_no_pre_push_hook(repo: Path) -> None:
+    """Git runs pre-push with NO ref line when every ref is already up to date (``test_dev_netverb``).
+
+    Netverb's retry after an attempt that landed hit exactly that, and admission refused the
+    empty input "no ref to judge". PLANTED CONTROL: the same always-run hook runs on a pushed ref.
+    """
+    seen = _Recorder(code=2)
+    admission = Hook(stage='pre-push', id='admission', run=('tool',), always_run=True)
+    assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin='', hooks=(admission,), runner=seen) == 0
+    assert seen.calls == [], 'nothing pushed, nothing judged'
+    stdin = _push_line(repo, 'refs/heads/main')
+    assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin=stdin, hooks=(admission,), runner=seen) == 1
+
+
 def test_a_ref_filter_skips_a_hook_whose_refs_were_not_pushed(repo: Path) -> None:
     stdin = _push_line(repo, 'refs/tags/v1')
     seen = _Recorder(code=1)

@@ -20,6 +20,7 @@ floor under the scan so a table that went empty cannot read as green.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -319,3 +320,37 @@ def test_the_entry_point_refuses_a_bad_spelling_without_a_traceback(capsys: pyte
     err = capsys.readouterr().err
     assert 'Traceback' not in err
     assert err.count('\n') == 1
+
+
+def _pushing_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """A repo with one commit, a local bare origin, and a pre-push hook copying git's stdin to a file."""
+    git = shutil.which('git') or 'git'
+    bare, repo, got = tmp_path / 'origin.git', tmp_path / 'repo', tmp_path / 'hook.stdin'
+    subprocess.run([git, '-c', 'init.defaultBranch=main', 'init', '-q', '--bare', str(bare)], check=True)
+    subprocess.run([git, '-c', 'init.defaultBranch=main', 'init', '-q', str(repo)], check=True)
+    hooks = repo / 'hooks'
+    hooks.mkdir()
+    (hooks / 'pre-push').write_text(f'#!/bin/sh\ncat > "{got.as_posix()}"\n', encoding='utf-8', newline='\n')
+    (hooks / 'pre-push').chmod(0o755)
+    for args in (
+        ['config', 'core.hooksPath', str(hooks)],
+        ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '--no-verify', '-m', 'c'],
+        ['remote', 'add', 'origin', str(bare)],
+    ):
+        subprocess.run([git, '-C', str(repo), *args], check=True)
+    return repo, got
+
+
+def test_netverb_hands_git_s_ref_lines_to_the_pre_push_hook_and_an_up_to_date_push_hands_none(tmp_path: Path) -> None:
+    """Netverb drops no stdin: the hook reads the ref line git wrote.
+
+    What admission saw as "no ref to judge" is git's own protocol: a push whose refs are already up to
+    date -- a retry after an attempt that landed -- still runs pre-push, with NO ref line.
+    """
+    repo, got = _pushing_repo(tmp_path)
+    push = [shutil.which('git') or 'git', '-C', str(repo), 'push', '-q', 'origin', 'HEAD:refs/heads/a']
+    assert run_network_verb(push, attempts=1).attempts[-1].ok
+    assert 'refs/heads/a' in got.read_text(encoding='utf-8'), 'the hook read the ref line git wrote'
+    got.unlink()
+    assert run_network_verb(push, attempts=1).attempts[-1].ok
+    assert got.read_text(encoding='utf-8') == '', 'an up-to-date push runs pre-push with an empty stdin'

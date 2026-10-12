@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
@@ -14,7 +13,6 @@ from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
-from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.run import NotSubmitted
@@ -168,115 +166,55 @@ def _checkout(tmp_path: Path, pyproject: str, remote: str = 'git@forge.example.o
     return repo, str(python)
 
 
-def test_the_cluster_argv_is_filled_from_the_declarations_alone(tmp_path: Path) -> None:
-    """The build (install, needs) is NOT in the argv: hpc run submit reads it from the commit itself."""
-    repo, python = _checkout(tmp_path, DECLARED)
-    argv = platformparts.part_argv(repo, 'linux', SHA, scope='full', os_name='nt')
-    output = Path(argv[-1])
-    assert argv == [
-        python, '-m', 'lab_commons.dev.platformparts', 'cluster', '--sha', SHA,
-        '--repo-url', 'https://forge.example.org/o/r.git',
-        '--collect', 'tests', '-o', str(output),
-    ]  # fmt: skip
-    assert output.relative_to(repo).parts[:2] == ('output', 'logs')
-    assert output.relative_to(repo).parts[-2:] == ('parts', SHA)
-    assert not any('<' in item for item in argv), 'no placeholder survives'
+def test_the_cluster_part_is_filled_from_the_declarations_alone(tmp_path: Path) -> None:
+    """The build (install, needs) is NOT in it: hpc reads it from the commit itself."""
+    repo, _python = _checkout(tmp_path, DECLARED)
+    part = platformparts.cluster_part(repo, SHA)
+    assert (part.repo_url, part.collect) == ('https://forge.example.org/o/r.git', 'tests')
+    assert part.output.relative_to(repo).parts[:2] == ('output', 'logs')
+    assert part.output.relative_to(repo).parts[-2:] == ('parts', SHA)
 
 
 def test_a_local_part_runs_the_declared_producer_per_scope(tmp_path: Path) -> None:
     repo, python = _checkout(tmp_path, DECLARED)
-    full = platformparts.part_argv(repo, 'windows', SHA, scope='full', os_name='nt')
+    full = platformparts.part_argv(repo, 'windows', scope='full', os_name='nt')
     assert full == [python, 'scripts/gate/runner.py', 'gate', '--platform', 'windows', '--full']
-    incremental = platformparts.part_argv(repo, 'windows', SHA, scope='incremental', os_name='nt')
+    incremental = platformparts.part_argv(repo, 'windows', scope='incremental', os_name='nt')
     assert incremental[-1] == 'windows'
 
 
 @pytest.mark.parametrize(
-    ('drop', 'platform', 'named'),
+    ('drop', 'named'),
     [
-        ('install = "uv sync --extra dev"\n', 'linux', r'\[tool\.lab_commons\.hpc\] install'),
-        ('output = "output/logs"\n', 'linux', r'\[tool\.lab_commons\.parts\] output'),
-        ('full = ["scripts/gate/runner.py", "gate", "--platform", "windows", "--full"]\n', 'windows',
-         r'\[tool\.lab_commons\.parts\.produce\.windows\] full'),
+        ('install = "uv sync --extra dev"\n', r'\[tool\.lab_commons\.hpc\] install'),
+        ('output = "output/logs"\n', r'\[tool\.lab_commons\.parts\] output'),
     ],
-)  # fmt: skip
-def test_a_missing_declaration_is_refused_naming_its_key(tmp_path: Path, drop: str, platform: str, named: str) -> None:
-    """PLANTED CONTROL: the full declaration produces an argv; removing one key refuses by that key."""
+)
+def test_a_missing_cluster_declaration_is_refused_naming_its_key(tmp_path: Path, drop: str, named: str) -> None:
+    """PLANTED CONTROL: the full declaration fills the part; removing one key refuses by that key."""
     assert DECLARED.count(drop) == 1
     repo, _python = _checkout(tmp_path, DECLARED.replace(drop, ''))
     with pytest.raises(platformparts.UndeclaredPart, match=named):
-        platformparts.part_argv(repo, platform, SHA, scope='full', os_name='nt')
+        platformparts.cluster_part(repo, SHA)
 
 
-def test_a_cluster_part_is_full_and_macos_needs_its_own_declaration(tmp_path: Path) -> None:
-    repo, _python = _checkout(tmp_path, DECLARED)
-    with pytest.raises(ValueError, match='scope full'):
-        platformparts.part_argv(repo, 'linux', SHA, scope='incremental', os_name='nt')
-    with pytest.raises(platformparts.UndeclaredPart, match=r'produce\.macos\] full'):
-        platformparts.part_argv(repo, 'macos', SHA, scope='full', os_name='nt')
+@pytest.mark.parametrize('platform', ['windows', 'linux', 'macos'])
+def test_a_local_part_of_any_platform_needs_its_own_produce_declaration(tmp_path: Path, platform: str) -> None:
+    """A linux box OFF a cluster is a local producer like any other; only a cluster seat runs the cluster part."""
+    declared = DECLARED.replace(
+        '[tool.lab_commons.parts.produce.windows]', f'[tool.lab_commons.parts.produce.{platform}]'
+    )
+    repo, python = _checkout(tmp_path, declared)
+    assert platformparts.part_argv(repo, platform, scope='full', os_name='nt')[0] == python
+    other = next(name for name in ('windows', 'linux', 'macos') if name != platform)
+    with pytest.raises(platformparts.UndeclaredPart, match=rf'produce\.{other}\] full'):
+        platformparts.part_argv(repo, other, scope='full', os_name='nt')
 
 
-def test_cluster_submits_gathers_and_posts_the_record(tmp_path: Path, monkeypatch) -> None:
-    calls: list[list[str]] = []
-    output = tmp_path / 'records'
+def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(monkeypatch, capsys) -> None:
+    """``hpc run submit`` by hand: a build that submitted nothing exits 3 (INCONCLUSIVE) and names its log.
 
-    def hpc(argv: list[str]) -> int:
-        calls.append(argv)
-        if argv[1] == 'gather':
-            write_record(_record({'t::a': 'failed'}), output)
-            return 1
-        return 0
-
-    posted: list[Path] = []
-    monkeypatch.setattr(platformparts, 'post', lambda _root, path: posted.append(path) or 'posted')
-    flags = ['--repo-url', 'https://f/o/r.git', '--collect', 'tests']
-    produced = platformparts.cluster(tmp_path, sha=SHA, hpc_args=flags, output=output, hpc=hpc)
-    assert produced == (ProducerExit.FAIL, 'posted'), 'the exit names the posted part'
-    assert calls[0] == ['run', 'submit', '--sha', SHA, '--scope', 'full', '--repo', str(tmp_path), *flags]
-    assert calls[1] == ['run', 'gather', '--sha', SHA, '-o', str(output), '--wait']
-    assert posted == [output / f'run-{SHA}-linux-t0.json.gz'], 'a red run is still posted as a FAIL part'
-
-
-def test_cluster_refuses_a_failed_submit_and_a_gather_without_a_record(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same verb with the run absent posts nothing."""
-    seen: list[str] = []
-    with pytest.raises(platformparts.PartRefusal, match='run submit'):
-        platformparts.cluster(tmp_path, sha=SHA, hpc_args=[], output=tmp_path, hpc=lambda a: seen.append(a[1]) or 2)
-    assert seen == ['submit'], 'nothing is gathered after a failed submit'
-    with pytest.raises(platformparts.PartRefusal, match='no linux record'):
-        platformparts.cluster(tmp_path, sha=SHA, hpc_args=[], output=tmp_path / 'none', hpc=lambda _a: 0)
-
-
-def _raising(error: Exception) -> Callable[..., NoReturn]:
-    def cluster(*_args: object, **_kwargs: object) -> NoReturn:
-        raise error
-
-    return cluster
-
-
-def _cluster_main(tmp_path: Path, monkeypatch, cluster) -> int:
-    monkeypatch.setattr(platformparts, 'cluster', cluster)
-    argv = ['cluster', '--sha', SHA, '-o', str(tmp_path), '--repo-url', 'u', '--collect', 't', '--root', str(tmp_path)]
-    return platformparts.main(argv)
-
-
-def test_cluster_exits_by_the_producer_contract(tmp_path: Path, monkeypatch) -> None:
-    """An unreachable cluster is NOT a red part (live 2026-10-11); PLANTED CONTROL: a posted FAIL is 1."""
-    unreachable = _raising(Unreachable('no login host answered'))
-    forge_down = _raising(PostFailed('forge did not answer'))
-    refused = _raising(platformparts.PartRefusal('run gather wrote no linux record'))
-    assert _cluster_main(tmp_path, monkeypatch, unreachable) == ProducerExit.UNREACHABLE
-    assert _cluster_main(tmp_path, monkeypatch, forge_down) == ProducerExit.UNREACHABLE
-    assert _cluster_main(tmp_path, monkeypatch, refused) == ProducerExit.INCONCLUSIVE
-    assert _cluster_main(tmp_path, monkeypatch, lambda *_a, **_k: (ProducerExit.FAIL, 'x')) == ProducerExit.FAIL
-    assert _cluster_main(tmp_path, monkeypatch, lambda *_a, **_k: (ProducerExit.PASS, 'x')) == ProducerExit.PASS
-
-
-def test_a_failed_native_build_is_inconclusive_and_names_its_log(tmp_path: Path, monkeypatch, capsys) -> None:
-    """A build that submitted nothing exits 3 through the real ``hpc run submit`` and names its log.
-
-    Live 2026-10-11 (5cd95e5c0a): the native build lacked cmake, nothing was submitted, and the producer
-    exited 1 -- a FAIL for a commit no test ran on. PLANTED CONTROL: a gathered red record is still 1.
+    The tick's half is ``test_dev_forgerun::test_a_failed_build_is_released_inconclusive_naming_its_log``.
     """
     log = '/home/u/ci/native/k.log'
 
@@ -287,27 +225,11 @@ def test_a_failed_native_build_is_inconclusive_and_names_its_log(tmp_path: Path,
     monkeypatch.setattr(hpc_cli, 'load_grants', lambda: None)
     monkeypatch.setattr(hpc_cli, 'builds_at', lambda *_a, **_k: ())
     monkeypatch.setattr(hpc_cli, 'table_at', lambda *_a: {})
+    monkeypatch.setattr(hpc_cli, 'submitter', lambda: None)
     monkeypatch.setattr(hpc_cli, 'submit_run', failed_build)
     flags = ['--repo-url', 'u', '--collect', 't']
     assert hpc_cli.main(['run', 'submit', '--sha', SHA, '--scope', 'full', *flags]) == ProducerExit.INCONCLUSIVE
     assert log in capsys.readouterr().err
-
-    real_cluster = platformparts.cluster
-
-    def chain(*_a: object, **_k: object) -> tuple[ProducerExit, str]:
-        return real_cluster(tmp_path, sha=SHA, hpc_args=flags, output=tmp_path, hpc=hpc_cli.main)
-
-    assert _cluster_main(tmp_path, monkeypatch, chain) == ProducerExit.INCONCLUSIVE
-    assert log in capsys.readouterr().err, 'the refusal the claim is released with names the build log'
-
-    def red_run(argv: list[str]) -> int:
-        if argv[1] == 'gather':
-            write_record(_record({'t::a': 'failed'}), tmp_path)
-        return 0
-
-    monkeypatch.setattr(platformparts, 'post', lambda _root, _path: 'posted')
-    produced = real_cluster(tmp_path, sha=SHA, hpc_args=flags, output=tmp_path, hpc=red_run)
-    assert produced[0] == ProducerExit.FAIL, 'a test failure is still a FAIL'
 
 
 def _status(platform: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
@@ -383,3 +305,18 @@ def test_a_windows_verify_of_a_repo_with_no_table_covers_what_it_ran(tmp_path: P
     assert platformparts.part_of(on_windows).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
         platformparts.part_of(local({}))
+
+
+def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, monkeypatch) -> None:
+    """PLANTED CONTROL: the same green record posts (0) when the forge answers."""
+    source = write_record(_record({'t::a': 'passed'}), tmp_path / 'runs')
+    monkeypatch.setattr(platformparts, 'enqueue', lambda *_a, **_k: None)
+    monkeypatch.setattr(platformparts, 'flush', lambda _root: [])
+    assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == 0
+
+    def down(_root: Path) -> list[str]:
+        msg = 'forge did not answer'
+        raise PostFailed(msg)
+
+    monkeypatch.setattr(platformparts, 'flush', down)
+    assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE

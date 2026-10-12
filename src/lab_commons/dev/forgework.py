@@ -197,6 +197,8 @@ class Client:
     sleep: Callable[[float], None] = time.sleep
     timeout: float = 30.0
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    #: The raw ``Date`` header of the forge's latest answer: its clock (:func:`lab_commons.dev.forgetick.forge_now`).
+    answered: str = ''
 
     @property
     def backend(self) -> Backend:
@@ -208,11 +210,12 @@ class Client:
     ) -> tuple[int, bytes]:
         backend = self.backend
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
-        headers = {'Authorization': auth, 'Content-Type': content_type}
         conn = self.transport(host or backend.host(self.forge), self.timeout)
         try:
-            conn.request(method, path, body=data, headers=headers | dict(backend.headers))
+            sent = {'Authorization': auth, 'Content-Type': content_type} | dict(backend.headers)
+            conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
+            self.answered = response.getheader('Date') or self.answered
             return response.status, response.read()
         finally:
             conn.close()
