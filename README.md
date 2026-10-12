@@ -186,7 +186,7 @@ upgrading, not by pinning:
 
 ```toml
 dependencies = [
-    "lab-commons @ git+https://github.com/DawnEver/lab-commons.git",
+    "lab-commons @ git+https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git",
 ]
 ```
 
