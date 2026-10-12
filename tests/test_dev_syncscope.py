@@ -32,7 +32,7 @@ from lab_commons.dev.syncscope import (
 MANIFEST = """
 [project]
 name = "consumer-a"
-dependencies = ["numpy", "lab-commons @ git+https://github.com/DawnEver/lab-commons.git"]
+dependencies = ["numpy", "lab-commons @ git+https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git"]
 
 [project.optional-dependencies]
 euclid = ["gmsh", "consumer-b[web] @ git+https://example.invalid/consumer-b.git"]
