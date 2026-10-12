@@ -127,3 +127,15 @@ def test_headroom_names_what_is_missing() -> None:
 def test_usage_is_core_hours_per_run_job() -> None:
     sacct = 'run-abcdef123456|7200\nrun-abcdef123456|3600\nother|99999\nrun-ffffffffffff|\n'
     assert parse_usage(sacct) == {'abcdef123456': 3.0}
+
+
+def test_own_weight_lifts_this_hosts_own_work_on_this_host_only() -> None:
+    """PLANTED CONTROL: without the weight, or on another host's login, the integration head stays first."""
+    integration = _cand('integrate/main', 'integration')
+    mine = dataclasses.replace(_cand('feat/x', 'pr'), origin='alice')
+    schedules = {'o/r': FAMILY}
+    assert _order(rank([mine, integration], schedules, NOW, cost_h={}))[0] == 'integrate/main'
+    assert _order(rank([mine, integration], schedules, NOW, cost_h={}, mine='bob', own_weight=3))[0] == 'integrate/main'
+    lifted = rank([integration, mine], schedules, NOW, cost_h={}, mine='alice', own_weight=3)
+    assert _order(lifted)[0] == 'feat/x'
+    assert lifted[0].value == 3 * 60

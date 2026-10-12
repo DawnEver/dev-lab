@@ -18,7 +18,8 @@ suite to learn whether a sha is green, and you never wait for one to push.
 - **One reader.** The integrator, issue readiness and admission all read parts through
   `lab_commons.dev.platformparts.standing`.
 - An INCONCLUSIVE run is no part and posts nothing. Which ids each platform runs is the repo's
-  `[tool.lab_commons.platforms]` table ([HPC clusters](hpc.md#platform-parts)).
+  `[tool.lab_commons.platforms]` and `[tool.lab_commons.capabilities]` tables
+  ([HPC clusters](hpc.md#platform-parts)).
 
 ## Producing parts: `forge serve`
 
@@ -93,6 +94,9 @@ prior_cost_h = 4.0
 
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
+`[serve] own_weight` (absent = 1) multiplies the value of candidates whose PR or request this host's own
+forge login opened -- on this host only; `[capabilities.<name>]` declares what it provides
+([HPC clusters](hpc.md#platform-parts)).
 
 ## The queue
 
