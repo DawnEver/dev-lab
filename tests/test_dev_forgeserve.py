@@ -402,3 +402,15 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, tidy=broken
     )
     assert [a.kind for a in alarms] == [RUN]
+
+
+def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch, tmp_path: Path) -> None:
+    """A stop door notes a serve's producer before it kills it; the serve names the release ``stopped``, not a crash."""
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    proc = _Proc(1)
+    proc.pid = 77  # type: ignore[attr-defined]
+    monkeypatch.setattr(forgeserve, 'was_stopped', lambda pid: pid == 77)
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
+    assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')

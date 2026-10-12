@@ -3,8 +3,9 @@
 ONE SOURCE FOR THE PROTOCOL. A harness used to restate the forge protocol step by step -- tick, run the
 claimed argv, watch, publish, route -- and with it this family's venv layout and output tree, so every
 protocol change needed a matching harness commit (audit 2026-10-10, item 4). This module owns the
-sequence; a harness (a workstation's, or a cluster account's crontab line under ``flock``) keeps only
-scheduling and locking, and calls this.
+sequence; a harness (a workstation's Scheduled Task, or a cluster account's crontab line under ``flock``)
+keeps only scheduling, and calls this. ``forge serve --lock [PATH]`` first takes an exclusive lock
+(:func:`lab_commons.dev.servelock.locked`): a second serve on the same lock exits 0 having done nothing.
 
 THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons.dev.forgerun.live`,
 a run of another state schema refused); :func:`lab_commons.dev.forgetick.tick` (flush the outbox,
@@ -72,6 +73,7 @@ from lab_commons.dev.forgetick import MODES, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url, part_context
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
+from lab_commons.dev.servelock import was_stopped
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
@@ -311,7 +313,9 @@ def _produce(
     say(f'[{item.platform}] exit={returncode}')
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if superseded or (posts and posts[-1].state == 'pending'):
-        reason = f'superseded by {superseded[:12]}' if superseded else release_reason(returncode)
+        stopped = getattr(proc, 'pid', None) is not None and was_stopped(proc.pid)  # by stoprun, on purpose
+        reason = 'stopped' if stopped else release_reason(returncode)
+        reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
     return Produced(item.ref, item.sha, item.platform, item.argv, returncode)
 
