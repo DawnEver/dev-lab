@@ -50,6 +50,9 @@ from lab_commons.hpc.deploy_spec import LAB_COMMONS
 from lab_commons.hpc.deploy_steps import Step, Tools
 from lab_commons.log import emit
 
+if sys.platform == 'win32':
+    import winreg
+
 __all__ = ['JMAG_PROGIDS', 'Programs', 'com_server', 'deploy', 'main', 'serve']
 
 #: The COM classes a ``jmag`` host drives: the Designer and its Scheduler.
@@ -71,10 +74,8 @@ _NO_PROMPT: Final = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
 
 def com_server(progid: str) -> Path | None:
     """The executable COM *progid* is registered to (``HKCR`` -> ``LocalServer32``), when it exists on disk."""
-    if os.name != 'nt':
+    if sys.platform != 'win32':
         return None
-    import winreg  # noqa: PLC0415 -- Windows only
-
     try:
         with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, f'{progid}\\CLSID') as key:
             clsid = winreg.QueryValue(key, None)
