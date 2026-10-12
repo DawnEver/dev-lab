@@ -12,7 +12,8 @@ and who runs it, is on [the verdict model](verdict-model.md).
   hook makes the classification visible to `-m`. A test in a heavy subtree that drives nothing heavy is carved
   back out by name.
 - Live vendor tools run only in the heavy tier.
-- Which PLATFORM runs a test is a separate declaration, `[tool.lab_commons.platforms]`
+- Which PART runs a test is a separate declaration, `[tool.lab_commons.platforms]` (OS) and
+  `[tool.lab_commons.capabilities]` (engines, host capabilities)
   ([HPC clusters](hpc.md#platform-parts)).
 
 ## xfail, never skip

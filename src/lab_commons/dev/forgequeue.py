@@ -24,13 +24,12 @@ from lab_commons.config import section
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgehosts import HostCard, read_cards
+from lab_commons.dev.forgeprovides import declared_parts, needs, unserved
 from lab_commons.dev.forgeschedule import (
-    NO_HOST,
     REQUEST,
     Candidate,
     Ranked,
     candidates,
-    declared_platforms,
     expected_cost,
     host_weights,
     load_schedule,
@@ -43,6 +42,7 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.hpc.learned import learned
+from lab_commons.hpc.platforms import Table, table_at
 from lab_commons.log import emit
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
@@ -69,7 +69,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     now = forge_now(client)
     schedule, repo = load_schedule(root), repo_name(client)
     found = candidates(
-        root, 'integrate', client, repo=repo, platforms=declared_platforms(root), schedule=schedule,
+        root, 'integrate', client, repo=repo, platforms=declared_parts(root), schedule=schedule,
         policy=load_policy(root), now=now,
     )  # fmt: skip
     cards = read_cards(client)
@@ -92,9 +92,16 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 continue
         waiting.append(one)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
+    read: dict[str, Table] = {}
+
+    def tables(sha: str) -> Table:
+        return read.setdefault(sha, table_at(root, sha) if sha else Table())
+
     weights = host_weights(section('schedule'))
     ranked = [
-        dataclasses.replace(item, blocked=_why(item.candidate, cards, now))
+        dataclasses.replace(
+            item, blocked=_why(item.candidate, cards, now, needs(tables(item.candidate.sha), item.candidate.platform))
+        )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
     return {
@@ -114,10 +121,12 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     }
 
 
-def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
-    serving = [card for card in cards if card.platform == candidate.platform and not card.stale(now)]
-    if not serving:
-        return f'{NO_HOST} serves {candidate.platform}'
+def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime, needed: Sequence[str]) -> str:
+    live = [card for card in cards if not card.stale(now)]
+    unclaimable = unserved(candidate.platform, needed, [(card.platform, card.provides) for card in live])
+    if unclaimable:
+        return unclaimable
+    serving = [card for card in live if candidate.platform in {card.platform, *card.provides}]
     return next((card.waiting[candidate.key] for card in serving if candidate.key in card.waiting), '')
 
 

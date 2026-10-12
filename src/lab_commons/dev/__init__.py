@@ -140,6 +140,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   whether it may claim the skip census.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve --mode M``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
+* :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<platform>`` part, in the cluster
   record's shape.
 * :mod:`lab_commons.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
@@ -268,6 +269,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`lab_commons.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`lab_commons.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
+* :mod:`lab_commons.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``) and what a part needs.
 * :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: close the issues a repo declared finished; never delete.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
@@ -304,7 +306,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
 * :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
-* :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify tree, children first.
+* :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
+* :mod:`lab_commons.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
+* :mod:`lab_commons.dev.servetask` -- a Windows workstation as a serve host: the ``lab-forge-serve`` Scheduled Task.
 * :mod:`lab_commons.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`lab_commons.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

@@ -4,7 +4,7 @@ Every candidate is a part a ref's newest commit lacks -- ``(repo, ref, sha, plat
 issue REQUEST. Each has a numeric VALUE and an expected COST; a claimer takes the feasible candidate
 with the highest SCORE, value per cost (weighted shortest job first)::
 
-    value = base[class] + boost + aging_rate * wait_hours
+    value = (base[class] + boost + aging_rate * wait_hours) * own
     score = weight[repo] * value / expected_cost
 
 ``base`` is an OPEN table of classes (``integration``, ``pr``, ``branch``, ``request`` by family default),
@@ -13,7 +13,9 @@ explicit ``priority:<n>``), and the aging term grows without bound, so no candid
 ``expected_cost`` is core-hours on a cluster and wall-hours on a box, predicted from what the
 repository's last run measured (:mod:`lab_commons.hpc.learned`); unmeasured work is priced at a declared
 prior. ``weight`` belongs to the HOST (its machine file's ``[schedule] weights``), so a host serving
-several repositories decides how to share itself while each repository ranks its own work.
+several repositories decides how to share itself while each repository ranks its own work. ``own`` is
+the host's too (``[serve] own_weight``, :mod:`lab_commons.dev.forgeprovides`): it multiplies the value of
+a candidate whose PR or request this host's own forge login opened, on this host only; else 1.
 
 THE NUMBERS ARE DATA, declared once in ``[tool.lab_commons.schedule]``; :class:`Schedule` holds the
 family default and a repository overrides key by key (a table key by table key)::
@@ -69,7 +71,6 @@ __all__ = [
     'boost_of',
     'box_headroom',
     'candidates',
-    'declared_platforms',
     'expected_cost',
     'host_weights',
     'labelled_issues',
@@ -174,6 +175,7 @@ class Candidate:
     scope: str = FULL
     labels: tuple[str, ...] = ()
     number: int = 0
+    origin: str = ''  # the forge login whose PR or request it is; '' for a branch head
 
     @property
     def key(self) -> str:
@@ -227,16 +229,19 @@ def rank(
     *,
     cost_h: Mapping[str, float],
     weights: Mapping[str, float] | None = None,
+    mine: str = '',
+    own_weight: float = 1.0,
 ) -> tuple[Ranked, ...]:
     """Every candidate scored and ordered, highest score first. PURE: the one ordering rule.
 
-    *schedules* and *cost_h* are keyed by repo; *weights* by repo, 1 for a repo it omits.
+    *schedules* and *cost_h* are keyed by repo; *weights* by repo, 1 for a repo it omits. A candidate
+    whose ``origin`` is *mine* (this host's login) has its value multiplied by *own_weight*.
     """
     weights = weights or {}
     ranked = []
     for one in candidates:
         schedule = schedules[one.repo]
-        worth = value(one, schedule, now)
+        worth = value(one, schedule, now) * (own_weight if mine and one.origin == mine else 1.0)
         cost = max(cost_h.get(one.repo, schedule.prior_cost_h), 1e-6)
         wait_h = max(0.0, (now - one.since).total_seconds() / 3600)
         ranked.append(Ranked(one, worth, cost, weights.get(one.repo, 1.0) * worth / cost, wait_h))
@@ -369,19 +374,21 @@ def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[st
 
 def _part_refs(
     root: Path, mode: str, client: Client, schedule: Schedule, policy: Policy, *, say: Callable[[str], None]
-) -> list[tuple[str, str, str, tuple[str, ...], int]]:
-    """``(ref, newest sha, class, labels, PR number)`` of every ref *mode* serves."""
+) -> list[tuple[str, str, str, tuple[str, ...], int, str]]:
+    """``(ref, newest sha, class, labels, PR number, PR author)`` of every ref *mode* serves."""
     tips = _tips(root)
     if mode != 'integrate':
-        return [(b, s, BRANCH, (), 0) for b, s in sorted(tips.items()) if b.startswith(policy.lane_prefixes)]
-    refs = [(policy.integration, tips[policy.integration], INTEGRATION, (), 0)] if policy.integration in tips else []
+        return [(b, s, BRANCH, (), 0, '') for b, s in sorted(tips.items()) if b.startswith(policy.lane_prefixes)]
+    refs = (
+        [(policy.integration, tips[policy.integration], INTEGRATION, (), 0, '')] if policy.integration in tips else []
+    )
     for pull in optional('open pull requests', lambda: pr_list(client), say):
         sha = tips.get(pull.head, pull.head_sha)
         if pull.base == policy.integration and pull.head != policy.integration and sha:
-            refs.append((pull.head, sha, PR, pull.labels, pull.number))
+            refs.append((pull.head, sha, PR, pull.labels, pull.number, pull.author))
     served = {ref for ref, *_ in refs}
     refs += [
-        (branch, sha, BRANCH, (), 0)
+        (branch, sha, BRANCH, (), 0, '')
         for branch, sha in sorted(tips.items())
         if branch not in served and any(fnmatch.fnmatchcase(branch, one) for one in schedule.branches)
     ]
@@ -396,8 +403,11 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
         platform = declared['platform'] if declared else 'linux'
         number = int(raw['number'])
+        origin = str((raw.get('user') or {}).get('login', ''))
         found.append(
-            Candidate(repo, f'issue/{number}', '', platform, REQUEST, since, labels=_labels(raw), number=number)
+            Candidate(
+                repo, f'issue/{number}', '', platform, REQUEST, since, labels=_labels(raw), number=number, origin=origin
+            )
         )
     return found
 
@@ -423,25 +433,13 @@ def candidates(
     if mode == 'quiet':
         return ()
     found = [
-        Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), labels=labels, number=number)
-        for ref, sha, kind, labels, number in _part_refs(root, mode, client, schedule, policy, say=say)
+        Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), labels=labels, number=number, origin=by)
+        for ref, sha, kind, labels, number, by in _part_refs(root, mode, client, schedule, policy, say=say)
         for platform in platforms
     ]
     if mode == 'integrate':
         found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
     return tuple(found)
-
-
-def declared_platforms(root: Path) -> tuple[str, ...]:
-    """The platforms *root* declares a producer for: ``[tool.lab_commons.parts.produce]``, plus linux with ``hpc``."""
-    manifest = root / 'pyproject.toml'
-    if not manifest.is_file():
-        return ()
-    declared = tomllib.loads(manifest.read_text(encoding='utf-8')).get('tool', {}).get('lab_commons', {})
-    found = set(declared.get('parts', {}).get('produce', {}))
-    if declared.get('hpc'):
-        found.add('linux')
-    return tuple(sorted(found))
 
 
 def repo_name(client: Client) -> str:

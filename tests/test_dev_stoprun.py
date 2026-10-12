@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.stoprun import (
     SignaturesNotDeclared,
     declared_signatures,
@@ -130,3 +131,34 @@ def test_a_blocking_pre_push_hook_is_a_run_this_door_stops() -> None:
     assert identify('python.exe scripts/gate/prepush_gate.py')
     assert not identify('python.exe -m lab_commons.dev.githooks run pre-commit')
     assert not identify('git push origin main')
+
+
+_SERVE = {
+    30: (1, 'python -m lab_commons.dev.forge serve --mode integrate --lock x'),
+    31: (30, 'python scripts/gate/runner.py part jmag --full'),
+    32: (31, 'python -m pytest -n 4'),
+}
+
+
+def test_a_serve_is_stopped_producers_first_noted_and_given_a_grace_to_release(tmp_path: Path) -> None:
+    killed: list[int] = []
+    waited: list[int] = []
+
+    def gone(pid: int, seconds: float) -> bool:
+        waited.append(pid)
+        assert seconds > 0
+        return True  # the serve released its claim and exited on its own
+
+    code, lines = stop(30, _SERVE, dry_run=False, kill=killed.append, gone=gone, notes=tmp_path)
+    assert code == 0
+    assert killed == [32, 31]
+    assert waited == [30]
+    assert was_stopped(31, root=tmp_path)
+    assert not was_stopped(32, root=tmp_path)
+    assert any('serve' in line for line in lines)
+
+
+def test_a_serve_that_outlives_its_grace_is_killed(tmp_path: Path) -> None:
+    killed: list[int] = []
+    stop(30, _SERVE, dry_run=False, kill=killed.append, gone=lambda *_: False, notes=tmp_path)
+    assert killed == [32, 31, 30]

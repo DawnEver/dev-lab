@@ -112,15 +112,24 @@ per repo + sha + platform + scope in `forge-runs/` beside the machine file. Slur
 
 ## Platform parts
 
-- **One table**, per marker, in the tested repo's `pyproject.toml`, read at the sha (`lab_commons.hpc.platforms`):
-  `[tool.lab_commons.platforms] femm = ["windows"]`. An unlisted marker runs everywhere. A host requirement is a
-  marker too: `dev_checkout = ["windows"]` sends a test that needs a developer checkout to a part that runs in one.
-- **Every id is assigned to exactly one part**: the first of `linux`, `windows`, `macos` that can run it
-  (`platforms.assign`). Parts are independent and can run in any order, in parallel.
+- **Two independent axes**, per marker, in the tested repo's `pyproject.toml`, read at the sha
+  (`lab_commons.hpc.platforms`). The OS axis, `[tool.lab_commons.platforms] com = ["windows"]`, holds real OS
+  constraints only. The capability axis, `[tool.lab_commons.capabilities]`, holds what a test needs beyond the
+  OS: an ENGINE (`jmag = { engine = true }`) gets its own part `tests/jmag`; a HOST capability
+  (`dev_checkout = { on = ["windows", "macos"] }`) names the OSes its serving hosts run and creates no part.
+  An unlisted marker runs everywhere. A capability row (`dev_checkout`, `node`, `jmag`) left under `platforms`
+  is refused, naming the move.
+- **Every id is assigned to exactly one part** (`platforms.assign`): one engine marker -> that engine's part;
+  two -> nowhere; otherwise the first of `linux`, `windows`, `macos` that can run it. Parts are independent and
+  can run in any order, in parallel.
+- **A host claims only what it provides** (`lab_commons.dev.forgeprovides`): its machine file declares
+  `[capabilities.<name>]` (e.g. `[capabilities.jmag] seats = 4`, compute concurrency), shown on its card as
+  `provides`. A part needs its engine, or every host capability whose `on` names its OS; a host lacking one is
+  never offered it, and `forge queue` labels it `no host provides <cap>`. The cluster's linux part needs none.
 - **A part is strict**: PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is
   FAIL; any `lost`/`missing` id makes it INCONCLUSIVE and it is not posted.
 - A non-cluster part calls `platformparts.select(root, sha, platform, collect=...)`, runs its assigned ids and
-  records what it handed to other platforms. A consumer exposes it as its runner's `--platform <name>`.
+  records what it handed to other parts. A consumer exposes it as one door per part name (`part <name>`).
 
 ## Job files
 

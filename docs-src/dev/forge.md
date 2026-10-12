@@ -18,7 +18,8 @@ suite to learn whether a sha is green, and you never wait for one to push.
 - **One reader.** The integrator, issue readiness and admission all read parts through
   `lab_commons.dev.platformparts.standing`.
 - An INCONCLUSIVE run is no part and posts nothing. Which ids each platform runs is the repo's
-  `[tool.lab_commons.platforms]` table ([HPC clusters](hpc.md#platform-parts)).
+  `[tool.lab_commons.platforms]` and `[tool.lab_commons.capabilities]` tables
+  ([HPC clusters](hpc.md#platform-parts)).
 
 ## Producing parts: `forge serve`
 
@@ -34,6 +35,14 @@ makes on a producer host. Each tick it:
 
 - `--mode integrate` serves the integration branch, open PRs into it and opted-in branches; `--mode develop`
   serves the lanes. `forge tick` is the same claim step without producing (`--dry-run` to preview).
+- **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
+  `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `~/.cache/lab-forge/serve.lock` elsewhere.
+- **A Windows workstation serves from a Scheduled Task**: `python -m lab_commons.dev.servetask [--dry-run]`,
+  run in the checkout, writes `lab-forge-serve` (every 5 min, IgnoreNew, as you, only while logged on);
+  `--dry-run` prints the exact `schtasks` command. **To stop it**, disable the Task --
+  `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
+  `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
+  `error: stopped`.
 - **The producer argv is declared**, never typed: `[tool.lab_commons.parts] produce.<platform>.<full|incremental>`
   in the repo's `pyproject.toml`, filled by `platformparts.part_argv`. A part whose producer is undeclared is
   not claimed, and the refusal names the key.
@@ -93,6 +102,9 @@ prior_cost_h = 4.0
 
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
+`[serve] own_weight` (absent = 1) multiplies the value of candidates whose PR or request this host's own
+forge login opened -- on this host only; `[capabilities.<name>]` declares what it provides
+([HPC clusters](hpc.md#platform-parts)).
 
 ## The queue
 

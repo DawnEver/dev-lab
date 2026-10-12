@@ -3,8 +3,9 @@
 ONE SOURCE FOR THE PROTOCOL. A harness used to restate the forge protocol step by step -- tick, run the
 claimed argv, watch, publish, route -- and with it this family's venv layout and output tree, so every
 protocol change needed a matching harness commit (audit 2026-10-10, item 4). This module owns the
-sequence; a harness (a workstation's, or a cluster account's crontab line under ``flock``) keeps only
-scheduling and locking, and calls this.
+sequence; a harness (a workstation's Scheduled Task, or a cluster account's crontab line under ``flock``)
+keeps only scheduling, and calls this. ``forge serve --lock [PATH]`` first takes an exclusive lock
+(:func:`lab_commons.dev.servelock.locked`): a second serve on the same lock exits 0 having done nothing.
 
 THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons.dev.forgerun.live`,
 a run of another state schema refused); :func:`lab_commons.dev.forgetick.tick` (flush the outbox,
@@ -45,51 +46,35 @@ work it could serve is pending each raise an alarm.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
-import os
 import subprocess
 import sys
-import threading
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from lab_commons.config import section
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun, forgeship
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
-from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
+from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import publish_card, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms, tip_of
+from lab_commons.dev.forgeproduce import Produced, produce
+from lab_commons.dev.forgeprovides import own_weight, provided
+from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
-from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgetick import MODES, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.platformparts import origin_url, part_context
-from lab_commons.dev.producer import ProducerExit, producing, release_reason
+from lab_commons.dev.platformparts import origin_url
+from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
-__all__ = ['Produced', 'ServeReport', 'main', 'serve']
-
-#: How long a produced part may run before it is called hung, in seconds.
-PRODUCE_WALL_S: Final = 24 * 3600
-
-
-@dataclass(frozen=True)
-class Produced:
-    """One claimed local part and what producing it did."""
-
-    ref: str
-    sha: str
-    platform: str
-    argv: tuple[str, ...]
-    returncode: int
+__all__ = ['ServeReport', 'main', 'serve']
 
 
 @dataclass(frozen=True)
@@ -128,12 +113,14 @@ def serve(
     raised: list[Alarm] = []  # every alarm this tick, for its host card
     alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
+    provides = provided(section('capabilities'))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
         ticked = tick(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
             in_flight=bool(runs), headroom=standing.headroom if standing else box_room(),
-            usage=standing.usage if standing else None, weights=host_weights(table),
+            usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
+            own_weight=own_weight(section('serve')),
         )  # fmt: skip
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
@@ -152,7 +139,7 @@ def serve(
             runs.append(forgerun.start(item, item.holder))
         else:
             produced.append(
-                _produce(
+                produce(
                     root,
                     item,
                     client=client,
@@ -177,7 +164,8 @@ def serve(
         alarm(one)
     if mode != 'quiet':
         publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
-                     standing=standing, table=table, say=say, alarms=raised, artefacts=ticked.artefacts)  # fmt: skip
+                     standing=standing, table=table, say=say, alarms=raised, artefacts=ticked.artefacts,
+                     provides=provides)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -241,88 +229,6 @@ def _advance(
         if after is not None:
             left.append(after.sha)
     return left
-
-
-def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None]) -> None:
-    for line in stream:
-        say(f'[{platform}] {line.rstrip()}')
-
-
-def _produce(
-    root: Path,
-    item: Work,
-    *,
-    client: Callable[[Path], Client],
-    spawn: Callable[..., Any],
-    clock: Callable[[], datetime],
-    say: Callable[[str], None],
-    lease: timedelta,
-    renew_s: float,
-    fetch: Callable[[Path], None] = fetch_origin,
-) -> Produced:
-    """Run one local part's argv, streaming it and holding its claim alive; release a claim it left pending.
-
-    At each heartbeat the ref is re-read from ``origin``: a ref that moved on stops the producer, and its
-    claim is released ``superseded by <sha>``.
-    """
-    context = part_context(item.platform)
-    say(f'[{item.platform}] start: {" ".join(item.argv)}')
-    proc = spawn(
-        list(item.argv),
-        cwd=root,
-        env=os.environ | producing(context, item.sha),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-    )
-    pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say), daemon=True)
-    pump.start()
-    started = clock()
-    superseded = ''
-    while True:
-        try:
-            returncode = proc.wait(timeout=renew_s)
-            break
-        except subprocess.TimeoutExpired:
-            if (clock() - started).total_seconds() > PRODUCE_WALL_S:
-                proc.kill()
-                returncode = proc.wait()
-                say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
-                break
-            fetch(root)
-            tip = tip_of(root, item.ref)
-            if tip and tip != item.sha:
-                proc.kill()
-                returncode = proc.wait()
-                superseded = tip
-                say(f'[{item.platform}] stopped: {item.ref} moved on to {tip[:12]}')
-                break
-            if item.holder is not None:  # the heartbeat: the same claim, until the FORGE's time plus the lease
-                built = client(root)
-                try:
-                    renewed = dataclasses.replace(item.holder, until=forge_now(built) + lease)
-                except (ForgeCallFailed, OSError) as failed:
-                    say(f'[{item.platform}] could not read the forge clock to renew: {failed}')
-                    continue
-                _post(built, item, 'pending', renewed.description(), say)
-    pump.join(timeout=5)
-    say(f'[{item.platform}] exit={returncode}')
-    posts = [status for status in status_history(client(root), item.sha) if status.context == context]
-    if superseded or (posts and posts[-1].state == 'pending'):
-        reason = f'superseded by {superseded[:12]}' if superseded else release_reason(returncode)
-        _post(client(root), item, 'error', reason, say)
-    return Produced(item.ref, item.sha, item.platform, item.argv, returncode)
-
-
-def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:
-    try:
-        status_post(client, item.sha, context=part_context(item.platform), state=state, description=description)
-    except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
-        say(f'[{item.platform}] could not post {state}: {failed}')
-    else:
-        say(f'[{item.platform}] {state}: {description}')
 
 
 def main(

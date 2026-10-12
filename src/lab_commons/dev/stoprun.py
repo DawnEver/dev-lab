@@ -3,8 +3,12 @@
 Generalised 2026-10-04 from a consumer's process-tree killer (its ``--pid`` mode) (AUTO-MODE-RUNS-THE-DOORS):
 an agent stopping its OWN superseded run was refused as a raw ``taskkill /T /F``. The door replaces the
 raw kill with a checked one: it REFUSES unless the pid's command line is a run it can identify
-(:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest -- plus any the repo declares),
-and then stops that pid's subtree only, children first, never an ancestor or a sibling. Local only.
+(:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest, a ``forge serve`` -- plus any the repo
+declares), and then stops that pid's subtree only, children first, never an ancestor or a sibling. Local only.
+
+A ``forge serve`` IS STOPPED SO ITS CLAIM IS RELEASED: its producers are noted as stopped on purpose
+(:func:`lab_commons.dev.servelock.note_stopped`) and stopped first, then the serve itself is given
+:data:`SERVE_GRACE_S` to release the claim as ``error: stopped`` and exit before it is killed too.
 
 A repo adds its own signatures as DATA, in ONE place -- its ``pyproject.toml`` (the repo of the cwd,
 or ``--repo``)::
@@ -32,16 +36,21 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 import tomllib
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.checkout import git_out
+from lab_commons.dev.servelock import note_stopped
 from lab_commons.log import emit
+from lab_commons.proc import pid_alive
 
 __all__ = [
     'RUN_SIGNATURES',
+    'SERVE',
+    'SERVE_GRACE_S',
     'Proc',
     'SignaturesNotDeclared',
     'declared_signatures',
@@ -55,6 +64,12 @@ __all__ = [
 
 _TABLE = '[tool.lab_commons.stoprun]'
 
+#: A ``forge serve``: stopped producers first, then given a grace to release its claim.
+SERVE: Final = re.compile(r'-m\s+lab_commons\.dev\.forge\s+serve\b')
+
+#: How long a serve whose producers were stopped may take to release its claim and exit, in seconds.
+SERVE_GRACE_S: Final = 60.0
+
 #: A command line that is one of these is a run this door may stop. Anything else is refused.
 RUN_SIGNATURES: Final = (
     re.compile(r'-m\s+lab_commons\.dev\.verify\b'),
@@ -64,6 +79,7 @@ RUN_SIGNATURES: Final = (
     # A PUSH MUST NEVER BLOCK: a pre-push hook that hangs is a run this door must be able to stop.
     re.compile(r'lab_commons\.dev\.githooks run pre-push\b'),
     re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
+    SERVE,
 )
 
 Proc = tuple[int, str]  # (parent pid, command line)
@@ -187,6 +203,16 @@ def _kill(pid: int) -> None:
         os.kill(pid, signal.SIGTERM)
 
 
+def _gone(pid: int, seconds: float) -> bool:
+    """Whether *pid* exits within *seconds*."""
+    deadline = time.monotonic() + seconds
+    while pid_alive(pid):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.5)
+    return True
+
+
 def stop(
     pid: int,
     table: Mapping[int, Proc],
@@ -194,6 +220,8 @@ def stop(
     dry_run: bool,
     kill: Callable[[int], None] = _kill,
     signatures: tuple[str, ...] = (),
+    gone: Callable[[int, float], bool] = _gone,
+    notes: Path | None = None,
 ) -> tuple[int, list[str]]:
     """Stop *pid*'s subtree if it is an identifiable run. ``(exit code, lines)``; 3 means refused."""
     if pid in (os.getpid(), os.getppid()):
@@ -206,7 +234,14 @@ def stop(
     if matched is None:
         return 3, [f'refused: {pid} matches no run signature (built-in or {_TABLE}): {table[pid][1][:200]!r}']
     lines = [f'matched signature {matched!r}']
+    serve = matched == SERVE.pattern
+    if serve and not dry_run:
+        for child in (p for p, (ppid, _) in table.items() if ppid == pid and p != pid):
+            note_stopped(child, root=notes)
     for member in subtree(table, pid):
+        if serve and member == pid and not dry_run and gone(pid, SERVE_GRACE_S):
+            lines.append(f'serve {pid} released its claim and exited')
+            continue
         lines.append(f'{"would stop" if dry_run else "stopped"} {member}  {table[member][1][:120]}')
         if not dry_run:
             kill(member)

@@ -14,7 +14,9 @@ repos, 2026-10-12). Two hosts racing to open the first one re-read after the cre
 the oldest; the loser is closed by ``forge tidy`` (:mod:`lab_commons.dev.forgetidy`).
 
 The card says who the host is (``<cluster>/<account>`` or the machine), the platform it
-serves, its headroom and the cluster facts it read locally (partitions, quota), when it last ticked (the
+serves, what else it PROVIDES (its machine file's ``[capabilities]``,
+:mod:`lab_commons.dev.forgeprovides`), its headroom and the cluster facts it read locally (partitions,
+quota), when it last ticked (the
 forge's clock), what it holds with live progress, why each candidate it saw waits, why it cannot write the
 large artefact store when it cannot, and EVERY ALARM the tick raised (:mod:`lab_commons.dev.forgealarm`): an
 alarm on an unattended host is read here, from any machine, not from a cron log nobody opens.
@@ -91,6 +93,7 @@ class HostCard:
     waiting: Mapping[str, str] = field(default_factory=dict)
     alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
     artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
+    provides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # machine-file [capabilities]
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -99,7 +102,8 @@ class HostCard:
     def text(self) -> str:
         """The comment body: one line a human reads, then the card as JSON."""
         holds = ', '.join(self.holds) or 'nothing'
-        head = f'**{self.host}** serves `{self.platform}` as {self.login}; ticked {self.ticked}; holds {holds}'
+        engines = ''.join(f' + `{name}`' for name in sorted(self.provides))
+        head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {**asdict(self), 'holds': list(self.holds), 'alarms': [dict(a) for a in self.alarms]}
@@ -202,6 +206,7 @@ def publish_card(
     say: Callable[[str], None],
     alarms: Sequence[Alarm] = (),
     artefacts: str = '',
+    provides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
     """Publish this serving host's card after a tick, with the *alarms* it raised; a refusal is said, never fatal."""
     built = client(root)
@@ -219,6 +224,7 @@ def publish_card(
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
             artefacts=artefacts,
+            provides=dict(provides or {}),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

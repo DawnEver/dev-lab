@@ -54,6 +54,7 @@ from lab_commons.dev.forgeclaim import (
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
+from lab_commons.dev.forgeprovides import declared_parts, lacking, needs, served_parts
 from lab_commons.dev.forgeschedule import (
     NO_HOST,
     OUTRANKED,
@@ -84,6 +85,7 @@ from lab_commons.dev.platformparts import (
 from lab_commons.dev.venvpath import current_os_name
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.learned import learned
+from lab_commons.hpc.platforms import Table, table_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
@@ -126,6 +128,8 @@ def tick(
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
+    provides: Mapping[str, Any] | None = None,
+    own_weight: float = 1.0,
 ) -> TickReport:
     """One tick, in the order the module docstring gives; with a run *in_flight* here it claims nothing.
 
@@ -133,7 +137,10 @@ def tick(
     sha12 used in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
     (default: :func:`lab_commons.hpc.learned.learned`). *probe* says why a cluster host cannot write the
-    repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`).
+    repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
+    this host's machine-file ``[capabilities]`` (:mod:`lab_commons.dev.forgeprovides`; none by default): it
+    adds the engine parts it serves and blocks a part needing what it lacks. *own_weight* lifts the value
+    of this host's login's own PRs and requests.
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -158,7 +165,7 @@ def tick(
         mode,
         built,
         repo=repo,
-        platforms=(serve.platform,),
+        platforms=served_parts(serve.platform, provides or {}, declared_parts(root), cluster=bool(serve.hpc)),
         schedule=schedule,
         policy=load_policy(root),
         now=now,
@@ -167,11 +174,11 @@ def tick(
     cores = 1 if serve.hpc else os.cpu_count() or 1
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
-    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
+    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, mine=login, own_weight=own_weight)
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run, os_name or current_os_name(),
         room=(headroom or Headroom(cores=cores)).why_not(), winner='a run in flight here' if in_flight else '',
-        store_why=probe(root) if serve.hpc else '',
+        store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
     for item in ranked:
         taken.consider(item)
@@ -204,6 +211,8 @@ class _Taking:
     room: str = ''
     winner: str = ''
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
+    provides: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+    tables: dict[str, Table] = dataclasses.field(default_factory=dict)
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
@@ -215,8 +224,8 @@ class _Taking:
         if wanted.kind == REQUEST:  # requests are ranked and shown; no producer claims one yet
             self.queue.append(dataclasses.replace(item, blocked=f'{NO_HOST} claims requests yet'))
             return
-        state, holder = assess(status_history(self.client, wanted.sha), self.serve.platform, me=self.me, now=self.now)
-        one = Work(wanted.ref, wanted.sha, self.serve.platform, state, holder)
+        state, holder = assess(status_history(self.client, wanted.sha), wanted.platform, me=self.me, now=self.now)
+        one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder)
         blocked = self._blocked(wanted) if state in CLAIMABLE else ''
         if state in CLAIMABLE and not blocked and not self.dry_run:
             one, blocked = self._take(one, wanted)
@@ -225,19 +234,25 @@ class _Taking:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
 
     def _blocked(self, wanted: Candidate) -> str:
+        table = self.tables.setdefault(wanted.sha, table_at(self.root, wanted.sha))
         outranked = f'{OUTRANKED} by {self.winner}' if self.winner else ''
-        return outranked or self.room or _over_budget(self.root, wanted, self.schedule, self.usage)
+        return (
+            lacking(needs(table, wanted.platform), self.provides)
+            or outranked
+            or self.room
+            or _over_budget(self.root, wanted, self.schedule, self.usage)
+        )
 
     def _take(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
         try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
             one = _producer(self.root, one, self.serve, self.os_name)
         except (UndeclaredPart, FileNotFoundError) as why:
-            self.refused.append(f'{part_context(self.serve.platform)}: not claimed -- {why}')
+            self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
             self.room = f'{NO_HOST} can produce it: {why}'
             return one, self.room
         if one.cluster is not None and one.cluster.outputs and self.store_why:
             why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
-            self.refused.append(f'{part_context(self.serve.platform)}: not claimed -- {why}')
+            self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
             return one, why
         one = claim(self.client, one, self.me)
         if one.state == MINE:
@@ -257,7 +272,7 @@ def _over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mappi
 def _producer(root: Path, work: Work, serve: Serving, os_name: str) -> Work:
     if serve.hpc:
         return dataclasses.replace(work, cluster=cluster_part(root, work.sha))
-    return dataclasses.replace(work, argv=tuple(part_argv(root, serve.platform, scope=FULL, os_name=os_name)))
+    return dataclasses.replace(work, argv=tuple(part_argv(root, work.platform, scope=FULL, os_name=os_name)))
 
 
 def _parser() -> argparse.ArgumentParser:

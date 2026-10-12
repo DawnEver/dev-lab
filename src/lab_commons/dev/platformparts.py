@@ -1,10 +1,11 @@
 """PLATFORM PARTS -- one commit's result COMPOSED of a part per platform it ran on, held on the FORGE.
 
-THE SPLIT IS DECLARED ONCE, per marker, in ``[tool.lab_commons.platforms]`` (:mod:`lab_commons.hpc.platforms`).
-A part is named for the platform it RAN ON -- ``linux``, ``windows``, ``macos`` -- never for where it
+THE SPLIT IS DECLARED ONCE, per marker, on two axes -- ``[tool.lab_commons.platforms]`` and
+``[tool.lab_commons.capabilities]`` (:mod:`lab_commons.hpc.platforms`). A part is named for the platform it
+RAN ON -- ``linux``, ``windows``, ``macos`` -- or for the ENGINE it needs (``jmag``), never for where it
 was launched from. EVERY COLLECTED ID IS ASSIGNED TO EXACTLY ONE PART by one rule,
-:func:`lab_commons.hpc.platforms.assign`: the first platform in ``PLATFORMS`` order that can run it
-(linux, else windows, else macos). A part's selection is therefore a pure function of the commit's
+:func:`lab_commons.hpc.platforms.assign`: its one engine, else the first platform in ``PLATFORMS`` order
+that can run it (linux, else windows, else macos). A part's selection is therefore a pure function of the commit's
 table and its collected ids; no part reads another part, so every part can start at any time and in
 parallel. Each part says what it HANDS to other parts.
 
@@ -27,7 +28,7 @@ status in the same context is a CLAIM on the part (:mod:`lab_commons.dev.forgeti
   REFUSED, never posted: measured 2026-10-09 a record of 50349 lost ids (a build that never produced a
   venv) was written as a linux FAIL. Nothing covered is refused, and so is a record handing off an id
   that is assigned to its own platform.
-* Any other producer (a consumer's runner with ``--platform <name>``) calls :func:`select` with a
+* Any other producer (a consumer's door per part, ``part <name>``) calls :func:`select` with a
   collector over its own checkout, runs the ids assigned to it and writes a record of the same shape.
 
 COMPOSITION (:func:`compose`). The latest part per platform for the commit. Every platform some part
@@ -69,7 +70,7 @@ from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.dev.venvpath import checkout_interpreter
-from lab_commons.hpc.platforms import LINUX, PLATFORMS, assign, cannot_run, host_platform, runnable, table_at
+from lab_commons.hpc.platforms import LINUX, PART_NAME, assign, cannot_run, host_platform, runnable, table_at
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
 from lab_commons.hpc.shell import FULL, INCREMENTAL
@@ -123,7 +124,8 @@ _STATE: Final = {'PASS': 'success', 'FAIL': 'failure'}
 _RESULT: Final = {state: result for result, state in _STATE.items()}
 
 _DESCRIPTION: Final = re.compile(
-    r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) hands=(?P<hands>-|[a-z]+:\d+(?:,[a-z]+:\d+)*) nowhere=(?P<nowhere>\d+)$'
+    r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
+    r'hands=(?P<hands>-|[a-z0-9_]+:\d+(?:,[a-z0-9_]+:\d+)*) nowhere=(?P<nowhere>\d+)$'
 )
 
 #: The remedy a missing part names: the tick that claims it runs :func:`part_argv`.
@@ -185,8 +187,8 @@ def part_argv(root: Path, platform: str, *, scope: str, os_name: str) -> list[st
         FileNotFoundError: the checkout has no own venv.
 
     """
-    if platform not in PLATFORMS or scope not in {FULL, INCREMENTAL}:
-        msg = f'a part is one of {PLATFORMS} at scope {FULL} or {INCREMENTAL}, not {platform!r} at {scope!r}'
+    if not PART_NAME.match(platform) or scope not in {FULL, INCREMENTAL}:
+        msg = f'a part is a platform or an engine at scope {FULL} or {INCREMENTAL}, not {platform!r} at {scope!r}'
         raise ValueError(msg)
     table = f'tool.lab_commons.parts.produce.{platform}'
     produce = _declared(root).get('parts', {}).get('produce', {}).get(platform, {}).get(scope)
@@ -315,7 +317,7 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
             continue
         platform = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)
-        if status.state not in _RESULT or found is None or platform not in PLATFORMS:
+        if status.state not in _RESULT or found is None or not PART_NAME.match(platform):
             problems.append(f'{status.context} is {status.state} ({status.description!r}) -- not a settled part')
             continue
         hands = {} if found['hands'] == '-' else dict(item.split(':') for item in found['hands'].split(','))
@@ -345,12 +347,12 @@ def select(
     *collect* takes a pytest marker expression (``''`` for none) and returns the node ids it collects
     in the consumer's checkout: once for everything, once per platform that cannot run some marker.
     """
-    if platform not in PLATFORMS:
-        msg = f'unknown platform {platform!r}; a part is named for the platform it runs on, one of {PLATFORMS}'
-        raise ValueError(msg)
     table = table_at(root, sha)
+    if platform not in table.parts:
+        msg = f'unknown part {platform!r}; a part is named for its platform or its engine, one of {table.parts}'
+        raise ValueError(msg)
     ids = list(collect(''))
-    cannot = {name: set(collect(expr)) for name in PLATFORMS if (expr := cannot_run(table, name))}
+    cannot = {name: set(collect(expr)) for name in table.parts if (expr := cannot_run(table, name))}
     return split(runnable(ids, cannot), platform)
 
 
@@ -374,7 +376,7 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     if nowhere:
         named = ', '.join(f'{part.platform}={part.nowhere}' for part in ordered if part.nowhere)
         problems.append(f'no declared platform can run some collected test(s) ({named})')
-    for platform in PLATFORMS:
+    for platform in sorted({name for part in ordered for name in part.hands}):
         handing = {part.platform: part.hands[platform] for part in ordered if part.hands.get(platform)}
         if handing and platform not in parts:
             by = ', '.join(f'{name} hands {count}' for name, count in sorted(handing.items()))
