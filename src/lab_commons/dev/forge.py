@@ -73,6 +73,7 @@ __all__ = [
     'credential_for',
     'fetch_origin',
     'forge_from_remote',
+    'forge_of_url',
     'https_transport',
     'on_origin',
     'protection_body',
@@ -209,6 +210,11 @@ def forge_from_remote(root: Path, *, remote: str = 'origin') -> Forge:
         msg = f'no `{remote}` remote in {root}: there is no forge to report on'
         raise UnreadableRemote(msg)
     return _parse_remote(done.stdout.strip(), remote=remote)
+
+
+def forge_of_url(url: str) -> Forge:
+    """Host, owner and repository of a remote *url* with no checkout to read it from (a deploy before its clone)."""
+    return _parse_remote(url, remote=url)
 
 
 def _parse_remote(url: str, *, remote: str) -> Forge:
