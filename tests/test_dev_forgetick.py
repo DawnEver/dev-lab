@@ -587,3 +587,25 @@ def test_the_cluster_part_stays_claimable_by_a_host_lacking_dev_checkout(server,
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     report = _tick(repo, server, seat=SEAT, host='linux', provides={'jmag': {'seats': 4}})
     assert [(w.platform, w.state) for w in report.claimed] == [('linux', MINE)], 'and a cluster runs no engine part'
+
+
+def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:
+    """One PR head declares a capability on the OS axis; the kit refuses it there and nowhere else.
+
+    PLANTED CONTROL: the boosted PR outranks the head, so without the refusal it -- not the head -- is claimed.
+    """
+    repo, tips = _origin(tmp_path)
+    bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.platforms]\njmag = ["windows"]\n')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/feat/a', bad)
+    head = _declare(repo, tips, PRODUCE)
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', bad, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{bad}', (200, []))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server)
+    assert [w.ref for w in report.claimed] == ['integrate/main']
+    (waiting,) = report.queue
+    assert waiting.candidate.ref == 'feat/a'
+    assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: [tool.lab_commons.platforms] jmag')
+    assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]

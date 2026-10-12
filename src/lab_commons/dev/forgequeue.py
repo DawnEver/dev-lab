@@ -42,7 +42,7 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.hpc.learned import learned
-from lab_commons.hpc.platforms import Table, table_at
+from lab_commons.hpc.platforms import Table, declared_at
 from lab_commons.log import emit
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
@@ -92,15 +92,17 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 continue
         waiting.append(one)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
-    read: dict[str, Table] = {}
+    read: dict[str, tuple[Table, str]] = {}
 
-    def tables(sha: str) -> Table:
-        return read.setdefault(sha, table_at(root, sha) if sha else Table())
+    def declared(sha: str) -> tuple[Table, str]:
+        return read.setdefault(sha, declared_at(root, sha) if sha else (Table(), ''))
 
     weights = host_weights(section('schedule'))
     ranked = [
         dataclasses.replace(
-            item, blocked=_why(item.candidate, cards, now, needs(tables(item.candidate.sha), item.candidate.platform))
+            item,
+            blocked=declared(item.candidate.sha)[1]
+            or _why(item.candidate, cards, now, needs(declared(item.candidate.sha)[0], item.candidate.platform)),
         )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
