@@ -30,8 +30,7 @@ def test_a_push_to_integrate_main_needs_no_part_and_main_does() -> None:
 
 
 def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(platformparts, 'checkout_interpreter', lambda *_a, **_k: Path('python'))
     monkeypatch.setattr(platformparts, 'dated_log', lambda *_a, **_k: Path('output'))
     monkeypatch.setattr(platformparts, 'origin_url', lambda *_a: 'https://h/o/r.git')
-    assert platformparts.part_argv(ROOT, 'windows', scope='full', os_name='nt')[1:] == ['-m', 'lab_commons.dev.verify']
-    assert platformparts.cluster_part(ROOT, SHA).collect == ''
+    assert platformparts.part_argv(ROOT, 'windows', scope='full', sha='HEAD') == ['-m', 'lab_commons.dev.verify']
+    assert platformparts.cluster_part(ROOT, 'HEAD').collect == ''

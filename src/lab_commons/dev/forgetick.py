@@ -9,8 +9,8 @@ A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgec
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
 ``quiet``, fetch ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
 value per cost, each waiting one naming why), claim the best feasible one unless a run is already in
-flight here, and give the claimed part what produces it: a local argv
-(:func:`lab_commons.dev.platformparts.part_argv`) or a cluster part
+flight here, and give the claimed part what produces it: a local argv as the claimed commit declares it
+(:func:`lab_commons.dev.platformparts.part_argv`; the producer runs it in a tree at that commit) or a cluster part
 (:func:`lab_commons.dev.platformparts.cluster_part`). A part whose producer the repo does not declare is
 not claimed; its refusal names the pyproject key to add. A cluster host whose rclone
 remote is unusable (:func:`lab_commons.dev.artefacts.remote_problem`) claims no part with declared outputs
@@ -82,7 +82,6 @@ from lab_commons.dev.platformparts import (
     part_context,
     this_platform,
 )
-from lab_commons.dev.venvpath import current_os_name
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.learned import learned
 from lab_commons.hpc.platforms import Table, table_at
@@ -121,7 +120,6 @@ def tick(
     dry_run: bool = False,
     fetch: Callable[[Path], None] = fetch_origin,
     host: str | None = None,
-    os_name: str | None = None,
     in_flight: bool = False,
     headroom: Headroom | None = None,
     usage: Mapping[str, float] | None = None,
@@ -176,7 +174,7 @@ def tick(
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, mine=login, own_weight=own_weight)
     taken = _Taking(
-        root, built, serve, me, now, schedule, usage, dry_run, os_name or current_os_name(),
+        root, built, serve, me, now, schedule, usage, dry_run,
         room=(headroom or Headroom(cores=cores)).why_not(), winner='a run in flight here' if in_flight else '',
         store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
@@ -207,7 +205,6 @@ class _Taking:
     schedule: Schedule
     usage: Mapping[str, float] | None
     dry_run: bool
-    os_name: str
     room: str = ''
     winner: str = ''
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
@@ -245,7 +242,7 @@ class _Taking:
 
     def _take(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
         try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
-            one = _producer(self.root, one, self.serve, self.os_name)
+            one = _producer(self.root, one, self.serve)
         except (UndeclaredPart, FileNotFoundError) as why:
             self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
             self.room = f'{NO_HOST} can produce it: {why}'
@@ -269,10 +266,10 @@ def _over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mappi
     return f'{OVER_BUDGET}: {wanted.ref} used {used:.1f} of {cap:g} core-h in 24 h' if used >= cap else ''
 
 
-def _producer(root: Path, work: Work, serve: Serving, os_name: str) -> Work:
+def _producer(root: Path, work: Work, serve: Serving) -> Work:
     if serve.hpc:
         return dataclasses.replace(work, cluster=cluster_part(root, work.sha))
-    return dataclasses.replace(work, argv=tuple(part_argv(root, work.platform, scope=FULL, os_name=os_name)))
+    return dataclasses.replace(work, argv=tuple(part_argv(root, work.platform, scope=FULL, sha=work.sha)))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -295,7 +292,6 @@ def main(
     fetch: Callable[[Path], None] = fetch_origin,
     seat_of: Callable[[], ClusterAccount | None] = this_seat,
     host: str | None = None,
-    os_name: str | None = None,
 ) -> int:
     """``tick --mode integrate|develop|quiet [--dry-run] [--lease-hours H] [--json]``; exit 1 when the forge fails."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
@@ -316,7 +312,6 @@ def main(
             dry_run=args.dry_run,
             fetch=fetch,
             host=host,
-            os_name=os_name,
         )
     except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError) as failed:
         emit(f'[tick] {failed}', err=True)

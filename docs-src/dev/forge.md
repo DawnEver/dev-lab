@@ -44,8 +44,16 @@ makes on a producer host. Each tick it:
   `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
   `error: stopped`.
 - **The producer argv is declared**, never typed: `[tool.lab_commons.parts] produce.<platform>.<full|incremental>`
-  in the repo's `pyproject.toml`, filled by `platformparts.part_argv`. A part whose producer is undeclared is
-  not claimed, and the refusal names the key.
+  in the repo's `pyproject.toml`, read AT THE CLAIMED SHA by `platformparts.part_argv`. A part whose producer
+  the sha does not declare is not claimed, and the refusal names the key.
+- **A local part is judged in a tree at the claimed sha** (`lab_commons.dev.shatree`), as a cluster run is:
+  `<main checkout>/.claude/worktrees/forge-<sha12>`, detached at the sha, with its submodules and its own
+  `.venv` (`-m lab_commons.dev.dep --bootstrap <tree>`). The declared argv runs there with that tree's
+  interpreter, and the tree is removed once the run ends. The serving checkout's HEAD decides nothing about
+  what is judged. A tree that cannot be built spawns nothing; the claim is released naming the step.
+- **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
+  must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
+  with the remedy -- update the serving checkout -- instead of being read as an absent, empty table.
 - **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.

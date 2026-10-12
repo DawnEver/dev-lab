@@ -142,7 +142,8 @@ class Serving:
 class Work:
     """One request and where it stands: a ref's tip lacking (or holding) one platform's part.
 
-    A claimed part carries what produces it: a local *argv*, or a *cluster* part advanced by serve.
+    A claimed part carries what produces it: a local *argv* -- as the sha declares it, run by the interpreter
+    of the producer's tree at the sha -- or a *cluster* part advanced by serve.
     """
 
     ref: str

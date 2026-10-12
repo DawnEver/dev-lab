@@ -36,7 +36,8 @@ hands ids to must have a part; any FAIL part makes it FAIL; a part naming ``nowh
 by name, as is a missing part.
 
 HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject. A LOCAL part is ONE
-fully filled argv (:func:`part_argv`) run with the checkout's own venv python, cwd = the checkout; a
+declared argv (:func:`part_argv`, read at the claimed commit) run by the own venv python of a tree the
+producer builds at that commit, cwd = that tree (:mod:`lab_commons.dev.shatree`); a
 CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluster's login node
 (:mod:`lab_commons.dev.forgerun`), from :func:`cluster_part`::
 
@@ -60,7 +61,6 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -69,7 +69,7 @@ from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from lab_commons.dev.producer import ProducerExit
-from lab_commons.dev.venvpath import checkout_interpreter
+from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.platforms import LINUX, PART_NAME, assign, cannot_run, host_platform, runnable, table_at
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
@@ -169,35 +169,42 @@ def record_directory(root: Path, head: str) -> Path:
     """The dated directory *head*'s run records go to, under ``[tool.lab_commons.parts] output``.
 
     Every part writes there: the cluster's (:func:`cluster_part`) and a local verify's
-    (:func:`lab_commons.dev.localpart.post_part`, a fresh or a cited run alike).
+    (:func:`lab_commons.dev.localpart.post_part`, a fresh or a cited run alike). *root* is the tree that was
+    judged, clean at *head*, so its working tree IS the commit's declaration.
 
     Raises:
         UndeclaredPart: the output is not declared; the message names the key.
 
     """
-    output = _text(_declared(root).get('parts', {}), 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
+    return _records(root, head, _declared(root))
+
+
+def _records(root: Path, head: str, declared: Mapping[str, Any]) -> Path:
+    output = _text(declared.get('parts', {}), 'tool.lab_commons.parts', 'output', '"output/logs"', required=True)
     return dated_log(root, head, base=output, kind=_RECORD_KIND)
 
 
-def part_argv(root: Path, platform: str, *, scope: str, os_name: str) -> list[str]:
-    """The ONE fully filled argv producing *platform*'s part at *scope*, in the checkout (module docstring).
+def part_argv(root: Path, platform: str, *, scope: str, sha: str) -> list[str]:
+    """The ONE declared argv producing *platform*'s part at *scope*, as commit *sha* declares it (module docstring).
+
+    It is what follows the interpreter: the producer runs it with the own venv python of the tree it built
+    at *sha* (:mod:`lab_commons.dev.shatree`), so neither half depends on where the serving checkout is.
 
     Raises:
         UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
-        FileNotFoundError: the checkout has no own venv.
 
     """
     if not PART_NAME.match(platform) or scope not in {FULL, INCREMENTAL}:
         msg = f'a part is a platform or an engine at scope {FULL} or {INCREMENTAL}, not {platform!r} at {scope!r}'
         raise ValueError(msg)
     table = f'tool.lab_commons.parts.produce.{platform}'
-    produce = _declared(root).get('parts', {}).get('produce', {}).get(platform, {}).get(scope)
-    argv = _strings(produce, table, scope, '["-m", "lab_commons.dev.verify"]', required=True)
-    return [str(checkout_interpreter(root, os_name=os_name)), *argv]
+    produce = _declared(root, sha).get('parts', {}).get('produce', {}).get(platform, {}).get(scope)
+    return _strings(produce, table, scope, '["-m", "lab_commons.dev.verify"]', required=True)
 
 
-def _declared(root: Path) -> dict[str, Any]:
-    return tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8')).get('tool', {}).get('lab_commons', {})
+def _declared(root: Path, sha: str | None = None) -> dict[str, Any]:
+    """The kit's tables as commit *sha* declares them, or *root*'s working tree when no sha is named."""
+    return kit_tables(pyproject_at(root, sha) if sha else (root / 'pyproject.toml').read_text(encoding='utf-8'))
 
 
 def origin_url(root: Path) -> str:
@@ -225,7 +232,7 @@ def cluster_part(root: Path, head: str) -> ClusterPart:
         UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
 
     """
-    declared = _declared(root)
+    declared = _declared(root, head)
     hpc, name = declared.get('hpc', {}), 'tool.lab_commons.hpc'
     _text(hpc, name, 'install', '"uv sync --extra dev"', required=True)
     collect = _text(hpc, name, 'collect', '"tests"', required=False)
@@ -233,7 +240,7 @@ def cluster_part(root: Path, head: str) -> ClusterPart:
     return ClusterPart(
         repo_url=origin_url(root),
         collect=collect,
-        output=record_directory(root, head),
+        output=_records(root, head, declared),
         outputs=tuple(outputs),
     )
 

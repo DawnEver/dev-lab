@@ -6,11 +6,10 @@ producer lives; a ref that moved on stops it (``superseded by <sha>``); a produc
 :data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
 its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose.
 
-A LOCAL PRODUCER JUDGES THE CHECKOUT, NOT THE SHA: ``verify`` runs on the working tree and posts on HEAD.
-So the part is produced only while the checkout's HEAD IS the claimed sha. A checkout elsewhere spawns
-nothing, and one that moved off the sha during the run is named; either way the claim is released as
-:func:`off_the_sha` says, never as a bare "posted no part" (live 2026-10-12: the checkout sat at e9bc0d4,
-verify judged and posted that, and the claim on 4e394b6 was released with no cause).
+THE PART IS JUDGED AT THE CLAIMED SHA, in a tree this producer owns (:mod:`lab_commons.dev.shatree`):
+the declared argv (read at the sha) runs with that tree's own interpreter, cwd = the tree, and the tree
+is removed once the run ended. The serving checkout's HEAD decides nothing. A tree that cannot be built
+spawns nothing, and the claim is released naming the step that refused.
 """
 
 from __future__ import annotations
@@ -28,13 +27,14 @@ from typing import Any, Final
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgeschedule import tip_of
-from lab_commons.dev.forgestatus import head_sha, status_history, status_post
+from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
+from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
 
-__all__ = ['PRODUCE_WALL_S', 'Produced', 'off_the_sha', 'produce']
+__all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
 
 #: How long a produced part may run before it is called hung, in seconds.
 PRODUCE_WALL_S: Final = 24 * 3600
@@ -49,16 +49,6 @@ class Produced:
     platform: str
     argv: tuple[str, ...]
     returncode: int
-
-
-def off_the_sha(head: str | None, sha: str) -> str:
-    """The release reason of a claim on *sha* whose checkout is at *head*; ``''`` when they agree."""
-    if head == sha:
-        return ''
-    return (
-        f'released: the checkout is at {(head or "no commit")[:12]}, not {sha[:12]} -- no part; '
-        f'bring the serving checkout to the claimed sha'
-    )
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None]) -> None:
@@ -78,19 +68,43 @@ def produce(
     renew_s: float,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> Produced:
-    """Run one local part's argv, streaming it and holding its claim alive; release a claim it left pending.
+    """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
-    At each heartbeat the ref is re-read from ``origin``: a ref that moved on stops the producer, and its
-    claim is released ``superseded by <sha>``.
+    The tree is built first and removed last (:mod:`lab_commons.dev.shatree`). At each heartbeat the ref is
+    re-read from ``origin``: a ref that moved on stops the producer, and its claim is released ``superseded by <sha>``.
     """
-    context = part_context(item.platform)
-    if off := off_the_sha(head_sha(root), item.sha):
-        _post(client(root), item, 'error', off, say)
+    try:
+        tree = open_tree(root, item.sha)
+    except TreeFailed as failed:
+        _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
+        say(f'[{item.platform}] {close_tree(root, item.sha)}')
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
-    say(f'[{item.platform}] start: {" ".join(item.argv)}')
+    try:
+        return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
+                    say=say, lease=lease, renew_s=renew_s, fetch=fetch)  # fmt: skip
+    finally:
+        say(f'[{item.platform}] {close_tree(root, item.sha)}')
+
+
+def _run(
+    root: Path,
+    item: Work,
+    argv: tuple[str, ...],
+    tree: Path,
+    *,
+    client: Callable[[Path], Client],
+    spawn: Callable[..., Any],
+    clock: Callable[[], datetime],
+    say: Callable[[str], None],
+    lease: timedelta,
+    renew_s: float,
+    fetch: Callable[[Path], None],
+) -> Produced:
+    context = part_context(item.platform)
+    say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
     proc = spawn(
-        list(item.argv),
-        cwd=root,
+        list(argv),
+        cwd=tree,
         env=os.environ | producing(context, item.sha),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -133,10 +147,10 @@ def produce(
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if superseded or (posts and posts[-1].state == 'pending'):
         stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
-        reason = 'stopped' if stopped else off_the_sha(head_sha(root), item.sha) or release_reason(returncode)
+        reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
-    return Produced(item.ref, item.sha, item.platform, item.argv, returncode)
+    return Produced(item.ref, item.sha, item.platform, argv, returncode)
 
 
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:

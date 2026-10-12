@@ -146,6 +146,7 @@ def test_a_box_serves_only_its_own_platform_and_never_a_cluster_over_ssh() -> No
 
 def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
+    (repo / 'pyproject.toml').write_text(PRODUCE, encoding='utf-8')  # committed: the producer is read AT the sha
     tips = {}
     for branch in ('integrate/main', 'feat/a', 'fix/b', 'other'):
         (repo / branch.replace('/', '_')).write_text(branch, encoding='utf-8')
@@ -153,17 +154,24 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', branch)
         tips[branch] = git_out(repo, 'rev-parse', 'HEAD')
         run_git(repo, 'update-ref', f'refs/remotes/origin/{branch}', tips[branch])
-    (repo / 'pyproject.toml').write_text(PRODUCE, encoding='utf-8')
-    (repo / '.venv' / 'Scripts').mkdir(parents=True)
-    (repo / '.venv' / 'Scripts' / 'python.exe').write_text('', encoding='utf-8')
     return repo, tips
+
+
+def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
+    """A new integration head whose OWN commit carries *pyproject*; the working tree is not what is read."""
+    (repo / 'pyproject.toml').write_text(pyproject, encoding='utf-8')
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'declare')
+    tips['integrate/main'] = git_out(repo, 'rev-parse', 'HEAD')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', tips['integrate/main'])
+    return tips['integrate/main']
 
 
 PRODUCE = '[tool.lab_commons.parts.produce.windows]\nfull = ["-m", "lab_commons.dev.verify"]\n'
 
 
-def _argv(repo: Path) -> list[str]:
-    return [str(repo / '.venv' / 'Scripts' / 'python.exe'), '-m', 'lab_commons.dev.verify']
+def _argv() -> list[str]:
+    return ['-m', 'lab_commons.dev.verify']
 
 
 def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetick.TickReport:
@@ -176,7 +184,6 @@ def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetic
         seat=kwargs.pop('seat', None),
         fetch=lambda _root: None,
         host=kwargs.pop('host', 'windows'),
-        os_name='nt',
         **kwargs,
     )
 
@@ -196,14 +203,15 @@ def test_a_tick_claims_an_open_request_and_names_the_command(server, tmp_path: P
     assert [(w.ref, w.platform, w.state) for w in report.claimed] == [('integrate/main', 'windows', MINE)]
     posted = next(r for r in Recorder.received if r['method'] == 'POST')
     assert posted['body'] == {'state': 'pending', 'context': 'tests/windows', 'description': ME.description()}
-    assert report.claimed[0].argv == tuple(_argv(repo)), 'the declared producer, run with the venv python'
+    assert report.claimed[0].argv == tuple(_argv()), 'the producer the claimed commit declares'
     assert any(line.startswith('produce tests/windows:') for line in report.lines)
 
 
 def test_a_part_the_repo_cannot_produce_is_never_claimed(server, tmp_path: Path) -> None:
     """PLANTED CONTROL: the claimable request of the test above, with the producer undeclared."""
     repo, tips = _origin(tmp_path)
-    (repo / 'pyproject.toml').write_text('', encoding='utf-8')
+    _declare(repo, tips, '')
+    (repo / 'pyproject.toml').write_text(PRODUCE, encoding='utf-8')  # the serving checkout's file decides nothing
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))
     report = _tick(repo, server)
@@ -301,11 +309,10 @@ def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, cap
         fetch=lambda _root: None,
         seat_of=lambda: None,
         host='windows',
-        os_name='nt',
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
-    assert printed['claimed'] == [{'ref': 'integrate/main', 'sha': sha, 'platform': 'windows', 'argv': _argv(repo)}]
+    assert printed['claimed'] == [{'ref': 'integrate/main', 'sha': sha, 'platform': 'windows', 'argv': _argv()}]
 
 
 def _post(status_id: int, claim: Claim, platform: str = 'windows') -> dict[str, object]:
@@ -352,10 +359,8 @@ def test_a_lapsed_lease_by_the_forges_clock_lets_another_claim_whatever_the_host
 
 def test_a_cluster_seat_claims_a_cluster_part_and_no_argv(server, tmp_path: Path) -> None:
     repo, tips = _origin(tmp_path)
-    sha = tips['integrate/main']
-    (repo / 'pyproject.toml').write_text(
-        '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n',
-        encoding='utf-8',
+    sha = _declare(
+        repo, tips, '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -523,10 +528,10 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     server, tmp_path: Path, outputs: str, problem: str, *, claims: bool
 ) -> None:
     repo, tips = _origin(tmp_path)
-    sha = tips['integrate/main']
-    (repo / 'pyproject.toml').write_text(
+    sha = _declare(
+        repo,
+        tips,
         f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{outputs}[tool.lab_commons.parts]\noutput = "output/logs"\n',
-        encoding='utf-8',
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -549,20 +554,10 @@ CAPABLE = (
 )
 
 
-def _capable_head(repo: Path) -> str:
-    """A new integration head whose OWN commit declares the capability table (it is read at the sha)."""
-    (repo / 'pyproject.toml').write_text(CAPABLE, encoding='utf-8')
-    run_git(repo, 'add', 'pyproject.toml')
-    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'capabilities')
-    sha = git_out(repo, 'rev-parse', 'HEAD')
-    run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', sha)
-    return sha
-
-
 def test_a_host_providing_an_engine_claims_its_part_and_one_lacking_it_is_never_offered(server, tmp_path: Path) -> None:
     """PLANTED CONTROL: the same host, the same head, without ``[capabilities.jmag]``, serves windows alone."""
-    repo, _tips = _origin(tmp_path)
-    sha = _capable_head(repo)
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, CAPABLE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []))
     lacking = _tick(repo, server, dry_run=True, provides={'dev_checkout': {}})
@@ -572,8 +567,8 @@ def test_a_host_providing_an_engine_claims_its_part_and_one_lacking_it_is_never_
 
 
 def test_a_part_needing_a_capability_this_host_lacks_waits_labelled(server, tmp_path: Path) -> None:
-    repo, _tips = _origin(tmp_path)
-    sha = _capable_head(repo)
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, CAPABLE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []))
     report = _tick(repo, server, provides={})
@@ -584,8 +579,8 @@ def test_a_part_needing_a_capability_this_host_lacks_waits_labelled(server, tmp_
 
 def test_the_cluster_part_stays_claimable_by_a_host_lacking_dev_checkout(server, tmp_path: Path) -> None:
     """The cluster case (coordinator ruling 2026-10-12): ``dev_checkout`` never makes the linux part unclaimable."""
-    repo, _tips = _origin(tmp_path)
-    sha = _capable_head(repo)
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, CAPABLE)
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))

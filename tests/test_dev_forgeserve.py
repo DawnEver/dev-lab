@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import os
 import subprocess
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -24,6 +23,7 @@ from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
 from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
+from lab_commons.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
 
 SHA = 'a' * 40
@@ -64,6 +64,25 @@ class _Forge:
         return tuple(SimpleNamespace(context=c, state=s, description=d) for c, s, d in self.posts)
 
 
+class _Trees:
+    """The producer's per-sha trees: which were opened and closed; *refuse* makes opening one fail."""
+
+    def __init__(self, tmp_path: Path, refuse: str = '') -> None:
+        self.base, self.refuse = tmp_path / 'trees', refuse
+        self.opened: list[str] = []
+        self.closed: list[str] = []
+
+    def open(self, _root: Path, sha: str) -> Tree:
+        self.opened.append(sha)
+        if self.refuse:
+            raise TreeFailed(self.refuse)
+        return Tree(self.base / sha[:12], self.base / sha[:12] / 'python')
+
+    def close(self, _root: Path, sha: str) -> str:
+        self.closed.append(sha)
+        return f'tree {sha[:12]}: removed'
+
+
 def _client(_root: Path) -> SimpleNamespace:
     return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 
@@ -81,7 +100,7 @@ def _serve(
     cards: list | None = None,
     host: str | None = None,
     tidy=lambda _root, _client, **_kw: (),
-    head: Callable[[], str] = lambda: SHA,
+    trees: _Trees | None = None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
@@ -102,7 +121,14 @@ def _serve(
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     monkeypatch.setattr(forgeship, 'tidy', tidy)
-    monkeypatch.setattr(forgeproduce, 'head_sha', lambda _root: head())
+    trees = trees or _Trees(tmp_path)
+    monkeypatch.setattr(forgeproduce, 'open_tree', trees.open)
+    monkeypatch.setattr(forgeproduce, 'close_tree', trees.close)
+
+    def spawn(argv: list[str], **kwargs: object) -> _Proc:
+        (spawned if spawned is not None else []).append({'argv': argv, **kwargs})
+        return (procs or {})[argv[1]]  # argv[0] is the tree's own interpreter
+
     report = forgeserve.serve(
         tmp_path,
         'integrate',
@@ -110,7 +136,7 @@ def _serve(
         machine='G',
         seat=seat,
         cluster=cluster,
-        spawn=lambda argv, **k: ((spawned if spawned is not None else []).append(k), (procs or {})[argv[0]])[1],
+        spawn=spawn,
         clock=lambda: NOW,
         say=said.append,
         alarm=alarms.append,
@@ -197,30 +223,40 @@ def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> N
     assert forge.posts[-1] == ('tests/windows', 'error', 'released: producer crashed (exit -9)')
 
 
-def test_a_tree_not_at_the_claimed_sha_produces_nothing_and_says_why(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED (live 2026-10-12, 4e394b6): a checkout elsewhere spawns nothing and the release names it.
+def test_a_local_part_is_judged_in_its_own_tree_at_the_claimed_sha(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED (live 2026-10-12, 4e394b6): the serving checkout sat at e9bc0d4 and verify judged THAT.
 
-    The checkout sat at e9bc0d4, verify judged and posted THAT, and the claim on 4e394b6 was released as
-    "exited 1 (FAIL) but posted no part" -- an exit with no named cause.
+    The producer runs the declared argv with the interpreter of a tree AT the claimed sha, in that tree,
+    and removes the tree afterwards -- the serving checkout (``tmp_path``) is never the cwd.
     """
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify', '--full'))
+    trees, spawned = _Trees(tmp_path), []
+    report, said, _alarms = _serve(
+        monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, spawned=spawned, trees=trees
+    )
+    tree = tmp_path / 'trees' / SHA[:12]
+    assert [(k['argv'], k['cwd']) for k in spawned] == [([str(tree / 'python'), 'verify', '--full'], tree)]
+    assert (trees.opened, trees.closed) == ([SHA], [SHA])
+    assert report.produced[0].argv == (str(tree / 'python'), 'verify', '--full')
+    assert f'[windows] tree {SHA[:12]}: removed' in said
+
+
+def test_a_tree_that_cannot_be_built_spawns_nothing_and_names_the_step(monkeypatch, tmp_path: Path) -> None:
     forge = _Forge()
     forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    spawned: list[dict] = []
-    stale = 'e' * 40
-    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1)}, forge, spawned=spawned, head=lambda: stale)
+    trees, spawned = _Trees(tmp_path, refuse='dep --bootstrap exited 1: no lock'), []
+    report, _said, _alarms = _serve(
+        monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, forge, spawned=spawned, trees=trees
+    )
     assert spawned == []
-    assert forge.posts[-1][1] == 'error'
-    assert f'the checkout is at {stale[:12]}, not {SHA[:12]}' in forge.posts[-1][2]
-
-
-def test_a_tree_that_moves_off_the_sha_mid_run_names_it(monkeypatch, tmp_path: Path) -> None:
-    forge = _Forge()
-    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
-    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-    heads = iter([SHA, 'f' * 40])
-    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(1)}, forge, head=lambda: next(heads))
-    assert f'the checkout is at {"f" * 12}, not {SHA[:12]}' in forge.posts[-1][2]
+    assert report.produced[0].returncode == ProducerExit.INCONCLUSIVE
+    assert forge.posts[-1] == (
+        'tests/windows',
+        'error',
+        f'released: no tree at {SHA[:12]} -- dep --bootstrap exited 1: no lock',
+    )
+    assert trees.closed == [SHA], 'a half-built tree is removed too'
 
 
 def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Path) -> None:

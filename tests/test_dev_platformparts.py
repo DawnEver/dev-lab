@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import NoReturn
 
 import pytest
-from _forge_fake import make_repo
+from _forge_fake import git_out, make_repo, run_git
 
 from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.forgeoutbox import PostFailed
@@ -158,21 +158,22 @@ incremental = ["scripts/gate/runner.py", "gate", "--platform", "windows"]
 
 
 def _checkout(tmp_path: Path, pyproject: str, remote: str = 'git@forge.example.org:o/r.git') -> tuple[Path, str]:
+    """A repo whose COMMIT carries *pyproject*, and that commit; the working tree then declares nothing."""
     repo = make_repo(tmp_path, remote)
     (repo / 'pyproject.toml').write_text(pyproject, encoding='utf-8')
-    python = repo / '.venv' / 'Scripts' / 'python.exe'
-    python.parent.mkdir(parents=True)
-    python.write_text('', encoding='utf-8')
-    return repo, str(python)
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'declare')
+    (repo / 'pyproject.toml').write_text('', encoding='utf-8')
+    return repo, git_out(repo, 'rev-parse', 'HEAD')
 
 
 def test_the_cluster_part_is_filled_from_the_declarations_alone(tmp_path: Path) -> None:
     """The build (install, needs) is NOT in it: hpc reads it from the commit itself."""
-    repo, _python = _checkout(tmp_path, DECLARED)
-    part = platformparts.cluster_part(repo, SHA)
+    repo, sha = _checkout(tmp_path, DECLARED)
+    part = platformparts.cluster_part(repo, sha)
     assert (part.repo_url, part.collect) == ('https://forge.example.org/o/r.git', 'tests')
     assert part.output.relative_to(repo).parts[:2] == ('output', 'logs')
-    assert part.output.relative_to(repo).parts[-2:] == ('parts', SHA)
+    assert part.output.relative_to(repo).parts[-2:] == ('parts', sha)
     assert part.outputs == (), 'nothing is uploaded by default'
 
 
@@ -182,18 +183,19 @@ def test_the_cluster_part_carries_the_declared_outputs_and_a_malformed_list_is_r
     )
     for name in ('ok', 'bad'):
         (tmp_path / name).mkdir()
-    repo, _python = _checkout(tmp_path / 'ok', declared)
-    assert platformparts.cluster_part(repo, SHA).outputs == ('f/*.h5',)
-    repo, _python = _checkout(tmp_path / 'bad', declared.replace('["f/*.h5"]', '"f/*.h5"'))
+    repo, sha = _checkout(tmp_path / 'ok', declared)
+    assert platformparts.cluster_part(repo, sha).outputs == ('f/*.h5',)
+    repo, sha = _checkout(tmp_path / 'bad', declared.replace('["f/*.h5"]', '"f/*.h5"'))
     with pytest.raises(platformparts.UndeclaredPart, match=r'\[tool\.lab_commons\.hpc\] outputs'):
-        platformparts.cluster_part(repo, SHA)
+        platformparts.cluster_part(repo, sha)
 
 
 def test_a_local_part_runs_the_declared_producer_per_scope(tmp_path: Path) -> None:
-    repo, python = _checkout(tmp_path, DECLARED)
-    full = platformparts.part_argv(repo, 'windows', scope='full', os_name='nt')
-    assert full == [python, 'scripts/gate/runner.py', 'gate', '--platform', 'windows', '--full']
-    incremental = platformparts.part_argv(repo, 'windows', scope='incremental', os_name='nt')
+    """The argv is the one the CLAIMED COMMIT declares (the working tree is emptied); the tree's python runs it."""
+    repo, sha = _checkout(tmp_path, DECLARED)
+    full = platformparts.part_argv(repo, 'windows', scope='full', sha=sha)
+    assert full == ['scripts/gate/runner.py', 'gate', '--platform', 'windows', '--full']
+    incremental = platformparts.part_argv(repo, 'windows', scope='incremental', sha=sha)
     assert incremental[-1] == 'windows'
 
 
@@ -207,9 +209,9 @@ def test_a_local_part_runs_the_declared_producer_per_scope(tmp_path: Path) -> No
 def test_a_missing_cluster_declaration_is_refused_naming_its_key(tmp_path: Path, drop: str, named: str) -> None:
     """PLANTED CONTROL: the full declaration fills the part; removing one key refuses by that key."""
     assert DECLARED.count(drop) == 1
-    repo, _python = _checkout(tmp_path, DECLARED.replace(drop, ''))
+    repo, sha = _checkout(tmp_path, DECLARED.replace(drop, ''))
     with pytest.raises(platformparts.UndeclaredPart, match=named):
-        platformparts.cluster_part(repo, SHA)
+        platformparts.cluster_part(repo, sha)
 
 
 @pytest.mark.parametrize('platform', ['windows', 'linux', 'macos'])
@@ -218,11 +220,11 @@ def test_a_local_part_of_any_platform_needs_its_own_produce_declaration(tmp_path
     declared = DECLARED.replace(
         '[tool.lab_commons.parts.produce.windows]', f'[tool.lab_commons.parts.produce.{platform}]'
     )
-    repo, python = _checkout(tmp_path, declared)
-    assert platformparts.part_argv(repo, platform, scope='full', os_name='nt')[0] == python
+    repo, sha = _checkout(tmp_path, declared)
+    assert platformparts.part_argv(repo, platform, scope='full', sha=sha)[0] == 'scripts/gate/runner.py'
     other = next(name for name in ('windows', 'linux', 'macos') if name != platform)
     with pytest.raises(platformparts.UndeclaredPart, match=rf'produce\.{other}\] full'):
-        platformparts.part_argv(repo, other, scope='full', os_name='nt')
+        platformparts.part_argv(repo, other, scope='full', sha=sha)
 
 
 def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(monkeypatch, capsys) -> None:
