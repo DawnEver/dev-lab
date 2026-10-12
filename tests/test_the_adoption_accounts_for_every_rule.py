@@ -99,6 +99,7 @@ _ENFORCED = {
     # The branch flow is enforced by its doors (forge promote / sync / integration), proved on real
     # repositories against both forge backends.
     'TRUNK-MOVES-BY-FAST-FORWARD': (guard('tests/test_dev_branchflow.py'), guard('tests/test_dev_admission.py')),
+    'INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT': (guard('tests/test_dev_integrationhome.py'),),
     'PRS-TARGET-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
     'DOWNSTREAM-SYNCS-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
     'FLOOR-ON-EVERY-SCAN': (
