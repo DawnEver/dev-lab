@@ -63,7 +63,7 @@ from lab_commons.dev import forgerun, forgeship
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
-from lab_commons.dev.forgehosts import publish_card
+from lab_commons.dev.forgehosts import publish_card, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms, tip_of
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
@@ -125,8 +125,8 @@ def serve(
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes)."""
     repo = origin_url(root)
     table = section('schedule') if table is None else table
-    raised: list[Alarm] = []
-    alarm = _recording(alarm, raised)
+    raised: list[Alarm] = []  # every alarm this tick, for its host card
+    alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
@@ -185,16 +185,6 @@ def serve(
     )
     published = tuple(flush(root, client=client))
     return ServeReport(tuple(ticked.lines), tuple(produced), tuple(left), published, broken)
-
-
-def _recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
-    """*alarm*, also keeping each alarm in *raised* so the tick's host card carries it."""
-
-    def sounded(one: Alarm) -> object:
-        raised.append(one)
-        return alarm(one)
-
-    return sounded
 
 
 def _tidy(

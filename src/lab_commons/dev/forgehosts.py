@@ -35,7 +35,16 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
 
-__all__ = ['HOSTS_TITLE', 'STALE_TICKS', 'HostCard', 'hosts_issue', 'publish', 'publish_card', 'read_cards']
+__all__ = [
+    'HOSTS_TITLE',
+    'STALE_TICKS',
+    'HostCard',
+    'hosts_issue',
+    'publish',
+    'publish_card',
+    'read_cards',
+    'recording',
+]
 
 #: The title of the issue every host card hangs on.
 HOSTS_TITLE: Final = 'forge hosts'
@@ -105,6 +114,16 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
         raw = json.loads(found['json'])
         cards.append(HostCard(**{**raw, 'holds': tuple(raw.get('holds', ())), 'alarms': tuple(raw.get('alarms', ()))}))
     return tuple(cards)
+
+
+def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
+    """*alarm*, also keeping each alarm in *raised* so the tick's card carries it."""
+
+    def sounded(one: Alarm) -> object:
+        raised.append(one)
+        return alarm(one)
+
+    return sounded
 
 
 def publish_card(
