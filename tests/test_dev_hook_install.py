@@ -105,7 +105,11 @@ def test_the_stage_pin_reds_in_both_directions(repo: Path) -> None:
         assert_stages_are_declared(root=repo, declared_stages=frozenset({'pre-commit', 'commit-msg'}))
 
 
-def test_a_worktree_shares_the_one_hooks_directory(repo: Path, tmp_path: Path) -> None:
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run([_GIT, '-C', str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_a_linked_worktree_installs_into_its_own_git_dir(repo: Path, tmp_path: Path) -> None:
     subprocess.run([_GIT, '-C', str(repo), 'add', '-A'], check=True, capture_output=True)
     subprocess.run(
         [_GIT, '-C', str(repo), '-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-qm', 'i', '--no-verify'],
@@ -114,5 +118,15 @@ def test_a_worktree_shares_the_one_hooks_directory(repo: Path, tmp_path: Path) -
     )
     lane = tmp_path / 'lane'
     subprocess.run([_GIT, '-C', str(repo), 'worktree', 'add', '-q', str(lane)], check=True, capture_output=True)
-    assert install(lane).verdict == PROTECTED
-    assert hook_install.hook_installation(repo).verdict == PROTECTED
+    done = install(lane)
+    assert done.verdict == PROTECTED
+    own = Path(_git_out(lane, 'rev-parse', '--absolute-git-dir')) / 'hooks'
+    assert done.hooks_dir.resolve() == own.resolve()
+    assert _git_out(lane, 'config', '--worktree', 'core.hooksPath') == own.as_posix()
+    assert sorted(path.name for path in lane.iterdir()) == ['.git', 'pyproject.toml']  # nothing in the tree
+    shared = subprocess.run(
+        [_GIT, '-C', str(repo), 'config', '--local', 'core.hooksPath'], check=False, capture_output=True
+    )
+    assert shared.returncode == 1  # the shared config is untouched
+    assert hook_install.hook_installation(repo).verdict == UNPROTECTED  # so is the main checkout
+    assert install(lane).hooks_dir == done.hooks_dir

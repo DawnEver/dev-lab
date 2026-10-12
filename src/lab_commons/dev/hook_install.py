@@ -14,9 +14,11 @@ next commit with nothing re-installed, and the shim text is a constant per stage
 byte-equal to :func:`shim`, and anything else in a declared slot is STALE (an older shim of ours) or
 FOREIGN (somebody else's file, which an install refuses to overwrite).
 
-THE HOOKS DIRECTORY IS ASKED OF GIT, never string-built: ``core.hooksPath`` redirects it and every
-worktree shares its main checkout's one directory. Reporting is read-only; installing is the
-explicit ``--install`` act, safe from any worktree because it is idempotent.
+THE HOOKS DIRECTORY IS ASKED OF GIT, never string-built: ``core.hooksPath`` redirects it. Reporting is
+read-only; installing is the explicit ``--install`` act, idempotent. In a LINKED worktree the install
+first points a worktree-scoped ``core.hooksPath`` at that worktree's OWN git dir
+(``.git/worktrees/<name>/hooks``): per-worktree, outside the working tree, so it needs no ignore or
+allowlist entry and never touches the shared config. The main checkout keeps git's default.
 """
 
 from __future__ import annotations
@@ -124,6 +126,28 @@ def hooks_dir(repo: Path) -> Path:
     return Path(out) if Path(out).is_absolute() else (repo / out)
 
 
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        [_GIT, '-C', str(repo), *args],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=True,
+        timeout=_GIT_TIMEOUT_S,
+    ).stdout.strip()
+
+
+def _scope_linked_worktree(repo: Path) -> None:
+    """In a linked worktree, point a worktree-scoped ``core.hooksPath`` at its own git dir's ``hooks``."""
+    git_dir = Path(_git(repo, 'rev-parse', '--absolute-git-dir'))
+    common = Path(_git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    if git_dir.resolve() == common.resolve():
+        return
+    _git(repo, 'config', 'extensions.worktreeConfig', 'true')
+    _git(repo, 'config', '--worktree', 'core.hooksPath', (git_dir / 'hooks').as_posix())
+
+
 def declared_stages(repo: Path) -> dict[str, tuple[str, ...]]:
     """Map git hook type -> the hook ids *repo*'s merged table declares for it."""
     return {stage: tuple(hook.id for hook in hooks) for stage, hooks in hook_table(repo).items()}
@@ -181,6 +205,7 @@ def install(repo: Path) -> InstallReport:
         HookInstallError: a foreign hook occupies a declared slot, or the checkout is still unprotected.
 
     """
+    _scope_linked_worktree(repo)
     before = hook_installation(repo)
     if before.verdict != UNPROTECTED:
         return before
