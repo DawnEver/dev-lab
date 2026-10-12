@@ -8,6 +8,8 @@ callables. No test touches this box's machine file, Scheduled Task or credential
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, replace
@@ -305,3 +307,25 @@ def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
     assert seen['mode'] == 'develop'
     assert seen['out'] is not None, 'the children write to the same log'
     assert '[serve] reached the log' in (tmp_path / 'serve.log').read_text(encoding='utf-8')
+
+
+REAL_DOOR: Final = r"""
+import pathlib, sys
+from lab_commons.dev._dep_project import target_root
+target_root(pathlib.Path(sys.argv[-1]), pathlib.Path.cwd())
+"""
+
+
+def test_the_bootstrap_passes_the_real_door_from_an_unrelated_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``dep --bootstrap`` refuses to move a primary checkout from elsewhere, so the deploy runs it IN the checkout."""
+    checkout, elsewhere = tmp_path / 'lab-commons', tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True)
+    door = tmp_path / 'door.py'
+    door.write_text(REAL_DOOR, encoding='utf-8')
+    monkeypatch.chdir(elsewhere)
+    programs = workstation.Programs(bootstrap=(sys.executable, str(door)))
+    step = workstation.Step(workstation.Tools(git=('git',)), dry=False)
+    assert workstation._venv(step, programs, checkout, checkout.name, moved=True) == 0

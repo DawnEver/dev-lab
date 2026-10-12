@@ -224,7 +224,9 @@ def _venv(step: Step, programs: Programs, checkout: Path, name: str, *, moved: b
     if _venv_python(checkout).is_file() and not moved:
         emit(f'  {name}: .venv current')
         return 0
-    return step.change(f'{name}: -m lab_commons.dev.dep --bootstrap {checkout}', [*programs.bootstrap, str(checkout)])
+    # The door's own rule: a primary checkout's environment moves only from that checkout.
+    bootstrap = [*programs.bootstrap, str(checkout)]
+    return step.change(f'{name}: -m lab_commons.dev.dep --bootstrap {checkout}', bootstrap, cwd=checkout)
 
 
 def _hooks(step: Step, programs: Programs, checkout: Path, name: str) -> int:
@@ -235,7 +237,7 @@ def _hooks(step: Step, programs: Programs, checkout: Path, name: str) -> int:
     if rc in {0, 2}:
         emit(f'  {name}: ' + ('hooks live' if rc == 0 else 'declares no hook'))
         return 0
-    return step.change(f'{name}: hook_install --install', [*hook, '--install'])
+    return step.change(f'{name}: hook_install --install', [*hook, '--install'], cwd=checkout)
 
 
 def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
