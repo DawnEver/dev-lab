@@ -6,10 +6,13 @@ now. So every ``forge serve`` tick publishes this host's CARD as ONE comment on 
 marker and edited in place (:func:`lab_commons.dev.forgepulls.comment_upsert`) -- the same shape on gitea
 and GitHub. The card says who the host is (``<cluster>/<account>`` or the machine), the platform it
 serves, its headroom and the cluster facts it read locally (partitions, quota), when it last ticked (the
-forge's clock), what it holds with live progress, and why each candidate it saw waits.
+forge's clock), what it holds with live progress, why each candidate it saw waits, and EVERY ALARM the tick
+raised (:mod:`lab_commons.dev.forgealarm`): an alarm on an unattended host is read here, from any machine,
+not from a cron log nobody opens.
 
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
-``forge queue`` shows it so rather than counting it as serving.
+``forge queue`` shows it so rather than counting it as serving. It is also how a REFUSED CREDENTIAL shows:
+a host whose token the forge refuses cannot publish anything, so its card simply stops moving.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev import forgerun
+from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving
 from lab_commons.dev.forgepulls import comment_list, comment_upsert
 from lab_commons.dev.forgeschedule import Ranked
@@ -56,6 +60,7 @@ class HostCard:
     facts: Mapping[str, Any] = field(default_factory=dict)
     holds: tuple[str, ...] = ()
     waiting: Mapping[str, str] = field(default_factory=dict)
+    alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -65,7 +70,9 @@ class HostCard:
         """The comment body: one line a human reads, then the card as JSON."""
         holds = ', '.join(self.holds) or 'nothing'
         head = f'**{self.host}** serves `{self.platform}` as {self.login}; ticked {self.ticked}; holds {holds}'
-        return f'{head}\n\n```json\n{json.dumps({**asdict(self), "holds": list(self.holds)}, indent=1)}\n```'
+        loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
+        raw = {**asdict(self), 'holds': list(self.holds), 'alarms': [dict(a) for a in self.alarms]}
+        return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
 
 def hosts_issue(client: Client) -> int | None:
@@ -96,7 +103,7 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
         if found is None:
             continue
         raw = json.loads(found['json'])
-        cards.append(HostCard(**{**raw, 'holds': tuple(raw.get('holds', ()))}))
+        cards.append(HostCard(**{**raw, 'holds': tuple(raw.get('holds', ())), 'alarms': tuple(raw.get('alarms', ()))}))
     return tuple(cards)
 
 
@@ -112,8 +119,9 @@ def publish_card(
     standing: forgerun.Standing | None,
     table: Mapping[str, Any],
     say: Callable[[str], None],
+    alarms: Sequence[Alarm] = (),
 ) -> None:
-    """Publish this serving host's card after a tick; a forge that refuses it is said, never a failed tick."""
+    """Publish this serving host's card after a tick, with the *alarms* it raised; a refusal is said, never fatal."""
     built = client(root)
     try:
         runs = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerun.live(origin_url(root)))
@@ -127,6 +135,7 @@ def publish_card(
             facts=standing.facts if standing else {},
             holds=runs if seat is not None else tuple(f'{one.sha[:12]} {one.platform}' for one in claimed),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
+            alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, OSError) as failed:

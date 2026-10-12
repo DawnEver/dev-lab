@@ -45,6 +45,9 @@ from lab_commons.dev.platformparts import origin_url
 from lab_commons.hpc.learned import learned
 from lab_commons.log import emit
 
+#: How a stale card reads: the host stopped publishing, and these are why a host stops.
+_STALE = '  STALE (no tick published: host down, cron line gone, or its forge credential refused -- see its cron log)'
+
 __all__ = ['main', 'render', 'view']
 
 
@@ -98,7 +101,15 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         'now': now.isoformat(),
         'queue': [_row(item) for item in ranked],
         'in_flight': in_flight,
-        'hosts': [{**dataclasses.asdict(card), 'holds': list(card.holds), 'stale': card.stale(now)} for card in cards],
+        'hosts': [
+            {
+                **dataclasses.asdict(card),
+                'holds': list(card.holds),
+                'alarms': list(card.alarms),
+                'stale': card.stale(now),
+            }
+            for card in cards
+        ],
         'starved': [_row(item) for item in starved(ranked, {repo: schedule})],
     }
 
@@ -126,9 +137,15 @@ def render(view_: Mapping[str, Any]) -> list[str]:
     ] or ['  (none)']
     lines += ['', 'hosts:']
     lines += [
-        f'  {h["host"]:<20} {h["platform"]:<8} ticked {h["ticked"]}{"  STALE" if h["stale"] else ""}  '
-        f'headroom {json.dumps(h["headroom"])}  holds {", ".join(h["holds"]) or "nothing"}'
+        line
         for h in view_['hosts']
+        for line in (
+            (
+                f'  {h["host"]:<20} {h["platform"]:<8} ticked {h["ticked"]}{_STALE if h["stale"] else ""}  '
+                f'headroom {json.dumps(h["headroom"])}  holds {", ".join(h["holds"]) or "nothing"}'
+            ),
+            *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
+        )
     ] or ['  (no host has published a card)']
     lines += ['', 'starved:']
     lines += [f'  {r["candidate"]} waited {r["wait_h"]:.1f} h -- {r["blocked"]}' for r in view_['starved']] or [

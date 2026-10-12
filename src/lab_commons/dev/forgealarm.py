@@ -15,6 +15,8 @@ WHERE THE FAMILY'S OWN CHANNELS ARE CONFIGURED THEY ARE USED TOO: the machine fi
 table (:mod:`lab_commons.config`) drives :class:`lab_commons.supervise.alert.Notifier` -- Telegram,
 email, webhook -- exactly as supervision does. No table, or none enabled, delivers nothing beyond the
 line, and says so on the line (``"delivered": []``).
+AND EVERY ALARM A TICK RAISES RIDES ON THAT HOST'S CARD (:mod:`lab_commons.dev.forgehosts`), which
+``forge queue`` prints: the forge is the channel every machine reads, with or without ``[alerts]``.
 
 A CRON TICK EVERY FIVE MINUTES MUST NOT PAGE EVERY FIVE MINUTES. A delivery of one ``(kind, repo)``
 is repeated at most once per :data:`REPEAT` (state: ``forge-alarms.json`` beside the machine file);

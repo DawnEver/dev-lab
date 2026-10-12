@@ -125,6 +125,8 @@ def serve(
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes)."""
     repo = origin_url(root)
     table = section('schedule') if table is None else table
+    raised: list[Alarm] = []
+    alarm = _recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
@@ -175,7 +177,7 @@ def serve(
         alarm(one)
     if mode != 'quiet':
         publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
-                     standing=standing, table=table, say=say)  # fmt: skip
+                     standing=standing, table=table, say=say, alarms=raised)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -183,6 +185,16 @@ def serve(
     )
     published = tuple(flush(root, client=client))
     return ServeReport(tuple(ticked.lines), tuple(produced), tuple(left), published, broken)
+
+
+def _recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
+    """*alarm*, also keeping each alarm in *raised* so the tick's host card carries it."""
+
+    def sounded(one: Alarm) -> object:
+        raised.append(one)
+        return alarm(one)
+
+    return sounded
 
 
 def _tidy(
