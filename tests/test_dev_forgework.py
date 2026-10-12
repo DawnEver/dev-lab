@@ -29,7 +29,7 @@ from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
 from lab_commons.dev.forge import Forge, NoCredential
-from lab_commons.dev.forgetick import forge_now
+from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgework import (
     GITEA,
     GITHUB,

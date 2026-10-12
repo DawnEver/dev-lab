@@ -29,6 +29,13 @@ EXIT CODES ARE READ BY ONE CONTRACT, :mod:`lab_commons.dev.producer`: 0/1 a post
 A CONTRACT BREAK FAILS LOUDLY: a produced argv exiting 2 -- what a renamed flag or verb looks like --
 is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 
+THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`lab_commons.dev.forgeschedule`). Before the tick a cluster host
+reads its standing locally -- headroom, the last day's core-hours, partitions -- and a box its CPU seat;
+the tick claims the best feasible candidate and names why every other waits. After it, a run whose ref
+moved on is SUPERSEDED (cancelled and released), a candidate waiting past its class's bound raises a
+``starved`` alarm, and this host's CARD is published on the forge (:mod:`lab_commons.dev.forgehosts`):
+who it is, what it serves, its headroom, what it holds with progress, and the queue as it saw it.
+
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`lab_commons.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
 work it could serve is pending each raise an alarm.
@@ -49,24 +56,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.config import section
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
+from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
+from lab_commons.dev.forgehosts import publish_card
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
+from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms, tip_of
+from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_history, status_post
-from lab_commons.dev.forgetick import (
-    DEFAULT_LEASE,
-    MODES,
-    OPEN,
-    STALE,
-    Claim,
-    Work,
-    forge_now,
-    this_machine,
-    this_seat,
-    tick,
-)
+from lab_commons.dev.forgetick import MODES, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url, part_context
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
@@ -117,14 +118,19 @@ def serve(
     alarm: Callable[[Alarm], object] = sound,
     renew_s: float | None = None,
     host: str | None = None,
+    box_room: Callable[[], Headroom] = box_headroom,
+    table: Mapping[str, Any] | None = None,
 ) -> ServeReport:
-    """The module docstring's sequence. *cluster* builds the Slurm side, only when a cluster run needs it."""
+    """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes)."""
     repo = origin_url(root)
+    table = section('schedule') if table is None else table
     runs = list(forgerun.live(repo)) if seat is not None else []
+    slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
         ticked = tick(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
-            in_flight=bool(runs),
+            in_flight=bool(runs), headroom=standing.headroom if standing else box_room(),
+            usage=standing.usage if standing else None, weights=host_weights(table),
         )  # fmt: skip
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
@@ -134,6 +140,8 @@ def serve(
         raise
     for line in ticked.lines:
         say(line)
+    if slurm is not None:
+        runs = forgerun.supersede_moved(root, runs, client=client(root), cluster=slurm, say=say)
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     produced: list[Produced] = []
     for item in ticked.claimed:
@@ -141,16 +149,31 @@ def serve(
             runs.append(forgerun.start(item, item.holder))
         else:
             produced.append(
-                _produce(root, item, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every)
+                _produce(
+                    root,
+                    item,
+                    client=client,
+                    spawn=spawn,
+                    clock=clock,
+                    say=say,
+                    lease=lease,
+                    renew_s=every,
+                    fetch=fetch,
+                )
             )
     left = _advance(
-        root, runs, client=client, machine=machine, seat=seat, lease=lease, cluster=cluster, say=say, alarm=alarm
+        root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
     )
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
     if mode != 'quiet' and pending and not ticked.claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]}' for item in pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
+    for one in starved_alarms(ticked.queue, load_schedule(root), repo):
+        alarm(one)
+    if mode != 'quiet':
+        publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
+                     standing=standing, table=table, say=say)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -168,7 +191,8 @@ def _advance(
     machine: str,
     seat: ClusterAccount | None,
     lease: timedelta,
-    cluster: Callable[[], forgerun.Cluster],
+    slurm: forgerun.Cluster | None,
+    why: str,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> list[str]:
@@ -177,11 +201,9 @@ def _advance(
         return []
     built = client(root)
     me = Claim(machine, built.whoami(), forge_now(built) + lease, str(seat) if seat else '')
-    try:
-        slurm = cluster()
-    except (RuntimeError, ValueError) as why:  # not on a cluster, or no grant for this account
+    if slurm is None:  # not on a cluster, or no grant for this account
         for run in runs:
-            alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} cannot advance', str(why)))
+            alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} cannot advance', why))
         say(f'[serve] no cluster to advance {len(runs)} run(s) on: {why}')
         return [run.sha for run in runs]
     left: list[str] = []
@@ -214,8 +236,13 @@ def _produce(
     say: Callable[[str], None],
     lease: timedelta,
     renew_s: float,
+    fetch: Callable[[Path], None] = fetch_origin,
 ) -> Produced:
-    """Run one local part's argv, streaming it and holding its claim alive; release a claim it left pending."""
+    """Run one local part's argv, streaming it and holding its claim alive; release a claim it left pending.
+
+    At each heartbeat the ref is re-read from ``origin``: a ref that moved on stops the producer, and its
+    claim is released ``superseded by <sha>``.
+    """
     context = part_context(item.platform)
     say(f'[{item.platform}] start: {" ".join(item.argv)}')
     proc = spawn(
@@ -231,6 +258,7 @@ def _produce(
     pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say), daemon=True)
     pump.start()
     started = clock()
+    superseded = ''
     while True:
         try:
             returncode = proc.wait(timeout=renew_s)
@@ -240,6 +268,14 @@ def _produce(
                 proc.kill()
                 returncode = proc.wait()
                 say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
+                break
+            fetch(root)
+            tip = tip_of(root, item.ref)
+            if tip and tip != item.sha:
+                proc.kill()
+                returncode = proc.wait()
+                superseded = tip
+                say(f'[{item.platform}] stopped: {item.ref} moved on to {tip[:12]}')
                 break
             if item.holder is not None:  # the heartbeat: the same claim, until the FORGE's time plus the lease
                 built = client(root)
@@ -252,8 +288,9 @@ def _produce(
     pump.join(timeout=5)
     say(f'[{item.platform}] exit={returncode}')
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
-    if posts and posts[-1].state == 'pending':
-        _post(client(root), item, 'error', release_reason(returncode), say)
+    if superseded or (posts and posts[-1].state == 'pending'):
+        reason = f'superseded by {superseded[:12]}' if superseded else release_reason(returncode)
+        _post(client(root), item, 'error', reason, say)
     return Produced(item.ref, item.sha, item.platform, item.argv, returncode)
 
 
@@ -294,7 +331,7 @@ def main(
             client=build,
             machine=machine,
             seat=seat,
-            cluster=lambda: forgerun.slurm_cluster(root, seat),
+            cluster=lambda: slurm_cluster(root, seat),
             lease=timedelta(hours=args.lease_hours),
             say=lambda line: emit(line, err=args.json, flush=True),
         )

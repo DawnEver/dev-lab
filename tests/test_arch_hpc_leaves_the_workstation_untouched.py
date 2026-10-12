@@ -23,7 +23,6 @@ from test_hpc_run import MACHINE, FakeRunCluster
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
-from lab_commons.hpc import outstanding
 from lab_commons.hpc.shell import pack
 
 _GIT: Final = shutil.which('git') or 'git'
@@ -80,7 +79,7 @@ def test_the_pack_reads_the_repository_and_the_cluster_cache_can_index_it(tmp_pa
 def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record(
     tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The record under ``-o`` and the machine's outstanding-run entry are the only local writes."""
+    """The record under ``-o`` is the only local write here (the learned measurements live beside the machine file)."""
     repo, sha = _repo(tmp_path)
     fake = FakeRunCluster(have=False)
     real_popen = subprocess.Popen
@@ -108,10 +107,8 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     assert cli.main(['run', 'submit', *common, '--scope', 'full', '--repo-url', 'https://g/r.git',
                      '--repo', str(repo)]) == 0  # fmt: skip
     assert json.loads(fake.state)['sha'] == sha, 'the run state went to the cluster'
-    assert [e['sha'] for e in outstanding.outstanding()] == [sha], 'the one local list of outstanding runs'
     out = tmp_path / 'out'
     assert cli.main(['run', 'gather', *common, '-o', str(out)]) == 0
-    assert outstanding.outstanding() == [], 'a written record takes the run off the list'
     (output,) = out.iterdir()
     assert output.name.startswith(f'run-{sha}-linux-'), output.name
     assert {argv[3] for argv in spawned} <= READ_ONLY_GIT

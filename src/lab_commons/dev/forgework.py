@@ -131,6 +131,8 @@ class PullRequest:
     base: str
     #: The head's commit; a fork's head branch is not in this repository, its commit is (``pull/N/head``).
     head_sha: str = ''
+    #: The labels on the PR -- where a user's designation (``priority:user``, ``priority:<n>``) is read.
+    labels: tuple[str, ...] = ()
 
 
 def _issue(raw: Mapping[str, Any]) -> Issue:
@@ -143,7 +145,11 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
     """A forge's pull-request JSON as a :class:`PullRequest`."""
     issue = _issue(raw)
     return PullRequest(
-        *dataclasses.astuple(issue), raw['head']['ref'], raw['base']['ref'], raw['head'].get('sha') or ''
+        *dataclasses.astuple(issue),
+        raw['head']['ref'],
+        raw['base']['ref'],
+        raw['head'].get('sha') or '',
+        tuple(str(label['name']) for label in raw.get('labels') or ()),
     )
 
 
@@ -197,7 +203,7 @@ class Client:
     sleep: Callable[[float], None] = time.sleep
     timeout: float = 30.0
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
-    #: The raw ``Date`` header of the forge's latest answer: its clock (:func:`lab_commons.dev.forgetick.forge_now`).
+    #: The raw ``Date`` header of the forge's latest answer: its clock (:func:`lab_commons.dev.forgeclaim.forge_now`).
     answered: str = ''
 
     @property

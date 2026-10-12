@@ -20,7 +20,7 @@ import pytest
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
-from lab_commons.hpc import learned, outstanding
+from lab_commons.hpc import learned
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
@@ -801,36 +801,31 @@ def test_a_pend_under_the_threshold_is_no_stall() -> None:
     assert where(SHA, MACHINE, lambda _g: fake, policy=POLICY).stall == ''
 
 
-# -- one list of outstanding runs; watch and gather --wait share one path --------------------------------
+# -- gather and gather --wait share one path, on this login node's shell ---------------------------------
 
 
-def _outstanding_cli(fake: FakeRunCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[object, list]:
+def _gather_cli(fake: FakeRunCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[object, list]:
 
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'machine' / 'config.toml'))
     monkeypatch.setattr(cli, 'load_grants', lambda: MACHINE)
-    monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: fake)  # run status: a human's read, over ssh
-    monkeypatch.setattr(cli, 'submitter', lambda: lambda _g: fake)  # gather/watch: this login node's shell
+    monkeypatch.setattr(cli, 'submitter', lambda: lambda _g: fake)  # gather: this login node's shell
     slept: list[float] = []
     monkeypatch.setattr(cli, '_sleep', slept.append)
-    state = _submit(fake)
-    outstanding.add(SHA, repo='https://g/r.git', grant=state['rounds'][0]['grant'], job_ids=['4243'])
+    _submit(fake)
     return cli, slept
 
 
-def test_watch_blocks_until_every_outstanding_run_has_its_record(
+def test_gather_wait_polls_until_the_run_has_its_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
     fake = FakeRunCluster(active=2)
     fake.queue = _queue(3, 'shortq,defq', pending=2, running=2)
-    cli, slept = _outstanding_cli(fake, tmp_path, monkeypatch)
-    assert cli.main(['run', 'status']) == 0
+    cli, slept = _gather_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'gather', '--sha', SHA, '--wait', '-o', str(tmp_path / 'out')]) == 0
     assert 'queued 2 for 3 min (Priority) on shortq,defq; running 2 of' in ''.join(capsys.readouterr())
-    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0
     assert len(slept) == 2, 'two polls saw it running, the third gathered it'
     assert len(list((tmp_path / 'out').iterdir())) == 1
-    assert outstanding.outstanding() == []
-    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0, 'nothing outstanding is nothing to wait for'
 
 
 def test_gather_without_wait_says_where_the_run_is_and_exits_pending(
@@ -838,23 +833,21 @@ def test_gather_without_wait_says_where_the_run_is_and_exits_pending(
 ) -> None:
     fake = FakeRunCluster(active=1)
     fake.queue = _queue(3, 'shortq,defq', pending=1, running=0)
-    cli, slept = _outstanding_cli(fake, tmp_path, monkeypatch)
+    cli, slept = _gather_cli(fake, tmp_path, monkeypatch)
     assert cli.main(['run', 'gather', '--sha', SHA, '-o', str(tmp_path / 'out')]) == PENDING
     assert 'queued 1 for 3 min' in ''.join(capsys.readouterr())
     assert slept == []
     assert cli.main(['run', 'gather', '--sha', SHA, '--wait', '-o', str(tmp_path / 'out')]) == 0
 
 
-def test_a_job_id_slurm_has_forgotten_is_a_finished_run_for_status_and_watch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_a_job_id_slurm_has_forgotten_is_a_finished_run_for_gather(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """PLANTED CONTROL, 2026-10-11: squeue forgets a finished job and refuses its id; that is DONE, not a crash."""
     fake = FakeRunCluster(active=1)
     fake.queue = RuntimeError('ssh exited 1: slurm_load_jobs error: Invalid job id specified')
-    cli, _ = _outstanding_cli(fake, tmp_path, monkeypatch)
-    assert cli.main(['run', 'status']) == 0
-    assert 'finished' in ''.join(capsys.readouterr())
-    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0
+    cli, _ = _gather_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'gather', '--sha', SHA, '--wait', '-o', str(tmp_path / 'out')]) == 0
     assert len(list((tmp_path / 'out').iterdir())) == 1
 
 
@@ -867,10 +860,10 @@ def test_any_other_squeue_failure_still_raises() -> None:
         where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
 
 
-def test_a_red_record_makes_watch_exit_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Planted control beside the green watch: same path, failing ids, exit 1."""
-    cli, _ = _outstanding_cli(_RedCluster(), tmp_path, monkeypatch)
-    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 1
+def test_a_red_record_makes_gather_exit_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planted control beside the green gather: same path, failing ids, exit 1."""
+    cli, _ = _gather_cli(_RedCluster(), tmp_path, monkeypatch)
+    assert cli.main(['run', 'gather', '--sha', SHA, '-o', str(tmp_path / 'out')]) == 1
 
 
 # -- efficiency: measured phases, carried measurements, balanced shards (census 2026-10-11) ----------------
@@ -921,8 +914,8 @@ def test_a_gathered_record_plans_the_next_submit_of_its_repo_and_no_other(
 ) -> None:
     """Measured 2026-10-11: --history was optional, nobody passed it, and 4441 of 4441 files planned blind."""
     fake = FakeRunCluster()
-    cli, _ = _outstanding_cli(fake, tmp_path, monkeypatch)
-    assert cli.main(['run', 'watch', '-o', str(tmp_path / 'out')]) == 0
+    cli, _ = _gather_cli(fake, tmp_path, monkeypatch)
+    assert cli.main(['run', 'gather', '--sha', SHA, '-o', str(tmp_path / 'out')]) == 0
     assert learned.learned('https://g/r.git')['durations'], 'the record taught its repository'
     assert learned.learned('https://g/other.git') == {}, 'PLANTED CONTROL: another repository learned nothing'
     state = _submit(FakeRunCluster(), history=learned.learned('https://g/r.git'))

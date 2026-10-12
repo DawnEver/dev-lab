@@ -18,9 +18,9 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgestatus import Status
-from lab_commons.dev.forgetick import (
+from lab_commons.dev.forgeclaim import (
     CLAIMED,
+    DEFAULT_LEASE,
     DONE,
     MINE,
     OPEN,
@@ -28,10 +28,20 @@ from lab_commons.dev.forgetick import (
     Claim,
     Serving,
     assess,
-    requests,
     serving,
-    tick,
 )
+from lab_commons.dev.forgeschedule import (
+    INTEGRATION,
+    OUTRANKED,
+    OVER_BUDGET,
+    PR,
+    REQUEST,
+    Headroom,
+    candidates,
+    load_schedule,
+)
+from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgetick import tick
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
@@ -50,6 +60,8 @@ NOW_HTTP = 'Sat, 10 Oct 2026 12:00:00 GMT'
 def server() -> Iterator[ThreadingHTTPServer]:
     for httpd in serve():
         Recorder.date = NOW_HTTP  # the forge's clock; the host's is never read
+        answer('GET', f'{API}/pulls', (200, []))  # no open PR and no request issue unless a test says so
+        answer('GET', f'{API}/issues', (200, []))
         yield httpd
 
 
@@ -151,14 +163,6 @@ PRODUCE = '[tool.lab_commons.parts.produce.windows]\nfull = ["-m", "lab_commons.
 
 def _argv(repo: Path) -> list[str]:
     return [str(repo / '.venv' / 'Scripts' / 'python.exe'), '-m', 'lab_commons.dev.verify']
-
-
-def test_the_mode_names_the_refs_it_serves(tmp_path: Path) -> None:
-    repo, tips = _origin(tmp_path)
-    policy = Policy()
-    assert requests(repo, 'integrate', policy) == (('integrate/main', tips['integrate/main']),)
-    assert set(requests(repo, 'develop', policy)) == {('fix/b', tips['fix/b']), ('feat/a', tips['feat/a'])}
-    assert requests(repo, 'quiet', policy) == ()
 
 
 def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetick.TickReport:
@@ -283,7 +287,7 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
 def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, capsys) -> None:
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
-    me = Claim(workstation() or '', 'alice', NOW + forgetick.DEFAULT_LEASE)
+    me = Claim(workstation() or '', 'alice', NOW + DEFAULT_LEASE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     mine = {'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': me.description()}
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
@@ -336,7 +340,7 @@ def test_a_lapsed_lease_by_the_forges_clock_lets_another_claim_whatever_the_host
     Recorder.received.clear()
     Recorder.date = 'Sat, 10 Oct 2026 12:02:00 GMT'  # the forge is two minutes on; the bob lease has lapsed
     later = NOW + timedelta(minutes=2)
-    mine = Claim('G', 'alice', later + forgetick.DEFAULT_LEASE)
+    mine = Claim('G', 'alice', later + DEFAULT_LEASE)
     answer('GET', f'{API}/statuses/{sha}', (200, [_post(1, bob)]), (200, [_post(1, bob), _post(2, mine)]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     taken = _tick(repo, server)
@@ -372,3 +376,88 @@ def test_a_run_in_flight_claims_nothing_more(server, tmp_path: Path) -> None:
     report = _tick(repo, server, in_flight=True)
     assert report.claimed == ()
     assert [w.state for w in report.work] == [OPEN]
+
+
+def _pull(number: int, head: str, sha: str, *labels: str) -> dict[str, object]:
+    return {
+        'number': number,
+        'title': head,
+        'state': 'open',
+        'body': '',
+        'html_url': f'https://forge.example.org/o/r/pulls/{number}',
+        'user': {'login': 'bob'},
+        'head': {'ref': head, 'sha': sha},
+        'base': {'ref': 'integrate/main'},
+        'labels': [{'name': label} for label in labels],
+    }
+
+
+def test_the_mode_names_its_candidates_one_per_ref(server, tmp_path: Path) -> None:
+    """Integrate: the integration head, PRs into it, opted-in branches, requests. Develop: the lanes."""
+    repo, tips = _origin(tmp_path)
+    (repo / 'pyproject.toml').write_text(PRODUCE + '[tool.lab_commons.schedule]\nbranches = ["oth*"]\n', 'utf-8')
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', tips['feat/a'], 'priority:user')]))
+    request = {
+        'number': 9,
+        'body': 'platform = "windows"\n',
+        'created_at': '2026-10-10T00:00:00Z',
+        'labels': [{'name': 'forge:request'}],
+    }
+    answer('GET', f'{API}/issues', (200, [request]))
+    forge = Forge('forge.example.org', 'o', 'r')
+    built = client(forge, Loopback(server))
+    found = candidates(
+        repo, 'integrate', built, repo='o/r', platforms=('windows',), schedule=load_schedule(repo),
+        policy=Policy(), now=NOW,
+    )  # fmt: skip
+    got = {(c.ref, c.sha, c.kind, c.labels) for c in found}
+    assert got == {
+        ('integrate/main', tips['integrate/main'], INTEGRATION, ()),
+        ('feat/a', tips['feat/a'], PR, ('priority:user',)),
+        ('other', tips['other'], 'branch', ()),
+        ('issue/9', '', REQUEST, ('forge:request',)),
+    }
+    develop = candidates(
+        repo, 'develop', built, repo='o/r', platforms=('windows',), schedule=load_schedule(repo),
+        policy=Policy(), now=NOW,
+    )  # fmt: skip
+    assert {c.ref for c in develop} == {'feat/a', 'fix/b'}
+
+
+def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path) -> None:
+    """A user-boosted PR jumps the integration head. PLANTED CONTROL: the label removed, the head is claimed."""
+    repo, tips = _origin(tmp_path)
+    head, lane = tips['integrate/main'], tips['feat/a']
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    answer('GET', f'{API}/statuses/{lane}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{lane}', (201, {}))
+    report = _tick(repo, server)
+    assert [w.ref for w in report.claimed] == ['feat/a']
+    (waiting,) = report.queue
+    assert waiting.candidate.ref == 'integrate/main'
+    assert waiting.blocked == f'{OUTRANKED} by feat/a@{lane[:12]}:windows'
+    Recorder.received.clear()
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane)]))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    assert [w.ref for w in _tick(repo, server).claimed] == ['integrate/main']
+
+
+def test_over_budget_or_no_headroom_is_not_claimed_and_says_so(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same open head under budget with headroom is claimed (the first tick test)."""
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    (repo / 'pyproject.toml').write_text(
+        PRODUCE + '[tool.lab_commons.schedule]\ndaily_budget_core_h = {integration = 10}\n', 'utf-8'
+    )
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    over = _tick(repo, server, usage={head[:12]: 12.0})
+    assert over.claimed == ()
+    assert over.queue[0].blocked == f'{OVER_BUDGET}: integrate/main used 12.0 of 10 core-h in 24 h'
+    full = _tick(repo, server, headroom=Headroom(cores=8, submits=0))
+    assert full.claimed == ()
+    assert 'QOS' in full.queue[0].blocked
+    assert not [r for r in Recorder.received if r['method'] == 'POST']

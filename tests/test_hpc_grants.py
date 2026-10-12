@@ -389,7 +389,7 @@ def test_on_an_even_makespan_the_grant_with_more_headroom_wins_wherever_it_is_li
     assert grant is first
 
 
-# -- probe reads the machine, not a job file in the cwd --------------------------------------------------
+# -- a job-file verb reads its job file, never a guessed one in the cwd ---------------------------------
 
 
 def _cli_on_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
@@ -397,19 +397,28 @@ def _cli_on_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
     monkeypatch.chdir(tmp_path)  # no hpc.toml here
     monkeypatch.setattr(cli, 'load_grants', lambda: Machine(workstation='ws-a', grants=(GRANT,)))
     monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: None)
-    monkeypatch.setattr(cli, 'probe', lambda _run, _account: _snap())
     return cli
 
 
-def test_probe_needs_no_job_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ('argv', 'remedy'),
+    [
+        (['probe'], 'host card carries its headroom'),
+        (['run', 'status'], 'shows its progress'),
+        (['run', 'watch'], 'forge serve'),
+    ],
+)
+def test_the_ssh_reads_are_retired_and_name_the_forge_as_their_replacement(
+    argv: list[str], remedy: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``probe`` crashed with FileNotFoundError on ``./hpc.toml``; the machine config is all it reads."""
+    """Where a run is and what the cluster can take are read from the forge. PLANTED CONTROL: run gather parses."""
     cli = _cli_on_machine(monkeypatch, tmp_path)
-    assert cli.main(['probe']) == 0
-    out = capsys.readouterr()
-    assert 'shortq' in out.out + out.err
-    assert 'defq' in out.out + out.err
+    with pytest.raises(SystemExit):
+        cli.main(argv)
+    err = capsys.readouterr().err
+    assert 'is retired' in err
+    assert remedy in err
+    assert cli._parser().parse_args(['run', 'gather', '--sha', 'a', '-o', 'o']).step == 'gather'
 
 
 @pytest.mark.parametrize('verb', ['plan', 'submit', 'status', 'gather', 'retry'])
