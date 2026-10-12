@@ -164,6 +164,28 @@ def test_each_tick_advances_the_run_and_a_restart_resumes_without_resubmitting(h
     assert forgerun.live('https://f/o/r.git') == (), 'released: the state file is gone'
 
 
+def test_a_retry_round_moves_the_runs_job_ids_to_the_round_in_flight(home: Path) -> None:
+    """Each tick re-reads every round's job id from the cluster; the run file never keeps its submit's.
+
+    Measured 2026-10-12 on Ada: r0 and r1 died OUT_OF_MEMORY, r2 ran, and every tick still said
+    ``running (jobs 7667160)`` -- the r0 job squeue had long forgotten -- because the run file kept the
+    ids of its SUBMIT. The retries are hpc's (one per gather); each tick re-reads them from the cluster.
+    """
+    store, slurm = _Store(), _Slurm(home / 'r')
+    _start(home, store)
+    _tick(store, slurm)
+    slurm.recorded = ['7667160', '7667161', '7667163']
+    said: list[str] = []
+    (run,) = forgerun.live('https://f/o/r.git')
+    after = forgerun.advance(
+        Path(), run, client=_Client(store), me=HERE, lease=HOURS6, cluster=slurm, say=said.append, alarm=[].append
+    )
+    assert after is not None
+    assert after.job_ids == ('7667160', '7667161', '7667163'), 'every round, so a cancel reaches them all'
+    assert forgerun.live('https://f/o/r.git')[0].job_ids == after.job_ids, 'and the file carries them'
+    assert any('job 7667163' in line and 'round 3' in line for line in said), said
+
+
 def test_a_crash_after_sbatch_adopts_the_jobs_slurm_recorded(home: Path) -> None:
     """PLANTED CONTROL: phase still ``claimed`` on disk, but hpc recorded the run -- Slurm, not the file, decides."""
     store, slurm = _Store(), _Slurm(home / 'r')

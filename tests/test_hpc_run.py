@@ -14,6 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import ClassVar
 
 import pytest
 
@@ -981,3 +982,33 @@ def test_every_item_carries_the_timeout_its_scope_declares() -> None:
     submit_run(narrowed, MACHINE, lambda _g: incremental, cost=COST, policy=POLICY)
     assert {i['timeout_s'] for i in full.manifests[0]['items']} == {3000}
     assert {i['timeout_s'] for i in incremental.manifests[0]['items']} == {300}
+
+
+class _AdaRounds(FakeRunCluster):
+    """sacct answers PER JOB ID, as Ada did for 18f128d on 2026-10-12: r0 and r1 OUT_OF_MEMORY, r2 COMPLETED."""
+
+    STATES: ClassVar[dict[str, str]] = {'4243': 'OUT_OF_MEMORY', '4244': 'OUT_OF_MEMORY', '4245': 'COMPLETED'}
+
+    def __call__(self, command: str, stdin: str | None = None) -> str:
+        if command.startswith('sacct '):
+            self.calls.append((command, stdin))
+            job = command.split(' -j ')[1].split(maxsplit=1)[0]
+            row = f'{self.STATES[job]}|2026-10-12T16:25:27|2026-10-12T16:25:39|2026-10-12T16:26:08|29|1'
+            return ''.join(f'{job}_{i}|{row}\n' for i in range(9))
+        return super().__call__(command, stdin)
+
+
+def test_two_out_of_memory_rounds_then_a_completed_one_is_gathered_from_the_latest_job() -> None:
+    """THE ADA RUN OF 2026-10-12: the record comes from r2, and only the CURRENT round's job is ever asked about.
+
+    sacct, never squeue, decides a round: a job squeue has forgotten is finished, not running.
+    """
+    fake = _AdaRounds(dies=frozenset({'tests/b.py'}), kills=2)
+    record = _run(fake)
+    assert record['job_ids'] == ['4243', '4244', '4245']
+    first, second, third = record['rounds']
+    assert (second['mem_mb'], third['mem_mb']) == (2 * first['mem_mb'], 4 * first['mem_mb'])
+    assert all(record['outcomes'][f'tests/b.py::t{n}'] == 'passed' for n in (3, 4, 5)), 'r2 results gathered'
+    asked = [c.split(' -j ')[1].split()[0] for c, _ in fake.calls if c.startswith('sacct ')]
+    assert asked == ['4243', '4244', '4245'], 'each gather asks sacct about the current round only'
+    assert not any(' -j ' in c for c, _ in fake.calls if 'squeue' in c), 'squeue decides no job in a gather'

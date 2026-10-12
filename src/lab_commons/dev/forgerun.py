@@ -270,7 +270,10 @@ def advance(
         if run.phase == SUBMITTED:
             record = cluster.gather(run)
             if record is None:
-                say(f'{tag}: running (jobs {" ".join(run.job_ids)})')
+                # hpc submits retry rounds inside a gather: re-read every round's job id each tick (Ada,
+                # 2026-10-12: the submit's r0 id was still shown while r2 ran).
+                run = _step(run, job_ids=tuple(cluster.submitted(run)) or run.job_ids)
+                say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
                 return _report(client, run, cluster.progress(run), lease, say)
             run = _step(run, phase=GATHERED, record=str(record))
             run = _report(client, run, 'publishing', lease, say)
