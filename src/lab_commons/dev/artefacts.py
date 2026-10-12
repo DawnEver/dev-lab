@@ -77,7 +77,8 @@ from lab_commons.dev.artefactstores import (
     sorted_refs,
     verified_copy,
 )
-from lab_commons.dev.forgework import Client, pull_of
+from lab_commons.dev.forgepulls import pulls_off
+from lab_commons.dev.forgework import Client, ForgeCallFailed, pull_of
 from lab_commons.hpc.rclone import probe
 
 __all__ = [
@@ -315,12 +316,21 @@ def resolve(entry: dict[str, Any], dest: Path, *, client: Client, repo: str) -> 
 
 
 def pinned(client: Client) -> frozenset[str]:
-    """The sha12s a ``keep``-labelled issue or pull request names: shas in its body, and a PR's head."""
+    """The sha12s a ``keep``-labelled issue or pull request names: shas in its body, and a PR's head.
+
+    A repository with pull requests switched off still lists its old PRs among its issues, but answers
+    their ``/pulls`` read 404 (:func:`~lab_commons.dev.forgepulls.pulls_off`): such a PR pins by its body.
+    """
     found: set[str] = set()
     for item in client.call('GET', f'{client.repo}/issues?state=all&labels=keep&limit=50'):
         found.update(token[:12] for token in _SHA_TOKEN.findall(item.get('body') or ''))
         if 'pull_request' in item:
-            head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
+            try:
+                head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
+            except ForgeCallFailed as failed:  # a PR labelled before the repo switched pull requests off
+                if not pulls_off(client, failed):
+                    raise
+                continue
             found.update([head[:12]] if head else [])
     return frozenset(found)
 
