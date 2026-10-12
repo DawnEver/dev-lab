@@ -60,6 +60,15 @@ def test_pruned_directories_are_not_walked(tmp_path) -> None:
     assert misplaced_code(tmp_path, code_roots=_ROOTS, pruned_paths=('worktrees',)) == []
 
 
+def test_the_cluster_run_directories_in_a_judged_tree_are_not_walked(tmp_path) -> None:
+    """Measured 2026-10-12 on Ada: a run writes ``.lab-ci/env.sh`` and ``.lab-hpc/<run>/job.sh`` into its tree."""
+    for rel in ('.lab-ci/env.sh', '.lab-hpc/run-abc-r0/job.sh'):
+        (tmp_path / rel).parent.mkdir(parents=True)
+        (tmp_path / rel).write_text('x', encoding='utf-8')
+    (tmp_path / 'stray.sh').write_text('x', encoding='utf-8')
+    assert misplaced_code(tmp_path, code_roots=_ROOTS) == ['stray.sh']
+
+
 def test_an_empty_allow_list_is_REFUSED_rather_than_refusing_everything(tmp_path) -> None:
     with pytest.raises(ValueError, match='code roots'):
         misplaced_code(tmp_path, code_roots=())
