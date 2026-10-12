@@ -14,7 +14,7 @@ import pytest
 from _forge_fake import git_out, run_git
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgerun, forgeserve, forgeship
+from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeschedule import Candidate, Headroom, Ranked
@@ -96,8 +96,8 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
-    monkeypatch.setattr(forgeserve, 'status_post', forge.post)
-    monkeypatch.setattr(forgeserve, 'status_history', forge.history)
+    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
+    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
     monkeypatch.setattr(forgeship, 'tidy', tidy)
     report = forgeserve.serve(
@@ -411,6 +411,6 @@ def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     proc = _Proc(1)
     proc.pid = 77  # type: ignore[attr-defined]
-    monkeypatch.setattr(forgeserve, 'was_stopped', lambda pid: pid == 77)
+    monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == 77)
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
     assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')
