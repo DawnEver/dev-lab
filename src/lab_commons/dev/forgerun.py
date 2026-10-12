@@ -12,7 +12,7 @@ captured in the run when it is claimed -- declared at REQUEST time) are packed f
 tree and put in the artefact store (:mod:`lab_commons.dev.artefacts`) after the record is gathered and
 before it is posted; the record's ``artefacts`` manifest names them. A declared output that is missing
 releases the part as an error and alarms. Each serve tick on a cluster also cleans the stores
-(:func:`tidy`): this host is their single writer.
+(:func:`lab_commons.dev.forgeship.tidy`): this host is their single writer.
 
 One file per run, keyed by repo + sha + platform + scope, under ``forge-runs/`` beside the machine
 file (:func:`directory`) -- in the account's home, so any login host of that account sees it.
@@ -54,21 +54,8 @@ from pathlib import Path
 from typing import Final, Protocol
 
 from lab_commons.config import config_path
-from lab_commons.dev.artefacts import (
-    ARCHIVE,
-    ArtefactStore,
-    ForgeStore,
-    MissingOutput,
-    clean,
-    collect,
-    large_store,
-    load_config,
-    pack,
-    pinned,
-    run_id,
-    store_for,
-)
-from lab_commons.dev.forge import forge_from_remote
+from lab_commons.dev import forgeship
+from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgeroute import pyproject_at, route
@@ -99,7 +86,6 @@ __all__ = [
     'start',
     'supersede',
     'supersede_moved',
-    'tidy',
 ]
 
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
@@ -354,36 +340,18 @@ def _release_reason(run: Run, why: Exception, alarm: Callable[[Alarm], None]) ->
 
 
 def _ship(root: Path, run: Run, *, client: Client, cluster: Cluster, say: Callable[[str], None], tag: str) -> Run:
-    """Pack the declared outputs, put them, and name them in the record's ``artefacts``; idempotent per run."""
+    """Store the declared outputs and name them in the record's ``artefacts``; idempotent per run."""
     record = read_record(Path(run.record))
     if not run.outputs or 'artefacts' in record:
         return run
     if not run.artefact:
         run = _step(run, artefact=run_id(run.sha, run.platform, forge_now(client)))
-    tree = cluster.tree(run)
-    archive = pack(tree, collect(tree, run.outputs), Path(run.output) / f'{run.artefact}{ARCHIVE}')
-    store = store_for(load_config(root), client, forge_from_remote(root).repo, size=archive.stat().st_size)
-    ref = store.put(run.artefact, archive)
-    archive.unlink()
+    ref = forgeship.store_outputs(
+        root, client, cluster.tree(run), run.outputs, ident=run.artefact, workdir=Path(run.output)
+    )
     run = _step(run, record=str(write_record({**record, 'artefacts': [ref.manifest()]}, Path(run.record).parent)))
     say(f'{tag}: {len(run.outputs)} declared output(s) stored as {ref.backend}:{ref.key} ({ref.bytes} bytes)')
     return run
-
-
-def tidy(root: Path, client: Client, *, say: Callable[[str], None]) -> tuple[str, ...]:
-    """Clean every artefact store this repo writes: past ``retain_days``, then down to ``cap_gb``; pins stay."""
-    config = load_config(root)
-    stores: list[ArtefactStore] = [ForgeStore(client)]
-    large = large_store(config, forge_from_remote(root).repo)
-    stores += [large] if large is not None else []
-    keep, now = pinned(client), forge_now(client)
-    gone = []
-    for store in stores:
-        cap = config.cap_bytes if store is large else 0
-        for ref in clean(store, now=now, retain_days=config.retain_days, cap_bytes=cap, pinned=keep):
-            gone.append(f'{ref.backend}:{ref.key}')
-            say(f'[artefacts] deleted {ref.backend}:{ref.key}')
-    return tuple(gone)
 
 
 def _step(run: Run, **changes: object) -> Run:

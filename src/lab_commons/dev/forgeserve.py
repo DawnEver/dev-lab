@@ -11,7 +11,7 @@ a run of another state schema refused); :func:`lab_commons.dev.forgetick.tick` (
 fetch, claim at most one part -- none while a run is in flight); start a claimed cluster part as a run,
 or produce a claimed LOCAL part inline; advance every cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
-release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgerun.tidy`);
+release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
 flush the outbox again.
 
 SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
@@ -59,7 +59,7 @@ from typing import Any, Final
 
 from lab_commons.config import section
 from lab_commons.dev import forge as _forge
-from lab_commons.dev import forgerun
+from lab_commons.dev import forgerun, forgeship
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
@@ -198,7 +198,7 @@ def _tidy(
     if seat is None:
         return
     try:
-        forgerun.tidy(root, client(root), say=say)
+        forgeship.tidy(root, client(root), say=say)
     except (OSError, ValueError) as why:
         alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
 

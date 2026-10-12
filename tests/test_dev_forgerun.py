@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import artefacts, forgerun, forgeslurm
+from lab_commons.dev import artefacts, forgerun, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, Claim, Work
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
@@ -361,9 +361,9 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
     """A real record and work tree, a ``folder`` large store, and the archive just over its 1 MB threshold."""
     zstd = home / 'zstd.py'
     zstd.write_text(_FAKE_ZSTD, encoding='utf-8')
-    monkeypatch.setattr(forgerun, 'pack', functools.partial(artefacts.pack, zstd=(sys.executable, str(zstd))))
+    monkeypatch.setattr(forgeship, 'pack', functools.partial(artefacts.pack, zstd=(sys.executable, str(zstd))))
     monkeypatch.setattr(forgerun, 'read_record', records.read_record)
-    monkeypatch.setattr(forgerun, 'forge_from_remote', lambda _root: SimpleNamespace(repo='r'))
+    monkeypatch.setattr(forgeship, 'forge_from_remote', lambda _root: SimpleNamespace(repo='r'))
     big, root = home / 'big', home / 'repo'
     root.mkdir()
     table = f'[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{big.as_posix()}"\nthreshold_mb = 1\n'

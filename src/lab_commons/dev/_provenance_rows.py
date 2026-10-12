@@ -139,6 +139,10 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgequeue': ('original',),
     'forgehosts': ('original',),
     'forgeslurm': ('original',),
+    'forgeship': ('original',),
+    'artefacts': ('original',),
+    'artefactstores': ('original',),
+    'selection': ('original',),
     'forgealarm': ('original',),
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'admission': ('original',),

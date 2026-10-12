@@ -14,7 +14,7 @@ import pytest
 from _forge_fake import git_out, run_git
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgerun, forgeserve
+from lab_commons.dev import forgehosts, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeschedule import Candidate, Headroom, Ranked
@@ -99,7 +99,7 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'status_post', forge.post)
     monkeypatch.setattr(forgeserve, 'status_history', forge.history)
     monkeypatch.setattr(forgehosts, 'publish', lambda _client, card: cards.append(card) or 'updated')
-    monkeypatch.setattr(forgerun, 'tidy', tidy)
+    monkeypatch.setattr(forgeship, 'tidy', tidy)
     report = forgeserve.serve(
         tmp_path,
         'integrate',
@@ -371,12 +371,14 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
 
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=None, tidy=tidy)
     assert cleaned == []
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, tidy=tidy)
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, tidy=tidy)
     assert cleaned == [tmp_path]
 
     def broken(_root: Path, _client: object, **_kw: object) -> tuple[str, ...]:
         msg = 'rclone lsjson exited 1'
         raise OSError(msg)
 
-    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, tidy=broken)
+    _report, _said, alarms = _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, tidy=broken
+    )
     assert [a.kind for a in alarms] == [RUN]

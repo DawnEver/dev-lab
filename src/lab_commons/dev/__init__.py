@@ -136,6 +136,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`lab_commons.dev.familyheads` -- a floating git package behind its forge head makes an env STALE;
   verify refuses it naming the sync door, and an unreachable forge is said, never read as fresh.
+* :mod:`lab_commons.dev.selection` -- what a verify argv selects: targeted or the whole suite, and
+  whether it may claim the skip census.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve --mode M``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<platform>`` part, in the cluster
@@ -265,6 +267,12 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
+* :mod:`lab_commons.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
+  store cleanup its host owns.
+* :mod:`lab_commons.dev.artefacts` -- the artefact store: declared outputs packed once, the backend
+  chosen by size, cleaned by the single writer.
+* :mod:`lab_commons.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
+  rclone backends.
 * :mod:`lab_commons.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.

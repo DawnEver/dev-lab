@@ -15,7 +15,7 @@ import tarfile
 import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -29,7 +29,7 @@ from lab_commons.dev.artefacts import (
     RcloneStore,
     Ref,
 )
-from lab_commons.dev.forgework import GITEA
+from lab_commons.dev.forgework import GITEA, Client
 
 SHA = 'a' * 40
 WHEN = datetime(2026, 10, 11, 9, 30, 5, tzinfo=UTC)
@@ -326,7 +326,7 @@ class _Forge:
 
     backend = GITEA
 
-    def call(self, method: str, path: str, body: object = None) -> Any:  # noqa: ANN401
+    def call(self, method: str, path: str, body: object = None) -> object:
         if 'issues?' in path and 'labels=keep' in path:
             return self.labelled
         if path.endswith('/issues?state=all&type=issues&q=run+records&limit=50'):
@@ -348,7 +348,7 @@ class _Forge:
             return None
         return list(self.assets)
 
-    def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: object = None) -> Any:  # noqa: ANN401
+    def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: object = None) -> object:
         del field, landed, path
         raw = {'id': len(self.assets) + 1, 'name': filename, 'size': len(content), 'browser_download_url': filename}
         self.assets.append(raw)
@@ -361,7 +361,7 @@ class _Forge:
 
 def test_the_forge_backend_is_write_once_and_verified_too(tmp_path: Path) -> None:
     forge = _Forge()
-    store = ForgeStore(forge)  # type: ignore[arg-type]
+    store = ForgeStore(cast('Client', forge))
     ref = store.put(RUN, _archive(tmp_path))
     assert ref.key == f'{RUN}.tar.zst'
     assert store.get(ref, tmp_path / 'd').read_bytes() == b'payload'
@@ -379,7 +379,7 @@ def test_keep_labels_pin_the_shas_their_issue_or_pr_names() -> None:
         {'number': 4, 'body': '', 'pull_request': {}},
     ]
     forge.heads[4] = 'd' * 40
-    assert artefacts.pinned(forge) == frozenset({'c' * 12, 'd' * 12})  # type: ignore[arg-type]
+    assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12, 'd' * 12})
 
 
 # --- choosing the store by size --------------------------------------------------------------------
@@ -388,11 +388,11 @@ def test_keep_labels_pin_the_shas_their_issue_or_pr_names() -> None:
 def test_small_goes_to_the_forge_large_to_the_configured_backend(tmp_path: Path) -> None:
     config = Config('folder', str(tmp_path / 'big'), threshold_mb=1)
     forge = _Forge()
-    small = artefacts.store_for(config, forge, 'lab', size=1024)  # type: ignore[arg-type]
-    large = artefacts.store_for(config, forge, 'lab', size=2 * 1024 * 1024)  # type: ignore[arg-type]
+    small = artefacts.store_for(config, cast('Client', forge), 'lab', size=1024)
+    large = artefacts.store_for(config, cast('Client', forge), 'lab', size=2 * 1024 * 1024)
     assert (small.backend, large.backend) == ('forge', 'folder')
 
 
 def test_too_large_for_the_forge_with_no_backend_is_refused_naming_the_key() -> None:
     with pytest.raises(ArtefactRefused, match=r'tool\.lab_commons\.artefacts'):
-        artefacts.store_for(Config(), _Forge(), 'lab', size=200 * 1024 * 1024)  # type: ignore[arg-type]
+        artefacts.store_for(Config(), cast('Client', _Forge()), 'lab', size=200 * 1024 * 1024)
