@@ -56,6 +56,7 @@ from lab_commons.dev.runcache import CachedRun, runs
 from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
+from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.records import read_record
 from lab_commons.resources import Basis, Exhausted
 
@@ -1024,7 +1025,7 @@ def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str,
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
     (tmp_path / 'judged.outcomes').mkdir()
     (tmp_path / 'judged.outcomes' / 'outcomes.json').write_text(json.dumps(judged), encoding='utf-8')
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: Table())
     posted: list[Path] = []
     monkeypatch.setattr(localpart, 'post', lambda _root, path: posted.append(path) or 'posted')
     return posted

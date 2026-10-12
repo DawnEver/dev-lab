@@ -24,7 +24,7 @@ from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
 from lab_commons.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory, this_platform
-from lab_commons.hpc.platforms import PLATFORMS, cannot_run, runnable, table_at
+from lab_commons.hpc.platforms import cannot_run, runnable, table_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
 
@@ -55,7 +55,7 @@ def local_record(
     ``not-covered``, with the platforms that can.
     """
     table = table_at(root, sha)
-    cannot = {name: set(collect(expr)) for name in PLATFORMS if (expr := cannot_run(table, name))}
+    cannot = {name: set(collect(expr)) for name in table.parts if (expr := cannot_run(table, name))}
     can = runnable(list(outcomes), cannot)
     mine = [node for node, platforms in can.items() if platform in platforms]
     handed = {node: platforms for node, platforms in can.items() if platform not in platforms}

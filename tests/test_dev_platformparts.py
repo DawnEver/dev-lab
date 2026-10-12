@@ -13,7 +13,7 @@ from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
-from lab_commons.hpc.platforms import assign, cannot_run, host_platform, read_table, runnable
+from lab_commons.hpc.platforms import Table, assign, cannot_run, host_platform, read_table, runnable
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.run import NotSubmitted
 
@@ -43,11 +43,11 @@ def _record(outcomes: dict[str, str], handed: dict[str, list[str]] | None = None
 
 def test_the_table_is_one_declaration_per_marker() -> None:
     table = read_table(PYPROJECT)
-    assert table == {'femm': ('windows',), 'matlab': ('windows', 'linux')}
+    assert table.rows == {'femm': ('windows',), 'matlab': ('windows', 'linux')}
     assert cannot_run(table, 'linux') == 'femm'
     assert cannot_run(table, 'macos') == 'femm or matlab'
     assert cannot_run(table, 'windows') == '', 'an unlisted marker runs everywhere'
-    assert read_table('[project]\nname = "x"\n') == {}
+    assert read_table('[project]\nname = "x"\n') == Table()
     with pytest.raises(ValueError, match='platforms are a list'):
         read_table('[tool.lab_commons.platforms]\nfemm = ["win32"]\n')
     assert host_platform('win32') == 'windows'
@@ -238,7 +238,7 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
 
     monkeypatch.setattr(hpc_cli, 'load_grants', lambda: None)
     monkeypatch.setattr(hpc_cli, 'builds_at', lambda *_a, **_k: ())
-    monkeypatch.setattr(hpc_cli, 'table_at', lambda *_a: {})
+    monkeypatch.setattr(hpc_cli, 'table_at', lambda *_a: Table())
     monkeypatch.setattr(hpc_cli, 'submitter', lambda: None)
     monkeypatch.setattr(hpc_cli, 'submit_run', failed_build)
     flags = ['--repo-url', 'u', '--collect', 't']
@@ -299,7 +299,7 @@ def test_a_windows_verify_of_a_repo_with_no_table_covers_what_it_ran(tmp_path: P
 
     PLANTED CONTROL: a run that judged no test is still refused, so an empty part is never a pass.
     """
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: {})
+    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: Table())
 
     def local(outcomes: dict[str, str]) -> dict[str, object]:
         return localpart.local_record(
@@ -340,11 +340,11 @@ def test_this_repo_assigns_its_dev_checkout_tests_off_the_cluster() -> None:
     """The cluster's linux tree is no developer checkout: a ``dev_checkout`` test is assigned, never skipped."""
     table = read_table((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8'))
     assert 'dev_checkout' in cannot_run(table, 'linux').split(' or ')
-    assert assign([p for p in ('linux', 'windows', 'macos') if p in table['dev_checkout']]) == 'windows'
+    assert assign([p for p in ('linux', 'windows', 'macos') if p in table.rows['dev_checkout']]) == 'windows'
 
 
 def test_this_repo_assigns_its_node_tests_off_the_cluster() -> None:
     """Ada's compute nodes carry no ``node`` (measured 2026-10-12): an engine test is assigned, never skipped."""
     table = read_table((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8'))
     assert cannot_run(table, 'linux') == 'dev_checkout or node'
-    assert assign([p for p in ('linux', 'windows', 'macos') if p in table['node']]) == 'windows'
+    assert assign([p for p in ('linux', 'windows', 'macos') if p in table.rows['node']]) == 'windows'
