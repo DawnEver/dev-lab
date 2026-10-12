@@ -273,6 +273,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: close the issues a repo declared finished; never delete.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
+* :mod:`lab_commons.dev.servekit` -- a deployed host fast-forwards its own lab-commons each serve tick, then re-execs.
 * :mod:`lab_commons.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`lab_commons.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.

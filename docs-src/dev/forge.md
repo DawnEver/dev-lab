@@ -54,6 +54,14 @@ makes on a producer host. Each tick it:
 - **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
   must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table.
+- **A deployed host keeps its own lab-commons current** (`lab_commons.dev.servekit`). On a host whose machine
+  file declares `[deploy]`, every serve tick first fast-forwards the deployed lab-commons checkout to
+  `origin/<its deployed ref>`. If HEAD moved, the tick reinstalls lab-commons into its own venv (the deploy's
+  `overlay_argv`; skipped when the venv imports the checkout itself) and re-executes the serve, so this
+  tick's claim runs the new code. A checkout that is dirty, off its ref, or diverged is refused: an alarm is
+  raised, exit 1, nothing claimed. The ref is the integration branch, not the trunk: a kit following the
+  trunk would refuse the integration commit that adds a table, and that commit could then never reach the
+  trunk. A workstation declares no `[deploy]`, so its serving checkout (a human's) is never moved by a tick.
 - **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
