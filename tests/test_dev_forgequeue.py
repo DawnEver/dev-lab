@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -86,7 +87,7 @@ def test_a_cards_alarms_and_a_stale_cards_silence_are_shown_by_the_queue(server)
     answer('GET', f'{API}/issues/3/comments', (200, [_comment(i, c) for i, c in enumerate((loud, quiet, gone))]))
     cards = read_cards(built)
     assert cards[0].alarms == (alarm,), 'the alarm round-trips through the comment'
-    hosts = [{**c.__dict__, 'holds': list(c.holds), 'alarms': list(c.alarms), 'stale': c.stale(NOW)} for c in cards]
+    hosts = [{**asdict(c), 'holds': list(c.holds), 'alarms': list(c.alarms), 'stale': c.stale(NOW)} for c in cards]
     lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
     assert '    ALARM run: the cluster run of abc cannot advance -- sbatch refused' in lines
     assert sum('ALARM' in line for line in lines) == 1
