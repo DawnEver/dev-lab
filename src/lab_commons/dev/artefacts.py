@@ -78,6 +78,7 @@ from lab_commons.dev.artefactstores import (
     verified_copy,
 )
 from lab_commons.dev.forgework import Client, pull_of
+from lab_commons.hpc.rclone import probe
 
 __all__ = [
     'ARCHIVE',
@@ -86,7 +87,6 @@ __all__ = [
     'FORGE',
     'MANIFEST',
     'RCLONE',
-    'RCLONE_RECIPE',
     'ArtefactRefused',
     'ArtefactStore',
     'Config',
@@ -114,14 +114,6 @@ __all__ = [
 _BACKENDS: Final = (FORGE, RCLONE, FOLDER)
 _SHA_TOKEN: Final = re.compile(r'\b[0-9a-f]{12,40}\b')
 _TABLE: Final = 'tool.lab_commons.artefacts'
-_PROBE_TIMEOUT_S: Final = 60
-
-#: How a writer creates its remote; the full recipe is docs-src/dev/artefacts.md.
-RCLONE_RECIPE: Final = (
-    'create it with `rclone config` (type onedrive, token from `rclone authorize "onedrive"` on a machine with '
-    'a browser, the SharePoint site\'s "Documents" library, drive_type = documentLibrary), then chmod 600 the '
-    'config; see docs-src/dev/artefacts.md'
-)
 
 
 def collect(tree: Path, outputs: Sequence[str]) -> list[Path]:
@@ -280,26 +272,13 @@ def large_store(config: Config, repo: str) -> ArtefactStore | None:
 def remote_problem(root: Path, *, rclone: Sequence[str] = ('rclone',)) -> str:
     """Why this host cannot write the repo's rclone store, ``''`` when it can or none is configured.
 
-    A cheap READ-ONLY probe: ``rclone lsd <remote>: --max-depth 1`` against the remote's root.
+    A cheap READ-ONLY probe of the remote's root (:func:`lab_commons.hpc.rclone.probe`).
     """
     try:
         config = load_config(root)
     except ArtefactRefused as bad:
         return str(bad)
-    if config.backend != RCLONE:
-        return ''
-    name = config.remote.partition(':')[0]
-    try:
-        done = subprocess.run(
-            [*rclone, 'lsd', f'{name}:', '--max-depth', '1'], capture_output=True, text=True, encoding='utf-8',
-            errors='replace', check=False, timeout=_PROBE_TIMEOUT_S,
-        )  # fmt: skip
-    except (OSError, subprocess.TimeoutExpired) as why:
-        return f'rclone cannot run here ({type(why).__name__}): {RCLONE_RECIPE}'
-    if done.returncode == 0:
-        return ''
-    tail = done.stderr.strip().splitlines()[-1:] or [f'exit {done.returncode}']
-    return f'the rclone remote {name}: is missing or unusable ({tail[0][-160:]}): {RCLONE_RECIPE}'
+    return probe(config.remote, rclone=rclone) if config.backend == RCLONE else ''
 
 
 def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtefactStore:

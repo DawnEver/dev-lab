@@ -293,8 +293,10 @@ def test_an_rclone_config_inside_the_repo_is_refused(tmp_path: Path) -> None:
 # --- cleanup ------------------------------------------------------------------------------------
 
 
-def _put_at(store: FolderStore, tmp_path: Path, when: datetime, sha: str = SHA, size: int = 10) -> Ref:
-    return store.put(artefacts.run_id(sha, 'linux', when), _archive(tmp_path, b'x' * size))
+def _put_at(
+    store: FolderStore, tmp_path: Path, when: datetime, *, sha: str = SHA, size: int = 10, account: str = 'alice'
+) -> Ref:
+    return store.put(artefacts.run_id(sha, 'linux', account, when), _archive(tmp_path, b'x' * size))
 
 
 def test_cleanup_drops_old_days_keeps_pins_then_trims_oldest_to_the_cap(tmp_path: Path) -> None:
