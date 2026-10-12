@@ -143,10 +143,11 @@ markers = [
 
 # Which platforms can run a marked test (lab_commons.hpc.platforms). The cluster's linux tree is a bare
 # worktree of one sha, not a developer checkout: a dev_checkout test is assigned to the windows part.
-[tool.lab_commons.platforms]
-dev_checkout = ["windows", "macos"]
+[tool.lab_commons.capabilities]
+# Host capabilities: `on` is the OSes their serving hosts run; the cluster's per-sha tree has neither.
+dev_checkout = { on = ["windows", "macos"] }
 # Ada's compute nodes carry no `node` (measured 2026-10-12); the engine runs where an agent does.
-node = ["windows", "macos"]
+node = { on = ["windows", "macos"] }
 
 [tool.ruff]
 line-length = 120

@@ -66,6 +66,7 @@ from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import publish_card, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
+from lab_commons.dev.forgeprovides import own_weight, provided
 from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms, tip_of
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_history, status_post
@@ -130,12 +131,14 @@ def serve(
     raised: list[Alarm] = []  # every alarm this tick, for its host card
     alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
+    provides = provided(section('capabilities'))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
         ticked = tick(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
             in_flight=bool(runs), headroom=standing.headroom if standing else box_room(),
-            usage=standing.usage if standing else None, weights=host_weights(table),
+            usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
+            own_weight=own_weight(section('serve')),
         )  # fmt: skip
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
@@ -179,7 +182,8 @@ def serve(
         alarm(one)
     if mode != 'quiet':
         publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
-                     standing=standing, table=table, say=say, alarms=raised, artefacts=ticked.artefacts)  # fmt: skip
+                     standing=standing, table=table, say=say, alarms=raised, artefacts=ticked.artefacts,
+                     provides=provides)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
