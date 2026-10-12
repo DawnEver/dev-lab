@@ -227,4 +227,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_integrationhome.py',),
     ),
+    (
+        'PUSH-FROM-ITS-OWN-BRANCH',
+        (
+            'A push updating the declared integration branch or trunk is refused at pre-push unless the local '
+            'ref pushed IS the same-named local branch: `HEAD:<it>` from another branch or a detached HEAD, '
+            'or `<other>:<it>`, never publishes. With git`s one-worktree-per-branch rule this makes the one '
+            'checkout on that branch the only place it is published from. No escape hatch.'
+        ),
+        ('tests/test_dev_integrationhome.py',),
+    ),
 )

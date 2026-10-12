@@ -23,19 +23,39 @@ trunk = "main"                      # moved only by `forge promote`
 test_roots = ["tests"]              # what the merge audit reads
 ```
 
-## Integration lives in the main checkout
+## Many agents, one machine
 
-The integration branch and the trunk have one home: the main checkout, whose single editor is the
-integrator. Lanes live in linked worktrees on lane branches. A commit or merge commit on either declared
-branch from a linked worktree is refused by the `integration-home` commit-msg hook
-(`lab_commons.dev.integrationhome`); commit-msg runs for merge commits, pre-commit does not. At session
-start, `python -m lab_commons.dev.integrationhome report` says how far the main checkout's branch is
-behind its origin and names `sh scripts/hooks/with-retry.sh pull --ff-only` to fix it.
+The model, stated once (MANY-AGENTS-ONE-MACHINE):
 
-To adopt it: the row comes from `base.toml`, which every repo's hook table merges over, so the hook
-needs no change. A repo also prints the `report` line from its SessionStart hook (or worktree-debris
-report). Before the first commit, move any integration worktree
-back into the main checkout.
+- Every agent or human works in its OWN linked worktree (`.claude/worktrees/<name>`) on its OWN lane
+  branch, any number at once. A worktree's hooks live in its own git dir
+  (`git config --worktree core.hooksPath "$(git rev-parse --git-dir)/hooks"`), so installing one never
+  rewrites another's.
+- The integration branch and the trunk are checked out in exactly ONE place, the main checkout, whose
+  single editor is the integrator. Git already refuses a second checkout of a branch across worktrees;
+  three hooks pin that one place down and the publishing path out of it.
+
+| rule | stage | refuses |
+|---|---|---|
+| INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT | commit-msg | a commit or merge commit on either declared branch from a linked worktree (commit-msg runs for merges, pre-commit does not) |
+| PUSH-FROM-ITS-OWN-BRANCH | pre-push | a push updating either declared branch whose local ref is not the same-named local branch |
+
+PUSH-FROM-ITS-OWN-BRANCH was earned 2026-10-13: the main checkout had been switched to the user's
+`feat/optimization`, and `git push origin HEAD:integrate/main` from there published the user's unreviewed
+commit. Git writes the local ref of a `HEAD:<branch>` refspec as the literal `HEAD`, so the hook resolves
+it: `sh scripts/hooks/with-retry.sh push origin HEAD:integrate/main` from the main checkout ON
+`integrate/main` passes; the same line from any other branch or a detached HEAD, or `<other>:integrate/main`,
+is refused. The remedy it names: push from the checkout whose HEAD is that branch, or push your own lane
+branch. The two rules are complementary, not redundant: the push rule alone would let the line be
+committed and published from a linked worktree, and the home rule alone would let any branch's HEAD be
+published onto it.
+
+Both are `lab_commons.dev.integrationhome`; branch names come from `[tool.lab_commons.integrator]`. At
+session start, `python -m lab_commons.dev.integrationhome report` says how far the main checkout's
+branch is behind its origin and names `sh scripts/hooks/with-retry.sh pull --ff-only` to fix it.
+
+To adopt: nothing beyond the lab-commons bump. Both rows come from `base.toml`, which every repo's hook
+table merges over, with no escape hatch. A repo also prints the `report` line from its SessionStart hook.
 
 ## Child branches sync from integration
 

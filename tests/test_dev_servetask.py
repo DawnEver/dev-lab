@@ -8,12 +8,15 @@ import sys
 from pathlib import Path
 
 import pytest
-from _arch_corpus import parse, rel, source_modules
+from _arch_corpus import assert_floor, parse, rel, source_modules
 
 from lab_commons.dev import servetask
 
 #: The creation flags that give a child a console of its OWN instead of the inherited windowless one.
 _DETACHING = frozenset({'DETACHED_PROCESS', 'CREATE_NEW_CONSOLE'})
+
+#: The kit's source-module floor for the console scan; the bound the inline check held before.
+SOURCE_FLOOR = 100
 
 
 def test_the_task_runs_the_windowless_interpreter_from_its_checkout_every_five_minutes(tmp_path: Path) -> None:
@@ -77,5 +80,18 @@ def _detaches(path: Path) -> bool:
 def test_nothing_in_the_kit_leaves_the_windowless_console_its_serve_child_inherits() -> None:
     """One flag at the root hides the whole tree ONLY while no descendant asks for a console of its own."""
     modules = source_modules()
-    assert len(modules) > 100, 'an empty scan is not a clean one'
+    assert_floor(len(modules), SOURCE_FLOOR, 'kit source')
     assert [rel(path) for path in modules if _detaches(path)] == []
+
+
+def test_a_planted_console_detaching_spawn_is_found(tmp_path: Path) -> None:
+    """THE PLANTED CONTROL: the real `_detaches` finds each detaching flag and passes a clean module."""
+    for flag in sorted(_DETACHING):
+        planted = tmp_path / f'planted_{flag.lower()}.py'
+        planted.write_text(
+            f'import subprocess\nsubprocess.Popen([], creationflags=subprocess.{flag})\n', encoding='utf-8'
+        )
+        assert _detaches(planted)
+    clean = tmp_path / 'clean.py'
+    clean.write_text('import subprocess\nsubprocess.Popen([])\n', encoding='utf-8')
+    assert not _detaches(clean)

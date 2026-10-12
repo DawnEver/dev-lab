@@ -13,6 +13,12 @@ single editor is the integrator; lanes live in linked worktrees on lane branches
   a merge commit too (``pre-commit`` does not), and the incident WAS a merge commit. It is the
   counterpart of a consumer's "development belongs in a worktree, not on the checkout's own main":
   that one keeps lanes out of the main checkout, this one keeps the integration line out of lanes.
+* :func:`push_refusal` -- PUSH-FROM-ITS-OWN-BRANCH, the pre-push refusal (2026-10-13). THE INCIDENT: the
+  main checkout had been switched to the user's ``feat/optimization``, and ``git push origin
+  HEAD:integrate/main`` from there published the user's unreviewed commit onto the integration line. A
+  push updating ``refs/heads/<long-lived>`` is refused unless its local ref IS ``refs/heads/<same name>``.
+  With git's own rule that a branch is checked out in at most one worktree, that single checkout is the
+  only place the long-lived line can be published from.
 * :func:`staleness` -- the session-start note: the main checkout's integration branch or trunk is
   behind its origin by N commits, and the fast-forward that clears it.
 
@@ -25,15 +31,18 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.worktreeplace import main_checkout
 from lab_commons.log import emit
 
-__all__ = ['RULE', 'main', 'refusal', 'staleness']
+__all__ = ['PUSH_RULE', 'RULE', 'main', 'push_refusal', 'refusal', 'staleness']
 
 RULE = 'INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT'
+PUSH_RULE = 'PUSH-FROM-ITS-OWN-BRANCH'
+_PUSH_FIELDS = 4  # git's pre-push line: local ref, local sha, remote ref, remote sha
 _GIT = shutil.which('git') or 'git'
 _PULL = 'sh scripts/hooks/with-retry.sh pull --ff-only'
 
@@ -73,6 +82,36 @@ def refusal(root: Path) -> str | None:
     )
 
 
+def push_refusal(root: Path, lines: str) -> str | None:
+    """Why a push is refused: a ref line updating a long-lived branch from any local ref but its namesake.
+
+    *lines* is git's pre-push stdin, ``<local ref> <local sha> <remote ref> <remote sha>`` per line. Git
+    writes the local ref of a ``HEAD:<branch>`` refspec as the literal ``HEAD``, so it is resolved through
+    ``symbolic-ref`` here: HEAD on that very branch passes, any other branch or a detached HEAD does not.
+    """
+    top = _git(root, 'rev-parse', '--show-toplevel')
+    if top is None:
+        return None
+    long_lived = _long_lived(Path(top))
+    head = _git(root, 'symbolic-ref', '-q', 'HEAD') or 'HEAD'
+    bad = []
+    for fields in (line.split() for line in lines.splitlines()):
+        if len(fields) != _PUSH_FIELDS:
+            continue
+        local, remote = head if fields[0] == 'HEAD' else fields[0], fields[2]
+        if remote.startswith('refs/heads/') and remote.removeprefix('refs/heads/') in long_lived and local != remote:
+            bad.append((local, remote))
+    if not bad:
+        return None
+    named = '; '.join(f'{remote} from {local}' for local, remote in bad)
+    return (
+        f'{PUSH_RULE}: {named}. A long-lived branch is published only from its own local branch, never '
+        f'HEAD:<it> from another branch or a detached HEAD.\n'
+        f'  Remedy: push from the checkout whose HEAD is that branch (the main checkout), or push your own '
+        f'lane branch instead (push origin HEAD:<your lane branch>) and merge it there.'
+    )
+
+
 def staleness(root: Path) -> str | None:
     """The main checkout's integration branch or trunk is behind its origin: by how much, and the remedy."""
     home = main_checkout(root)
@@ -89,16 +128,16 @@ def staleness(root: Path) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``commit-msg [msgfile]`` refuses (exit 1); ``report`` prints the staleness note and always exits 0."""
+    """``commit-msg`` and ``pre-push`` refuse (exit 1); ``report`` prints the staleness note, always exit 0."""
     parser = argparse.ArgumentParser(prog='lab_commons.dev.integrationhome', description=__doc__.splitlines()[0])
-    parser.add_argument('mode', choices=('commit-msg', 'report'))
+    parser.add_argument('mode', choices=('commit-msg', 'pre-push', 'report'))
     parser.add_argument('rest', nargs='*', help='git hook arguments (ignored)')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     if args.mode == 'report':
         emit(staleness(args.root) or 'integration-home: the main checkout is current.')
         return 0
-    reason = refusal(args.root)
+    reason = push_refusal(args.root, sys.stdin.read()) if args.mode == 'pre-push' else refusal(args.root)
     if reason is None:
         return 0
     emit(f'\n  REFUSED: {reason}\n', err=True)

@@ -92,3 +92,10 @@ run = ["python", "-m", "lab_commons.dev.mergeaudit"]
 [[commit-msg]]
 id = "integration-home"
 run = ["python", "-m", "lab_commons.dev.integrationhome", "commit-msg"]
+
+# PUSH-FROM-ITS-OWN-BRANCH: a push updating the declared integration branch or trunk from any local ref but
+# its namesake -- HEAD:<it> from another branch or a detached HEAD (lab_commons.dev.integrationhome).
+[[pre-push]]
+id = "push-from-its-own-branch"
+run = ["python", "-m", "lab_commons.dev.integrationhome", "pre-push"]
+always_run = true
