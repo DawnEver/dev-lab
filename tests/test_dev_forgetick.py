@@ -506,3 +506,36 @@ def test_a_credential_refusal_on_an_optional_listing_still_raises(server, tmp_pa
     answer('GET', f'{API}/pulls', (401, {'message': 'token is required'}))
     with pytest.raises(ForgeCallFailed):
         _integrate(server, tmp_path, [])
+
+
+_MISSING = 'the rclone remote hpc-data: is missing or unusable'
+
+
+@pytest.mark.parametrize(
+    ('outputs', 'problem', 'claims'),
+    [
+        ('outputs = ["fields/*.h5"]\n', _MISSING, False),
+        ('outputs = ["fields/*.h5"]\n', '', True),  # PLANTED CONTROL: a working remote claims it
+        ('', _MISSING, True),  # PLANTED CONTROL: no declared outputs never need the remote
+    ],
+)
+def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
+    server, tmp_path: Path, outputs: str, problem: str, *, claims: bool
+) -> None:
+    repo, tips = _origin(tmp_path)
+    sha = tips['integrate/main']
+    (repo / 'pyproject.toml').write_text(
+        f'[tool.lab_commons.hpc]\ninstall = "uv sync"\n{outputs}[tool.lab_commons.parts]\noutput = "output/logs"\n',
+        encoding='utf-8',
+    )
+    me = Claim('G', 'alice', LATER, 'ada/alice')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, seat=SEAT, host='linux', probe=lambda _root: problem)
+    assert bool(report.claimed) is claims
+    assert report.artefacts == problem, 'the host card states why'
+    if not claims:
+        assert not any(r['method'] == 'POST' for r in Recorder.received), 'no claim is posted'
+        assert any('threshold_mb' in reason and _MISSING in reason for reason in report.refused)
+        assert any(_MISSING in item.blocked for item in report.queue)

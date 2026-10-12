@@ -13,16 +13,55 @@ idempotent: running it twice leaves one comment, not two.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+import urllib.parse
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Final
 
-from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, pull_of
+from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, is_pull, pull_of
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
 
-__all__ = ['comment_list', 'comment_upsert', 'marker', 'pr_list', 'pr_retarget']
+__all__ = [
+    'ListingIncomplete',
+    'comment_list',
+    'comment_upsert',
+    'issues',
+    'marker',
+    'pages',
+    'pr_list',
+    'pr_retarget',
+    'pulls_off',
+]
 
 _NOT_FOUND: Final = 404
+#: A listing's page size, and the pages read before it is refused as incomplete.
+_PAGE: Final = 50
+_PAGES: Final = 100
+
+
+class ListingIncomplete(RuntimeError):
+    """A listing still full at its page bound: what it did not read may hold the object being looked for."""
+
+
+def pages(client: Client, path: str, query: Mapping[str, str]) -> list[Any]:
+    """Every page of the listing at *path*; one still full at the bound is :class:`ListingIncomplete`."""
+    found: list[Any] = []
+    for page in range(1, _PAGES + 1):
+        params = dict(query) | {client.backend.page_param: str(_PAGE), 'page': str(page)}
+        listed = client.call('GET', f'{path}?{urllib.parse.urlencode(params)}')
+        found += listed
+        if len(listed) < _PAGE:
+            return found
+    msg = f'{path} still lists past {_PAGES} pages of {_PAGE}; refusing a partial read'
+    raise ListingIncomplete(msg)
+
+
+def issues(client: Client, *, state: str = 'all') -> tuple[Mapping[str, Any], ...]:
+    """Every issue in *state*, raw, off the listing (never the lagging search index), pulls excluded."""
+    return tuple(
+        raw for raw in pages(client, f'{client.repo}/issues', {'state': state, 'type': 'issues'}) if not is_pull(raw)
+    )
 
 
 def marker(subject: str) -> str:
@@ -33,17 +72,26 @@ def marker(subject: str) -> str:
 def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
     """Every pull request in *state*, lowest number first; none when the repository disables pull requests.
 
-    Gitea answers ``/pulls`` 404 for a repository with PRs switched off. That 404 is read back against the
-    repository's own ``has_pull_requests`` flag, so a 404 for any other reason still raises.
+    Gitea answers ``/pulls`` 404 for a repository with PRs switched off (:func:`pulls_off`); a 404 for
+    any other reason still raises.
     """
     try:
-        raw = client.pages(f'{client.repo}/pulls', {'state': state})
+        raw = pages(client, f'{client.repo}/pulls', {'state': state})
     except ForgeCallFailed as failed:
-        last = failed.report.attempts[-1].returncode if failed.report.attempts else 0
-        if last == _NOT_FOUND and client.call('GET', client.repo).get('has_pull_requests') is False:
+        if pulls_off(client, failed):
             return ()
         raise
     return tuple(sorted((pull_of(item) for item in raw), key=lambda pr: pr.number))
+
+
+def pulls_off(client: Client, failed: ForgeCallFailed) -> bool:
+    """Whether *failed* is gitea's 404 for a repository whose pull requests are switched off.
+
+    The 404 is read back against the repository's own ``has_pull_requests`` flag, so a 404 for any
+    other reason is not mistaken for it.
+    """
+    last = failed.report.attempts[-1].returncode if failed.report.attempts else 0
+    return last == _NOT_FOUND and client.call('GET', client.repo).get('has_pull_requests') is False
 
 
 def pr_retarget(client: Client, number: int, base: str) -> PullRequest:
@@ -53,7 +101,7 @@ def pr_retarget(client: Client, number: int, base: str) -> PullRequest:
 
 def comment_list(client: Client, number: int) -> tuple[Comment, ...]:
     """Every comment on issue or PR *number*, oldest first."""
-    return tuple(comment_of(raw) for raw in client.pages(f'{client.repo}/issues/{number}/comments', {}))
+    return tuple(comment_of(raw) for raw in pages(client, f'{client.repo}/issues/{number}/comments', {}))
 
 
 def comment_upsert(client: Client, number: int, *, subject: str, text: str) -> tuple[str, Comment | None]:

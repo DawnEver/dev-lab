@@ -75,6 +75,27 @@ def test_a_card_older_than_three_of_its_ticks_is_stale(server) -> None:
     assert [(card.host, card.stale(NOW)) for card in cards] == [('box-g', False), ('ada/bob', True)]
 
 
+def test_a_cards_alarms_and_a_stale_cards_silence_are_shown_by_the_queue(server) -> None:
+    """PLANTED CONTROL: a fresh card with no alarm shows no ALARM line and no STALE remedy."""
+    built = client(FORGE, Loopback(server))
+    alarm = {'kind': 'run', 'subject': 'the cluster run of abc cannot advance', 'body': 'sbatch refused'}
+    loud = _card('ada/alice', 'linux', NOW, alarms=(alarm,))
+    quiet = _card('box-g', 'windows', NOW)
+    gone = _card('ada/bob', 'linux', NOW - timedelta(hours=1))
+    answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
+    answer('GET', f'{API}/issues/3/comments', (200, [_comment(i, c) for i, c in enumerate((loud, quiet, gone))]))
+    cards = read_cards(built)
+    assert cards[0].alarms == (alarm,), 'the alarm round-trips through the comment'
+    hosts = [{**c.__dict__, 'holds': list(c.holds), 'alarms': list(c.alarms), 'stale': c.stale(NOW)} for c in cards]
+    lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
+    assert '    ALARM run: the cluster run of abc cannot advance -- sbatch refused' in lines
+    assert sum('ALARM' in line for line in lines) == 1
+    stale = [line for line in lines if 'STALE' in line]
+    assert len(stale) == 1
+    assert 'ada/bob' in stale[0]
+    assert 'credential' in stale[0], 'a host that stopped publishing names the likely cause'
+
+
 def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
     (repo / 'pyproject.toml').write_text('[tool.lab_commons.parts.produce.windows]\nfull = ["x"]\n', 'utf-8')
@@ -146,3 +167,10 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     printed = json.loads(capsys.readouterr().out)
     assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'starved'}
     assert printed['queue'][0]['blocked'] == 'no host serves windows'
+
+
+def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:
+    """PLANTED CONTROL: a card whose store works says nothing about it."""
+    why = 'the rclone remote hpc-data: is missing or unusable'
+    assert f'artefacts: {why}' in _card('ada/alice', 'linux', NOW, artefacts=why).text()
+    assert 'artefacts:' not in _card('ada/alice', 'linux', NOW).text()

@@ -15,10 +15,13 @@ the oldest; the loser is closed by ``forge tidy`` (:mod:`lab_commons.dev.forgeti
 
 The card says who the host is (``<cluster>/<account>`` or the machine), the platform it
 serves, its headroom and the cluster facts it read locally (partitions, quota), when it last ticked (the
-forge's clock), what it holds with live progress, and why each candidate it saw waits.
+forge's clock), what it holds with live progress, why each candidate it saw waits, why it cannot write the
+large artefact store when it cannot, and EVERY ALARM the tick raised (:mod:`lab_commons.dev.forgealarm`): an
+alarm on an unattended host is read here, from any machine, not from a cron log nobody opens.
 
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
-``forge queue`` shows it so rather than counting it as serving.
+``forge queue`` shows it so rather than counting it as serving. It is also how a REFUSED CREDENTIAL shows:
+a host whose token the forge refuses cannot publish anything, so its card simply stops moving.
 """
 
 from __future__ import annotations
@@ -33,10 +36,11 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev import forgerun
+from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving
-from lab_commons.dev.forgepulls import comment_list, comment_upsert, marker
+from lab_commons.dev.forgepulls import ListingIncomplete, comment_list, comment_upsert, issues, marker
 from lab_commons.dev.forgeschedule import Ranked
-from lab_commons.dev.forgework import Client, ForgeCallFailed, ListingIncomplete
+from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
 
@@ -53,6 +57,7 @@ __all__ = [
     'publish',
     'publish_card',
     'read_cards',
+    'recording',
 ]
 
 #: The title of the issue every host card hangs on.
@@ -84,6 +89,8 @@ class HostCard:
     facts: Mapping[str, Any] = field(default_factory=dict)
     holds: tuple[str, ...] = ()
     waiting: Mapping[str, str] = field(default_factory=dict)
+    alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
+    artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -93,7 +100,10 @@ class HostCard:
         """The comment body: one line a human reads, then the card as JSON."""
         holds = ', '.join(self.holds) or 'nothing'
         head = f'**{self.host}** serves `{self.platform}` as {self.login}; ticked {self.ticked}; holds {holds}'
-        return f'{head}\n\n```json\n{json.dumps({**asdict(self), "holds": list(self.holds)}, indent=1)}\n```'
+        head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
+        loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
+        raw = {**asdict(self), 'holds': list(self.holds), 'alarms': [dict(a) for a in self.alarms]}
+        return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
 
 class HostsIssueLost(RuntimeError):
@@ -107,7 +117,7 @@ def is_hosts(raw: Mapping[str, Any]) -> bool:
 
 def hosts_issues(client: Client) -> tuple[Mapping[str, Any], ...]:
     """Every hosts issue in every state, oldest first; a failed or partial read raises."""
-    return tuple(sorted((raw for raw in client.issues(state='all') if is_hosts(raw)), key=lambda raw: raw['number']))
+    return tuple(sorted((raw for raw in issues(client, state='all') if is_hosts(raw)), key=lambda raw: raw['number']))
 
 
 def _seen_all_open(client: Client) -> None:
@@ -120,7 +130,7 @@ def _seen_all_open(client: Client) -> None:
     repo = client.call('GET', client.repo)
     if 'open_pr_counter' not in repo:
         return
-    listed = sum(raw['state'] == 'open' for raw in client.issues(state='open'))
+    listed = sum(raw['state'] == 'open' for raw in issues(client, state='open'))
     if listed < repo['open_issues_count']:
         seen = f'the listing shows {listed} open issues and the repository counts {repo["open_issues_count"]}'
         msg = f'{seen}; refusing to open a {HOSTS_TITLE!r} issue a blind lookup did not find'
@@ -164,8 +174,18 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
         if found is None:
             continue
         raw = json.loads(found['json'])
-        cards.append(HostCard(**{**raw, 'holds': tuple(raw.get('holds', ()))}))
+        cards.append(HostCard(**{**raw, 'holds': tuple(raw.get('holds', ())), 'alarms': tuple(raw.get('alarms', ()))}))
     return tuple(cards)
+
+
+def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
+    """*alarm*, also keeping each alarm in *raised* so the tick's card carries it."""
+
+    def sounded(one: Alarm) -> object:
+        raised.append(one)
+        return alarm(one)
+
+    return sounded
 
 
 def publish_card(
@@ -180,8 +200,10 @@ def publish_card(
     standing: forgerun.Standing | None,
     table: Mapping[str, Any],
     say: Callable[[str], None],
+    alarms: Sequence[Alarm] = (),
+    artefacts: str = '',
 ) -> None:
-    """Publish this serving host's card after a tick; a forge that refuses it is said, never a failed tick."""
+    """Publish this serving host's card after a tick, with the *alarms* it raised; a refusal is said, never fatal."""
     built = client(root)
     try:
         runs = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerun.live(origin_url(root)))
@@ -195,6 +217,8 @@ def publish_card(
             facts=standing.facts if standing else {},
             holds=runs if seat is not None else tuple(f'{one.sha[:12]} {one.platform}' for one in claimed),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
+            alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
+            artefacts=artefacts,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

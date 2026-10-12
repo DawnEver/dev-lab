@@ -7,7 +7,7 @@ The repo declares what may be removed, ONCE, as data in its pyproject; absent, n
     green_areas = true             # an open `area:<name>` issue with no `- [ ]` red row left
     request_max_age_days = 14      # an open request issue (`forge:request`) older than this
 
-Each rule reads the ONE listing of every issue (:meth:`~lab_commons.dev.forgework.Client.issues`), so
+Each rule reads the ONE listing of every issue (:func:`lab_commons.dev.forgepulls.issues`), so
 a partial or failed read removes nothing. A hosts duplicate is useless, so it is DELETED (user ruling
 2026-10-13) -- but only one :mod:`~lab_commons.dev.forgehosts` opened (its marker or its origin text in
 the body), never one a human wrote under that title; a token without delete rights closes it instead and
@@ -33,10 +33,11 @@ from typing import Any, Final
 
 from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
-from lab_commons.dev.forgepulls import comment_upsert
+from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert
+from lab_commons.dev.forgepulls import issues as list_issues
 from lab_commons.dev.forgeroute import title_of
 from lab_commons.dev.forgeschedule import Schedule
-from lab_commons.dev.forgework import Client, ForgeCallFailed, ListingIncomplete, client_for
+from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.log import emit
 
 __all__ = ['SUBJECT', 'Closing', 'Hygiene', 'apply', 'load_hygiene', 'main', 'plan', 'tidy']
@@ -136,7 +137,7 @@ def _remove(client: Client, one: Closing, state: str) -> str:
     """Delete or close *one*; a delete the forge refuses (no admin right) falls back to closing, said."""
     if one.delete:
         try:
-            client.issue_delete(one.number)
+            client.call('DELETE', f'{client.repo}/issues/{one.number}')  # gitea: repository admin rights
         except ForgeCallFailed as refused:
             if not refused.report.attempts or refused.report.attempts[-1].retryable:
                 raise
@@ -166,7 +167,7 @@ def tidy(client: Client, hygiene: Hygiene, *, dry_run: bool = False) -> list[str
     """One pass: the plan as lines, applied unless *dry_run*; nothing is read or written with no rule on."""
     if not hygiene.any:
         return []
-    issues = client.issues(state='all')
+    issues = list_issues(client, state='all')
     now = forge_now(client)
     closing = plan(issues, hygiene, now)
     lines = [f'{"would " if dry_run else ""}{one.verb} #{one.number} {one.title!r}: {one.why}' for one in closing]

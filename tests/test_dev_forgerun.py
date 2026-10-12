@@ -389,6 +389,7 @@ def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted
     (ref,) = artefacts.FolderStore(big, 'r').list(None)
     assert entry == ref.manifest()
     assert ref.backend == 'folder'
+    assert artefacts.parsed_run_id(ref.run_id)['account'] == 'alice', "the claim owner's cluster account writes it"
     fetched = artefacts.FolderStore(big, 'r').get(ref, home / 'fetched')
     with tarfile.open(fileobj=io.BytesIO(fetched.read_bytes())) as tar:
         assert tar.getnames() == ['fields/b.h5'], 'only the declared output; undeclared.log stays on the cluster'

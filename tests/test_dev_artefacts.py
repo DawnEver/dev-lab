@@ -29,11 +29,12 @@ from lab_commons.dev.artefacts import (
     RcloneStore,
     Ref,
 )
-from lab_commons.dev.forgework import GITEA, Client
+from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed
+from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 
 SHA = 'a' * 40
 WHEN = datetime(2026, 10, 11, 9, 30, 5, tzinfo=UTC)
-RUN = artefacts.run_id(SHA, 'linux', WHEN)
+RUN = artefacts.run_id(SHA, 'linux', 'alice', WHEN)
 
 _FAKE_ZSTD = """
 import shutil, sys
@@ -74,6 +75,9 @@ elif verb == 'cat':
     sys.stdout.write(local(args[1]).read_text())
 elif verb == 'deletefile':
     local(args[1]).unlink()
+elif verb == 'lsd':
+    if not (base / args[1].rstrip(':')).is_dir():
+        sys.stderr.write("didn't find section in config file"); sys.exit(1)
 elif verb == 'rmdirs':
     root = local(args[1])
     for d in sorted((p for p in root.rglob('*') if p.is_dir()), key=lambda p: -len(p.parts)):
@@ -115,9 +119,9 @@ def _archive(tmp_path: Path, content: bytes = b'payload') -> Path:
 # --- names and layout -------------------------------------------------------------------------
 
 
-def test_the_run_id_is_sha12_platform_and_utc_stamp_and_its_day_folder_follows() -> None:
-    assert RUN == 'aaaaaaaaaaaa-linux-20261011T093005Z'
-    assert artefacts.object_key('lab', RUN) == 'lab/2026/10/11/aaaaaaaaaaaa-linux-20261011T093005Z'
+def test_the_run_id_is_sha12_platform_account_and_utc_stamp_and_its_day_folder_follows() -> None:
+    assert RUN == 'aaaaaaaaaaaa-linux-alice-20261011T093005Z'
+    assert artefacts.object_key('lab', RUN) == 'lab/2026/10/11/aaaaaaaaaaaa-linux-alice-20261011T093005Z'
 
 
 @pytest.mark.parametrize(
@@ -130,7 +134,7 @@ def test_a_name_onedrive_cannot_hold_is_refused(bad: str) -> None:
 
 
 def test_planted_control_a_short_ascii_key_is_accepted() -> None:
-    artefacts.check_key('lab/2026/10/11/aaaaaaaaaaaa-linux-20261011T093005Z.tar.zst')
+    artefacts.check_key('lab/2026/10/11/aaaaaaaaaaaa-linux-alice-20261011T093005Z.tar.zst')
 
 
 # --- declared outputs -------------------------------------------------------------------------
@@ -261,7 +265,7 @@ def test_rclone_is_driven_by_argv_lists_and_uploads_immutably(tmp_path: Path, rc
 
 def test_list_older_than_reads_the_day_folder(tmp_path: Path) -> None:
     store = FolderStore(tmp_path / 'f', 'lab')
-    old = store.put(artefacts.run_id(SHA, 'linux', WHEN - timedelta(days=5)), _archive(tmp_path))
+    old = store.put(artefacts.run_id(SHA, 'linux', 'alice', WHEN - timedelta(days=5)), _archive(tmp_path))
     store.put(RUN, _archive(tmp_path))
     assert store.list(WHEN - timedelta(days=3)) == (old,)
 
@@ -290,8 +294,10 @@ def test_an_rclone_config_inside_the_repo_is_refused(tmp_path: Path) -> None:
 # --- cleanup ------------------------------------------------------------------------------------
 
 
-def _put_at(store: FolderStore, tmp_path: Path, when: datetime, sha: str = SHA, size: int = 10) -> Ref:
-    return store.put(artefacts.run_id(sha, 'linux', when), _archive(tmp_path, b'x' * size))
+def _put_at(
+    store: FolderStore, tmp_path: Path, when: datetime, *, sha: str = SHA, size: int = 10, account: str = 'alice'
+) -> Ref:
+    return store.put(artefacts.run_id(sha, 'linux', account, when), _archive(tmp_path, b'x' * size))
 
 
 def test_cleanup_drops_old_days_keeps_pins_then_trims_oldest_to_the_cap(tmp_path: Path) -> None:
@@ -300,7 +306,7 @@ def test_cleanup_drops_old_days_keeps_pins_then_trims_oldest_to_the_cap(tmp_path
     old = _put_at(store, tmp_path, WHEN - timedelta(days=4))
     oldest_recent = _put_at(store, tmp_path, WHEN - timedelta(days=2))
     newest = _put_at(store, tmp_path, WHEN)
-    gone = artefacts.clean(store, now=WHEN, retain_days=3, cap_bytes=25, pinned=frozenset({'b' * 12}))
+    gone = artefacts.clean(store, account='alice', now=WHEN, retain_days=3, cap_bytes=25, pinned=frozenset({'b' * 12}))
     assert set(gone) == {old, oldest_recent}
     assert set(store.list(None)) == {pinned, newest}
     assert not (tmp_path / 'f' / 'lab' / '2026' / '10' / '07').exists(), 'an emptied day folder is removed'
@@ -309,7 +315,7 @@ def test_cleanup_drops_old_days_keeps_pins_then_trims_oldest_to_the_cap(tmp_path
 def test_planted_control_nothing_young_and_under_the_cap_is_deleted(tmp_path: Path) -> None:
     store = FolderStore(tmp_path / 'f', 'lab')
     kept = _put_at(store, tmp_path, WHEN - timedelta(days=1))
-    assert artefacts.clean(store, now=WHEN, retain_days=3, cap_bytes=10**9, pinned=frozenset()) == ()
+    assert artefacts.clean(store, account='alice', now=WHEN, retain_days=3, cap_bytes=10**9, pinned=frozenset()) == ()
     assert store.list(None) == (kept,)
 
 
@@ -321,6 +327,8 @@ class _Forge:
         self.blobs: dict[str, bytes] = {}
         self.labelled: list[dict[str, Any]] = []
         self.heads: dict[int, str] = {}
+        self.pulls_off = False  # every /pulls/N read answers 404
+        self.has_pull_requests = True  # the repository's own flag
 
     repo = '/api/v1/repos/o/r'
 
@@ -331,6 +339,10 @@ class _Forge:
             return self.labelled
         if path.endswith('/issues?state=all&type=issues&q=run+records&limit=50'):
             return [{'title': 'run records', 'number': 1}]
+        if path == self.repo:
+            return {'has_pull_requests': self.has_pull_requests}
+        if '/pulls/' in path and self.pulls_off:  # gitea: the pulls unit is off, so every PR read is 404
+            raise ForgeCallFailed(Report(('GET', path), (Attempt(1, 404, 'not found', Diagnosis.FORGE_REFUSED),), 1))
         if '/pulls/' in path:
             return {
                 'number': 1,
@@ -382,6 +394,24 @@ def test_keep_labels_pin_the_shas_their_issue_or_pr_names() -> None:
     assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12, 'd' * 12})
 
 
+def test_a_repo_with_pull_requests_off_pins_by_body_and_never_fails_the_cleanup() -> None:
+    forge = _Forge()
+    forge.pulls_off, forge.has_pull_requests = True, False
+    forge.labelled = [
+        {'number': 3, 'body': f'results of {"c" * 40} please'},
+        {'number': 7, 'body': '', 'pull_request': {}},  # a PR labelled keep before the unit was switched off
+    ]
+    assert artefacts.pinned(cast('Client', forge)) == frozenset({'c' * 12})
+
+
+def test_a_pull_read_refused_for_another_reason_still_raises() -> None:
+    forge = _Forge()
+    forge.pulls_off = True
+    forge.labelled = [{'number': 7, 'body': '', 'pull_request': {}}]
+    with pytest.raises(ForgeCallFailed):
+        artefacts.pinned(cast('Client', forge))
+
+
 # --- choosing the store by size --------------------------------------------------------------------
 
 
@@ -396,3 +426,70 @@ def test_small_goes_to_the_forge_large_to_the_configured_backend(tmp_path: Path)
 def test_too_large_for_the_forge_with_no_backend_is_refused_naming_the_key() -> None:
     with pytest.raises(ArtefactRefused, match=r'tool\.lab_commons\.artefacts'):
         artefacts.store_for(Config(), cast('Client', _Forge()), 'lab', size=200 * 1024 * 1024)
+
+
+# --- one shared library, many writers -------------------------------------------------------------
+
+
+@pytest.mark.parametrize('bad', ['Alice', 'al ice', 'al:ice', 'alice.', '-alice', 'caf\u00e9', '', 'a' * 33])
+def test_an_account_a_cloud_drive_cannot_name_is_refused(bad: str) -> None:
+    with pytest.raises(ArtefactRefused, match='account'):
+        artefacts.run_id(SHA, 'linux', bad, WHEN)
+
+
+def test_planted_control_a_slurm_style_account_names_a_run() -> None:
+    ident = artefacts.run_id(SHA, 'linux', 'pc-ab1.x_2', WHEN)
+    assert artefacts.parsed_run_id(ident)['account'] == 'pc-ab1.x_2'
+
+
+def test_each_writer_cleans_only_its_own_runs(tmp_path: Path) -> None:
+    """Two writers share one store: A's cleanup, by age and by cap, leaves every one of B's runs untouched."""
+    store = FolderStore(tmp_path / 'f', 'lab')
+    a_old = _put_at(store, tmp_path, WHEN - timedelta(days=9), account='alice')
+    a_new = _put_at(store, tmp_path, WHEN, account='alice', size=30)
+    b_old = _put_at(store, tmp_path, WHEN - timedelta(days=9), account='bob')
+    b_new = _put_at(store, tmp_path, WHEN, account='bob', size=30)
+    gone = artefacts.clean(store, account='alice', now=WHEN, retain_days=3, cap_bytes=40, pinned=frozenset())
+    assert set(gone) == {a_old}, "the cap counts A's share only, so A's new run stays under 40 bytes"
+    assert set(store.list(None)) == {a_new, b_old, b_new}
+
+
+def test_the_cap_binds_each_writer_on_its_own_share(tmp_path: Path) -> None:
+    store = FolderStore(tmp_path / 'f', 'lab')
+    a_first = _put_at(store, tmp_path, WHEN - timedelta(hours=2), account='alice', size=30)
+    _put_at(store, tmp_path, WHEN - timedelta(hours=1), account='bob', size=30)
+    a_last = _put_at(store, tmp_path, WHEN, account='alice', size=30)
+    assert artefacts.clean(store, account='alice', now=WHEN, retain_days=3, cap_bytes=40, pinned=frozenset()) == (
+        a_first,
+    )
+    assert a_last in store.list(None)
+
+
+# --- no working remote --------------------------------------------------------------------------------
+
+
+def _rclone_repo(tmp_path: Path, remote: str = 'hpc-data:motronics') -> Path:
+    return _pyproject(tmp_path / 'r', f'[tool.lab_commons.artefacts]\nbackend = "rclone"\nremote = "{remote}"\n')
+
+
+def test_a_missing_remote_is_named_with_its_recipe(tmp_path: Path, rclone) -> None:
+    argv, cloud = rclone
+    why = artefacts.remote_problem(_rclone_repo(tmp_path), rclone=argv)
+    assert 'hpc-data:' in why
+    assert 'rclone config' in why
+    calls = [json.loads(line) for line in (cloud / 'calls.jsonl').read_text().splitlines()]
+    assert calls == [['lsd', 'hpc-data:', '--max-depth', '1']], 'one cheap, read-only probe'
+
+
+def test_planted_control_a_present_remote_has_no_problem(tmp_path: Path, rclone) -> None:
+    argv, cloud = rclone
+    (cloud / 'hpc-data').mkdir()
+    assert artefacts.remote_problem(_rclone_repo(tmp_path), rclone=argv) == ''
+
+
+def test_no_rclone_binary_is_a_problem_too(tmp_path: Path) -> None:
+    assert 'rclone' in artefacts.remote_problem(_rclone_repo(tmp_path), rclone=(str(tmp_path / 'no-rclone'),))
+
+
+def test_a_repo_without_an_rclone_store_never_probes(tmp_path: Path) -> None:
+    assert artefacts.remote_problem(_pyproject(tmp_path / 'r', ''), rclone=(str(tmp_path / 'no-rclone'),)) == ''

@@ -11,26 +11,38 @@ On the login host you chose, store your own forge token once (`git config --glob
 `chmod 600 ~/.git-credentials`, then `python -m lab_commons.dev.forge auth login`), then paste:
 
 ```
-F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main
+[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
 ```
 
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
-  file: host, root, python, served repos); later runs read it, and flags that disagree with it are refused.
-- **What it does** (`lab_commons.hpc.deploy`): refuses off the declared host; checks every served repo with
-  `git ls-remote` before changing anything; clones or fast-forwards each checkout; builds each `.venv` with the
-  repo's own `[tool.lab_commons.hpc] install` and `native` build on a uv-managed CPython (skipped while its
-  inputs are unchanged); installs `cmake` through `uv tool` when a repo needs it and the host lacks it;
-  replaces its own marked crontab lines; runs one tick of each repo and prints it.
+  file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
+  runs read it, and flags that disagree with it are refused. `lab-commons` is always served: every tick runs it.
+- **What it does** (`lab_commons.hpc.deploy`): refuses off the declared host; checks the account before changing
+  anything -- `credential.helper` set and `~/.git-credentials` mode 600, `git ls-remote` per repo, and
+  `forge auth check` per repo (the API calls a tick makes: `GET /user`, push permission for commit statuses,
+  the issue list); writes the account's own `[[hpc.grant]]` when it has none (user from `id -un`, account and
+  `cpu=` limit from `sacctmgr`, this host, the declared partitions); clones or fast-forwards each checkout;
+  installs `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo` (no PATH
+  edit) and `cmake` through `uv tool` when the tick PATH lacks them, and refuses any other missing `needs` by
+  name; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
+  uv-managed CPython (skipped while its inputs are unchanged); installs the served lab-commons checkout over
+  the sha each other repo pins (`uv pip install --no-config`, run outside the project so its sources cannot
+  put the pin back; keyed by the lab-commons HEAD, so the next deploy after a lab-commons update reinstalls
+  it); replaces its own marked crontab lines; runs one tick of each repo and prints it.
+- A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
+  the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
 - **The crontab line**, per repo, every 5 minutes:
   `cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve --mode integrate >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
-  Route its alarm lines, or enable `[alerts]` in the machine file.
+  Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
+  file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
   hosts. A second host finding a live run owned by another host of its account leaves it alone until that
   owner's lease lapses on the forge's clock.
 - **Identity is read, never typed**: the claim names `<cluster>/<account>` from Slurm's `ClusterName` and
   `id -un` (`lab_commons.hpc.account`).
-- `git`, `uv` and `cargo` must be on the cron `PATH`; `module load` lines go in `~/.bashrc`.
+- The cron `PATH` is `~/.local/bin:~/.cargo/bin:/usr/local/bin:/usr/bin:/bin` plus the directories `sbatch`, `sacct` and `squeue` resolve in when the deploy runs (it refuses without them); the deploy checks every tool
+  there, not on the login shell's PATH.
 
 ## Grants: the machine file
 

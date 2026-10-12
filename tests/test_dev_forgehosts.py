@@ -69,7 +69,7 @@ def test_planted_control_the_old_lookup_opens_a_duplicate_every_tick() -> None:
 
 def test_a_lookup_that_cannot_see_the_issue_it_just_created_refuses(monkeypatch) -> None:
     forge = StateForge()
-    monkeypatch.setattr('lab_commons.dev.forgework.is_pull', _presence_only)  # the 2026-10-12 blindness
+    monkeypatch.setattr('lab_commons.dev.forgepulls.is_pull', _presence_only)  # the 2026-10-12 blindness
     with pytest.raises(forgehosts.HostsIssueLost):
         publish(forge, _card('ada/alice'))
     with pytest.raises(forgehosts.HostsIssueLost, match='repository counts 1'):

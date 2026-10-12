@@ -63,7 +63,7 @@ from lab_commons.dev import forgerun, forgeship
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
-from lab_commons.dev.forgehosts import publish_card
+from lab_commons.dev.forgehosts import publish_card, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms, tip_of
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
@@ -125,6 +125,8 @@ def serve(
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes)."""
     repo = origin_url(root)
     table = section('schedule') if table is None else table
+    raised: list[Alarm] = []  # every alarm this tick, for its host card
+    alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
@@ -175,7 +177,7 @@ def serve(
         alarm(one)
     if mode != 'quiet':
         publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
-                     standing=standing, table=table, say=say)  # fmt: skip
+                     standing=standing, table=table, say=say, alarms=raised, artefacts=ticked.artefacts)  # fmt: skip
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -194,11 +196,11 @@ def _tidy(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """On a cluster -- the artefact stores' single writer -- clean them each tick; a failure alarms, never stops it."""
+    """On a cluster -- one artefact writer -- clean its own account's runs each tick; a failure only alarms."""
     if seat is None:
         return
     try:
-        forgeship.tidy(root, client(root), say=say)
+        forgeship.tidy(root, client(root), account=seat.account, say=say)
     except (OSError, ValueError) as why:
         alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
 

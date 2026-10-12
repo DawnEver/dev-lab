@@ -17,14 +17,18 @@ reader side maps the same store to a local path in the MACHINE config (``[artefa
 :func:`reader`) -- a synced mirror of the remote, read, never written.
 
 CLOUD-DRIVE-SHAPED LAYOUT. ``<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.zst`` plus ``<run-id>.manifest.json``,
-``run-id = <sha12>-<platform>-<utcstamp>``: one archive per run (a synced drive pays per FILE), short
-ASCII names checked against OneDrive's forbidden characters, trailing dot/space and its path limit
+``run-id = <sha12>-<platform>-<account>-<utcstamp>``: one archive per run (a synced drive pays per FILE),
+short ASCII names checked against OneDrive's forbidden characters, trailing dot/space and its path limit
 (:func:`check_key`). WRITE-ONCE: an object is never rewritten -- a different object under an existing
 key is refused; the same bytes again is the object already landed (a resumed tick), not a write.
 
-CLEANUP BY THE SINGLE WRITER (:func:`clean`): whole runs in day folders older than ``retain_days`` go,
-unless a ``keep`` label on an issue or pull request pins their sha (:func:`pinned`); then oldest first
-until the store is under ``cap_gb``; emptied folders are removed.
+ONE SHARED LIBRARY, MANY WRITERS (user ruling 2026-10-13). Several cluster accounts, each with its own
+rclone identity, write the same store; ``<account>`` in the run id is the cluster account that wrote it
+(the claim owner's). EACH WRITER CLEANS ONLY ITS OWN (:func:`clean`): of the runs carrying its account,
+whole runs in day folders older than ``retain_days`` go, unless a ``keep`` label on an issue or pull
+request pins their sha (:func:`pinned`); then its oldest first until its own share is under ``cap_gb``;
+emptied folders are removed. A writer whose remote is unusable says so (:func:`remote_problem`) and
+claims no part whose declared outputs could need it.
 
 CREDENTIALS. The rclone config is never in a repo, never logged, and must be mode 600
 (:func:`check_rclone_config`); no argv here carries a secret.
@@ -73,7 +77,9 @@ from lab_commons.dev.artefactstores import (
     sorted_refs,
     verified_copy,
 )
-from lab_commons.dev.forgework import Client, pull_of
+from lab_commons.dev.forgepulls import pulls_off
+from lab_commons.dev.forgework import Client, ForgeCallFailed, pull_of
+from lab_commons.hpc.rclone import probe
 
 __all__ = [
     'ARCHIVE',
@@ -100,6 +106,7 @@ __all__ = [
     'pack',
     'pinned',
     'reader',
+    'remote_problem',
     'resolve',
     'run_id',
     'store_for',
@@ -263,6 +270,18 @@ def large_store(config: Config, repo: str) -> ArtefactStore | None:
     return None
 
 
+def remote_problem(root: Path, *, rclone: Sequence[str] = ('rclone',)) -> str:
+    """Why this host cannot write the repo's rclone store, ``''`` when it can or none is configured.
+
+    A cheap READ-ONLY probe of the remote's root (:func:`lab_commons.hpc.rclone.probe`).
+    """
+    try:
+        config = load_config(root)
+    except ArtefactRefused as bad:
+        return str(bad)
+    return probe(config.remote, rclone=rclone) if config.backend == RCLONE else ''
+
+
 def store_for(config: Config, client: Client, repo: str, *, size: int) -> ArtefactStore:
     """The forge for an archive of *size* at or under the threshold, else the configured large backend."""
     if size <= config.threshold_mb * MB:
@@ -297,21 +316,34 @@ def resolve(entry: dict[str, Any], dest: Path, *, client: Client, repo: str) -> 
 
 
 def pinned(client: Client) -> frozenset[str]:
-    """The sha12s a ``keep``-labelled issue or pull request names: shas in its body, and a PR's head."""
+    """The sha12s a ``keep``-labelled issue or pull request names: shas in its body, and a PR's head.
+
+    A repository with pull requests switched off still lists its old PRs among its issues, but answers
+    their ``/pulls`` read 404 (:func:`~lab_commons.dev.forgepulls.pulls_off`): such a PR pins by its body.
+    """
     found: set[str] = set()
     for item in client.call('GET', f'{client.repo}/issues?state=all&labels=keep&limit=50'):
         found.update(token[:12] for token in _SHA_TOKEN.findall(item.get('body') or ''))
         if 'pull_request' in item:
-            head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
+            try:
+                head = pull_of(client.call('GET', f'{client.repo}/pulls/{item["number"]}')).head_sha
+            except ForgeCallFailed as failed:  # a PR labelled before the repo switched pull requests off
+                if not pulls_off(client, failed):
+                    raise
+                continue
             found.update([head[:12]] if head else [])
     return frozenset(found)
 
 
 def clean(
-    store: ArtefactStore, *, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
+    store: ArtefactStore, *, account: str, now: datetime, retain_days: int, cap_bytes: int, pinned: frozenset[str]
 ) -> tuple[Ref, ...]:
-    """Delete runs older than *retain_days*, then oldest first until under *cap_bytes* (0: no cap); pins stay."""
-    refs = store.list(None)
+    """Delete *account*'s old runs, then its oldest until its share is under *cap_bytes*; nobody else's.
+
+    Of *account*'s runs only: those older than *retain_days* go, then oldest first until its share is
+    under *cap_bytes* (0: no cap); pins stay, and every other writer's run is never touched.
+    """
+    refs = [ref for ref in store.list(None) if parsed_run_id(ref.run_id)['account'] == account]
     cutoff = now.astimezone(UTC).date().toordinal() - retain_days
     held = [ref for ref in refs if parsed_run_id(ref.run_id)['sha'] in pinned]
     doomed = [ref for ref in refs if ref not in held and run_time(ref.run_id).date().toordinal() < cutoff]

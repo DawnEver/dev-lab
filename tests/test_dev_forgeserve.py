@@ -255,6 +255,26 @@ def test_a_run_with_no_cluster_to_advance_on_alarms_and_waits(monkeypatch, tmp_p
     assert len(forgerun.live('https://f/o/r.git')) == 1, 'the run is kept for the next tick'
 
 
+def test_the_alarms_a_tick_raises_ride_on_its_host_card(monkeypatch, tmp_path: Path) -> None:
+    """A stuck run is read from the forge, not from a cron log. PLANTED CONTROL: a calm tick's card is clean."""
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    cards: list = []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, cards=cards, host='linux')
+    assert cards[-1].alarms == ()
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', ME, cluster=part), ME)
+
+    def no_grant() -> None:
+        msg = 'no [[hpc.grant]] has user = "alice"'
+        raise ValueError(msg)
+
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=no_grant, cards=cards, host='linux')
+    (raised,) = cards[-1].alarms
+    assert raised['kind'] == RUN
+    assert raised['subject'] == f'the cluster run of {SHA[:12]} cannot advance'
+    assert 'no [[hpc.grant]]' in raised['body']
+
+
 def test_an_account_idle_with_work_pending_alarms(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: the same pending request, claimed, raises nothing."""
     pending = Work('integrate/main', SHA, 'windows', OPEN)
@@ -362,17 +382,17 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
     monkeypatch, tmp_path: Path
 ) -> None:
     """PLANTED CONTROL: the same serve off a cluster (no seat) never cleans -- a workstation only reads."""
-    cleaned: list[Path] = []
+    cleaned: list[tuple[Path, str]] = []
 
-    def tidy(root: Path, _client: object, *, say: object) -> tuple[str, ...]:
+    def tidy(root: Path, _client: object, *, account: str, say: object) -> tuple[str, ...]:
         del say
-        cleaned.append(root)
+        cleaned.append((root, account))
         return ()
 
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=None, tidy=tidy)
     assert cleaned == []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, tidy=tidy)
-    assert cleaned == [tmp_path]
+    assert cleaned == [(tmp_path, SEAT.account)], "it cleans its own account's runs only"
 
     def broken(_root: Path, _client: object, **_kw: object) -> tuple[str, ...]:
         msg = 'rclone lsjson exited 1'

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
+from lab_commons.dev.forgepulls import issues
 from lab_commons.dev.forgework import Client, ForgeCallFailed, Issue, client_for
 from lab_commons.hpc.records import read_record
 from lab_commons.log import emit
@@ -155,7 +156,7 @@ def _find(client: Client, title: str) -> Issue | None:
     (#2432-#2436 beside #2427-#2431, 2026-10-11). Never ``q=`` either: gitea answers it from a search
     indexer that can lag a fresh issue. Every page is read so a duplicate never shadows the original.
     """
-    numbers = [raw['number'] for raw in client.issues(state='open') if raw.get('title') == title]
+    numbers = [raw['number'] for raw in issues(client, state='open') if raw.get('title') == title]
     return client.issue_view(min(numbers)) if numbers else None
 
 

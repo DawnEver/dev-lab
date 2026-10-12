@@ -62,7 +62,6 @@ __all__ = [
     'Comment',
     'ForgeCallFailed',
     'Issue',
-    'ListingIncomplete',
     'PullRequest',
     'backend_for',
     'client_for',
@@ -84,14 +83,6 @@ _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
 
 #: A create's read-back before a retry -- its own landed object, or ``None`` -- or no read-back at all.
 _Found = Callable[[], Any] | None
-
-#: A listing's page size, and the pages read before it is refused as incomplete.
-_LIST_PAGE: Final = 50
-_LIST_PAGES: Final = 100
-
-
-class ListingIncomplete(RuntimeError):
-    """A listing still full at its page bound: what it did not read may hold the object being looked for."""
 
 
 def is_pull(raw: Mapping[str, Any]) -> bool:
@@ -334,23 +325,6 @@ class Client:
         listed = self.call('GET', f'{self.repo}/issues?{query}')
         return tuple(_issue(raw) for raw in listed if not is_pull(raw))
 
-    def pages(self, path: str, query: Mapping[str, str]) -> list[Any]:
-        """Every page of the listing at *path*; one still full at the bound is :class:`ListingIncomplete`."""
-        found: list[Any] = []
-        for page in range(1, _LIST_PAGES + 1):
-            params = dict(query) | {self.backend.page_param: str(_LIST_PAGE), 'page': str(page)}
-            listed = self.call('GET', f'{path}?{urllib.parse.urlencode(params)}')
-            found += listed
-            if len(listed) < _LIST_PAGE:
-                return found
-        msg = f'{path} still lists past {_LIST_PAGES} pages of {_LIST_PAGE}; refusing a partial read'
-        raise ListingIncomplete(msg)
-
-    def issues(self, *, state: str = 'all') -> tuple[Mapping[str, Any], ...]:
-        """Every issue in *state*, raw, off the listing (never the lagging search index), pulls excluded."""
-        listed = self.pages(f'{self.repo}/issues', {'state': state, 'type': 'issues'})
-        return tuple(raw for raw in listed if not is_pull(raw))
-
     def issue_view(self, number: int) -> Issue:
         """One issue."""
         return _issue(self.call('GET', f'{self.repo}/issues/{number}'))
@@ -374,10 +348,6 @@ class Client:
     def issue_close(self, number: int) -> Issue:
         """Close an issue; nothing is written but the state."""
         return _issue(self.call('PATCH', f'{self.repo}/issues/{number}', {'state': 'closed'}))
-
-    def issue_delete(self, number: int) -> None:
-        """Delete an issue outright (gitea: repository admin rights); a refusal raises :class:`ForgeCallFailed`."""
-        self.call('DELETE', f'{self.repo}/issues/{number}')
 
     def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
         """A new pull request from *head* into *base*."""

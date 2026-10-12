@@ -66,7 +66,11 @@ _PATH_LIMIT: Final = 400
 _FORBIDDEN: Final = frozenset('"*:<>?\\|')
 
 _STAMP: Final = '%Y%m%dT%H%M%SZ'
-_RUN_ID: Final = re.compile(r'^(?P<sha>[0-9a-f]{12})-(?P<platform>[a-z0-9]+)-(?P<stamp>\d{8}T\d{6}Z)$')
+#: A writer's account as a name segment: lowercase (OneDrive is case-insensitive), short, no trailing dot.
+_ACCOUNT: Final = r'[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?'
+_RUN_ID: Final = re.compile(
+    rf'^(?P<sha>[0-9a-f]{{12}})-(?P<platform>[a-z0-9]+)-(?P<account>{_ACCOUNT})-(?P<stamp>\d{{8}}T\d{{6}}Z)$'
+)
 MB: Final = 1024 * 1024
 _RCLONE_TIMEOUT_S: Final = 3600
 
@@ -82,16 +86,22 @@ class MissingOutput(ArtefactRefused):
 # --- names and layout -------------------------------------------------------------------------
 
 
-def run_id(sha: str, platform: str, when: datetime) -> str:
-    """``<sha12>-<platform>-<utcstamp>`` -- one run, short and ASCII."""
-    return f'{sha[:12]}-{platform}-{when.astimezone(UTC).strftime(_STAMP)}'
+def run_id(sha: str, platform: str, account: str, when: datetime) -> str:
+    """``<sha12>-<platform>-<account>-<utcstamp>`` -- one run of one writer, short and ASCII."""
+    if re.fullmatch(_ACCOUNT, account) is None:
+        msg = (
+            f'account {account!r} cannot name an artefact on a cloud drive: lowercase ASCII letters, '
+            'digits and "._-", at most 32, starting and ending in a letter or digit'
+        )
+        raise ArtefactRefused(msg)
+    return f'{sha[:12]}-{platform}-{account}-{when.astimezone(UTC).strftime(_STAMP)}'
 
 
 def parsed_run_id(ident: str) -> re.Match[str]:
-    """*ident* split into ``sha``, ``platform`` and ``stamp``; a malformed id is refused."""
+    """*ident* split into ``sha``, ``platform``, ``account`` and ``stamp``; a malformed id is refused."""
     found = _RUN_ID.match(ident)
     if found is None:
-        msg = f'{ident!r} is not a run id (<sha12>-<platform>-<yyyymmddTHHMMSSZ>)'
+        msg = f'{ident!r} is not a run id (<sha12>-<platform>-<account>-<yyyymmddTHHMMSSZ>)'
         raise ArtefactRefused(msg)
     return found
 

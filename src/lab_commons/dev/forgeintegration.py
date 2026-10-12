@@ -32,11 +32,11 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_origin, forge_from_remote
-from lab_commons.dev.forgepulls import comment_upsert, pr_list, pr_retarget
+from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgestatus import Status, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
 from lab_commons.dev.forgetidy import load_hygiene, tidy
-from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, ListingIncomplete, PullRequest, client_for
+from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, PullRequest, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing

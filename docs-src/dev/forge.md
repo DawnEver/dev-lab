@@ -158,6 +158,7 @@ One command per forge host, run from a checkout whose `origin` is on it (or pass
 ```
 python -m lab_commons.dev.forge auth login      # prompts for the token, input hidden
 python -m lab_commons.dev.forge auth status     # where the token comes from, and who it is
+python -m lab_commons.dev.forge auth check      # can it do what a forge serve tick does (--url <repo url>)
 ```
 
 - `login` checks the token against the forge and stores it with `git credential approve` only if accepted.
