@@ -18,14 +18,16 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``) and
    ``[serve] repos, root, own_weight`` merged in place; every other table, key and comment is kept,
    and ``--dry-run`` prints the diff.
-7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`lab_commons.dev.servetask`), rewritten only
-   when its action differs.
+7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`lab_commons.dev.servetask`), registered from
+   its XML definition and rewritten only when the installed one reads back different.
 
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
 ``serve [--mode M]`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
 ``forge serve --mode M`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
-Its exit is the worst child's; one repo's failure never skips the next.
+Its exit is the worst child's; one repo's failure never skips the next. Each child starts with no
+console window; under ``pythonw`` (no streams at all) the serve and its children write to the capped
+serve log (:func:`lab_commons.dev.servetask.open_log`).
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import IO, Any, Final
 
 from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
@@ -106,6 +108,7 @@ class Programs:
     which: Callable[[str], str | None] = shutil.which
     com: Callable[[str], Path | None] = com_server
     windows: bool = os.name == 'nt'
+    home: Path = field(default_factory=servetask.home)
 
 
 def _read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -261,16 +264,17 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
 
 def _task(step: Step, programs: Programs, lab: Path, mode: str) -> int:
     emit(f'[task] {servetask.TASK}')
-    command = servetask.create_argv(lab, user=servetask.this_user(), mode=mode)
-    action = servetask.action_of(lab, mode=mode)
-    if len(action) > servetask.TR_MAX:
-        emit(f'deploy refused: the action is {len(action)} characters, schtasks takes {servetask.TR_MAX}', err=True)
-        return 2
+    want = servetask.definition_of(lab, mode=mode)
     query = _read([*programs.schtasks, *servetask.query_argv()[1:]])
-    if query.returncode == 0 and servetask.installed_action(query.stdout) == action:
-        emit(f'  in place: {action}')
+    if query.returncode == 0 and servetask.installed(query.stdout) == want:
+        emit(f'  in place: {want.command} {want.arguments}')
         rc = 0
     else:
+        xml = programs.home / f'{servetask.TASK}.xml'
+        if not step.dry:
+            xml.parent.mkdir(parents=True, exist_ok=True)
+            xml.write_text(servetask.task_xml(want, user=servetask.this_user()), encoding='utf-16')
+        command = servetask.create_argv(xml)
         rc = step.change(subprocess.list2cmdline(command), [*programs.schtasks, *command[1:]])
     emit(f'  stop: {servetask.DISABLE}')
     return rc
@@ -334,8 +338,13 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     return _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS], args.mode)
 
 
-def serve(mode: str, *, run: Callable[..., Any] = subprocess.run, lock: Path | None = None) -> int:
-    """``forge serve --mode`` *mode* in each ``[serve] repos`` checkout, under one lock; the worst exit."""
+def serve(
+    mode: str, *, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None
+) -> int:
+    """``forge serve --mode`` *mode* in each ``[serve] repos`` checkout, under one lock; the worst exit.
+
+    Every child starts with no console window; *out*, when given, receives its stdout and stderr.
+    """
     table = section('serve')
     repos, root = table.get('repos'), table.get('root')
     if not (isinstance(repos, list) and repos and isinstance(root, str)):
@@ -355,7 +364,8 @@ def serve(mode: str, *, run: Callable[..., Any] = subprocess.run, lock: Path | N
                 continue
             emit(f'[serve] {name}', flush=True)
             argv = [str(python), '-m', 'lab_commons.dev.forge', 'serve', '--mode', mode]
-            rc = run(argv, cwd=checkout, check=False).returncode
+            streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
+            rc = run(argv, cwd=checkout, check=False, **streams, **servetask.windowless()).returncode
             if rc:
                 emit(f'[serve] {name} exited {rc}', err=True)
             worst = max(worst, rc)
@@ -367,7 +377,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ['deploy']:
         return deploy(args[1:])
-    return serve(_parser().parse_args(args).mode)
+    mode = _parser().parse_args(args).mode
+    if sys.stdout is not None:
+        return serve(mode)
+    with servetask.open_log(servetask.log_path()) as log:  # pythonw: no console, so no streams
+        sys.stdout = sys.stderr = log
+        try:
+            return serve(mode, out=log)
+        finally:
+            sys.stdout = sys.stderr = None
 
 
 if __name__ == '__main__':

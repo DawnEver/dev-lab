@@ -38,9 +38,11 @@ makes on a producer host. Each tick it:
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `~/.cache/lab-forge/serve.lock` elsewhere.
 - **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
-  you, only while logged on), written by [the workstation deploy](#deploy-a-windows-workstation). Its action
-  is `python -m lab_commons.dev.workstation serve`: under the one serve lock, `forge serve` in each
-  `[serve] repos` checkout in turn. **To stop it**, disable the Task --
+  you, only while logged on, hidden), written by [the workstation deploy](#deploy-a-windows-workstation). Its
+  action is the checkout's `pythonw.exe -m lab_commons.dev.workstation serve`, so NO console window opens:
+  each child starts with `CREATE_NO_WINDOW` and every descendant inherits that windowless console. Output
+  goes to `%LOCALAPPDATA%/lab-forge/serve.log` (rotated to `serve.log.1` at 4 MiB). Under the one serve
+  lock it runs `forge serve` in each `[serve] repos` checkout in turn. **To stop it**, disable the Task --
   `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
   `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
   `error: stopped`.
@@ -92,7 +94,8 @@ A second run changes nothing. In order, it:
    installs each repo's hooks where they are not live;
 4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root, own_weight` (`--own-weight`,
    default 2) into `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
-5. writes the one `lab-forge-serve` Task, and only when its action differs.
+5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
+   different -- so a re-run replaces an older `cmd /c` Task.
 
 A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
 
