@@ -1,7 +1,7 @@
 """Every INSTALL DOOR in a repo must deliver the DECLARED build of a floating requirement.
 
 THE DECLARATION THIS DEFENDS. The family pins nothing first-party: ``lab-commons @
-git+https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git`` carries no ``rev=``, no
+git+https://<forge-host>/<owner>/lab-commons.git`` carries no ``rev=``, no
 ``tag=``, and the lock file is deliberately NOT tracked (user ruling 2026-09-17). The requirement
 therefore SAYS "whatever that URL holds now", and a repo held at anything older stops being told
 when a shared rule moved. That is a declaration, and this module is the mechanism that makes it true.

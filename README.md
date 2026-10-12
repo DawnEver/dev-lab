@@ -181,12 +181,13 @@ are read as markdown from a checkout or from the forge.
 ## Installing (git URL)
 
 Not yet published to PyPI. Consumers depend on it by git URL and track the latest
-`main` — the family takes the newest version of every dependency, so drift is closed by
+`main` (`<forge-host>/<owner>` is what your `origin` remote names) — the family takes the
+newest version of every dependency, so drift is closed by
 upgrading, not by pinning:
 
 ```toml
 dependencies = [
-    "lab-commons @ git+https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git",
+    "lab-commons @ git+https://<forge-host>/<owner>/lab-commons.git",
 ]
 ```
 
