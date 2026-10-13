@@ -338,7 +338,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-11 AT 532 after the branch-flow modules: 460 keeps 72.
 #: RE-MEASURED 2026-10-12 AT 560 after the forge owners, issue routing and hygiene modules: 490 keeps 70.
 #: RE-MEASURED 2026-10-13 AT 581 after the workstation deploy and its tests: 511 keeps 70.
-CONSTANT_FLOOR = 511
+#: RE-MEASURED 2026-10-13 AT 603 after the compute model, probe, learned and ledger modules: 533 keeps 70.
+CONSTANT_FLOOR = 533
 CONSTANT_HEADROOM = 90
 
 

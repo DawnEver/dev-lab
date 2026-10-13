@@ -17,6 +17,12 @@ at once, and a seat taken by each would serialise them again. The seat stays the
 -- a developer's measure or verify -- and serve reads its holders as running demand. The environment
 seat is still taken: a mutation of the producer's own environment mid-run is still the harm.
 
+A LIGHT RUN TAKES NO BOX SEAT (user ruling 2026-10-13: light runs never queue). A caller that passes
+``memory_bytes`` declares its run does not saturate the box -- a targeted selection at a capped width
+(:data:`LIGHT_WIDTH`) -- and is admitted by that memory demand against the box's free memory
+(:class:`~lab_commons.dev.cpuseat.CpuSeat` ``saturating=False``), so it never waits on a heavy holder.
+Heavy still excludes heavy. The environment seat is taken either way.
+
 It is separate from :mod:`lab_commons.dev.verify` because verify is one adopter and not the only
 one -- a gate runner in a sibling repo needs the same three lines and must not reimplement them, and
 an entry point that reimplemented them would be the second definition this family keeps paying for.
@@ -30,13 +36,22 @@ import sys
 import time
 from typing import Final
 
-from lab_commons.dev.cpuseat import CpuSeat
+from lab_commons.dev.cpuseat import LIGHT_WIDTH, CpuSeat
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.producer import PRODUCING_VAR
 from lab_commons.log import emit
-from lab_commons.resources import Exhausted
+from lab_commons.resources import MEMORY, Exhausted
 
-__all__ = ['MEASURE_WAIT_S', 'PROGRESS_S', 'WAIT_S', 'hold_run_seats', 'holders_line']
+__all__ = [
+    'LIGHT_ENV',
+    'LIGHT_MEMORY_BYTES',
+    'LIGHT_WIDTH',
+    'MEASURE_WAIT_S',
+    'PROGRESS_S',
+    'WAIT_S',
+    'hold_run_seats',
+    'holders_line',
+]
 
 #: The CEILING ON THE WAIT for the box, in seconds -- 30 minutes, the same bound this family's gate
 #: tier already carries, so a run queued behind a gate cannot outlive the thing it queues behind.
@@ -54,6 +69,13 @@ WAIT_S: Final = 1800.0
 #: almost always behind one, and the useful answer is a fast refusal naming the holder, not a queue.
 MEASURE_WAIT_S: Final = 60.0
 
+#: A light run's DECLARED memory when its driver cannot price its selection: 512 MiB per capped worker.
+#: It is admitted against FREE memory, so a box that cannot hold it still refuses it, naming the shortfall.
+LIGHT_MEMORY_BYTES: Final = LIGHT_WIDTH * 2**29
+
+#: What a light run's pytest is launched with: pytest-xdist reads it for ``-n auto``, so the cap holds.
+LIGHT_ENV: Final = {'PYTEST_XDIST_AUTO_NUM_WORKERS': str(LIGHT_WIDTH)}
+
 #: How often the wait SAYS SOMETHING, in seconds. A silent queue and a hung process look identical
 #: from a terminal -- measured on this family 2026-09-16, where a frozen log mtime read as a hang for
 #: 26 minutes while pytest was working the whole time (`lab_commons.dev.verify._tee`). A queue that
@@ -61,8 +83,12 @@ MEASURE_WAIT_S: Final = 60.0
 PROGRESS_S: Final = 60.0
 
 
-def hold_run_seats(stack: contextlib.ExitStack, what: str, *, wait_s: float, poll_s: float) -> None:
-    """Take the CPU seat, then this interpreter's environment seat, for the life of *stack*, or raise naming the holder.
+def hold_run_seats(
+    stack: contextlib.ExitStack, what: str, *, wait_s: float, poll_s: float, memory_bytes: int | None = None
+) -> None:
+    """Take the CPU seat (a LIGHT run: its declared memory), then this interpreter's environment seat, or raise.
+
+    Both are held for the life of *stack*; the refusal names the holder.
 
     THE ADOPTION THIS EXISTS TO MAKE, measured missing 2026-09-16: ``lab_commons.dev.verify`` took
     NO lock, a sibling repo ran it for ~194 CPU-minutes holding ~17 GB, and a repo that DID take a
@@ -86,6 +112,8 @@ def hold_run_seats(stack: contextlib.ExitStack, what: str, *, wait_s: float, pol
         what: what this run IS, as the refusal will print it for the next reader.
         wait_s: ceiling on the wait. ``0`` checks once and refuses.
         poll_s: seconds between attempts.
+        memory_bytes: ``None`` for a run that SATURATES the box (it takes the seat); else the run is
+            LIGHT and is admitted by this declared memory, taking no seat (the module docstring).
 
     Raises:
         Exhausted: still held when the wait ran out. NOT wrapped in a new class -- the broker's
@@ -96,13 +124,16 @@ def hold_run_seats(stack: contextlib.ExitStack, what: str, *, wait_s: float, pol
     started = time.monotonic()
     deadline = started + max(0.0, wait_s)
     if PRODUCING_VAR not in os.environ:  # a producer serve admitted takes no box seat (the module docstring)
-        _hold_box(stack, what, started, deadline, poll_s)
+        _hold_box(stack, what, started, deadline, poll_s=poll_s, memory_bytes=memory_bytes)
     remaining = max(0.0, deadline - time.monotonic())
     stack.enter_context(EnvironmentSeat(sys.prefix, what, wait_s=remaining, poll_s=poll_s).held())
 
 
-def _hold_box(stack: contextlib.ExitStack, what: str, started: float, deadline: float, poll_s: float) -> None:
-    lock = CpuSeat(what, wait_s=0.0)
+def _hold_box(
+    stack: contextlib.ExitStack, what: str, started: float, deadline: float, *, poll_s: float, memory_bytes: int | None
+) -> None:
+    light = memory_bytes is not None
+    lock = CpuSeat(what, {MEMORY.name: memory_bytes} if light else {}, wait_s=0.0, saturating=not light)
     announced: float | None = None
     while True:
         try:
