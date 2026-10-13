@@ -168,8 +168,9 @@ present here and its demand fits `supply - reservations not for it - running`. A
 skipped and a smaller, lower-ranked one is still claimed, so several parts run on one host at once.
 
 - **Demand** is what the part's last run measured (`compute.learned`, keyed by part); unmeasured, a box part
-  is the whole box and a cluster part one core. A box job's cpu is capped at the box's supply: it spreads over
-  the cores it is given, so a whole-box job is admitted alone and never starved by the own reserve.
+  is every core free now (admitted alone) and a cluster part one core. A box run's cpu is MEASURED -- the
+  cpu-seconds of its process tree over its wall (`proccpu.TreeCpu`) -- and never capped: eight busy cores do not
+  fit in four.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); a box's probe
   (free cores, available memory, OS, tools) less its user's own reserve (`[reserve]` margins).
 - **Reservations**: every authorised live lease on the ledger ([reservations](#reservations)).

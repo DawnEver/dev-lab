@@ -29,7 +29,7 @@ def _priority(pid: int) -> int:
         return os.getpriority(os.PRIO_PROCESS, pid)
     kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel32.OpenProcess.restype = ctypes.c_void_p
-    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)  # noqa: FBT003 -- Win32 BOOL
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)  # 0: a Win32 BOOL, not inherited
     assert handle, f'cannot open pid {pid}: {ctypes.get_last_error()}'
     try:
         return kernel32.GetPriorityClass(ctypes.c_void_p(handle))

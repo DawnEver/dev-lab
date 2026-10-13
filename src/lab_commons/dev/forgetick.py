@@ -29,9 +29,10 @@ the resources it lacks (``not admitted: lacking cpu``). Several parts may theref
 once. Two parts of ONE sha are never claimed by one box in one tick: a local part is judged in its
 sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
 
-A BOX JOB'S WIDTH FOLLOWS ITS BOX. A box run spreads over the cores it is given
-(:func:`lab_commons.dev.bounded.worker_width`), so its cpu demand is capped at the box's supply: a job
-that measured the whole box is admitted alone, and never starved by a core the own reserve keeps back.
+A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
+wall (:class:`lab_commons.proccpu.TreeCpu`), never capped to the box: a job that kept eight cores busy does
+not fit in four. Unmeasured, it takes every core free now, so it is admitted alone.
+Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
 
 from __future__ import annotations
@@ -39,10 +40,11 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import math
 import os
 import shlex
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -60,8 +62,8 @@ from lab_commons.compute.model import (
     Supply,
     admit,
     expected_cost,
-    fitted,
     rank,
+    submitted,
 )
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
@@ -150,6 +152,7 @@ def tick(
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
+    busy: Iterable[str] = (),
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -162,7 +165,8 @@ def tick(
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). Which resources
     this host has is *supply*'s ``present`` (:mod:`lab_commons.compute.probe`): a part whose need-set is not
-    all present waits ``not admitted: lacking <resource>``.
+    all present waits ``not admitted: lacking <resource>``. *busy* are the shas a producer
+    here is judging now: their trees are taken, so no part of them is claimed.
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -205,12 +209,13 @@ def tick(
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     room = supply or Supply(machine or 'this host', Resources(cpu=cores))
-    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=cores)
+    free = max(1, math.floor(room.resources['cpu']))  # an unmeasured box run takes every core free now
+    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=free)
     sized = demand or (lambda _wanted, needed: by_part(needed))
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
-        size=lambda wanted, needed: fitted(sized(wanted, needed), room, cluster=bool(serve.hpc)),
-        reservations=tuple(reservations), taken=list(running),
+        size=lambda wanted, needed: submitted(sized(wanted, needed), room),
+        reservations=tuple(reservations), taken=list(running), trees=set(busy),
         store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip
     for item in ranked:

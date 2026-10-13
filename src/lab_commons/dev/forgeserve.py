@@ -8,10 +8,11 @@ keeps only scheduling, and calls this. ``forge serve --lock [PATH]`` first takes
 (:func:`lab_commons.dev.servelock.locked`): a second serve on the same lock exits 0 having done nothing.
 
 THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons.dev.forgerun.live`,
-a run of another state schema refused); read what this host can admit against (below);
-:func:`lab_commons.dev.forgetick.tick` (flush the outbox, fetch, claim in rank order while jobs admit);
-start each claimed cluster part as a run, and produce the claimed LOCAL parts -- all of them at once,
-one thread each, until the last ends; advance every cluster run one step
+a run of another state schema refused); then ROUNDS while any local producer lives -- read what this
+host can admit against (below), :func:`lab_commons.dev.forgetick.tick` (flush the outbox, fetch, claim
+in rank order while jobs admit), start each claimed cluster part as a run and each claimed LOCAL part
+as a producer of its own, and wait one tick period or until a producer ends; then advance every
+cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
 flush the outbox again.
@@ -29,7 +30,10 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.model.admit`), read her
   so a lease on this host is a lease on this supply.
 * RESERVATIONS -- every authorised lease on the ledger (:func:`lab_commons.compute.ledger.read`); a lease
   on another scope, expired, or for the job withholds nothing.
-* RUNNING -- each cluster run in flight here, at its learned demand; and each INTERACTIVE run holding the
+* RUNNING -- each cluster run in flight here, at its learned demand; each LOCAL PRODUCER this serve is
+  running, at its learned demand -- and since the probe already reads what it busies, what it was last
+  measured using (:func:`lab_commons.dev.forgeproduce.produce`'s *watch*) is given back to the supply,
+  so it is counted once; and each INTERACTIVE run holding the
   box seat (:class:`~lab_commons.dev.cpuseat.CpuSeat`, a developer's ``gate measure`` or ``verify``), at
   what it declared, else the whole box. The seat no longer decides what serve claims: it only makes an
   interactive run visible to it. A producer serve spawned takes no box seat (:mod:`lab_commons.dev.verify`).
@@ -39,8 +43,15 @@ its stream, its beats, its renewals, its release -- and is blocking, so N admitt
 it side by side. A second, multi-child producer loop would restate all of that; detached children
 advanced per tick (the cluster's shape) would need a state file per child and a tick that adopts them.
 Threads share two things, each behind a lock: the git fetch of the serving checkout (two fetches into
-one repository race on its refs) and the host card, published with every live part's progress. Each
-part is judged in its own sha's tree (the tick never claims two parts of one sha in one tick).
+one repository race on its refs, and the tick fetches too) and the host card, published with EVERY live
+part's progress. Each part is judged in its own sha's tree: a sha being produced here is passed to the
+tick as busy, so no round claims a second part of it.
+
+CLAIMING WHILE PRODUCING, and how it ends. A host busy with one part keeps claiming what still fits, a
+round per tick period or per producer that ended. A producer STOPPED on purpose
+(:mod:`lab_commons.dev.stoprun`) ends the claiming: no round starts after it, the live producers are
+waited for, and serve exits -- what a stop means. However a round fails, every producer thread is joined
+before serve returns or raises, so no claim is left held by a thread nobody waits for.
 
 A LOCAL PRODUCER HOLDS ITS CLAIM: its output streams prefixed ``[platform]``, its
 claim is renewed (the same claim, ``until`` = the forge's time plus the lease) every third of the
@@ -72,15 +83,12 @@ work it could serve is pending each raise an alarm.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import functools
 import json
 import os
 import subprocess
 import sys
-import threading
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -90,32 +98,31 @@ from lab_commons.compute import ledger
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.learned import learned_demand
 from lab_commons.compute.ledger import own_reserve, reserve_table
-from lab_commons.compute.model import Demand, Resources, Supply
+from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
-from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun, forgeship
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
-from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
-from lab_commons.dev.forgehosts import card_host, publish_card, recording
+from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, forge_now, this_machine, this_seat
+from lab_commons.dev.forgehosts import card_host, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
 from lab_commons.dev.forgeprovides import provided
+from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
 from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
-from lab_commons.dev.forgetick import MODES, tick
+from lab_commons.dev.forgetick import MODES
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.needsets import needs_of
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 from lab_commons.proc import system_memory
-from lab_commons.resources import CPU, MEMORY, Holder
+from lab_commons.resources import Holder
 
-__all__ = ['ServeReport', 'box_reserve', 'main', 'seat_running', 'serve']
+__all__ = ['ServeReport', 'box_reserve', 'main', 'serve']
 
 _GB = 1024.0**3
 
@@ -167,68 +174,60 @@ def serve(
     provides = provided(section('capabilities'))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     name = card_host(machine, seat)
-    if standing is not None:
-        supply = dataclasses.replace(standing.supply, scope=name)
-    else:
-        probed = box_room(name, capabilities=provides)
-        supply = Supply(name, probed.resources - (reserve or box_reserve)(), probed.present)
     cores = os.cpu_count() or 1
-    sized = learned_demand(repo, cluster=seat is not None, cores=cores)
-    seated = () if seat is not None else tuple(holders())
-    running = [*(sized(needs_of(run.platform)) for run in runs), *seat_running(seated, cores=cores)]
     book = read_ledger(client(root))
-    leases = tuple(one.reservation for one in book.entries if not one.refused)
-    try:
-        ticked = tick(
-            root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
-            supply=supply, reservations=leases, running=running,
-            usage=standing.usage if standing else None, weights=host_weights(table),
-        )  # fmt: skip
-    except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
-            alarm(
-                Alarm(AUTH, repo, f'the forge refused the stored credential on {machine or "this host"}', str(failed))
-            )
-        raise
-    for line in ticked.lines:
-        say(line)
-    if slurm is not None:
-        runs = forgerun.supersede_moved(root, runs, client=client(root), cluster=slurm, say=say)
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
-    now = forge_now(client(root))
-    card = functools.partial(
-        publish_card, root, ticked.queue, client=client, machine=machine, seat=seat, host=host, standing=standing,
-        table=table, say=say, alarms=raised, artefacts=ticked.artefacts, provides=provides,
-        delegates=reserve_table(section('reserve')).delegates, supply=supply,
-        running=(*(f'{run.sha[:12]} {run.platform}' for run in runs), *(one.describe() for one in seated)),
-        reservations=[one.row() for one in book.live(now) if one.reservation.scope == name],
+    beat_s = float(table.get('tick_minutes', 5)) * 60
+    fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
+    host_rounds = Rounds(
+        root, repo, mode, alarm, runs, slurm=slurm, say=say, cores=cores,
+        sized=learned_demand(repo, cluster=seat is not None, cores=cores),
+        supplied=functools.partial(
+            supply_now, name=name, standing=standing, box_room=box_room, provides=provides,
+            reserve=reserve or box_reserve,
+        ),
+        seated=(lambda: ()) if seat is not None else lambda: tuple(holders()),
+        ticking={
+            'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
+            'reservations': tuple(one.reservation for one in book.entries if not one.refused),
+            'usage': standing.usage if standing else None, 'weights': host_weights(table),
+        },
+        carding={
+            'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
+            'say': say, 'alarms': raised, 'provides': provides,
+            'delegates': reserve_table(section('reserve')).delegates,
+        },
+        leased=lambda now: [one.row() for one in book.live(now) if one.reservation.scope == name],
+        produce=functools.partial(
+            produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
+            fetch=fetched, beat_s=beat_s,
+        ),
     )  # fmt: skip
-    local = [item for item in ticked.claimed if item.cluster is None or item.holder is None]
-    runs += [forgerun.start(item, item.holder) for item in ticked.claimed if item not in local and item.holder]
-    produced = _produce_all(
-        root, local, card=card, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
-        fetch=fetch, beat_s=float(table.get('tick_minutes', 5)) * 60,
-    )  # fmt: skip
+    rounds, produced = host_rounds.serve(beat_s)
+    runs, card = host_rounds.runs, host_rounds.card
+    ticked = rounds[-1]
+    claimed = [item for one in rounds for item in one.claimed]
     left = _advance(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
     )
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
-    if mode != 'quiet' and pending and not ticked.claimed and not left:
+    if mode != 'quiet' and pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]}' for item in pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
     for one in starved_alarms(ticked.queue, load_schedule(root), repo):
         alarm(one)
     if mode != 'quiet':
-        card(ticked.claimed)
+        card(claimed)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
         if p.returncode == ProducerExit.USAGE
     )
     published = tuple(flush(root, client=client))
-    return ServeReport(tuple(ticked.lines), tuple(produced), tuple(left), published, broken)
+    lines = tuple(line for one in rounds for line in one.lines)
+    return ServeReport(lines, tuple(produced), tuple(left), published, broken)
 
 
 def box_reserve(table: Mapping[str, Any] | None = None) -> Resources:
@@ -239,44 +238,6 @@ def box_reserve(table: Mapping[str, Any] | None = None) -> Resources:
     memory = system_memory()
     total = Resources(cpu=os.cpu_count() or 1, mem_gb=memory.total_bytes / _GB if memory else 0.0)
     return own_reserve(total, {}, reserve_table(section('reserve') if table is None else table))
-
-
-def seat_running(holders: Sequence[Holder], *, cores: int) -> list[Demand]:
-    """Each holder of the box seat as running demand: the cores and memory it declared, else the whole box."""
-    return [
-        Demand(cpu=float(one.demands.get(CPU.name) or cores), mem_gb=one.demands.get(MEMORY.name, 0) / _GB)
-        for one in holders
-    ]
-
-
-def _produce_all(
-    root: Path,
-    local: Sequence[Work],
-    *,
-    card: Callable[..., None],
-    fetch: Callable[[Path], None],
-    **kwargs: object,
-) -> list[Produced]:
-    """Produce every claimed local part at once, one thread each (the module docstring); in claim order."""
-    if not local:
-        return []
-    fetching, publishing = threading.Lock(), threading.Lock()
-    progress: dict[tuple[str, str], str] = {}
-
-    def fetched(here: Path) -> None:
-        with fetching:
-            fetch(here)
-
-    def beat(one: Work, elapsed: timedelta) -> None:
-        with publishing:
-            progress[one.sha, one.platform] = f'producing {elapsed.total_seconds() // 60:.0f}m'
-            card(local, progress=dict(progress))
-
-    def one(item: Work) -> Produced:
-        return produce(root, item, fetch=fetched, beat=functools.partial(beat, item), **kwargs)
-
-    with ThreadPoolExecutor(max_workers=len(local), thread_name_prefix='produce') as pool:
-        return list(pool.map(one, local))
 
 
 def _tidy(

@@ -19,10 +19,13 @@ decides nothing. A tree that cannot be built spawns nothing, and the claim is re
 that refused.
 
 WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The producer's process tree is
-sampled at every wake for its resident memory; a run that ended on its own (not superseded, not stopped)
-records its peak, wall and held cpu-seconds under ``(local, its need-set)`` -- the box half of the one
-demand table a Slurm run also writes. A box part holds the whole box, so its cpu-seconds are its wall
-times the box's cores. A signalled exit's peak is a floor (:func:`~lab_commons.compute.learned.record_run`).
+sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
+user + system over every process of the tree, a child that exited keeping what it was last seen using);
+a run that ended on its own (not superseded, not stopped) records its peak, wall and MEASURED cpu-seconds
+under ``(local, its need-set)`` -- the box half of the one demand table a Slurm run also writes. Each wake
+also hands *watch* what the tree uses now (cores busy since the last wake, resident GB), so a serve that
+keeps claiming while it runs can see it. A signalled exit's peak is a floor
+(:func:`~lab_commons.compute.learned.record_run`).
 
 A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): a light run is
 admitted beside a heavy part (:mod:`lab_commons.dev.boxwait`), and the scheduler keeps it responsive.
@@ -44,7 +47,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.compute.learned import LOCAL, Run, record_run
-from lab_commons.dev.bounded import logical_cores
+from lab_commons.compute.model import Resources
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
@@ -57,6 +60,7 @@ from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
 from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
+from lab_commons.proccpu import TreeCpu
 
 __all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
 
@@ -73,6 +77,7 @@ class Produced:
     platform: str
     argv: tuple[str, ...]
     returncode: int
+    stopped: bool = False  # by :mod:`lab_commons.dev.stoprun`, on purpose
 
 
 #: Bytes in one gibibyte.
@@ -112,6 +117,8 @@ def produce(
     beat: Callable[[timedelta], object] = lambda _elapsed: None,
     sample: Callable[[int], float | None] = tree_gb,
     learn: Callable[..., object] = learn_box_run,
+    meter: Callable[[int], Callable[[], float | None]] = lambda pid: TreeCpu(pid).sample,
+    watch: Callable[[Resources], object] = lambda _using: None,
 ) -> Produced:
     """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
@@ -128,7 +135,8 @@ def produce(
     try:
         return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
                     say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
-                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn)  # fmt: skip
+                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
+                    meter=meter, watch=watch)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
 
@@ -151,6 +159,8 @@ def _run(
     beat: Callable[[timedelta], object],
     sample: Callable[[int], float | None],
     learn: Callable[..., object],
+    meter: Callable[[int], Callable[[], float | None]],
+    watch: Callable[[Resources], object],
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
@@ -172,7 +182,7 @@ def _run(
     wake_s = min(renew_s, beat_s)
     renew_every = max(1, math.ceil(renew_s / wake_s - 1e-9))  # wakes per renewal
     wakes = 0
-    peak: float | None = None
+    usage = _Usage(meter(proc.pid) if proc.pid is not None else lambda: None, watch, started)
     while True:
         try:
             returncode = proc.wait(timeout=wake_s)
@@ -183,8 +193,7 @@ def _run(
                 returncode = proc.wait()
                 say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
                 break
-            if proc.pid is not None and (now := sample(proc.pid)) is not None:
-                peak = max(peak or 0.0, now)
+            usage.wake(sample(proc.pid) if proc.pid is not None else None, clock)
             fetch(root)
             tip = tip_of(root, item.ref)
             if tip and tip != item.sha and not equivalent(root, item.sha, tip):
@@ -200,9 +209,9 @@ def _run(
     pump.join(timeout=5)
     say(f'[{item.platform}] exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
-    if peak is not None and not superseded and not stopped:
+    if usage.peak is not None and usage.cpu_s > 0 and not superseded and not stopped:
         wall_s = max(1.0, (clock() - started).total_seconds())
-        learn(root, item, Run(peak, wall_s * logical_cores(), wall_s), killed=returncode < 0)
+        learn(root, item, Run(usage.peak, usage.cpu_s, wall_s), killed=returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if superseded or (posts and posts[-1].state == 'pending'):
         reason = 'stopped' if stopped else release_reason(returncode)
@@ -210,7 +219,26 @@ def _run(
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         _carry(root, client(root), item, posts[-1], say)
-    return Produced(item.ref, item.sha, item.platform, argv, returncode)
+    return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped)
+
+
+class _Usage:
+    """What one producer's tree has used: its peak GB and MEASURED cpu-seconds, and what it uses now."""
+
+    def __init__(self, cpu: Callable[[], float | None], watch: Callable[[Resources], object], at: datetime) -> None:
+        self._cpu, self._watch, self._at = cpu, watch, at
+        self.peak: float | None = None
+        self.cpu_s = 0.0
+
+    def wake(self, gb: float | None, clock: Callable[[], datetime]) -> None:
+        """Read the tree once: keep its peak and cpu-seconds; hand *watch* the cores busy since the last wake."""
+        self.peak = self.peak if gb is None else max(self.peak or 0.0, gb)
+        cpu_s = max(self.cpu_s, self._cpu() or 0.0)
+        now = clock()
+        span = (now - self._at).total_seconds()
+        cores = (cpu_s - self.cpu_s) / span if span > 0 else 0.0
+        self._watch(Resources(cpu=cores, mem_gb=gb or 0.0))
+        self.cpu_s, self._at = cpu_s, now
 
 
 def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], None]) -> None:
@@ -254,7 +282,7 @@ def _post(client: Client, item: Work, state: str, description: str, say: Callabl
 BELOW_NORMAL_NICE: Final = 10
 
 
-def below_normal(spawn: Callable[..., Any], argv: list[str], **kwargs: Any) -> Any:  # noqa: ANN401 -- spawn's own
+def below_normal[P](spawn: Callable[..., P], argv: list[str], **kwargs: object) -> P:
     """Start *argv* through *spawn* at BELOW-NORMAL priority, which its descendants inherit.
 
     Windows: ``BELOW_NORMAL_PRIORITY_CLASS`` at creation. POSIX has no creation flag (``preexec_fn`` is
@@ -262,7 +290,7 @@ def below_normal(spawn: Callable[..., Any], argv: list[str], **kwargs: Any) -> A
     renice the OS refuses (a parent already nicer, a child already gone) leaves it where it is.
     """
     if sys.platform == 'win32':
-        flags = kwargs.pop('creationflags', 0) | subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        flags = int(kwargs.pop('creationflags', 0) or 0) | subprocess.BELOW_NORMAL_PRIORITY_CLASS
         return spawn(argv, creationflags=flags, **kwargs)
     proc = spawn(argv, **kwargs)
     if isinstance(proc, subprocess.Popen):
