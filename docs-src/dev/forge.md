@@ -203,8 +203,9 @@ python -m lab_commons.dev.forge queue [--json]
 
 The one status command, from the forge alone, on any machine with a forge credential. It fetches origin and
 prints the queue (class, value, cost, score, wait, blocking reason), every run in flight with its owner and
-progress, every host card (stale flagged), every live reservation (a refused writer's flagged) and every
-starved candidate. It posts nothing.
+progress, every host card (stale flagged), every live reservation (a refused writer's flagged), every
+starved candidate, and every undeclared origin branch idle past its grace (`deletable`, `delete` or `stale`;
+see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 
 - **Blocking reasons**: `no host serves it`, `no host provides <resource>` (no live card has every resource
   the part needs), `over budget: <ref> used X of Y core-h in 24 h`,
@@ -249,7 +250,9 @@ or need-set, until a moment (`36h`, `2d`, or ISO). A daily-moving share is a res
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
 "delivered", "repeat"}` to stderr for: `auth` (401/403 or no credential), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
-pending) and `starved`. The machine file's `[alerts]` table (telegram, email, webhook) delivers them; one
+pending), `starved`, and origin's branch hygiene from the integration host: `pruned` (the merged branches it
+deleted, or a prune that failed) and `stale-branch` (unmerged branches idle past the grace, never deleted; see
+[pruning origin](branch-set.md#pruning-origin)). The machine file's `[alerts]` table (telegram, email, webhook) delivers them; one
 `(kind, repo[, candidate])` is delivered at most once per 6 h.
 
 ## Records and the outbox

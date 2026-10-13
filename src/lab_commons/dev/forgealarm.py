@@ -6,7 +6,10 @@ stored), a claim whose lease cannot be renewed (``lease``: the forge refused the
 holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot advance (``run``), and
 an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
 and a traffic jam: a candidate waiting past its class's bound (``starved``,
-:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own.
+:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own. Two more are
+origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by the integration host only: the
+merged branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
+(``stale-branch``), which are never deleted.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -38,7 +41,7 @@ from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
-__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'REPEAT', 'RUN', 'STARVED', 'Alarm', 'sound']
+__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'PRUNED', 'REPEAT', 'RUN', 'STALE_BRANCH', 'STARVED', 'Alarm', 'sound']
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
 EVENT: Final = 'lab_commons.forge.alarm'
@@ -50,6 +53,10 @@ IDLE: Final = 'idle'
 RUN: Final = 'run'
 #: A candidate waited past its class's bound (:mod:`lab_commons.dev.forgeschedule`).
 STARVED: Final = 'starved'
+#: The integration host deleted merged idle origin branches, or failed to (:mod:`lab_commons.dev.branchprune`).
+PRUNED: Final = 'pruned'
+#: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`lab_commons.dev.branchprune`).
+STALE_BRANCH: Final = 'stale-branch'
 
 #: How long one ``(kind, repo)`` delivery waits before it is delivered again.
 REPEAT: Final = timedelta(hours=6)

@@ -8,6 +8,8 @@ and read by :func:`declared_branchset`::
     [tool.lab_commons.branchset]
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
+    prune_merged = true            # the integration host's serve tick DELETES merged idle origin branches
+    grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
@@ -19,7 +21,9 @@ Three questions are asked of it, all through local refs (fetch first; the remote
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
   first. ``python -m lab_commons.dev.branchset [--root R]`` prints this list; it deletes nothing.
 
-The assertions consumers run are :mod:`lab_commons.dev.famtests.branchset`.
+The assertions consumers run are :mod:`lab_commons.dev.famtests.branchset`. Remote deletion is a human
+decision expressed as DATA: ``prune_merged`` (default ``false``) is what lets the forge prune merged origin
+branches (:mod:`lab_commons.dev.branchprune`); an agent never deletes a remote ref by hand.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ __all__ = [
 ]
 
 _TABLE = '[tool.lab_commons.branchset]'
+_KEYS = frozenset({'trunk', 'sessions', 'prune_merged', 'grace_hours'})
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
@@ -63,6 +68,10 @@ class BranchSet:
 
     trunk: str
     sessions: frozenset[str]
+    #: Whether the integration host's serve tick deletes merged, idle origin branches; off, it only lists them.
+    prune_merged: bool = False
+    #: How long a branch tip sits idle before it is pruned (merged) or alarmed (unmerged).
+    grace_hours: float = 24.0
 
     @property
     def declared(self) -> frozenset[str]:
@@ -110,7 +119,19 @@ def declared_branchset(root: Path) -> BranchSet:
     if not isinstance(sessions, list) or not all(isinstance(name, str) and name for name in sessions):
         msg = f'{_TABLE} sessions in {manifest} is {sessions!r}; it must be a list of branch names'
         raise BranchSetNotDeclared(msg)
-    return BranchSet(trunk, frozenset(sessions))
+    unknown = sorted(set(table) - _KEYS)
+    if unknown:
+        msg = f'{_TABLE} in {manifest} has unknown key(s) {unknown}; the keys are {sorted(_KEYS)}'
+        raise BranchSetNotDeclared(msg)
+    prune = table.get('prune_merged', False)
+    grace = table.get('grace_hours', 24.0)
+    if not isinstance(prune, bool):
+        msg = f'{_TABLE} prune_merged in {manifest} is {prune!r}; it must be true or false'
+        raise BranchSetNotDeclared(msg)
+    if isinstance(grace, bool) or not isinstance(grace, int | float) or grace < 0:
+        msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
+        raise BranchSetNotDeclared(msg)
+    return BranchSet(trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace))
 
 
 def _local_branches(root: Path) -> tuple[str, ...] | None:

@@ -313,6 +313,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.lab_commons]``.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
+* :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: the integration host deletes merged idle origin
+  branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
 * :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
 * :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.

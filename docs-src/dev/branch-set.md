@@ -11,10 +11,12 @@ what to merge and what to delete, and `--apply` to delete the merged local ones.
 [tool.lab_commons.branchset]
 trunk = 'main'                 # required
 sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
+prune_merged = true            # default false: the integration host deletes merged idle origin branches
+grace_hours = 24               # default 24: idle time before a branch is pruned (merged) or alarmed (unmerged)
 ```
 
-Read by `lab_commons.dev.branchset.declared_branchset(root)`; a missing or malformed table raises
-`BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
+Read by `lab_commons.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
+raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 ## The census and the candidates
 
@@ -31,7 +33,8 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
   about work whose only published copy is the branch you are about to delete.
 - The question is whether the CHANGE is there, so the instrument is `git cherry` against the remote, which sees
   through cherry-picks and rebases; the ancestor test does not.
-- Deleting a branch on origin is a human's action: the door prints `git push origin --delete <b>`.
+- Deleting a branch on origin BY HAND is a human's action (the forge's automatic prune, below, is the same
+  human decision made once as data): the door prints `git push origin --delete <b>`.
 
 ## The assertions consumers run
 
@@ -59,3 +62,43 @@ lines from stdin through the family hook runner). Agent lanes are local: only th
 | a checkout with no declared branch set | refused: a guard that cannot judge must not read as one that acquitted |
 
 There is no bypass flag; the way to push a new long-lived branch is to add it to `sessions`.
+
+## Pruning origin
+
+Finished branches still pile up on origin, so the forge prunes them (`lab_commons.dev.branchprune`). The host
+that owns integration, `[tool.lab_commons.integrator] host` (a serving host's card name or a forge login),
+surveys origin on every `forge serve` tick, after the tick's `git fetch --prune`. No other host reads or
+deletes anything. Undeclared branches whose tip has been idle for at least `grace_hours` are judged:
+
+| origin branch | rule | what happens |
+|---|---|---|
+| declared (`trunk`, `sessions`, the integration branch) | none | never touched |
+| idle less than `grace_hours` | none | never touched |
+| head of an open pull request | none | never touched |
+| tip is an ancestor of `origin/<integration>` or `origin/<trunk>` | `merged-idle` | DELETED through the forge API when `prune_merged = true`; otherwise listed as `deletable` |
+| anything else | `unmerged-stale` | ALARMED (`stale-branch`) with its age, never deleted |
+
+- **Remote deletion is a human decision, expressed as data.** `prune_merged` defaults to `false`. Until a repo
+  opts in, `forge integration` and `forge queue` print each merged branch as `deletable`, and nothing is deleted.
+  An agent never deletes a remote ref by hand; `PUSH-REMOTE-DELETE` still refuses it.
+- **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
+  that moved is kept, because its new tip is somebody's new work.
+- **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The
+  tick then raises one `pruned` alarm naming every deleted branch and its sha, so a deletion can be undone by
+  pushing that sha back.
+- **Idle means the tip's committer date.** A branch nobody has committed to for `grace_hours` is idle, whenever
+  it was pushed.
+
+### Mirrors
+
+A gitea push mirror runs a mirror push, which PRUNES: a branch deleted on gitea is deleted on the mirror at its
+next sync. Measured 2026-10-13: lab-commons mirrors to `github.com/DawnEver/lab-commons` (`sync_on_commit = true`,
+`interval = 8h`), and both carry the same 14 heads. consumer-a and consumer-b have no push mirror. What the
+repository admin must keep set (Settings > Repository > Mirror settings):
+
+- a PUSH mirror, not a pull mirror. Its mirror push is what carries a deletion, and nothing else does.
+- `interval` non-zero. `sync_on_commit` fires on a push, and a deletion through the API is not a push, so the
+  interval sync is the one guaranteed to carry it. Expect up to `interval` (8 h here), or the next push to any
+  branch, before the mirror drops the branch.
+- a mirror credential with delete rights on the GitHub side (a token with `contents: write`). Without them
+  the mirror's `last_error` says so, under the same settings page.

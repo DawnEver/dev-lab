@@ -18,7 +18,9 @@ against the trunk is first RETARGETED to integration, with a comment saying why.
 
 The tick FETCHES (origin, and each PR head) through the retry wrapper; everything after is a read
 of the object store and the forge. Last, the repo's declared issue hygiene runs
-(:func:`lab_commons.dev.forgetidy.tidy`), so finished issues are closed on the integrator's cadence.
+(:func:`lab_commons.dev.forgetidy.tidy`), so finished issues are closed on the integrator's cadence,
+and every undeclared origin branch idle past its grace is listed (:func:`lab_commons.dev.branchprune.listing`):
+``deletable`` when the repo has not opted into pruning. Deleting is the serve tick's, never this verb's.
 """
 
 from __future__ import annotations
@@ -28,9 +30,12 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev.branchprune import listing
+from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_origin, forge_from_remote
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgestatus import Status, status_list, status_post
@@ -253,7 +258,8 @@ def main(
         venues = _venues(root)
         lines = tick(root, venues, load_policy(root))
         lines += [f'tidy: {line}' for line in tidy(dict(venues)['origin'], load_hygiene(root))]
-    except (ForgeCallFailed, ListingIncomplete) as failed:
+        lines += [f'branch: {row.line()}' for row in listing(root, dict(venues)['origin'], now=datetime.now(UTC))]
+    except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
         return 1
     except (OSError, ValueError) as exc:
