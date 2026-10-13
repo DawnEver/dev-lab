@@ -52,7 +52,7 @@ On the login host you chose, store your own forge token once (`git config --glob
 ## Grants: the machine file
 
 The account's `[hpc]` table in `~/.config/lab-commons/config.toml` (`$LAB_COMMONS_CONFIG` overrides the path)
-holds one `[[hpc.grant]]` per Slurm share. Partitions, QOS and compute-node set-up are cluster facts, so they
+holds one `[[hpc.grant]]` per Slurm account it may reach. Partitions, QOS and compute-node set-up are cluster facts, so they
 live on the grant.
 
 ```toml
@@ -60,15 +60,15 @@ live on the grant.
 user = "me"                          # equal to the login on that cluster
 hosts = ["login2.cluster", "login1.cluster"]
 slurm_account = "acct-free"
-cpus = 64                            # this account's share of the CPU quota
 partitions = ["shortq", "defq"]      # optional, in preference order
 qos = { devq = "dev" }               # optional
 setup = ["module load git/2.42.0"]   # optional, prepended to every array task
 ```
 
-- A missing table, a duplicate account, an empty `hosts` or a non-positive share is refused with the key named.
+- A missing table, a duplicate account or an empty `hosts` is refused with the key named; a `cpus` share is retired
+  and refused by name: an account is divided by reservations its owner writes ([reservations](forge.md#reservations)).
   No secrets in the file.
-- **Usage is read, never stored.** Every job carries `--comment=lc:ws=<host>`; headroom is the share minus what
+- **Usage is read, never stored.** Every job carries `--comment=lc:ws=<host>`; headroom is the quota minus what
   the account's jobs hold, read from `squeue --me`.
 - Each tick the host publishes its headroom, partitions and quota on its forge host card.
 

@@ -120,9 +120,9 @@ class SlurmCluster:
         read = []
         for grant in self.machine.grants:
             snapshot = probe(self.connect(grant), grant.slurm_account)
-            read.append((grant.cpus, snapshot, snapshot.quota.default_qos))
-        supply = supply_probe.account(self.scope, read, workstation=self.machine.workstation)
-        _, snapshot, qos = read[0]
+            read.append((snapshot, snapshot.quota.default_qos))
+        supply = supply_probe.account(self.scope, read)
+        snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {
             'quota_cpus': snapshot.quota.cpus,

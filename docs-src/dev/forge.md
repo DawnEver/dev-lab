@@ -92,8 +92,8 @@ A second run changes nothing. In order, it:
    follows), or fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m lab_commons.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
-4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root, own_weight` (`--own-weight`,
-   default 2) into `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
+4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`), `[serve] repos, root` and, with `--delegates a,b`,
+   `[reserve] delegates` into `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
 
@@ -156,8 +156,7 @@ prior_cost_h = 4.0
 
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
-`[serve] own_weight` (absent = 1) multiplies the value of candidates whose PR or request this host's own
-forge login opened -- on this host only; `[capabilities.<name>]` declares what it provides
+`[capabilities.<name>]` declares what it provides
 ([HPC clusters](hpc.md#platform-parts)).
 
 ## The queue
@@ -168,7 +167,8 @@ python -m lab_commons.dev.forge queue [--json]
 
 The one status command, from the forge alone, on any machine with a forge credential. It fetches origin and
 prints the queue (class, value, cost, score, wait, blocking reason), every run in flight with its owner and
-progress, every host card (stale flagged) and every starved candidate. It posts nothing.
+progress, every host card (stale flagged), every live reservation (a refused writer's flagged) and every
+starved candidate. It posts nothing.
 
 - **Blocking reasons**: `no host serves <platform>`, `over budget: <ref> used X of Y core-h in 24 h`,
   `no headroom: ...`, `outranked by <candidate>`, `no host can produce it: <undeclared key>`.
@@ -183,6 +183,27 @@ progress, every host card (stale flagged) and every starved candidate. It posts 
   delete rights closes instead and says so); `green_areas` (an `area:*` issue with no `- [ ]` row) and
   `request_max_age_days` only CLOSE. It says so in ONE comment on the hosts issue; absent the table, it reads nothing.
 - `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
+
+## Reservations
+
+```
+python -m lab_commons.dev.forge reserve <host|account> <res=amount,...> --for login:X|repo:Y|needs:a+b --until <iso|duration>
+python -m lab_commons.dev.forge release <id>
+```
+
+A reservation is a LEASE of resources on one host or cluster account (a host card's name), for one login, repo
+or need-set, until a moment (`36h`, `2d`, or ISO). A daily-moving share is a reservation that expires daily.
+
+- **Stored once**, as one comment on the `forge hosts` issue beside the cards (`compute.ledger`); its id is the
+  forge's comment id, and `forge queue` lists the live ones.
+- **Who may write** (user ruling 2026-10-13): the host's own login -- the author the forge records on its card
+  -- or a login its user designates in the machine file's `[reserve] delegates = [...]`, published on the card.
+  Anyone else is refused before posting, and EVERY READER judges each lease by its forge-recorded author, so a
+  lease posted around the verb counts for nothing. The writer, the host's login or a delegate may release it.
+- **The own reserve** is not a lease: what the box's own user is using now plus `[reserve] cpu_margin` (default 1
+  core) and `mem_margin` (default 0.25 of the box's memory), subtracted from the box's supply and lent to nobody.
+- A machine file says what a host HAS and who may reserve it, never how it is divided: a cluster grant carries
+  no share, and an account is divided by the reservations its owner writes.
 
 ## Alarms
 

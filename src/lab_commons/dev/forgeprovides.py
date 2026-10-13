@@ -9,9 +9,6 @@ runs is measured; what else it can produce is declared in THIS MACHINE's file
 
     [capabilities.dev_checkout]
 
-    [serve]
-    own_weight = 3     # this host's own pushes and requests rank first ON THIS HOST
-
 A part NEEDS its engine, or -- for an OS part -- every host capability whose ``on`` list names that OS
 (:func:`needs`). A host lacking one is never offered the part (:func:`lacking`), and the queue names
 the capability no live host provides (:func:`unserved`): BLOCKED, never red, never skipped. The
@@ -30,7 +27,7 @@ from typing import Any, Final
 from lab_commons.dev.forgeschedule import NO_HOST
 from lab_commons.hpc.platforms import PART_NAME, PLATFORMS, Table
 
-__all__ = ['NO_PROVIDER', 'declared_parts', 'lacking', 'needs', 'own_weight', 'provided', 'served_parts', 'unserved']
+__all__ = ['NO_PROVIDER', 'declared_parts', 'lacking', 'needs', 'provided', 'served_parts', 'unserved']
 
 #: How a part no host may claim is labelled: ``no host provides <capability>``.
 NO_PROVIDER: Final = f'{NO_HOST} provides'
@@ -80,15 +77,6 @@ def unserved(part: str, needed: Sequence[str], hosts: Sequence[tuple[str, Mappin
     if any(not lacking(needed, provides) for provides in serving):
         return ''
     return lacking([name for name in needed if not any(name in provides for provides in serving)] or needed, {})
-
-
-def own_weight(table: Mapping[str, Any]) -> float:
-    """The machine file's ``[serve] own_weight``: this host's own work's value multiplier; absent is 1."""
-    weight = table.get('own_weight', 1)
-    if isinstance(weight, bool) or not isinstance(weight, int | float) or weight <= 0:
-        msg = f'{_WHERE}: [serve] own_weight must be a positive number, got {weight!r}'
-        raise ValueError(msg)
-    return float(weight)
 
 
 def declared_parts(root: Path) -> tuple[str, ...]:

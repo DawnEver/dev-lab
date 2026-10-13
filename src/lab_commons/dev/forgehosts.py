@@ -42,7 +42,7 @@ from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_list, comment_upsert, issues, marker
-from lab_commons.dev.forgework import Client, ForgeCallFailed
+from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
 
@@ -53,6 +53,7 @@ __all__ = [
     'STALE_TICKS',
     'HostCard',
     'HostsIssueLost',
+    'card_of',
     'hosts_issue',
     'hosts_issues',
     'is_hosts',
@@ -94,6 +95,7 @@ class HostCard:
     alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
     artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
     provides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # machine-file [capabilities]
+    delegates: tuple[str, ...] = ()  # the logins this host's user lets reserve it (machine-file [reserve])
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -106,7 +108,12 @@ class HostCard:
         head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
-        raw = {**asdict(self), 'holds': list(self.holds), 'alarms': [dict(a) for a in self.alarms]}
+        raw = {
+            **asdict(self),
+            'holds': list(self.holds),
+            'alarms': [dict(a) for a in self.alarms],
+            'delegates': list(self.delegates),
+        }
         return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
 
@@ -172,14 +179,17 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
     number = hosts_issue(client)
     if number is None:
         return ()
-    cards = []
-    for comment in comment_list(client, number):
-        found = _BLOCK.search(comment.body) if f'lab-commons:{_SUBJECT}' in comment.body else None
-        if found is None:
-            continue
-        raw = json.loads(found['json'])
-        cards.append(HostCard(**{**raw, 'holds': tuple(raw.get('holds', ())), 'alarms': tuple(raw.get('alarms', ()))}))
-    return tuple(cards)
+    return tuple(card for comment in comment_list(client, number) if (card := card_of(comment)) is not None)
+
+
+def card_of(comment: Comment) -> HostCard | None:
+    """The host card *comment* carries, or ``None`` when it carries none."""
+    found = _BLOCK.search(comment.body) if f'lab-commons:{_SUBJECT}' in comment.body else None
+    if found is None:
+        return None
+    raw = json.loads(found['json'])
+    tupled = {key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'delegates')}
+    return HostCard(**{**raw, **tupled})
 
 
 def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:
@@ -208,10 +218,12 @@ def publish_card(
     artefacts: str = '',
     provides: Mapping[str, Mapping[str, Any]] | None = None,
     progress: str = '',
+    delegates: Sequence[str] = (),
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
     *progress* is what a local part it holds has done so far (``producing 42m``), published while it runs.
+    *delegates* are the logins this host's user lets reserve it (:mod:`lab_commons.compute.ledger`).
     """
     built = client(root)
     try:
@@ -231,6 +243,7 @@ def publish_card(
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
             artefacts=artefacts,
             provides=dict(provides or {}),
+            delegates=tuple(delegates),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

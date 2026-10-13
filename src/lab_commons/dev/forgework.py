@@ -128,6 +128,8 @@ class Comment:
     id: int
     body: str
     url: str
+    #: The login the FORGE records as its writer -- never a claim the body makes about itself.
+    author: str = ''
 
 
 @dataclass(frozen=True)
@@ -168,7 +170,7 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
 
 def comment_of(raw: Mapping[str, Any]) -> Comment:
     """A forge's comment JSON as a :class:`Comment`."""
-    return Comment(raw['id'], raw.get('body') or '', raw['html_url'])
+    return Comment(raw['id'], raw.get('body') or '', raw['html_url'], (raw.get('user') or {}).get('login', ''))
 
 
 def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:

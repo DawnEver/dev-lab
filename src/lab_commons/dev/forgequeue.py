@@ -4,7 +4,8 @@ Read-only, and read from the forge, so any machine with a forge credential sees 
 node sees: every waiting candidate with its class, value, expected cost, score, wait and what blocks it
 (:mod:`lab_commons.dev.forgeschedule`); every run in flight with its owner and the live progress its
 claim carries (:class:`lab_commons.dev.forgeclaim.Claim`); every host card, stale ones flagged
-(:mod:`lab_commons.dev.forgehosts`); and every candidate starved past its class's bound. It fetches
+(:mod:`lab_commons.dev.forgehosts`); every live reservation (:mod:`lab_commons.compute.ledger`), a refused
+writer's flagged; and every candidate starved past its class's bound. It fetches
 ``origin`` first so the refs it ranks are the forge's, and posts nothing.
 """
 
@@ -20,12 +21,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from lab_commons.compute import ledger
 from lab_commons.compute.learned import learned
 from lab_commons.compute.model import REQUEST, Candidate, Ranked, expected_cost, rank, starved
 from lab_commons.config import section
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
-from lab_commons.dev.forgehosts import HostCard, read_cards
+from lab_commons.dev.forgehosts import HostCard
 from lab_commons.dev.forgeprovides import declared_parts, needs, unserved
 from lab_commons.dev.forgeschedule import candidates, host_weights, load_schedule, repo_name
 from lab_commons.dev.forgestatus import Status, status_history
@@ -62,7 +64,8 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         root, 'integrate', client, repo=repo, platforms=declared_parts(root), schedule=schedule,
         policy=load_policy(root), now=now,
     )  # fmt: skip
-    cards = read_cards(client)
+    book = ledger.read(client)
+    cards = book.cards
     histories: dict[str, tuple[Status, ...]] = {}
     nobody = Claim('', '', now)
     waiting: list[Candidate] = []
@@ -109,6 +112,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
             }
             for card in cards
         ],
+        'reservations': [one.row() for one in book.entries if now < one.reservation.until],
         'starved': [_row(item) for item in starved(ranked, {repo: schedule})],
     }
 
@@ -120,6 +124,10 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime, needed:
         return unclaimable
     serving = [card for card in live if candidate.platform in {card.platform, *card.provides}]
     return next((card.waiting[candidate.key] for card in serving if candidate.key in card.waiting), '')
+
+
+def _amounts(resources: Mapping[str, float]) -> str:
+    return ','.join(f'{name}={amount:g}' for name, amount in sorted(resources.items()))
 
 
 def render(view_: Mapping[str, Any]) -> list[str]:
@@ -148,6 +156,12 @@ def render(view_: Mapping[str, Any]) -> list[str]:
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']
+    lines += ['', 'reservations:']
+    lines += [
+        f'  {r["id"]}  {r["scope"]}  {_amounts(r["resources"])}  for {r["for"]}  until {r["until"]}  by {r["by"]}'
+        + (f'  REFUSED: {r["refused"]}' if r['refused'] else '')
+        for r in view_.get('reservations', ())
+    ] or ['  (none)']
     lines += ['', 'starved:']
     lines += [f'  {r["candidate"]} waited {r["wait_h"]:.1f} h -- {r["blocked"]}' for r in view_['starved']] or [
         '  (none)'

@@ -405,6 +405,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
     def tick(*_a: object, **_k: object) -> TickReport:
         raise ForgeCallFailed(refused)
 
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))  # never this box's own machine file
     monkeypatch.setattr(forgeserve, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
     alarms: list = []

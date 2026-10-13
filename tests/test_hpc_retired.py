@@ -10,7 +10,7 @@ import pytest
 
 from lab_commons.dev import admission, platformparts
 from lab_commons.hpc import __main__ as hpc_main
-from lab_commons.hpc.retired import RETIRED, refusal
+from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -83,3 +83,10 @@ def test_the_build_flags_of_run_submit_are_refused_by_name(flag: str, capsys: py
     err = capsys.readouterr().err
     assert f'`run submit {flag}` is retired' in err
     assert '[tool.lab_commons.hpc]' in err
+
+
+def test_a_retired_machine_file_key_is_refused_by_name() -> None:
+    """PLANTED CONTROL: the same table without the retired key passes."""
+    with pytest.raises(ValueError, match=r'\[serve\] own_weight is retired: .*own_reserve'):
+        refuse_retired_keys('serve', {'own_weight': 2, 'repos': ['a']})
+    refuse_retired_keys('serve', {'repos': ['a']})

@@ -5,7 +5,7 @@ The counterpart of a cluster account's ``python -m lab_commons.hpc deploy``. It 
 dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.Step`.
 
 ``deploy --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 [--forge <https base>]
-[--root DIR] [--ref BRANCH] [--own-weight N] [--mode M] [--dry-run]``, each step reporting and safe to repeat:
+[--root DIR] [--ref BRANCH] [--delegates LOGIN,...] [--mode M] [--dry-run]``, each step reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
@@ -16,7 +16,8 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
 4. VENVS: ``-m lab_commons.dev.dep --bootstrap <checkout>`` when the venv is missing or the checkout moved.
 5. HOOKS: ``-m lab_commons.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``) and
-   ``[serve] repos, root, own_weight`` merged in place; every other table, key and comment is kept,
+   ``[serve] repos, root`` and ``[reserve] delegates`` (the logins this box's user lets reserve it,
+   :mod:`lab_commons.compute.ledger`) merged in place; every other table, key and comment is kept,
    and ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`lab_commons.dev.servetask`), registered from
    its XML definition and rewritten only when the installed one reads back different.
@@ -45,7 +46,7 @@ from typing import IO, Any, Final
 from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
 from lab_commons.dev._machinefile import diff, merged
-from lab_commons.dev.forgeprovides import own_weight, provided
+from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.servelock import default_lock, held
 from lab_commons.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_spec import LAB_COMMONS
@@ -141,6 +142,10 @@ def _repos(text: str) -> tuple[str, ...]:
     return repos
 
 
+def _logins(text: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(part.strip() for part in text.split(',') if part.strip()))
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.workstation', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -150,7 +155,7 @@ def _parser() -> argparse.ArgumentParser:
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
-    dep.add_argument('--own-weight', type=float, default=2.0, help="[serve] own_weight: this box's own work first")
+    dep.add_argument('--delegates', type=_logins, default=(), help='[reserve] delegates: who else may reserve it')
     dep.add_argument('--mode', default='integrate', help='the serve mode the Task runs (default: integrate)')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     run = verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
@@ -325,7 +330,6 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     args.root = args.root.expanduser().absolute()
     checkouts = {name: args.root / name for name in args.repos}
     try:
-        weight = own_weight({'own_weight': args.own_weight})
         urls = _preflight(args, tools, checkouts)
     except ValueError as bad:
         urls = str(bad)
@@ -336,7 +340,9 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     if rc := _checkouts(step, tools, checkouts, urls, args.ref):
         return rc
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
-    tables['serve'] = {'repos': list(args.repos), 'root': str(args.root), 'own_weight': weight}
+    tables['serve'] = {'repos': list(args.repos), 'root': str(args.root)}
+    if args.delegates:
+        tables['reserve'] = {'delegates': list(args.delegates)}
     return _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS], args.mode)
 
 

@@ -33,7 +33,7 @@ from lab_commons.hpc.slurm import PROBE_COMMAND, parse_snapshot, parse_usage, pr
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
-GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', cpus=64, partitions=('shortq', 'defq'))
+GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', partitions=('shortq', 'defq'))
 SHA = 'a' * 40
 
 
@@ -60,13 +60,11 @@ def test_a_machine_holds_several_grants(tmp_path: Path, monkeypatch: pytest.Monk
 user = "me"
 hosts = ["login2", "login1"]
 slurm_account = "acct-free"
-cpus = 64
 partitions = ["shortq"]
 [[hpc.grant]]
 user = "me"
 hosts = ["other"]
 slurm_account = "x"
-cpus = 8
 priority = 2
 """,
     )
@@ -83,7 +81,7 @@ priority = 2
 
 
 def _grant(**extra: object) -> str:
-    keys = {'hosts': '["h"]', 'cpus': '1', **extra}
+    keys = {'hosts': '["h"]', **extra}
     return '[[grant]]\nuser = "u"\nslurm_account = "s"\n' + ''.join(f'{k} = {v}\n' for k, v in keys.items())
 
 
@@ -91,8 +89,8 @@ def _grant(**extra: object) -> str:
     ('table', 'match'),
     [
         ({}, r'no \[hpc\] table'),
-        (_grant() + '[[grant]]\nuser = "u"\nhosts = ["g"]\nslurm_account = "s"\ncpus = 2\n', 'granted twice'),
-        (_grant(cpus='0'), 'share must be positive'),
+        (_grant() + '[[grant]]\nuser = "u"\nhosts = ["g"]\nslurm_account = "s"\n', 'granted twice'),
+        (_grant(cpus='64'), r'\[\[hpc\.grant\]\] cpus is retired.*forge reserve'),
         (_grant(key='"x"'), 'unknown keys'),
         (_grant(account='"u@h"'), 'unknown keys'),
         (_grant(hosts='[]'), 'at least one login host'),
@@ -163,7 +161,7 @@ def test_runner_for_tries_the_grants_targets_in_order(monkeypatch: pytest.Monkey
         return 'ok'
 
     monkeypatch.setattr(cluster_module, '_completed', fake)
-    grant = Grant(user='me', hosts=('h1', 'h2'), slurm_account='a', cpus=1)
+    grant = Grant(user='me', hosts=('h1', 'h2'), slurm_account='a')
     assert cluster_module.runner_for(grant)('true', None) == 'ok'
     assert [a[-2] for a in seen] == ['me@h1', 'me@h2']
     assert 'BatchMode=yes' in seen[0]
@@ -185,14 +183,12 @@ def test_the_usage_question_rides_the_one_probe_and_stays_about_the_caller() -> 
     assert 'squeue -h --me -A acct-free -o "%C %k"' in command
 
 
-def test_headroom_is_the_share_less_what_others_and_i_hold() -> None:
-    assert headroom(_snap(), 64, 'ws-a') == 64
-    assert headroom(_snap('16 lc:ws=ws-a\n'), 64, 'ws-a') == 48
-    # 96 quota, another box holds 48: min(64, 96-48) - 0
-    assert headroom(_snap('48 lc:ws=ws-b\n'), 64, 'ws-a') == 48
-    assert headroom(_snap('48 lc:ws=ws-b\n24 lc:ws=ws-a\n'), 64, 'ws-a') == 24
-    assert headroom(_snap('90 (null)\n'), 64, 'ws-a') == 6, 'an untagged job is someone else'
-    assert headroom(_snap('70 lc:ws=ws-a\n'), 64, 'ws-a') == 0
+def test_headroom_is_the_quota_less_every_job_held_with_no_share_carved_out() -> None:
+    assert headroom(_snap()) == 96
+    assert headroom(_snap('16 lc:ws=ws-a\n')) == 80
+    assert headroom(_snap('48 lc:ws=ws-b\n24 lc:ws=ws-a\n')) == 24, 'every box holds against the quota alike'
+    assert headroom(_snap('90 (null)\n')) == 6, 'an untagged job counts too'
+    assert headroom(_snap('100 lc:ws=ws-a\n')) == 0
 
 
 # -- allocation ------------------------------------------------------------------------------------------
@@ -203,31 +199,36 @@ def test_the_plan_is_capped_by_headroom_and_tagged() -> None:
         500, Cost(seconds=60), [(GRANT, _snap('16 lc:ws=ws-a\n'))], workstation='ws-a', policy=Policy()
     )
     assert grant is GRANT
-    assert plan.throttle == len(plan.shards) <= 48, 'the headroom caps the wave; one wave, all running'
+    assert plan.throttle == len(plan.shards) <= 80, 'the headroom caps the wave; one wave, all running'
     assert plan.comment == 'lc:ws=ws-a'
     assert plan.account == 'acct-free'
     assert plan.partitions[0] == 'shortq'
 
 
 def test_the_grant_that_finishes_first_wins() -> None:
-    small = Grant(user='me', hosts=('a',), slurm_account='acct-free', cpus=8)
-    big = Grant(user='me', hosts=('b',), slurm_account='acct-free', cpus=64)
-    grant, _ = allocate(500, Cost(seconds=60), [(small, _snap()), (big, _snap())], workstation='w', policy=Policy())
+    small = Grant(user='me', hosts=('a',), slurm_account='acct-free')
+    big = Grant(user='me', hosts=('b',), slurm_account='acct-free')
+    busy, idle = _snap('88 lc:ws=x\n'), _snap()
+    grant, _ = allocate(500, Cost(seconds=60), [(small, busy), (big, idle)], workstation='w', policy=Policy())
     assert grant is big
 
 
 def test_a_tie_goes_to_priority() -> None:
-    low = Grant(user='me', hosts=('a',), slurm_account='acct-free', cpus=64)
-    high = Grant(user='me', hosts=('b',), slurm_account='acct-free', cpus=64, priority=1)
+    low = Grant(user='me', hosts=('a',), slurm_account='acct-free')
+    high = Grant(user='me', hosts=('b',), slurm_account='acct-free', priority=1)
     grant, _ = allocate(10, Cost(seconds=60), [(low, _snap()), (high, _snap())], workstation='w', policy=Policy())
     assert grant is high
 
 
 def test_no_headroom_anywhere_names_every_account() -> None:
-    other = Grant(user='me', hosts=('b',), slurm_account='acct-free', cpus=4)
+    other = Grant(user='me', hosts=('b',), slurm_account='acct-free')
     with pytest.raises(ValueError, match=r'me@login\.example') as refused:
         allocate(
-            10, Cost(cpus=8), [(GRANT, _snap('96 lc:ws=ws-b\n')), (other, _snap())], workstation='ws-a', policy=Policy()
+            10,
+            Cost(cpus=8),
+            [(GRANT, _snap('96 lc:ws=ws-b\n')), (other, _snap('90 (null)\n'))],
+            workstation='ws-a',
+            policy=Policy(),
         )
     assert 'me@b' in str(refused.value)
     assert 'ws-b=96' in str(refused.value)
@@ -254,7 +255,7 @@ def test_the_grant_table_reads_setup() -> None:
     assert load_grants(table).grants[0].setup == ('module load git',)
 
 
-_GRANT_ROW = {'user': 'me', 'hosts': ['h'], 'slurm_account': 'a', 'cpus': 4}
+_GRANT_ROW = {'user': 'me', 'hosts': ['h'], 'slurm_account': 'a'}
 
 
 def test_an_untagged_plan_carries_no_comment(tmp_path: Path) -> None:
@@ -330,9 +331,7 @@ def test_without_harness_machine_the_workstation_is_absent(monkeypatch: pytest.M
     assert machine.comment == ''
     _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap('40 lc:ws=G\n'))], workstation=None, policy=Policy())
     assert plan.comment == ''
-    assert headroom(_snap('40 lc:ws=G\n'), 64, None) == 56, (
-        'an unnamed box holds nothing tagged; every tagged job is another box'
-    )
+    assert headroom(_snap('40 lc:ws=G\n')) == 56, 'every job on the account holds against its quota'
 
 
 def test_a_spaced_harness_machine_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -379,8 +378,8 @@ def test_a_partition_needing_another_qos_is_not_merged_into_one_submission() -> 
 
 
 def test_on_an_even_makespan_the_grant_with_more_headroom_wins_wherever_it_is_listed() -> None:
-    first = Grant(user='u1', hosts=('login.example',), slurm_account='acct-free', cpus=96)
-    second = Grant(user='u2', hosts=('login.example',), slurm_account='acct-free', cpus=96)
+    first = Grant(user='u1', hosts=('login.example',), slurm_account='acct-free')
+    second = Grant(user='u2', hosts=('login.example',), slurm_account='acct-free')
     busy, idle = _snap('60 lc:ws=ws-a\n'), _snap()
     grant, _ = allocate(1, Cost(seconds=60), [(first, busy), (second, idle)], workstation='ws-a', policy=Policy())
     assert grant is second

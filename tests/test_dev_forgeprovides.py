@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev.forgeprovides import NO_PROVIDER, lacking, needs, own_weight, provided, served_parts, unserved
+from lab_commons.dev.forgeprovides import NO_PROVIDER, lacking, needs, provided, served_parts, unserved
 from lab_commons.hpc.platforms import read_table
 
 TABLE = read_table(
@@ -50,10 +50,3 @@ def test_the_queue_names_the_capability_no_live_host_provides() -> None:
     assert unserved('linux', needs(TABLE, 'linux'), hosts) == ''
     assert unserved('jmag', needs(TABLE, 'jmag'), [*hosts, ('windows', {'jmag': {'seats': 4}})]) == ''
     assert unserved('macos', (), hosts) == 'no host serves macos'
-
-
-def test_own_weight_is_a_positive_multiplier_defaulting_to_one() -> None:
-    assert own_weight({}) == 1.0
-    assert own_weight({'own_weight': 3}) == 3.0
-    with pytest.raises(ValueError, match='own_weight'):
-        own_weight({'own_weight': 0})

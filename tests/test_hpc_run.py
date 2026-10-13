@@ -51,7 +51,7 @@ from lab_commons.hpc.watch import PENDING
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
-GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', cpus=64, partitions=('shortq', 'defq'))
+GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', partitions=('shortq', 'defq'))
 SHA = 'a' * 40
 SOURCE = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'pytest_item.py'
 
@@ -581,7 +581,7 @@ def test_the_build_runs_in_its_own_errexit_shell_and_checks_the_venv() -> None:
 
 def test_every_round_runs_as_the_user_whose_home_holds_the_built_tree() -> None:
     """Measured 2026-10-09: built as one user, submitted as another on the same cluster -- no venv there."""
-    other = Grant(user='you', hosts=GRANT.hosts, slurm_account='acct-free', cpus=640, partitions=GRANT.partitions)
+    other = Grant(user='you', hosts=GRANT.hosts, slurm_account='acct-free', partitions=GRANT.partitions)
     mine, theirs = FakeRunCluster(dies=frozenset({'tests/b.py'})), FakeRunCluster()
     machine = Machine(workstation='ws-a', grants=(GRANT, other))
     connect = {GRANT.account: mine, other.account: theirs}

@@ -266,6 +266,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
+* :mod:`lab_commons.dev.forgereserve` -- ``forge reserve`` / ``forge release``: leases in the ledger.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.
 * :mod:`lab_commons.dev.forgecred` -- how a stored secret (:mod:`lab_commons.credentials`) meets a forge.
 * :mod:`lab_commons.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.

@@ -166,7 +166,7 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
-    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'starved'}
+    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'reservations', 'starved'}
     assert printed['queue'][0]['blocked'] == 'no host serves windows'
 
 

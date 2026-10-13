@@ -4,7 +4,7 @@ Every candidate is a part a ref's newest commit lacks -- ``(repo, ref, sha, plat
 issue REQUEST. Each has a numeric VALUE and an expected COST; a claimer takes the feasible candidate
 with the highest SCORE, value per cost (weighted shortest job first)::
 
-    value = (base[class] + boost + aging_rate * wait_hours) * own
+    value = base[class] + boost + aging_rate * wait_hours
     score = weight[repo] * value / expected_cost
 
 ``base`` is an OPEN table of classes (``integration``, ``pr``, ``branch``, ``request`` by family default),
@@ -13,9 +13,8 @@ explicit ``priority:<n>``), and the aging term grows without bound, so no candid
 ``expected_cost`` is core-hours on a cluster and wall-hours on a box, predicted from what the
 repository's last run measured (:mod:`lab_commons.compute.learned`); unmeasured work is priced at a declared
 prior. ``weight`` belongs to the HOST (its machine file's ``[schedule] weights``), so a host serving
-several repositories decides how to share itself while each repository ranks its own work. ``own`` is
-the host's too (``[serve] own_weight``, :mod:`lab_commons.dev.forgeprovides`): it multiplies the value of
-a candidate whose PR or request this host's own forge login opened, on this host only; else 1.
+several repositories decides how to share itself while each repository ranks its own work. A host's
+own user is served by its own reserve (:mod:`lab_commons.compute.ledger`), never by a lift in the order.
 
 THE NUMBERS ARE DATA, declared once in ``[tool.lab_commons.schedule]``; :class:`Schedule` holds the
 family default and a repository overrides key by key (a table key by table key)::
