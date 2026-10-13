@@ -220,14 +220,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-WRITER-PER-SESSION-BRANCH',
         (
-            'Every declared session branch (the integration branch included) is advanced only by the session '
-            'holding its lease: `refs/leases/<branch>` on origin names the holder (a session identity, never a '
-            'host, directory or login), where it last renewed, and when it expires. It is taken, renewed by the '
-            'holder`s every push, released, and taken over only once expired; the write is a fast-forward push, '
-            'so origin is the compare-and-swap. The trunk is guarded by the integration branch`s lease. Refused '
-            'at pre-push, as is a push with no identity or no lease.'
+            'Every declared session branch (the integration branch included) has one writer at a time, and that '
+            'is git`s own, never a host, directory or lease of ours: locally a branch is checked out in at most '
+            'one worktree, so the sessions of one host and repo never share one; remotely a plain push is '
+            'compare-and-swap, so a writer on a stale tip is refused as a non-fast-forward and must merge first, '
+            'and SESSION-HISTORY-ONLY-GROWS refuses the force that would bypass it.'
         ),
-        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_sessionlease.py'),
+        ('tests/test_dev_sessionbranch.py',),
     ),
     (
         'PUBLISH-IS-THE-LOCAL-REF',

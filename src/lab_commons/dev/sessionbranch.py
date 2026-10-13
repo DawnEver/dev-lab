@@ -1,24 +1,28 @@
-"""A SESSION BRANCH IS PROTECTED AT PUSH: four invariants, judged on git's own pre-push lines.
+"""A SESSION BRANCH IS PROTECTED AT PUSH: three local invariants, judged on git's own pre-push lines.
 
 User ruling 2026-10-13: every session has ONE branch it leads (``[tool.lab_commons.branchset] sessions``,
 the integration branch among them), and that branch is protected for what it IS, never for where it is
-checked out or which box pushes it -- both move. The invariants, each refused here by name:
+checked out or which box pushes it -- both move.
 
-* ``ONE-WRITER-PER-SESSION-BRANCH`` (P1) -- only the session holding the branch's lease advances it
-  (:mod:`lab_commons.dev.sessionlease`; the trunk is guarded by the integration branch's lease). A push by
-  the holder RENEWS the lease, so an active session never lapses.
+``ONE-WRITER-PER-SESSION-BRANCH`` (P1) is git's own, and nothing is built for it (user ruling 2026-10-14:
+no lease refs -- every push would read and write origin). LOCALLY a branch is checked out in at most one
+worktree, so the sessions of one host and repo, one per worktree, never share a branch. REMOTELY a plain
+push is compare-and-swap: origin refuses a non-fast-forward, so a writer working on a stale tip loses and
+must merge first -- and P3 below refuses the force that would bypass it.
+
+The invariants refused here by name, with NO network call beyond the push itself:
+
 * ``PUBLISH-IS-THE-LOCAL-REF`` (P2) -- a push to ``refs/heads/X`` carries the local branch ``X``: its local
   ref, with ``HEAD`` resolved, IS ``refs/heads/X``. ``HEAD:X`` from another branch, ``Y:X`` and a bare sha
   are refused. Any checkout may publish ``X`` -- none needs it checked out.
-* ``SESSION-HISTORY-ONLY-GROWS`` (P3) -- the old remote tip is an ancestor of the new one; a forced
-  non-fast-forward and a deletion are refused. ONE place: no other hook judges ancestry of a session branch.
+* ``SESSION-HISTORY-ONLY-GROWS`` (P3) -- the old remote tip git hands the hook is an ancestor of the new
+  one; a forced non-fast-forward and a deletion are refused. ONE place: no other hook judges this.
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a
   two-parent merge naming its branch in a ``Merged-Branch:`` trailer, and the merge audit
   (:func:`lab_commons.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
   Judged from ``[tool.lab_commons.integrator] merges_only_since`` forward: no retroactive check.
 
-Local refusals (P2-P4) are judged first and need no network; the lease is read from origin last.
-There is no bypass: a guard that cannot judge (no branch set, no identity, origin unreadable) refuses.
+There is no bypass: a guard that cannot judge (no branch set) refuses.
 """
 
 from __future__ import annotations
@@ -28,20 +32,16 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
 from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
-from lab_commons.dev.forgehosts import this_host
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.mergeaudit import MergeAuditError, judge
-from lab_commons.dev.sessionlease import IDENTITY_ENV, LeaseRefused, identity, lease_branch, read, take
 from lab_commons.log import emit
 
 __all__ = [
     'MERGED_BRANCH',
-    'P1',
     'P2',
     'P3',
     'P4',
@@ -50,7 +50,6 @@ __all__ = [
     'refusals',
 ]
 
-P1: Final = 'ONE-WRITER-PER-SESSION-BRANCH'
 P2: Final = 'PUBLISH-IS-THE-LOCAL-REF'
 P3: Final = 'SESSION-HISTORY-ONLY-GROWS'
 P4: Final = 'INTEGRATION-IS-MERGES-ONLY'
@@ -143,64 +142,29 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
     return found
 
 
-def _lease_refusals(root: Path, branches: set[str], who: str | None, now: datetime) -> list[str]:
-    if who is None:
-        return [f'{P1}: no session identity; set {IDENTITY_ENV[0]} (or push from inside an agent session)']
-    found = []
-    for branch in sorted(branches):
-        take_it = f'python -m lab_commons.dev.sessionlease take {branch}'
-        try:
-            lease = read(root, branch)
-        except LeaseRefused as refused:
-            found.append(f'{P1}: {refused}')
-            continue
-        if lease is None:
-            found.append(f'{P1}: {branch} has no lease on origin; take it first: {take_it}')
-        elif not lease.live(now):
-            found.append(f'{P1}: {lease.text()} -- EXPIRED; take it over: {take_it}')
-        elif lease.holder != who:
-            found.append(f'{P1}: {lease.text()}; you are {who}. Ask {lease.holder} to release it, or wait')
-    return found
-
-
-def refusals(root: Path, lines: str, *, who: str | None, now: datetime) -> tuple[list[str], set[str]]:
-    """Every refusal for the push *lines* describe, and the lease branches it needs (renewed when it passes)."""
+def refusals(root: Path, lines: str) -> list[str]:
+    """Every refusal for the push *lines* describe; local reads only."""
     try:
         declared = declared_branchset(root)
     except BranchSetNotDeclared as exc:
-        return [
-            f'{P1}: this checkout declares no readable branch set, so no session branch can be judged: {exc}'
-        ], set()
+        return [f'{P2}: this checkout declares no readable branch set, so no session branch can be judged: {exc}']
     policy = load_policy(root)
     guarded = {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}
     found: list[str] = []
-    leased: set[str] = set()
     for fields in (line.split() for line in lines.splitlines()):
-        if len(fields) != _FIELDS or fields[2] not in guarded:
-            continue
-        found += _judge_ref(root, policy, fields)
-        leased.add(lease_branch(root, fields[2][len(_HEADS) :]))
-    if found or not leased:
-        return found, leased
-    return _lease_refusals(root, leased, who, now), leased
+        if len(fields) == _FIELDS and fields[2] in guarded:
+            found += _judge_ref(root, policy, fields)
+    return found
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes (and renews the lease)."""
-    del argv  # git passes the remote name and url; the lease is always judged on origin
+    """The pre-push hook: git's ref lines on stdin; exit 1 refuses, 0 publishes."""
+    del argv  # git passes the remote name and url; nothing here reads the remote
     top = _git(Path.cwd(), 'rev-parse', '--show-toplevel').stdout.strip()
-    root = Path(top or Path.cwd())
-    who = identity()
-    lines = '' if sys.stdin.isatty() else sys.stdin.read()
-    found, leased = refusals(root, lines, who=who, now=datetime.now(UTC))
+    found = refusals(Path(top or Path.cwd()), '' if sys.stdin.isatty() else sys.stdin.read())
     if found:
         emit('\n'.join(['', *(f'  REFUSED: {line}' for line in found), '']), err=True)
         return 1
-    for branch in sorted(leased):
-        try:
-            emit(f'[lease] renewed: {take(root, branch, who=str(who), where=this_host()).text()}')
-        except LeaseRefused as refused:
-            emit(f'[lease] not renewed (the push proceeds on the live lease): {refused}', err=True)
     return 0
 
 

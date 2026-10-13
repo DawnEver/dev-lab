@@ -18,6 +18,7 @@ from lab_commons.dev.forgeroute import (
     owners_of,
     read_areas,
     read_owners,
+    reconcile,
     render,
     route,
 )
@@ -207,3 +208,34 @@ def test_a_created_area_issue_mentions_its_owners(server) -> None:
     route(client(_FORGE, Loopback(server)), _record({_JMAG: 'failed'}) | {'branch': 'lane/x'}, _AREAS + _OWNERS)
     created = [body for method, _path, body in _writes() if method == 'POST']
     assert created[0]['body'].rstrip().endswith('cc @alice @bob.k @carol')
+
+
+def test_reconcile_keeps_one_issue_per_title_so_two_hosts_write_once(server) -> None:
+    """The first host creates; the second, deriving the same rows, finds it by title and writes nothing.
+
+    PLANTED CONTROLS: a changed body is updated; an open issue under the prefix that no row wants is closed,
+    and one under another prefix is left alone.
+    """
+    wanted = {'integration: feat/a is READY': 'merge it'}
+    answer('GET', f'{_ROOT}/issues', (200, []))
+    answer('POST', f'{_ROOT}/issues', (201, _issue(21, 'integration: feat/a is READY', 'merge it')))
+    first = reconcile(client(_FORGE, Loopback(server)), 'integration: ', wanted)
+    assert [(r.action, r.number) for r in first] == [('created', 21)]
+    Recorder.received.clear()
+    listed = [_issue(21, 'integration: feat/a is READY', ''), _issue(4, 'area:jmag', '')]
+    answer('GET', f'{_ROOT}/issues', (200, listed), (200, listed))
+    answer('GET', f'{_ROOT}/issues/21', (200, _issue(21, 'integration: feat/a is READY', '[H · x · y]\n\nmerge it')))
+    second = reconcile(client(_FORGE, Loopback(server)), 'integration: ', wanted)
+    assert [r.action for r in second] == ['unchanged']
+    assert _writes() == []
+    answer('GET', f'{_ROOT}/issues', (200, listed), (200, listed))
+    answer('GET', f'{_ROOT}/issues/21', (200, _issue(21, 'integration: feat/a is READY', 'merge it')))
+    answer('PATCH', f'{_ROOT}/issues/21', (200, _issue(21, 'x', '')))
+    moved = reconcile(client(_FORGE, Loopback(server)), 'integration: ', {'integration: feat/a is READY': 'now'})
+    assert [r.action for r in moved] == ['updated']
+    stale = [_issue(21, 'integration: feat/a is READY', ''), _issue(4, 'area:jmag', '')]
+    answer('GET', f'{_ROOT}/issues', (200, stale), (200, stale))
+    answer('GET', f'{_ROOT}/issues/21', (200, _issue(21, 'integration: feat/a is READY', 'merge it')))
+    answer('PATCH', f'{_ROOT}/issues/21', (200, _issue(21, 'x', '')))
+    gone = reconcile(client(_FORGE, Loopback(server)), 'integration: ', {})
+    assert [(r.action, r.number) for r in gone] == [('closed', 21)]

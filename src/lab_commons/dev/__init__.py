@@ -318,11 +318,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.lab_commons]``.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
-* :mod:`lab_commons.dev.sessionlease` -- ONE-WRITER-PER-SESSION-BRANCH: the lease on origin naming the one
-  session that may advance a declared session branch, until when; taken, renewed, expired, taken over.
-* :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch: one writer (the
-  lease holder), publish = the local ref, history only grows, integration takes merges only.
-* :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: the integration host deletes merged idle origin
+* :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
+  only: publish = the local ref, history only grows, integration takes merges only.
+* :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
 * :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.

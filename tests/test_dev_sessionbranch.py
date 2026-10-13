@@ -1,8 +1,8 @@
-"""The four session-branch invariants, each through a REAL ``git push`` to a bare origin and a REAL pre-push hook.
+"""The session-branch invariants, each through a REAL ``git push`` to a bare origin and a REAL pre-push hook.
 
-P1 ONE-WRITER-PER-SESSION-BRANCH, P2 PUBLISH-IS-THE-LOCAL-REF, P3 SESSION-HISTORY-ONLY-GROWS,
-P4 INTEGRATION-IS-MERGES-ONLY. Every refusal has its planted control: the same push, made the right way,
-lands. Names are declared non-defaults (``int/line``, ``stable``, ``feat/s``).
+P2 PUBLISH-IS-THE-LOCAL-REF, P3 SESSION-HISTORY-ONLY-GROWS, P4 INTEGRATION-IS-MERGES-ONLY -- and P1
+ONE-WRITER-PER-SESSION-BRANCH, proved to be git's own mechanisms. Every refusal has its planted control: the
+same push, made the right way, lands. Names are declared non-defaults (``int/line``, ``stable``, ``feat/s``).
 """
 
 from __future__ import annotations
@@ -10,13 +10,11 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.sessionbranch import P1
-from lab_commons.dev.sessionlease import read, release, take
+from lab_commons.dev.sessionbranch import P3
 
 _GIT = shutil.which('git') or 'git'
 _DECL = (
@@ -58,10 +56,8 @@ def _remote(cwd: Path, branch: str) -> str:
 
 
 @pytest.fixture
-def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A clone of origin with the three declared branches published, the hook installed, ``alice`` running."""
-    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
-    monkeypatch.setenv('LAB_COMMONS_SESSION', 'alice')
+def repo(tmp_path: Path) -> Path:
+    """A clone of origin with the three declared branches published, the hook installed."""
     origin = tmp_path / 'origin.git'
     _git(tmp_path, 'init', '--bare', '-b', 'stable', str(origin))
     work = tmp_path / 'work'
@@ -85,8 +81,6 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(work, 'config', 'core.hooksPath', hooks.as_posix())
     _git(work, 'config', 'user.name', 't')
     _git(work, 'config', 'user.email', 't@t')
-    for branch in ('int/line', 'feat/s'):
-        take(work, branch, who='alice', where='G')
     return work
 
 
@@ -140,75 +134,6 @@ def test_deleting_a_session_branch_is_refused(repo: Path) -> None:
     assert done.returncode != 0
     assert 'SESSION-HISTORY-ONLY-GROWS' in done.stderr
     assert _remote(repo, 'feat/s')
-
-
-# --- P1 ONE-WRITER-PER-SESSION-BRANCH ---------------------------------------------------------------
-
-
-def test_another_session_is_refused_and_the_holder_lands_and_renews(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _git(repo, 'checkout', 'feat/s')
-    _git(repo, 'commit', '--allow-empty', '-m', 'feat: s')
-    monkeypatch.setenv('LAB_COMMONS_SESSION', 'bob')
-    done = _push(repo, 'feat/s')
-    assert done.returncode != 0
-    assert 'ONE-WRITER-PER-SESSION-BRANCH' in done.stderr
-    assert 'alice' in done.stderr
-    monkeypatch.setenv('LAB_COMMONS_SESSION', 'alice')
-    before = read(repo, 'feat/s')
-    done = _push(repo, 'feat/s')
-    assert done.returncode == 0, done.stderr
-    after = read(repo, 'feat/s')
-    assert before is not None
-    assert after is not None
-    assert after.sha != before.sha, 'a push by the holder renews its lease'
-
-
-def test_a_branch_without_a_lease_or_without_an_identity_is_refused(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _git(tmp_path / 'origin.git', 'update-ref', '-d', 'refs/leases/feat/s')
-    _git(repo, 'checkout', 'feat/s')
-    _git(repo, 'commit', '--allow-empty', '-m', 'feat: s')
-    done = _push(repo, 'feat/s')
-    assert done.returncode != 0
-    assert 'sessionlease take feat/s' in done.stderr
-    monkeypatch.delenv('LAB_COMMONS_SESSION')
-    assert 'LAB_COMMONS_SESSION' in _push(repo, 'feat/s').stderr
-
-
-def test_an_expired_lease_does_not_publish(repo: Path, tmp_path: Path) -> None:
-    lease = read(repo, 'feat/s')
-    assert lease is not None
-    past = datetime.now(UTC) - timedelta(hours=1)
-    stale = _git(
-        repo,
-        'commit-tree',
-        f'{lease.sha}^{{tree}}',
-        '-p',
-        lease.sha,
-        '-m',
-        f'lease feat/s\n\nHolder: alice\nWhere: G\nExpires: {past.strftime("%Y-%m-%dT%H:%M:%SZ")}\n',
-    )
-    _git(tmp_path / 'origin.git', 'fetch', '-q', str(repo), stale)
-    _git(tmp_path / 'origin.git', 'update-ref', 'refs/leases/feat/s', stale)
-    _git(repo, 'checkout', 'feat/s')
-    _git(repo, 'commit', '--allow-empty', '-m', 'feat: s')
-    done = _push(repo, 'feat/s')
-    assert done.returncode != 0
-    assert 'EXPIRED' in done.stderr
-
-
-def test_the_trunk_is_guarded_by_the_integration_lease(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _git(repo, 'checkout', 'lane/x')
-    monkeypatch.setenv('LAB_COMMONS_SESSION', 'bob')
-    _git(repo, 'branch', '-f', 'stable', _git(repo, 'commit-tree', 'stable^{tree}', '-p', 'stable', '-m', 'x: y'))
-    done = _push(repo, 'stable')
-    assert done.returncode != 0
-    assert 'int/line' in done.stderr
-    monkeypatch.setenv('LAB_COMMONS_SESSION', 'alice')
-    assert _push(repo, 'stable').returncode == 0
 
 
 # --- P4 INTEGRATION-IS-MERGES-ONLY ------------------------------------------------------------------
@@ -290,33 +215,34 @@ def test_creating_the_integration_branch_judges_only_commits_after_the_declared_
     assert done.returncode == 0, done.stderr
 
 
-def test_two_sessions_in_two_worktrees_of_one_repo_on_one_host_each_own_only_their_branch(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Ownership is per SESSION, never per host, repo or checkout: same box, same repo, two writers."""
-    release(repo, 'feat/s', who='alice')
-    take(repo, 'feat/s', who='bob', where='G')
+def test_two_sessions_in_two_worktrees_of_one_repo_on_one_host_never_share_a_writer(repo: Path, tmp_path: Path) -> None:
+    """ONE-WRITER-PER-SESSION-BRANCH is git's own: one checkout per branch locally, compare-and-swap remotely."""
     _git(repo, 'checkout', 'stable')
-    trees = {'alice': tmp_path / 'wt-int', 'bob': tmp_path / 'wt-s'}
-    _git(repo, 'worktree', 'add', str(trees['alice']), 'int/line')
-    _git(repo, 'worktree', 'add', str(trees['bob']), 'feat/s')
-    own = {'alice': 'int/line', 'bob': 'feat/s'}
-    _git(trees['bob'], 'commit', '--allow-empty', '-m', 'feat: bob')
-    _git(
-        trees['alice'], 'branch', '-f', 'lane/x', _git(repo, 'commit-tree', 'stable^{tree}', '-p', 'stable', '-m', 'x')
+    first, second = tmp_path / 'wt-a', tmp_path / 'wt-b'
+    _git(repo, 'worktree', 'add', str(first), 'feat/s')
+    taken = subprocess.run(
+        [_GIT, 'worktree', 'add', str(second), 'feat/s'],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
     )
-    tree = _git(repo, 'merge-tree', '--write-tree', 'int/line', 'lane/x').splitlines()[0]
-    merge = _git(
-        repo, 'commit-tree', tree, '-p', 'int/line', '-p', 'lane/x', '-m', 'chore(merge): x\n\nMerged-Branch: lane/x\n'
+    assert taken.returncode != 0, 'a second worktree checked out a branch another session holds'
+    _git(repo, 'worktree', 'add', str(second), 'lane/x')
+    _git(second, 'commit', '--allow-empty', '-m', 'feat: the other session')
+    assert _push(second, 'lane/x:feat/s').returncode != 0, 'publishing onto the other session branch'
+    other = tmp_path / 'other-host'
+    _git(tmp_path, 'clone', '-q', '-b', 'feat/s', str(tmp_path / 'origin.git'), str(other))
+    _git(other, 'commit', '--allow-empty', '-m', 'feat: a clone that went first')
+    assert (
+        subprocess.run([_GIT, 'push', 'origin', 'feat/s'], cwd=other, capture_output=True, check=False).returncode == 0
     )
-    _git(trees['alice'], 'merge', '--ff-only', merge)
-    pairs = (('alice', 'bob'), ('bob', 'alice'))
-    for who, other in pairs:
-        monkeypatch.setenv('LAB_COMMONS_SESSION', who)
-        foreign = _push(trees[who], own[other])
-        assert foreign.returncode != 0, f'{who} advanced {own[other]}'
-        assert P1 in foreign.stderr
-    for who, _ in pairs:
-        monkeypatch.setenv('LAB_COMMONS_SESSION', who)
-        mine = _push(trees[who], own[who])
-        assert mine.returncode == 0, mine.stderr
+    _git(first, 'commit', '--allow-empty', '-m', 'feat: on a stale tip')
+    stale = _push(first, 'feat/s')
+    assert stale.returncode != 0, 'a stale tip overwrote the other writer'
+    assert P3 in stale.stderr, 'git hands the hook the real remote tip: the stale push is judged before it is sent'
+    assert P3 in _push(first, '--force', 'feat/s').stderr, 'the force that would bypass it'
+    _git(first, 'pull', '-q', '--no-rebase', '--no-edit', 'origin', 'feat/s')
+    landed = _push(first, 'feat/s')
+    assert landed.returncode == 0, landed.stderr

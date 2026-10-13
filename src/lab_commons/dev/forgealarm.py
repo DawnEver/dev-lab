@@ -7,10 +7,10 @@ holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot ad
 an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
 and a traffic jam: a candidate waiting past its class's bound (``starved``,
 :mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own. One more is not
-a failure but a PROMPT: on the host declared to own integration, the integration queue CHANGED -- a lane
+a failure but a PROMPT: on any host, an integration-queue row was written to its forge issue -- a lane
 went READY, the integration tip became promotable, or a red needs routing (``integration``,
 :mod:`lab_commons.dev.integrator`), keyed by the row so each new one is delivered at once. Two more are
-origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by that same host only: the merged
+origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by whichever host prunes: the merged
 branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
 (``stale-branch``), which are never deleted; and an account whose storage is still near its quota after
 the retention pass (``storage``).
@@ -63,9 +63,9 @@ IDLE: Final = 'idle'
 RUN: Final = 'run'
 #: A candidate waited past its class's bound (:mod:`lab_commons.dev.forgeschedule`).
 STARVED: Final = 'starved'
-#: The integration queue changed on the host that owns integration (:mod:`lab_commons.dev.integrator`).
+#: An integration row this host created or changed on the forge (:mod:`lab_commons.dev.integrator`).
 INTEGRATION: Final = 'integration'
-#: The integration host deleted merged idle origin branches, or failed to (:mod:`lab_commons.dev.branchprune`).
+#: A host deleted merged idle origin branches, or failed to (:mod:`lab_commons.dev.branchprune`).
 PRUNED: Final = 'pruned'
 #: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`lab_commons.dev.branchprune`).
 STALE_BRANCH: Final = 'stale-branch'

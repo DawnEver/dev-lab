@@ -38,7 +38,7 @@ Each tick it:
 4. runs every claimed local part at once, one thread each (streamed, each claim renewed every third of the
    lease), or advances a cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
 5. posts the part with its record attached, and edits its host card;
-6. on the host that owns integration, prompts the integrator ([integration alarm](#alarms)).
+6. on every host, keeps one forge issue per integration row and prompts the integrator when it writes one ([integration alarm](#alarms)).
 
 - `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
@@ -284,8 +284,7 @@ moment (`36h`, `2d`, or ISO). A daily-moving share is a reservation that expires
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
 "delivered", "repeat"}` to stderr for: `auth` (401/403 or no credential), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
-pending), `starved`, and `integration` -- not a failure but a PROMPT: on the host where the live integration
-lease holder last renewed (its `Where:`, a card name or a forge login), each tick derives the
+pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
 BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered at once
 ([the integrator](integrator.md#waking-the-integrator)). The same host raises origin's branch hygiene:
@@ -343,7 +342,7 @@ python -m lab_commons.dev.forge auth check      # can it do what a forge serve t
 
 Configuration applied through the forge's API or web UI; enabling it is the human's decision.
 
-- **Push whitelist**: only the integrator's accounts may update `main` (the client side: the integration lease). A consumer's protection script applies
+- **Push whitelist**: only the integrator's accounts may update `main` (the client side: SESSION-HISTORY-ONLY-GROWS). A consumer's protection script applies
   it from a declared constant, so a new machine's account is added in code, not in the UI.
 - **Required status check**: `tests/base` at least; parts are derived, so a required context per need-set
   goes stale when a marker changes. Enable it only once real parts exist on `main`'s tip; a required context

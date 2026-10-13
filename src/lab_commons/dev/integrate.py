@@ -1,9 +1,9 @@
 """INTEGRATION NEEDS NO WORKING TREE: merge a branch into the integration branch, or promote the trunk, by refs alone.
 
 The integration branch is one more session branch (:mod:`lab_commons.dev.sessionbranch`): what makes a
-commit on it legitimate is that it is a merge that passes the audit and was published by the lease holder,
-not which directory it was made in. So neither verb checks anything out, and neither pushes -- the holder
-publishes with a plain ``git push origin <branch>``, which the pre-push guard judges.
+commit on it legitimate is that it is a merge that passes the audit and lands by fast-forward, not which
+directory it was made in. So neither verb checks anything out, and neither pushes -- the session publishes
+with a plain ``git push origin <branch>``, which the pre-push guard judges.
 
 * ``merge <branch>`` -- ``git merge-tree --write-tree`` of the local integration branch and *branch*;
   refused on a conflict, naming the files. The message carries ``Merged-Branch: <branch>`` and any

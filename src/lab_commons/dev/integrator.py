@@ -16,14 +16,12 @@ construction. The integration tip, when not on ``main``, is PROMOTE when its par
 scope ``full`` (what the trunk admits), BLOCKED on a FAIL part, PARTS_NEEDED otherwise. Ready lanes
 merge oldest tip commit first, ties by branch name.
 
-THE FORGE PROMPTS THE INTEGRATOR. A wake is the observer's half, and the observer is ``forge serve``: on
-the host where the live holder of the integration branch's lease last renewed (its card name or forge
-login, :func:`lab_commons.dev.sessionlease.holds_integration_here`), each serve tick derives this same queue
-(:func:`observe`) and raises one ``integration`` alarm
-per row that asks the integrator to act (:func:`prompts`: a READY lane, a PROMOTE-able tip, a BLOCKED
-red to route), keyed by row state, branch and tip. The alarm de-dup state (:mod:`lab_commons.dev.forgealarm`)
-is the only memory: a NEW row is a new key, delivered at once; an unchanged row repeats once per the
-receiver's repeat window. Nothing else is stored.
+THE FORGE PROMPTS THE INTEGRATOR. A wake is the observer's half, and the observer is ``forge serve``: EVERY
+serving host derives this same queue (:func:`observe`) on each tick -- no host owns integration -- and the
+rows that ask the integrator to act (:func:`prompts`: a READY lane, a PROMOTE-able tip, a BLOCKED red to
+route) are kept as ONE forge issue per row (:func:`lab_commons.dev.forgeroute.reconcile`, titled
+``integration: <subject>``), so N hosts write one issue and only the host that creates or changes it pages.
+Nothing else is stored.
 
 FETCH-FREE, the caller's half, exactly as in ``forgeissue``: run the fetch through the retry wrapper
 first. The tips printed make a stale answer visible.
@@ -49,7 +47,6 @@ from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import standing
-from lab_commons.dev.sessionlease import holds_integration_here
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
@@ -218,12 +215,9 @@ def prompts(queue: Queue, repo: str) -> list[Alarm]:
     ]
 
 
-def observe(root: Path, repo: str, *, hosts: set[str], statuses: Callable[[str], Sequence[Status]]) -> list[Alarm]:
-    """The prompts for *root*'s queue where the integration lease holder works (one of *hosts*); ``[]`` elsewhere."""
-    policy = load_policy(root)
-    if not holds_integration_here(root, hosts):
-        return []
-    return prompts(derive(root, policy, load_schedule(root), statuses), repo)
+def observe(root: Path, repo: str, *, statuses: Callable[[str], Sequence[Status]]) -> list[Alarm]:
+    """The prompts for *root*'s queue, derived by any host; the forge keeps one issue per row."""
+    return prompts(derive(root, load_policy(root), load_schedule(root), statuses), repo)
 
 
 def _render(queue: Queue) -> str:

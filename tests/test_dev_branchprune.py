@@ -18,7 +18,6 @@ from typing import Any
 
 import pytest
 
-from lab_commons.dev import branchprune
 from lab_commons.dev.branchprune import DELETABLE, DELETE, MERGED, STALE, prune, serve_prune, survey
 from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
@@ -234,15 +233,28 @@ def test_a_branch_that_moved_since_the_survey_is_kept(tmp_path: Path) -> None:
     assert PRUNED not in {a.kind for a in alarms}
 
 
-def test_only_the_host_of_the_integration_lease_holder_prunes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(branchprune, 'holds_integration_here', lambda _root, names: 'integrator-box' in names)
+class RacedForge(BareForge):
+    """Another host deletes each branch between this host's read of its tip and this host's DELETE."""
+
+    def call(self, method: str, path: str, body: object = None, landed: object = None) -> object:
+        if method != 'DELETE':
+            return super().call(method, path, body, landed)
+        name = urllib.parse.unquote(path.partition('?')[0].removeprefix(f'{API}/branches/'))
+        subprocess.run([_GIT, 'update-ref', '-d', f'refs/heads/{name}'], cwd=self.origin, check=True, timeout=60)
+        gone = Attempt(1, 404, 'branch does not exist', Diagnosis.FORGE_REFUSED)
+        raise ForgeCallFailed(Report(('DELETE', name), (gone,), 1))
+
+
+def test_any_host_prunes_and_a_racing_second_delete_is_a_no_op(tmp_path: Path) -> None:
+    """No owner: every host prunes. PLANTED: the loser of a race neither raises nor alarms a failure."""
     root, origin = _planted(tmp_path, extra='prune_merged = true\n')
-    forge = BareForge(origin)
     alarms: list[Alarm] = []
-    serve_prune(root, forge, host='some-other-box', now=NOW, say=lambda _l: None, alarm=alarms.append)
-    assert [call for call in forge.calls if call[1].startswith(API)] == [], (
-        'a host that does not own integration read on'
-    )
-    assert forge.deleted == []
-    serve_prune(root, forge, host='integrator-box', now=NOW, say=lambda _l: None, alarm=alarms.append)
-    assert forge.deleted == ['lane/merged']
+    said: list[str] = []
+    serve_prune(root, RacedForge(origin), now=NOW, say=said.append, alarm=alarms.append)
+    assert 'lane/merged' not in _on_origin(origin)
+    assert PRUNED not in {a.kind for a in alarms}, 'a delete another host already made is no failure'
+    assert any('another host deleted it first' in line for line in said), said
+    forge = BareForge(origin)
+    _git(origin, 'update-ref', 'refs/heads/lane/merged', _git(root, 'rev-parse', 'origin/lane/merged'))
+    serve_prune(root, forge, now=NOW, say=lambda _l: None, alarm=alarms.append)
+    assert forge.deleted == ['lane/merged'], 'the uncontested host deletes'

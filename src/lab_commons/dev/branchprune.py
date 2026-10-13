@@ -2,9 +2,9 @@
 
 User ruling 2026-10-13: "origin should not carry this much garbage -- build the mechanism." The push-time
 check (:mod:`lab_commons.dev.branchset_push`) stops a lane reaching origin, but declared feature branches
-still FINISH, and a finished branch left on origin is debt nobody owns. So the host where the live holder of
-the integration branch's lease last renewed (:func:`lab_commons.dev.sessionlease.holds_integration_here`)
-surveys origin on every serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``.
+still FINISH, and a finished branch left on origin is debt nobody owns. So EVERY serving host surveys origin
+on its serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``. No host owns this: a
+deletion is pinned to the judged sha, so two hosts racing delete once and the second finds it gone (a no-op).
 
 AN ORIGIN BRANCH IS A ROW of :func:`survey` when it is NOT declared (the branch set, the integration branch,
 the trunk) and its tip has sat idle -- its committer date -- for at least ``grace_hours``. Then:
@@ -41,7 +41,6 @@ from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, pr_list
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy, load_policy
-from lab_commons.dev.sessionlease import holds_integration_here
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
@@ -55,7 +54,6 @@ __all__ = [
     'UNMERGED',
     'Row',
     'listing',
-    'owns_integration',
     'prune',
     'serve_prune',
     'survey',
@@ -156,7 +154,13 @@ def _delete(client: Client, row: Row, say: Callable[[str], None]) -> bool:
         say(f'[prune] kept {row.ref}: {state} since the survey judged {row.sha[:12]}')
         return False
     path = client.backend.branch_delete.format(name=urllib.parse.quote(row.ref, safe='/'))
-    client.call('DELETE', f'{client.repo}/{path}')
+    try:
+        client.call('DELETE', f'{client.repo}/{path}')
+    except ForgeCallFailed:
+        if _live_tip(client, row.ref) is not None:
+            raise
+        say(f'[prune] {row.ref}: another host deleted it first (a no-op here)')
+        return False
     say(json.dumps({'event': EVENT, 'ref': row.ref, 'sha': row.sha, 'rule': row.rule}))
     return True
 
@@ -186,24 +190,16 @@ def prune(
     return rows
 
 
-def owns_integration(root: Path, client: Client, host: str) -> bool:
-    """Whether the live integration lease holder last renewed here: card name *host*, or the client's login."""
-    return holds_integration_here(root, {host, client.whoami()})
-
-
 def serve_prune(
     root: Path,
     client: Client,
     *,
-    host: str,
     now: datetime,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> tuple[Row, ...]:
-    """The serve tick's step: :func:`prune` on the integration owner, nothing elsewhere; a failure only alarms."""
+    """The serve tick's step on any host: :func:`prune`; a failure only alarms."""
     try:
-        if not owns_integration(root, client, host):
-            return ()
         return prune(root, client, now=now, say=say, alarm=alarm)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         alarm(Alarm(PRUNED, client.forge.repo, 'the origin branch prune failed', str(failed)))

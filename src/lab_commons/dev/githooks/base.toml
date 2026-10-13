@@ -93,9 +93,9 @@ run = ["python", "-m", "lab_commons.dev.forgeorigin"]
 id = "merge-audit"
 run = ["python", "-m", "lab_commons.dev.mergeaudit"]
 
-# The session-branch invariants at push (lab_commons.dev.sessionbranch): only the lease holder advances a declared
-# session branch or the trunk (ONE-WRITER-PER-SESSION-BRANCH), from that very local branch (PUBLISH-IS-THE-LOCAL-REF),
-# by fast-forward (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY).
+# The session-branch invariants at push, local reads only (lab_commons.dev.sessionbranch): a declared session branch
+# or the trunk is published from that very local branch (PUBLISH-IS-THE-LOCAL-REF), by fast-forward
+# (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY).
 [[pre-push]]
 id = "session-branch"
 run = ["python", "-m", "lab_commons.dev.sessionbranch"]

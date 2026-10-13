@@ -15,7 +15,7 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
-on the host that owns integration, prune merged idle origin branches (:func:`lab_commons.dev.branchprune.serve_prune`);
+on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`);
 run the storage retention pass when due (:mod:`lab_commons.dev.retention`; still over quota raises a
 ``storage`` alarm); flush the outbox again.
 
@@ -73,16 +73,16 @@ is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`lab_commons.dev.forgeschedule`). Before the tick a cluster host
 reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
-other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released); on the host that
-owns integration ONLY, a part no host admits waiting past its class's bound raises a ``starved`` alarm,
+other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released); on ANY host,
+a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
 read across every host card; and this host's CARD is published on the forge
 (:mod:`lab_commons.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
-THE FORGE PROMPTS THE INTEGRATOR: on the host where the live holder of the integration branch's lease last
-renewed (matched against this host's card name and its forge login), the tick derives the integration
-queue and raises an ``integration`` alarm per new row that asks for action
-(:func:`lab_commons.dev.integrator.observe`). Every other host derives nothing.
+THE FORGE PROMPTS THE INTEGRATOR: every host derives the integration queue
+(:func:`lab_commons.dev.integrator.observe`) and keeps ONE ``integration`` forge issue per row that asks
+for action (:func:`raise_once`): N hosts write one issue, and only the host that creates or changes it
+pages. No host owns integration.
 
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`lab_commons.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
@@ -110,10 +110,10 @@ from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
-from lab_commons.dev.branchprune import owns_integration, serve_prune
+from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
-from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STORAGE, Alarm, sound
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, STORAGE, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import HostCard, card_host, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
@@ -121,6 +121,7 @@ from lab_commons.dev.forgeproduce import Produced, produce
 from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
+from lab_commons.dev.forgeroute import reconcile
 from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_list
@@ -134,7 +135,7 @@ from lab_commons.log import emit
 from lab_commons.proc import system_memory
 from lab_commons.resources import Holder
 
-__all__ = ['ServeReport', 'box_reserve', 'main', 'serve']
+__all__ = ['ServeReport', 'box_reserve', 'main', 'raise_once', 'serve']
 
 _GB = 1024.0**3
 
@@ -225,14 +226,14 @@ def serve(
     )
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
-    serve_prune(root, client(root), host=name, now=clock(), say=say, alarm=alarm)
+    serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
-    _starved(root, repo, client(root), book.cards, host=name, say=say, alarm=alarm)
+    _starved(root, repo, client(root), book.cards, say=say, alarm=alarm)
     card(claimed)
-    _prompt(root, repo, client(root), hosts={name}, say=say, alarm=alarm)
+    _prompt(root, repo, client(root), say=say, alarm=alarm)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -243,31 +244,36 @@ def serve(
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
 
 
+def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:
+    """Keep ONE forge issue per alarm of *kind* (``<kind>: <subject>``) and page only where it was written.
+
+    Any host may raise these; :func:`lab_commons.dev.forgeroute.reconcile` finds the issue by its title, so
+    N hosts deriving the same rows write one issue, the host that creates or changes it pages, and a row
+    no longer derived closes its issue.
+    """
+    by_title = {f'{kind}: {one.subject}': one for one in alarms}
+    for done in reconcile(built, f'{kind}: ', {title: one.body for title, one in by_title.items()}):
+        if done.action in {'created', 'updated'} and done.area in by_title:
+            alarm(by_title[done.area])
+
+
 def _starved(
     root: Path,
     repo: str,
     built: Client,
     cards: Sequence[HostCard],
     *,
-    host: str,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """On the integration host only: a ``starved`` alarm for each part NO host admits, read across every card.
-
-    Each host sees only its own queue, so one host's wait is not starvation, and N hosts alarming one part
-    is N pages: the ONE owner is the host that owns integration (:func:`owns_integration`).
-    """
-    if not owns_integration(root, built, host):
-        return
+    """A ``starved`` issue for each part NO host admits, read across every card; any host may raise it."""
     schedule = load_schedule(root)
     try:
         queue, _ = forge_queue(root, built, cards, now=forge_now(built), schedule=schedule)
+        found = starved_alarms([item for item in queue if unadmitted(item.blocked)], schedule, repo)
+        raise_once(built, STARVED, found, alarm=alarm)
     except ForgeCallFailed as failed:
-        say(f'[serve] the queue across hosts was not read: {failed}')
-        return
-    for one in starved_alarms([item for item in queue if unadmitted(item.blocked)], schedule, repo):
-        alarm(one)
+        say(f'[serve] the starved parts were not raised: {failed}')
 
 
 def _prompt(
@@ -275,14 +281,13 @@ def _prompt(
     repo: str,
     built: Client,
     *,
-    hosts: set[str],
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """Raise the integrator's prompts when this host owns integration; a forge failure is said, not raised."""
+    """Keep the integrator's prompts as one issue per row; a forge failure is said, not raised."""
     try:
-        for one in observe(root, repo, hosts={*hosts, built.whoami()}, statuses=lambda sha: status_list(built, sha)):
-            alarm(one)
+        found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
+        raise_once(built, INTEGRATION, found, alarm=alarm)
     except ForgeCallFailed as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 
