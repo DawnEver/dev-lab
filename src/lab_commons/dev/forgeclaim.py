@@ -153,6 +153,7 @@ class Work:
     holder: Claim | None = None
     argv: tuple[str, ...] = ()
     cluster: ClusterPart | None = None
+    needs: frozenset[str] = frozenset()  # the resource names a claimed part needs, as its sha declares them
 
 
 def serving(host: str, seat: ClusterAccount | None) -> Serving:

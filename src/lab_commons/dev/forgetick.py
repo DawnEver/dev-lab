@@ -27,7 +27,7 @@ once. Two parts of ONE sha are never claimed by one box in one tick: a local par
 sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
-wall (:class:`lab_commons.proc.TreeCpu`), never capped to the box: a job that kept eight cores busy does
+wall (:class:`lab_commons.proccpu.TreeCpu`), never capped to the box: a job that kept eight cores busy does
 not fit in four. Unmeasured, it takes every core free now, so it is admitted alone.
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
@@ -41,7 +41,7 @@ import math
 import os
 import shlex
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -60,6 +60,7 @@ from lab_commons.compute.model import (
     admit,
     expected_cost,
     rank,
+    submitted,
 )
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
@@ -150,6 +151,7 @@ def tick(
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
     provides: Mapping[str, Any] | None = None,
+    busy: Iterable[str] = (),
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -162,7 +164,8 @@ def tick(
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
     this host's machine-file ``[capabilities]`` (:mod:`lab_commons.dev.forgeprovides`; none by default): it
-    adds the engine parts it serves and blocks a part needing what it lacks.
+    adds the engine parts it serves and blocks a part needing what it lacks. *busy* are the shas a producer
+    here is judging now: their trees are taken, so no part of them is claimed.
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -204,7 +207,7 @@ def tick(
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
-        reservations=tuple(reservations), taken=list(running),
+        reservations=tuple(reservations), taken=list(running), trees=set(busy),
         store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
     for item in ranked:
@@ -300,17 +303,11 @@ class _Taking:
             return one, why
         one = claim(self.client, one, self.me)
         if one.state == MINE:
+            one = dataclasses.replace(one, needs=needed)
             self.claimed.append(one)
             self.taken.append(self.size(wanted, needed))
             self.trees.add(wanted.sha)
         return one, ''
-
-
-def submitted(demand: Mapping[str, float], supply: Supply) -> Mapping[str, float]:
-    """*demand* with one submission where *supply* counts them; else unchanged."""
-    if 'submits' not in supply.present:
-        return demand
-    return Resources({**demand, 'submits': max(1.0, demand.get('submits', 0.0))})
 
 
 def _producer(root: Path, work: Work, serve: Serving) -> Work:

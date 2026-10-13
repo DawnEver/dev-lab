@@ -161,7 +161,7 @@ skipped and a smaller, lower-ranked one is still claimed, so several parts run o
 
 - **Demand** is what the part's last run measured (`compute.learned`, keyed by part); unmeasured, a box part
   is every core free now (admitted alone) and a cluster part one core. A box run's cpu is MEASURED -- the
-  cpu-seconds of its process tree over its wall (`proc.TreeCpu`) -- and never capped: eight busy cores do not
+  cpu-seconds of its process tree over its wall (`proccpu.TreeCpu`) -- and never capped: eight busy cores do not
   fit in four.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); a box's probe
   (free cores, available memory, OS, tools) less its user's own reserve (`[reserve]` margins).

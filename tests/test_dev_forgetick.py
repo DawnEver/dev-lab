@@ -705,3 +705,18 @@ def test_a_box_job_is_admitted_at_the_cores_it_measured_never_capped_to_the_box(
     answer('POST', f'{API}/statuses/{head}', (201, {}))
     fits = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=4))
     assert [w.ref for w in fits.claimed] == ['integrate/main']
+
+
+def test_a_sha_a_producer_here_is_judging_is_busy_and_not_claimed(server, tmp_path: Path) -> None:
+    """Serve claims while it produces: the tree of a sha in production is taken. PLANTED CONTROL: not busy, claimed."""
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    busy = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=1), busy={head})
+    assert busy.claimed == ()
+    assert busy.queue[0].blocked == f'the tree of {head[:12]} is producing another part here'
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    free = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=1))
+    assert [w.ref for w in free.claimed] == ['integrate/main']

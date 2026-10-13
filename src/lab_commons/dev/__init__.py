@@ -141,6 +141,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve --mode M``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
+* :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
 * :mod:`lab_commons.dev.forgecarry` -- REACH-EQUIVALENCE: a descendant touching only declared inert paths
   keeps the run and receives its part, naming the sha it was judged at.
 * :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<platform>`` part, in the cluster

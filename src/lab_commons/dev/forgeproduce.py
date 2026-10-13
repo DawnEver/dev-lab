@@ -19,7 +19,7 @@ decides nothing. A tree that cannot be built spawns nothing, and the claim is re
 that refused.
 
 WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The producer's process tree is
-sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proc.TreeCpu`:
+sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
 a run that ended on its own (not superseded, not stopped) records its peak, wall and MEASURED cpu-seconds
 under ``(platform, no needs)`` -- the box half of the one demand table a Slurm run also writes. Each wake
@@ -53,7 +53,8 @@ from lab_commons.dev.platformparts import origin_url, part_context, parts_of
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
-from lab_commons.proc import TreeCpu, process_tree, working_set_bytes
+from lab_commons.proc import process_tree, working_set_bytes
+from lab_commons.proccpu import TreeCpu
 
 __all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
 

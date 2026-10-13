@@ -17,7 +17,7 @@ from _forge_fake import git_out, run_git
 from lab_commons.compute.ledger import Entry, Ledger
 from lab_commons.compute.model import Candidate, Demand, For, Ranked, Reservation, Resources, Supply
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
+from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgetick import TickReport
@@ -110,19 +110,31 @@ def _serve(
     seen: dict[str, object] | None = None,
     holders: tuple[Holder, ...] = (),
     book: Ledger | None = None,
+    later: tuple[TickReport, ...] = (),
+    ticks: list[dict] | None = None,
+    table: dict | None = None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
+    """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
+
+    *seen* is what the FIRST tick was given; *ticks* collects what every tick was given.
+    """
     said: list[str] = []
     alarms: list = []
     forge = forge or _Forge()
     seen = seen if seen is not None else {}
     cards = cards if cards is not None else []
 
+    answers = iter((ticked, *later))
+    given: list[dict] = ticks if ticks is not None else []
+
     def tick(*_a: object, **kwargs: object) -> TickReport:
-        seen.update(kwargs)
-        return ticked
+        if not given:
+            seen.update(kwargs)
+        given.append(kwargs)
+        return next(answers, TickReport((), (), ()))
 
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
-    monkeypatch.setattr(forgeserve, 'tick', tick)
+    monkeypatch.setattr(forgerounds, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
@@ -151,7 +163,7 @@ def _serve(
         alarm=alarms.append,
         renew_s=0.01,
         box_room=lambda scope, **_: Supply(scope, Resources(cpu=4, mem_gb=32)),
-        table={},
+        table=table or {},
         fetch=lambda _root: None,
         host=host,
         reserve=lambda: Resources(cpu=1, mem_gb=8),
@@ -415,7 +427,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
         raise ForgeCallFailed(refused)
 
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))  # never this box's own machine file
-    monkeypatch.setattr(forgeserve, 'tick', tick)
+    monkeypatch.setattr(forgerounds, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
     alarms: list = []
     with pytest.raises(ForgeCallFailed):
@@ -668,3 +680,114 @@ def test_each_wake_hands_watch_the_cores_busy_since_the_last(monkeypatch, tmp_pa
         sample=lambda _pid: 2.0, meter=lambda _pid: cpu, learn=lambda *_a, **_k: None, watch=watched.append,
     )  # fmt: skip
     assert [(one['cpu'], one['mem_gb']) for one in watched] == [(2.0, 2.0), (3.0, 2.0)]
+
+
+class _Until(_Proc):
+    """A producer that lives, beating, until *event* is set."""
+
+    def __init__(self, event: threading.Event, code: int = 0, pid: int | None = None) -> None:
+        super().__init__(code, pid=pid)
+        self.event = event
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self.event.wait(timeout=timeout):
+            return self.code
+        cmd = 'fake'
+        raise subprocess.TimeoutExpired(cmd, timeout or 0)
+
+
+class _Sets(_Proc):
+    """A producer that beats *beats* times (a little apart), then sets *event* and exits."""
+
+    def __init__(self, event: threading.Event, code: int = 0, beats: int = 0, pid: int | None = None) -> None:
+        super().__init__(code, beats=beats, pid=pid)
+        self.event = event
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self.beats:
+            self.event.wait(timeout=0.02)
+        code = super().wait(timeout)
+        self.event.set()
+        return code
+
+
+#: A tick period short enough that a second round comes while a producer runs.
+QUICK = {'tick_minutes': 0.001}
+
+
+def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkeypatch, tmp_path: Path) -> None:
+    """Serve keeps ticking while a producer lives: the next round sees it RUNNING and its sha BUSY, and claims more.
+
+    The first producer lives until the second ends, so the second can only have been claimed while it ran.
+    """
+    other = 'b' * 40
+    first = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('first',))
+    second = Work('feat/a', other, 'windows', 'mine', ME, argv=('second',))
+    second_done = threading.Event()
+    procs = {'first': _Until(second_done), 'second': _Sets(second_done, code=1, beats=3)}
+    ticks: list[dict] = []
+    cards: list = []
+    report, _said, _alarms = _serve(
+        monkeypatch, tmp_path, _claimed(first), procs, ticks=ticks, later=(_claimed(second),), table=QUICK, cards=cards,
+    )  # fmt: skip
+    assert [(p.sha, p.returncode) for p in report.produced] == [(SHA, 0), (other, 1)], 'in start order'
+    assert ticks[0]['busy'] == frozenset()
+    assert ticks[1]['busy'] == frozenset({SHA}), 'the tree of a part being produced is taken'
+    assert len(ticks[1]['running']) == len(ticks[0]['running']) + 1, 'the live producer runs at its demand'
+    assert any(len(card.holds) == 2 for card in cards), 'a card while both run names both'
+    assert report.tick == ('tick: one line', 'tick: one line'), 'every round says what it claimed'
+
+
+def test_a_producer_stopped_on_purpose_ends_the_claiming(monkeypatch, tmp_path: Path) -> None:
+    """A stop (stoprun) means serve exits: no round after it, the live producer is waited for, nothing new starts.
+
+    PLANTED CONTROL: the same two producers, neither stopped, and a later round runs.
+    """
+    other, third = 'b' * 40, 'c' * 40
+    claims = (
+        Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('stopped',)),
+        Work('feat/a', other, 'windows', 'mine', ME, argv=('lives',)),
+    )
+    later = (_claimed(Work('feat/b', third, 'windows', 'mine', ME, argv=('never',))),)
+
+    def run(stopped_pid: int) -> tuple[list[dict], list[dict]]:
+        ended = threading.Event()
+        procs = {
+            'stopped': _Sets(ended, code=-9, pid=77),
+            'lives': _Sets(threading.Event(), beats=10),
+            'never': _Proc(0),
+        }
+        monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == stopped_pid)
+        ticks: list[dict] = []
+        spawned: list[dict] = []
+        _serve(
+            monkeypatch, tmp_path, _claimed(*claims), procs, ticks=ticks, later=later, table=QUICK, spawned=spawned,
+        )  # fmt: skip
+        return ticks, spawned
+
+    ticks, spawned = run(77)
+    assert len(ticks) == 1
+    assert [one['argv'][1] for one in spawned] == ['stopped', 'lives']
+    ticks, _spawned = run(0)
+    assert len(ticks) == 2, 'PLANTED CONTROL: a crash is not a stop; the host claims on'
+
+
+def test_a_round_that_raises_joins_every_producer_first(monkeypatch, tmp_path: Path) -> None:
+    """No producer thread outlives serve: a later round failing waits for the live producer before it raises."""
+    ended = threading.Event()
+    first = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('first',))
+    procs = {'first': _Sets(ended, beats=20)}
+    failed = ForgeCallFailed(Report(('GET', '/x'), (Attempt(1, 128, 'boom', Diagnosis.TRANSIENT),), 3))
+    calls: list[int] = []
+
+    def tick(*_a: object, **_k: object) -> TickReport:
+        calls.append(1)
+        if len(calls) > 1:
+            raise failed
+        return _claimed(first)
+
+    monkeypatch.setattr(forgerounds, '_tick', lambda *_a, **kw: tick(**kw))
+    with pytest.raises(ForgeCallFailed):
+        _serve(monkeypatch, tmp_path, _claimed(first), procs, table=QUICK)
+    assert ended.is_set(), 'the producer ended before serve raised'
+    assert not [t for t in threading.enumerate() if t.name.startswith('produce-')]
