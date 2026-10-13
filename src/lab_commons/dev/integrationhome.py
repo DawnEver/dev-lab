@@ -18,7 +18,10 @@ single editor is the integrator; lanes live in linked worktrees on lane branches
   HEAD:integrate/main`` from there published the user's unreviewed commit onto the integration line. A
   push updating ``refs/heads/<long-lived>`` is refused unless its local ref IS ``refs/heads/<same name>``.
   With git's own rule that a branch is checked out in at most one worktree, that single checkout is the
-  only place the long-lived line can be published from.
+  only place the long-lived line can be published from. THE TRUNK is narrower still: it moves ONLY by
+  ``forge promote``, a fast-forward to the integration tip, and promote pushes the bare
+  ``<sha>:refs/heads/<trunk>``. So a trunk update is permitted exactly when the pushed sha IS the local
+  ``refs/heads/<integration>`` sha -- whatever the local ref is spelled as -- and refused otherwise.
 * :func:`staleness` -- the session-start note: the main checkout's integration branch or trunk is
   behind its origin by N commits, and the fast-forward that clears it.
 
@@ -92,14 +95,19 @@ def push_refusal(root: Path, lines: str) -> str | None:
     top = _git(root, 'rev-parse', '--show-toplevel')
     if top is None:
         return None
-    long_lived = _long_lived(Path(top))
+    policy = load_policy(Path(top))
+    tip = _git(root, 'rev-parse', '-q', '--verify', f'refs/heads/{policy.integration}^{{commit}}')
     head = _git(root, 'symbolic-ref', '-q', 'HEAD') or 'HEAD'
     bad = []
     for fields in (line.split() for line in lines.splitlines()):
         if len(fields) != _PUSH_FIELDS:
             continue
-        local, remote = head if fields[0] == 'HEAD' else fields[0], fields[2]
-        if remote.startswith('refs/heads/') and remote.removeprefix('refs/heads/') in long_lived and local != remote:
+        local, sha, remote = head if fields[0] == 'HEAD' else fields[0], fields[1], fields[2]
+        if remote == f'refs/heads/{policy.trunk}':
+            refused = tip is None or sha != tip
+        else:
+            refused = remote == f'refs/heads/{policy.integration}' and local != remote
+        if refused:
             bad.append((local, remote))
     if not bad:
         return None
@@ -108,7 +116,8 @@ def push_refusal(root: Path, lines: str) -> str | None:
         f'{PUSH_RULE}: {named}. A long-lived branch is published only from its own local branch, never '
         f'HEAD:<it> from another branch or a detached HEAD.\n'
         f'  Remedy: push from the checkout whose HEAD is that branch (the main checkout), or push your own '
-        f'lane branch instead (push origin HEAD:<your lane branch>) and merge it there.'
+        f'lane branch instead (push origin HEAD:<your lane branch>) and merge it there; move the trunk only by '
+        f'`forge promote`.'
     )
 
 
