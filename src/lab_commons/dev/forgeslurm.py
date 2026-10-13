@@ -21,7 +21,7 @@ from lab_commons.compute import learned
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import config_path
-from lab_commons.dev.forgecarry import carry_from, nearest
+from lab_commons.dev.forgecarry import carry_from, read_by
 from lab_commons.dev.forgerun import Cluster, Run, Standing
 from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from lab_commons.hpc.account import ClusterAccount
@@ -107,7 +107,7 @@ class SlurmCluster:
         runners = self._runners()
         held = {}
         shas = run_shas(self.machine, runners)
-        for ancestor in [*([sha] if sha in shas else []), *nearest(self.root, sha, shas)]:
+        for ancestor in read_by(self.root, sha, shas):
             state, shell = load_state(ancestor, self.machine, runners)
             if state.get('env') == env and state.get('platform') == part:
                 held[ancestor] = held_outcomes(state, shell)

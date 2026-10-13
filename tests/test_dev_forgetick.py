@@ -79,7 +79,7 @@ def _pending(claim: Claim, status_id: int, platform: str = BASE) -> Status:
 
 
 def _assess(history: list[Status], platform: str = BASE) -> tuple[str, Claim | None]:
-    return assess(history, platform, me=ME, now=NOW)
+    return assess(history, f'tests/{platform}', me=ME, now=NOW)
 
 
 def test_a_claim_round_trips_through_its_description() -> None:
@@ -133,7 +133,7 @@ def test_two_login_hosts_of_one_account_are_two_owners() -> None:
     me = Claim('hpclogin02', 'alice', LATER, 'ada/alice')
     other_host = dataclasses.replace(me, machine='hpclogin01')
     history = [_pending(other_host, 1, 'linux'), _pending(me, 2, 'linux')]
-    assert assess(history, 'linux', me=me, now=NOW) == (CLAIMED, other_host)
+    assert assess(history, 'tests/linux', me=me, now=NOW) == (CLAIMED, other_host)
 
 
 def test_my_holding_claim_is_my_latest_renewal() -> None:
@@ -514,7 +514,7 @@ def test_every_host_names_every_class_one_candidate_per_ref(server, tmp_path: Pa
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'], 'priority:user')]))
     request = {
         'number': 9,
-        'body': 'platform = "windows"\n',
+        'body': 'producer = "femm_goldens"\n',
         'created_at': '2026-10-10T00:00:00Z',
         'labels': [{'name': 'forge:request'}],
     }
@@ -538,16 +538,17 @@ def test_every_host_names_every_class_one_candidate_per_ref(server, tmp_path: Pa
 def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_exclude(server, tmp_path: Path) -> None:
     """HEAVY NEVER ON DEVELOPMENT BRANCHES (user ruling 2026-10-13): ``parts.refs.<part>.<scope>`` filters refs.
 
-    The PR, the classed branches and the request are all served and all excluded from
-    ``tests/windows`` at ``full``; each exclusion is SAID. PLANTED CONTROL: the same refs with no filter
-    are all candidates (:func:`test_every_host_names_every_class_one_candidate_per_ref`), and a part the filter
-    does not name (``jmag``) keeps every ref.
+    The PR and the classed branches are all served and all excluded from ``tests/windows`` at ``full``;
+    each exclusion is SAID. A request is no part, asked for by name at its sha: no part's filter excludes
+    it. PLANTED CONTROL: the same refs with no filter are all candidates
+    (:func:`test_every_host_names_every_class_one_candidate_per_ref`), and a part the filter does not name
+    (``jmag``) keeps every ref.
     """
     repo, tips = _origin(tmp_path)
     refs = '[tool.lab_commons.parts.refs.windows]\nfull = ["integrate/main", "main"]\n'
     (repo / 'pyproject.toml').write_text(PRODUCE + refs + _RULE, 'utf-8')
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'])]))
-    request = {'number': 9, 'body': 'platform = "windows"\n', 'labels': [{'name': 'forge:request'}]}
+    request = {'number': 9, 'body': 'producer = "femm_goldens"\n', 'labels': [{'name': 'forge:request'}]}
     answer('GET', f'{API}/issues', (200, [request]))
     notes: list[str] = []
     found = candidates(
@@ -561,11 +562,12 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
         ('topic/a', 'jmag'),
         ('wip/b', 'jmag'),
         ('other', 'jmag'),
+        ('issue/9', ''),
     }
     assert sorted(note for note in notes if 'tests/windows' in note) == sorted(
         f'[serve] {ref} is not served tests/windows at full: [tool.lab_commons.parts.refs.windows] full '
         f"admits ['integrate/main', 'main']"
-        for ref in ('topic/a', 'wip/b', 'other', 'issue/9')
+        for ref in ('topic/a', 'wip/b', 'other')
     )
 
 

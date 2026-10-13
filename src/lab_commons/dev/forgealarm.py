@@ -12,7 +12,8 @@ went READY, the integration tip became promotable, or a red needs routing (``int
 :mod:`lab_commons.dev.integrator`), keyed by the row so each new one is delivered at once. Two more are
 origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by that same host only: the merged
 branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
-(``stale-branch``), which are never deleted.
+(``stale-branch``), which are never deleted; and an account whose storage is still near its quota after
+the retention pass (``storage``).
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -48,7 +49,7 @@ from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
 __all__ = [
-    'AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'PRUNED', 'RUN', 'STALE_BRANCH', 'STARVED', 'Alarm',
+    'AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'PRUNED', 'RUN', 'STALE_BRANCH', 'STARVED', 'STORAGE', 'Alarm',
     'main', 'repeat_window', 'sound',
 ]  # fmt: skip
 
@@ -68,6 +69,8 @@ INTEGRATION: Final = 'integration'
 PRUNED: Final = 'pruned'
 #: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`lab_commons.dev.branchprune`).
 STALE_BRANCH: Final = 'stale-branch'
+#: Usage still at the quota pressure line after the retention pass (:mod:`lab_commons.dev.retention`).
+STORAGE: Final = 'storage'
 
 
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:

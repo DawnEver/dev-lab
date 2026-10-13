@@ -1042,6 +1042,15 @@ def test_every_item_carries_the_timeout_its_scope_declares() -> None:
     assert {i['timeout_s'] for i in incremental.manifests[0]['items']} == {300}
 
 
+def test_the_run_state_names_the_build_directories_it_runs_in() -> None:
+    """Retention ties ``~/ci/envs/<key>`` and ``~/ci/native/<key>`` to a run only through these keys."""
+    builds = Builds(install='true', env_key='k1', native_key='n1')
+    state = submit_run(
+        RunSpec(sha=SHA, repo_url='u', builds=builds), MACHINE, lambda _g: FakeRunCluster(), cost=COST, policy=POLICY
+    )
+    assert state['builds'] == {'env': 'k1', 'native': 'n1'}
+
+
 class _AdaRounds(FakeRunCluster):
     """sacct answers PER JOB ID, as Ada did for 18f128d on 2026-10-12: r0 and r1 OUT_OF_MEMORY, r2 COMPLETED."""
 

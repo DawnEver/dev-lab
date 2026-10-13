@@ -37,11 +37,12 @@ from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fet
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgehosts import HostCard
 from lab_commons.dev.forgeprovides import present, unserved
+from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, request_context
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, candidates, host_weights, load_schedule, repo_name
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import derived, origin_url
+from lab_commons.dev.platformparts import derived, origin_url, part_context
 from lab_commons.hpc.declared import OutdatedKit
 from lab_commons.hpc.needsets import declared_at, needs_of
 from lab_commons.log import emit
@@ -82,33 +83,23 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     )  # fmt: skip
     book = ledger.read(client)
     cards = book.cards
-    nobody = Claim('', '', now)
-    waiting: list[Candidate] = []
-    in_flight: list[dict[str, Any]] = []
-    for one in found:
-        if one.kind != REQUEST:
-            state, holder = assess(history(one.sha), one.platform, me=nobody, now=now)
-            if state == DONE:
-                continue
-            if state == CLAIMED and holder is not None:
-                owner = holder.hpc or holder.machine or '-'
-                in_flight.append(
-                    {'candidate': one.key, 'owner': owner, 'login': holder.login, 'progress': holder.progress}
-                    | {'until': holder.until.isoformat()}
-                )
-                continue
-        waiting.append(one)
+    waiting, in_flight = _standing(found, history, now)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
     read: dict[str, str] = {}
 
-    def declared(sha: str) -> str:
-        return read[sha] if sha in read else read.setdefault(sha, _refused(root, sha))
+    def refused(one: Candidate) -> str:
+        """Why *one* cannot be produced as its sha declares it: a request's producer, a part's vocabulary."""
+        if one.kind == REQUEST:
+            return _refused(lambda: declared_request(root, one.sha, one.producer) and '')
+        if one.sha not in read:
+            read[one.sha] = _refused(lambda: declared_at(root, one.sha)[1] if one.sha else '')
+        return read[one.sha]
 
     weights = host_weights(section('schedule'))
     ranked = [
         dataclasses.replace(
             item,
-            blocked=declared(item.candidate.sha) or _why(item.candidate, cards, now),
+            blocked=refused(item.candidate) or _why(item.candidate, cards, now),
         )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
@@ -138,12 +129,35 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     }
 
 
-def _refused(root: Path, sha: str) -> str:
-    """Why *sha*'s declaration is refused here, ``''`` when it is read (or there is no sha)."""
+def _refused(read: Callable[[], str]) -> str:
+    """What *read* says refuses a declaration; a reader older than the sha says so, and the sha waits."""
     try:
-        return declared_at(root, sha)[1] if sha else ''
-    except OutdatedKit as why:  # this reader is older than the sha: it says so, and the sha waits
+        return read()
+    except (UndeclaredRequest, OutdatedKit) as why:
         return str(why)
+
+
+def _standing(
+    found: Sequence[Candidate], history: Callable[[str], Sequence[Status]], now: datetime
+) -> tuple[list[Candidate], list[dict[str, Any]]]:
+    """``(waiting, in flight)``: a part and a request are one job, each assessed in its own context."""
+    nobody = Claim('', '', now)
+    waiting: list[Candidate] = []
+    in_flight: list[dict[str, Any]] = []
+    for one in found:
+        context = request_context(one.number) if one.kind == REQUEST else part_context(one.platform)
+        state, holder = assess(history(one.sha), context, me=nobody, now=now)
+        if state == DONE:
+            continue
+        if state == CLAIMED and holder is not None:
+            owner = holder.hpc or holder.machine or '-'
+            in_flight.append(
+                {'candidate': one.key, 'owner': owner, 'login': holder.login, 'progress': holder.progress}
+                | {'until': holder.until.isoformat()}
+            )
+            continue
+        waiting.append(one)
+    return waiting, in_flight
 
 
 def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:

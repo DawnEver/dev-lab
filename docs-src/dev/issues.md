@@ -59,7 +59,7 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 |---|---|---|
 | `priority:user` | the scheduler | adds the declared boost to a PR or issue |
 | `priority:<n>` | the scheduler | adds `n` |
-| `forge:request` | the scheduler | makes the issue a queued request (`platform = "<p>"` in its body) |
+| `forge:request` | the scheduler | makes the issue a queued request (`producer = "<declared name>"` and `sha = "<40-hex>"` in its body) |
 | `keep` | the artefact store | pins its sha's artefacts past retention ([artefacts](artefacts.md)) |
 
 No other label carries state.
