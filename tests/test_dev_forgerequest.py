@@ -16,7 +16,7 @@ from test_dev_forgetick import API, LATER, PRODUCE, _declare, _origin, _tick
 
 from lab_commons.compute.model import REQUEST, Resources, Supply
 from lab_commons.dev import forgeproduce
-from lab_commons.dev.forgeclaim import MINE, Claim, Work
+from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from lab_commons.dev.forgerequest import (
     UndeclaredRequest,
     declared_request,
@@ -25,6 +25,7 @@ from lab_commons.dev.forgerequest import (
     request_context,
 )
 from lab_commons.dev.forgeschedule import NOT_ADMITTED
+from lab_commons.hpc.declared import OutdatedKit
 
 server = test_dev_forgetick.server  # the loopback forge fixture, shared
 
@@ -89,14 +90,22 @@ def test_a_host_lacking_a_needed_resource_does_not_admit_it(server, tmp_path: Pa
 
 
 def test_an_undeclared_producer_name_is_refused_not_run(server, tmp_path: Path) -> None:
-    """A request names a producer; it never carries a command. A name the sha does not declare is refused."""
+    """A request names a producer; it never carries a command. A name the sha does not declare is refused.
+
+    The defect is the commit's own, so it is settled ONCE on the request's own context, never claimed or
+    left waiting. PLANTED CONTROL: a declared name is claimed (the test above).
+    """
     repo, tips = _origin(tmp_path)
     sha = _request(repo, tips, 'rm_rf')
     answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
     report = _tick(repo, server, supply=FEMM_HOST)
     assert report.claimed == ()
-    assert not [r for r in Recorder.received if r['method'] == 'POST']
-    assert any('[tool.lab_commons.requests.rm_rf]' in why for why in report.refused)
+    assert report.queue == ()
+    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
+    assert (posted['body']['state'], posted['body']['context']) == ('error', request_context(9))
+    assert posted['body']['description'].startswith(REFUSED_AT_COMMIT)
+    assert '[tool.lab_commons.requests.rm_rf]' in posted['body']['description']
 
 
 def test_a_declaration_is_read_at_the_sha_and_refuses_a_malformed_row(tmp_path: Path) -> None:
@@ -172,3 +181,14 @@ def test_a_request_is_named_by_its_issue_and_its_body_names_no_command() -> None
     assert request_context(9) == 'request/9'
     body = 'producer = "x; rm -rf /"\nsha = "HEAD"\n'
     assert parse_body(body) == ('', ''), 'a name or a sha, nothing else'
+
+
+def test_a_table_this_kit_does_not_know_is_the_readers_defect_never_the_requests(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a retired table is the commit's own defect -- refused as an undeclared request."""
+    repo, tips = _origin(tmp_path)
+    newer = _declare(repo, tips, GOLDENS + '[tool.lab_commons.tomorrow]\nrows = 1\n')
+    with pytest.raises(OutdatedKit):
+        declared_request(repo, newer, 'femm_goldens')
+    older = _declare(repo, tips, GOLDENS + '[tool.lab_commons.platforms]\nrows = 1\n')
+    with pytest.raises(UndeclaredRequest, match='retired'):
+        declared_request(repo, older, 'femm_goldens')

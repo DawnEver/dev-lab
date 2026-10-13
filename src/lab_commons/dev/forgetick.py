@@ -113,6 +113,8 @@ class TickReport:
     artefacts: str = ''
     #: The loans a reservation holder's claim displaces here: the serve loop stops and releases each.
     preempt: tuple[Held, ...] = ()
+    #: The open parts this host could serve -- its needs all present here -- and did not claim: what makes it idle.
+    pending: tuple[Work, ...] = ()
 
 
 def tick(
@@ -213,7 +215,14 @@ def tick(
     lines += [f'artefacts {taken.store_why}'] if taken.store_why else []
     lines += [f'preempt {one.label}: {preempted(one.on_loan)}' for one in taken.preempt]
     return TickReport(
-        tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why, tuple(taken.preempt)
+        tuple(work),
+        tuple(claimed),
+        tuple(lines),
+        tuple(refused),
+        tuple(queue),
+        taken.store_why,
+        tuple(taken.preempt),
+        tuple(taken.pending),
     )
 
 

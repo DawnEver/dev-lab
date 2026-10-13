@@ -38,6 +38,7 @@ from lab_commons.dev.forgeclaim import (
     DONE,
     MINE,
     OPEN,
+    REFUSED_AT_COMMIT,
     STALE,
     Claim,
     Serving,
@@ -213,17 +214,28 @@ def test_a_tick_claims_an_open_request_and_names_the_command(server, tmp_path: P
     assert any(line.startswith('produce tests/base:') for line in report.lines)
 
 
-def test_a_part_the_repo_cannot_produce_is_never_claimed(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the claimable request of the test above, with the producer undeclared."""
+def test_a_part_the_repo_cannot_produce_is_never_claimed_and_is_refused_on_its_commit(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the claimable request of the test above, with the producer undeclared AT the sha.
+
+    The defect is the commit's own, so it is routed ONCE to its owner -- an ``error`` on the part's context
+    of that commit -- never claimed, never left waiting to be re-refused (and alarmed) every tick.
+    """
     repo, tips = _origin(tmp_path)
-    _declare(repo, tips, '')
+    sha = _declare(repo, tips, '')
     (repo / 'pyproject.toml').write_text(PRODUCE, encoding='utf-8')  # the serving checkout's file decides nothing
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
     report = _tick(repo, server)
     assert report.claimed == ()
-    assert not [r for r in Recorder.received if r['method'] == 'POST']
-    assert 'tool.lab_commons.tests] produce' in report.refused[0]
+    assert report.queue == ()
+    assert report.refused == (), 'a commit-own refusal is no reason for this host to sit idle'
+    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
+    assert posted['body']['state'] == 'error'
+    assert posted['body']['context'] == 'tests/base'
+    assert posted['body']['description'].startswith(REFUSED_AT_COMMIT)
+    assert 'tool.lab_commons.tests] produce' in posted['body']['description']
+    assert [w.state for w in report.work] == [DONE]
 
 
 def test_a_tick_that_loses_the_race_claims_nothing(server, tmp_path: Path) -> None:
@@ -702,6 +714,7 @@ def test_a_part_base_hands_to_is_claimed_where_its_needs_are_present(server, tmp
     lacking = _tick(repo, server, dry_run=True, supply=BOX, demand=_one_core)
     assert [(w.platform, w.state) for w in lacking.work] == [(BASE, DONE), ('jmag', OPEN)]
     assert [item.blocked for item in lacking.queue] == [f'{NOT_ADMITTED}: lacking jmag']
+    assert lacking.pending == (), 'a part needing a tool absent here is no work this host could serve'
     answer('GET', f'{API}/statuses/{sha}', (200, [_base('jmag:2')]), (200, [_base('jmag:2'), _post(2, ME, 'jmag')]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     with_jmag = Supply('G', Resources(cpu=4, mem_gb=32, jmag=4), frozenset({'cpu', 'mem_gb', 'windows', 'jmag'}))
@@ -721,6 +734,7 @@ def test_two_parts_of_one_sha_never_share_a_tree_in_one_tick(server, tmp_path: P
     report = _tick(repo, server, supply=roomy, demand=_one_core)
     assert [w.platform for w in report.claimed] == ['dev_checkout']
     assert [item.blocked for item in report.queue] == [f'the tree of {sha[:12]} is producing another part here']
+    assert [w.platform for w in report.pending] == ['jmag'], 'PLANTED CONTROL: servable here, only busy now'
 
 
 def test_a_cluster_claims_what_it_has_and_never_a_part_needing_dev_checkout(server, tmp_path: Path) -> None:
@@ -758,6 +772,49 @@ def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(s
     assert waiting.candidate.ref == 'topic/a'
     assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: this lab-commons does not know')
     assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+
+
+def test_a_retired_declaration_is_refused_once_on_its_own_commit_and_never_waits(server, tmp_path: Path) -> None:
+    """A RETIRED table is the commit's own defect (older than its reader): routed to it once, never queued.
+
+    PLANTED CONTROL: the test above -- a table this kit does not KNOW is the serving host's defect (its kit is
+    older), so that sha waits, unposted, for a host that can read it.
+    """
+    repo, tips = _origin(tmp_path)
+    bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.platforms]\nrows = 1\n')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', bad)
+    head = _declare(repo, tips, PRODUCE)
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', bad, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{bad}', (200, []))
+    answer('POST', f'{API}/statuses/{bad}', (201, {}))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server)
+    assert [w.ref for w in report.claimed] == ['integrate/main']
+    assert report.queue == ()
+    (settled,) = [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+    assert settled['body']['state'] == 'error'
+    assert settled['body']['description'].startswith(f'{REFUSED_AT_COMMIT} declaration at {bad[:12]} refused')
+    refusal = {'id': 9, 'context': 'tests/base', 'status': 'error', 'description': settled['body']['description']}
+    Recorder.received.clear()
+    answer('GET', f'{API}/statuses/{bad}', (200, [refusal]))
+    answer('GET', f'{API}/statuses/{head}', (200, [_post(1, ME)]))
+    again = _tick(repo, server)
+    assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']], 'routed ONCE'
+    assert [item.candidate.ref for item in again.queue] == []
+
+
+def test_a_dry_run_routes_no_refusal(server, tmp_path: Path) -> None:
+    """A dry run posts nothing: the commit-own refusal is shown waiting, with its reason."""
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, '')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    report = _tick(repo, server, dry_run=True)
+    assert not [r for r in Recorder.received if r['method'] == 'POST']
+    (waiting,) = report.queue
+    assert waiting.blocked.startswith(REFUSED_AT_COMMIT)
 
 
 def test_a_box_job_is_admitted_at_the_cores_it_measured_never_capped_to_the_box(server, tmp_path: Path) -> None:
@@ -853,10 +910,36 @@ def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claime
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', stale, 'priority:user')]))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{stale}', (200, []))
+    answer('POST', f'{API}/statuses/{stale}', (201, {}))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
     answer('POST', f'{API}/statuses/{head}', (201, {}))
     report = _tick(repo, server)
     assert [w.ref for w in report.claimed] == ['integrate/main']
+    assert report.queue == (), 'refused on its own commit, never left waiting'
+
+
+CLUSTER_ONLY = '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
+
+
+@pytest.mark.parametrize(
+    ('declared', 'kind', 'missing'),
+    [(CLUSTER_ONLY, {}, 'tool.lab_commons.tests] produce'), (PRODUCE, {'seat': SEAT, 'host': 'linux'}, 'install')],
+    ids=['box-lacks-produce', 'cluster-lacks-install'],
+)
+def test_a_producer_only_the_other_host_kind_can_build_is_never_refused_on_the_commit(
+    server, tmp_path: Path, declared: str, kind: dict, missing: str
+) -> None:
+    """A box needs ``produce``, a cluster ``hpc install``: one kind lacking its own is no defect of the commit.
+
+    The part waits here, named, and is no work this host could serve. PLANTED CONTROL: a commit declaring
+    neither is refused on it (``test_a_part_the_repo_cannot_produce_is_never_claimed_and_is_refused_on_its_commit``).
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, declared)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    report = _tick(repo, server, **kind)
+    assert not [r for r in Recorder.received if r['method'] == 'POST']
     (waiting,) = report.queue
-    assert waiting.candidate.ref == 'topic/a'
-    assert 'tool.lab_commons.tests] produce' in waiting.blocked
+    assert missing in waiting.blocked
+    assert report.pending == ()

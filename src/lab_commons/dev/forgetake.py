@@ -2,9 +2,12 @@
 
 Each candidate becomes a :class:`~lab_commons.compute.model.Job` carrying its need-set and its origin
 (login, vouched host, session) -- a part's need-set from its name, a REQUEST's from the producer its sha
-declares (:mod:`lab_commons.dev.forgerequest`; an undeclared name is refused, never run). It is blocked
-by a refused declaration, a producer its sha cannot build, its sha's tree being busy here, its ref's
-budget, or admission -- and otherwise claimed, its demand then counted as running for every later
+declares (:mod:`lab_commons.dev.forgerequest`). A job whose OWN commit is defective -- its declaration
+refused, a request name it does not declare, or a producer NO host kind can build -- is refused on that
+commit's own context once (:func:`lab_commons.dev.forgeclaim.refuse`) and never queued; a table this kit
+does not know is the serving host's defect, so that sha waits. Any other job is blocked by this host's
+kind lacking its producer, its sha's tree being busy here, its ref's budget, or admission -- and otherwise
+claimed, its demand then counted as running for every later
 candidate -- ON LOAN from a reservation when it borrows one's idle part, and DISPLACING the loans it
 preempts when it holds one (:func:`lab_commons.compute.admission.admit`); those loans are collected
 in :attr:`ClaimPass.preempt` for the serve loop to stop and release.
@@ -21,13 +24,14 @@ from pathlib import Path
 
 from lab_commons.compute.admission import Admission, Held, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Reservation, Resources, Schedule, Supply
-from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, Claim, Serving, Work, assess, claim
+from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
 from lab_commons.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
-from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
+from lab_commons.hpc.declared import OutdatedKit
+from lab_commons.hpc.needsets import declared_at, needs_of
 
 __all__ = ['ClaimPass']
 
@@ -50,14 +54,15 @@ class ClaimPass:
     reservations: tuple[Reservation, ...] = ()
     taken: list[Held] = dataclasses.field(default_factory=list)  # what runs, then each claim
     trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
-    unproducible: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its producer cannot be built
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
-    tables: dict[str, tuple[Vocabulary, str]] = dataclasses.field(default_factory=dict)
+    declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
+    unservable: set[str] = dataclasses.field(default_factory=set)  # keys whose producer this host kind cannot build
     history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
     queue: list[Ranked] = dataclasses.field(default_factory=list)
+    pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
     preempt: list[Held] = dataclasses.field(default_factory=list)  # loans a holder's claim here displaces
     admitted: dict[str, tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
     requests: dict[tuple[str, str], Declared] = dataclasses.field(default_factory=dict)  # (sha, name) -> it
@@ -66,16 +71,19 @@ class ClaimPass:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
         wanted = item.candidate
         context = request_context(wanted.number) if wanted.kind == REQUEST else part_context(wanted.platform)
-        if wanted.kind == REQUEST:
-            try:  # the producer BEFORE anything else: an undeclared name is refused, never run
-                self._declared(wanted)
-            except UndeclaredRequest as why:
-                self.refused.append(f'{context}: not claimed -- {why}')
-                self.queue.append(dataclasses.replace(item, blocked=str(why)))
-                return
         state, holder = assess(self.history(wanted.sha), context, me=self.me, now=self.now)
         one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder, context=context)
-        blocked, needed = self._blocked(wanted) if state in CLAIMABLE else ('', frozenset[str]())
+        blocked, needed = '', frozenset[str]()
+        if state in CLAIMABLE:
+            try:
+                one, blocked = self._own(one, wanted)
+            except OutdatedKit as why:  # this host's defect: the sha waits for a kit that reads it
+                blocked = str(why)
+            if blocked.startswith(REFUSED_AT_COMMIT) and not self.dry_run:
+                self.work.append(refuse(self.client, one, blocked.removeprefix(REFUSED_AT_COMMIT).strip()))
+                return
+            if not blocked:
+                blocked, needed = self._blocked(wanted)
         if state in CLAIMABLE and not blocked and self.dry_run:
             self._took(wanted, needed)
         elif state in CLAIMABLE and not blocked:
@@ -83,6 +91,15 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
+            if wanted.key not in self.unservable and self._servable(wanted):
+                self.pending.append(one)
+
+    def _servable(self, wanted: Candidate) -> bool:
+        """Whether every need of *wanted* is present on this host (an unreadable request declaration: no)."""
+        try:
+            return self._needs(wanted) <= self.supply.present
+        except (UndeclaredRequest, OutdatedKit):
+            return False
 
     def reserved(self, wanted: Candidate) -> bool:
         """Whether a live lease on this host is for *wanted*: it then ranks first here."""
@@ -107,18 +124,47 @@ class ClaimPass:
         producer = wanted.producer if wanted.kind == REQUEST else wanted.platform
         return Job(self.repo, wanted.sha, producer, needed, wanted.origin, wanted.origin_host, wanted.session)
 
+    def _own(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
+        """*one* with what produces it here, and why not (``''``: it is producible here).
+
+        The commit's OWN defect is prefixed :data:`REFUSED_AT_COMMIT`: a request name its sha does not declare,
+        a part's declaration refused, or neither host kind able to build the part's producer (a box needs
+        ``produce``, a cluster ``hpc install``). Only this host's kind lacking it is no such defect: another kind
+        serves it. A declaration this kit is too old to read raises :class:`OutdatedKit` for the caller.
+        """
+        if wanted.kind == REQUEST:
+            return self._own_request(one, wanted)
+        if one.sha not in self.declarations:
+            self.declarations[one.sha] = declared_at(self.root, one.sha)[1]
+        if self.declarations[one.sha]:
+            return one, f'{REFUSED_AT_COMMIT} {self.declarations[one.sha]}'
+        try:
+            return _part_producer(self.root, one, hpc=bool(self.serve.hpc)), ''
+        except (UndeclaredPart, FileNotFoundError) as here:
+            try:
+                _part_producer(self.root, one, hpc=not self.serve.hpc)
+            except (UndeclaredPart, FileNotFoundError) as there:
+                return one, f'{REFUSED_AT_COMMIT} {NO_HOST} can produce {one.context}: {here}; {there}'
+            self.unservable.add(wanted.key)
+            return one, f'this host cannot produce {one.context}: {here}'
+
+    def _own_request(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
+        """A request: refused at its commit when its sha declares no such producer; it runs in a local tree."""
+        try:
+            declared = self._declared(wanted)
+        except UndeclaredRequest as why:
+            return one, f'{REFUSED_AT_COMMIT} {why}'
+        if self.serve.hpc:
+            self.unservable.add(wanted.key)
+            return one, f'{NO_HOST} on a cluster seat runs a request'
+        return dataclasses.replace(one, argv=declared.argv), ''
+
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
         busy = not self.serve.hpc and wanted.sha in self.trees
-        if wanted.kind == REQUEST:  # its producer is declared (considered first); it runs in a local tree
-            refused = f'{NO_HOST} on a cluster seat runs a request' if self.serve.hpc else ''
-        else:
-            _, refused = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
-            refused = refused or self.unproducible.get(wanted.sha, '')
         why = (
-            refused
-            or (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
+            (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
             or over_budget(self.root, wanted, self.schedule, self.usage)
             or self._admission(wanted, needed)
         )
@@ -146,12 +192,6 @@ class ClaimPass:
         return verdict
 
     def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
-        try:  # what produces it BEFORE the claim: a job nobody can produce is never claimed
-            one = self._producer(one, wanted)
-        except (UndeclaredPart, FileNotFoundError) as why:
-            self.refused.append(f'{one.context}: not claimed -- {why}')
-            self.unproducible[wanted.sha] = f'{NO_HOST} can produce it: {why}'
-            return one, self.unproducible[wanted.sha]
         if one.cluster is not None and one.cluster.outputs and self.store_why:
             why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
             self.refused.append(f'{one.context}: not claimed -- {why}')
@@ -164,10 +204,9 @@ class ClaimPass:
             self.trees.add(wanted.sha)
         return one, ''
 
-    def _producer(self, work: Work, wanted: Candidate) -> Work:
-        """*work* carrying what produces it: a request's declared argv, a cluster part, or a part's producer."""
-        if wanted.kind == REQUEST:  # run in a tree at its sha by that tree's python, like a local part
-            return dataclasses.replace(work, argv=self._declared(wanted).argv)
-        if self.serve.hpc:
-            return dataclasses.replace(work, cluster=cluster_part(self.root, work.sha))
-        return dataclasses.replace(work, argv=tuple(producer_argv(self.root, work.platform, sha=work.sha)))
+
+def _part_producer(root: Path, work: Work, *, hpc: bool) -> Work:
+    """*work* carrying what produces its part: a cluster part on a cluster seat, else the sha's producer argv."""
+    if hpc:
+        return dataclasses.replace(work, cluster=cluster_part(root, work.sha))
+    return dataclasses.replace(work, argv=tuple(producer_argv(root, work.platform, sha=work.sha)))

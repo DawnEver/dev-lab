@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.producer import ProducerExit, release_reason
-from lab_commons.hpc.declared import kit_tables, pyproject_at
+from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import RESOURCE_NAME, part_name
 
 if TYPE_CHECKING:
@@ -104,6 +104,7 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
 
     Raises:
         UndeclaredRequest: absent, malformed, or the sha unreadable; the message names the key.
+        OutdatedKit: the sha declares a table this kit does not know.
 
     """
     table = f'[tool.lab_commons.requests.{name}]'
@@ -112,7 +113,9 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
         raise UndeclaredRequest(msg)
     try:
         row = kit_tables(pyproject_at(root, sha)).get('requests', {}).get(name)
-    except (ValueError, OSError) as why:  # an unknown sha, an unreadable or outdated declaration
+    except OutdatedKit:  # the READER is older than the sha: this host's defect, never the commit's
+        raise
+    except (ValueError, OSError) as why:  # an unknown sha, an unreadable or retired declaration
         msg = f'{table} unreadable at {sha[:12]}: {why}'
         raise UndeclaredRequest(msg) from why
     if not isinstance(row, dict):

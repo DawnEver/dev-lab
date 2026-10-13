@@ -29,7 +29,7 @@ from typing import Any
 
 from lab_commons.compute import ledger
 from lab_commons.compute.learned import learned
-from lab_commons.compute.model import REQUEST, Candidate, Ranked, expected_cost, rank, starved
+from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank, starved
 from lab_commons.config import section
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
@@ -43,13 +43,14 @@ from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import derived, origin_url, part_context
-from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
+from lab_commons.hpc.declared import OutdatedKit
+from lab_commons.hpc.needsets import declared_at, needs_of
 from lab_commons.log import emit
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
 _STALE = '  STALE (no tick published: host down, cron line gone, or its forge credential refused -- see its cron log)'
 
-__all__ = ['main', 'render', 'view']
+__all__ = ['forge_queue', 'main', 'render', 'unadmitted', 'view']
 
 
 def _row(item: Ranked) -> dict[str, Any]:
@@ -68,45 +69,11 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     """The whole picture as data: ``queue``, ``in_flight``, ``hosts``, ``starved`` (module docstring)."""
     fetch(root)
     now = forge_now(client)
-    schedule, repo = load_schedule(root), repo_name(client)
-    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
-
-    def history(sha: str) -> tuple[Status, ...]:
-        if sha not in histories:
-            histories[sha] = status_history(client, sha) if sha else ()
-        return histories[sha]
-
-    found = candidates(
-        root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
-        policy=load_policy(root), now=now,
-    )  # fmt: skip
+    schedule = load_schedule(root)
     book = ledger.read(client)
     cards = book.cards
-    waiting, in_flight = _standing(found, history, now)
-    cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
-    read: dict[str, tuple[Vocabulary, str]] = {}
-
-    def declared(sha: str) -> tuple[Vocabulary, str]:
-        return read.setdefault(sha, declared_at(root, sha) if sha else (Vocabulary(), ''))
-
-    def refused(one: Candidate) -> str:
-        """Why *one* cannot be produced as its sha declares it: a request's producer, a part's vocabulary."""
-        if one.kind != REQUEST:
-            return declared(one.sha)[1]
-        try:
-            declared_request(root, one.sha, one.producer)
-        except UndeclaredRequest as why:
-            return str(why)
-        return ''
-
-    weights = host_weights(section('schedule'))
-    ranked = [
-        dataclasses.replace(
-            item,
-            blocked=refused(item.candidate) or _why(item.candidate, cards, now),
-        )
-        for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
-    ]
+    ranked, in_flight = forge_queue(root, client, cards, now=now, schedule=schedule)
+    repo = repo_name(client)
     try:
         branches = [dataclasses.asdict(row) for row in listing(root, client, now=now)]
     except BranchSetNotDeclared as undeclared:  # the queue still reads; the branch rows say why they are absent
@@ -131,6 +98,58 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         'reservations': [one.row() for one in book.entries if now < one.reservation.until],
         'starved': [_row(item) for item in starved(ranked, {repo: schedule})],
     }
+
+
+def forge_queue(
+    root: Path, client: Client, cards: Sequence[HostCard], *, now: datetime, schedule: Schedule
+) -> tuple[list[Ranked], list[dict[str, Any]]]:
+    """The queue ACROSS hosts, ranked, each waiting candidate blocked by what every live card says; and in flight.
+
+    Fetches nothing: the caller holds origin as fresh as it needs.
+    """
+    repo = repo_name(client)
+    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
+
+    def history(sha: str) -> tuple[Status, ...]:
+        if sha not in histories:
+            histories[sha] = status_history(client, sha) if sha else ()
+        return histories[sha]
+
+    found = candidates(
+        root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
+        policy=load_policy(root), now=now,
+    )  # fmt: skip
+    waiting, in_flight = _standing(found, history, now)
+    cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
+    read: dict[str, str] = {}
+
+    def refused(one: Candidate) -> str:
+        """Why *one* cannot be produced as its sha declares it: a request's producer, a part's vocabulary."""
+        if one.kind == REQUEST:
+            return _refused(lambda: declared_request(root, one.sha, one.producer) and '')
+        if one.sha not in read:
+            read[one.sha] = _refused(lambda: declared_at(root, one.sha)[1] if one.sha else '')
+        return read[one.sha]
+
+    weights = host_weights(section('schedule'))
+    ranked = [
+        dataclasses.replace(item, blocked=refused(item.candidate) or _why(item.candidate, cards, now))
+        for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
+    ]
+    return ranked, in_flight
+
+
+def unadmitted(blocked: str) -> bool:
+    """Whether *blocked*, a reason read across every live card, says NO host can take it (not one host's wait)."""
+    return blocked.startswith(NO_HOST)
+
+
+def _refused(read: Callable[[], str]) -> str:
+    """What *read* says refuses a declaration; a reader older than the sha says so, and the sha waits."""
+    try:
+        return read()
+    except (UndeclaredRequest, OutdatedKit) as why:
+        return str(why)
 
 
 def _standing(
