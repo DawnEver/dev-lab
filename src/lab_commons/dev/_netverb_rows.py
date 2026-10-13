@@ -35,7 +35,7 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         'hook-refused',
         False,
         # `[githooks] pre-push: N hook(s) failed` is this family's own runner (2026-10-13: a
-        # PUSH-FROM-ITS-OWN-BRANCH refusal read as unclassified and was retried three times); a hook
+        # session-branch refusal read as unclassified and was retried three times); a hook
         # run bare still prints its own indented `  REFUSED: <RULE-ID>` line.
         (
             'pre-push hook',

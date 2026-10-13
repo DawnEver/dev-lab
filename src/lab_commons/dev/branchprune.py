@@ -2,9 +2,9 @@
 
 User ruling 2026-10-13: "origin should not carry this much garbage -- build the mechanism." The push-time
 check (:mod:`lab_commons.dev.branchset_push`) stops a lane reaching origin, but declared feature branches
-still FINISH, and a finished branch left on origin is debt nobody owns. So the host that owns integration
-(``[tool.lab_commons.integrator] host``, :class:`~lab_commons.dev.lanepolicy.Policy`) surveys origin on
-every serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``.
+still FINISH, and a finished branch left on origin is debt nobody owns. So the host where the live holder of
+the integration branch's lease last renewed (:func:`lab_commons.dev.sessionlease.holds_integration_here`)
+surveys origin on every serve tick (:func:`serve_prune`), after the tick's ``git fetch --prune``.
 
 AN ORIGIN BRANCH IS A ROW of :func:`survey` when it is NOT declared (the branch set, the integration branch,
 the trunk) and its tip has sat idle -- its committer date -- for at least ``grace_hours``. Then:
@@ -41,6 +41,7 @@ from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, pr_list
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy, load_policy
+from lab_commons.dev.sessionlease import holds_integration_here
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
@@ -185,9 +186,9 @@ def prune(
     return rows
 
 
-def owns_integration(policy: Policy, client: Client, host: str) -> bool:
-    """Whether this host -- card name *host*, or the client's forge login -- is the declared integration owner."""
-    return bool(policy.host) and policy.host in {host, client.whoami()}
+def owns_integration(root: Path, client: Client, host: str) -> bool:
+    """Whether the live integration lease holder last renewed here: card name *host*, or the client's login."""
+    return holds_integration_here(root, {host, client.whoami()})
 
 
 def serve_prune(
@@ -201,7 +202,7 @@ def serve_prune(
 ) -> tuple[Row, ...]:
     """The serve tick's step: :func:`prune` on the integration owner, nothing elsewhere; a failure only alarms."""
     try:
-        if not owns_integration(load_policy(root), client, host):
+        if not owns_integration(root, client, host):
             return ()
         return prune(root, client, now=now, say=say, alarm=alarm)
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:

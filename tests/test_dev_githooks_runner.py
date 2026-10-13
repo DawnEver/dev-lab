@@ -56,11 +56,10 @@ class _Recorder:
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
     assert set(table) == {'pre-commit', 'commit-msg', 'pre-push'}
-    assert {hook.id for hook in table['pre-push']} == {'push-from-its-own-branch', 'branchset-push'}
+    assert {hook.id for hook in table['pre-push']} == {'session-branch', 'branchset-push'}
     assert {hook.id for hook in table['commit-msg']} == {
         'commitizen',
         'forge-host',
-        'integration-home',
         'issue-ref',
         'merge-audit',
     }
@@ -109,7 +108,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         encoding='utf-8',
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
-    assert pre_push == ['push-from-its-own-branch', 'branchset-push', 'admission']
+    assert pre_push == ['session-branch', 'branchset-push', 'admission']
 
 
 def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:

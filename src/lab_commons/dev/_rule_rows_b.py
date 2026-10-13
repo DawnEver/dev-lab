@@ -203,10 +203,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'TRUNK-MOVES-BY-FAST-FORWARD',
         (
             'The trunk moves only by fast-forward to an integration commit whose every required '
-            '`tests/<part>` part stands PASS at scope full, through `forge promote`; it refuses with the '
+            '`tests/<part>` part stands PASS at scope full, through `integrate promote`; it refuses with the '
             'missing parts named, and refuses a trunk that cannot fast-forward rather than merging into it.'
         ),
-        ('tests/test_dev_branchflow.py', 'tests/test_dev_admission.py'),
+        ('tests/test_dev_integrate.py', 'tests/test_dev_admission.py'),
     ),
     (
         'PRS-TARGET-INTEGRATION',
@@ -218,23 +218,43 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_branchflow.py',),
     ),
     (
-        'INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT',
+        'ONE-WRITER-PER-SESSION-BRANCH',
         (
-            'The declared integration branch and trunk have ONE home, the main checkout, whose single editor is '
-            'the integrator; lanes live in linked worktrees on lane branches. A commit or merge commit on either '
-            'branch from a linked worktree is refused at commit-msg, and session start names the main checkout`s '
-            'lag behind origin with the fast-forward that clears it.'
+            'Every declared session branch (the integration branch included) is advanced only by the session '
+            'holding its lease: `refs/leases/<branch>` on origin names the holder (a session identity, never a '
+            'host, directory or login), where it last renewed, and when it expires. It is taken, renewed by the '
+            'holder`s every push, released, and taken over only once expired; the write is a fast-forward push, '
+            'so origin is the compare-and-swap. The trunk is guarded by the integration branch`s lease. Refused '
+            'at pre-push, as is a push with no identity or no lease.'
         ),
-        ('tests/test_dev_integrationhome.py',),
+        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_sessionlease.py'),
     ),
     (
-        'PUSH-FROM-ITS-OWN-BRANCH',
+        'PUBLISH-IS-THE-LOCAL-REF',
         (
-            'A push updating the declared integration branch or trunk is refused at pre-push unless the local '
-            'ref pushed IS the same-named local branch: `HEAD:<it>` from another branch or a detached HEAD, '
-            'or `<other>:<it>`, never publishes. With git`s one-worktree-per-branch rule this makes the one '
-            'checkout on that branch the only place it is published from. No escape hatch.'
+            'A push to `refs/heads/<X>` of a declared session branch or the trunk carries exactly the local '
+            'branch `<X>`: its local ref, with `HEAD` resolved, is `refs/heads/<X>`. `HEAD:<X>` from another '
+            'branch, `<Y>:<X>`, a bare sha and a detached HEAD are refused at pre-push. Any checkout may publish '
+            'it; none needs it checked out.'
         ),
-        ('tests/test_dev_integrationhome.py',),
+        ('tests/test_dev_sessionbranch.py',),
+    ),
+    (
+        'SESSION-HISTORY-ONLY-GROWS',
+        (
+            'A push to a declared session branch or the trunk is refused at pre-push unless origin`s tip is an '
+            'ancestor of the pushed one: a forced non-fast-forward and a deletion never land.'
+        ),
+        ('tests/test_dev_sessionbranch.py',),
+    ),
+    (
+        'INTEGRATION-IS-MERGES-ONLY',
+        (
+            'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
+            'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
+            'passes -- the same judgement the commit-msg hook makes. Refused at pre-push; `integrate merge` '
+            'makes such a merge with no working tree.'
+        ),
+        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py'),
     ),
 )

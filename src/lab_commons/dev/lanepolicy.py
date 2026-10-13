@@ -31,10 +31,6 @@ class Policy:
     trunk: str = 'main'
     #: The test trees :mod:`lab_commons.dev.mergeaudit` reads when a merge is committed.
     test_roots: tuple[str, ...] = ('tests',)
-    #: The host that OWNS integration: the serving host (its card name) or forge login whose serve tick derives
-    #: the integration queue and raises an ``integration`` alarm when it changes, and prunes merged origin branches
-    #: (:mod:`lab_commons.dev.branchprune`); ``''`` is nobody.
-    host: str = ''
     #: INTEGRATION-IS-MERGES-ONLY holds for every first-parent commit of the integration branch after this sha
     #: (:mod:`lab_commons.dev.sessionbranch`); a push that CREATES the branch is refused while it is ``''``.
     merges_only_since: str = ''

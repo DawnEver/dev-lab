@@ -478,7 +478,7 @@ def _waiting(kind: str, waited_h: float, blocked: str) -> Ranked:
 
 
 def _starving(monkeypatch: pytest.MonkeyPatch, *, owner: bool, queue: list[Ranked]) -> None:
-    monkeypatch.setattr(forgeserve, 'owns_integration', lambda _policy, _client, host: owner and host == 'G')
+    monkeypatch.setattr(forgeserve, 'owns_integration', lambda _root, _client, host: owner and host == 'G')
     monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (queue, []))
 
 
@@ -649,7 +649,7 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
 
 
 def test_every_tick_offers_the_branch_prune_its_host_card_name(monkeypatch, tmp_path: Path) -> None:
-    """The prune decides ownership itself (``[tool.lab_commons.integrator] host``); serve hands it who this is."""
+    """The prune decides ownership itself (where the integration lease holder works); serve hands it who this is."""
     offered: list[dict] = []
 
     def prune(root: Path, _client: object, **kwargs: object) -> tuple[()]:

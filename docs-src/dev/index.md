@@ -4,7 +4,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 
 - Authors edit in a worktree, measure only what they touched, commit and push. Nobody runs a full suite to push.
 - The forge holds every verdict: `forge serve` hosts claim a pushed sha and post its `tests/<part>` parts.
-- `integrate/main` coordinates; `main` moves only by `forge promote`, when every part is a full PASS.
+- `integrate/main` coordinates; `main` moves only by `integrate promote`, when every part is a full PASS.
 - `.claude/rules/**` in each repo holds hard constraints only and is read on every turn; these pages hold the
   mechanism and are read when you do the thing.
 - New here, or arriving from the old local-gate model: read [Migrating a workstation](migrate.md) first.
@@ -24,7 +24,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [Killed runs and orphans](./orphans.md) | What survives a stopped run, why a lock judges liveness, and how to reap |
 | [Box resources](./box-resources.md) | What one workstation rations, and the broker every run declares its cost to |
 | [The forge](./forge.md) | Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict |
-| [The integrator](./integrator.md) | The integration tick, PRs into integration, `forge sync`, `forge promote`, the merge audit |
+| [The integrator](./integrator.md) | The integration tick, PRs into integration, `forge sync`, `integrate`, the merge audit, session-branch leases |
 | [Issues](./issues.md) | An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments |
 | [HPC clusters](./hpc.md) | A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records |
 | [Artefacts](./artefacts.md) | A run's declared outputs: the store, its layout and its retention |

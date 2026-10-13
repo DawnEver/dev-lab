@@ -11,7 +11,7 @@ verbs are on [the integrator](integrator.md); the bars are on [the verdict model
 |---|---|---|
 | child (`feat/...`, `fix/...`, a session branch, a PR head) | this change, on a tree nobody else writes | its owner's commits and `forge sync` |
 | integration (`integrate/main`) | these children together, on one tree | the integrator's merges |
-| trunk (`main`) | the state everyone may branch from and fast-forward to | `forge promote` only |
+| trunk (`main`) | the state everyone may branch from and fast-forward to | `integrate promote` only |
 
 - **Branch from integration, never from `main`**, which lags by the integration cycle.
 - **Two green branches are not a verdict about their merge.** Collection, imports and parametrize inputs depend

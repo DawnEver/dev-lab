@@ -68,7 +68,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: eight past the 195 this pair allowed. The new modules write through ``emit`` like every other;
 #: the floor is re-taken at the same ~80% and THE HEADROOM STAYS AT 45. 150 -> 160.
 #: Re-taken 2026-10-12 at 258: forge-schedule's split modules, artefacts/artefactstores, forgeship, selection.
-#: Re-taken 2026-10-12 at 267 (serve-task, serve-lock, forge-produce, forge-provides, integration-home): 220 -> 227.
+#: Re-taken 2026-10-12 at 267 (serve-task, serve-lock, forge-produce, forge-provides, a retired hook): 220 -> 227.
 #: Re-taken 2026-10-13 at 273 (six modules since): 227 -> 232.
 #: Re-taken 2026-10-13 at 278-279 (compute.probe; compute.ledger and forgereserve, merged): 232 -> 237.
 #: Re-taken 2026-10-13 at 288 (admission, forgelend, forgeorigin, forgetake; retention, diskusage): 237 -> 247.

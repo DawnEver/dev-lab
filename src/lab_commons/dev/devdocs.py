@@ -112,7 +112,7 @@ PAGES: Final[tuple[Page, ...]] = (
     Page(
         'integrator',
         'The integrator',
-        'The integration tick, PRs into integration, `forge sync`, `forge promote`, the merge audit',
+        'The integration tick, PRs into integration, `forge sync`, `integrate`, the merge audit, session-branch leases',
     ),
     Page(
         'issues',

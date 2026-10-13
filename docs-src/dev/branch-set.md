@@ -66,7 +66,7 @@ There is no bypass flag; the way to push a new long-lived branch is to add it to
 ## Pruning origin
 
 Finished branches still pile up on origin, so the forge prunes them (`lab_commons.dev.branchprune`). The host
-that owns integration, `[tool.lab_commons.integrator] host` (a serving host's card name or a forge login),
+where the live integration lease holder last renewed (its `Where:`, a card name or a forge login),
 surveys origin on every `forge serve` tick, after the tick's `git fetch --prune`. No other host reads or
 deletes anything. Undeclared branches whose tip has been idle for at least `grace_hours` are judged:
 

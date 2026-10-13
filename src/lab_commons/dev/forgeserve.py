@@ -79,8 +79,8 @@ read across every host card; and this host's CARD is published on the forge
 (:mod:`lab_commons.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
-THE FORGE PROMPTS THE INTEGRATOR: on the host declared to own integration (``[tool.lab_commons.integrator]
-host``, matched against this host's card name and its forge login), the tick derives the integration
+THE FORGE PROMPTS THE INTEGRATOR: on the host where the live holder of the integration branch's lease last
+renewed (matched against this host's card name and its forge login), the tick derives the integration
 queue and raises an ``integration`` alarm per new row that asks for action
 (:func:`lab_commons.dev.integrator.observe`). Every other host derives nothing.
 
@@ -126,7 +126,6 @@ from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.integrator import observe
-from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
@@ -259,7 +258,7 @@ def _starved(
     Each host sees only its own queue, so one host's wait is not starvation, and N hosts alarming one part
     is N pages: the ONE owner is the host that owns integration (:func:`owns_integration`).
     """
-    if not owns_integration(load_policy(root), built, host):
+    if not owns_integration(root, built, host):
         return
     schedule = load_schedule(root)
     try:

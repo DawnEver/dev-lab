@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from lab_commons.dev import branchprune
 from lab_commons.dev.branchprune import DELETABLE, DELETE, MERGED, STALE, prune, serve_prune, survey
 from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
@@ -30,7 +31,7 @@ _GIT = shutil.which('git') or 'git'
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
 OLD = '2026-10-10T12:00:00+00:00'
 YOUNG = '2026-10-13T11:00:00+00:00'
-POLICY = Policy(integration='integrate/main', trunk='main', host='integrator-box')
+POLICY = Policy(integration='integrate/main', trunk='main')
 
 _MANIFEST = """[project]
 name = "planted"
@@ -41,7 +42,6 @@ trunk = "main"
 sessions = ["integrate/main", "feat/session"]
 {extra}
 [tool.lab_commons.integrator]
-host = "integrator-box"
 """
 
 
@@ -234,7 +234,8 @@ def test_a_branch_that_moved_since_the_survey_is_kept(tmp_path: Path) -> None:
     assert PRUNED not in {a.kind for a in alarms}
 
 
-def test_only_the_declared_integration_host_prunes(tmp_path: Path) -> None:
+def test_only_the_host_of_the_integration_lease_holder_prunes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(branchprune, 'holds_integration_here', lambda _root, names: 'integrator-box' in names)
     root, origin = _planted(tmp_path, extra='prune_merged = true\n')
     forge = BareForge(origin)
     alarms: list[Alarm] = []

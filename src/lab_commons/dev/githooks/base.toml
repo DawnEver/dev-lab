@@ -93,17 +93,12 @@ run = ["python", "-m", "lab_commons.dev.forgeorigin"]
 id = "merge-audit"
 run = ["python", "-m", "lab_commons.dev.mergeaudit"]
 
-# INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT: a commit or MERGE commit on the declared integration branch or
-# trunk from a linked worktree (lab_commons.dev.integrationhome). commit-msg, because pre-commit skips merges.
-[[commit-msg]]
-id = "integration-home"
-run = ["python", "-m", "lab_commons.dev.integrationhome", "commit-msg"]
-
-# PUSH-FROM-ITS-OWN-BRANCH: a push updating the declared integration branch or trunk from any local ref but
-# its namesake -- HEAD:<it> from another branch or a detached HEAD (lab_commons.dev.integrationhome).
+# The session-branch invariants at push (lab_commons.dev.sessionbranch): only the lease holder advances a declared
+# session branch or the trunk (ONE-WRITER-PER-SESSION-BRANCH), from that very local branch (PUBLISH-IS-THE-LOCAL-REF),
+# by fast-forward (SESSION-HISTORY-ONLY-GROWS), and the integration branch by audited merges (INTEGRATION-IS-MERGES-ONLY).
 [[pre-push]]
-id = "push-from-its-own-branch"
-run = ["python", "-m", "lab_commons.dev.integrationhome", "pre-push"]
+id = "session-branch"
+run = ["python", "-m", "lab_commons.dev.sessionbranch"]
 always_run = true
 
 # ONE-BRANCH-PER-SESSION at push time: a push creating or updating a branch the repo's [tool.lab_commons.branchset]

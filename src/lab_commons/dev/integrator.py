@@ -17,8 +17,9 @@ scope ``full`` (what the trunk admits), BLOCKED on a FAIL part, PARTS_NEEDED oth
 merge oldest tip commit first, ties by branch name.
 
 THE FORGE PROMPTS THE INTEGRATOR. A wake is the observer's half, and the observer is ``forge serve``: on
-the host DECLARED to own integration (``[tool.lab_commons.integrator] host``, a host card name or a forge
-login), each serve tick derives this same queue (:func:`observe`) and raises one ``integration`` alarm
+the host where the live holder of the integration branch's lease last renewed (its card name or forge
+login, :func:`lab_commons.dev.sessionlease.holds_integration_here`), each serve tick derives this same queue
+(:func:`observe`) and raises one ``integration`` alarm
 per row that asks the integrator to act (:func:`prompts`: a READY lane, a PROMOTE-able tip, a BLOCKED
 red to route), keyed by row state, branch and tip. The alarm de-dup state (:mod:`lab_commons.dev.forgealarm`)
 is the only memory: a NEW row is a new key, delivered at once; an unchanged row repeats once per the
@@ -48,6 +49,7 @@ from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import standing
+from lab_commons.dev.sessionlease import holds_integration_here
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
@@ -217,9 +219,9 @@ def prompts(queue: Queue, repo: str) -> list[Alarm]:
 
 
 def observe(root: Path, repo: str, *, hosts: set[str], statuses: Callable[[str], Sequence[Status]]) -> list[Alarm]:
-    """The prompts for *root*'s queue when one of *hosts* is the declared integrator; ``[]`` elsewhere."""
+    """The prompts for *root*'s queue where the integration lease holder works (one of *hosts*); ``[]`` elsewhere."""
     policy = load_policy(root)
-    if not policy.host or policy.host not in hosts:
+    if not holds_integration_here(root, hosts):
         return []
     return prompts(derive(root, policy, load_schedule(root), statuses), repo)
 

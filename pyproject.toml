@@ -95,12 +95,12 @@ output = "output/logs"
 resources = ["dev_checkout", "node"]
 produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 
-# The family branch flow: integrate/main coordinates; main moves only by `forge promote` (fast-forward)
+# The family branch flow: integrate/main coordinates; main moves only by `integrate promote` (fast-forward)
 # once every derived tests/<part> of an integration commit stands PASS at scope full.
 [tool.lab_commons.integrator]
 trunk = "main"
 integration = "integrate/main"
-host = "G"  # the integrator session runs on G; serve there raises the `integration` prompts
+merges_only_since = "c6ba73b78d56f7e0c3a4e95d208e752b9047bdf4"  # INTEGRATION-IS-MERGES-ONLY from here on
 
 # This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
 # `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
@@ -131,7 +131,7 @@ request_max_age_days = 14
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
-# User ruling 2026-10-13 ("origin should not carry this junk"): the integration host (integrator.host) deletes
+# User ruling 2026-10-13 ("origin should not carry this junk"): the integration lease holder's host deletes
 # merged undeclared origin branches idle >= grace_hours (lab_commons.dev.branchprune).
 prune_merged = true
 

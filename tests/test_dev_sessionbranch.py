@@ -183,9 +183,14 @@ def test_an_expired_lease_does_not_publish(repo: Path, tmp_path: Path) -> None:
     assert lease is not None
     past = datetime.now(UTC) - timedelta(hours=1)
     stale = _git(
-        repo, 'commit-tree', f'{lease.sha}^{{tree}}', '-p', lease.sha, '-m',
+        repo,
+        'commit-tree',
+        f'{lease.sha}^{{tree}}',
+        '-p',
+        lease.sha,
+        '-m',
         f'lease feat/s\n\nHolder: alice\nWhere: G\nExpires: {past.strftime("%Y-%m-%dT%H:%M:%SZ")}\n',
-    )  # fmt: skip
+    )
     _git(tmp_path / 'origin.git', 'fetch', '-q', str(repo), stale)
     _git(tmp_path / 'origin.git', 'update-ref', 'refs/leases/feat/s', stale)
     _git(repo, 'checkout', 'feat/s')
