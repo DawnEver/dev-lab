@@ -70,6 +70,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeserve': ('original',),
     'forgeproduce': ('original',),
     'forgecarry': ('original',),
+    'footprint': ('original',),
     'localpart': ('original',),
     'familyheads': ('original',),
     'outcomes': ('original',),

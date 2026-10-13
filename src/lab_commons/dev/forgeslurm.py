@@ -2,7 +2,9 @@
 
 Everything here runs ON the cluster login node (``lab_commons.hpc``'s own shell, never ``ssh``):
 submitting and gathering a run, where its jobs stand (:func:`progress_text`, the phrase its claim
-carries), cancelling a superseded run, and the account's STANDING read locally each tick -- its supply
+carries), cancelling a superseded run, the outcomes a run CARRIES from the nearest earlier runs of its env --
+finished records and the finished shards of superseded ones (:mod:`lab_commons.dev.forgecarry`) -- and the
+account's STANDING read locally each tick -- its supply
 (cpu, memory and the QOS's remaining submissions over every grant,
 :func:`lab_commons.compute.probe.account`), the last day's core-hours per run from ``sacct``,
 and the partitions and quota a host card publishes.
@@ -19,6 +21,7 @@ from lab_commons.compute import learned
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import config_path
+from lab_commons.dev.forgecarry import carry_from, nearest
 from lab_commons.dev.forgerun import Cluster, Run, Standing
 from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from lab_commons.hpc.account import ClusterAccount
@@ -28,7 +31,7 @@ from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
 from lab_commons.hpc.platforms import table_at
 from lab_commons.hpc.progress import Progress, where
-from lab_commons.hpc.run import load_state, submit_run
+from lab_commons.hpc.run import held_outcomes, load_state, run_shas, submit_run
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.watch import PENDING, settle
 
@@ -86,8 +89,22 @@ class SlurmCluster:
             cost=self.config.cost,
             policy=self.config.policy,
             history=learned.learned(run.repo_url),
+            carry=lambda env: self.carry(run.sha, env),
         )
         return [one['job_id'] for one in state['rounds']]
+
+    def carry(self, sha: str, env: str) -> dict[str, tuple[str, str, str]]:
+        """The outcomes *sha*'s run takes from the nearest earlier runs of env *env* (module docstring).
+
+        A run of another env is never read: the env is the one dependency no footprint holds.
+        """
+        runners = self._runners()
+        held = {}
+        for ancestor in nearest(self.root, sha, run_shas(self.machine, runners)):
+            state, shell = load_state(ancestor, self.machine, runners)
+            if state.get('env') == env:
+                held[ancestor] = held_outcomes(state, shell)
+        return carry_from(self.root, sha, held)
 
     def tree(self, run: Run) -> Path:
         """``~/ci/trees/<sha>`` in this account's home (:attr:`lab_commons.hpc.shell.RunSpec.tree`)."""

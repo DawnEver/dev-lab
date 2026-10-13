@@ -13,7 +13,11 @@ A PART IS A COMMIT STATUS (forge plan, user ruling 2026-10-09): context :func:`p
 (``tests/<platform>``), state ``success`` (PASS) or ``failure`` (FAIL), and a description every
 workstation can read without the record -- :meth:`Part.description`::
 
-    scope=full ran=1234 hands=windows:12,macos:3 nowhere=0
+    scope=full ran=1234 hands=windows:12,macos:3 nowhere=0 kept=0123456789ab:900
+
+``kept`` (absent when none) counts, per sha12 they RAN at, the outcomes this part CARRIED from an earlier
+run because no changed path reaches them (:mod:`lab_commons.dev.forgecarry`); they are judged like any
+outcome and never counted in ``ran``.
 
 ``hands`` is, per OTHER platform, how many collected ids this part assigned to it; ``nowhere`` how
 many ids no declared platform can run. A part CARRIED to a reach-equivalent descendant
@@ -130,6 +134,7 @@ _RESULT: Final = {state: result for result, state in _STATE.items()}
 _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
     r'hands=(?P<hands>-|[a-z0-9_]+:\d+(?:,[a-z0-9_]+:\d+)*) nowhere=(?P<nowhere>\d+)'
+    r'(?: kept=(?P<kept>[0-9a-f]{12}:\d+(?:,[0-9a-f]{12}:\d+)*))?'
     r'(?: carried from (?P<carried>[0-9a-f]{12}): only inert paths changed)?$'
 )
 
@@ -265,6 +270,7 @@ class Part:
     hands: dict[str, int] = field(default_factory=dict)
     nowhere: int = 0
     carried: str = ''  # the sha12 this verdict was judged at, when it is carried (lab_commons.dev.forgecarry)
+    kept: dict[str, int] = field(default_factory=dict)  # outcomes carried in, per sha12 they ran at; never in ran
 
     @property
     def state(self) -> str:
@@ -274,8 +280,9 @@ class Part:
     def description(self) -> str:
         """The status description: ``scope= ran= hands= nowhere=`` (module docstring)."""
         hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
+        kept = ' kept=' + ','.join(f'{sha}:{count}' for sha, count in sorted(self.kept.items())) if self.kept else ''
         carried = f' carried from {self.carried}: only inert paths changed' if self.carried else ''
-        return f'scope={self.scope} ran={self.ran} hands={hands} nowhere={self.nowhere}{carried}'
+        return f'scope={self.scope} ran={self.ran} hands={hands} nowhere={self.nowhere}{kept}{carried}'
 
 
 def part_of(record: Mapping[str, Any]) -> Part:
@@ -308,11 +315,16 @@ def part_of(record: Mapping[str, Any]) -> Part:
         if owner is not None:
             hands[owner] = hands.get(owner, 0) + 1
     failing = any(outcome not in PASSING for outcome in covered.values())
+    kept: dict[str, int] = {}
+    for node, origin in record.get('carried', {}).items():
+        if node in covered:
+            kept[origin[:12]] = kept.get(origin[:12], 0) + 1
     return Part(
         platform=platform,
         scope=scope,
         result='FAIL' if failing else 'PASS',
-        ran=len(covered),
+        ran=len(covered) - sum(kept.values()),
+        kept=kept,
         hands=hands,
         nowhere=sum(1 for can in handed.values() if assign(can) is None),
     )
@@ -343,6 +355,9 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
             hands={name: int(count) for name, count in hands.items()},
             nowhere=int(found['nowhere']),
             carried=found['carried'] or '',
+            kept={sha: int(n) for sha, n in (one.split(':') for one in found['kept'].split(','))}
+            if found['kept']
+            else {},
         )
     return parts, tuple(problems)
 

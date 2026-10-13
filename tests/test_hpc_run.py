@@ -21,6 +21,8 @@ import pytest
 from lab_commons.compute import learned
 from lab_commons.compute.learned import OOM_GROWTH, Measured
 from lab_commons.config import CONFIG_ENV
+from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.platformparts import part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc.builds import Builds
@@ -33,7 +35,7 @@ from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
-from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
+from lab_commons.hpc.run import RETRIES, build_run, gather_run, held_outcomes, run_shas, submit_run
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
@@ -1106,3 +1108,55 @@ def test_a_failed_run_build_is_inconclusive(
     _build_cli(monkeypatch, FakeRunCluster(build_fails=True))
     assert cli.main(['run', 'build', '--sha', SHA, '--repo-url', 'u']) == 3
     assert 'could not find `cargo`' in capsys.readouterr().err
+
+
+# -- carried outcomes (lab_commons.dev.forgecarry) ------------------------------------------------------
+
+A_SHA = 'a' * 40
+
+
+def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> None:
+    fake, envs = FakeRunCluster(), []
+
+    def carry(env: str) -> dict[str, tuple[str, str, str]]:
+        envs.append(env)
+        return {
+            'tests/a.py::t1': ('passed', A_SHA, A_SHA),
+            'tests/a.py::t2': ('failed', A_SHA, A_SHA),
+            'x::y': ('passed', A_SHA, A_SHA),
+        }
+
+    record = _run(fake, carry=carry)
+    assert envs == ['e0ffee0123456789'], 'the carry is asked for the env the build reported'
+    submitted = {node for item in fake.manifests[0]['items'] for node in item['ids']}
+    assert submitted == {'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5'}
+    assert record['carried'] == {'tests/a.py::t1': A_SHA, 'tests/a.py::t2': A_SHA}, 'an id not collected is not taken'
+    assert record['outcomes']['tests/a.py::t2'] == 'failed', 'a carried red stays red'
+    assert record['scope'] == FULL, 'a carried run is still the full suite'
+    part = part_of(record)
+    assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, 'FAIL'), 'carried is never counted as run'
+    assert part.description().endswith(f'kept={A_SHA[:12]}:2')
+    assert parts_of([Status('tests/linux', 'failure', part.description(), '')])[0]['linux'] == part
+
+
+def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> None:
+    fake = FakeRunCluster()
+    ids = ['tests/a.py::t1', 'tests/a.py::t2', 'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5']
+    state = _submit(fake, carry=lambda _env: dict.fromkeys(ids, ('passed', A_SHA, A_SHA)))
+    assert not fake.manifests, 'nothing was submitted'
+    assert state['rounds'] == []
+    assert _gather(fake) == state['record']
+    assert part_of(state['record']).ran == 0
+
+
+def test_a_superseded_run_holds_its_folded_rounds_and_every_id_its_last_round_streamed() -> None:
+    fake = FakeRunCluster(dies=frozenset({'tests/b.py'}), kills=5)
+    state = _submit(fake)
+    held = held_outcomes(json.loads(fake.state), fake)
+    assert held == {
+        'tests/a.py::t1': ('passed', SHA),
+        'tests/a.py::t2': ('passed', SHA),
+        'tests/b.py::t3': ('passed', SHA),
+    }, 'the killed item kept what it streamed; the handed id is not an outcome'
+    assert state['sha'] == SHA
+    assert run_shas(MACHINE, {GRANT.account: lambda _c, _s: f'/h/ci/runs/{SHA}/state.json\n'}) == [SHA]
