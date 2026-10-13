@@ -8,14 +8,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from _forge_fake import git_out, run_git
 
+from lab_commons.dev.diskusage import Usage, parse_mmlsquota
 from lab_commons.dev.retention import (
+    Plan,
     Policy,
-    Usage,
     apply,
+    carry_sources,
     cluster_plan,
     load_policy,
-    parse_mmlsquota,
     serve_pass,
     workstation_plan,
 )
@@ -39,8 +41,11 @@ def _dir(path: Path, when: datetime, size: int = 10) -> Path:
     return path
 
 
-def _run(home: Path, sha: str, env: str, when: datetime, *, done: bool = True, repo: str = 'r') -> None:
-    state = {'sha': sha, 'repo': repo, 'env': env, **({'record': {}} if done else {})}
+def _run(
+    home: Path, sha: str, env: str, when: datetime, *, done: bool = True, repo: str = 'r', native: str = 'n4'
+) -> None:
+    builds = {'env': env, 'native': native}
+    state = {'sha': sha, 'repo': repo, 'env': 'hash', 'builds': builds, **({'record': {}} if done else {})}
     path = home / 'ci' / 'runs' / sha / 'state.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state), encoding='utf-8')
@@ -48,16 +53,16 @@ def _run(home: Path, sha: str, env: str, when: datetime, *, done: bool = True, r
     _dir(home / 'ci' / 'trees' / sha, when)
 
 
-def _doomed(plan: object) -> dict[str, str]:
-    return {d.path.name: d.rule for d in plan.doomed}  # type: ignore[attr-defined]
+def _doomed(plan: Plan) -> dict[str, str]:
+    return {d.path.name: d.rule for d in plan.doomed}
 
 
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
-    # env e1: five finished runs, oldest first -> the 3 newest are carry sources
+    # five finished runs of this repo; SOURCES names the three a live tip carries from
     for i, sha in enumerate(['a1', 'a2', 'a3', 'a4', 'a5']):
         _run(tmp_path, sha, 'e1', OLD + timedelta(hours=i))
-    _run(tmp_path, 'b1', 'e2', OLD - timedelta(days=5))  # the only run of e2: its env's carry source
+    _run(tmp_path, 'b1', 'e2', OLD - timedelta(days=5), repo='other', native='n3')  # another repo's to judge
     _run(tmp_path, 'f1', 'e1', OLD - timedelta(days=1), done=False)  # in flight: no record, live file
     _run(tmp_path, 'g1', 'e1', NOW - timedelta(days=30), done=False)  # abandoned: no record, no live file
     _dir(tmp_path / 'ci' / 'trees' / 'orphan', OLD)
@@ -78,19 +83,25 @@ def home(tmp_path: Path) -> Path:
 
 
 POLICY = Policy(log_max_mb=1, uv_prune=False)
+SOURCES = {'a3', 'a4', 'a5'}
+
+
+def _plan(home: Path) -> Plan:
+    return cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES)
 
 
 def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
-    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'})
+    plan = _plan(home)
     assert _doomed(plan) == {
-        'a1': 'run-beyond-carry',
-        'a2': 'run-beyond-carry',
+        'a1': 'run-not-a-carry-source',
+        'a2': 'run-not-a-carry-source',
         'g1': 'run-abandoned',
         'orphan': 'tree-unreferenced',
         'e3': 'env-unreferenced',
         'e3.log': 'env-unreferenced',
-        'n0': 'native-beyond-keep',
-        'n1': 'native-beyond-keep',
+        'n0': 'native-unreferenced',
+        'n1': 'native-unreferenced',
+        'n2': 'native-unreferenced',
         'a1.pack': 'pack-not-in-flight',
         'slurm-1.out': 'slurm-out-finished',
         'lab-forge-r.log': 'log-over-size',
@@ -99,14 +110,36 @@ def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
     assert trees == {'runs', 'trees'}, 'a run goes with its tree'
 
 
-def test_harder_is_oldest_first_and_never_in_flight_nor_the_newest_per_env(home: Path) -> None:
-    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'})
+def test_harder_is_this_repos_carry_sources_oldest_first_never_in_flight(home: Path) -> None:
+    plan = _plan(home)
     harder = [d.path.name for d in plan.harder if d.path.parent.name == 'runs']
-    assert harder == ['a3', 'a4'], 'b1 and a5 are the newest of their env, f1 is in flight'
+    assert harder == ['a3', 'a4', 'a5'], "f1 is in flight, b1 is another repo's"
+
+
+def test_a_kept_run_naming_no_builds_blocks_the_env_and_native_rules(home: Path) -> None:
+    """An older run state names no build keys: an unprovable reference is a reference."""
+    state = home / 'ci' / 'runs' / 'a5' / 'state.json'
+    state.write_text(json.dumps({'sha': 'a5', 'repo': 'r', 'record': {}}), encoding='utf-8')
+    _touch(state, OLD + timedelta(hours=4))
+    rules = set(_doomed(_plan(home)).values())
+    assert not {'env-unreferenced', 'native-unreferenced'} & rules
+    assert 'run-not-a-carry-source' in rules, 'PLANTED CONTROL: the run rules still decide'
+
+
+def test_carry_sources_are_the_carrys_own_nearest_runs_per_tip(tmp_path: Path) -> None:
+    """A linear history c0..c5 with runs at c0..c4: tip c5 reads c4 c3 c2; c0 c1 are nobody's source."""
+    run_git(tmp_path, 'init', '-q')
+    shas = []
+    for i in range(6):
+        run_git(tmp_path, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', f'c{i}')
+        shas.append(git_out(tmp_path, 'rev-parse', 'HEAD'))
+    runs = shas[:5]
+    assert carry_sources(tmp_path, runs, [shas[5]]) == set(shas[2:5])
+    assert carry_sources(tmp_path, runs, [shas[3]]) == set(shas[0:4]), "a tip that ran is its own child's source"
 
 
 def test_apply_logs_every_deletion_and_dry_run_deletes_nothing(home: Path) -> None:
-    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'})
+    plan = _plan(home)
     lines: list[str] = []
     apply(plan, POLICY, usage=None, dry_run=True, say=lines.append, run=_no_run)
     assert (home / 'ci' / 'runs' / 'a1').exists()
@@ -123,7 +156,7 @@ def test_apply_logs_every_deletion_and_dry_run_deletes_nothing(home: Path) -> No
 
 
 def test_quota_pressure_prunes_harder_until_target_and_reports_still_over(home: Path) -> None:
-    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'})
+    plan = _plan(home)
     near = Usage(used=95 * 10**9, limit=100 * 10**9, files=None, files_limit=None)
     done = apply(plan, POLICY, usage=near, dry_run=False, say=lambda _: None, run=_no_run)
     assert not (home / 'ci' / 'runs' / 'a3').exists(), 'pressure removed the oldest carry source'
@@ -141,7 +174,7 @@ def test_mmlsquota_is_read_for_blocks_and_files() -> None:
     )
     usage = parse_mmlsquota(text)
     assert usage == Usage(used=10261120 * 1024, limit=1048576000 * 1024, files=516915, files_limit=2000000)
-    assert usage.fraction() == pytest.approx(516915 / 2000000)  # files are the nearer ceiling here
+    assert usage.fraction() == pytest.approx(516915 / 2000000, abs=0.0)  # exact integers; files are the nearer ceiling
     assert parse_mmlsquota('no quota') is None
 
 
@@ -159,10 +192,10 @@ def test_workstation_plan_removes_stale_forge_trees_only(tmp_path: Path) -> None
 
 
 def test_policy_is_data_and_an_unknown_key_is_refused() -> None:
-    assert load_policy({'carry_keep': 5}).carry_keep == 5
+    assert load_policy({'abandon_days': 5}).abandon_days == 5
     assert load_policy({}) == Policy()
-    with pytest.raises(ValueError, match='carry_kept'):
-        load_policy({'carry_kept': 5})
+    with pytest.raises(ValueError, match='carry_keep'):
+        load_policy({'carry_keep': 5})  # retired: the carry's own selection decides
 
 
 def test_serve_pass_runs_once_per_interval(home: Path, tmp_path: Path) -> None:
@@ -170,6 +203,9 @@ def test_serve_pass_runs_once_per_interval(home: Path, tmp_path: Path) -> None:
     kwargs = {
         'cluster': True, 'home': home, 'state': state, 'table': {'uv_prune': False},
         'usage': lambda: None, 'live': lambda: {'f1'}, 'say': lambda _: None, 'run': _no_run,
+        'planner': lambda _root, policy, **kw: cluster_plan(
+            kw['home'], policy, now=kw['now'], live=kw['live'], repo='r', sources=SOURCES
+        ),
     }  # fmt: skip
     assert serve_pass(Path(), now=NOW, **kwargs) is not None
     assert not (home / 'ci' / 'runs' / 'a1').exists()
