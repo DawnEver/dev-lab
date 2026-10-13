@@ -242,3 +242,24 @@ def test_git_merge_itself_runs_the_check_on_a_clean_merge(repo: Path) -> None:
     _git(repo, 'merge', '-q', '--no-ff', '-m', 'merge lane', 'lane')
     assert seen.is_file()
     assert _git(repo, 'log', '-1', '--format=%s') == 'merge lane'
+
+
+def test_the_check_reads_its_declaration_from_the_tree_being_committed_never_the_working_tree(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-merge reads no declaration; a merge reads the INDEX tree's -- an unstaged retired key changes nothing.
+
+    PLANTED CONTROL: the same retired key STAGED into the merge refuses, naming it.
+    """
+    monkeypatch.chdir(repo)
+    message = repo / 'MSG'
+    message.write_text('feat: x\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text('not [toml\n', encoding='utf-8')
+    assert mergeaudit.main([str(message)]) == 0, 'a plain commit read the working-tree manifest'
+    (repo / 'pyproject.toml').unlink()
+    _pending_merge_dropping_b(repo)
+    message.write_text(f'merge lane\n\n{mergeaudit.TRAILER}: LOST test_b -- moved upstream\n', encoding='utf-8')
+    (repo / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8')
+    assert mergeaudit.main([str(message)]) == 0, 'the unstaged working-tree manifest was read'
+    _git(repo, 'add', 'pyproject.toml')
+    assert mergeaudit.main([str(message)]) == 1

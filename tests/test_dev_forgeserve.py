@@ -21,6 +21,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgelend, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, STORAGE, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
+from lab_commons.dev.forgeroute import Routed
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
@@ -96,6 +97,24 @@ def _client(_root: Path) -> SimpleNamespace:
     return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 
 
+class _Issues:
+    """The forge's open issues, shared by every host a test serves: ``reconcile``'s contract, by title."""
+
+    def __init__(self) -> None:
+        self.open: dict[str, str] = {}
+
+    def reconcile(self, _client: object, prefix: str, wanted: dict[str, str]) -> tuple[Routed, ...]:
+        done = []
+        for title, body in sorted(wanted.items()):
+            action = 'created' if title not in self.open else 'updated' if self.open[title] != body else 'unchanged'
+            self.open[title] = body
+            done.append(Routed(title, action, 1))
+        for title in [t for t in self.open if t.startswith(prefix) and t not in wanted]:
+            del self.open[title]
+            done.append(Routed(title, 'closed', 1))
+        return tuple(done)
+
+
 def _serve(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -118,6 +137,9 @@ def _serve(
     table: dict | None = None,
     retain=lambda _root, **_kw: None,
     observe=None,
+    issues: _Issues | None = None,
+    prune=lambda _root, _client, **_kw: (),
+    starving: tuple = (),
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -156,6 +178,9 @@ def _serve(
         return (procs or {})[argv[1]]  # argv[0] is the tree's own interpreter
 
     monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
+    monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
+    monkeypatch.setattr(forgeserve, 'serve_prune', prune)
+    monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     report = forgeserve.serve(
         tmp_path,
         client=_client,
@@ -246,19 +271,29 @@ def test_the_cli_exits_two_on_a_broken_contract(monkeypatch, tmp_path: Path, cap
         forgeserve.main(['--nonsense'], cwd=tmp_path)
 
 
-def test_the_serve_tick_prompts_the_integrator_through_the_alarm_channel(monkeypatch, tmp_path: Path) -> None:
-    """The observer docs-src/dev/integrator.md describes: serve asks it with this host's card name and login."""
-    asked: list[set[str]] = []
+def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_path: Path) -> None:
+    """No owner: every host derives the queue; the forge keeps one issue per row, so only its writer pages.
+
+    PLANTED CONTROLS: a second host deriving the same row pages nothing; a changed row pages again; a row
+    no longer derived closes its issue.
+    """
     prompt = Alarm(INTEGRATION, 'o/r', 'feat/a is READY', 'merge it', about='merge feat/a@abc')
+    rows = [prompt]
 
-    def observe(_root: Path, _repo: str, *, hosts: set[str], statuses: object) -> list[Alarm]:
+    def observe(_root: Path, _repo: str, *, statuses: object) -> list[Alarm]:
         assert callable(statuses)
-        asked.append(hosts)
-        return [prompt]
+        return list(rows)
 
-    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe)
-    assert asked == [{'G', 'alice'}]
-    assert prompt in alarms
+    forge = _Issues()
+    first = _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)[2]
+    assert prompt in first
+    assert forge.open == {'integration: feat/a is READY': 'merge it'}
+    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)[2] == []
+    rows[:] = [dataclasses.replace(prompt, body='merge it now')]
+    assert _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)[2] == rows
+    rows[:] = []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)
+    assert forge.open == {}
 
 
 def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch, tmp_path: Path) -> None:
@@ -477,28 +512,28 @@ def _waiting(kind: str, waited_h: float, blocked: str) -> Ranked:
     return Ranked(one, 60.0, 4.0, 15.0, waited_h, blocked)
 
 
-def _starving(monkeypatch: pytest.MonkeyPatch, *, owner: bool, queue: list[Ranked]) -> None:
-    monkeypatch.setattr(forgeserve, 'owns_integration', lambda _policy, _client, host: owner and host == 'G')
-    monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (queue, []))
+def test_any_host_raises_starved_for_a_part_no_host_admits_and_n_hosts_page_once(monkeypatch, tmp_path: Path) -> None:
+    """Every host reads the queue ACROSS hosts; a part some host admits is no starvation, only a wait.
 
-
-def test_only_the_integration_host_raises_starved_for_a_part_no_host_admits(monkeypatch, tmp_path: Path) -> None:
-    """ONE owner reads the queue ACROSS hosts; a part some host admits is no starvation, only a wait.
-
-    PLANTED CONTROLS: a blocked wait under the bound and a wait one host only has to finish raise nothing on
-    the owner, and a host that does not own integration raises nothing for the same queue, nor for its own.
+    PLANTED CONTROLS: a blocked wait under the bound and a wait one host only has to finish raise nothing,
+    and a second host reading the same queue writes the same issue and pages nothing.
     """
     nobody = 'no host admits it -- G lacking cpu; ada/alice lacking mem_gb'
     queue = [_waiting('pr', 13, nobody), _waiting('pr', 11, nobody), _waiting('pr', 14, 'the tree is busy here')]
-    _starving(monkeypatch, owner=True, queue=queue)
-    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ('tick',)))
+
+    forge = _Issues()
+    _report, _said, alarms = _serve(
+        monkeypatch, tmp_path, TickReport((), (), ('tick',)), issues=forge, starving=tuple(queue)
+    )
     (alarm,) = alarms
     assert (alarm.kind, alarm.about) == (STARVED, f'feat/x@{SHA[:12]}:windows')
     assert 'waited 13.0 h, past its 12 h bound' in alarm.body
     assert nobody in alarm.body, 'the starved alarm names every host and what it lacks'
-    _starving(monkeypatch, owner=False, queue=queue)
-    own = TickReport((), (), ('tick',), (), (_waiting('pr', 13, 'not admitted: lacking cpu, mem_gb'),))
-    assert _serve(monkeypatch, tmp_path, own)[2] == []
+    assert len(forge.open) == 1
+    again = _serve(
+        monkeypatch, tmp_path, TickReport((), (), ('tick',)), issues=forge, host='other', starving=tuple(queue)
+    )
+    assert again[2] == []
 
 
 def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
@@ -648,17 +683,17 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
     assert [a.kind for a in alarms] == [RUN]
 
 
-def test_every_tick_offers_the_branch_prune_its_host_card_name(monkeypatch, tmp_path: Path) -> None:
-    """The prune decides ownership itself (``[tool.lab_commons.integrator] host``); serve hands it who this is."""
-    offered: list[dict] = []
+def test_every_tick_runs_the_branch_prune_on_any_host(monkeypatch, tmp_path: Path) -> None:
+    """No owner: the prune is idempotent, so every host's tick runs it (a raced delete is a no-op)."""
+    offered: list[Path] = []
 
     def prune(root: Path, _client: object, **kwargs: object) -> tuple[()]:
-        offered.append({'root': root, 'host': kwargs['host']})
+        assert 'host' not in kwargs
+        offered.append(root)
         return ()
 
-    monkeypatch.setattr(forgeserve, 'serve_prune', prune)
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()))
-    assert offered == [{'root': tmp_path, 'host': forgeserve.card_host('G', None)}]
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), prune=prune)
+    assert offered == [tmp_path]
 
 
 def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch, tmp_path: Path) -> None:

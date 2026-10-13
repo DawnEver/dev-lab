@@ -49,7 +49,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.forge import _GIT
-from lab_commons.dev.lanepolicy import load_policy
+from lab_commons.dev.lanepolicy import policy_at
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
@@ -64,6 +64,7 @@ __all__ = [
     'MergeAuditError',
     'audit',
     'classify',
+    'judge',
     'main',
     'pending',
     'read_tests',
@@ -257,16 +258,34 @@ def _audit(
     return classify(base, ours, theirs, merged)
 
 
-def pending(root: Path, message: str, *, roots: Sequence[str]) -> tuple[str, ...]:
+def pending(root: Path, message: str) -> tuple[str, ...]:
     """What *message* fails to name about the merge being committed in *root*; empty for a non-merge.
 
-    The merged tree is the INDEX (``git write-tree``) -- exactly what the commit will record.
+    The merged tree is the INDEX (``git write-tree``) -- exactly what the commit will record -- and the test
+    roots are the ones THAT tree declares (:func:`lab_commons.dev.lanepolicy.policy_at`), never the working
+    tree's. A non-merge reads no declaration at all, which is what ``integrate merge`` relies on: it runs
+    this stage with no merge in the working tree and audits its own merged tree through :func:`judge`.
     """
     parents = _pending_parents(root)
     if parents is None:
         return ()
     tree = _git(root, 'write-tree').decode().strip()
-    return unnamed(_audit(root, 'the merge being committed', parents, tree, roots=roots), message)
+    try:
+        roots = policy_at(root, tree).test_roots
+    except ValueError as error:
+        raise MergeAuditError(str(error)) from error
+    return judge(root, parents, tree, message, roots=roots, label='the merge being committed')
+
+
+def judge(
+    root: Path, parents: Sequence[str], merged: str, message: str, *, roots: Sequence[str], label: str = ''
+) -> tuple[str, ...]:
+    """What *message* fails to name about *merged* (a commit or a tree) as the merge of *parents*.
+
+    The ONE judgement: the commit-msg hook (:func:`pending`), ``integrate merge`` and the integration
+    branch's push guard (:mod:`lab_commons.dev.sessionbranch`) all call it.
+    """
+    return unnamed(_audit(root, label or merged, parents, merged, roots=roots), message)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -278,7 +297,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').decode().strip())
         message = Path(args[0]).read_text(encoding='utf-8', errors='replace')
-        problems = pending(root, message, roots=load_policy(root).test_roots)
+        problems = pending(root, message)
     except (MergeAuditError, OSError) as error:
         problems = (str(error),)
     if not problems:

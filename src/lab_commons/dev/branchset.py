@@ -8,7 +8,7 @@ and read by :func:`declared_branchset`::
     [tool.lab_commons.branchset]
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
-    prune_merged = true            # the integration host's serve tick DELETES merged idle origin branches
+    prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
@@ -30,10 +30,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import subprocess
 import tomllib
 from pathlib import Path
 
 from lab_commons.dev.checkout import authority_for, git_out, origin_branches
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.log import emit
 
 __all__ = [
@@ -43,6 +45,8 @@ __all__ = [
     'Candidate',
     'Census',
     'apply_local',
+    'branchset_at',
+    'branchset_from',
     'census',
     'declared_branchset',
     'main',
@@ -68,7 +72,7 @@ class BranchSet:
 
     trunk: str
     sessions: frozenset[str]
-    #: Whether the integration host's serve tick deletes merged, idle origin branches; off, it only lists them.
+    #: Whether every host's serve tick deletes merged, idle origin branches; off, it only lists them.
     prune_merged: bool = False
     #: How long a branch tip sits idle before it is pruned (merged) or alarmed (unmerged).
     grace_hours: float = 24.0
@@ -106,8 +110,28 @@ def declared_branchset(root: Path) -> BranchSet:
     """
     manifest = root / 'pyproject.toml'
     try:
-        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+        text = manifest.read_text(encoding='utf-8')
+    except OSError as exc:
+        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        raise BranchSetNotDeclared(msg) from exc
+    return branchset_from(text, str(manifest))
+
+
+def branchset_at(root: Path, rev: str) -> BranchSet:
+    """The branch set commit or tree *rev* of *root* declares -- never the working tree's."""
+    try:
+        text = pyproject_at(root, rev)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        msg = f'{rev}:pyproject.toml is not readable in {root}: {exc}'
+        raise BranchSetNotDeclared(msg) from exc
+    return branchset_from(text, f'{rev}:pyproject.toml')
+
+
+def branchset_from(text: str, manifest: str) -> BranchSet:
+    """The branch set *text* declares; *manifest* names where it came from in every refusal."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
         msg = f'{manifest} is not a readable TOML manifest: {exc}'
         raise BranchSetNotDeclared(msg) from exc
     table = data.get('tool', {}).get('lab_commons', {}).get('branchset')

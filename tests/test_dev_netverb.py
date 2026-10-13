@@ -155,9 +155,9 @@ def test_a_non_retryable_failure_is_reported_on_the_FIRST_attempt(
 
 
 _GITHOOKS_REFUSAL = (
-    '\n  REFUSED: PUSH-FROM-ITS-OWN-BRANCH: refs/heads/main from 40621a5. A long-lived branch ...\n'
-    '  Remedy: push from the checkout whose HEAD is that branch (the main checkout).\n'
-    '[githooks] pre-push: 1 hook(s) failed: push-from-its-own-branch\n'
+    '\n  REFUSED: PUBLISH-IS-THE-LOCAL-REF: main is published only from the local branch main, not 40621a5\n'
+    '  Remedy: merge into main and push `main`.\n'
+    '[githooks] pre-push: 1 hook(s) failed: session-branch\n'
     "error: failed to push some refs to 'origin'\n"
 )
 
@@ -170,8 +170,8 @@ def test_the_githooks_runners_pre_push_refusal_is_not_retried_and_reports_the_ho
     assert _ran(counter) == 1
     assert report.diagnosis is Diagnosis.HOOK_REFUSED
     assert report.disposition is Disposition.REFUSED
-    assert 'REFUSED: PUSH-FROM-ITS-OWN-BRANCH' in report.remedy
-    assert 'Remedy: push from the checkout' in report.remedy
+    assert 'REFUSED: PUBLISH-IS-THE-LOCAL-REF' in report.remedy
+    assert 'Remedy: merge into main' in report.remedy
 
 
 def test_a_command_that_succeeds_is_not_retried_at_all(tmp_path: Path) -> None:

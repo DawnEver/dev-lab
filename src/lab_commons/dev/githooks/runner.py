@@ -173,11 +173,13 @@ def _argvs(hook: Hook, stage: str, git_args: Sequence[str], chosen: Sequence[str
     return [base]
 
 
-def _run_hook(hook: Hook, argvs: list[list[str]], root: Path, stdin: str | None, runner: Runner) -> int:
+def _run_hook(
+    hook: Hook, argvs: list[list[str]], root: Path, stdin: str | None, runner: Runner, *, env: Mapping[str, str]
+) -> int:
     """Each argv in turn, stopping at the first failure; at pre-commit a rewrite of the tree fails too."""
     before = worktree_diff(root) if hook.stage == 'pre-commit' else ''
     for argv in argvs:
-        if code := runner(argv, root, stdin, hook.env):
+        if code := runner(argv, root, stdin, {**env, **hook.env}):
             return code
     if hook.stage == 'pre-commit' and worktree_diff(root) != before:
         emit(f'[githooks] pre-commit {hook.id}: it changed the working tree; review, stage, commit again')
@@ -205,6 +207,7 @@ def run_stage(
     stdin: str = '',
     hooks: Sequence[Hook] | None = None,
     runner: Runner = _subprocess_runner,
+    env: Mapping[str, str] | None = None,
 ) -> int:
     """Run every hook of *stage* in *root*; ``0`` when all passed or were skipped, else ``1``.
 
@@ -215,6 +218,8 @@ def run_stage(
         stdin: what git wrote on the hook's stdin (pre-push: the ref lines).
         hooks: the hooks to run; the merged table of *root* when omitted.
         runner: runs ``(argv, cwd, stdin, env)`` and returns the exit code; injected for tests only.
+        env: variables every hook of the stage runs with (beneath its own ``env``): ``integrate`` points git at
+            the repository while *root* holds the merged tree's manifest.
 
     """
     if stage not in STAGES:
@@ -240,7 +245,7 @@ def run_stage(
             emit(f'[githooks] {stage} {hook.id}: skipped -- no path selected')
             continue
         hook_stdin = ''.join(f'{line.line}\n' for line in lines) if stage == 'pre-push' else None
-        code = _run_hook(hook, _argvs(hook, stage, git_args, chosen), root, hook_stdin, runner)
+        code = _run_hook(hook, _argvs(hook, stage, git_args, chosen), root, hook_stdin, runner, env=env or {})
         emit(f'[githooks] {stage} {hook.id}: {"passed" if code == 0 else f"FAILED (exit {code})"}')
         if code:
             failed.append(hook.id)

@@ -1,7 +1,7 @@
 """What merging one commit into another WOULD do, read from git objects alone -- no checkout, no index.
 
 ONE READING, THREE CALLERS. The integration tick asks it of every child branch against the
-integration branch, ``forge sync`` asks it before it touches the owner's tree, and ``forge promote``
+integration branch, ``forge sync`` asks it before it touches the owner's tree, and ``integrate promote``
 asks whether the trunk can fast-forward. Each question is a pure read of the object store:
 
 * :func:`trial` -- ``git merge-tree --write-tree`` (git >= 2.38): how far *head* is behind *base*,

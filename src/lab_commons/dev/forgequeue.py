@@ -11,7 +11,7 @@ resources it lacks there (``no host admits it -- box-g lacking cpu; ada/alice la
 ``origin`` first so the refs it ranks are the forge's, and posts nothing.
 
 It also lists every undeclared origin branch idle past its grace (:mod:`lab_commons.dev.branchprune`):
-``deletable`` (merged, the repo has not opted into pruning), ``delete`` (the integration host prunes it on
+``deletable`` (merged, the repo has not opted into pruning), ``delete`` (any serving host prunes it on
 its next tick) or ``stale`` (unmerged: alarmed, never deleted).
 """
 

@@ -96,11 +96,13 @@ _ENFORCED = {
     # verify's publish for VERDICT-AS-STATUS, the derived-state door for ISSUE-IS-INTENT.
     'VERDICT-AS-STATUS': (guard('tests/test_dev_forgestatus.py'), guard('tests/test_dev_verify.py')),
     'ISSUE-IS-INTENT': (guard('tests/test_dev_forgeissue.py'),),
-    # The branch flow is enforced by its doors (forge promote / sync / integration), proved on real
+    # The branch flow is enforced by its doors (integrate / forge sync / forge integration), proved on real
     # repositories against both forge backends.
-    'TRUNK-MOVES-BY-FAST-FORWARD': (guard('tests/test_dev_branchflow.py'), guard('tests/test_dev_admission.py')),
-    'INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT': (guard('tests/test_dev_integrationhome.py'),),
-    'PUSH-FROM-ITS-OWN-BRANCH': (guard('tests/test_dev_integrationhome.py'),),
+    'TRUNK-MOVES-BY-FAST-FORWARD': (guard('tests/test_dev_integrate.py'), guard('tests/test_dev_admission.py')),
+    'ONE-WRITER-PER-SESSION-BRANCH': (guard('tests/test_dev_sessionbranch.py'),),
+    'SESSION-HISTORY-ONLY-GROWS': (guard('tests/test_dev_sessionbranch.py'),),
+    'INTEGRATION-IS-MERGES-ONLY': (guard('tests/test_dev_sessionbranch.py'), guard('tests/test_dev_integrate.py')),
+    'PUBLISH-IS-THE-LOCAL-REF': (guard('tests/test_dev_sessionbranch.py'),),
     'PRS-TARGET-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
     'DOWNSTREAM-SYNCS-INTEGRATION': (guard('tests/test_dev_branchflow.py'),),
     'FLOOR-ON-EVERY-SCAN': (

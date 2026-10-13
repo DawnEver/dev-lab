@@ -213,9 +213,11 @@ def test_the_planted_control_pushes_both_ways(tmp_path: Path) -> None:
             check=False,
         )
 
-    allowed = push('HEAD:refs/heads/feat/session')
+    subprocess.run([_GIT, 'branch', 'feat/session'], cwd=root, check=True, capture_output=True, timeout=60)
+    subprocess.run([_GIT, 'branch', 'work/foo'], cwd=root, check=True, capture_output=True, timeout=60)
+    allowed = push('feat/session')  # PUBLISH-IS-THE-LOCAL-REF: a declared branch goes out from its own ref
     assert allowed.returncode == 0, f'the declared branch was refused: {allowed.stderr}'
-    refused = push('HEAD:refs/heads/work/foo')
+    refused = push('work/foo')
     assert refused.returncode != 0, 'an undeclared branch was accepted by the real hook'
     assert 'REFUSED' in refused.stderr
     assert 'work/foo' in refused.stderr

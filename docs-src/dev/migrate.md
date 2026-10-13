@@ -85,10 +85,10 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | you used to | now |
 |---|---|
 | read a local log to know if a sha is green | `forge status list <sha>` or `forge queue` |
-| push `main` after a local heavy run | `forge promote` (integrator only), when every part is a full PASS |
+| push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the integrator), when every part is a full PASS |
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
 | push a lane branch to origin | keep lanes local; the pre-push hook refuses an undeclared branch ([the push-time check](branch-set.md#the-push-time-check)) |
-| delete merged origin branches by hand | declare `prune_merged = true`; the integration host prunes them ([pruning origin](branch-set.md#pruning-origin)) |
+| delete merged origin branches by hand | declare `prune_merged = true`; every serving host prunes them ([pruning origin](branch-set.md#pruning-origin)) |
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
 
@@ -110,8 +110,8 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
   classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}` (the family default;
   declare it only to differ, and a declaration replaces it whole). A branch no pattern matches is neither
   served nor a child. Starvation bounds take a `feature` row (default 18 h).
-- **Who is prompted to integrate**: declare `[tool.lab_commons.integrator] host = "<card name or login>"`; that
-  host's serve tick raises an `integration` alarm when the queue changes.
+- **Who is prompted to integrate**: nobody is configured. Every host's serve tick keeps one forge issue per
+  integration row; the host that creates or changes one raises the `integration` alarm.
 - **How often an alarm repeats** is the receiver's: `[alerts] repeat_hours` in the machine file (absent: 6).
 
 ## Migrating a repo to need-set parts
@@ -146,7 +146,7 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
 5. **Hosts**: a host has a resource when its machine file declares `[capabilities.<name>]` (and, for `jmag`,
    `matlab`, `node`, the probe finds it). A Windows box that should run FEMM parts declares
    `[capabilities.femm]`; one that should run Windows-only parts declares nothing (its OS is measured).
-6. **Promotion**: `forge promote` now needs `tests/base` and every part a part hands to. A server-side
+6. **Promotion**: `integrate promote` now needs `tests/base` and every part a part hands to. A server-side
    required status context should be `tests/base` only.
 
 ### consumer-a (a solver repo with JMAG, FEMM, MATLAB and SIMBA tests)
@@ -189,30 +189,30 @@ Upgrading lab-commons brings two changes to every repo that opts into the base h
    from the TOML hook migration (2026-10-11) until 2026-10-13 this check never ran. A push of any branch that
    `[tool.lab_commons.branchset]` does not name is now refused. Before you upgrade, declare every session branch
    that really lives on origin, or its next push is refused. Agent lanes stay local.
-2. **Merged branches are pruned from origin.** Opt in, and name the host that owns integration:
+2. **Merged branches are pruned from origin.** Opt in (every serving host prunes, idempotently):
 
 ```toml
 [tool.lab_commons.branchset]
 trunk = 'main'
 sessions = ['integrate/main']  # every long-lived branch: exactly what the pre-push hook allows
-prune_merged = true            # the integration host deletes merged branches idle >= grace_hours
+prune_merged = true            # every serving host deletes (idempotently) merged branches idle >= grace_hours
 grace_hours = 24
 
 [tool.lab_commons.integrator]
-host = '<the card name, or forge login, of the integrator serving host>'
+merges_only_since = '<the integration tip sha when you adopt>'
 ```
 
 Before setting `prune_merged`, run `python -m lab_commons.dev.forge queue` and read its `origin branches`
-section: every `deletable` row there is deleted on the integration host's next tick. See
+section: every `deletable` row there is deleted on the next serve tick of any host. See
 [pruning origin](branch-set.md#pruning-origin).
 
 ### consumer-a
 
 - `sessions` declares `integrate/main` and six `feat/*` session branches. Keep a `feat/*` there while its
   session lives. Once it is merged and done, remove it from `sessions`, and the prune deletes it from origin.
-- Set `prune_merged = true` and `[tool.lab_commons.integrator] host`. No push mirror is configured.
+- Set `prune_merged = true`, `[tool.lab_commons.integrator] merges_only_since`, and nothing else. No push mirror is configured.
 
 ### consumer-b
 
 - `sessions = ['deploy', 'integrate/main', 'wdg-3d']`. A declared session is never pruned.
-- Set `prune_merged = true` and `[tool.lab_commons.integrator] host`. No push mirror is configured.
+- Set `prune_merged = true`, `[tool.lab_commons.integrator] merges_only_since`, and nothing else. No push mirror is configured.

@@ -113,11 +113,12 @@ def test_the_integration_tip_not_on_main_is_judged_by_its_full_parts(parts: tupl
     assert (queue.promotion.branch, queue.promotion.state) == ('integrate/main', state)
 
 
-def test_the_consumer_declares_its_branches_and_who_is_prompted(tmp_path: Path) -> None:
-    (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.integrator]\nintegration = "stage"\nhost = "G"\n', encoding='utf-8'
-    )
-    assert load_policy(tmp_path) == Policy(integration='stage', host='G')
+def test_the_consumer_declares_its_branches_and_a_retired_host_is_refused_by_name(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nintegration = "stage"\n', encoding='utf-8')
+    assert load_policy(tmp_path) == Policy(integration='stage')
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'host is retired: .*no host owns integration'):
+        load_policy(tmp_path)
     assert load_policy(tmp_path / 'absent') == Policy()
 
 
@@ -204,17 +205,9 @@ def test_each_ready_promotable_or_red_row_is_one_prompt_keyed_by_its_tip() -> No
     assert [a.about for a in moved] == [f'{MERGE} feat/ok@o2'], 'a moved tip is a NEW prompt, delivered at once'
 
 
-def test_only_the_declared_integration_host_is_prompted(tmp_path: Path) -> None:
+def test_any_host_derives_the_prompts(tmp_path: Path) -> None:
+    """No owner and no host argument: whoever serves derives the same rows (the forge keeps one issue each)."""
     repo, tips = _repo(tmp_path)
     green = {tips['feat/out']: _GREEN}
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8')
-    asked: list[str] = []
-
-    def statuses(sha: str) -> tuple[Status, ...]:
-        asked.append(sha)
-        return green.get(sha, ())
-
-    assert observe(repo, 'o/r', hosts={'H', 'bob'}, statuses=statuses) == []
-    assert asked == [], 'another host derives nothing'
-    found = observe(repo, 'o/r', hosts={'G', 'alice'}, statuses=statuses)
+    found = observe(repo, 'o/r', statuses=lambda sha: green.get(sha, ()))
     assert [a.about for a in found] == [f'{MERGE} feat/out@{tips["feat/out"][:12]}']

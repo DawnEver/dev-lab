@@ -38,7 +38,7 @@ is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
 
 COMPOSITION (:func:`compose`). The latest part per need-set for the commit. ``base`` must have a part,
 and so must every part some part hands ids to; any FAIL part makes it FAIL. "Every derived part green"
-is therefore what a PASS means, and what ``forge promote`` requires.
+is therefore what a PASS means, and what ``integrate promote`` requires.
 
 HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject. A LOCAL part is the ONE
 declared argv (:func:`producer_argv`, read at the claimed commit, ``{part}`` filled) run by the own venv

@@ -16,13 +16,12 @@ construction. The integration tip, when not on ``main``, is PROMOTE when its par
 scope ``full`` (what the trunk admits), BLOCKED on a FAIL part, PARTS_NEEDED otherwise. Ready lanes
 merge oldest tip commit first, ties by branch name.
 
-THE FORGE PROMPTS THE INTEGRATOR. A wake is the observer's half, and the observer is ``forge serve``: on
-the host DECLARED to own integration (``[tool.lab_commons.integrator] host``, a host card name or a forge
-login), each serve tick derives this same queue (:func:`observe`) and raises one ``integration`` alarm
-per row that asks the integrator to act (:func:`prompts`: a READY lane, a PROMOTE-able tip, a BLOCKED
-red to route), keyed by row state, branch and tip. The alarm de-dup state (:mod:`lab_commons.dev.forgealarm`)
-is the only memory: a NEW row is a new key, delivered at once; an unchanged row repeats once per the
-receiver's repeat window. Nothing else is stored.
+THE FORGE PROMPTS THE INTEGRATOR. A wake is the observer's half, and the observer is ``forge serve``: EVERY
+serving host derives this same queue (:func:`observe`) on each tick -- no host owns integration -- and the
+rows that ask the integrator to act (:func:`prompts`: a READY lane, a PROMOTE-able tip, a BLOCKED red to
+route) are kept as ONE forge issue per row (:func:`lab_commons.dev.forgeroute.reconcile`, titled
+``integration: <subject>``), so N hosts write one issue and only the host that creates or changes it pages.
+Nothing else is stored.
 
 FETCH-FREE, the caller's half, exactly as in ``forgeissue``: run the fetch through the retry wrapper
 first. The tips printed make a stale answer visible.
@@ -195,7 +194,7 @@ def derive(root: Path, policy: Policy, schedule: Schedule, statuses: Callable[[s
 
 _ASKS: Final = {
     MERGE: 'is READY: merge it into integration',
-    PROMOTE: 'is PROMOTE-able: forge promote',
+    PROMOTE: 'is PROMOTE-able: python -m lab_commons.dev.integrate promote <sha>',
     BLOCKED: 'is BLOCKED on a red part: route it',
 }
 
@@ -216,12 +215,9 @@ def prompts(queue: Queue, repo: str) -> list[Alarm]:
     ]
 
 
-def observe(root: Path, repo: str, *, hosts: set[str], statuses: Callable[[str], Sequence[Status]]) -> list[Alarm]:
-    """The prompts for *root*'s queue when one of *hosts* is the declared integrator; ``[]`` elsewhere."""
-    policy = load_policy(root)
-    if not policy.host or policy.host not in hosts:
-        return []
-    return prompts(derive(root, policy, load_schedule(root), statuses), repo)
+def observe(root: Path, repo: str, *, statuses: Callable[[str], Sequence[Status]]) -> list[Alarm]:
+    """The prompts for *root*'s queue, derived by any host; the forge keeps one issue per row."""
+    return prompts(derive(root, load_policy(root), load_schedule(root), statuses), repo)
 
 
 def _render(queue: Queue) -> str:

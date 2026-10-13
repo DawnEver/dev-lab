@@ -11,7 +11,7 @@ what to merge and what to delete, and `--apply` to delete the merged local ones.
 [tool.lab_commons.branchset]
 trunk = 'main'                 # required
 sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
-prune_merged = true            # default false: the integration host deletes merged idle origin branches
+prune_merged = true            # default false: every serving host deletes merged idle origin branches
 grace_hours = 24               # default 24: idle time before a branch is pruned (merged) or alarmed (unmerged)
 ```
 
@@ -66,7 +66,7 @@ There is no bypass flag; the way to push a new long-lived branch is to add it to
 ## Pruning origin
 
 Finished branches still pile up on origin, so the forge prunes them (`lab_commons.dev.branchprune`). The host
-that owns integration, `[tool.lab_commons.integrator] host` (a serving host's card name or a forge login),
+EVERY serving host -- no host owns this; a deletion is pinned to the judged sha, so a raced second delete is a no-op --
 surveys origin on every `forge serve` tick, after the tick's `git fetch --prune`. No other host reads or
 deletes anything. Undeclared branches whose tip has been idle for at least `grace_hours` are judged:
 

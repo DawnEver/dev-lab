@@ -153,9 +153,6 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's vocabulary, so a local run posts the same kind of part a cluster run does.
 * :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
-* :mod:`lab_commons.dev.integrationhome` -- INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT: refuses a commit on
-  the integration branch or trunk from a linked worktree, and reports the main checkout's lag; and
-  PUSH-FROM-ITS-OWN-BRANCH: refuses a push of either branch from any local ref but its namesake.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
   (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
 * :mod:`lab_commons.dev.producer` -- the producer exit contract: what a part producer's exit code
@@ -301,7 +298,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
 * :mod:`lab_commons.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
 * :mod:`lab_commons.dev.forgepulls` -- PR list/retarget and ONE marker-found comment per subject, both forges.
-* :mod:`lab_commons.dev.forgepromote` -- ``forge promote``: the trunk FAST-FORWARDS to a full-PASS integration tip.
+* :mod:`lab_commons.dev.integrate` -- integration by refs alone: ``merge <branch>`` (merge-tree, the commit-msg
+  stage and the merge audit, compare-and-swap) and ``promote <sha>`` (the local trunk FAST-FORWARDS to a
+  full-PASS integration commit). Neither checks out nor pushes.
 * :mod:`lab_commons.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
@@ -319,7 +318,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.lab_commons]``.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
-* :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: the integration host deletes merged idle origin
+* :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
+  only: publish = the local ref, history only grows, integration takes merges only.
+* :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
 * :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.

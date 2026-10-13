@@ -3,7 +3,7 @@
 ``status`` for commit statuses, ``issue claim|status|comments|comments-since`` for derived issue
 state and comment reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for
 run records, ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
-for failure routing and ``serve`` for the whole harness sequence, ``promote`` / ``sync`` / ``integration``
+for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``reserve`` / ``release`` for leases; anything
 else is the issue/PR door. The verbs live in the sibling modules, which import :mod:`forge`, so
 :mod:`forge` reaches this module only from its entry point.
@@ -18,7 +18,6 @@ from lab_commons.dev import (
     forgeintegration,
     forgeissue,
     forgeoutbox,
-    forgepromote,
     forgequeue,
     forgerecords,
     forgereserve,
@@ -48,7 +47,6 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'route': forgeroute.main,
     'serve': lambda argv: servelock.locked(argv, lambda rest: servekit.current(rest, forgeserve.main)),
     'tick': forgetick.main,
-    'promote': forgepromote.main,
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,

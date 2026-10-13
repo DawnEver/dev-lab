@@ -1,16 +1,19 @@
 # The integrator
 
-The integrator is the one session that merges child branches into the integration branch and moves the trunk.
-It runs no tests: it reads `tests/<part>` parts from the forge. Its loop is `forge integration` (merge
-what is ready, report on every child), push, and `forge promote` when integration is fully green. Everyone
-else syncs their branch with `forge sync` and opens pull requests into integration.
+The integrator is the session whose branch is the integration branch: it merges child branches into it
+and moves the trunk. It runs no tests: it reads `tests/<part>` parts from the forge. Its
+loop is `forge integration` (report on every child), `integrate merge <branch>` for what is ready, a plain
+`git push origin <integration>`, and `integrate promote <sha>` then `git push origin <trunk>` when an
+integration commit is fully green. Everyone else syncs their branch with `forge sync` and opens pull
+requests into integration. Who the integrator is, and where it runs, moves; nothing records it.
 
 ## The branch flow
 
 | branch | who writes it | the one verb that moves it |
 |---|---|---|
-| trunk (`main`) | nobody by hand | `forge promote`: fast-forward to a fully green integration tip |
-| integration (`integrate/main`) | the integrator | merges of child branches, then a push |
+| trunk (`main`) | the integrator | `integrate promote <sha>`, then a push |
+| integration (`integrate/main`) | the integrator | `integrate merge <branch>`, then a push |
+| any other declared session branch | its session | that session's commits and merges, then a push |
 | a child (lane, feat branch, PR head) | its owner | the owner's commits, and `forge sync` from integration |
 
 Declared once in the consumer's `pyproject.toml`; every key is optional and an unknown key is refused:
@@ -18,48 +21,56 @@ Declared once in the consumer's `pyproject.toml`; every key is optional and an u
 ```toml
 [tool.lab_commons.integrator]
 integration = "integrate/main"      # the branch children merge into
-trunk = "main"                      # moved only by `forge promote`
+trunk = "main"                      # moved only by `integrate promote`
 test_roots = ["tests"]              # what the merge audit reads
-host = "G"                          # who is prompted: a host card name or forge login; absent = nobody
+merges_only_since = "<sha>"         # INTEGRATION-IS-MERGES-ONLY holds after this commit
 ```
 
 Which origin branches are CHILDREN is not a list here but the schedule's one rule,
 `[tool.lab_commons.schedule] classes_by_ref` ([scheduling](forge.md#scheduling)): a branch the rule classes
 is a child, served and queued; one it does not is neither.
 
-## Many agents, one machine
+## Session branches: one writer, by git
 
-The model, stated once (MANY-AGENTS-ONE-MACHINE):
+Every repo declares its session branches in `[tool.lab_commons.branchset] sessions` -- the integration branch
+is one of them. One host's one repo may carry SEVERAL sessions at once, each on its own branch in its own
+worktree (the main checkout is just one more worktree). So a branch is protected for what it IS, never for
+where it is checked out or which box pushes it: both move.
 
-- Every agent or human works in its OWN linked worktree (`.claude/worktrees/<name>`) on its OWN lane
-  branch, any number at once. A worktree's hooks live in its own git dir
-  (`git config --worktree core.hooksPath "$(git rev-parse --git-dir)/hooks"`), so installing one never
-  rewrites another's.
-- The integration branch and the trunk are checked out in exactly ONE place, the main checkout, whose
-  single editor is the integrator. Git already refuses a second checkout of a branch across worktrees;
-  three hooks pin that one place down and the publishing path out of it.
+ONE-WRITER-PER-SESSION-BRANCH is git's own two mechanisms, and nothing is built for it (user ruling
+2026-10-14: no lease refs -- every push would read and write origin, and every fetch would carry them):
 
-| rule | stage | refuses |
-|---|---|---|
-| INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT | commit-msg | a commit or merge commit on either declared branch from a linked worktree (commit-msg runs for merges, pre-commit does not) |
-| PUSH-FROM-ITS-OWN-BRANCH | pre-push | a push updating either declared branch whose local ref is not the same-named local branch |
+- **Locally**, a branch is checked out in at most one worktree, so two sessions of one host and repo never
+  share a branch.
+- **Remotely**, a plain push is compare-and-swap: origin refuses a non-fast-forward, so a writer on a stale
+  tip loses and must merge first. SESSION-HISTORY-ONLY-GROWS refuses the force that would bypass it.
 
-PUSH-FROM-ITS-OWN-BRANCH was earned 2026-10-13: the main checkout had been switched to the user's
-`feat/optimization`, and `git push origin HEAD:integrate/main` from there published the user's unreviewed
-commit. Git writes the local ref of a `HEAD:<branch>` refspec as the literal `HEAD`, so the hook resolves
-it: `sh scripts/hooks/with-retry.sh push origin HEAD:integrate/main` from the main checkout ON
-`integrate/main` passes; the same line from any other branch or a detached HEAD, or `<other>:integrate/main`,
-is refused. The remedy it names: push from the checkout whose HEAD is that branch, or push your own lane
-branch. The two rules are complementary, not redundant: the push rule alone would let the line be
-committed and published from a linked worktree, and the home rule alone would let any branch's HEAD be
-published onto it.
+The rest are refused at pre-push by the base row `session-branch` (`lab_commons.dev.sessionbranch`), from
+local reads only -- no network call beyond the push itself -- with no escape hatch:
 
-Both are `lab_commons.dev.integrationhome`; branch names come from `[tool.lab_commons.integrator]`. At
-session start, `python -m lab_commons.dev.integrationhome report` says how far the main checkout's
-branch is behind its origin and names `sh scripts/hooks/with-retry.sh pull --ff-only` to fix it.
+| rule | refuses |
+|---|---|
+| PUBLISH-IS-THE-LOCAL-REF | a push to `refs/heads/X` whose local ref, `HEAD` resolved, is not `refs/heads/X`: `HEAD:X` from another branch, `Y:X`, a bare sha, a detached HEAD |
+| SESSION-HISTORY-ONLY-GROWS | a push whose old remote tip (as git hands it to the hook) is not an ancestor of the new one: a forced non-fast-forward, and a deletion |
+| INTEGRATION-IS-MERGES-ONLY | a new first-parent commit on the integration branch (after `merges_only_since`) that is not a two-parent merge with a `Merged-Branch:` trailer whose merge audit passes |
 
-To adopt: nothing beyond the lab-commons bump. Both rows come from `base.toml`, which every repo's hook
-table merges over, with no escape hatch. A repo also prints the `report` line from its SessionStart hook.
+The CPU/box seat stays a RESOURCE lock; it decides no ownership.
+
+## Integrating without a working tree
+
+```
+python -m lab_commons.dev.integrate merge <branch> [--audit "<KIND> <test> -- <reason>"]...
+python -m lab_commons.dev.integrate promote <sha>
+```
+
+- `merge` runs `git merge-tree --write-tree` of the local integration branch and `<branch>`, refuses a
+  conflict naming the files, passes the message (`Merged-Branch: <branch>` plus the `--audit` lines) through
+  the repo's own `commit-msg` hook stage and `mergeaudit.judge` -- the same functions the hooks run -- then
+  `commit-tree` and `update-ref` with the old tip as compare-and-swap.
+- `promote` fast-forwards the LOCAL trunk ref to `<sha>`, an origin integration commit whose every derived
+  part stands PASS at scope full; it refuses naming the missing parts.
+- Neither checks out nor pushes; both refuse a target branch that is checked out in some worktree. The
+  session publishes with `git push origin <branch>`.
 
 ## Child branches sync from integration
 
@@ -112,13 +123,10 @@ stores it, so a duplicate or lost wake changes nothing.
 
 ## Promoting the trunk
 
-```
-python -m lab_commons.dev.forge promote
-```
-
-`TRUNK-MOVES-BY-FAST-FORWARD`: a fast-forward push of the trunk to the integration tip when every required
-`tests/<part>` part stands PASS at scope `full`. It refuses naming the missing parts, and refuses a trunk
-that is not an ancestor of integration rather than merging. No merge commit ever lands on the trunk.
+`TRUNK-MOVES-BY-FAST-FORWARD`: `integrate promote <sha>` moves the trunk to an integration commit when every
+required `tests/<part>` part stands PASS at scope `full`. It refuses naming the missing parts, and refuses a
+trunk that is not an ancestor of `<sha>` rather than merging. No merge commit ever lands on the trunk; the
+push admission row checks the same standing when the holder pushes it.
 
 ## The merge audit
 
@@ -147,13 +155,13 @@ that is not an ancestor of integration rather than merging. No merge commit ever
 The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
 carries no state: it only means "derive again now". Polling is the floor that makes a lost wake harmless.
 
-**The observer is `forge serve`.** On the host the repo declares in `[tool.lab_commons.integrator] host`, each
-serve tick derives this same queue (`integrator.observe`) and raises an `integration` alarm per row that asks
-the integrator to act: a lane READY to merge, the integration tip PROMOTE-able, a lane or tip BLOCKED on a red
-to route. Each alarm is keyed by `<state> <branch>@<tip12>`, so the alarm de-dup state is the only memory: a
-new row or a moved tip is a new key and is delivered at once; an unchanged row repeats once per the receiver's
-`[alerts] repeat_hours`. It goes out through every alarm channel -- the stderr JSONL line a consumer routes
-(cc-config's notify), the host card, and `[alerts]`. Every other host derives nothing.
+**The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives this same
+queue (`integrator.observe`), and every row that asks the integrator to act -- a lane READY to merge, the
+integration tip PROMOTE-able, a lane or tip BLOCKED on a red to route -- is kept as ONE forge issue titled
+`integration: <subject>` (`forgeroute.reconcile`, the found-by-title rule failure routing keeps an `area:*`
+issue by). N hosts deriving the same row write one issue; only the host that creates or changes it raises the
+alarm (the stderr JSONL line, the host card, `[alerts]`), and a row no longer derived closes its issue. The
+`starved` alarm is kept the same way, one `starved: <subject>` issue per part.
 
 ## Failure modes
 
@@ -162,5 +170,5 @@ new row or a moved tip is a new key and is delivered at once; an unchanged row r
 | the child moved after its part was posted | the new tip has no part and reads `waiting` until a producer posts one |
 | stale refs (no fetch) | every row prints its tip, so the staleness is visible; the module never fetches |
 | forge unreachable | the command exits non-zero with the remedy; nothing is merged on a guess |
-| two integrators on one repo | the push whitelist and fast-forward-only promote make the loser's push fail |
+| two integrators on one repo | the second's push is a non-fast-forward and refused; it merges first |
 | a child blocked on `failure` | listed with its tip; it is the owner's to fix, through its `area:*` issue |

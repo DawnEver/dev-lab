@@ -12,7 +12,7 @@ a hint, never a trigger.
 | human | sets goals, reviews, accepts; decides forge settings and remote deletions | accepts "done" from an agent without its tests |
 | author (any box, the weakest included) | edits in a worktree on its session branch, measures what it touched, commits, pushes | runs a full suite; merges another child's branch |
 | producer (a box with capacity, or a cluster) | runs `forge serve`: claims a sha lacking its part, runs it, posts `tests/<part>` | produces a part it did not claim |
-| integrator (one session) | `forge integration`, pushes integration, `forge promote` | runs tests; writes a child branch |
+| integrator (the integration branch's session) | `forge integration`, `integrate merge`, `integrate promote`, pushes | runs tests; writes a child branch |
 | owner (per area) | fixes the reds in its `area:<name>` issue on its own branch | is interrupted by another area's reds |
 
 - A **subagent** is an author that never publishes: it commits on its lane and hands the SHA back to its main
@@ -26,7 +26,7 @@ a hint, never a trigger.
 3. A producer claims the pushed sha and posts its parts ([the forge](forge.md)).
 4. `forge route` files the reds as `area:*` issues for their owners ([issues](issues.md)).
 5. The integrator merges children whose parts stand PASS, pushes integration, and producers prove that tip.
-6. When every part of the integration tip is a full PASS, `forge promote` fast-forwards `main`.
+6. When every part of an integration commit is a full PASS, `integrate promote` fast-forwards `main`.
 7. A merged branch is deleted ([one branch per session](branch-set.md)).
 
 Every arrow is a forge event, not someone remembering: push, missing status, claim, status, issue, fix, push.
