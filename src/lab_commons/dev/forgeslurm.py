@@ -26,7 +26,7 @@ from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, probe, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
-from lab_commons.hpc.platforms import table_at
+from lab_commons.hpc.needsets import vocabulary_at
 from lab_commons.hpc.progress import Progress, where
 from lab_commons.hpc.run import load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
@@ -75,7 +75,8 @@ class SlurmCluster:
             sha=run.sha,
             repo_url=run.repo_url,
             collect=run.collect,
-            table=table_at(self.root, run.sha),
+            vocabulary=vocabulary_at(self.root, run.sha),
+            part=run.platform,
             pack_from=self.root,
             builds=builds_at(self.root, run.sha, python=''),
         )

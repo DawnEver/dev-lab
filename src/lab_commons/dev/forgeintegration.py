@@ -8,7 +8,7 @@ checkout (:mod:`lab_commons.dev.trialmerge`):
 * merged into integration at <sha>, or deferred and why (conflicts / parts not green / ready, waiting);
 * behind N, clean or the conflicting files;
 * its watched upstream set (``DOWNSTREAM-SYNCS-INTEGRATION``: integration unless opted in);
-* the head's ``tests/<platform>`` states, with the open ``area:*`` issues that cite the head;
+* the head's ``tests/<part>`` states, with the open ``area:*`` issues that cite the head;
 * promoted to the trunk at <sha>, once the trunk holds it.
 
 WHERE IT IS SAID. On a PR, as ONE comment found by a hidden marker and updated in place
@@ -78,7 +78,7 @@ def _line(statuses: Sequence[Status]) -> list[str]:
         f'  - `{s.context}` {s.state}: {s.description}' + (f' ([record]({s.url}))' if s.url else '')
         for s in statuses
         if s.context.startswith(CONTEXT_PREFIX)
-    ] or ['  - no `tests/<platform>` part posted yet']
+    ] or ['  - no `tests/<part>` part posted yet']
 
 
 def _areas(client: Client, head: str) -> list[str]:
@@ -98,11 +98,11 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     elif not tried.clean:
         state, verdict = 'failure', f'deferred: conflicts with `{policy.integration}`'
     elif result == 'FAIL':
-        state, verdict = 'failure', 'deferred: a `tests/<platform>` part FAILED'
+        state, verdict = 'failure', 'deferred: a `tests/<part>` part FAILED'
     elif result == 'PASS':
         state, verdict = 'pending', 'ready: clean and every part PASS; waiting for the integrator to merge'
     else:
-        state, verdict = 'pending', 'deferred: the `tests/<platform>` parts are not settled yet'
+        state, verdict = 'pending', 'deferred: the `tests/<part>` parts are not settled yet'
     position = 'clean' if tried.clean else 'conflicts in ' + ', '.join(f'`{f}`' for f in tried.conflicts)
     promoted = (
         f'promoted to `{policy.trunk}` (it holds {merge})'
@@ -135,7 +135,7 @@ def retarget_note(policy: Policy) -> str:
         f'Retargeted from `{policy.trunk}` to `{policy.integration}`: every pull request lands on '
         f'`{policy.integration}`, the coordination branch only the integrator merges into. '
         f'`{policy.trunk}` moves only by fast-forward to an `{policy.integration}` commit whose every '
-        f'`tests/<platform>` part is a full PASS.'
+        f'`tests/<part>` part is a full PASS.'
     )
 
 

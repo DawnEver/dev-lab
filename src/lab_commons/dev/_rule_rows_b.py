@@ -154,7 +154,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'VERDICTS-FROM-THE-FORGE',
         (
             'A verdict is a fact about a sha, produced ONCE, after the push, by the forge serve host that claims '
-            'its `tests/<platform>` part, and read from the forge. Nobody runs a full suite to push: admission '
+            'its `tests/<part>` part, and read from the forge. Nobody runs a full suite to push: admission '
             'reads forge parts and no pre-push hook runs a test. A full tier (verify naming no path, a runner`s '
             'gate or heavy) refuses to run outside the producer serve spawned, naming the remedy: push, then read '
             'the part. A developer`s targeted measure needs no claim, and refuses fast rather than queue behind a '
@@ -203,7 +203,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'TRUNK-MOVES-BY-FAST-FORWARD',
         (
             'The trunk moves only by fast-forward to an integration commit whose every required '
-            '`tests/<platform>` part stands PASS at scope full, through `forge promote`; it refuses with the '
+            '`tests/<part>` part stands PASS at scope full, through `forge promote`; it refuses with the '
             'missing parts named, and refuses a trunk that cannot fast-forward rather than merging into it.'
         ),
         ('tests/test_dev_branchflow.py', 'tests/test_dev_admission.py'),

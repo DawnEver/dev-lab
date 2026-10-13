@@ -277,7 +277,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A verdict answers for the INCREMENT that produced it, not the tree: a red it did not cause is inventory. '
             'Lane and integration pushes are admitted with no result -- parts are produced FROM pushed shas; the '
-            'trunk needs every tests/<platform> part of HEAD on the forge a PASS of scope full. Refused: a part '
+            'trunk needs every tests/<part> part of HEAD on the forge a PASS of scope full. Refused: a part '
             'missing, unsettled, failing or incremental, or the forge unreadable -- there is no local fallback.'
         ),
         (

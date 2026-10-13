@@ -34,9 +34,9 @@ def _ref(branch: str, tip: str, at: int = 0, *, absorbed: bool = False) -> LaneR
     return LaneRef(branch, tip, at, absorbed=absorbed)
 
 
-def _part(state: str = 'success', *, platform: str = 'linux', scope: str = 'full', hands: str = '-') -> Status:
+def _part(state: str = 'success', *, platform: str = 'base', scope: str = 'full', hands: str = '-') -> Status:
     """A ``tests/<platform>`` part as the forge holds it -- the one name for a platform result."""
-    return Status(f'tests/{platform}', state, f'scope={scope} ran=3 hands={hands} nowhere=0', '')
+    return Status(f'tests/{platform}', state, f'scope={scope} ran=3 hands={hands}', '')
 
 
 _GREEN = (_part(),)

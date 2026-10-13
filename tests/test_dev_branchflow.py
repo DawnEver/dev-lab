@@ -37,9 +37,9 @@ def server() -> Iterator[ThreadingHTTPServer]:
 def _part(state: str = 'success', scope: str = 'full', sid: int = 1) -> dict[str, object]:
     return {
         'id': sid,
-        'context': 'tests/linux',
+        'context': 'tests/base',
         'status': state,
-        'description': f'scope={scope} ran=3 hands=- nowhere=0',
+        'description': f'scope={scope} ran=3 hands=-',
     }
 
 

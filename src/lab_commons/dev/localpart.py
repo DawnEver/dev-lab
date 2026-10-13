@@ -1,12 +1,16 @@
-"""A LOCAL RUN AS A PART -- what a workstation's verify posts, in the cluster record's shape.
+"""A LOCAL RUN AS PARTS -- what a workstation's verify posts, in the cluster record's shape.
 
-The cluster's linux part comes from ``hpc run gather``; a local run's part comes from here, so both are
-one kind of run record and post as one kind of ``tests/<platform>`` part
-(:mod:`lab_commons.dev.platformparts`). A local verify runs EVERY collected id, so its record COVERS
-every id it judged that the commit's platform table lets this platform run, and hands off ``not-covered``
-only the ids this platform cannot run -- measured 2026-10-11: assigning by the cluster's rule left a
-windows full verify of lab-commons (no platform markers, so every id is linux's) covering nothing, and
-neither a fresh nor a cited PASS ever posted a part.
+The cluster's parts come from ``hpc run gather``; a local run's come from here, so both are one kind of
+run record and post as one kind of ``tests/<part>`` part (:mod:`lab_commons.dev.platformparts`). Each
+reported id belongs to ONE part, its need-set (:mod:`lab_commons.hpc.needsets`); a record covers the ids
+of its own part and hands every other collected id ``not-covered`` to the part it belongs to.
+
+WHICH PARTS A RUN POSTS. A producer told its part (``verify --part <part>``, the declared ``produce``)
+posts exactly that part. A run nobody named a part for posts EVERY part it judged whose needs THIS host
+has (:func:`present_here`: its OS and the tools its machine file declares and the probes find) -- a FEMM
+test that ran on a host without FEMM proved nothing about FEMM, so its part is not posted from here.
+Measured 2026-10-11: a windows full verify of lab-commons covered nothing under the old per-OS
+assignment; under need-sets every unmarked test is ``base`` and a bare verify posts it.
 
 The record is written where ``[tool.lab_commons.parts] output`` declares
 (:func:`lab_commons.dev.platformparts.record_directory`). A CITED verdict posts from the cited run's own
@@ -20,48 +24,64 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lab_commons.compute.probe import tools
+from lab_commons.config import section
 from lab_commons.dev.forgeoutbox import PostFailed
+from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
 from lab_commons.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory, this_platform
-from lab_commons.hpc.platforms import cannot_run, runnable, table_at
+from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
 
-__all__ = ['local_record', 'post_cited', 'post_local', 'post_part']
+__all__ = ['local_record', 'owners', 'part_selection', 'post_cited', 'post_local', 'post_part', 'present_here']
 
 #: The record's word for an id handed to another part (the cluster record's own).
 _NOT_COVERED = 'not-covered'
 
 
+def present_here() -> frozenset[str]:
+    """The resources THIS host has: its OS, and every machine-file tool the probes find installed."""
+    _, found = tools(provided(section('capabilities')))
+    return frozenset({this_platform(), *found})
+
+
+def owners(root: Path, sha: str, reported: Collection[str], collect: Callable[[str], Sequence[str]]) -> dict[str, str]:
+    """``{id: its part}`` over the *reported* ids and everything collected; no resources declared: all base.
+
+    *collect* is asked once for everything (``''``) and once per declared resource marker.
+    """
+    vocabulary = vocabulary_at(root, sha)
+    if not vocabulary.resources:
+        return dict.fromkeys(reported, BASE)
+    ids = list(dict.fromkeys([*reported, *collect('')]))
+    return need_sets(ids, {name: set(collect(name)) for name in vocabulary.resources})
+
+
 def local_record(
-    root: Path,
     *,
     sha: str,
-    platform: str,
+    part: str,
     scope: str,
     req: str,
     outcomes: Mapping[str, str],
     reasons: Mapping[str, str],
-    collect: Callable[[str], Sequence[str]],
+    owned: Mapping[str, str],
 ) -> dict[str, Any]:
-    """The run record of a LOCAL run, in the cluster record's shape, so it posts as the same kind of part.
+    """The run record of *part* from a LOCAL run, in the cluster record's shape.
 
-    The ids are the ones the run reported (*collect* is asked only for the marker expressions the table
-    declares). An id *platform* can run carries its outcome; an id it cannot run is handed off,
-    ``not-covered``, with the platforms that can.
+    An id of *part* the run reported carries its outcome; every other id of *owned* (id -> part) is
+    handed off, ``not-covered``, to the part it belongs to.
     """
-    table = table_at(root, sha)
-    cannot = {name: set(collect(expr)) for name in table.parts if (expr := cannot_run(table, name))}
-    can = runnable(list(outcomes), cannot)
-    mine = [node for node, platforms in can.items() if platform in platforms]
-    handed = {node: platforms for node, platforms in can.items() if platform not in platforms}
+    mine = [node for node, owner in owned.items() if owner == part and node in outcomes]
+    handed = {node: owner for node, owner in owned.items() if owner != part}
     return {
         'sha': sha,
-        'platform': platform,
+        'platform': part,
         'scope': scope,
         'req': req,
         'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, _NOT_COVERED)},
@@ -80,18 +100,35 @@ def post_local(root: Path, record: Mapping[str, Any], directory: Path) -> str:
 
 
 def post_cited(
-    root: Path, cited_log: str, arguments: tuple[str, ...], *, head: str | None, dirt: tuple[str, ...]
+    root: Path,
+    cited_log: str,
+    arguments: tuple[str, ...],
+    *,
+    head: str | None,
+    dirt: tuple[str, ...],
+    part: str = '',
 ) -> str:
-    """Post a CITED run's part; its outcomes beside its log (``<path>@<digest>`` in the cache) are the evidence.
+    """Post a CITED run's part(s); its outcomes beside its log (``<path>@<digest>`` in the cache) are the evidence.
 
     It is about *head* only when the tree is clean (*dirt* empty); nothing re-runs.
     """
     log = root / cited_log.split('@', 1)[0]
-    return post_part(root, log, verdict_commit(head, head, dirt, dirt), arguments, settled=True)
+    return post_part(root, log, verdict_commit(head, head, dirt, dirt), arguments, settled=True, part=part)
 
 
-def post_part(root: Path, log: Path, commit: str | None, arguments: tuple[str, ...], *, settled: bool) -> str:
-    """Post the run judged in *log* as this platform's ``tests/<platform>`` part of *commit*; one line says what.
+def post_part(
+    root: Path,
+    log: Path,
+    commit: str | None,
+    arguments: tuple[str, ...],
+    *,
+    settled: bool,
+    part: str = '',
+    present: Callable[[], frozenset[str]] | None = None,
+) -> str:
+    """Post the run judged in *log* as *part* of *commit*, or every part this host has the needs of; one line each.
+
+    With no *part*: every part it judged whose needs this host has (module docstring).
 
     *log* is a fresh verdict's log or a CITED run's evidence; its outcomes sit beside it.
     """
@@ -106,19 +143,41 @@ def post_part(root: Path, log: Path, commit: str | None, arguments: tuple[str, .
 
     def collect(expression: str) -> list[str]:
         argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
-        command = [*argv, '-m', expression, *arguments]
+        command = [*argv, *(['-m', expression] if expression else []), *arguments]
         done = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
         return parse_ids(done.stdout)
 
     judged = outcomes_dir(log)
-    record = local_record(
-        root,
-        sha=commit,
-        platform=this_platform(),
-        scope=INCREMENTAL if arguments else FULL,
-        req=log.stem,
-        outcomes=read_outcomes(judged),
-        reasons=read_reasons(judged),
-        collect=collect,
+    outcomes, reasons = read_outcomes(judged), read_reasons(judged)
+    owned = owners(root, commit, list(outcomes), collect)
+    if part:
+        chosen = [part]
+    else:
+        here = (present or present_here)()
+        chosen = sorted({owned[node] for node in outcomes if needs_of(owned[node]) <= here})
+    if not chosen:
+        return 'part: not posted -- this host has the needs of no part this run judged'
+    scope = INCREMENTAL if arguments else FULL
+    return '\n'.join(
+        post_local(
+            root,
+            local_record(
+                sha=commit, part=name, scope=scope, req=log.stem, outcomes=outcomes, reasons=reasons, owned=owned
+            ),
+            directory,
+        )
+        for name in chosen
     )
-    return post_local(root, record, directory)
+
+
+def part_selection(root: Path, part: str) -> tuple[str, ...]:
+    """The pytest arguments selecting exactly *part*'s tests in *root*'s checkout; ``()`` for no part.
+
+    Raises:
+        ValueError: *part* is no need-set over the checkout's declared resources.
+
+    """
+    manifest = root / 'pyproject.toml'
+    declared = manifest.read_text(encoding='utf-8') if manifest.is_file() else ''
+    expression = selecting(read_vocabulary(declared), part) if part else ''
+    return ('-m', expression) if expression else ()

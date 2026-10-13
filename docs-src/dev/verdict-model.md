@@ -34,7 +34,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 |---|---|
 | a child branch | none: push; the forge produces its parts afterwards |
 | the integration branch | none: the integrator merges on the children's parts |
-| `main` | every `tests/<platform>` part of HEAD a PASS at scope `full`, read from the forge |
+| `main` | every `tests/<part>` part of HEAD a PASS at scope `full`, read from the forge |
 
 - **The bar is the increment, not the tree** (`VERDICT-BAR-IS-THE-INCREMENT`): a red your change did not cause
   is inventory, routed to its `area:*` issue, never your blocker.

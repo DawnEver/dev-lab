@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 __all__ = ['PRODUCING_VAR', 'RETRYABLE', 'ProducerExit', 'full_suite_refusal', 'producing', 'release_reason']
 
-#: Set by ``forge serve`` on the producer it spawns: the claimed part, ``tests/<platform>@<sha>``.
+#: Set by ``forge serve`` on the producer it spawns: the claimed part, ``tests/<part>@<sha>``.
 PRODUCING_VAR: Final = 'LAB_COMMONS_PRODUCING'
 
 

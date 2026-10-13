@@ -1,7 +1,7 @@
 """``forge promote``: move the trunk by FAST-FORWARD to the integration tip -- and only when it is fully green.
 
 The trunk is the stable branch. It has exactly one way to move: to an integration commit whose every
-required ``tests/<platform>`` part stands PASS at scope ``full`` -- the SAME reading push admission
+required ``tests/<part>`` part stands PASS at scope ``full`` -- the SAME reading push admission
 makes for the trunk (:func:`lab_commons.dev.platformparts.standing`), so the door that moves it and
 the hook that admits the push cannot disagree. No merge commit ever lands on the trunk: when the trunk
 is not an ancestor of the integration tip, the move is refused rather than reconciled.

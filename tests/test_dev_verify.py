@@ -41,7 +41,7 @@ from lab_commons.dev.boxwait import MEASURE_WAIT_S
 from lab_commons.dev.cpuseat import CPU_POOL
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
-from lab_commons.dev.platformparts import part_context, part_of, this_platform
+from lab_commons.dev.platformparts import part_context, part_of
 from lab_commons.dev.producer import PRODUCING_VAR, ProducerExit, producing
 from lab_commons.dev.reports import (
     SKIP_CEILING,
@@ -56,7 +56,7 @@ from lab_commons.dev.runcache import CachedRun, runs
 from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
-from lab_commons.hpc.platforms import Table
+from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
 from lab_commons.resources import Basis, Exhausted
 
@@ -864,7 +864,7 @@ class TestTheTeeOnAColouredStep:
 @pytest.fixture(autouse=True)
 def _as_the_producer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Most tests here drive a FULL run, which only a producer ``forge serve`` spawned may take."""
-    for name, value in producing(part_context(this_platform()), 'a' * 40).items():
+    for name, value in producing(part_context(BASE), 'a' * 40).items():
         monkeypatch.setenv(name, value)
 
 
@@ -918,17 +918,18 @@ def _patched_main(
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(localpart, 'local_record', lambda _root, **fields: fields)
+    monkeypatch.setattr(localpart, 'read_outcomes', lambda _judged: {'t::a': 'passed'})
+    monkeypatch.setattr(localpart, 'owners', lambda _root, _sha, reported, _collect: dict.fromkeys(reported, BASE))
+    monkeypatch.setattr(localpart, 'present_here', lambda: frozenset({'windows'}))
+    monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
     assert verify.main([]) == EXIT_CODES[Outcome.PASS]
     return posted
 
 
-def test_a_judged_clean_run_posts_this_platforms_full_part_on_head(monkeypatch, tmp_path: Path) -> None:
+def test_a_judged_clean_run_posts_its_base_part_on_head(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[(), ()])
-    assert [(record['sha'], record['platform'], record['scope']) for record in posted] == [
-        ('a' * 40, localpart.this_platform(), 'full')
-    ]
+    assert [(record['sha'], record['part'], record['scope']) for record in posted] == [('a' * 40, BASE, 'full')]
 
 
 def test_a_dirty_tree_queues_nothing_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
@@ -1025,7 +1026,7 @@ def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str,
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
     (tmp_path / 'judged.outcomes').mkdir()
     (tmp_path / 'judged.outcomes' / 'outcomes.json').write_text(json.dumps(judged), encoding='utf-8')
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: Table())
+    monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: Vocabulary())
     posted: list[Path] = []
     monkeypatch.setattr(localpart, 'post', lambda _root, path: posted.append(path) or 'posted')
     return posted
@@ -1182,3 +1183,33 @@ _HOLD_SEAT: Final = (
     "    print('already held', flush=True)\n"
     '    time.sleep(600)\n'
 )
+
+
+def test_a_producer_told_its_part_runs_exactly_its_need_set_and_posts_it_alone(monkeypatch, tmp_path: Path) -> None:
+    """``verify --part femm`` is the declared producer's form: one -m selecting the need-set, one part posted."""
+    _cached(monkeypatch, tmp_path)
+    declared = '[tool.lab_commons.parts]\noutput = "out"\n[tool.lab_commons.tests]\nresources = ["femm", "jmag"]\n'
+    (tmp_path / 'pyproject.toml').write_text(declared, encoding='utf-8')
+    for name, value in producing(part_context('femm'), 'a' * 40).items():
+        monkeypatch.setenv(name, value)
+    ran: list[tuple[str, ...]] = []
+    monkeypatch.setattr(verify, 'run_verify', lambda _root, arguments, **_k: ran.append(arguments) or _judged(tmp_path))
+    posts: list[tuple[tuple[str, ...], str]] = []
+
+    def post(*_a: object, arguments: tuple[str, ...], part: str, **_k: object) -> str:
+        posts.append((arguments, part))
+        return 'posted'
+
+    monkeypatch.setattr(verify, 'post_part', post)
+    assert verify.main(['--part', 'femm']) == ProducerExit.PASS
+    assert ran == [('-m', 'femm and not jmag')]
+    assert posts == [((), 'femm')], 'its own selection is the part, of scope full'
+
+
+def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatch, tmp_path: Path, capsys) -> None:
+    """PLANTED CONTROL: a need-set naming an undeclared resource selects nothing a test can carry."""
+    _cached(monkeypatch, tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nresources = ["femm"]\n', encoding='utf-8')
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a refused part ran'))
+    assert verify.main(['--part', 'matlab']) == ProducerExit.USAGE
+    assert "needs ['matlab']" in capsys.readouterr().err
