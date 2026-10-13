@@ -24,6 +24,11 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
 
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
+A REFUSAL IN STEPS 3-5 BELONGS TO ITS REPO (incident 2026-10-13, the cluster deploy's twin): the repo is
+reported with its reason, skipped by the later steps and left out of ``[serve] repos`` so the Task never
+serves it; the deploy finishes for the others, raises one forge ``run`` alarm per refused repo
+(:mod:`lab_commons.dev.forgealarm`), and exits 2 naming each.
+
 ``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
 ``forge serve`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
 Its exit is the worst child's; one repo's failure never skips the next. Each child starts with no
@@ -46,6 +51,7 @@ from typing import IO, Any, Final
 from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
 from lab_commons.dev._machinefile import diff, merged
+from lab_commons.dev.forgealarm import RUN, Alarm, sound
 from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.servelock import default_lock, held
 from lab_commons.dev.venvpath import venv_interpreter
@@ -111,6 +117,7 @@ class Programs:
     com: Callable[[str], Path | None] = com_server
     windows: bool = os.name == 'nt'
     home: Path = field(default_factory=servetask.home)
+    alarm: Callable[[Alarm], object] = sound
 
 
 def _read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -191,10 +198,11 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
 
 @dataclass(frozen=True)
 class _Moved:
-    """A checkout step's outcome: its exit, and whether HEAD moved."""
+    """A checkout step's outcome: its exit, whether HEAD moved, and why it was refused."""
 
     rc: int
     moved: bool = False
+    why: str = ''
 
 
 def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> _Moved:
@@ -203,8 +211,7 @@ def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: 
         return _Moved(step.change(f'{checkout.name}: git clone -b {ref} {url} {checkout}', clone), moved=True)
     git = [*programs.git, '-C', str(checkout)]
     if _read([*git, 'status', '--porcelain']).stdout.strip():
-        emit(f'deploy refused: {checkout} has local changes; commit or clean them, then re-run', err=True)
-        return _Moved(2)
+        return _Moved(2, why=f'{checkout} has local changes; commit or clean them, then re-run')
     if step.dry:
         return _Moved(step.change(f'{checkout.name}: git fetch, then fast-forward to its upstream when behind', []))
     return _fast_forward(step, git, checkout.name)
@@ -215,8 +222,7 @@ def _fast_forward(step: Step, git: Sequence[str], name: str) -> _Moved:
         return _Moved(rc)
     head, upstream = (_read([*git, 'rev-parse', rev]).stdout.strip() for rev in ('HEAD', '@{u}'))
     if not upstream:
-        emit(f'deploy refused: {name} tracks no upstream; `git branch -u origin/<ref>` in it, then re-run', err=True)
-        return _Moved(2)
+        return _Moved(2, why=f'{name} tracks no upstream; `git branch -u origin/<ref>` in it, then re-run')
     if head == upstream:
         emit(f'  {name}: current at {head[:12]}')
         return _Moved(0)
@@ -302,24 +308,26 @@ def _preflight(args: argparse.Namespace, tools: Programs, checkouts: Mapping[str
     return urls
 
 
-def _checkouts(step: Step, tools: Programs, checkouts: Mapping[str, Path], urls: Mapping[str, str], ref: str) -> int:
-    """Clone or fast-forward each checkout, then bootstrap its venv and install its hooks where needed."""
+def _checkouts(
+    step: Step, tools: Programs, checkouts: Mapping[str, Path], urls: Mapping[str, str], ref: str
+) -> dict[str, str]:
+    """Clone or fast-forward each checkout, then bootstrap its venv and install its hooks where needed.
+
+    A repo whose step fails is refused ALONE: skipped by every later step and returned by name with its
+    reason -- one repo's outdated state never stops the others.
+    """
     emit('[checkouts] clone, or fast-forward a clean checkout')
-    moved: dict[str, bool] = {}
-    for name, co in checkouts.items():
-        done = _checkout(step, tools, co, url=urls[name], ref=ref)
-        if done.rc:
-            return done.rc
-        moved[name] = done.moved
+    done = {name: _checkout(step, tools, co, url=urls[name], ref=ref) for name, co in checkouts.items()}
+    refused = {name: one.why or f'checkout exited {one.rc}' for name, one in done.items() if one.rc}
     emit('[venvs] -m lab_commons.dev.dep --bootstrap where missing or moved')
     for name, co in checkouts.items():
-        if rc := _venv(step, tools, co, name, moved=moved[name]):
-            return rc
+        if name not in refused and (rc := _venv(step, tools, co, name, moved=done[name].moved)):
+            refused[name] = f'its venv bootstrap exited {rc}'
     emit('[hooks] hook_install --install where not live')
     for name, co in checkouts.items():
-        if rc := _hooks(step, tools, co, name):
-            return rc
-    return 0
+        if name not in refused and (rc := _hooks(step, tools, co, name)):
+            refused[name] = f'its hook install exited {rc}'
+    return refused
 
 
 def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
@@ -336,13 +344,16 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
         emit(f'deploy refused: {urls}', err=True)
         return 2
     step = Step(Tools(git=tools.git), dry=args.dry_run)
-    if rc := _checkouts(step, tools, checkouts, urls, args.ref):
-        return rc
+    refused = _checkouts(step, tools, checkouts, urls, args.ref)
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
-    tables['serve'] = {'repos': list(args.repos), 'root': str(args.root)}
+    tables['serve'] = {'repos': [name for name in args.repos if name not in refused], 'root': str(args.root)}
     if args.delegates:
         tables['reserve'] = {'delegates': list(args.delegates)}
-    return _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS])
+    rc = _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS])
+    for name, why in refused.items():
+        tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
+        emit(f'deploy refused {name} (left out of [serve] repos): {why}', err=True)
+    return rc or (2 if refused else 0)
 
 
 def serve(*, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None) -> int:

@@ -20,6 +20,7 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import servetask, workstation
+from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.servelock import held
 from lab_commons.dev.venvpath import venv_interpreter
 
@@ -217,6 +218,26 @@ def test_a_dirty_checkout_is_refused_and_a_behind_one_is_fast_forwarded(box: Box
     assert f'bootstrap {box.root / "beta"}' not in moved
     (alpha / 'DIRTY').touch()
     assert box.deploy() == 2
+
+
+def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One repo's refusal never stops the others: it leaves [serve] repos, its owner is alarmed, the exit is 2."""
+    raised: list[Alarm] = []
+    programs = replace(box.programs, alarm=raised.append)
+    argv = [*DEPLOY, '--root', str(box.root)]
+    assert workstation.deploy(argv, programs=programs) == 0
+    (box.root / 'beta' / '.git' / 'DIRTY').touch()
+    (box.root / 'alpha' / '.git' / 'UP_SHA').write_text('b' * 40)
+    capsys.readouterr()
+    assert workstation.deploy(argv, programs=programs) == 2
+    assert f'git -C {box.root / "alpha"} merge --ff-only -q @{{u}}' in box.calls(), 'the planted control moves on'
+    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    assert declared['serve']['repos'] == ['lab-commons', 'alpha'], 'a refused repo is not served'
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
+    assert 'beta' in capsys.readouterr().err
+    assert [(one.repo, 'local changes' in one.body) for one in raised] == [(f'{FORGE}/beta.git', True)]
 
 
 def test_a_missing_checkout_without_a_forge_is_refused(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
