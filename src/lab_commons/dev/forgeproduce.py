@@ -23,14 +23,19 @@ sampled at every wake for its resident memory; a run that ended on its own (not 
 records its peak, wall and held cpu-seconds under ``(platform, no needs)`` -- the box half of the one
 demand table a Slurm run also writes. A box part holds the whole box, so its cpu-seconds are its wall
 times the box's cores. A signalled exit's peak is a floor (:func:`~lab_commons.compute.learned.record_run`).
+
+A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): a light run is
+admitted beside a heavy part (:mod:`lab_commons.dev.boxwait`), and the scheduler keeps it responsive.
 """
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import math
 import os
 import subprocess
+import sys
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -148,7 +153,8 @@ def _run(
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
-    proc = spawn(
+    proc = below_normal(
+        spawn,
         list(argv),
         cwd=tree,
         env=os.environ | producing(context, item.sha),
@@ -241,3 +247,24 @@ def _post(client: Client, item: Work, state: str, description: str, say: Callabl
         say(f'[{item.platform}] could not post {state}: {failed}')
     else:
         say(f'[{item.platform}] {state}: {description}')
+
+
+#: The POSIX niceness a producer runs at: below normal, so an interactive run keeps the scheduler's favour.
+BELOW_NORMAL_NICE: Final = 10
+
+
+def below_normal(spawn: Callable[..., Any], argv: list[str], **kwargs: Any) -> Any:  # noqa: ANN401 -- spawn's own
+    """Start *argv* through *spawn* at BELOW-NORMAL priority, which its descendants inherit.
+
+    Windows: ``BELOW_NORMAL_PRIORITY_CLASS`` at creation. POSIX has no creation flag (``preexec_fn`` is
+    unsafe beside serve's threads), so a real child is reniced at once, before it spawns workers; a
+    renice the OS refuses (a parent already nicer, a child already gone) leaves it where it is.
+    """
+    if sys.platform == 'win32':
+        flags = kwargs.pop('creationflags', 0) | subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        return spawn(argv, creationflags=flags, **kwargs)
+    proc = spawn(argv, **kwargs)
+    if isinstance(proc, subprocess.Popen):
+        with contextlib.suppress(OSError):
+            os.setpriority(os.PRIO_PROCESS, proc.pid, BELOW_NORMAL_NICE)
+    return proc

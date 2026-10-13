@@ -55,6 +55,13 @@ CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluster'
     [tool.lab_commons.parts.produce.windows]   # a local part: argv after the venv python, per scope
     full = ["-m", "lab_commons.dev.verify"]
 
+    [tool.lab_commons.parts.refs.windows]      # optional: the refs (fnmatch) this part is produced for
+    full = ["integrate/main", "main"]          # absent = every ref the serving mode serves
+
+A ref filter is what keeps HEAVY work off development branches (user ruling 2026-10-13): the scheduler
+(:func:`lab_commons.dev.forgeschedule.candidates`) never offers a ref the part's filter excludes, and
+says so. It is read from the SERVING checkout, so a branch cannot widen the filter that judges it.
+
 The repo url is origin's, spelled https. A missing declaration is refused naming the key to add --
 never a command with a hole in it.
 """
@@ -205,6 +212,20 @@ def part_argv(root: Path, platform: str, *, scope: str, sha: str) -> list[str]:
     table = f'tool.lab_commons.parts.produce.{platform}'
     produce = _declared(root, sha).get('parts', {}).get('produce', {}).get(platform, {}).get(scope)
     return _strings(produce, table, scope, '["-m", "lab_commons.dev.verify"]', required=True)
+
+
+def part_refs(root: Path, platform: str, scope: str) -> tuple[str, ...] | None:
+    """The refs (fnmatch patterns) *platform*'s part at *scope* is produced for; ``None`` when undeclared.
+
+    Raises:
+        UndeclaredPart: the declaration is present and not a list of strings.
+
+    """
+    declared = _declared(root).get('parts', {}).get('refs', {}).get(platform, {}).get(scope)
+    if declared is None:
+        return None
+    table = f'tool.lab_commons.parts.refs.{platform}'
+    return tuple(_strings(declared, table, scope, '["integrate/main", "main"]', required=True))
 
 
 def _declared(root: Path, sha: str | None = None) -> dict[str, Any]:

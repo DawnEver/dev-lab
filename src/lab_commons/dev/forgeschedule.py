@@ -66,6 +66,7 @@ from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
+from lab_commons.dev.platformparts import part_refs
 from lab_commons.hpc.shell import FULL
 
 __all__ = [
@@ -289,7 +290,8 @@ def candidates(
     """Every candidate *mode* serves, ONE per ref and platform: the ref's newest sha (coalesced). Fetches nothing.
 
     ``integrate``: the integration branch, every open PR into it (labels from the PR), every opted-in
-    branch, and every request issue -- PRs and requests
+    branch, and every request issue -- each kept only where its part's ref filter admits its ref
+    (:func:`lab_commons.dev.platformparts.part_refs`, the exclusion said through *say*) -- PRs and requests
     :func:`optional`, a failure said through *say*. ``develop``: the lanes, as class ``branch``. ``quiet``: none.
     """
     if mode == 'quiet':
@@ -301,7 +303,19 @@ def candidates(
     ]
     if mode == 'integrate':
         found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
-    return tuple(found)
+    return tuple(one for one in found if _ref_served(root, one, say))
+
+
+def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:
+    """Whether *wanted*'s part declares its ref (``[tool.lab_commons.parts.refs]``); an exclusion is SAID."""
+    admits = part_refs(root, wanted.platform, wanted.scope)
+    if admits is None or any(fnmatch.fnmatchcase(wanted.ref, one) for one in admits):
+        return True
+    say(
+        f'[serve] {wanted.ref} is not served tests/{wanted.platform} at {wanted.scope}: '
+        f'[tool.lab_commons.parts.refs.{wanted.platform}] {wanted.scope} admits {list(admits)}'
+    )
+    return False
 
 
 def repo_name(client: Client) -> str:
