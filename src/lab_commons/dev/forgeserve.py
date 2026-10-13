@@ -182,6 +182,7 @@ def serve(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
             supply=supply, reservations=leases, running=running,
             usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
+            owners={host_: (owner.login, *owner.delegates) for host_, owner in book.owners.items()},
         )  # fmt: skip
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:

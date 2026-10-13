@@ -34,28 +34,23 @@ that measured the whole box is admitted alone, and never starved by a core the o
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import os
 import shlex
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.compute.learned import learned, learned_demand
 from lab_commons.compute.model import (
-    REQUEST,
     Candidate,
-    Job,
     Ranked,
     Reservation,
     Resources,
-    Schedule,
     Supply,
-    admit,
     expected_cost,
     fitted,
     rank,
@@ -69,43 +64,31 @@ from lab_commons.dev.forge import (
     https_transport,
 )
 from lab_commons.dev.forgeclaim import (
-    CLAIMABLE,
     DEFAULT_LEASE,
-    MINE,
     Claim,
-    Serving,
     Work,
-    assess,
-    claim,
     forge_now,
     serving,
     this_machine,
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeprovides import declared_parts, lacking, needs, served_parts
+from lab_commons.dev.forgeprovides import declared_parts, served_parts
 from lab_commons.dev.forgeschedule import (
-    NO_HOST,
-    NOT_ADMITTED,
     candidates,
     load_schedule,
-    over_budget,
     repo_name,
+    vouched,
 )
-from lab_commons.dev.forgestatus import status_history
+from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import (
-    UndeclaredPart,
-    cluster_part,
     origin_url,
-    part_argv,
     part_context,
     this_platform,
 )
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.platforms import Table, declared_at
-from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
 __all__ = ['MODES', 'TickReport', 'main', 'tick']
@@ -149,6 +132,7 @@ def tick(
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
     provides: Mapping[str, Any] | None = None,
+    owners: Mapping[str, Collection[str]] | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -161,7 +145,10 @@ def tick(
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
     this host's machine-file ``[capabilities]`` (:mod:`lab_commons.dev.forgeprovides`; none by default): it
-    adds the engine parts it serves and blocks a part needing what it lacks.
+    adds the engine parts it serves and blocks a part needing what it lacks. *owners* is who may vouch for
+    each host card (host -> its login and delegates; :class:`lab_commons.compute.ledger.Ledger`): a job's
+    ORIGIN host stands only where its forge-recorded login is one of them, and a job a live lease on this
+    host is for ranks FIRST here.
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -181,30 +168,33 @@ def tick(
     serve = serving(host or this_platform(), seat)
     me = Claim(machine, login, now + lease, serve.hpc)
     schedule, repo = load_schedule(root), repo_name(built)
-    found = candidates(
-        root,
-        mode,
-        built,
-        repo=repo,
-        platforms=served_parts(serve.platform, provides or {}, declared_parts(root), cluster=bool(serve.hpc)),
-        schedule=schedule,
-        policy=load_policy(root),
-        now=now,
-        say=lines.append,
+    found = vouched(
+        candidates(
+            root,
+            mode,
+            built,
+            repo=repo,
+            platforms=served_parts(serve.platform, provides or {}, declared_parts(root), cluster=bool(serve.hpc)),
+            schedule=schedule,
+            policy=load_policy(root),
+            now=now,
+            say=lines.append,
+        ),
+        owners or {},
     )
     cores = 1 if serve.hpc else os.cpu_count() or 1
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
-    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     room = supply or Supply(machine or 'this host', Resources(cpu=cores))
     by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=cores)
     sized = demand or (lambda wanted, needed: by_part(wanted.platform, needed))
-    taken = _Taking(
+    taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: fitted(sized(wanted, needed), room, cluster=bool(serve.hpc)),
         reservations=tuple(reservations), taken=list(running),
         store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
+    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, reserved=taken.reserved)
     for item in ranked:
         taken.consider(item)
     work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
@@ -218,96 +208,6 @@ def tick(
     lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
     lines += [f'artefacts {taken.store_why}'] if taken.store_why else []
     return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why)
-
-
-@dataclass
-class _Taking:
-    """The claim pass over the ranked queue: each candidate that admits is claimed, the rest say why not."""
-
-    root: Path
-    client: Client
-    serve: Serving
-    me: Claim
-    now: datetime
-    schedule: Schedule
-    usage: Mapping[str, float] | None
-    dry_run: bool
-    repo: str
-    supply: Supply
-    size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
-    reservations: tuple[Reservation, ...] = ()
-    taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
-    trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
-    unproducible: str = ''  # why the repo's producer cannot be built here; blocks every later candidate
-    store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
-    provides: Mapping[str, Any] = dataclasses.field(default_factory=dict)
-    tables: dict[str, tuple[Table, str]] = dataclasses.field(default_factory=dict)
-    work: list[Work] = dataclasses.field(default_factory=list)
-    claimed: list[Work] = dataclasses.field(default_factory=list)
-    refused: list[str] = dataclasses.field(default_factory=list)
-    queue: list[Ranked] = dataclasses.field(default_factory=list)
-
-    def consider(self, item: Ranked) -> None:
-        """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
-        wanted = item.candidate
-        if wanted.kind == REQUEST:  # requests are ranked and shown; no producer claims one yet
-            self.queue.append(dataclasses.replace(item, blocked=f'{NO_HOST} claims requests yet'))
-            return
-        state, holder = assess(status_history(self.client, wanted.sha), wanted.platform, me=self.me, now=self.now)
-        one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder)
-        blocked, needed = self._blocked(wanted) if state in CLAIMABLE else ('', frozenset[str]())
-        if state in CLAIMABLE and not blocked and not self.dry_run:
-            one, blocked = self._take(one, wanted, needed)
-        self.work.append(one)
-        if one.state in CLAIMABLE:
-            self.queue.append(dataclasses.replace(item, blocked=blocked))
-
-    def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
-        """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
-        table, refused = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
-        needed = frozenset(needs(table, wanted.platform))
-        busy = not self.serve.hpc and wanted.sha in self.trees
-        why = (
-            refused
-            or lacking(sorted(needed), self.provides)
-            or self.unproducible
-            or (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
-            or over_budget(self.root, wanted, self.schedule, self.usage)
-            or self._admission(wanted, needed)
-        )
-        return why, needed
-
-    def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
-        job = Job(self.repo, wanted.sha, wanted.platform, needed, wanted.origin)
-        verdict = admit(
-            job, self.size(wanted, needed), self.supply,
-            reservations=self.reservations, running=self.taken, now=self.now,
-        )  # fmt: skip
-        return '' if verdict else f'{NOT_ADMITTED}: {verdict.why}'
-
-    def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
-        try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
-            one = _producer(self.root, one, self.serve)
-        except (UndeclaredPart, FileNotFoundError) as why:
-            self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
-            self.unproducible = f'{NO_HOST} can produce it: {why}'
-            return one, self.unproducible
-        if one.cluster is not None and one.cluster.outputs and self.store_why:
-            why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
-            self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
-            return one, why
-        one = claim(self.client, one, self.me)
-        if one.state == MINE:
-            self.claimed.append(one)
-            self.taken.append(self.size(wanted, needed))
-            self.trees.add(wanted.sha)
-        return one, ''
-
-
-def _producer(root: Path, work: Work, serve: Serving) -> Work:
-    if serve.hpc:
-        return dataclasses.replace(work, cluster=cluster_part(root, work.sha))
-    return dataclasses.replace(work, argv=tuple(part_argv(root, work.platform, scope=FULL, sha=work.sha)))
 
 
 def _parser() -> argparse.ArgumentParser:

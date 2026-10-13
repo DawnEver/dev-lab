@@ -719,3 +719,35 @@ def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(s
     assert waiting.candidate.ref == 'feat/a'
     assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: [tool.lab_commons.platforms] jmag')
     assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+
+
+def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:
+    """``feat/a``'s tip re-made carrying the ``Forge-Host`` trailer the commit-msg hook writes."""
+    run_git(repo, 'checkout', '-q', tips['feat/a'])
+    message = f'lane work\n\nForge-Host: {host}'
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', message)
+    tips['feat/a'] = git_out(repo, 'rev-parse', 'HEAD')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/feat/a', tips['feat/a'])
+    return tips['feat/a']
+
+
+@pytest.mark.parametrize(
+    ('lease_for', 'owners', 'first'),
+    [
+        (For(session='feat/a'), {}, 'feat/a'),
+        (For(host='B'), {'B': ('bob',)}, 'feat/a'),  # bob authored the PR and owns B: the trailer stands
+        (For(host='B'), {'B': ('carol',)}, 'integrate/main'),  # CONTROL: B is carol's, bob cannot vouch for it
+        (For(session='fix/b'), {}, 'integrate/main'),  # CONTROL: a lease for another session
+    ],
+)
+def test_a_job_a_live_lease_here_is_for_ranks_first(server, tmp_path: Path, lease_for: For, owners, first) -> None:
+    """The PR (class pr) outscores nothing against the head (class integration) -- unless a lease here is for it."""
+    repo, tips = _origin(tmp_path)
+    lane = _stamped_lane(repo, tips, 'B')
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane)]))
+    for sha in (lane, tips['integrate/main']):
+        answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    lease = Reservation('G', Resources(cpu=1), lease_for, LATER, 'alice')
+    report = _tick(repo, server, dry_run=True, reservations=[lease], owners=owners, demand=lambda *_: Demand(cpu=1))
+    assert report.queue[0].candidate.ref == first

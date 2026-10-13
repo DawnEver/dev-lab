@@ -68,11 +68,16 @@ def reserve_main(
     env: Mapping[str, str] | None = None,
     transport: Transport = https_transport,
 ) -> int:
-    """``reserve <scope> <res=amount,...> --for login:X|repo:Y|needs:a+b --until <iso|duration>``; 2 refused."""
+    """``reserve <scope> <res=amount,...> --for login:X|host:H|session:S|repo:Y|needs:a+b --until ...``; 2 refused.
+
+    ``host:H`` is for the jobs host card H created; ``session:S`` for the jobs pushed to lane S.
+    """
     parser = argparse.ArgumentParser(prog='lab_commons.dev.forge reserve', description=__doc__.splitlines()[0])
     parser.add_argument('scope', help='a host card name: a machine, or <cluster>/<account>')
     parser.add_argument('resources', help='cpu=8,mem_gb=32,jmag=1')
-    parser.add_argument('--for', dest='for_', required=True, help='login:X, repo:Y or needs:a+b')
+    parser.add_argument(
+        '--for', dest='for_', required=True, help='login:X, host:H (a host card), session:S (a lane), repo:Y, needs:a+b'
+    )
     parser.add_argument('--until', required=True, help='an ISO moment, or a duration: 30m, 36h, 2d')
     return _run(parser, _reserve, argv, cwd=cwd, env=env, transport=transport)
 

@@ -82,6 +82,12 @@ run = ["cz", "check", "--allow-abort", "--commit-msg-file"]
 id = "issue-ref"
 run = ["python", "-m", "lab_commons.dev.issueref"]
 
+# The origin host a reservation `for host:H` matches, as a `Forge-Host:` trailer (lab_commons.dev.forgeorigin).
+# The one row that WRITES: it appends the trailer and never blocks.
+[[commit-msg]]
+id = "forge-host"
+run = ["python", "-m", "lab_commons.dev.forgeorigin"]
+
 # MERGE-DEVIATIONS-NAMED, checked when the merge is committed (lab_commons.dev.mergeaudit).
 [[commit-msg]]
 id = "merge-audit"

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
-from lab_commons.dev.forgeschedule import host_weights, load_schedule, parse_usage
+from lab_commons.dev.forgeschedule import host_weights, load_schedule, parse_usage, vouched
 from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
@@ -109,3 +109,23 @@ def test_a_blocked_candidate_past_its_class_bound_is_starved() -> None:
 def test_usage_is_core_hours_per_run_job() -> None:
     sacct = 'run-abcdef123456|7200\nrun-abcdef123456|3600\nother|99999\nrun-ffffffffffff|\n'
     assert parse_usage(sacct) == {'abcdef123456': 3.0}
+
+
+def test_a_reserved_candidate_ranks_first_over_a_higher_score() -> None:
+    """A lease holder is not starved by higher-scored foreign work; CONTROL: nothing reserved keeps the score order."""
+    head = _cand('integrate/main', 'integration')
+    lane = _cand('lane/x', 'branch')
+    schedules = {'o/r': Schedule()}
+    assert [r.candidate for r in rank([lane, head], schedules, NOW, cost_h={})] == [head, lane]
+    held = rank([lane, head], schedules, NOW, cost_h={}, reserved=lambda one: one.ref == 'lane/x')
+    assert [(r.candidate, r.reserved) for r in held] == [(lane, True), (head, False)]
+
+
+def test_an_origin_host_stands_only_where_its_login_owns_or_is_delegated_the_host() -> None:
+    claimed = dataclasses.replace(_cand('lane/x', 'pr'), origin='bob', origin_host='G')
+    owners = {'G': ('alice', 'bob'), 'H': ('carol',)}
+    assert vouched([claimed], owners) == (claimed,)
+    forged = dataclasses.replace(claimed, origin_host='H')
+    assert vouched([forged], owners) == (dataclasses.replace(forged, origin_host=''),)
+    unknown = dataclasses.replace(claimed, origin_host='Z')
+    assert vouched([unknown], owners)[0].origin_host == ''
