@@ -70,7 +70,7 @@ __all__ = [
 #: The parameters :func:`lab_commons.dev.boxwait.hold_run_seats` takes, as a NAMED SET compared for
 #: EQUALITY. Not a superset assertion -- see this module's docstring -- and not a count, which could
 #: not say which of the four moved and would invite being edited to match whatever it found.
-HOLD_RUN_SEATS_PARAMETERS: Final[frozenset[str]] = frozenset({'stack', 'what', 'wait_s', 'poll_s'})
+HOLD_RUN_SEATS_PARAMETERS: Final[frozenset[str]] = frozenset({'stack', 'what', 'wait_s', 'poll_s', 'memory_bytes'})
 
 #: The call every arm looks for in the entry point's own source. The paren is load-bearing: a module
 #: that merely IMPORTS the name would otherwise satisfy an assertion about calling it.

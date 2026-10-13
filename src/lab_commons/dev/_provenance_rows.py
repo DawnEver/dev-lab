@@ -152,6 +152,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'artefactstores': ('original',),
     'selection': ('original',),
     'forgealarm': ('original',),
+    'forgereserve': ('original',),
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'admission': ('original',),
     'forgeissue': ('original',),

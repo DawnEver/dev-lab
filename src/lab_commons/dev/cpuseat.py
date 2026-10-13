@@ -26,10 +26,22 @@ unmeasured box's cpu ceiling is one, so DEMANDING cores would refuse the very ru
 to serialise. The seat is the exclusion; ``demands`` is how a caller declares what else it expects
 to consume (memory, most usefully), and it is passed through to the broker rather than interpreted
 here.
+
+ONLY A SATURATING RUN TAKES THE SEAT (user ruling 2026-10-13: light runs never queue). A LIGHT run --
+a targeted selection at a capped width -- does not want the box's width, so serialising it behind a
+heavy holder bought nothing and cost hours (measured 2026-10-13: every light measure of a session came
+back INCONCLUSIVE behind a forge ``part jmag``). ``saturating=False`` takes neither seat and is admitted
+by its DECLARED memory demand against the box's free memory instead, so it is still refused when the
+box cannot hold it, and it is refused at construction when it declares no memory -- a light run that
+declares nothing would be admitted by nothing. Its memory ceiling is the box's TOTAL as the OS reads it
+now, a measurement of this box: on the conservative default an unmeasured box demands half of total be
+free whatever was declared, which refuses a 64 MB selection on a busy workstation and makes the
+declaration decorative.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -39,20 +51,30 @@ from typing import Final
 from lab_commons.resources import (
     BOX_SEATS,
     DEFAULT_POLL_S,
+    MEMORY,
     SEATS,
     Broker,
     Capacity,
     CapacityRegistry,
     Grant,
     Holder,
+    system_memory,
 )
 
-__all__ = ['CPU_POOL', 'CpuSeat']
+__all__ = ['CPU_POOL', 'LIGHT_POOL', 'LIGHT_WIDTH', 'CpuSeat']
 
 #: The name this lock's records carry. NOT the exclusion -- see the module docstring: what excludes
 #: is the box-scoped seat below. Kept as a named constant because a record still has to say which
 #: pool wrote it, and a caller that wants to read this lock's records has to know where they are.
 CPU_POOL: Final = 'lab-commons-cpu'
+
+#: The pool LIGHT runs are admitted in: not :data:`CPU_POOL`, whose structural one seat is the heavy
+#: exclusion. Its seats are this box's cores over :data:`LIGHT_WIDTH`, read from the OS when admitted.
+LIGHT_POOL: Final = 'lab-commons-light'
+
+#: THE WIDTH CAP that makes a run LIGHT: at most this many workers, leaving the box's width to whatever
+#: saturating run holds the seat. A run wider than this saturates and takes the seat.
+LIGHT_WIDTH: Final = 4
 
 #: The rule, as data the broker MUST read. A STRUCTURAL capacity is a property of the tool rather
 #: than of the machine, which is exactly what "this pool runs one at a time" is -- and because
@@ -97,9 +119,16 @@ class CpuSeat:
     wait_s: float = 0.0
     poll_s: float = DEFAULT_POLL_S
     broker: Broker | None = None
+    saturating: bool = True
 
     def __post_init__(self) -> None:
-        """Refuse a request that does not say WHAT is being locked, at construction."""
+        """Refuse a request that does not say WHAT is being locked, or a light one that declares no memory."""
+        if not self.saturating and self.demands.get(MEMORY.name, 0) <= 0:
+            msg = (
+                f'{self.what!r} is a light run and declares no {MEMORY.name} demand. A light run takes '
+                f'no seat and is admitted by its declared memory alone, so declaring none is no admission.'
+            )
+            raise ValueError(msg)
         if not self.what.strip():
             msg = (
                 'a lock holder with no name produces a refusal that cannot be acted on. The reader '
@@ -143,9 +172,12 @@ class CpuSeat:
         # `seats=` key in `demands` cannot widen them. What a caller may add is what else its run
         # costs; what it may not add is a second seat, which would be this class contradicting its
         # own name.
-        demands = {**self.demands, SEATS.name: 1, BOX_SEATS.name: 1}
-        with self._broker(self.broker).admit(
-            CPU_POOL,
+        demands = {**self.demands, SEATS.name: 1, BOX_SEATS.name: 1} if self.saturating else dict(self.demands)
+        broker = self._broker(self.broker)
+        if not self.saturating:
+            _declare_light_measured(broker)
+        with broker.admit(
+            CPU_POOL if self.saturating else LIGHT_POOL,
             demands,
             what=self.what,
             wait_s=self.wait_s,
@@ -169,3 +201,18 @@ class CpuSeat:
     def resource_dir(*, broker: Broker | None = None) -> Path:
         """Where the exclusion lives on disk -- outside every repository, by the broker's design."""
         return CpuSeat._broker(broker).resource_dir()
+
+
+def _declare_light_measured(broker: Broker) -> None:
+    """Declare :data:`LIGHT_POOL`'s ceilings as this box's OS readings now: total memory, cores over the cap.
+
+    An unreadable memory declares nothing and stays on the conservative default -- refusing is the
+    direction that cannot crash the box.
+    """
+    host = broker.hostname
+    seats = max(1, (os.cpu_count() or 1) // LIGHT_WIDTH)
+    broker.registry.declare(LIGHT_POOL, Capacity.measured(SEATS.name, seats, on=host, note='cores // LIGHT_WIDTH'))
+    reading = system_memory()
+    if reading is not None:
+        total = Capacity.measured(MEMORY.name, reading.total_bytes, on=host, note='the OS reading of total memory')
+        broker.registry.declare(LIGHT_POOL, total)

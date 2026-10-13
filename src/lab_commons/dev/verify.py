@@ -46,7 +46,7 @@ from typing import IO, Final
 
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
-from lab_commons.dev.boxwait import MEASURE_WAIT_S, WAIT_S, hold_run_seats, holders_line
+from lab_commons.dev.boxwait import LIGHT_ENV, LIGHT_MEMORY_BYTES, MEASURE_WAIT_S, WAIT_S, hold_run_seats, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.familyheads import family_freshness
@@ -359,6 +359,9 @@ def run_verify(
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
+    A TARGETED selection is a LIGHT run (:mod:`lab_commons.dev.boxwait`): it takes no box seat, is
+    admitted by ``LIGHT_MEMORY_BYTES`` and runs at the capped width, so it never queues on a heavy holder.
+
     The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
     refused against a tree that has not yet spent twenty minutes being tested -- and so is an entry
     whose SUBJECT has left the checkout (:func:`~lab_commons.dev.reports.stale_declarations`), which
@@ -399,7 +402,9 @@ def run_verify(
     path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
     with contextlib.ExitStack() as box, path.open('w', encoding='utf-8') as handle:
-        hold_run_seats(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
+        light = is_targeted(root, pytest_args)
+        memory = LIGHT_MEMORY_BYTES if light else None
+        hold_run_seats(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s, memory_bytes=memory)
         reports.append(read_hooks(root, handle=handle))
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
@@ -408,6 +413,7 @@ def run_verify(
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
             durations.LEDGER_ENV_VAR: env_key(env_manifest()),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
+            **(LIGHT_ENV if light else {}),
         }
         command = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *pytest_args]
         code = _tee(command, cwd=root, handle=handle, extra_env=stamp)

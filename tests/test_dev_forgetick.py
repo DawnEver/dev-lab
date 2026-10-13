@@ -506,6 +506,38 @@ def test_the_mode_names_its_candidates_one_per_ref(server, tmp_path: Path) -> No
     assert {c.ref for c in develop} == {'feat/a', 'fix/b'}
 
 
+def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_exclude(server, tmp_path: Path) -> None:
+    """HEAVY NEVER ON DEVELOPMENT BRANCHES (user ruling 2026-10-13): ``parts.refs.<part>.<scope>`` filters refs.
+
+    The PR, the opted-in branch and the request are all served by ``integrate`` and all excluded from
+    ``tests/windows`` at ``full``; each exclusion is SAID. PLANTED CONTROL: the same refs with no filter
+    are all candidates (:func:`test_the_mode_names_its_candidates_one_per_ref`), and a part the filter
+    does not name (``jmag``) keeps every ref.
+    """
+    repo, tips = _origin(tmp_path)
+    refs = '[tool.lab_commons.parts.refs.windows]\nfull = ["integrate/main", "main"]\n'
+    (repo / 'pyproject.toml').write_text(PRODUCE + refs + '[tool.lab_commons.schedule]\nbranches = ["oth*"]\n', 'utf-8')
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', tips['feat/a'])]))
+    request = {'number': 9, 'body': 'platform = "windows"\n', 'labels': [{'name': 'forge:request'}]}
+    answer('GET', f'{API}/issues', (200, [request]))
+    notes: list[str] = []
+    found = candidates(
+        repo, 'integrate', client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
+        platforms=('windows', 'jmag'), schedule=load_schedule(repo), policy=Policy(), now=NOW, say=notes.append,
+    )  # fmt: skip
+    assert {(c.ref, c.platform) for c in found} == {
+        ('integrate/main', 'windows'),
+        ('integrate/main', 'jmag'),
+        ('feat/a', 'jmag'),
+        ('other', 'jmag'),
+    }
+    assert sorted(note for note in notes if 'tests/windows' in note) == sorted(
+        f'[serve] {ref} is not served tests/windows at full: [tool.lab_commons.parts.refs.windows] full '
+        f"admits ['integrate/main', 'main']"
+        for ref in ('feat/a', 'other', 'issue/9')
+    )
+
+
 def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path) -> None:
     """A user-boosted PR jumps the integration head. PLANTED CONTROL: the label removed, the head is claimed."""
     repo, tips = _origin(tmp_path)

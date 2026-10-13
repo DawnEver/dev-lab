@@ -1121,17 +1121,18 @@ def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_p
     assert verify.main(['--no-status', '--rerun']) == ProducerExit.PASS
 
 
-def test_a_held_box_exits_3_from_a_real_process() -> None:
+def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
-    A child holds this box's CPU seat and a second ``python -m lab_commons.dev.verify --lock-wait-s 0``
-    runs; whatever already holds the seat on this box (a sibling's heavy run) only makes the wait real.
-    Its selection is its own, so the run key differs from any enclosing verify and it cannot attach to it.
-    The second run is INTERACTIVE (a developer's targeted verify): a producer ``forge serve`` spawned takes
-    no box seat (:mod:`lab_commons.dev.boxwait`), so the seat is the interactive runs' alone.
+    A targeted verify is LIGHT (user ruling 2026-10-13: light runs never queue on a heavy holder), so
+    what refuses it is its own pool full: a child holds every light seat of a PRIVATE record root, and a
+    second ``python -m lab_commons.dev.verify --lock-wait-s 0`` runs against that root. Its selection is
+    its own, so the run key differs from any enclosing verify and it cannot attach to it.
     """
+    records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path)}
     holder = subprocess.Popen(
         [sys.executable, '-c', _HOLD_SEAT],
+        env=os.environ | records,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -1139,7 +1140,7 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
     )
     try:
         assert holder.stdout is not None
-        holder.stdout.readline()  # 'held' or the refusal: either way the seat is now taken
+        assert holder.stdout.readline().strip() == 'held', 'the planted holder never took the light seats'
         done = subprocess.run(
             [
                 sys.executable,
@@ -1155,7 +1156,7 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
                 'held_box_probe',
             ],
             cwd=Path(__file__).resolve().parents[1],
-            env={name: value for name, value in os.environ.items() if name != PRODUCING_VAR},
+            env={name: value for name, value in os.environ.items() if name != PRODUCING_VAR} | records,
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -1169,16 +1170,13 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
     assert 'this box is held and nothing was measured' in done.stderr
 
 
-#: A child that takes the box's CPU seat and holds it until killed (the seat may already be held).
+#: A child that takes EVERY light seat of its record root and holds them until killed.
 _HOLD_SEAT: Final = (
-    'import sys, time\n'
-    'from lab_commons.dev.cpuseat import CpuSeat\n'
-    'from lab_commons.resources import Exhausted\n'
-    'try:\n'
-    "    with CpuSeat('planted-holder', wait_s=0).held():\n"
-    "        print('held', flush=True)\n"
-    '        time.sleep(600)\n'
-    'except Exhausted:\n'
-    "    print('already held', flush=True)\n"
+    'import contextlib, os, time\n'
+    'from lab_commons.dev.cpuseat import LIGHT_WIDTH, CpuSeat\n'
+    'with contextlib.ExitStack() as stack:\n'
+    '    for one in range(max(1, (os.cpu_count() or 1) // LIGHT_WIDTH)):\n'
+    "        stack.enter_context(CpuSeat(f'planted-light-{one}', {'memory': 1}, saturating=False).held())\n"
+    "    print('held', flush=True)\n"
     '    time.sleep(600)\n'
 )
