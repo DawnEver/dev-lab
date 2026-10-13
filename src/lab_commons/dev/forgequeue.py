@@ -42,7 +42,8 @@ from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import derived, origin_url
-from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
+from lab_commons.hpc.declared import OutdatedKit
+from lab_commons.hpc.needsets import declared_at, needs_of
 from lab_commons.log import emit
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
@@ -98,16 +99,16 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 continue
         waiting.append(one)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
-    read: dict[str, tuple[Vocabulary, str]] = {}
+    read: dict[str, str] = {}
 
-    def declared(sha: str) -> tuple[Vocabulary, str]:
-        return read.setdefault(sha, declared_at(root, sha) if sha else (Vocabulary(), ''))
+    def declared(sha: str) -> str:
+        return read[sha] if sha in read else read.setdefault(sha, _refused(root, sha))
 
     weights = host_weights(section('schedule'))
     ranked = [
         dataclasses.replace(
             item,
-            blocked=declared(item.candidate.sha)[1] or _why(item.candidate, cards, now),
+            blocked=declared(item.candidate.sha) or _why(item.candidate, cards, now),
         )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
@@ -135,6 +136,14 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         'reservations': [one.row() for one in book.entries if now < one.reservation.until],
         'starved': [_row(item) for item in starved(ranked, {repo: schedule})],
     }
+
+
+def _refused(root: Path, sha: str) -> str:
+    """Why *sha*'s declaration is refused here, ``''`` when it is read (or there is no sha)."""
+    try:
+        return declared_at(root, sha)[1] if sha else ''
+    except OutdatedKit as why:  # this reader is older than the sha: it says so, and the sha waits
+        return str(why)
 
 
 def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:

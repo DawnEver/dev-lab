@@ -28,6 +28,11 @@ A LEASE IS JUDGED ON THE FORGE'S CLOCK. ``until`` is the forge's time (the ``Dat
 runs fast never retakes a live claim, nor a slow one holds a dead one. A claim whose ``until`` has
 passed is stale and may be retaken by anyone serving that platform; only its owner renews it, so a
 lapsed lease means the owner is gone.
+
+A DEFECT OF THE COMMIT ITSELF IS ROUTED TO IT, ONCE (:func:`refuse`). A part whose own commit declares what
+no host can read or produce -- a retired table, a malformed row, no producer -- is settled ``error`` on that
+commit's part context, prefixed :data:`REFUSED_AT_COMMIT`, so its branch or PR shows why, and every later
+tick reads it DONE: it never waits, never starves, and never makes a host look idle with work pending.
 """
 
 from __future__ import annotations
@@ -58,6 +63,7 @@ __all__ = [
     'DONE',
     'MINE',
     'OPEN',
+    'REFUSED_AT_COMMIT',
     'STALE',
     'Claim',
     'Serving',
@@ -65,6 +71,7 @@ __all__ = [
     'assess',
     'claim',
     'forge_now',
+    'refuse',
     'serving',
     'this_machine',
     'this_seat',
@@ -80,6 +87,8 @@ CLAIMED: Final = 'claimed'
 MINE: Final = 'mine'
 DONE: Final = 'done'
 CLAIMABLE: Final = frozenset({OPEN, STALE})
+#: The description prefix of a part settled ``error`` for its own commit's defect (:func:`refuse`).
+REFUSED_AT_COMMIT: Final = 'refused at this commit:'
 
 _NOBODY: Final = '-'
 _CLAIM: Final = re.compile(
@@ -213,3 +222,10 @@ def claim(client: Client, work: Work, me: Claim) -> Work:
     status_post(client, work.sha, context=part_context(work.platform), state='pending', description=me.description())
     state, holder = assess(status_history(client, work.sha), work.platform, me=me, now=forge_now(client))
     return dataclasses.replace(work, state=state, holder=holder)
+
+
+def refuse(client: Client, work: Work, why: str) -> Work:
+    """Settle *work*'s part ``error`` on its own commit, naming *why*: the commit's owner reads it there, once."""
+    description = f'{REFUSED_AT_COMMIT} {why}'[:DESCRIPTION_LIMIT]
+    status_post(client, work.sha, context=part_context(work.platform), state='error', description=description)
+    return dataclasses.replace(work, state=DONE)
