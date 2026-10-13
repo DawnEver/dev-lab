@@ -128,7 +128,7 @@ newest commit lacks, or a request issue.
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
   `weight[repo] * value / expected_cost` (weighted shortest job first). Aging grows without bound, so no
   class starves forever.
-- **Cost** is the repo's last measured run (`lab_commons.hpc.learned`), in core-hours on a cluster and
+- **Cost** is the repo's last measured run (`lab_commons.compute.learned`), in core-hours on a cluster and
   wall-hours on a box; unmeasured work costs `prior_cost_h`.
 - **Priority is a forge label** on the PR or issue: `priority:user` adds the declared boost, `priority:<n>`
   adds `n`.

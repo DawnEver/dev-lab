@@ -109,6 +109,9 @@ def worker_width(*, gb_per_worker: float, max_width: int, floor: int, reserve_co
 
     An unreadable box falls back to a width somebody MEASURED rather than to the floor, clipped by
     what the processors allow, because "cannot measure" is not "cannot afford".
+
+    This is ONLY the arithmetic. *gb_per_worker* is a measurement with one home: the per-file peaks
+    of :func:`lab_commons.compute.learned.worker_gb`, the same table a Slurm task is sized from.
     """
     by_cores = logical_cores() - reserve_cores
     available = _available_gb()

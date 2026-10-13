@@ -18,15 +18,15 @@ from typing import ClassVar
 
 import pytest
 
+from lab_commons.compute import learned
+from lab_commons.compute.learned import OOM_GROWTH, Measured
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
-from lab_commons.hpc import learned
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
-from lab_commons.hpc.measured import OOM_GROWTH, Measured
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.platforms import Table
@@ -1007,7 +1007,7 @@ def test_a_gathered_record_plans_the_next_submit_of_its_repo_and_no_other(
 def test_history_is_no_flag_and_its_spelling_is_refused_with_the_remedy(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         cli.main(['run', 'submit', '--sha', SHA, '--repo-url', 'u', '--scope', 'full', '--history', 'r.json.gz'])
-    assert 'lab_commons.hpc.learned' in capsys.readouterr().err
+    assert 'lab_commons.compute.learned' in capsys.readouterr().err
 
 
 def test_a_workstation_never_submits_or_gathers_over_ssh(monkeypatch: pytest.MonkeyPatch, capsys) -> None:

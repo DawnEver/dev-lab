@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.learned import learned
 from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
@@ -78,7 +79,6 @@ from lab_commons.dev.platformparts import (
     this_platform,
 )
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.learned import learned
 from lab_commons.hpc.platforms import Table, declared_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
@@ -129,7 +129,7 @@ def tick(
     *headroom* is what this host can take now (default: a box's cores); *usage* the core-hours each run
     sha12 used in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
-    (default: :func:`lab_commons.hpc.learned.learned`). *probe* says why a cluster host cannot write the
+    (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
     this host's machine-file ``[capabilities]`` (:mod:`lab_commons.dev.forgeprovides`; none by default): it
     adds the engine parts it serves and blocks a part needing what it lacks. *own_weight* lifts the value
