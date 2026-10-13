@@ -20,23 +20,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from lab_commons.compute.model import REQUEST, Candidate, Ranked, expected_cost, rank, starved
 from lab_commons.config import section
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgehosts import HostCard, read_cards
 from lab_commons.dev.forgeprovides import declared_parts, needs, unserved
-from lab_commons.dev.forgeschedule import (
-    REQUEST,
-    Candidate,
-    Ranked,
-    candidates,
-    expected_cost,
-    host_weights,
-    load_schedule,
-    rank,
-    repo_name,
-    starved,
-)
+from lab_commons.dev.forgeschedule import candidates, host_weights, load_schedule, repo_name
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy

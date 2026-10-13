@@ -31,12 +31,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.model import Schedule
 from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert
 from lab_commons.dev.forgepulls import issues as list_issues
 from lab_commons.dev.forgeroute import title_of
-from lab_commons.dev.forgeschedule import Schedule
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.log import emit
 

@@ -13,11 +13,12 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import git_out, run_git
 
+from lab_commons.compute.model import Candidate, Ranked
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
-from lab_commons.dev.forgeschedule import Candidate, Headroom, Ranked
+from lab_commons.dev.forgeschedule import Headroom
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
@@ -25,6 +26,7 @@ from lab_commons.dev.platformparts import ClusterPart
 from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
 from lab_commons.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.shell import FULL
 
 SHA = 'a' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -248,7 +250,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     waits: list[float | None] = []
     proc = _Proc(0, beats=6)
     inner = proc.wait
-    proc.wait = lambda timeout=None: waits.append(timeout) or inner(timeout)  # type: ignore[method-assign]
+    monkeypatch.setattr(proc, 'wait', lambda timeout=None: waits.append(timeout) or inner(timeout))
     forgeproduce.produce(
         tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, clock=lambda: NOW, say=lambda _l: None,
         lease=timedelta(hours=6), renew_s=30.0, beat_s=10.0, beat=beats.append, fetch=lambda _root: None,
@@ -414,7 +416,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
 
 
 def _waiting(kind: str, waited_h: float, blocked: str) -> Ranked:
-    one = Candidate('o/r', 'feat/x', SHA, 'windows', kind, NOW - timedelta(hours=waited_h))
+    one = Candidate('o/r', 'feat/x', SHA, 'windows', kind, NOW - timedelta(hours=waited_h), FULL)
     return Ranked(one, 60.0, 4.0, 15.0, waited_h, blocked)
 
 

@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
+from lab_commons.compute.model import INTEGRATION, PR, REQUEST
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
@@ -30,16 +31,7 @@ from lab_commons.dev.forgeclaim import (
     assess,
     serving,
 )
-from lab_commons.dev.forgeschedule import (
-    INTEGRATION,
-    OUTRANKED,
-    OVER_BUDGET,
-    PR,
-    REQUEST,
-    Headroom,
-    candidates,
-    load_schedule,
-)
+from lab_commons.dev.forgeschedule import OUTRANKED, OVER_BUDGET, Headroom, candidates, load_schedule
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed

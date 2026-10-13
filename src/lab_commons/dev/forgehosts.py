@@ -37,11 +37,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.model import Ranked
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_list, comment_upsert, issues, marker
-from lab_commons.dev.forgeschedule import Ranked
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
