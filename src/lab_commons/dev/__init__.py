@@ -272,6 +272,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``host:H`` reservation matches.
 * :mod:`lab_commons.dev.forgereserve` -- ``forge reserve`` / ``forge release``: leases in the ledger.
 * :mod:`lab_commons.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
+* :mod:`lab_commons.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.
 * :mod:`lab_commons.dev.forgecred` -- how a stored secret (:mod:`lab_commons.credentials`) meets a forge.
 * :mod:`lab_commons.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.

@@ -72,7 +72,7 @@ class ClaimPass:
         wanted = item.candidate
         context = request_context(wanted.number) if wanted.kind == REQUEST else part_context(wanted.platform)
         state, holder = assess(self.history(wanted.sha), context, me=self.me, now=self.now)
-        one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder, context=context)
+        one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder, request=context)
         blocked, needed = '', frozenset[str]()
         if state in CLAIMABLE:
             try:

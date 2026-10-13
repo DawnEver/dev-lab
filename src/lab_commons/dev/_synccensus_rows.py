@@ -37,7 +37,7 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
         path='pyproject.toml',
-        line=253,
+        line=257,
         evidence='extras = "dev viz-mpl viz-bokeh"',
         selected=('dev', 'viz-mpl', 'viz-bokeh'),
         scope='COMPLETE',
@@ -67,7 +67,8 @@ ROWS: tuple[ScopeRow, ...] = (
             ' REPOINTED 2026-10-12, 242 -> 253, text unchanged: the platform marker table and the '
             'cluster-run comments grew above it. REPOINTED 2026-10-12, 253 -> 254: the platform table '
             'split into its capability axis, one comment line longer. REPOINTED 2026-10-13, 254 -> 253, '
-            'text unchanged: the two part axes became one [tool.lab_commons.tests] table.'
+            'text unchanged: the two part axes became one [tool.lab_commons.tests] table. REPOINTED '
+            '2026-10-13, 253 -> 257, text unchanged: the integrator host and branch-prune opt-in landed above it.'
         ),
     ),
 )
@@ -77,7 +78,7 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, int], str] = {
-    ('lab-commons', 'pyproject.toml', 326): (
+    ('lab-commons', 'pyproject.toml', 330): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '
@@ -91,6 +92,7 @@ SITES: dict[tuple[str, str, int], str] = {
         'the TOML the workflow is rendered from. REPOINTED 2026-10-12, 315 -> 326, command text unchanged.'
         ' REPOINTED 2026-10-12, 326 -> 327: the capability axis split, command text unchanged.'
         ' REPOINTED 2026-10-13, 327 -> 326: one need vocabulary replaced both part axes, text unchanged.'
+        ' REPOINTED 2026-10-13, 326 -> 330: the integrator host and branch-prune opt-in, text unchanged.'
     ),
 }
 
