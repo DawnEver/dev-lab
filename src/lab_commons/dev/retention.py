@@ -16,7 +16,7 @@ overrides any of them, and an unknown key is refused. What each rule PROVES befo
 
 * ``run-not-a-carry-source`` -- a finished run (its state holds a ``record``) of THIS serve's repo that
   no live tip can carry from. The sources are the carry's OWN selection
-  (:func:`lab_commons.dev.forgecarry.nearest`, what ``SlurmCluster.carry`` reads) for every origin branch
+  (:func:`lab_commons.dev.forgecarry.read_by`, what ``SlurmCluster.carry`` reads) for every origin branch
   tip -- the integration tip, PR heads and lane tips -- plus each tip's own run, since a commit on top of
   a tip reads that run first (:func:`carry_sources`). Another repo's runs are its own serve's to judge.
   Its tree goes with it.
@@ -60,7 +60,7 @@ from typing import Any, Final
 
 from lab_commons.config import config_path, section
 from lab_commons.dev.diskusage import Usage, measure, read_usage, writable
-from lab_commons.dev.forgecarry import nearest
+from lab_commons.dev.forgecarry import read_by
 from lab_commons.dev.forgerun import directory as run_files
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.servelock import held
@@ -162,12 +162,13 @@ def _runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
 
 
 def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[str]:
-    """The runs among *shas* a commit at or on top of any of *tips* would carry from (module docstring)."""
+    """The runs among *shas* a commit at or on top of any of *tips* would carry from (module docstring).
+
+    A tip's own :func:`~lab_commons.dev.forgecarry.read_by` covers a child's: the child reads the tip's run
+    and the tip's nearest, a subset of what the tip reads.
+    """
     shas = set(shas)
-    out: set[str] = set()
-    for tip in set(tips):
-        out |= ({tip} & shas) | set(nearest(root, tip, shas))
-    return out
+    return {sha for tip in set(tips) for sha in read_by(root, tip, shas)}
 
 
 def cluster_plan(

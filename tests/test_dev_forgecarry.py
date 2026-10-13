@@ -226,3 +226,14 @@ def test_a_published_cluster_part_is_also_posted_on_the_equivalent_tip(monkeypat
         forgerun.advance(tmp_path, run, client=None, me=ME, lease=timedelta(hours=6), cluster=None,
                          say=lambda _l: None, alarm=lambda _a: None)  # fmt: skip
         assert posted == expected
+
+
+def test_read_by_is_the_runs_own_then_its_nearest_ancestors(tmp_path: Path) -> None:
+    """The ONE selection the cluster carry reads and retention keeps: c4's own run first, then c3 c2 c1."""
+    run_git(tmp_path, 'init', '-q')
+    shas = []
+    for i in range(5):
+        run_git(tmp_path, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', f'c{i}')
+        shas.append(git_out(tmp_path, 'rev-parse', 'HEAD'))
+    assert forgecarry.read_by(tmp_path, shas[4], shas) == [shas[4], shas[3], shas[2], shas[1]]
+    assert forgecarry.read_by(tmp_path, shas[4], shas[:4]) == [shas[3], shas[2], shas[1]], 'PLANTED CONTROL: no own run'
