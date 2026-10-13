@@ -21,7 +21,7 @@ SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the produce
 claimed part in its environment (:func:`lab_commons.dev.producer.producing`), and a full tier refuses to
 run in any process without it.
 
-WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.model.admit`), read here before it:
+WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read here before it:
 
 * SUPPLY -- a cluster account's standing (:mod:`lab_commons.dev.forgeslurm`); a box's probe
   (:func:`lab_commons.compute.probe.box`) less its user's OWN RESERVE (the machine file's ``[reserve]``
@@ -29,7 +29,8 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.model.admit`), read her
   what the user uses is not subtracted twice). Named as the card is (:func:`~lab_commons.dev.forgehosts.card_host`),
   so a lease on this host is a lease on this supply.
 * RESERVATIONS -- every authorised lease on the ledger (:func:`lab_commons.compute.ledger.read`); a lease
-  on another scope, expired, or for the job withholds nothing.
+  on another scope, expired, or for the job keeps nothing from it; a live one LENDS its idle part, and
+  each round withdraws or stops a loan a holder preempts (:mod:`lab_commons.dev.forgerounds`).
 * RUNNING -- each cluster run in flight here, at its learned demand; each LOCAL PRODUCER this serve is
   running, at its learned demand -- and since the probe already reads what it busies, what it was last
   measured using (:func:`lab_commons.dev.forgeproduce.produce`'s *watch*) is given back to the supply,
@@ -196,6 +197,7 @@ def serve(
             'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
             'reservations': tuple(one.reservation for one in book.entries if not one.refused),
             'usage': standing.usage if standing else None, 'weights': host_weights(table),
+            'owners': {host_: (owner.login, *owner.delegates) for host_, owner in book.owners.items()},
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,

@@ -9,7 +9,7 @@ claimer takes the feasible candidate with the highest SCORE, value per cost (wei
     score = weight[repo] * value / expected_cost
 
 EVERY HOST SERVES EVERY CLASS, from this one queue: ORDER is the rank, FIT is the admission
-(:func:`lab_commons.compute.model.admit`), and exclusivity is a reservation -- a host that takes no
+(:func:`lab_commons.compute.admission.admit`), and exclusivity is a reservation -- a host that takes no
 foreign work is reserved whole by its owner. A candidate's class comes from where it is: the declared
 integration branch is ``integration``, the head of an open PR into it ``pr``, an issue carrying the
 request label ``request``, and any other origin branch the class ONE ORDERED RULE names
@@ -38,7 +38,7 @@ family default and a repository overrides key by key (a table key by table key):
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
 part, over its ref's budget, or not admitted here -- naming the resources it lacks
-(:func:`lab_commons.compute.model.admit`). A candidate waiting longer than its class's
+(:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
 ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
@@ -53,7 +53,7 @@ import re
 import subprocess
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -81,6 +81,7 @@ from lab_commons.hpc.shell import FULL
 __all__ = [
     'NOT_ADMITTED',
     'NO_HOST',
+    'ORIGIN_HOST',
     'OVER_BUDGET',
     'candidates',
     'host_weights',
@@ -92,6 +93,7 @@ __all__ = [
     'repo_name',
     'starved_alarms',
     'tip_of',
+    'vouched',
 ]
 
 #: Why a candidate is not claimed -- the prefix of :attr:`Ranked.blocked`.
@@ -216,6 +218,30 @@ def _when(root: Path, sha: str, fallback: datetime) -> datetime:
     return datetime.fromisoformat(stamp).astimezone(UTC) if stamp else fallback
 
 
+#: The commit trailer naming the host card a commit was made on (written by the ``forge-host`` commit-msg hook).
+ORIGIN_HOST: Final = 'Forge-Host'
+
+
+def _trailer(root: Path, sha: str, key: str) -> str:
+    """The last *key* trailer of commit *sha*; ``''`` when it carries none."""
+    values = _git(root, 'show', '-s', f'--format=%(trailers:key={key},valueonly)', sha).split()
+    return values[-1] if values else ''
+
+
+def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -> tuple[Candidate, ...]:
+    """*found* with each ``origin_host`` kept only where its FORGE-RECORDED login owns or is delegated that host.
+
+    A trailer or a request body is text anyone can write; the forge records who authored the PR or the
+    issue, and the hosts issue who owns each card (*owners*: host -> its login and its ``[reserve]`` delegates).
+    """
+    return tuple(
+        one
+        if not one.origin_host or one.origin in owners.get(one.origin_host, ())
+        else dataclasses.replace(one, origin_host='')
+        for one in found
+    )
+
+
 def _tips(root: Path) -> dict[str, str]:
     listed = _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING)
     return {ref.removeprefix(_TRACKING): sha for ref, sha in (line.split(' ') for line in listed.splitlines() if line)}
@@ -233,6 +259,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
 
 
 _REQUEST_PLATFORM: Final = re.compile(r'^\s*platform\s*=\s*["\'](?P<platform>[\w-]+)["\']', re.MULTILINE)
+_REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)
 
 
 def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[str], None]) -> Sequence[T]:
@@ -279,6 +306,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
         platform = declared['platform'] if declared else BASE
         number = int(raw['number'])
         origin = str((raw.get('user') or {}).get('login', ''))
+        host = _REQUEST_HOST.search(raw.get('body') or '')
         found.append(
             Candidate(
                 repo,
@@ -291,6 +319,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
                 labels=_labels(raw),
                 number=number,
                 origin=origin,
+                origin_host=host['host'] if host else '',
             )
         )
     return found
@@ -317,7 +346,20 @@ def candidates(
     :func:`optional`, a failure said through *say*.
     """
     found = [
-        Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), FULL, labels=labels, number=number, origin=by)
+        Candidate(
+            repo,
+            ref,
+            sha,
+            platform,
+            kind,
+            _when(root, sha, now),
+            FULL,
+            labels=labels,
+            number=number,
+            origin=by,
+            origin_host=_trailer(root, sha, ORIGIN_HOST) if by else '',
+            session=ref,
+        )
         for ref, sha, kind, labels, number, by in _part_refs(root, client, schedule, policy, say=say)
         for platform in parts(sha)
     ]
