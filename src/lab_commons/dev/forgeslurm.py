@@ -31,7 +31,8 @@ from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
 from lab_commons.hpc.platforms import table_at
 from lab_commons.hpc.progress import Progress, where
-from lab_commons.hpc.run import held_outcomes, load_state, run_shas, submit_run
+from lab_commons.hpc.records import held_outcomes, run_shas
+from lab_commons.hpc.run import load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.watch import PENDING, settle
 

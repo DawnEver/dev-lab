@@ -34,8 +34,8 @@ from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
-from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
-from lab_commons.hpc.run import RETRIES, build_run, gather_run, held_outcomes, run_shas, submit_run
+from lab_commons.hpc.records import fold, held_outcomes, read_record, read_streams, record_name, run_shas, write_record
+from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
