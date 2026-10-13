@@ -137,9 +137,9 @@ def test_every_shipped_script_declares_what_it_is() -> None:
     )
     assert githooks.undeclared() == (), githooks.undeclared()
     # NAMED, never counted: a fourth hook is a deliberate edit here, and a count could not say which
-    # one arrived. `branchset-push` joined on 2026-10-06 -- ONE-BRANCH-PER-SESSION refused AT PUSH
-    # TIME, where the decision is still open, rather than only by the census that runs afterwards.
-    assert set(githooks.HOOKS) == {'branchset-push', 'bump-version', 'cz-push-range'}, githooks.HOOKS
+    # one arrived. The push-time branch-set check left this set on 2026-10-13: it is a base pre-push ROW
+    # (base.toml) run in the repo venv, so no shipped script wraps it.
+    assert set(githooks.HOOKS) == {'bump-version', 'cz-push-range'}, githooks.HOOKS
     assert set(githooks.scripts_of_kind(githooks.WRAPPER)) == {'with-venv'}
 
 

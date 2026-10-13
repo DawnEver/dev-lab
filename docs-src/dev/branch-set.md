@@ -45,8 +45,10 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 
 ## The push-time check
 
-A pre-push hook judges every pushed `refs/heads/**` ref (`lab_commons.dev.branchset_push`, reading git's ref lines
-from stdin through the family hook runner):
+The family base hook table carries the pre-push row `branchset-push`
+(`src/lab_commons/dev/githooks/base.toml`), so every repo that opts into `[tool.lab_commons.hooks]` runs it with no
+line of its own. It judges every pushed `refs/heads/**` ref (`lab_commons.dev.branchset_push`, reading git's ref
+lines from stdin through the family hook runner). Agent lanes are local: only the declared branches reach origin.
 
 | push | verdict |
 |---|---|
