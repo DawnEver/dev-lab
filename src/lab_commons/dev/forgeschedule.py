@@ -29,8 +29,9 @@ family default and a repository overrides key by key (a table key by table key):
     prior_cost_h = 4.0
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
-platform, over its ref's budget, no headroom here, or outranked. A candidate waiting longer than its
-class's ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
+platform, over its ref's budget, or not admitted here -- naming the resources it lacks
+(:func:`lab_commons.compute.model.admit`). A candidate waiting longer than its class's
+``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
 in :mod:`lab_commons.compute.model`; this module gathers candidates and loads the numbers (I/O).
@@ -68,14 +69,14 @@ from lab_commons.dev.lanepolicy import Policy
 from lab_commons.hpc.shell import FULL
 
 __all__ = [
-    'NO_HEADROOM',
+    'NOT_ADMITTED',
     'NO_HOST',
-    'OUTRANKED',
     'OVER_BUDGET',
     'candidates',
     'host_weights',
     'labelled_issues',
     'load_schedule',
+    'over_budget',
     'parse_usage',
     'ref_usage',
     'repo_name',
@@ -86,8 +87,7 @@ __all__ = [
 #: Why a candidate is not claimed -- the prefix of :attr:`Ranked.blocked`.
 NO_HOST: Final = 'no host'
 OVER_BUDGET: Final = 'over budget'
-NO_HEADROOM: Final = 'no headroom'
-OUTRANKED: Final = 'outranked'
+NOT_ADMITTED: Final = 'not admitted'
 
 _TRACKING: Final = 'refs/remotes/origin/'
 
@@ -136,6 +136,15 @@ def starved_alarms(queue: Sequence[Ranked], schedule: Schedule, repo: str) -> li
         )
         for item in starved(queue, {one.candidate.repo: schedule for one in queue})
     ]
+
+
+def over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mapping[str, float] | None) -> str:
+    """Why *wanted* is over its class's daily budget on this host, ``''`` when it is not (or nothing meters)."""
+    cap = schedule.daily_budget_core_h.get(wanted.kind)
+    if cap is None or usage is None:
+        return ''
+    used = ref_usage(root, wanted.ref, usage)
+    return f'{OVER_BUDGET}: {wanted.ref} used {used:.1f} of {cap:g} core-h in 24 h' if used >= cap else ''
 
 
 def tip_of(root: Path, ref: str) -> str:

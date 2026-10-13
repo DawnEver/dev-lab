@@ -70,7 +70,7 @@ setup = ["module load git/2.42.0"]   # optional, prepended to every array task
   No secrets in the file.
 - **Usage is read, never stored.** Every job carries `--comment=lc:ws=<host>`; headroom is the quota minus what
   the account's jobs hold, read from `squeue --me`.
-- Each tick the host publishes its headroom, partitions and quota on its forge host card.
+- Each tick the host publishes its supply, partitions and quota on its forge host card.
 
 ## Runs on the cluster
 

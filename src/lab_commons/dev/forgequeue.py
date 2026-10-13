@@ -4,8 +4,10 @@ Read-only, and read from the forge, so any machine with a forge credential sees 
 node sees: every waiting candidate with its class, value, expected cost, score, wait and what blocks it
 (:mod:`lab_commons.dev.forgeschedule`); every run in flight with its owner and the live progress its
 claim carries (:class:`lab_commons.dev.forgeclaim.Claim`); every host card, stale ones flagged
-(:mod:`lab_commons.dev.forgehosts`); every live reservation (:mod:`lab_commons.compute.ledger`), a refused
-writer's flagged; and every candidate starved past its class's bound. It fetches
+(:mod:`lab_commons.dev.forgehosts`) with its supply and what runs on it; every live reservation
+(:mod:`lab_commons.compute.ledger`), a refused writer's flagged; and every candidate starved past its
+class's bound. A candidate EVERY live host serving it refuses to admit says so, naming each host and the
+resources it lacks there (``no host admits it -- box-g lacking cpu; ada/alice lacking mem_gb``). It fetches
 ``origin`` first so the refs it ranks are the forge's, and posts nothing.
 """
 
@@ -29,7 +31,7 @@ from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fet
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgehosts import HostCard
 from lab_commons.dev.forgeprovides import declared_parts, needs, unserved
-from lab_commons.dev.forgeschedule import candidates, host_weights, load_schedule, repo_name
+from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, candidates, host_weights, load_schedule, repo_name
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
@@ -108,6 +110,8 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 **dataclasses.asdict(card),
                 'holds': list(card.holds),
                 'alarms': list(card.alarms),
+                'running': list(card.running),
+                'reservations': [dict(r) for r in card.reservations],
                 'stale': card.stale(now),
             }
             for card in cards
@@ -123,7 +127,12 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime, needed:
     if unclaimable:
         return unclaimable
     serving = [card for card in live if candidate.platform in {card.platform, *card.provides}]
-    return next((card.waiting[candidate.key] for card in serving if candidate.key in card.waiting), '')
+    reasons = [(card.host, card.waiting[candidate.key]) for card in serving if candidate.key in card.waiting]
+    refused = [(host, why) for host, why in reasons if why.startswith(f'{NOT_ADMITTED}: ')]
+    if refused and len(refused) == len(serving):
+        named = '; '.join(f'{host} {why.removeprefix(f"{NOT_ADMITTED}: ")}' for host, why in refused)
+        return f'{NO_HOST} admits it -- {named}'
+    return reasons[0][1] if reasons else ''
 
 
 def _amounts(resources: Mapping[str, float]) -> str:
@@ -151,8 +160,9 @@ def render(view_: Mapping[str, Any]) -> list[str]:
         for line in (
             (
                 f'  {h["host"]:<20} {h["platform"]:<8} ticked {h["ticked"]}{_STALE if h["stale"] else ""}  '
-                f'headroom {json.dumps(h["headroom"])}  holds {", ".join(h["holds"]) or "nothing"}'
+                f'supply {_amounts(h["supply"])}  holds {", ".join(h["holds"]) or "nothing"}'
             ),
+            *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']

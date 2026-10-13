@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterator
 from dataclasses import asdict
@@ -46,7 +47,7 @@ def _card(host: str, platform: str, ticked: datetime, **extra: object) -> HostCa
 
 def test_the_first_card_opens_the_hosts_issue_and_the_next_edits_it_in_place(server) -> None:
     built = client(FORGE, Loopback(server))
-    card = _card('ada/alice', 'linux', NOW, headroom={'cores': 64, 'submits': 10})
+    card = _card('ada/alice', 'linux', NOW, supply={'cpu': 64, 'submits': 10})
     answer('GET', f'{API}/issues', (200, []), (200, []), (200, [_issue(3, HOSTS_TITLE)]))
     answer('GET', API, (200, {'open_issues_count': 0, 'open_pr_counter': 0}))
     answer('POST', f'{API}/issues', (201, _issue(3, HOSTS_TITLE)))
@@ -149,12 +150,33 @@ def test_the_queue_shows_progress_hosts_and_why_work_waits(server, tmp_path: Pat
     assert waiting['blocked'] == 'no host serves windows', 'the only windows card is stale'
     assert [(h['host'], h['stale']) for h in seen['hosts']] == [('box-g', True)]
     key = waiting['candidate']
-    _forge_of(tips, [_card('box-g', 'windows', NOW, waiting={key: 'no headroom: lacking cpu'})])
+    _forge_of(tips, [_card('box-g', 'windows', NOW, waiting={key: 'not admitted: lacking cpu'})])
     again = forgequeue.view(repo, built, fetch=lambda _root: None)
-    assert again['queue'][0]['blocked'] == 'no headroom: lacking cpu'
+    assert again['queue'][0]['blocked'] == 'no host admits it -- box-g lacking cpu'
     lines = forgequeue.render(again)
     assert any('running 40/93 done 12/93' in line for line in lines)
-    assert any(line.strip().startswith('pr') and 'no headroom' in line for line in lines)
+    assert any(line.strip().startswith('pr') and 'box-g lacking cpu' in line for line in lines)
+
+
+def test_a_candidate_no_host_admits_names_each_host_and_what_it_lacks(server, tmp_path: Path, monkeypatch) -> None:
+    """PLANTED CONTROL: one of the two hosts would admit it (it waits for another reason there) -- not starved."""
+    monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
+    repo, tips = _origin(tmp_path)
+    built = client(FORGE, Loopback(server))
+    key = f'feat/a@{tips["feat/a"][:12]}:windows'
+    g = _card('box-g', 'windows', NOW, waiting={key: 'not admitted: lacking cpu'}, supply={'cpu': 0.5})
+    h = _card('box-h', 'windows', NOW, waiting={key: 'not admitted: lacking mem_gb'}, running=('gate measure',))
+    _forge_of(tips, [g, h])
+    seen = forgequeue.view(repo, built, fetch=lambda _root: None)
+    blocked = next(row['blocked'] for row in seen['queue'] if row['candidate'] == key)
+    assert blocked == 'no host admits it -- box-g lacking cpu; box-h lacking mem_gb'
+    lines = forgequeue.render(seen)
+    assert any('supply cpu=0.5' in line for line in lines)
+    assert any(line.strip() == 'running gate measure' for line in lines)
+    calm = dataclasses.replace(h, waiting={key: 'over budget: feat/a used 9 of 8 core-h in 24 h'})
+    _forge_of(tips, [g, calm])
+    again = forgequeue.view(repo, built, fetch=lambda _root: None)
+    assert next(row['blocked'] for row in again['queue'] if row['candidate'] == key) == 'not admitted: lacking cpu'
 
 
 def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) -> None:

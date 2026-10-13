@@ -8,13 +8,27 @@ A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgec
 
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
 ``quiet``, fetch ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
-value per cost, each waiting one naming why), claim the best feasible one unless a run is already in
-flight here, and give the claimed part what produces it: a local argv as the claimed commit declares it
-(:func:`lab_commons.dev.platformparts.part_argv`; the producer runs it in a tree at that commit) or a cluster part
-(:func:`lab_commons.dev.platformparts.cluster_part`). A part whose producer the repo does not declare is
-not claimed; its refusal names the pyproject key to add. A cluster host whose rclone
-remote is unusable (:func:`lab_commons.dev.artefacts.remote_problem`) claims no part with declared outputs
--- they could exceed ``threshold_mb`` -- and says why; a part with none is still claimed. It runs nothing itself.
+value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
+(:func:`lab_commons.compute.model.admit`), and give each claimed part what produces it: a local argv as
+the claimed commit declares it (:func:`lab_commons.dev.platformparts.part_argv`; the producer runs it in
+a tree at that commit) or a cluster part (:func:`lab_commons.dev.platformparts.cluster_part`). A part
+whose producer the repo does not declare is not claimed; its refusal names the pyproject key to add. A
+cluster host whose rclone remote is unusable (:func:`lab_commons.dev.artefacts.remote_problem`) claims
+no part with declared outputs -- they could exceed ``threshold_mb`` -- and says why; a part with none is
+still claimed. It runs nothing itself.
+
+ADMISSION, NOT ONE CLAIM A TICK. Each candidate is a :class:`~lab_commons.compute.model.Job` whose
+demand is what its last run measured (:func:`~lab_commons.compute.learned.learned_demand`); it is admitted when it fits
+this host's supply less others' reservations and less everything already RUNNING -- the runs in flight
+here, an interactive run holding the box seat, and every part this tick claimed before it. A job that
+does not fit is skipped and a smaller lower-ranked one is still claimed; the skipped one waits naming
+the resources it lacks (``not admitted: lacking cpu``). Several parts may therefore run on one host at
+once. Two parts of ONE sha are never claimed by one box in one tick: a local part is judged in its
+sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
+
+A BOX JOB'S WIDTH FOLLOWS ITS BOX. A box run spreads over the cores it is given
+(:func:`lab_commons.dev.bounded.worker_width`), so its cpu demand is capped at the box's supply: a job
+that measured the whole box is admitted alone, and never starved by a core the own reserve keeps back.
 """
 
 from __future__ import annotations
@@ -31,18 +45,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.compute.learned import learned
+from lab_commons.compute.learned import learned, learned_demand
 from lab_commons.compute.model import (
     REQUEST,
     Candidate,
-    Demand,
     Job,
     Ranked,
+    Reservation,
     Resources,
     Schedule,
     Supply,
     admit,
     expected_cost,
+    fitted,
     rank,
 )
 from lab_commons.dev.artefacts import remote_problem
@@ -70,13 +85,11 @@ from lab_commons.dev.forgeclaim import (
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeprovides import declared_parts, lacking, needs, served_parts
 from lab_commons.dev.forgeschedule import (
-    NO_HEADROOM,
     NO_HOST,
-    OUTRANKED,
-    OVER_BUDGET,
+    NOT_ADMITTED,
     candidates,
     load_schedule,
-    ref_usage,
+    over_budget,
     repo_name,
 )
 from lab_commons.dev.forgestatus import status_history
@@ -127,18 +140,22 @@ def tick(
     dry_run: bool = False,
     fetch: Callable[[Path], None] = fetch_origin,
     host: str | None = None,
-    in_flight: bool = False,
     supply: Supply | None = None,
+    reservations: Sequence[Reservation] = (),
+    running: Sequence[Mapping[str, float]] = (),
+    demand: Callable[[Candidate, frozenset[str]], Mapping[str, float]] | None = None,
     usage: Mapping[str, float] | None = None,
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
     provides: Mapping[str, Any] | None = None,
 ) -> TickReport:
-    """One tick, in the order the module docstring gives; with a run *in_flight* here it claims nothing.
+    """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
     *supply* is what this host or account has now (:mod:`lab_commons.compute.probe`; default: a box's
-    cores); *usage* the core-hours each run sha12 used
+    cores); *reservations* the ledger's leases (:mod:`lab_commons.compute.ledger`; one on another scope,
+    expired, or for the job itself withholds nothing); *running* the demands already running here;
+    *demand* a candidate's size (default: what it measured); *usage* the core-hours each run sha12 used
     in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
@@ -179,10 +196,13 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
+    room = supply or Supply(machine or 'this host', Resources(cpu=cores))
+    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=cores)
+    sized = demand or (lambda wanted, needed: by_part(wanted.platform, needed))
     taken = _Taking(
-        root, built, serve, me, now, schedule, usage, dry_run,
-        room=_room(repo, supply or Supply(machine or 'this host', Resources(cpu=cores)), now),
-        winner='a run in flight here' if in_flight else '',
+        root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
+        size=lambda wanted, needed: fitted(sized(wanted, needed), room, cluster=bool(serve.hpc)),
+        reservations=tuple(reservations), taken=list(running),
         store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
     for item in ranked:
@@ -202,7 +222,7 @@ def tick(
 
 @dataclass
 class _Taking:
-    """The claim pass over the ranked queue: the first unblocked candidate is claimed, the rest say why not."""
+    """The claim pass over the ranked queue: each candidate that admits is claimed, the rest say why not."""
 
     root: Path
     client: Client
@@ -212,8 +232,13 @@ class _Taking:
     schedule: Schedule
     usage: Mapping[str, float] | None
     dry_run: bool
-    room: str = ''
-    winner: str = ''
+    repo: str
+    supply: Supply
+    size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
+    reservations: tuple[Reservation, ...] = ()
+    taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
+    trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
+    unproducible: str = ''  # why the repo's producer cannot be built here; blocks every later candidate
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     provides: Mapping[str, Any] = dataclasses.field(default_factory=dict)
     tables: dict[str, tuple[Table, str]] = dataclasses.field(default_factory=dict)
@@ -230,31 +255,43 @@ class _Taking:
             return
         state, holder = assess(status_history(self.client, wanted.sha), wanted.platform, me=self.me, now=self.now)
         one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder)
-        blocked = self._blocked(wanted) if state in CLAIMABLE else ''
+        blocked, needed = self._blocked(wanted) if state in CLAIMABLE else ('', frozenset[str]())
         if state in CLAIMABLE and not blocked and not self.dry_run:
-            one, blocked = self._take(one, wanted)
+            one, blocked = self._take(one, wanted, needed)
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
 
-    def _blocked(self, wanted: Candidate) -> str:
+    def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
+        """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         table, refused = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
-        outranked = f'{OUTRANKED} by {self.winner}' if self.winner else ''
-        return (
+        needed = frozenset(needs(table, wanted.platform))
+        busy = not self.serve.hpc and wanted.sha in self.trees
+        why = (
             refused
-            or lacking(needs(table, wanted.platform), self.provides)
-            or outranked
-            or self.room
-            or _over_budget(self.root, wanted, self.schedule, self.usage)
+            or lacking(sorted(needed), self.provides)
+            or self.unproducible
+            or (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
+            or over_budget(self.root, wanted, self.schedule, self.usage)
+            or self._admission(wanted, needed)
         )
+        return why, needed
 
-    def _take(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
+    def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
+        job = Job(self.repo, wanted.sha, wanted.platform, needed, wanted.origin)
+        verdict = admit(
+            job, self.size(wanted, needed), self.supply,
+            reservations=self.reservations, running=self.taken, now=self.now,
+        )  # fmt: skip
+        return '' if verdict else f'{NOT_ADMITTED}: {verdict.why}'
+
+    def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
         try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
             one = _producer(self.root, one, self.serve)
         except (UndeclaredPart, FileNotFoundError) as why:
             self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
-            self.room = f'{NO_HOST} can produce it: {why}'
-            return one, self.room
+            self.unproducible = f'{NO_HOST} can produce it: {why}'
+            return one, self.unproducible
         if one.cluster is not None and one.cluster.outputs and self.store_why:
             why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
             self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
@@ -262,23 +299,9 @@ class _Taking:
         one = claim(self.client, one, self.me)
         if one.state == MINE:
             self.claimed.append(one)
-            self.winner = wanted.key
+            self.taken.append(self.size(wanted, needed))
+            self.trees.add(wanted.sha)
         return one, ''
-
-
-def _room(repo: str, supply: Supply, now: datetime) -> str:
-    """``''`` when one run fits *supply* (a core, and a submission where those are counted), else what lacks."""
-    floor = Demand(cpu=1, submits=1 if 'submits' in supply.present else 0)
-    admission = admit(Job(repo, '', 'forge tick'), floor, supply, now=now)
-    return '' if admission else f'{NO_HEADROOM}: {admission.why}'
-
-
-def _over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mapping[str, float] | None) -> str:
-    cap = schedule.daily_budget_core_h.get(wanted.kind)
-    if cap is None or usage is None:
-        return ''
-    used = ref_usage(root, wanted.ref, usage)
-    return f'{OVER_BUDGET}: {wanted.ref} used {used:.1f} of {cap:g} core-h in 24 h' if used >= cap else ''
 
 
 def _producer(root: Path, work: Work, serve: Serving) -> Work:

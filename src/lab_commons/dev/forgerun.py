@@ -148,7 +148,7 @@ class Cluster(Protocol):
         """``scancel`` every job of *run*; the ids cancelled."""
 
     def standing(self) -> Standing:
-        """The account's headroom, core-hours used per run in the last day, and the partitions and quota."""
+        """The account's supply, core-hours used per run in the last day, and the partitions and quota."""
 
 
 @dataclass(frozen=True)
