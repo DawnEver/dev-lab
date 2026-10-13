@@ -41,13 +41,11 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
-import os
 import re
 import subprocess
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -63,7 +61,6 @@ from lab_commons.compute.model import (
     Schedule,
     starved,
 )
-from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
@@ -76,8 +73,6 @@ __all__ = [
     'NO_HOST',
     'OUTRANKED',
     'OVER_BUDGET',
-    'Headroom',
-    'box_headroom',
     'candidates',
     'host_weights',
     'labelled_issues',
@@ -127,27 +122,6 @@ def load_schedule(root: Path) -> Schedule:
 def host_weights(table: Mapping[str, Any]) -> dict[str, float]:
     """The machine file's ``[schedule] weights`` (repo ``owner/name`` -> multiplier); absent = 1 for all."""
     return {str(repo): float(weight) for repo, weight in dict(table.get('weights', {})).items()}
-
-
-@dataclass(frozen=True)
-class Headroom:
-    """What this host can take on now: free cores, and job submissions its QOS still accepts (``None`` = no cap)."""
-
-    cores: int
-    submits: int | None = None
-
-    def why_not(self) -> str:
-        """``''`` when a run fits, else the reason (one core and one submission are the floor of any run)."""
-        if self.cores < 1:
-            return f'{NO_HEADROOM}: no free core here'
-        if self.submits is not None and self.submits < 1:
-            return f'{NO_HEADROOM}: the QOS accepts no more submissions'
-        return ''
-
-
-def box_headroom() -> Headroom:
-    """A box's headroom: its cores, none while a run holds its CPU seat."""
-    return Headroom(cores=0 if CpuSeat.holders() else os.cpu_count() or 1)
 
 
 def starved_alarms(queue: Sequence[Ranked], schedule: Schedule, repo: str) -> list[Alarm]:

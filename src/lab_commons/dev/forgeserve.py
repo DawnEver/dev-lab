@@ -34,11 +34,12 @@ A CONTRACT BREAK FAILS LOUDLY: a produced argv exiting 2 -- what a renamed flag 
 is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`lab_commons.dev.forgeschedule`). Before the tick a cluster host
-reads its standing locally -- headroom, the last day's core-hours, partitions -- and a box its CPU seat;
-the tick claims the best feasible candidate and names why every other waits. After it, a run whose ref
-moved on is SUPERSEDED (cancelled and released), a candidate waiting past its class's bound raises a
-``starved`` alarm, and this host's CARD is published on the forge (:mod:`lab_commons.dev.forgehosts`):
-who it is, what it serves, its headroom, what it holds with progress, and the queue as it saw it.
+reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
+(:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
+other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released), a candidate
+waiting past its class's bound raises a ``starved`` alarm, and this host's CARD is published on the forge
+(:mod:`lab_commons.dev.forgehosts`):
+who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`lab_commons.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
@@ -58,6 +59,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from lab_commons.compute import probe as supply_probe
+from lab_commons.compute.model import Supply
 from lab_commons.config import section
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun, forgeship
@@ -68,7 +71,7 @@ from lab_commons.dev.forgehosts import publish_card, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
 from lab_commons.dev.forgeprovides import own_weight, provided
-from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms
+from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgetick import MODES, tick
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
@@ -107,7 +110,7 @@ def serve(
     alarm: Callable[[Alarm], object] = sound,
     renew_s: float | None = None,
     host: str | None = None,
-    box_room: Callable[[], Headroom] = box_headroom,
+    box_room: Callable[..., Supply] = supply_probe.box,
     table: Mapping[str, Any] | None = None,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes)."""
@@ -121,7 +124,8 @@ def serve(
     try:
         ticked = tick(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
-            in_flight=bool(runs), headroom=standing.headroom if standing else box_room(),
+            in_flight=bool(runs),
+            supply=standing.supply if standing else box_room(machine or 'this host', capabilities=provides),
             usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
             own_weight=own_weight(section('serve')),
         )  # fmt: skip

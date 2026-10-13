@@ -31,7 +31,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank
+from lab_commons.compute.model import (
+    REQUEST,
+    Candidate,
+    Demand,
+    Job,
+    Ranked,
+    Resources,
+    Schedule,
+    Supply,
+    admit,
+    expected_cost,
+    rank,
+)
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
     NoCredential,
@@ -57,10 +69,10 @@ from lab_commons.dev.forgeclaim import (
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeprovides import declared_parts, lacking, needs, served_parts
 from lab_commons.dev.forgeschedule import (
+    NO_HEADROOM,
     NO_HOST,
     OUTRANKED,
     OVER_BUDGET,
-    Headroom,
     candidates,
     load_schedule,
     ref_usage,
@@ -116,7 +128,7 @@ def tick(
     fetch: Callable[[Path], None] = fetch_origin,
     host: str | None = None,
     in_flight: bool = False,
-    headroom: Headroom | None = None,
+    supply: Supply | None = None,
     usage: Mapping[str, float] | None = None,
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
@@ -126,8 +138,9 @@ def tick(
 ) -> TickReport:
     """One tick, in the order the module docstring gives; with a run *in_flight* here it claims nothing.
 
-    *headroom* is what this host can take now (default: a box's cores); *usage* the core-hours each run
-    sha12 used in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
+    *supply* is what this host or account has now (:mod:`lab_commons.compute.probe`; default: a box's
+    cores); *usage* the core-hours each run sha12 used
+    in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
     (default: :func:`lab_commons.hpc.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
@@ -170,7 +183,8 @@ def tick(
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, mine=login, own_weight=own_weight)
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run,
-        room=(headroom or Headroom(cores=cores)).why_not(), winner='a run in flight here' if in_flight else '',
+        room=_room(repo, supply or Supply(machine or 'this host', Resources(cpu=cores)), now),
+        winner='a run in flight here' if in_flight else '',
         store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
     for item in ranked:
@@ -252,6 +266,13 @@ class _Taking:
             self.claimed.append(one)
             self.winner = wanted.key
         return one, ''
+
+
+def _room(repo: str, supply: Supply, now: datetime) -> str:
+    """``''`` when one run fits *supply* (a core, and a submission where those are counted), else what lacks."""
+    floor = Demand(cpu=1, submits=1 if 'submits' in supply.present else 0)
+    admission = admit(Job(repo, '', 'forge tick'), floor, supply, now=now)
+    return '' if admission else f'{NO_HEADROOM}: {admission.why}'
 
 
 def _over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mapping[str, float] | None) -> str:

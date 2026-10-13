@@ -149,9 +149,9 @@ def test_the_queue_shows_progress_hosts_and_why_work_waits(server, tmp_path: Pat
     assert waiting['blocked'] == 'no host serves windows', 'the only windows card is stale'
     assert [(h['host'], h['stale']) for h in seen['hosts']] == [('box-g', True)]
     key = waiting['candidate']
-    _forge_of(tips, [_card('box-g', 'windows', NOW, waiting={key: 'no headroom: no free core here'})])
+    _forge_of(tips, [_card('box-g', 'windows', NOW, waiting={key: 'no headroom: lacking cpu'})])
     again = forgequeue.view(repo, built, fetch=lambda _root: None)
-    assert again['queue'][0]['blocked'] == 'no headroom: no free core here'
+    assert again['queue'][0]['blocked'] == 'no headroom: lacking cpu'
     lines = forgequeue.render(again)
     assert any('running 40/93 done 12/93' in line for line in lines)
     assert any(line.strip().startswith('pr') and 'no headroom' in line for line in lines)

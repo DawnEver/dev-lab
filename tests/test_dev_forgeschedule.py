@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
-from lab_commons.dev.forgeschedule import NO_HEADROOM, Headroom, host_weights, load_schedule, parse_usage
+from lab_commons.dev.forgeschedule import host_weights, load_schedule, parse_usage
 from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
@@ -104,12 +104,6 @@ def test_a_blocked_candidate_past_its_class_bound_is_starved() -> None:
     blocked = [dataclasses.replace(item, blocked='outranked by x') for item in (old, young)]
     assert [i.candidate.ref for i in starved(blocked, {'o/r': FAMILY})] == ['feat/x']
     assert starved([old], {'o/r': FAMILY}) == ()
-
-
-def test_headroom_names_what_is_missing() -> None:
-    assert Headroom(cores=8, submits=None).why_not() == ''
-    assert Headroom(cores=0).why_not().startswith(NO_HEADROOM)
-    assert 'QOS' in Headroom(cores=8, submits=0).why_not()
 
 
 def test_usage_is_core_hours_per_run_job() -> None:
