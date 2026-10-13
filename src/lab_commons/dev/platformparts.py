@@ -11,12 +11,16 @@ A PART IS A COMMIT STATUS (forge plan, user ruling 2026-10-09): context :func:`p
 (``tests/<part>``), state ``success`` (PASS) or ``failure`` (FAIL), and a description every
 workstation can read without the record -- :meth:`Part.description`::
 
-    scope=full ran=1234 hands=femm+windows:12,jmag:3
+    scope=full ran=1234 hands=femm+windows:12,jmag:3 kept=0123456789ab:900
+
+``kept`` (absent when none) counts, per sha12 they RAN at, the outcomes this part CARRIED from an earlier
+run of the same part because no changed path reaches them (:mod:`lab_commons.dev.forgecarry`); they are
+judged like any outcome and never counted in ``ran``.
 
 ``hands`` is, per OTHER part, how many collected ids belong to it. That is how a commit's parts are
 DISCOVERED (:func:`derived`): ``base`` is always wanted, and so is every part a posted part hands to. A
 part CARRIED to a reach-equivalent descendant (:mod:`lab_commons.dev.forgecarry`) ends ``carried from
-<sha12>: only inert paths changed`` and is a part like any other: the sha it was judged at is named,
+<sha12>: every outcome carried by footprint`` and is a part like any other: the sha it was judged at is named,
 never hidden. The full per-id outcome stays in the run record, attached on the forge and linked as the
 status's ``target_url`` (:mod:`lab_commons.dev.forgerecords`). A ``pending`` status in the same context
 is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
@@ -141,7 +145,8 @@ _RESULT: Final = {state: result for result, state in _STATE.items()}
 _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
     r'hands=(?P<hands>-|[a-z0-9_+]+:\d+(?:,[a-z0-9_+]+:\d+)*)'
-    r'(?: carried from (?P<carried>[0-9a-f]{12}): only inert paths changed)?$'
+    r'(?: kept=(?P<kept>[0-9a-f]{12}:\d+(?:,[0-9a-f]{12}:\d+)*))?'
+    r'(?: carried from (?P<carried>[0-9a-f]{12}): every outcome carried by footprint)?$'
 )
 
 #: The remedy a missing part names: a host whose resources admit it claims it and runs :func:`producer_argv`.
@@ -293,6 +298,7 @@ class Part:
     ran: int
     hands: dict[str, int] = field(default_factory=dict)
     carried: str = ''  # the sha12 this verdict was judged at, when it is carried (lab_commons.dev.forgecarry)
+    kept: dict[str, int] = field(default_factory=dict)  # outcomes carried in, per sha12 they ran at; never in ran
 
     @property
     def state(self) -> str:
@@ -302,8 +308,9 @@ class Part:
     def description(self) -> str:
         """The status description: ``scope= ran= hands=`` (module docstring)."""
         hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
-        carried = f' carried from {self.carried}: only inert paths changed' if self.carried else ''
-        return f'scope={self.scope} ran={self.ran} hands={hands}{carried}'
+        kept = ' kept=' + ','.join(f'{sha}:{count}' for sha, count in sorted(self.kept.items())) if self.kept else ''
+        carried = f' carried from {self.carried}: every outcome carried by footprint' if self.carried else ''
+        return f'scope={self.scope} ran={self.ran} hands={hands}{kept}{carried}'
 
 
 def part_of(record: Mapping[str, Any]) -> Part:
@@ -339,7 +346,18 @@ def part_of(record: Mapping[str, Any]) -> Part:
     for owner in handed.values():
         hands[owner] = hands.get(owner, 0) + 1
     failing = any(outcome not in PASSING for outcome in covered.values())
-    return Part(platform=platform, scope=scope, result='FAIL' if failing else 'PASS', ran=len(covered), hands=hands)
+    kept: dict[str, int] = {}
+    for node, origin in record.get('carried', {}).items():
+        if node in covered:
+            kept[origin[:12]] = kept.get(origin[:12], 0) + 1
+    return Part(
+        platform=platform,
+        scope=scope,
+        result='FAIL' if failing else 'PASS',
+        ran=len(covered) - sum(kept.values()),
+        hands=hands,
+        kept=kept,
+    )
 
 
 def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ...]]:
@@ -366,6 +384,9 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
             ran=int(found['ran']),
             hands={owner: int(count) for owner, count in hands.items()},
             carried=found['carried'] or '',
+            kept={sha: int(n) for sha, n in (one.split(':') for one in found['kept'].split(','))}
+            if found['kept']
+            else {},
         )
     return parts, tuple(problems)
 

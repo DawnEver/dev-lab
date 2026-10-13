@@ -266,7 +266,7 @@ def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callabl
     except ForgeCallFailed as failed:
         say(f'[{item.platform}] could not carry to {target[:12]}: {failed}')
     else:
-        say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: only inert paths changed')
+        say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:

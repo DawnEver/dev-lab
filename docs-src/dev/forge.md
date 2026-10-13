@@ -117,12 +117,20 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
 - **Supersede.** When a ref moves on, its in-flight run is cancelled and released `superseded by <sha12>`.
-- **Carry, not supersede, across an inert diff** (`lab_commons.dev.forgecarry`). A repo declares the paths
-  no test reads, `[tool.lab_commons.parts] inert = [".claude/memory/**", "docs-src/**", "*.md"]`
-  (`fnmatch`, `*` crosses `/`). When the new tip descends from the run's sha and every path in
-  `git diff --no-renames` matches, the run finishes; its part is posted on its own sha and on the tip as
-  `scope=... carried from <sha12>: only inert paths changed`, which admission and promote read as the part
-  it is. One non-inert path, no ancestry, nothing declared, or a tip already settled: no carry.
+- **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test
+  file's FOOTPRINT is derived at the judged sha: itself, its conftest/`__init__` chain, its transitive in-repo
+  imports (candidates, so an added shadow counts), `pyproject.toml`/`uv.lock`, the declared `everywhere`
+  globs -- and EVERYTHING when a module in it reads the repo by path (`__file__`, a repo-path literal,
+  `subprocess`, `import_module`, ...) without a declared `reads` entry:
+  `[tool.lab_commons.carry] everywhere = ["rust/**"]`, `[tool.lab_commons.carry.reads] "tests/x.py" = ["docs/**"]`.
+  A test's outcome at A stands at a descendant B when no path in `git diff --no-renames A B` is in its footprint.
+  - PER OUTCOME on a cluster run: B's run takes every such outcome its 3 nearest ancestor runs OF THE SAME PART AND ENV
+    hold -- records, folded rounds, and the streams a superseded run's last round left -- and submits only the
+    rest. The record's `carried` maps each id to the sha it RAN at; the part reads
+    `scope=full ran=<run here> ... kept=<sha12>:<n>`, never counting a carried outcome as run.
+  - PER PART: every test file at A carries and no test file is added -- the run finishes instead of being
+    superseded and its part is also posted on the tip as `... carried from <sha12>: every outcome carried by footprint`.
+    No ancestry, a malformed declaration, or a tip already settled: no carry.
 
 ## Scheduling
 

@@ -142,8 +142,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
-* :mod:`lab_commons.dev.forgecarry` -- REACH-EQUIVALENCE: a descendant touching only declared inert paths
-  keeps the run and receives its part, naming the sha it was judged at.
+* :mod:`lab_commons.dev.forgecarry` -- REACH-CARRY: an outcome stands at a descendant whose diff misses its
+  test's footprint; per outcome on a cluster run, per part when every test carries.
+* :mod:`lab_commons.dev.footprint` -- the repo paths a test file's outcome can depend on, derived statically.
 * :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<part>`` part, in the cluster
   record's shape.
 * :mod:`lab_commons.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and

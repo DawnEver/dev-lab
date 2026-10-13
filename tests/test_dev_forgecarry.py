@@ -1,7 +1,7 @@
-"""REACH-EQUIVALENCE: a part's verdict at A carries to a descendant B whose diff touches only inert paths.
+"""REACH-EQUIVALENCE: a part's verdict at A carries to a descendant B whose diff reaches no test's footprint.
 
 Every diff here is a REAL ``git diff`` in a temp repo; the forge is a per-sha store of status posts.
-The planted control in each pair is the code-touching descendant: same history shape, one non-inert path.
+The planted control in each pair is the code-touching descendant: same history shape, one path a test imports.
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ from lab_commons.dev.shatree import Tree
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))
 REF = 'integrate/main'
-INERT = '[tool.lab_commons.parts]\noutput = "output/logs"\ninert = [".claude/memory/**", "docs-src/**", "*.md"]\n'
+PYPROJECT = '[tool.lab_commons.parts]\noutput = "output/logs"\n'
+TEST = 'from a import x\nimport b\n\n\ndef test_x():\n    assert x == 1\n'
 
 
 def _commit(root: Path, files: dict[str, str], message: str) -> str:
@@ -37,10 +38,10 @@ def _commit(root: Path, files: dict[str, str], message: str) -> str:
     return git_out(root, 'rev-parse', 'HEAD')
 
 
-def _repo(root: Path, pyproject: str = INERT) -> str:
-    """A repo whose first commit declares *pyproject*; that commit, the judged sha A."""
+def _repo(root: Path) -> str:
+    """A repo whose one test imports ``src/a.py`` (and a ``b`` it does not hold); its first commit, the sha A."""
     run_git(root, 'init', '-q')
-    return _commit(root, {'pyproject.toml': pyproject, 'src/a.py': 'x = 1\n'}, 'a')
+    return _commit(root, {'pyproject.toml': PYPROJECT, 'src/a.py': 'x = 1\n', 'tests/test_a.py': TEST}, 'a')
 
 
 def _push(root: Path, sha: str) -> None:
@@ -50,46 +51,39 @@ def _push(root: Path, sha: str) -> None:
 DOCS = {'.claude/memory/2026/10/13/plan.md': 'status: done\n', 'docs-src/x.txt': 'y\n', 'README.md': 'r\n'}
 
 
-def test_a_docs_only_descendant_is_equivalent_and_any_code_path_is_not(tmp_path: Path) -> None:
+def test_a_docs_only_descendant_is_equivalent_and_any_reached_path_is_not(tmp_path: Path) -> None:
     a = _repo(tmp_path)
     docs = _commit(tmp_path, DOCS, 'docs')
     assert forgecarry.changed_paths(tmp_path, a, docs) == tuple(sorted(DOCS))
     assert forgecarry.equivalent(tmp_path, a, docs)
     code = _commit(tmp_path, {'src/a.py': 'x = 2\n', 'notes.md': 'n\n'}, 'code')
-    assert not forgecarry.equivalent(tmp_path, a, code), 'one non-inert path in the diff refuses the carry'
+    assert not forgecarry.equivalent(tmp_path, a, code), 'one path a test imports refuses the carry'
     assert not forgecarry.equivalent(tmp_path, docs, code)
 
 
-def test_a_rename_out_of_an_inert_tree_counts_both_paths(tmp_path: Path) -> None:
+def test_a_rename_out_of_an_unreached_tree_counts_both_paths(tmp_path: Path) -> None:
     a = _repo(tmp_path)
-    _commit(tmp_path, {'docs-src/tool.py': 'z = 1\n'}, 'docs')
-    run_git(tmp_path, 'mv', 'docs-src/tool.py', 'src/tool.py')
+    _commit(tmp_path, {'docs-src/b.py': 'z = 1\n'}, 'docs')
+    run_git(tmp_path, 'mv', 'docs-src/b.py', 'src/b.py')
     run_git(tmp_path, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'mv')
     moved = git_out(tmp_path, 'rev-parse', 'HEAD')
-    assert 'src/tool.py' in (forgecarry.changed_paths(tmp_path, a, moved) or ())
-    assert not forgecarry.equivalent(tmp_path, a, moved)
+    assert 'src/b.py' in (forgecarry.changed_paths(tmp_path, a, moved) or ())
+    assert not forgecarry.equivalent(tmp_path, a, moved), 'src/b.py is a candidate of `import b`'
 
 
-def test_nothing_declared_or_a_non_descendant_never_carries(tmp_path: Path) -> None:
-    a = _repo(tmp_path, '[tool.lab_commons.parts]\noutput = "output/logs"\n')
+def test_a_non_descendant_never_carries(tmp_path: Path) -> None:
+    a = _repo(tmp_path)
     docs = _commit(tmp_path, DOCS, 'docs')
-    assert not forgecarry.equivalent(tmp_path, a, docs), 'no inert list: every path can reach a test'
     run_git(tmp_path, 'checkout', '-q', '-b', 'side', a)
     sibling = _commit(tmp_path, {'README.md': 's\n'}, 'side')
     assert forgecarry.changed_paths(tmp_path, docs, sibling) is None, 'not a descendant: there is no diff to judge'
     assert not forgecarry.equivalent(tmp_path, docs, sibling)
 
 
-def test_an_inert_list_that_is_not_strings_is_refused_by_name(tmp_path: Path) -> None:
-    a = _repo(tmp_path, '[tool.lab_commons.parts]\ninert = "*.md"\n')
-    with pytest.raises(ValueError, match=r'\[tool\.lab_commons\.parts\] inert'):
-        forgecarry.inert_globs(tmp_path, a)
-
-
 def test_a_carried_part_names_its_source_and_still_admits() -> None:
     part = Part('base', 'full', 'PASS', 12, carried='a' * 12)
     text = part.description()
-    assert text.endswith(f'carried from {"a" * 12}: only inert paths changed')
+    assert text.endswith(f'carried from {"a" * 12}: every outcome carried by footprint')
     parts, problems = parts_of([Status('tests/base', 'success', text, '')])
     assert problems == ()
     assert parts['base'] == part
@@ -159,7 +153,7 @@ def test_a_docs_only_descendant_keeps_the_local_run_and_gets_the_carried_status(
     assert not proc.killed, 'a reach-equivalent tip lets the run finish'
     (carried,) = forge.history(None, b)
     assert (carried.context, carried.state, carried.url) == ('tests/windows', 'success', 'https://f/record')
-    expected = f'scope=full ran=7 hands=- carried from {a[:12]}: only inert paths changed'
+    expected = f'scope=full ran=7 hands=- carried from {a[:12]}: every outcome carried by footprint'
     assert carried.description == expected
 
 
