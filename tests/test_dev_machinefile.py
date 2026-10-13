@@ -9,8 +9,8 @@ import pytest
 from lab_commons.dev._machinefile import diff, merged
 
 HAND: str = (
-    '# this box\n[hpc]\n\n[[hpc.grant]]\nuser = "me"  # mine\ncpus = 96\n\n'
-    '[capabilities.jmag]\nseats = 4  # measured here\n\n[serve]\nown_weight = 2\n'
+    '# this box\n[hpc]\n\n[[hpc.grant]]\nuser = "me"  # mine\nslurm_account = "a"\n\n'
+    '[capabilities.jmag]\nseats = 4  # measured here\n\n[serve]\ntick_minutes = 2\n'
 )
 
 
@@ -19,12 +19,12 @@ def test_an_absent_table_is_appended_and_every_other_line_kept() -> None:
     assert out.startswith(HAND.rstrip('\n'))
     parsed = tomllib.loads(out)
     assert parsed['capabilities'] == {'jmag': {'seats': 4}, 'node': {}}
-    assert parsed['serve'] == {'own_weight': 2, 'repos': ['a', 'b']}
-    assert parsed['hpc']['grant'] == [{'user': 'me', 'cpus': 96}]
+    assert parsed['serve'] == {'tick_minutes': 2, 'repos': ['a', 'b']}
+    assert parsed['hpc']['grant'] == [{'user': 'me', 'slurm_account': 'a'}]
 
 
 def test_an_equal_value_keeps_its_line_and_comment_so_a_second_merge_is_a_no_op() -> None:
-    wanted = {'capabilities.jmag': {'seats': 4}, 'serve': {'own_weight': 2}}
+    wanted = {'capabilities.jmag': {'seats': 4}, 'serve': {'tick_minutes': 2}}
     assert merged(HAND, wanted) == HAND
     once = merged(HAND, {'serve': {'repos': ['x']}})
     assert merged(once, {'serve': {'repos': ['x']}}) == once
@@ -44,5 +44,5 @@ def test_a_merge_that_would_break_the_file_is_refused() -> None:
 
 
 def test_an_empty_file_gets_the_tables() -> None:
-    assert tomllib.loads(merged('', {'serve': {'own_weight': 2.5}})) == {'serve': {'own_weight': 2.5}}
+    assert tomllib.loads(merged('', {'serve': {'tick_minutes': 2.5}})) == {'serve': {'tick_minutes': 2.5}}
     assert diff('a\n', 'a\n', 'c') == ''

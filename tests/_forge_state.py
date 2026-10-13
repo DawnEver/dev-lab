@@ -28,6 +28,7 @@ class StateForge(Client):
         self.comments: dict[int, list[dict[str, Any]]] = {}
         self.fail_lists = False
         self.deny_delete = False
+        self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         self._next_comment = 1000
 
     def add_issue(self, title: str, body: str = '', *, state: str = 'open', **extra: object) -> int:
@@ -76,7 +77,12 @@ class StateForge(Client):
 
     def _comment(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
         self._next_comment += 1
-        made = {'id': self._next_comment, 'body': body['body'], 'html_url': f'c/{self._next_comment}'}
+        made = {
+            'id': self._next_comment,
+            'body': body['body'],
+            'html_url': f'c/{self._next_comment}',
+            'user': {'login': self.login},
+        }
         self.comments[number].append(made)
         return made
 
@@ -84,6 +90,10 @@ class StateForge(Client):
         found = next(c for cs in self.comments.values() for c in cs if c['id'] == comment_id)
         found['body'] = body['body']
         return found
+
+    def _delete_comment(self, comment_id: int) -> None:
+        for listed in self.comments.values():
+            listed[:] = [c for c in listed if c['id'] != comment_id]
 
     def _delete(self, number: int) -> None:
         if self.deny_delete:  # gitea answers a non-admin token 403
@@ -105,7 +115,7 @@ class StateForge(Client):
         kind, number = self._shape(route)
         opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
         handlers = {
-            ('GET', 'user'): lambda: {'login': 'a'},
+            ('GET', 'user'): lambda: {'login': self.login},
             ('GET', 'repo'): lambda: {'open_issues_count': opened, 'open_pr_counter': 0, 'has_pull_requests': True},
             ('GET', 'issues'): lambda: self._listed(query),
             ('POST', 'issues'): lambda: self.issues_by_number[self.add_issue(sent['title'], sent['body'])],
@@ -115,5 +125,6 @@ class StateForge(Client):
             ('POST', 'comments'): lambda: self._comment(number, sent),
             ('PATCH', 'comment'): lambda: self._edit_comment(number, sent),
             ('DELETE', 'issue'): lambda: self._delete(number),
+            ('DELETE', 'comment'): lambda: self._delete_comment(number),
         }
         return handlers[method, kind]()

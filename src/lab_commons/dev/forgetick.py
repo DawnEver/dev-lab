@@ -122,7 +122,6 @@ def tick(
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
     provides: Mapping[str, Any] | None = None,
-    own_weight: float = 1.0,
 ) -> TickReport:
     """One tick, in the order the module docstring gives; with a run *in_flight* here it claims nothing.
 
@@ -132,8 +131,7 @@ def tick(
     (default: :func:`lab_commons.hpc.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
     this host's machine-file ``[capabilities]`` (:mod:`lab_commons.dev.forgeprovides`; none by default): it
-    adds the engine parts it serves and blocks a part needing what it lacks. *own_weight* lifts the value
-    of this host's login's own PRs and requests.
+    adds the engine parts it serves and blocks a part needing what it lacks.
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -167,7 +165,7 @@ def tick(
     cores = 1 if serve.hpc else os.cpu_count() or 1
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
-    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, mine=login, own_weight=own_weight)
+    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run,
         room=(headroom or Headroom(cores=cores)).why_not(), winner='a run in flight here' if in_flight else '',

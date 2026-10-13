@@ -119,7 +119,7 @@ class SlurmCluster:
         shell = self.connect(grant)
         snapshot = probe(shell, grant.slurm_account)
         qos = snapshot.quota.default_qos
-        room = Headroom(headroom(snapshot, grant.cpus, self.machine.workstation), snapshot.quota.submit_room(qos))
+        room = Headroom(headroom(snapshot), snapshot.quota.submit_room(qos))
         facts: dict[str, object] = {
             'quota_cpus': snapshot.quota.cpus,
             'qos': qos,

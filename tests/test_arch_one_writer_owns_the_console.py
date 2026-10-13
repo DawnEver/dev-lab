@@ -70,7 +70,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-12 at 258: forge-schedule's split modules, artefacts/artefactstores, forgeship, selection.
 #: Re-taken 2026-10-12 at 267 (serve-task, serve-lock, forge-produce, forge-provides, integration-home): 220 -> 227.
 #: Re-taken 2026-10-13 at 273 (six modules since): 227 -> 232.
-MODULE_FLOOR = 232
+#: Re-taken 2026-10-13 at 279 (compute.ledger, forgereserve and the compute package): 232 -> 237.
+MODULE_FLOOR = 237
 MODULE_HEADROOM = 45
 
 

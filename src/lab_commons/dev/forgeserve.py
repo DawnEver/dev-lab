@@ -58,6 +58,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from lab_commons.compute.ledger import reserve_table
 from lab_commons.config import section
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun, forgeship
@@ -67,7 +68,7 @@ from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, forge_
 from lab_commons.dev.forgehosts import publish_card, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
-from lab_commons.dev.forgeprovides import own_weight, provided
+from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.forgeschedule import Headroom, box_headroom, host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgetick import MODES, tick
@@ -75,6 +76,7 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
 __all__ = ['ServeReport', 'main', 'serve']
@@ -116,6 +118,7 @@ def serve(
     raised: list[Alarm] = []  # every alarm this tick, for its host card
     alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
+    refuse_retired_keys('serve', section('serve'))
     provides = provided(section('capabilities'))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     try:
@@ -123,7 +126,6 @@ def serve(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
             in_flight=bool(runs), headroom=standing.headroom if standing else box_room(),
             usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
-            own_weight=own_weight(section('serve')),
         )  # fmt: skip
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
@@ -140,6 +142,7 @@ def serve(
     card = functools.partial(
         publish_card, root, ticked.queue, client=client, machine=machine, seat=seat, host=host, standing=standing,
         table=table, say=say, alarms=raised, artefacts=ticked.artefacts, provides=provides,
+        delegates=reserve_table(section('reserve')).delegates,
     )  # fmt: skip
 
     beat_s = float(table.get('tick_minutes', 5)) * 60
