@@ -382,7 +382,7 @@ def _hold(
     """
     now = forge_now(client)
     owner = run.claim
-    state, holder = assess(status_history(client, run.sha), run.platform, me=owner, now=now)
+    state, holder = assess(status_history(client, run.sha), part_context(run.platform), me=owner, now=now)
     if state == DONE:
         say(f'{tag}: the part is already settled on the forge -- released')
         drop(run)

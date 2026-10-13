@@ -142,10 +142,13 @@ class Serving:
 
 @dataclass(frozen=True)
 class Work:
-    """One request and where it stands: a ref's tip lacking (or holding) one part; *platform* is the part's name.
+    """One JOB and where it stands: a part a ref's tip lacks (or holds), or a request (:mod:`forgerequest`).
 
-    A claimed part carries what produces it: a local *argv* -- as the sha declares it, run by the interpreter
-    of the producer's tree at the sha -- or a *cluster* part advanced by serve.
+    *platform* is the part's name -- a request's need-set spelled the same way. A part and a request are one
+    noun on one path, told apart only by *context*, the status context its claim and result are posted in:
+    ``tests/<part>`` for a part (the default), ``request/<n>`` for a request. A claimed job carries what
+    produces it: a local *argv* -- as the sha declares it, run by the interpreter of the producer's tree at
+    the sha -- or a *cluster* part advanced by serve.
     """
 
     ref: str
@@ -155,6 +158,12 @@ class Work:
     holder: Claim | None = None
     argv: tuple[str, ...] = ()
     cluster: ClusterPart | None = None
+    context: str = ''
+
+    def __post_init__(self) -> None:
+        """A job named by no context is a part: ``tests/<part>``."""
+        if not self.context:
+            object.__setattr__(self, 'context', part_context(self.platform))
 
 
 def serving(host: str, seat: ClusterAccount | None) -> Serving:
@@ -172,12 +181,11 @@ def this_machine(seat: ClusterAccount | None) -> str:
     return workstation() or (socket.gethostname().split('.')[0] if seat is not None else '')
 
 
-def assess(history: Sequence[Status], platform: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
-    """Where *platform*'s part stands on a commit whose every post is *history* (oldest first).
+def assess(history: Sequence[Status], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
+    """Where the job posted in *context* stands on a commit whose every post is *history* (oldest first).
 
     *now* is the FORGE's time. Returns the state and the claim holding it (``None`` when nobody holds it).
     """
-    context = part_context(platform)
     posts = [status for status in history if status.context == context]
     if posts and posts[-1].state != 'pending':  # a claim released by an outage is open again
         return (OPEN if posts[-1].description.startswith(REQUEUED) else DONE), None
@@ -210,6 +218,6 @@ def claim(client: Client, work: Work, me: Claim) -> Work:
     same call RENEWS an owner's lease: a renewal is a claim like any other, and it holds only while no
     earlier live claim of another owner stands.
     """
-    status_post(client, work.sha, context=part_context(work.platform), state='pending', description=me.description())
-    state, holder = assess(status_history(client, work.sha), work.platform, me=me, now=forge_now(client))
+    status_post(client, work.sha, context=work.context, state='pending', description=me.description())
+    state, holder = assess(status_history(client, work.sha), work.context, me=me, now=forge_now(client))
     return dataclasses.replace(work, state=state, holder=holder)
