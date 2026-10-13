@@ -15,6 +15,7 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
+on the host that owns integration, prune merged idle origin branches (:func:`lab_commons.dev.branchprune.serve_prune`);
 flush the outbox again.
 
 SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
@@ -107,6 +108,7 @@ from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship
+from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
@@ -218,6 +220,7 @@ def serve(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
     )
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
+    serve_prune(root, client(root), host=name, now=clock(), say=say, alarm=alarm)
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
     if pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'

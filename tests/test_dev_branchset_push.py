@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import githooks
 from lab_commons.dev.branchset import BranchSet
 from lab_commons.dev.branchset_push import (
     ALLOWED,
@@ -31,7 +30,7 @@ from lab_commons.dev.branchset_push import (
     refusal,
     undeclared,
 )
-from lab_commons.dev.githooks import HOOK, PYTHON_ENV, hook_path, kind, run_hook
+from lab_commons.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session', 'integrate/main'}))
@@ -45,6 +44,8 @@ version = "0"
 [tool.lab_commons.branchset]
 trunk = "main"
 sessions = ["feat/session", "integrate/main"]
+
+[tool.lab_commons.hooks]
 """
 
 
@@ -167,15 +168,18 @@ def test_a_checkout_with_no_declaration_is_refused_rather_than_passed(tmp_path: 
 
 
 def _wire_hook(root: Path) -> None:
-    """Install the SHIPPED script as git's own pre-push hook, the way a consumer's git calls it.
+    """Install the family RUNNER as git's own pre-push hook -- the base table decides what it runs.
 
-    The interpreter is THIS PROCESS's (``sys.executable``), not one resolved from ``PATH``: the test
-    runs in the environment that can import ``lab_commons``, and a hook wired to a different one
-    would refuse the declared branch for a reason that has nothing to do with the rule -- which is
-    precisely the misattribution ``branchset-push.sh``'s own header refuses to make.
+    THE INCIDENT THIS SHAPE ANSWERS (2026-10-13): this control used to write ``branchset_push`` into
+    the hook BY HAND, so it proved the module and never the wiring -- and the wiring was missing. When
+    hooks moved to TOML (2026-10-11) the base table carried no ``branchset-push`` row, every consumer's
+    pre-push ran without it, and an agent pushed ten lane branches to origin. What runs here is what
+    a consumer's installed shim runs: ``githooks run pre-push`` over the merged base + repo table.
+    The interpreter is THIS PROCESS's: a planted checkout has no ``.venv`` of its own.
     """
     hook = root / '.git' / 'hooks' / 'pre-push'
-    hook.write_text(f'#!/usr/bin/env bash\n"{sys.executable}" -m lab_commons.dev.branchset_push\n')
+    runner = f'"{Path(sys.executable).as_posix()}" -m lab_commons.dev.githooks run pre-push "$@"'
+    hook.write_text(f'#!/usr/bin/env bash\n{runner}\n')
     hook.chmod(0o755)
 
 
@@ -228,25 +232,17 @@ def test_the_planted_control_pushes_both_ways(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 5. THE HANDSHAKE, and the registry the hook has to be in to be wired at all
+# 5. THE WIRING: the family base table, the one place a pre-push check is declared
 # ---------------------------------------------------------------------------
 
 
-def test_the_hook_is_registered_and_shipped() -> None:
-    """A hook the registry does not name cannot be wired: ``--list`` is how a consumer finds it."""
-    shipped = set(githooks.SCRIPTS)
-    assert 'branchset-push' in shipped, shipped
-    assert kind('branchset-push') == HOOK
-    assert hook_path('branchset-push').is_file()
-
-
-def test_the_dispatcher_hands_the_hook_its_own_interpreter(tmp_path: Path) -> None:
-    """LAB_PYTHON is what stops a shipped script guessing an interpreter from PATH."""
-    code = run_hook('branchset-push', cwd=tmp_path)
-    # The planted checkout above has no manifest here, so the hook REFUSES; what this asserts is
-    # that it RAN and reached its own module -- exit 2, not a bash "command not found" and not 0.
-    assert code in {REFUSED, COULD_NOT_JUDGE}, f'the shipped script did not reach its module: rc={code}'
-    assert PYTHON_ENV == 'LAB_PYTHON'
+def test_the_base_table_runs_the_check_at_pre_push_for_every_consumer() -> None:
+    """The row IS the wiring: a consumer opting into the base table gets the check without a line of its own."""
+    rows = {row['id']: row for row in base_rows()['pre-push']}
+    assert 'branchset-push' in rows, sorted(rows)
+    row = rows['branchset-push']
+    assert row['run'] == ['python', '-m', 'lab_commons.dev.branchset_push'], row['run']
+    assert row.get('always_run'), 'a push that changes no path still moves a ref; the check must run for it'
 
 
 def test_the_module_refuses_an_undeclared_branch_read_from_stdin(tmp_path: Path) -> None:

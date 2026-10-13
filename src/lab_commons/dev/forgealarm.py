@@ -9,7 +9,10 @@ and a traffic jam: a candidate waiting past its class's bound (``starved``,
 :mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own. One more is not
 a failure but a PROMPT: on the host declared to own integration, the integration queue CHANGED -- a lane
 went READY, the integration tip became promotable, or a red needs routing (``integration``,
-:mod:`lab_commons.dev.integrator`), keyed by the row so each new one is delivered at once.
+:mod:`lab_commons.dev.integrator`), keyed by the row so each new one is delivered at once. Two more are
+origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by that same host only: the merged
+branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
+(``stale-branch``), which are never deleted.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -43,7 +46,10 @@ from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
-__all__ = ['AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'RUN', 'STARVED', 'Alarm', 'repeat_window', 'sound']
+__all__ = [
+    'AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'PRUNED', 'RUN', 'STALE_BRANCH', 'STARVED', 'Alarm',
+    'repeat_window', 'sound',
+]  # fmt: skip
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
 EVENT: Final = 'lab_commons.forge.alarm'
@@ -57,6 +63,10 @@ RUN: Final = 'run'
 STARVED: Final = 'starved'
 #: The integration queue changed on the host that owns integration (:mod:`lab_commons.dev.integrator`).
 INTEGRATION: Final = 'integration'
+#: The integration host deleted merged idle origin branches, or failed to (:mod:`lab_commons.dev.branchprune`).
+PRUNED: Final = 'pruned'
+#: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`lab_commons.dev.branchprune`).
+STALE_BRANCH: Final = 'stale-branch'
 
 
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:

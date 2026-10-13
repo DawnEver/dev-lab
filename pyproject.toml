@@ -131,6 +131,9 @@ request_max_age_days = 14
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
+# User ruling 2026-10-13 ("origin should not carry this junk"): the integration host (integrator.host) deletes
+# merged undeclared origin branches idle >= grace_hours (lab_commons.dev.branchprune).
+prune_merged = true
 
 [tool.lab_commons.doors]
 # This repo's exits, keyed by deny-rule ID. The agent guard runs from whichever project a session

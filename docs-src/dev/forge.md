@@ -211,8 +211,9 @@ python -m lab_commons.dev.forge queue [--json]
 
 The one status command, from the forge alone, on any machine with a forge credential. It fetches origin and
 prints the queue (class, value, cost, score, wait, blocking reason), every run in flight with its owner and
-progress, every host card (stale flagged), every live reservation (a refused writer's flagged) and every
-starved candidate. It posts nothing.
+progress, every host card (stale flagged), every live reservation (a refused writer's flagged), every
+starved candidate, and every undeclared origin branch idle past its grace (`deletable`, `delete` or `stale`;
+see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 
 - **Blocking reasons**: `no host serves it`, `no host provides <resource>` (no live card has every resource
   the part needs), `over budget: <ref> used X of Y core-h in 24 h`,
@@ -274,9 +275,11 @@ pending), `starved`, and `integration` -- not a failure but a PROMPT: on the hos
 integration (`[tool.lab_commons.integrator] host`, a card name or a forge login), each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
 BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered at once
-([the integrator](integrator.md#waking-the-integrator)). The machine file's `[alerts]` table (telegram,
-email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most once per `[alerts]
-repeat_hours` (absent: 6) -- the receiver's decision, so it lives in the receiver's machine file.
+([the integrator](integrator.md#waking-the-integrator)). The same host raises origin's branch hygiene:
+`pruned` (the merged branches it deleted, or a prune that failed) and `stale-branch` (unmerged branches idle
+past the grace, never deleted; see [pruning origin](branch-set.md#pruning-origin)). The machine file's
+`[alerts]` table (telegram, email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most
+once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it lives in the receiver's machine file.
 
 ## Records and the outbox
 

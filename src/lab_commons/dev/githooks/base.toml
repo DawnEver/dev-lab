@@ -105,3 +105,10 @@ run = ["python", "-m", "lab_commons.dev.integrationhome", "commit-msg"]
 id = "push-from-its-own-branch"
 run = ["python", "-m", "lab_commons.dev.integrationhome", "pre-push"]
 always_run = true
+
+# ONE-BRANCH-PER-SESSION at push time: a push creating or updating a branch the repo's [tool.lab_commons.branchset]
+# does not declare is refused (lab_commons.dev.branchset_push). Lanes are local; only declared branches reach origin.
+[[pre-push]]
+id = "branchset-push"
+run = ["python", "-m", "lab_commons.dev.branchset_push"]
+always_run = true

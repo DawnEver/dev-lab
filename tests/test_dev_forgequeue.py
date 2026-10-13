@@ -188,7 +188,7 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
-    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'reservations', 'starved'}
+    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'reservations', 'starved', 'branches'}
     assert printed['queue'][0]['blocked'] == 'no host serves it'
 
 
@@ -197,6 +197,18 @@ def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:
     why = 'the rclone remote hpc-data: is missing or unusable'
     assert f'artefacts: {why}' in _card('ada/alice', 'linux', NOW, artefacts=why).text()
     assert 'artefacts:' not in _card('ada/alice', 'linux', NOW).text()
+
+
+def test_the_queue_shows_the_origin_branches_a_human_may_delete() -> None:
+    """Prune off, a merged idle branch is printed DELETABLE; an unmerged one STALE with its age."""
+    rows = [
+        {'action': 'deletable', 'ref': 'lane/done', 'sha': 'a' * 40, 'rule': 'merged-idle', 'idle_h': 30.0},
+        {'action': 'stale', 'ref': 'lane/left', 'sha': 'b' * 40, 'rule': 'unmerged-stale', 'idle_h': 96.0},
+    ]
+    view = {'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': [], 'starved': [], 'branches': rows}
+    lines = forgequeue.render(view)
+    assert f'  deletable lane/done  {"a" * 12}  merged-idle, idle 30 h' in lines
+    assert f'  stale     lane/left  {"b" * 12}  unmerged-stale, idle 96 h' in lines
 
 
 def test_a_cards_preempted_loans_round_trip_and_are_shown_by_the_queue(server) -> None:

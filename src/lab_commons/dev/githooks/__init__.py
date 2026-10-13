@@ -97,7 +97,6 @@ SCRIPTS: Final[tuple[str, ...]] = tuple(sorted(p.stem for p in _HERE.glob(f'*{HO
 #: What each shipped script IS. The registry owns this; the directory owns which scripts exist, and
 #: :func:`undeclared` is where the two are made to agree in both directions.
 KINDS: Final[dict[str, str]] = {
-    'branchset-push': HOOK,
     'bump-version': HOOK,
     'cz-push-range': HOOK,
     'git-env-repair': FRAGMENT,
@@ -242,8 +241,7 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
     reverse -- would be making that decision from outside the file that documents it.
 
     THE INTERPRETER IS PASSED DOWN AS ``LAB_PYTHON``, because this function is the only place that
-    knows it. A hook that needs THIS PACKAGE -- ``branchset-push`` reads the declared branch set with
-    ``lab_commons.dev.branchset`` -- must import it from the environment the consumer installed it
+    knows it. A shipped script that needs THIS PACKAGE must import it from the environment the consumer installed it
     into, and a bash script cannot recover ``sys.executable``: it would have to guess from ``PATH``,
     and the guess that missed would report an ImportError as a policy refusal. Handing it down costs
     one environment variable and removes the guess. A hook that does not use it is unaffected.

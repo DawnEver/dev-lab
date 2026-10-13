@@ -87,6 +87,8 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | read a local log to know if a sha is green | `forge status list <sha>` or `forge queue` |
 | push `main` after a local heavy run | `forge promote` (integrator only), when every part is a full PASS |
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
+| push a lane branch to origin | keep lanes local; the pre-push hook refuses an undeclared branch ([the push-time check](branch-set.md#the-push-time-check)) |
+| delete merged origin branches by hand | declare `prune_merged = true`; the integration host prunes them ([pruning origin](branch-set.md#pruning-origin)) |
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
 
@@ -177,3 +179,40 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
   `base` from `[tool.lab_commons.hpc]`), add `[tool.lab_commons.parts] output` and
   `[tool.lab_commons.tests] produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]`; add `resources`
   only for markers naming something a host may lack.
+
+## Branch hygiene: lanes stay local, origin is pruned
+
+Upgrading lab-commons brings two changes to every repo that opts into the base hook table
+(`[tool.lab_commons.hooks]`):
+
+1. **The pre-push hook refuses an undeclared branch.** The base table was missing its `branchset-push` row, so
+   from the TOML hook migration (2026-10-11) until 2026-10-13 this check never ran. A push of any branch that
+   `[tool.lab_commons.branchset]` does not name is now refused. Before you upgrade, declare every session branch
+   that really lives on origin, or its next push is refused. Agent lanes stay local.
+2. **Merged branches are pruned from origin.** Opt in, and name the host that owns integration:
+
+```toml
+[tool.lab_commons.branchset]
+trunk = 'main'
+sessions = ['integrate/main']  # every long-lived branch: exactly what the pre-push hook allows
+prune_merged = true            # the integration host deletes merged branches idle >= grace_hours
+grace_hours = 24
+
+[tool.lab_commons.integrator]
+host = '<the card name, or forge login, of the integrator serving host>'
+```
+
+Before setting `prune_merged`, run `python -m lab_commons.dev.forge queue` and read its `origin branches`
+section: every `deletable` row there is deleted on the integration host's next tick. See
+[pruning origin](branch-set.md#pruning-origin).
+
+### consumer-a
+
+- `sessions` declares `integrate/main` and six `feat/*` session branches. Keep a `feat/*` there while its
+  session lives. Once it is merged and done, remove it from `sessions`, and the prune deletes it from origin.
+- Set `prune_merged = true` and `[tool.lab_commons.integrator] host`. No push mirror is configured.
+
+### consumer-b
+
+- `sessions = ['deploy', 'integrate/main', 'wdg-3d']`. A declared session is never pruned.
+- Set `prune_merged = true` and `[tool.lab_commons.integrator] host`. No push mirror is configured.

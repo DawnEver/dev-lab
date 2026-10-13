@@ -624,6 +624,19 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
     assert [a.kind for a in alarms] == [RUN]
 
 
+def test_every_tick_offers_the_branch_prune_its_host_card_name(monkeypatch, tmp_path: Path) -> None:
+    """The prune decides ownership itself (``[tool.lab_commons.integrator] host``); serve hands it who this is."""
+    offered: list[dict] = []
+
+    def prune(root: Path, _client: object, **kwargs: object) -> tuple[()]:
+        offered.append({'root': root, 'host': kwargs['host']})
+        return ()
+
+    monkeypatch.setattr(forgeserve, 'serve_prune', prune)
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()))
+    assert offered == [{'root': tmp_path, 'host': forgeserve.card_host('G', None)}]
+
+
 def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch, tmp_path: Path) -> None:
     """A stop door notes a serve's producer before it kills it; the serve names the release ``stopped``, not a crash."""
     forge = _Forge()
