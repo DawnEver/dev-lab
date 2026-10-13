@@ -281,6 +281,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`lab_commons.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.
+* :mod:`lab_commons.dev.retention` -- the storage retention pass serve runs: delete what nothing references.
 * :mod:`lab_commons.dev.artefacts` -- the artefact store: declared outputs packed once, the backend
   chosen by size, one shared library whose every writer cleans only its own runs.
 * :mod:`lab_commons.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and

@@ -54,6 +54,16 @@ makes on a producer host. Each tick it:
   `.venv` (`-m lab_commons.dev.dep --bootstrap <tree>`). The declared argv runs there with that tree's
   interpreter, and the tree is removed once the run ends. The serving checkout's HEAD decides nothing about
   what is judged. A tree that cannot be built spawns nothing; the claim is released naming the step.
+- **Serve cleans its own storage** (`lab_commons.dev.retention`), at most once per `every_hours` and at once
+  when usage nears the quota -- no cron line of its own. On a cluster it plans `~/ci` by reference: a finished
+  run beyond the `carry_keep` newest of its env key (compute-carry's sources), an abandoned run, a tree, env,
+  native build or pack nothing kept names, finished `~/slurm-*.out`, and `~/.cache/lab-forge-*.log` past
+  `log_max_mb` (rotated); never a run in flight, nothing younger than `min_age_hours`. On a workstation it
+  removes the stale `forge-*` trees of the serving checkout. Then `uv cache prune` and `git worktree prune`.
+  Every deletion is one JSON line (path, bytes, files, rule). At `pressure` of the block or file quota it
+  also removes kept runs oldest first down to `target`, and raises a `storage` alarm if still over. The
+  policy is the kit defaults, overridden per key by the machine file's `[retention]` table (an unknown key is
+  refused). Preview: `python -m lab_commons.dev.retention [--cluster]` lists the plan and deletes nothing.
 - **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
   must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table.

@@ -18,13 +18,14 @@ from lab_commons.compute.ledger import Entry, Ledger
 from lab_commons.compute.model import Candidate, Demand, For, Ranked, Reservation, Resources, Supply
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
-from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
+from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED, STORAGE
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
 from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
+from lab_commons.dev.retention import Outcome
 from lab_commons.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
@@ -110,6 +111,7 @@ def _serve(
     seen: dict[str, object] | None = None,
     holders: tuple[Holder, ...] = (),
     book: Ledger | None = None,
+    retain=lambda _root, **_kw: None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
@@ -157,6 +159,7 @@ def _serve(
         reserve=lambda: Resources(cpu=1, mem_gb=8),
         holders=lambda: holders,
         read_ledger=lambda _client: book or Ledger(None, {}, ()),
+        retain=retain,
     )
     said.append(f'running={seen.get("running")}')
     return report, said, alarms
@@ -423,6 +426,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
             tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
             box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)), table={},
             reserve=Resources, holders=tuple, read_ledger=lambda _client: Ledger(None, {}, ()),
+            retain=lambda _root, **_kw: None,
         )  # fmt: skip
     assert [a.kind for a in alarms] == [AUTH]
 
@@ -633,3 +637,18 @@ def test_a_finished_box_run_learns_its_peak_wall_and_held_cpu(monkeypatch, tmp_p
     )
     produce(_Proc(0, beats=0, pid=4242))
     assert len(learnt) == 1, 'PLANTED CONTROL: a run never sampled learns nothing'
+
+
+def test_the_retention_pass_runs_each_serve_and_alarms_only_when_still_over(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: a pass that freed enough raises nothing; one still over raises ``storage``."""
+    asked: list[dict] = []
+    quiet = TickReport((), (), ('tick',), (), ())
+
+    def retain(*, over: bool) -> object:
+        return lambda _root, **kw: asked.append(kw) or Outcome(10, 1, over)
+
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, retain=retain(over=False))
+    assert alarms == []
+    assert asked[0]['cluster'] is False
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, retain=retain(over=True))
+    assert [a.kind for a in alarms] == [STORAGE]

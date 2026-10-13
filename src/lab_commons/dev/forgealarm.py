@@ -6,7 +6,8 @@ stored), a claim whose lease cannot be renewed (``lease``: the forge refused the
 holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot advance (``run``), and
 an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
 and a traffic jam: a candidate waiting past its class's bound (``starved``,
-:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own.
+:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own; and an
+account whose storage is still near its quota after the retention pass (``storage``).
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -38,7 +39,7 @@ from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
-__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'REPEAT', 'RUN', 'STARVED', 'Alarm', 'sound']
+__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'REPEAT', 'RUN', 'STARVED', 'STORAGE', 'Alarm', 'sound']
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
 EVENT: Final = 'lab_commons.forge.alarm'
@@ -50,6 +51,8 @@ IDLE: Final = 'idle'
 RUN: Final = 'run'
 #: A candidate waited past its class's bound (:mod:`lab_commons.dev.forgeschedule`).
 STARVED: Final = 'starved'
+#: Usage still at the quota pressure line after the retention pass (:mod:`lab_commons.dev.retention`).
+STORAGE: Final = 'storage'
 
 #: How long one ``(kind, repo)`` delivery waits before it is delivered again.
 REPEAT: Final = timedelta(hours=6)
