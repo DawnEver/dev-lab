@@ -110,7 +110,7 @@ def test_submit_and_gather_run_only_read_only_git_here_and_write_only_the_record
     out = tmp_path / 'out'
     assert cli.main(['run', 'gather', *common, '-o', str(out)]) == 0
     (output,) = out.iterdir()
-    assert output.name.startswith(f'run-{sha}-linux-'), output.name
+    assert output.name.startswith(f'run-{sha}-base-'), output.name
     assert {argv[3] for argv in spawned} <= READ_ONLY_GIT
     assert 'pack-objects' in {argv[3] for argv in spawned}, 'the commit was off the remote, so it was packed'
     assert _fingerprint(repo) == before_repo

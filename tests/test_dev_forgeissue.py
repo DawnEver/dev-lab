@@ -120,7 +120,7 @@ def test_issue_status_derives_ready_from_a_green_gate_and_reports_conflicting_cl
 
     def gate(_client: object, sha: str) -> tuple[Status, ...]:
         asked.append(sha)
-        return (Status('tests/linux', 'success', 'scope=full ran=3 hands=- nowhere=0', ''),)
+        return (Status('tests/base', 'success', 'scope=full ran=3 hands=-', ''),)
 
     state = issue_status(client(_FORGE, Loopback(server)), repo, 7, statuses=gate)
     assert state.state == READY

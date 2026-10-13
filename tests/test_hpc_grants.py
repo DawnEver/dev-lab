@@ -19,6 +19,7 @@ from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable, failover_runner, render_script
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, load_grants
+from lab_commons.hpc.needsets import Vocabulary
 from lab_commons.hpc.plan import allocate, headroom, make_plan
 from lab_commons.hpc.shell import (
     RunSpec,
@@ -278,7 +279,7 @@ def test_every_path_stays_under_ci() -> None:
         builds=Builds(install='uv pip install -e .', env_key='k1'),
         python='3.13',
         select='not slow',
-        table={'win': ('windows',)},
+        vocabulary=Vocabulary(('win',)),
     )
     for script in (fetch_script(spec), build_script(spec), collect_command(spec, also='win')):
         for word in script.replace(';', ' ').replace('=', ' ').split():

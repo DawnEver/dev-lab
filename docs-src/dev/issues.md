@@ -31,7 +31,7 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 | state | derived from |
 |---|---|
 | `done` | the issue is closed, or a `Closes #N` (`Fixes`, `Resolves`) commit is on the default branch |
-| `ready` | a branch referencing it has a tip whose `tests/<platform>` parts stand PASS |
+| `ready` | a branch referencing it has a tip whose `tests/<part>` parts stand PASS |
 | `in-progress` | an origin branch carries a commit referencing `#N` not yet on the default branch, or is named `fix/<N>-...` |
 | `todo` | open, and nothing on origin references it |
 

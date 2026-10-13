@@ -1,7 +1,7 @@
 """THE RUN CACHE -- this box's memory of judged runs, so a key already judged is CITED, not re-run.
 
 WHAT IT IS, AND IS NOT. A cache of :mod:`lab_commons.dev.verify` runs keyed by ``(tree, env,
-selector)``; it decides no push and is read by nobody else. A platform result is a ``tests/<platform>``
+selector)``; it decides no push and is read by nobody else. A platform result is a ``tests/<part>``
 part on the forge (:mod:`lab_commons.dev.platformparts`), which every workstation can read; the
 per-test outcomes travel in that part's run record, not here.
 

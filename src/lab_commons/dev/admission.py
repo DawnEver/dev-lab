@@ -12,7 +12,7 @@ the trunk           every required part of HEAD is a ``full`` PASS    anything e
 
 PARTS ARE PRODUCED FROM PUSHED SHAS. A pushed integration sha lacking its parts IS the request
 (:mod:`lab_commons.dev.forgetick`), so an integration push cannot wait for parts that only its push
-makes possible. The trunk is where everything must already be green: HEAD's ``tests/<platform>``
+makes possible. The trunk is where everything must already be green: HEAD's ``tests/<part>``
 statuses (:mod:`lab_commons.dev.platformparts`) are read from the forge and composed -- every part a
 PASS of scope ``full``, every platform some part hands ids to present, no id runnable nowhere. An
 incremental part is a re-run of named ids and says nothing about the rest, so it is not a trunk part.

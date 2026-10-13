@@ -1,25 +1,28 @@
 # The forge
 
 The forge (a self-hosted Gitea, or GitHub) is where every verdict lives. A pushed sha that lacks a
-`tests/<platform>` status is work; a `forge serve` host claims it, runs the suite once and posts the result.
+`tests/<part>` status is work; a `forge serve` host claims it, runs the suite once and posts the result.
 You push, then read `python -m lab_commons.dev.forge queue` or `forge status list <sha>`. You never run a full
 suite to learn whether a sha is green, and you never wait for one to push.
 
 ## Parts
 
-- **A part** is one platform's result for one sha, posted as the commit status `tests/<platform>` (`linux`,
-  `windows`, `macos`): `success` is PASS, `failure` is FAIL, `pending` is a claim. The description is
-  `scope=<full|incremental> ran=<n> hands=<platform>:<n>,... nowhere=<n>`; `target_url` links the run record.
-- **A run** is one execution of a test set on one platform at one sha; its record is
-  `run-<sha>-<platform>-<req>.json.gz`. An incremental part is its base part plus the re-run ids.
+- **A part** is one NEED-SET's result for one sha, posted as the commit status `tests/<part>`:
+  `success` is PASS, `failure` is FAIL, `pending` is a claim. The description is
+  `scope=<full|incremental> ran=<n> hands=<part>:<n>,...`; `target_url` links the run record.
+- **Parts are derived, never declared** ([parts by need-set](hpc.md#parts-by-need-set)). A test marks the
+  resources it needs; its part is that set, named sorted and `+`-joined (`tests/femm+windows`), or
+  `tests/base` for none. `base` is always wanted; every part a posted part hands ids to is wanted too
+  (`platformparts.derived`). A new tool is a new marker and nothing else.
+- **A run** is one execution of one part's tests at one sha; its record is `run-<sha>-<part>-<req>.json.gz`
+  (its `platform` key holds the part). An incremental part is its base part plus the re-run ids.
 - **Admission** is computed from parts and never stored (`lab_commons.dev.admission`): a lane and the
-  integration branch need no part; the trunk needs every required part of HEAD a PASS at scope `full`. An
-  unreadable forge makes the trunk wait.
+  integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
+  at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.
 - **One reader.** The integrator, issue readiness and admission all read parts through
   `lab_commons.dev.platformparts.standing`.
-- An INCONCLUSIVE run is no part and posts nothing. Which ids each platform runs is the repo's
-  `[tool.lab_commons.platforms]` and `[tool.lab_commons.capabilities]` tables
-  ([HPC clusters](hpc.md#platform-parts)).
+- An INCONCLUSIVE run is no part and posts nothing. Which ids a part runs is its need-set over the repo's
+  `[tool.lab_commons.tests] resources` ([HPC clusters](hpc.md#parts-by-need-set)).
 
 ## Producing parts: `forge serve`
 
@@ -27,7 +30,7 @@ suite to learn whether a sha is green, and you never wait for one to push.
 makes on a producer host. Each tick it:
 
 1. flushes the status outbox (`quiet` stops here);
-2. fetches origin and builds the queue for its own platform ([scheduling](#scheduling));
+2. fetches origin and builds the queue of every derived part ([scheduling](#scheduling));
 3. claims in rank order WHILE JOBS ADMIT ([admission](#admission)), posting `pending` for each;
 4. runs every claimed local part at once, one thread each (streamed, each claim renewed every third of the
    lease), or advances a cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
@@ -46,9 +49,11 @@ makes on a producer host. Each tick it:
   `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
   `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
   `error: stopped`.
-- **The producer argv is declared**, never typed: `[tool.lab_commons.parts] produce.<platform>.<full|incremental>`
-  in the repo's `pyproject.toml`, read AT THE CLAIMED SHA by `platformparts.part_argv`. A part whose producer
-  the sha does not declare is not claimed, and the refusal names the key.
+- **The producer argv is declared ONCE**, never typed: `[tool.lab_commons.tests] produce`, the argv after the
+  tree's interpreter, carrying `{part}` (`["-m", "lab_commons.dev.verify", "--part", "{part}"]`), read AT THE
+  CLAIMED SHA by `platformparts.producer_argv` with the claimed part filled in. It runs exactly that part's
+  tests (`verify --part` selects them with one `-m`, `needsets.selecting`) and posts that part. A sha that
+  declares no producer, or one never told its part, is not claimed, and the refusal names the key.
 - **A local part is judged in a tree at the claimed sha** (`lab_commons.dev.shatree`), as a cluster run is:
   `<main checkout>/.claude/worktrees/forge-<sha12>`, detached at the sha, with its submodules and its own
   `.venv` (`-m lab_commons.dev.dep --bootstrap <tree>`). The declared argv runs there with that tree's
@@ -66,7 +71,9 @@ makes on a producer host. Each tick it:
   refused). Preview: `python -m lab_commons.dev.retention [--cluster]` lists the plan and deletes nothing.
 - **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
   must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
-  with the remedy -- update the serving checkout -- instead of being read as an absent, empty table.
+  with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The
+  other way round, a RETIRED table (`lab_commons.hpc.retired`) is refused naming its replacement: the
+  declaration is older than the kit ([migrating a repo](migrate.md#migrating-a-repo-to-need-set-parts)).
 - **A deployed host keeps its own lab-commons current** (`lab_commons.dev.servekit`). On a host whose machine
   file declares `[deploy]`, every serve tick first fast-forwards the deployed lab-commons checkout to
   `origin/<its deployed ref>`. If HEAD moved, the tick reinstalls lab-commons into its own venv (the deploy's
@@ -115,17 +122,25 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
   The owner is machine + login + hpc, so two login hosts of one account are two claimants.
 - A status post is not compare-and-swap: after posting, the claimant re-reads and the earliest live claim
   (lowest status id) holds; every other claimant stands down.
-- `until` is the forge's clock plus the lease. Only the owner renews; a lapsed claim is retaken by anyone
-  serving the platform.
+- `until` is the forge's clock plus the lease. Only the owner renews; a lapsed claim is retaken by any host
+  that admits the part.
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
 - **Supersede.** When a ref moves on, its in-flight run is cancelled and released `superseded by <sha12>`.
-- **Carry, not supersede, across an inert diff** (`lab_commons.dev.forgecarry`). A repo declares the paths
-  no test reads, `[tool.lab_commons.parts] inert = [".claude/memory/**", "docs-src/**", "*.md"]`
-  (`fnmatch`, `*` crosses `/`). When the new tip descends from the run's sha and every path in
-  `git diff --no-renames` matches, the run finishes; its part is posted on its own sha and on the tip as
-  `scope=... carried from <sha12>: only inert paths changed`, which admission and promote read as the part
-  it is. One non-inert path, no ancestry, nothing declared, or a tip already settled: no carry.
+- **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test
+  file's FOOTPRINT is derived at the judged sha: itself, its conftest/`__init__` chain, its transitive in-repo
+  imports (candidates, so an added shadow counts), `pyproject.toml`/`uv.lock`, the declared `everywhere`
+  globs -- and EVERYTHING when a module in it reads the repo by path (`__file__`, a repo-path literal,
+  `subprocess`, `import_module`, ...) without a declared `reads` entry:
+  `[tool.lab_commons.carry] everywhere = ["rust/**"]`, `[tool.lab_commons.carry.reads] "tests/x.py" = ["docs/**"]`.
+  A test's outcome at A stands at a descendant B when no path in `git diff --no-renames A B` is in its footprint.
+  - PER OUTCOME on a cluster run: B's run takes every such outcome its 3 nearest ancestor runs OF THE SAME PART AND ENV
+    hold -- records, folded rounds, and the streams a superseded run's last round left -- and submits only the
+    rest. The record's `carried` maps each id to the sha it RAN at; the part reads
+    `scope=full ran=<run here> ... kept=<sha12>:<n>`, never counting a carried outcome as run.
+  - PER PART: every test file at A carries and no test file is added -- the run finishes instead of being
+    superseded and its part is also posted on the tip as `... carried from <sha12>: every outcome carried by footprint`.
+    No ancestry, a malformed declaration, or a tip already settled: no carry.
 
 ## Scheduling
 
@@ -134,7 +149,8 @@ newest commit lacks, or a request issue.
 
 - **Candidates** (`forgeschedule.candidates`): in integrate mode the integration branch (`integration`), every
   open PR into it (`pr`), every opted-in branch (`branch`), every open issue labelled `forge:request`
-  (`request`; platform from `platform = "<p>"` in the body, else linux). In develop mode, the lanes.
+  (`request`; its part from `platform = "<p>"` in the body, else `base`). In develop mode, the lanes. A
+  ref's tip is one candidate per part it needs (`base`, and every part its posted parts hand to).
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
   `weight[repo] * value / expected_cost` (weighted shortest job first). Aging grows without bound, so no
   class starves forever.
@@ -170,8 +186,9 @@ present here and its demand fits `supply - reservations not for it - running`. A
 skipped and a smaller, lower-ranked one is still claimed, so several parts run on one host at once.
 
 - **Demand** is what the part's last run measured (`compute.learned`, keyed by part); unmeasured, a box part
-  is the whole box and a cluster part one core. A box job's cpu is capped at the box's supply: it spreads over
-  the cores it is given, so a whole-box job is admitted alone and never starved by the own reserve.
+  is every core free now (admitted alone) and a cluster part one core. A box run's cpu is MEASURED -- the
+  cpu-seconds of its process tree over its wall (`proccpu.TreeCpu`) -- and never capped: eight busy cores do not
+  fit in four.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); a box's probe
   (free cores, available memory, OS, tools) less its user's own reserve (`[reserve]` margins).
 - **Reservations**: every authorised live lease on the ledger ([reservations](#reservations)).
@@ -184,8 +201,9 @@ skipped and a smaller, lower-ranked one is still claimed, so several parts run o
 
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
-`[capabilities.<name>]` declares what it provides
-([HPC clusters](hpc.md#platform-parts)).
+`[capabilities.<name>]` declares a resource it has beyond its OS (`seats` = its concurrency, the one number
+no probe reads); a probed tool is present only where its probe finds it
+([HPC clusters](hpc.md#parts-by-need-set)).
 
 ## The queue
 
@@ -198,11 +216,12 @@ prints the queue (class, value, cost, score, wait, blocking reason), every run i
 progress, every host card (stale flagged), every live reservation (a refused writer's flagged) and every
 starved candidate. It posts nothing.
 
-- **Blocking reasons**: `no host serves <platform>`, `over budget: <ref> used X of Y core-h in 24 h`,
+- **Blocking reasons**: `no host serves it`, `no host provides <resource>` (no live card has every resource
+  the part needs), `over budget: <ref> used X of Y core-h in 24 h`,
   `not admitted: lacking <resource>`, `no host admits it -- <host> lacking <resource>; ...`,
   `the tree of <sha12> is producing another part here`, `no host can produce it: <undeclared key>`.
 - **Host cards** (`forgehosts`): each serving host edits one comment on the ONE `forge hosts` issue: who it
-  is, its platform, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
+  is, its OS, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
   last tick, what it holds, what else `running` on it, its live `reservations`, and why each candidate it saw
   waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
   the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
@@ -294,7 +313,8 @@ Configuration applied through the forge's API or web UI; enabling it is the huma
 
 - **Push whitelist**: only the integrator's accounts may update `main`. A consumer's protection script applies
   it from a declared constant, so a new machine's account is added in code, not in the UI.
-- **Required status check**: one `tests/<platform>` context per platform the repo's parts run on. Enable it
-  only once real parts exist on `main`'s tip; a required context nothing publishes blocks `main` for everyone.
+- **Required status check**: `tests/base` at least; parts are derived, so a required context per need-set
+  goes stale when a marker changes. Enable it only once real parts exist on `main`'s tip; a required context
+  nothing publishes blocks `main` for everyone. `forge promote` already requires every derived part.
 - The client side of the same rule is `forge promote`, which moves `main` only by fast-forward to a fully green
   integration tip ([the integrator](integrator.md#promoting-the-trunk)).
