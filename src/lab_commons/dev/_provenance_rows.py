@@ -154,6 +154,14 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'selection': ('original',),
     'forgealarm': ('original',),
     'forgereserve': ('original',),
+    # ORIGINAL: split out of forgetick/forgeserve inside the kit; no consumer held them.
+    'forgetake': ('original',),
+    'forgerounds': ('original',),
+    'forgelend': ('original',),
+    'forgeorigin': ('original',),
+    'forgerequest': ('original',),
+    'retention': ('original',),
+    'diskusage': ('original',),
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'admission': ('original',),
     'forgeissue': ('original',),
