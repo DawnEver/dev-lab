@@ -20,7 +20,7 @@ SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the produce
 claimed part in its environment (:func:`lab_commons.dev.producer.producing`), and a full tier refuses to
 run in any process without it.
 
-WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.model.admit`), read here before it:
+WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read here before it:
 
 * SUPPLY -- a cluster account's standing (:mod:`lab_commons.dev.forgeslurm`); a box's probe
   (:func:`lab_commons.compute.probe.box`) less its user's OWN RESERVE (the machine file's ``[reserve]``
@@ -28,7 +28,8 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.model.admit`), read her
   what the user uses is not subtracted twice). Named as the card is (:func:`~lab_commons.dev.forgehosts.card_host`),
   so a lease on this host is a lease on this supply.
 * RESERVATIONS -- every authorised lease on the ledger (:func:`lab_commons.compute.ledger.read`); a lease
-  on another scope, expired, or for the job withholds nothing.
+  on another scope, expired, or for the job keeps nothing from it; a live one LENDS its idle part, and
+  each cluster run on loan that a holder preempts is withdrawn (:mod:`lab_commons.dev.forgelend`).
 * RUNNING -- each cluster run in flight here, at its learned demand; and each INTERACTIVE run holding the
   box seat (:class:`~lab_commons.dev.cpuseat.CpuSeat`, a developer's ``gate measure`` or ``verify``), at
   what it declared, else the whole box. The seat no longer decides what serve claims: it only makes an
@@ -88,6 +89,7 @@ from typing import Any
 
 from lab_commons.compute import ledger
 from lab_commons.compute import probe as supply_probe
+from lab_commons.compute.admission import Held
 from lab_commons.compute.learned import learned_demand
 from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Demand, Resources, Supply
@@ -99,6 +101,7 @@ from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_t
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, Work, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import card_host, publish_card, recording
+from lab_commons.dev.forgelend import held_part, held_run, preempt_runs
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
 from lab_commons.dev.forgeprovides import provided
@@ -174,16 +177,17 @@ def serve(
     cores = os.cpu_count() or 1
     sized = learned_demand(repo, cluster=seat is not None, cores=cores)
     seated = () if seat is not None else tuple(holders())
-    running = [*(sized(run.platform, frozenset()) for run in runs), *seat_running(seated, cores=cores)]
+    running = [*(held_run(run, sized) for run in runs), *(Held(one) for one in seat_running(seated, cores=cores))]
     book = read_ledger(client(root))
     leases = tuple(one.reservation for one in book.entries if not one.refused)
+    ticking = functools.partial(
+        tick, root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
+        supply=supply, reservations=leases,
+        usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
+        owners={host_: (owner.login, *owner.delegates) for host_, owner in book.owners.items()},
+    )  # fmt: skip
     try:
-        ticked = tick(
-            root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
-            supply=supply, reservations=leases, running=running,
-            usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
-            owners={host_: (owner.login, *owner.delegates) for host_, owner in book.owners.items()},
-        )  # fmt: skip
+        ticked = ticking(running=running)
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
             alarm(
@@ -194,6 +198,7 @@ def serve(
         say(line)
     if slurm is not None:
         runs = forgerun.supersede_moved(root, runs, client=client(root), cluster=slurm, say=say)
+        runs = preempt_runs(runs, ticked.preempt, client=client(root), cluster=slurm, say=say)
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     now = forge_now(client(root))
     card = functools.partial(
@@ -202,12 +207,15 @@ def serve(
         delegates=reserve_table(section('reserve')).delegates, supply=supply,
         running=(*(f'{run.sha[:12]} {run.platform}' for run in runs), *(one.describe() for one in seated)),
         reservations=[one.row() for one in book.live(now) if one.reservation.scope == name],
+        preempted=[f'{one.label} by reservation {one.on_loan}' for one in ticked.preempt],
     )  # fmt: skip
     local = [item for item in ticked.claimed if item.cluster is None or item.holder is None]
     runs += [forgerun.start(item, item.holder) for item in ticked.claimed if item not in local and item.holder]
     produced = _produce_all(
         root, local, card=card, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
         fetch=fetch, beat_s=float(table.get('tick_minutes', 5)) * 60,
+        recheck=lambda loans: ticking(running=[*running, *loans], dry_run=True).preempt,
+        held=functools.partial(held_part, sized=sized),
     )  # fmt: skip
     left = _advance(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
@@ -255,13 +263,22 @@ def _produce_all(
     *,
     card: Callable[..., None],
     fetch: Callable[[Path], None],
+    recheck: Callable[[Sequence[Held]], Sequence[Held]] = lambda _: (),
+    held: Callable[[Work], Held] | None = None,
     **kwargs: object,
 ) -> list[Produced]:
-    """Produce every claimed local part at once, one thread each (the module docstring); in claim order."""
+    """Produce every claimed local part at once, one thread each (the module docstring); in claim order.
+
+    At each beat, while a part runs ON LOAN, the queue is re-judged with these parts running (*recheck*, a
+    dry tick): a loan a reservation holder's waiting job would preempt is told to yield
+    (:func:`~lab_commons.dev.forgeproduce.produce` stops its tree and releases it re-queued).
+    """
     if not local:
         return []
     fetching, publishing = threading.Lock(), threading.Lock()
     progress: dict[tuple[str, str], str] = {}
+    yielding: dict[tuple[str, str], int] = {}
+    loans = [held(item) for item in local] if held is not None else []
 
     def fetched(here: Path) -> None:
         with fetching:
@@ -271,9 +288,16 @@ def _produce_all(
         with publishing:
             progress[one.sha, one.platform] = f'producing {elapsed.total_seconds() // 60:.0f}m'
             card(local, progress=dict(progress))
+        if any(loan.on_loan for loan in loans):
+            with fetching:
+                found = recheck(loans)
+            yielding.update({(d.job.sha, d.job.producer): d.on_loan for d in found if d.job is not None})
 
     def one(item: Work) -> Produced:
-        return produce(root, item, fetch=fetched, beat=functools.partial(beat, item), **kwargs)
+        def yields() -> int:
+            return yielding.get((item.sha, item.platform), 0)
+
+        return produce(root, item, fetch=fetched, beat=functools.partial(beat, item), yields=yields, **kwargs)
 
     with ThreadPoolExecutor(max_workers=len(local), thread_name_prefix='produce') as pool:
         return list(pool.map(one, local))

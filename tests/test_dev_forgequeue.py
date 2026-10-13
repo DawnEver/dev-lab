@@ -197,3 +197,17 @@ def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:
     why = 'the rclone remote hpc-data: is missing or unusable'
     assert f'artefacts: {why}' in _card('ada/alice', 'linux', NOW, artefacts=why).text()
     assert 'artefacts:' not in _card('ada/alice', 'linux', NOW).text()
+
+
+def test_a_cards_preempted_loans_round_trip_and_are_shown_by_the_queue(server) -> None:
+    """PLANTED CONTROL: a card that preempted nothing shows no PREEMPTED line."""
+    built = client(FORGE, Loopback(server))
+    loud = _card('box-g', 'windows', NOW, preempted=('aaaaaaaaaaaa windows by reservation 5',))
+    quiet = _card('box-h', 'windows', NOW)
+    answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
+    answer('GET', f'{API}/issues/3/comments', (200, [_comment(i, c) for i, c in enumerate((loud, quiet))]))
+    cards = read_cards(built)
+    assert cards[0].preempted == loud.preempted
+    hosts = [{**asdict(c), 'holds': list(c.holds), 'stale': False} for c in cards]
+    lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
+    assert [line for line in lines if 'PREEMPTED' in line] == ['    PREEMPTED aaaaaaaaaaaa windows by reservation 5']

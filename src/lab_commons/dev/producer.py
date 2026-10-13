@@ -32,7 +32,17 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ['PRODUCING_VAR', 'RETRYABLE', 'ProducerExit', 'full_suite_refusal', 'producing', 'release_reason']
+__all__ = [
+    'PREEMPTED',
+    'PRODUCING_VAR',
+    'REQUEUED',
+    'RETRYABLE',
+    'ProducerExit',
+    'full_suite_refusal',
+    'preempted',
+    'producing',
+    'release_reason',
+]
 
 #: Set by ``forge serve`` on the producer it spawns: the claimed part, ``tests/<platform>@<sha>``.
 PRODUCING_VAR: Final = 'LAB_COMMONS_PRODUCING'
@@ -68,6 +78,10 @@ class ProducerExit(IntEnum):
 
 #: The description prefix of a released claim the next tick may claim again (:func:`release_reason`).
 RETRYABLE: Final = 'released: unreachable'
+#: The release of a loan a reservation holder PREEMPTED: open again, re-queued like :data:`RETRYABLE`.
+PREEMPTED: Final = 'released: preempted by reservation'
+#: The release prefixes that leave a part OPEN (claimable again), not settled.
+REQUEUED: Final = (RETRYABLE, PREEMPTED)
 
 
 def release_reason(code: int) -> str:
@@ -80,3 +94,8 @@ def release_reason(code: int) -> str:
         ProducerExit.UNREACHABLE: f'{RETRYABLE} (exit 4) -- infrastructure did not answer; retried next tick',
     }
     return reasons.get(code, f'released: producer crashed (exit {code})')
+
+
+def preempted(lease_id: int) -> str:
+    """The ``error`` description releasing a loan the holder of reservation *lease_id* preempted (re-queued)."""
+    return f'{PREEMPTED} {lease_id}'

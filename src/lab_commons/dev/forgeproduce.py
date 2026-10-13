@@ -9,7 +9,9 @@ every *renew_s* (counted in wakes) while the producer lives; a ref that moved on
 reach-equivalent (:mod:`lab_commons.dev.forgecarry`) -- then the run finishes and its part is also posted
 on that tip, naming the sha it was judged at; a producer past
 :data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
-its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose.
+its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose. A LOAN
+a reservation holder preempts (*yields* names the lease at a wake) has its process tree stopped and its
+claim released ``preempted by reservation <id>``: OPEN again, re-queued, never an error.
 
 THE PART IS JUDGED AT THE CLAIMED SHA, in a tree this producer owns (:mod:`lab_commons.dev.shatree`):
 the declared argv (read at the sha) runs with that tree's own interpreter, cwd = the tree, and the tree
@@ -52,9 +54,10 @@ from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, part_context, parts_of
-from lab_commons.dev.producer import ProducerExit, producing, release_reason
+from lab_commons.dev.producer import ProducerExit, preempted, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
+from lab_commons.dev.stoprun import declared_signatures, process_table, stop
 from lab_commons.proc import process_tree, working_set_bytes
 
 __all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
@@ -111,6 +114,7 @@ def produce(
     beat: Callable[[timedelta], object] = lambda _elapsed: None,
     sample: Callable[[int], float | None] = tree_gb,
     learn: Callable[..., object] = learn_box_run,
+    yields: Callable[[], int] = lambda: 0,
 ) -> Produced:
     """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
@@ -127,7 +131,8 @@ def produce(
     try:
         return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
                     say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
-                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn)  # fmt: skip
+                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
+                    yields=yields)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
 
@@ -150,6 +155,7 @@ def _run(
     beat: Callable[[timedelta], object],
     sample: Callable[[int], float | None],
     learn: Callable[..., object],
+    yields: Callable[[], int],
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
@@ -168,6 +174,7 @@ def _run(
     pump.start()
     started = clock()
     superseded = ''
+    displaced = 0  # the reservation whose holder preempted this loan
     wake_s = min(renew_s, beat_s)
     renew_every = max(1, math.ceil(renew_s / wake_s - 1e-9))  # wakes per renewal
     wakes = 0
@@ -184,13 +191,11 @@ def _run(
                 break
             if proc.pid is not None and (now := sample(proc.pid)) is not None:
                 peak = max(peak or 0.0, now)
-            fetch(root)
-            tip = tip_of(root, item.ref)
-            if tip and tip != item.sha and not equivalent(root, item.sha, tip):
-                proc.kill()
+            superseded, displaced, why = _interrupted(root, item, fetch, yields)
+            if why:
+                _halt(root, proc)
                 returncode = proc.wait()
-                superseded = tip
-                say(f'[{item.platform}] stopped: {item.ref} moved on to {tip[:12]}')
+                say(f'[{item.platform}] stopped: {why}')
                 break
             wakes += 1
             beat(clock() - started)
@@ -199,17 +204,37 @@ def _run(
     pump.join(timeout=5)
     say(f'[{item.platform}] exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
-    if peak is not None and not superseded and not stopped:
+    if peak is not None and not superseded and not stopped and not displaced:
         wall_s = max(1.0, (clock() - started).total_seconds())
         learn(root, item, Run(peak, wall_s * logical_cores(), wall_s), killed=returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
-    if superseded or (posts and posts[-1].state == 'pending'):
+    if superseded or displaced or (posts and posts[-1].state == 'pending'):
         reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
+        reason = preempted(displaced) if displaced else reason
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         _carry(root, client(root), item, posts[-1], say)
     return Produced(item.ref, item.sha, item.platform, argv, returncode)
+
+
+def _interrupted(
+    root: Path, item: Work, fetch: Callable[[Path], None], yields: Callable[[], int]
+) -> tuple[str, int, str]:
+    """``(tip it was superseded by, lease that preempted it, why)`` at a wake; ``('', 0, '')`` to keep running."""
+    fetch(root)
+    tip = tip_of(root, item.ref)
+    if tip and tip != item.sha and not equivalent(root, item.sha, tip):
+        return tip, 0, f'{item.ref} moved on to {tip[:12]}'
+    displaced = yields()
+    return '', displaced, preempted(displaced) if displaced else ''
+
+
+def _halt(root: Path, proc: subprocess.Popen[str]) -> None:
+    """Stop *proc*'s whole tree through :mod:`lab_commons.dev.stoprun`; a pid it refuses is killed alone."""
+    code, _ = stop(proc.pid, process_table(), dry_run=False, signatures=declared_signatures(root))
+    if code:
+        proc.kill()
 
 
 def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], None]) -> None:

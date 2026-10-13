@@ -155,8 +155,9 @@ prior_cost_h = 4.0
 
 ### Admission
 
-A tick walks the ranked queue and claims each candidate that ADMITS (`compute.model.admit`): its needs are
-present here and its demand fits `supply - reservations not for it - running`. A job that does not fit is
+A tick walks the ranked queue and claims each candidate that ADMITS (`compute.admission.admit`): its needs are
+present here and its demand fits `supply - running - the idle part of leases not for it`, else it borrows one
+lease's idle part (on loan) or, as a holder, preempts loans in its lease ([reservations](#reservations)). A job that does not fit is
 skipped and a smaller, lower-ranked one is still claimed, so several parts run on one host at once.
 
 - **Demand** is what the part's last run measured (`compute.learned`, keyed by part); unmeasured, a box part
@@ -207,12 +208,25 @@ starved candidate. It posts nothing.
 ## Reservations
 
 ```
-python -m lab_commons.dev.forge reserve <host|account> <res=amount,...> --for login:X|repo:Y|needs:a+b --until <iso|duration>
+python -m lab_commons.dev.forge reserve <host|account> <res=amount,...>|--all --for login:X|host:H|session:S|repo:Y|needs:a+b --until <iso|duration>
 python -m lab_commons.dev.forge release <id>
 ```
 
-A reservation is a LEASE of resources on one host or cluster account (a host card's name), for one login, repo
-or need-set, until a moment (`36h`, `2d`, or ISO). A daily-moving share is a reservation that expires daily.
+A reservation is a LEASE of some resources -- or, with `--all`, the WHOLE scope, re-read at each admission --
+on one host or cluster account (a host card's name), for one login, host, session, repo or need-set, until a
+moment (`36h`, `2d`, or ISO). A daily-moving share is a reservation that expires daily.
+
+- **Whom it is for** (user ruling 2026-10-13: a session or workstation may hold a share). `login:X` matches the
+  forge login of a PR or request; `session:S` the ref a job was pushed to (one lane is one agent session);
+  `host:H` the host a job was created on -- a `Forge-Host: H` trailer the `forge-host` commit-msg hook stamps
+  (`dev.forgeorigin`), or `host = "H"` in a request's body -- kept only where the forge-recorded author of the PR
+  or issue is H's card owner or one of its `[reserve] delegates`. A job a live lease is for ranks FIRST there.
+- **It LENDS what its holders leave idle** (`compute.admission`): a job it is not for is admitted beside it, or
+  ON LOAN into its idle part -- the claim says `on_loan=<id>`, and the card's holds show it. A holder's job that
+  does not fit because of loans PREEMPTS them, newest first and only as many as needed: a cluster loan is
+  cancelled, a local one is stopped at its next wake (its tree, through `stoprun`), and either is released
+  `preempted by reservation <id>` -- open again, re-queued, never an error. The card and `forge queue` list
+  what each tick preempted. A holder with room beside the loans preempts nothing.
 
 - **Stored once**, as one comment on the `forge hosts` issue beside the cards (`compute.ledger`); its id is the
   forge's comment id, and `forge queue` lists the live ones.

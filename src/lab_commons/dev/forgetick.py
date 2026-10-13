@@ -9,7 +9,7 @@ A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgec
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
 ``quiet``, fetch ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
 value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
-(:func:`lab_commons.compute.model.admit`), and give each claimed part what produces it: a local argv as
+(:func:`lab_commons.compute.admission.admit`), and give each claimed part what produces it: a local argv as
 the claimed commit declares it (:func:`lab_commons.dev.platformparts.part_argv`; the producer runs it in
 a tree at that commit) or a cluster part (:func:`lab_commons.dev.platformparts.cluster_part`). A part
 whose producer the repo does not declare is not claimed; its refusal names the pyproject key to add. A
@@ -44,6 +44,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.admission import Held
 from lab_commons.compute.learned import learned, learned_demand
 from lab_commons.compute.model import (
     Candidate,
@@ -88,6 +89,7 @@ from lab_commons.dev.platformparts import (
     part_context,
     this_platform,
 )
+from lab_commons.dev.producer import preempted
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
 
@@ -110,6 +112,8 @@ class TickReport:
     queue: tuple[Ranked, ...] = ()
     #: Why this host cannot write the large artefact store, ``''`` when it can (stated on its host card).
     artefacts: str = ''
+    #: The loans a reservation holder's claim displaces here: the serve loop stops and releases each.
+    preempt: tuple[Held, ...] = ()
 
 
 def tick(
@@ -125,7 +129,7 @@ def tick(
     host: str | None = None,
     supply: Supply | None = None,
     reservations: Sequence[Reservation] = (),
-    running: Sequence[Mapping[str, float]] = (),
+    running: Sequence[Held] = (),
     demand: Callable[[Candidate, frozenset[str]], Mapping[str, float]] | None = None,
     usage: Mapping[str, float] | None = None,
     weights: Mapping[str, float] | None = None,
@@ -138,7 +142,8 @@ def tick(
 
     *supply* is what this host or account has now (:mod:`lab_commons.compute.probe`; default: a box's
     cores); *reservations* the ledger's leases (:mod:`lab_commons.compute.ledger`; one on another scope,
-    expired, or for the job itself withholds nothing); *running* the demands already running here;
+    expired, or for the job itself keeps nothing from it; a live one lends its idle part); *running* what
+    already runs here (each loan named);
     *demand* a candidate's size (default: what it measured); *usage* the core-hours each run sha12 used
     in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
@@ -207,7 +212,10 @@ def tick(
     lines += [f'refused {reason}' for reason in refused]
     lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
     lines += [f'artefacts {taken.store_why}'] if taken.store_why else []
-    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why)
+    lines += [f'preempt {one.label}: {preempted(one.on_loan)}' for one in taken.preempt]
+    return TickReport(
+        tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why, tuple(taken.preempt)
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -14,17 +14,18 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import git_out, run_git
 
+from lab_commons.compute.admission import Held
 from lab_commons.compute.ledger import Entry, Ledger
-from lab_commons.compute.model import Candidate, Demand, For, Ranked, Reservation, Resources, Supply
+from lab_commons.compute.model import Candidate, Demand, For, Job, Ranked, Reservation, Resources, Supply
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
+from lab_commons.dev import forgehosts, forgelend, forgeproduce, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
-from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
+from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, preempted, release_reason
 from lab_commons.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
@@ -357,7 +358,10 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert report.in_flight == (SHA,)
     assert 'running=[]' in said
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
-    assert f'running={[Demand(cpu=1)]}' in said, 'the next tick reads the run back from disk as running demand'
+    (line,) = [one for one in said if one.startswith('running=')][-1:]
+    assert "demand=Resources({'cpu': 1.0})" in line, 'the next tick reads the run back from disk as running demand'
+    assert f"sha='{SHA}'" in line
+    assert 'on_loan=0' in line
     assert len(advanced) == 2
 
 
@@ -483,7 +487,7 @@ def test_an_interactive_run_holding_the_box_seat_counts_as_running(monkeypatch, 
     assert seen['running'] == []
     declared = _holder('gate measure', **{CPU.name: 2, MEMORY.name: 4 * 1024**3})
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, holders=(declared, _holder('verify:x')))
-    assert seen['running'] == [Demand(cpu=2, mem_gb=4), Demand(cpu=os.cpu_count() or 1)]
+    assert seen['running'] == [Held(Demand(cpu=2, mem_gb=4)), Held(Demand(cpu=os.cpu_count() or 1))]
 
 
 def test_every_authorised_lease_reaches_the_admission_and_a_refused_one_never(monkeypatch, tmp_path: Path) -> None:
@@ -633,3 +637,53 @@ def test_a_finished_box_run_learns_its_peak_wall_and_held_cpu(monkeypatch, tmp_p
     )
     produce(_Proc(0, beats=0, pid=4242))
     assert len(learnt) == 1, 'PLANTED CONTROL: a run never sampled learns nothing'
+
+
+# --- a reservation holder preempts a loan (user ruling 2026-10-13) --------------------------------------
+
+LOANED = dataclasses.replace(ME, on_loan=5)
+
+
+def _loan(platform: str) -> Held:
+    return Held(Demand(cpu=1), Job('', SHA, platform), on_loan=5, since=NOW)
+
+
+def test_a_preempted_cluster_loan_is_cancelled_released_requeued_and_shown(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same run, a tick preempting nothing -- kept and advanced."""
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    forge = _Forge()
+    monkeypatch.setattr(forgelend, 'status_post', forge.post)
+    monkeypatch.setattr(forgerun, 'advance', lambda _root, run, **_k: run)
+    run = forgerun.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), LOANED.description(),
+                       phase=forgerun.SUBMITTED, job_ids=('77',))  # fmt: skip
+    forgerun.save(run)
+    seen: dict[str, object] = {}
+    kept, _said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, seen=seen)
+    assert kept.in_flight == (SHA,)
+    assert [one.on_loan for one in seen['running']] == [5], 'the run is read back as on loan from lease 5'
+    slurm, cards = _Slurm(), []
+    displaced = dataclasses.replace(TickReport((), (), ()), preempt=(_loan('linux'),))
+    report, _said, _alarms = _serve(
+        monkeypatch, tmp_path, displaced, forge, seat=SEAT, cluster=lambda: slurm, cards=cards
+    )  # fmt: skip
+    assert report.in_flight == ()
+    assert slurm.cancelled == ['77']
+    assert forge.posts[-1] == ('tests/linux', 'error', preempted(5))
+    assert forgerun.live('https://f/o/r.git') == ()
+    assert cards[-1].preempted == (f'{SHA[:12]} linux by reservation 5',)
+
+
+def test_a_local_loan_yields_at_a_beat_when_a_holder_would_preempt_it(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same part NOT on loan is never re-judged and runs to its end."""
+    forge = _Forge()
+    item = Work('integrate/main', SHA, 'windows', 'mine', LOANED, argv=('verify',))
+    displaced = dataclasses.replace(_claimed(item), preempt=(_loan('windows'),))
+    _report, said, _alarms = _serve(monkeypatch, tmp_path, displaced, {'verify': _Proc(0, beats=50)}, forge)
+    assert forge.posts[-1] == ('tests/windows', 'error', preempted(5))
+    assert any(f'stopped: {preempted(5)}' in line for line in said)
+    plain = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    forge = _Forge()
+    displaced = dataclasses.replace(_claimed(plain), preempt=(_loan('windows'),))
+    _report, said, _alarms = _serve(monkeypatch, tmp_path, displaced, {'verify': _Proc(0, beats=3)}, forge)
+    assert not any(preempted(5) in line for line in said), 'ran to its end'
+    assert all(post[2] != preempted(5) for post in forge.posts)

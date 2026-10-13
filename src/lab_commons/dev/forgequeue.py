@@ -111,6 +111,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 'holds': list(card.holds),
                 'alarms': list(card.alarms),
                 'running': list(card.running),
+                'preempted': list(card.preempted),
                 'reservations': [dict(r) for r in card.reservations],
                 'stale': card.stale(now),
             }
@@ -135,7 +136,9 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime, needed:
     return reasons[0][1] if reasons else ''
 
 
-def _amounts(resources: Mapping[str, float]) -> str:
+def _amounts(resources: Mapping[str, float] | str) -> str:
+    if isinstance(resources, str):  # a whole-scope lease: 'all'
+        return resources
     return ','.join(f'{name}={amount:g}' for name, amount in sorted(resources.items()))
 
 
@@ -163,6 +166,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
                 f'supply {_amounts(h["supply"])}  holds {", ".join(h["holds"]) or "nothing"}'
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
+            *([f'    PREEMPTED {", ".join(h["preempted"])}'] if h.get('preempted') else []),
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']

@@ -30,7 +30,7 @@ family default and a repository overrides key by key (a table key by table key):
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
 platform, over its ref's budget, or not admitted here -- naming the resources it lacks
-(:func:`lab_commons.compute.model.admit`). A candidate waiting longer than its class's
+(:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
 ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
