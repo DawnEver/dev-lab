@@ -914,3 +914,30 @@ def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claime
     report = _tick(repo, server)
     assert [w.ref for w in report.claimed] == ['integrate/main']
     assert report.queue == (), 'refused on its own commit, never left waiting'
+
+
+CLUSTER_ONLY = '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
+
+
+@pytest.mark.parametrize(
+    ('declared', 'kind', 'missing'),
+    [(CLUSTER_ONLY, {}, 'tool.lab_commons.tests] produce'), (PRODUCE, {'seat': SEAT, 'host': 'linux'}, 'install')],
+    ids=['box-lacks-produce', 'cluster-lacks-install'],
+)
+def test_a_producer_only_the_other_host_kind_can_build_is_never_refused_on_the_commit(
+    server, tmp_path: Path, declared: str, kind: dict, missing: str
+) -> None:
+    """A box needs ``produce``, a cluster ``hpc install``: one kind lacking its own is no defect of the commit.
+
+    The part waits here, named, and is no work this host could serve. PLANTED CONTROL: a commit declaring
+    neither is refused on it (``test_a_part_the_repo_cannot_produce_is_never_claimed_and_is_refused_on_its_commit``).
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, declared)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    report = _tick(repo, server, **kind)
+    assert not [r for r in Recorder.received if r['method'] == 'POST']
+    (waiting,) = report.queue
+    assert missing in waiting.blocked
+    assert report.pending == ()

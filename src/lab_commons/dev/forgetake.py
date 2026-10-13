@@ -53,6 +53,7 @@ class ClaimPass:
     trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
+    unservable: set[tuple[str, str]] = dataclasses.field(default_factory=set)  # (sha, part) this host kind cannot build
     history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
@@ -88,7 +89,7 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
-            if needs_of(wanted.platform) <= self.supply.present:
+            if needs_of(wanted.platform) <= self.supply.present and (one.sha, one.platform) not in self.unservable:
                 self.pending.append(one)
 
     def reserved(self, wanted: Candidate) -> bool:
@@ -100,9 +101,12 @@ class ClaimPass:
         return Job(self.repo, wanted.sha, wanted.platform, needed, wanted.origin, wanted.origin_host, wanted.session)
 
     def _own(self, one: Work) -> tuple[Work, str]:
-        """*one* with what produces it, and the defect of its OWN commit that refuses it (``''``: none).
+        """*one* with what produces it here, and why not (``''``: it is producible here).
 
-        A declaration this kit is too old to read is the host's defect, not the commit's: raised for the caller.
+        The commit's OWN defect is prefixed :data:`REFUSED_AT_COMMIT`: its declaration refused, or neither host
+        kind can build its producer (a box needs ``produce``, a cluster ``hpc install``). Only this host's kind
+        lacking its producer is no such defect -- another kind serves it. A declaration this kit is too old to
+        read is this host's defect: :class:`OutdatedKit` is raised for the caller.
         """
         if one.sha not in self.declarations:
             self.declarations[one.sha] = declared_at(self.root, one.sha)[1]
@@ -110,8 +114,14 @@ class ClaimPass:
             return one, f'{REFUSED_AT_COMMIT} {self.declarations[one.sha]}'
         try:
             return _producer(self.root, one, self.serve), ''
-        except (UndeclaredPart, FileNotFoundError) as why:
-            return one, f'{REFUSED_AT_COMMIT} {NO_HOST} can produce {part_context(one.platform)}: {why}'
+        except (UndeclaredPart, FileNotFoundError) as here:
+            other = dataclasses.replace(self.serve, hpc='' if self.serve.hpc else 'any')
+            try:
+                _producer(self.root, one, other)
+            except (UndeclaredPart, FileNotFoundError) as there:
+                return one, f'{REFUSED_AT_COMMIT} {NO_HOST} can produce {part_context(one.platform)}: {here}; {there}'
+            self.unservable.add((one.sha, one.platform))
+            return one, f'this host cannot produce {part_context(one.platform)}: {here}'
 
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
