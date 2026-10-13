@@ -301,7 +301,9 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
 * :mod:`lab_commons.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
 * :mod:`lab_commons.dev.forgepulls` -- PR list/retarget and ONE marker-found comment per subject, both forges.
-* :mod:`lab_commons.dev.forgepromote` -- ``forge promote``: the trunk FAST-FORWARDS to a full-PASS integration tip.
+* :mod:`lab_commons.dev.integrate` -- integration by refs alone: ``merge <branch>`` (merge-tree, the commit-msg
+  stage and the merge audit, compare-and-swap) and ``promote <sha>`` (the local trunk FAST-FORWARDS to a
+  full-PASS integration commit). Neither checks out nor pushes.
 * :mod:`lab_commons.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.

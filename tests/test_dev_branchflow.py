@@ -6,7 +6,6 @@ evidence is the refs git holds and the requests the forge server recorded.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -15,7 +14,7 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, serve
 
-from lab_commons.dev import forgepromote, forgesync
+from lab_commons.dev import forgesync
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeintegration import CONTEXT, retarget_note, tick
 from lab_commons.dev.forgepulls import comment_upsert, marker
@@ -68,76 +67,6 @@ def test_a_trial_merge_names_behind_and_conflicts_without_touching_the_tree(tmp_
     assert (found.behind, found.conflicts) == (1, ('x.txt',))
     assert git_out(work, 'status', '--porcelain') == ''
     assert trial(work, 'origin/integrate/main', lane).clean
-
-
-# --- promote --------------------------------------------------------------------------------------
-
-
-def test_promote_refuses_without_full_parts_and_fast_forwards_with_them(server, tmp_path: Path) -> None:
-    """PLANTED both ways: an incremental part refuses (main does not move); a full PASS fast-forwards."""
-    _, work = clone_pair(tmp_path)
-    tip = advance(work, 'integrate/main', 'f.txt', 'f\n')
-    before = git_out(work, 'rev-parse', 'origin/main')
-    built = client(GITEA, Loopback(server))
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part(scope='incremental')]))
-    found = forgepromote.promote(work, built, POLICY)
-    assert found.action == 'refused'
-    assert any('scope full' in reason for reason in found.reasons)
-    run_git(work, 'fetch', '-q', 'origin')
-    assert git_out(work, 'rev-parse', 'origin/main') == before
-
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
-    assert forgepromote.promote(work, built, POLICY).action == 'promote'
-    run_git(work, 'fetch', '-q', 'origin')
-    assert git_out(work, 'rev-parse', 'origin/main') == tip
-    assert git_out(work, 'rev-list', '--merges', 'origin/main') == '', 'no merge commit on the trunk'
-    assert forgepromote.promote(work, built, POLICY).action == 'current'
-
-
-def _real_pre_push(work: Path) -> None:
-    """The REAL PUSH-FROM-ITS-OWN-BRANCH hook, installed where promote's own push will run it."""
-    hooks = work / '.push-hooks'
-    hooks.mkdir()
-    python = Path(sys.executable).as_posix()
-    (hooks / 'pre-push').write_text(
-        f'#!/bin/sh\nexec "{python}" -m lab_commons.dev.integrationhome pre-push "$@"\n',
-        encoding='utf-8',
-        newline='\n',
-    )
-    (hooks / 'pre-push').chmod(0o755)
-    run_git(work, 'config', 'core.hooksPath', hooks.as_posix())
-
-
-def test_promote_end_to_end_passes_the_real_pre_push_hook_only_from_the_integration_tip(server, tmp_path: Path) -> None:
-    """2026-10-13: the real hook refused promote's bare ``<sha>:refs/heads/main``; now only the tip passes.
-
-    PLANTED: a stale local integration branch refuses through the same hook, not retried.
-    """
-    _, work = clone_pair(tmp_path)
-    tip = advance(work, 'integrate/main', 'f.txt', 'f\n')
-    _real_pre_push(work)
-    built = client(GITEA, Loopback(server))
-    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
-    run_git(work, 'branch', '-f', 'integrate/main', 'origin/main')
-    with pytest.raises(OSError, match='hook-refused'):
-        forgepromote.promote(work, built, POLICY)
-    run_git(work, 'branch', '-f', 'integrate/main', tip)
-    assert forgepromote.promote(work, built, POLICY).action == 'promote'
-    run_git(work, 'fetch', '-q', 'origin')
-    assert git_out(work, 'rev-parse', 'origin/main') == tip
-
-
-def test_promote_refuses_a_trunk_that_cannot_fast_forward(server, tmp_path: Path) -> None:
-    _, work = clone_pair(tmp_path)
-    advance(work, 'main', 'hotfix.txt', 'h\n')
-    advance(work, 'integrate/main', 'f.txt', 'f\n')
-    found = forgepromote.decide(work, client(GITEA, Loopback(server)), POLICY)
-    assert found.action == 'refused'
-    assert 'cannot fast-forward' in found.reasons[0]
-    assert Recorder.received == [], 'parts are not even read for an impossible move'
-
-
-# --- sync -----------------------------------------------------------------------------------------
 
 
 def _child(tmp_path: Path) -> Path:

@@ -195,7 +195,7 @@ def derive(root: Path, policy: Policy, schedule: Schedule, statuses: Callable[[s
 
 _ASKS: Final = {
     MERGE: 'is READY: merge it into integration',
-    PROMOTE: 'is PROMOTE-able: forge promote',
+    PROMOTE: 'is PROMOTE-able: python -m lab_commons.dev.integrate promote <sha>',
     BLOCKED: 'is BLOCKED on a red part: route it',
 }
 
