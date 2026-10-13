@@ -35,6 +35,9 @@ class Policy:
     #: the integration queue and raises an ``integration`` alarm when it changes, and prunes merged origin branches
     #: (:mod:`lab_commons.dev.branchprune`); ``''`` is nobody.
     host: str = ''
+    #: INTEGRATION-IS-MERGES-ONLY holds for every first-parent commit of the integration branch after this sha
+    #: (:mod:`lab_commons.dev.sessionbranch`); a push that CREATES the branch is refused while it is ``''``.
+    merges_only_since: str = ''
 
 
 def load_policy(root: Path) -> Policy:
@@ -44,7 +47,8 @@ def load_policy(root: Path) -> Policy:
         return Policy()
     with manifest.open('rb') as handle:
         declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(_TABLE, {})
-    if retired := [f'{key} is retired: {RETIRED[key]}' for key in declared if key in RETIRED]:
+    spelled = {key: f'{_TABLE}.{key}' if f'{_TABLE}.{key}' in RETIRED else key for key in declared}
+    if retired := [f'{key} is retired: {RETIRED[name]}' for key, name in spelled.items() if name in RETIRED]:
         msg = f'[tool.lab_commons.{_TABLE}] in {manifest}: ' + '; '.join(retired)
         raise ValueError(msg)
     known = {field.name for field in dataclasses.fields(Policy)}

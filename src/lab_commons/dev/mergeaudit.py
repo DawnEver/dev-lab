@@ -64,6 +64,7 @@ __all__ = [
     'MergeAuditError',
     'audit',
     'classify',
+    'judge',
     'main',
     'pending',
     'read_tests',
@@ -266,7 +267,18 @@ def pending(root: Path, message: str, *, roots: Sequence[str]) -> tuple[str, ...
     if parents is None:
         return ()
     tree = _git(root, 'write-tree').decode().strip()
-    return unnamed(_audit(root, 'the merge being committed', parents, tree, roots=roots), message)
+    return judge(root, parents, tree, message, roots=roots, label='the merge being committed')
+
+
+def judge(
+    root: Path, parents: Sequence[str], merged: str, message: str, *, roots: Sequence[str], label: str = ''
+) -> tuple[str, ...]:
+    """What *message* fails to name about *merged* (a commit or a tree) as the merge of *parents*.
+
+    The ONE judgement: the commit-msg hook (:func:`pending`), ``integrate merge`` and the integration
+    branch's push guard (:mod:`lab_commons.dev.sessionbranch`) all call it.
+    """
+    return unnamed(_audit(root, label or merged, parents, merged, roots=roots), message)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -172,6 +172,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL: a consumer's primary-checkout hook guarded the other direction only.
     'integrationhome': ('original',),
     'sessionlease': ('original',),
+    'sessionbranch': ('original',),
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
