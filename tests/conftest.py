@@ -22,14 +22,15 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 #: Git and Git Credential Manager never ask a person: a fake forge host once popped a GCM dialog on a
 #: workstation. ``credential.interactive=never`` rides as command-level config, so it survives a test's
-#: own ``GIT_CONFIG_GLOBAL``. No askpass is set: git consults askpass BEFORE ``GIT_TERMINAL_PROMPT``,
+#: own ``GIT_CONFIG_GLOBAL``. It rides in ``GIT_CONFIG_PARAMETERS`` (what ``git -c`` itself exports), never
+#: the numbered ``GIT_CONFIG_COUNT`` set: a test that plants its own numbered set would otherwise have its
+#: ``KEY_0`` completed by ours (``git-env-repair``'s poison arm went quietly harmless).
+#: No askpass is set: git consults askpass BEFORE ``GIT_TERMINAL_PROMPT``,
 #: and an ``echo`` askpass would ANSWER a prompt with a fake credential instead of refusing it.
 NO_PROMPT: Final = {
     'GIT_TERMINAL_PROMPT': '0',
     'GCM_INTERACTIVE': 'never',
-    'GIT_CONFIG_COUNT': '1',
-    'GIT_CONFIG_KEY_0': 'credential.interactive',
-    'GIT_CONFIG_VALUE_0': 'never',
+    'GIT_CONFIG_PARAMETERS': "'credential.interactive'='never'",
 }
 ASKPASS: Final = ('GIT_ASKPASS', 'SSH_ASKPASS')
 

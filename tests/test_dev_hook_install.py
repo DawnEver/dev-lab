@@ -106,7 +106,9 @@ def test_the_stage_pin_reds_in_both_directions(repo: Path) -> None:
 
 
 def _git_out(repo: Path, *args: str) -> str:
-    return subprocess.run([_GIT, '-C', str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        [_GIT, '-C', str(repo), *args], check=True, capture_output=True, text=True, encoding='utf-8'
+    ).stdout.strip()
 
 
 def test_a_linked_worktree_installs_into_its_own_git_dir(repo: Path, tmp_path: Path) -> None:
