@@ -8,28 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.forgeschedule import (
-    NO_HEADROOM,
-    Candidate,
-    Headroom,
-    Ranked,
-    Schedule,
-    boost_of,
-    expected_cost,
-    host_weights,
-    load_schedule,
-    parse_usage,
-    rank,
-    starved,
-    value,
-)
+from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
+from lab_commons.dev.forgeschedule import NO_HEADROOM, Headroom, host_weights, load_schedule, parse_usage
+from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 FAMILY = Schedule()
 
 
 def _cand(ref: str, kind: str, *, repo: str = 'o/r', waited_h: float = 0.0, labels: tuple[str, ...] = ()) -> Candidate:
-    return Candidate(repo, ref, ref.ljust(40, '0'), 'linux', kind, NOW - timedelta(hours=waited_h), labels=labels)
+    return Candidate(repo, ref, ref.ljust(40, '0'), 'linux', kind, NOW - timedelta(hours=waited_h), FULL, labels=labels)
 
 
 def _order(ranked: tuple[Ranked, ...]) -> list[str]:

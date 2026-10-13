@@ -140,7 +140,7 @@ newest commit lacks, or a request issue.
   it, its wait and its blocking reason.
 
 The numbers are data, `[tool.lab_commons.schedule]` over the family default
-(`lab_commons.dev.forgeschedule.Schedule`), overridden key by key:
+(`lab_commons.compute.model.Schedule`), overridden key by key:
 
 ```toml
 [tool.lab_commons.schedule]
@@ -182,7 +182,7 @@ progress, every host card (stale flagged) and every starved candidate. It posts 
   issue but the oldest (user ruling 2026-10-13; a human-written one is never touched, and a token without
   delete rights closes instead and says so); `green_areas` (an `area:*` issue with no `- [ ]` row) and
   `request_max_age_days` only CLOSE. It says so in ONE comment on the hosts issue; absent the table, it reads nothing.
-- `forgeschedule.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
+- `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
 
 ## Alarms
 

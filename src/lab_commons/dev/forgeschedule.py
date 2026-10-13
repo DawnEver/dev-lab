@@ -33,7 +33,8 @@ WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no
 platform, over its ref's budget, no headroom here, or outranked. A candidate waiting longer than its
 class's ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
-:func:`rank` is pure and is the only ordering rule: an optimiser replaces it without touching I/O.
+The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
+in :mod:`lab_commons.compute.model`; this module gathers candidates and loads the numbers (I/O).
 """
 
 from __future__ import annotations
@@ -46,11 +47,22 @@ import subprocess
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.model import (
+    BRANCH,
+    INTEGRATION,
+    PR,
+    REQUEST,
+    SCHEDULE_TABLE,
+    Candidate,
+    Ranked,
+    Schedule,
+    starved,
+)
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
@@ -64,34 +76,18 @@ __all__ = [
     'NO_HOST',
     'OUTRANKED',
     'OVER_BUDGET',
-    'Candidate',
     'Headroom',
-    'Ranked',
-    'Schedule',
-    'boost_of',
     'box_headroom',
     'candidates',
-    'expected_cost',
     'host_weights',
     'labelled_issues',
     'load_schedule',
     'parse_usage',
-    'rank',
     'ref_usage',
     'repo_name',
-    'starved',
     'starved_alarms',
     'tip_of',
-    'value',
 ]
-
-_TABLE: Final = 'schedule'
-
-#: The class of each candidate source the family knows; a repository may add classes of its own.
-INTEGRATION: Final = 'integration'
-PR: Final = 'pr'
-BRANCH: Final = 'branch'
-REQUEST: Final = 'request'
 
 #: Why a candidate is not claimed -- the prefix of :attr:`Ranked.blocked`.
 NO_HOST: Final = 'no host'
@@ -99,39 +95,7 @@ OVER_BUDGET: Final = 'over budget'
 NO_HEADROOM: Final = 'no headroom'
 OUTRANKED: Final = 'outranked'
 
-_PRIORITY: Final = re.compile(r'^priority:(?P<n>-?\d+(?:\.\d+)?)$')
 _TRACKING: Final = 'refs/remotes/origin/'
-
-
-@dataclass(frozen=True)
-class Schedule:
-    """``[tool.lab_commons.schedule]``: the family default; a repository overrides key by key."""
-
-    classes: Mapping[str, float] = field(
-        default_factory=lambda: {INTEGRATION: 100.0, PR: 60.0, BRANCH: 30.0, REQUEST: 20.0}
-    )
-    #: Value gained per hour a candidate waits -- the term that guarantees no class starves forever.
-    aging_rate: float = 10.0
-    starve_after_hours: Mapping[str, float] = field(
-        default_factory=lambda: {INTEGRATION: 6.0, PR: 12.0, BRANCH: 24.0, REQUEST: 48.0}
-    )
-    #: Core-hours one ref of the class may use per 24 h; a class absent here is unbounded.
-    daily_budget_core_h: Mapping[str, float] = field(default_factory=dict)
-    #: Label -> value added; ``priority:<n>`` adds ``n`` without being declared.
-    boosts: Mapping[str, float] = field(default_factory=lambda: {'priority:user': 1000.0})
-    #: Opted-in child branches (fnmatch patterns), served as class ``branch`` beside the integration branch.
-    branches: tuple[str, ...] = ()
-    #: The label that makes an open issue a request.
-    request_label: str = 'forge:request'
-    #: The expected cost, in hours, of work nothing has measured yet.
-    prior_cost_h: float = 4.0
-
-    def base(self, kind: str) -> float:
-        """The base value of class *kind*; an undeclared class is refused by name."""
-        if kind not in self.classes:
-            msg = f'class {kind!r} is not in [tool.lab_commons.{_TABLE}] classes {sorted(self.classes)}'
-            raise ValueError(msg)
-        return float(self.classes[kind])
 
 
 def load_schedule(root: Path) -> Schedule:
@@ -140,12 +104,15 @@ def load_schedule(root: Path) -> Schedule:
     declared: dict[str, Any] = {}
     if manifest.is_file():
         with manifest.open('rb') as handle:
-            declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(_TABLE, {})
+            declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(SCHEDULE_TABLE, {})
     default = Schedule()
     known = {one.name for one in dataclasses.fields(Schedule)}
     unknown = sorted(set(declared) - known)
     if unknown:
-        msg = f'[tool.lab_commons.{_TABLE}] in {manifest} has unknown key(s) {unknown}; the keys are {sorted(known)}'
+        msg = (
+            f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest} has unknown key(s) {unknown}; '
+            f'the keys are {sorted(known)}'
+        )
         raise ValueError(msg)
     merged: dict[str, Any] = {}
     defaults = dataclasses.asdict(default)
@@ -160,102 +127,6 @@ def load_schedule(root: Path) -> Schedule:
 def host_weights(table: Mapping[str, Any]) -> dict[str, float]:
     """The machine file's ``[schedule] weights`` (repo ``owner/name`` -> multiplier); absent = 1 for all."""
     return {str(repo): float(weight) for repo, weight in dict(table.get('weights', {})).items()}
-
-
-@dataclass(frozen=True)
-class Candidate:
-    """One unit of work waiting: a part a ref's newest commit lacks, or an issue request (``number``)."""
-
-    repo: str
-    ref: str
-    sha: str
-    platform: str
-    kind: str
-    since: datetime
-    scope: str = FULL
-    labels: tuple[str, ...] = ()
-    number: int = 0
-    origin: str = ''  # the forge login whose PR or request it is; '' for a branch head
-
-    @property
-    def key(self) -> str:
-        """How a host card and an alarm name it: ``<ref>@<sha12>:<platform>``."""
-        return f'{self.ref}@{self.sha[:12]}:{self.platform}'
-
-
-@dataclass(frozen=True)
-class Ranked:
-    """A candidate with its numbers, and why it is not claimed (``''`` = nothing blocks it)."""
-
-    candidate: Candidate
-    value: float
-    cost_h: float
-    score: float
-    wait_h: float
-    blocked: str = ''
-
-
-def boost_of(labels: Sequence[str], schedule: Schedule) -> float:
-    """The value the user attached: every declared label's boost plus every ``priority:<n>``."""
-    total = 0.0
-    for label in labels:
-        if label in schedule.boosts:
-            total += float(schedule.boosts[label])
-        elif (found := _PRIORITY.match(label)) is not None:
-            total += float(found['n'])
-    return total
-
-
-def value(candidate: Candidate, schedule: Schedule, now: datetime) -> float:
-    """``base[class] + boost + aging_rate * wait_hours`` (module docstring)."""
-    wait_h = max(0.0, (now - candidate.since).total_seconds() / 3600)
-    return schedule.base(candidate.kind) + boost_of(candidate.labels, schedule) + schedule.aging_rate * wait_h
-
-
-def expected_cost(measured: Mapping[str, Any], prior_h: float, *, cores: int = 1) -> float:
-    """Hours one full run costs: the last run's measured core-seconds (durations + overheads) over *cores*.
-
-    On a cluster *cores* is 1 (core-hours); on a box it is the box's cores (wall-hours). Nothing measured
-    is *prior_h*.
-    """
-    seconds = sum(dict(measured.get('durations', {})).values()) + sum(dict(measured.get('overheads', {})).values())
-    return seconds / 3600 / max(1, cores) if seconds > 0 else prior_h
-
-
-def rank(
-    candidates: Sequence[Candidate],
-    schedules: Mapping[str, Schedule],
-    now: datetime,
-    *,
-    cost_h: Mapping[str, float],
-    weights: Mapping[str, float] | None = None,
-    mine: str = '',
-    own_weight: float = 1.0,
-) -> tuple[Ranked, ...]:
-    """Every candidate scored and ordered, highest score first. PURE: the one ordering rule.
-
-    *schedules* and *cost_h* are keyed by repo; *weights* by repo, 1 for a repo it omits. A candidate
-    whose ``origin`` is *mine* (this host's login) has its value multiplied by *own_weight*.
-    """
-    weights = weights or {}
-    ranked = []
-    for one in candidates:
-        schedule = schedules[one.repo]
-        worth = value(one, schedule, now) * (own_weight if mine and one.origin == mine else 1.0)
-        cost = max(cost_h.get(one.repo, schedule.prior_cost_h), 1e-6)
-        wait_h = max(0.0, (now - one.since).total_seconds() / 3600)
-        ranked.append(Ranked(one, worth, cost, weights.get(one.repo, 1.0) * worth / cost, wait_h))
-    return tuple(sorted(ranked, key=lambda item: (-item.score, item.candidate.since, item.candidate.key)))
-
-
-def starved(ranked: Sequence[Ranked], schedules: Mapping[str, Schedule]) -> tuple[Ranked, ...]:
-    """The blocked candidates that waited past their class's ``starve_after_hours``."""
-    found = []
-    for item in ranked:
-        bound = schedules[item.candidate.repo].starve_after_hours.get(item.candidate.kind)
-        if item.blocked and bound is not None and item.wait_h > bound:
-            found.append(item)
-    return tuple(found)
 
 
 @dataclass(frozen=True)
@@ -406,7 +277,16 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
         origin = str((raw.get('user') or {}).get('login', ''))
         found.append(
             Candidate(
-                repo, f'issue/{number}', '', platform, REQUEST, since, labels=_labels(raw), number=number, origin=origin
+                repo,
+                f'issue/{number}',
+                '',
+                platform,
+                REQUEST,
+                since,
+                FULL,
+                labels=_labels(raw),
+                number=number,
+                origin=origin,
             )
         )
     return found
@@ -433,7 +313,7 @@ def candidates(
     if mode == 'quiet':
         return ()
     found = [
-        Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), labels=labels, number=number, origin=by)
+        Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), FULL, labels=labels, number=number, origin=by)
         for ref, sha, kind, labels, number, by in _part_refs(root, mode, client, schedule, policy, say=say)
         for platform in platforms
     ]

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
     NoCredential,
@@ -59,15 +60,9 @@ from lab_commons.dev.forgeschedule import (
     NO_HOST,
     OUTRANKED,
     OVER_BUDGET,
-    REQUEST,
-    Candidate,
     Headroom,
-    Ranked,
-    Schedule,
     candidates,
-    expected_cost,
     load_schedule,
-    rank,
     ref_usage,
     repo_name,
 )
