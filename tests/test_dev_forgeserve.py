@@ -602,9 +602,9 @@ def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch
     assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')
 
 
-def test_a_finished_box_run_learns_its_peak_wall_and_held_cpu(monkeypatch, tmp_path: Path) -> None:
-    """The box half of the one demand table: the tree's peak over the wakes, keyed by the part's platform."""
-    forge, learnt = _Forge(), []
+def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> forgeproduce.Produced:
+    """One local part through :func:`forgeproduce.produce`, every forge and tree seam faked."""
+    forge = _Forge()
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
@@ -612,24 +612,59 @@ def test_a_finished_box_run_learns_its_peak_wall_and_held_cpu(monkeypatch, tmp_p
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
-    monkeypatch.setattr(forgeproduce, 'logical_cores', lambda: 8)
-    readings = iter([2.0, None, 3.5, 1.0])
+    return forgeproduce.produce(
+        tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, say=lambda _l: None,
+        lease=timedelta(hours=6), renew_s=30.0, fetch=lambda _root: None, **kwargs,
+    )  # fmt: skip
 
-    def produce(proc: _Proc) -> None:
-        forgeproduce.produce(
-            tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, clock=lambda: NOW, say=lambda _l: None,
-            lease=timedelta(hours=6), renew_s=30.0, fetch=lambda _root: None,
-            sample=lambda _pid: next(readings), learn=lambda *a, **k: learnt.append((a, k)),
-        )  # fmt: skip
 
-    produce(_Proc(0, beats=4, pid=4242))
+def test_a_finished_box_run_learns_its_peak_wall_and_measured_cpu(monkeypatch, tmp_path: Path) -> None:
+    """The box half of the one demand table: the tree's peak and its MEASURED cpu-seconds, never wall x cores."""
+    learnt: list = []
+    gb, cpu = iter([2.0, None, 3.5, 1.0]), iter([10.0, None, 30.0, 45.0])
+    ticks = iter(NOW + timedelta(seconds=s) for s in range(0, 1000, 10))
+    _produce_one(
+        monkeypatch, tmp_path, _Proc(0, beats=4, pid=4242), clock=lambda: next(ticks),
+        sample=lambda _pid: next(gb), meter=lambda _pid: lambda: next(cpu),
+        learn=lambda *a, **k: learnt.append((a, k)),
+    )  # fmt: skip
     ((root, done, run), how) = learnt[0]
-    assert (root, done.platform, run.peak_mem_gb, run.cpu_s / run.wall_s, how) == (
-        tmp_path,
-        'windows',
-        3.5,
-        8.0,
-        {'killed': False},
-    )
-    produce(_Proc(0, beats=0, pid=4242))
-    assert len(learnt) == 1, 'PLANTED CONTROL: a run never sampled learns nothing'
+    assert (root, done.platform, run.peak_mem_gb, run.cpu_s, how) == (tmp_path, 'windows', 3.5, 45.0, {'killed': False})
+    assert run.wall_s > 0
+
+
+def test_a_run_never_sampled_learns_nothing(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: no wake, no reading -- nothing is learned."""
+    learnt: list = []
+    _produce_one(
+        monkeypatch, tmp_path, _Proc(0, beats=0, pid=4242), clock=lambda: NOW,
+        sample=lambda _pid: 1.0, meter=lambda _pid: lambda: 5.0, learn=lambda *a, **_k: learnt.append(a),
+    )  # fmt: skip
+    assert learnt == []
+
+
+def test_a_run_with_no_cpu_reading_learns_nothing(monkeypatch, tmp_path: Path) -> None:
+    """A tree whose cpu cannot be read records no demand: an unmeasured cpu is never invented."""
+    learnt: list = []
+    _produce_one(
+        monkeypatch, tmp_path, _Proc(0, beats=2, pid=4242), clock=lambda: NOW,
+        sample=lambda _pid: 1.0, meter=lambda _pid: lambda: None, learn=lambda *a, **_k: learnt.append(a),
+    )  # fmt: skip
+    assert learnt == []
+
+
+def test_each_wake_hands_watch_the_cores_busy_since_the_last(monkeypatch, tmp_path: Path) -> None:
+    """What the producer's tree uses NOW, for a serve that keeps claiming while it runs."""
+    watched: list[Resources] = []
+    clock = {'now': NOW}
+    readings = iter([20.0, 50.0])
+
+    def cpu() -> float:  # ten seconds pass between two readings of the tree
+        clock['now'] += timedelta(seconds=10)
+        return next(readings)
+
+    _produce_one(
+        monkeypatch, tmp_path, _Proc(0, beats=2, pid=4242), clock=lambda: clock['now'],
+        sample=lambda _pid: 2.0, meter=lambda _pid: cpu, learn=lambda *_a, **_k: None, watch=watched.append,
+    )  # fmt: skip
+    assert [(one['cpu'], one['mem_gb']) for one in watched] == [(2.0, 2.0), (3.0, 2.0)]

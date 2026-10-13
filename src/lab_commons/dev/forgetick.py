@@ -26,9 +26,10 @@ the resources it lacks (``not admitted: lacking cpu``). Several parts may theref
 once. Two parts of ONE sha are never claimed by one box in one tick: a local part is judged in its
 sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
 
-A BOX JOB'S WIDTH FOLLOWS ITS BOX. A box run spreads over the cores it is given
-(:func:`lab_commons.dev.bounded.worker_width`), so its cpu demand is capped at the box's supply: a job
-that measured the whole box is admitted alone, and never starved by a core the own reserve keeps back.
+A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
+wall (:class:`lab_commons.proc.TreeCpu`), never capped to the box: a job that kept eight cores busy does
+not fit in four. Unmeasured, it takes every core free now, so it is admitted alone.
+Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import math
 import os
 import shlex
 import sys
@@ -57,7 +59,6 @@ from lab_commons.compute.model import (
     Supply,
     admit,
     expected_cost,
-    fitted,
     rank,
 )
 from lab_commons.dev.artefacts import remote_problem
@@ -197,11 +198,12 @@ def tick(
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     room = supply or Supply(machine or 'this host', Resources(cpu=cores))
-    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=cores)
+    free = max(1, math.floor(room.resources['cpu']))  # an unmeasured box run takes every core free now
+    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=free)
     sized = demand or (lambda wanted, needed: by_part(wanted.platform, needed))
     taken = _Taking(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
-        size=lambda wanted, needed: fitted(sized(wanted, needed), room, cluster=bool(serve.hpc)),
+        size=lambda wanted, needed: submitted(sized(wanted, needed), room),
         reservations=tuple(reservations), taken=list(running),
         store_why=probe(root) if serve.hpc else '', provides=provides or {},
     )  # fmt: skip
@@ -302,6 +304,13 @@ class _Taking:
             self.taken.append(self.size(wanted, needed))
             self.trees.add(wanted.sha)
         return one, ''
+
+
+def submitted(demand: Mapping[str, float], supply: Supply) -> Mapping[str, float]:
+    """*demand* with one submission where *supply* counts them; else unchanged."""
+    if 'submits' not in supply.present:
+        return demand
+    return Resources({**demand, 'submits': max(1.0, demand.get('submits', 0.0))})
 
 
 def _producer(root: Path, work: Work, serve: Serving) -> Work:

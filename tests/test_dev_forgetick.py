@@ -373,7 +373,7 @@ BOX = Supply('G', Resources(cpu=4, mem_gb=32), frozenset({'cpu', 'mem_gb', 'wind
 def _sized(**by_ref: float) -> object:
     """A fake demand: a core and *by_ref* GB for the candidate of each ref (``integrate/main`` spelled ``head``).
 
-    Memory, because a box job's cpu is elastic -- capped at the box's (`compute.model.fitted`) -- and memory is not.
+    Memory is the one resource the tests built on it vary.
     """
 
     def size(wanted: Candidate, _needs: frozenset[str]) -> Demand:
@@ -687,3 +687,21 @@ def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(s
     assert waiting.candidate.ref == 'feat/a'
     assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: [tool.lab_commons.platforms] jmag')
     assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+
+
+def test_a_box_job_is_admitted_at_the_cores_it_measured_never_capped_to_the_box(server, tmp_path: Path) -> None:
+    """A box job's cpu demand is what its run MEASURED (cpu-seconds over wall): eight busy cores do not fit in four.
+
+    PLANTED CONTROL: the same head measuring four cores fits the same box and is claimed.
+    """
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    wide = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=8))
+    assert wide.claimed == ()
+    assert wide.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu'
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    fits = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=4))
+    assert [w.ref for w in fits.claimed] == ['integrate/main']
