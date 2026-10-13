@@ -34,7 +34,17 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         # full cost. The hook is LOCAL, so no backoff and no forge can change its mind.
         'hook-refused',
         False,
-        ('pre-push hook', 'pre-receive hook declined', 'hook declined', 'hooks/pre-push'),
+        # `[githooks] pre-push: N hook(s) failed` is this family's own runner (2026-10-13: a
+        # PUSH-FROM-ITS-OWN-BRANCH refusal read as unclassified and was retried three times); a hook
+        # run bare still prints its own indented `  REFUSED: <RULE-ID>` line.
+        (
+            'pre-push hook',
+            'pre-receive hook declined',
+            'hook declined',
+            'hooks/pre-push',
+            '[githooks] pre-push:',
+            '  refused: ',
+        ),
     ),
     (
         # THE REF ITSELF IS STALE OR PROTECTED -- git's own vocabulary for "your input is wrong".

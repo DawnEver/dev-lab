@@ -224,6 +224,11 @@ class Report:
             return Disposition.REFUSED
         return Disposition.EXHAUSTED
 
+    def _hook_says(self) -> str:
+        """The hook's own ``REFUSED:``/``Remedy:`` lines from the last attempt -- its remedy, not ours."""
+        lines = (line.strip() for line in self.attempts[-1].output.splitlines())
+        return ' '.join(line for line in lines if line.startswith(('REFUSED:', 'Remedy:')))
+
     @property
     def remedy(self) -> str:
         """One sentence naming what happened AND what to do -- never the bare word "blocked"."""
@@ -236,10 +241,11 @@ class Report:
                 f'the earlier failures were transient and no action is needed'
             )
         if self.disposition is Disposition.REFUSED:
+            said = self._hook_says() if self.diagnosis is Diagnosis.HOOK_REFUSED else ''
             return (
                 f'{verb}: REFUSED on attempt {self.attempt_count} with diagnosis '
-                f'{self.diagnosis.value} -- retrying cannot change this answer; read the output and '
-                f'fix what was refused'
+                f'{self.diagnosis.value} -- retrying cannot change this answer; '
+                + (f'the hook says: {said}' if said else 'read the output and fix what was refused')
             )
         return (
             f'{verb}: gave up after {self.attempt_count} of {self.allowed_attempts} attempts, last '

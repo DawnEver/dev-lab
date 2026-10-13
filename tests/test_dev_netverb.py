@@ -154,6 +154,26 @@ def test_a_non_retryable_failure_is_reported_on_the_FIRST_attempt(
     assert 'retrying cannot change this answer' in report.remedy
 
 
+_GITHOOKS_REFUSAL = (
+    '\n  REFUSED: PUSH-FROM-ITS-OWN-BRANCH: refs/heads/main from 40621a5. A long-lived branch ...\n'
+    '  Remedy: push from the checkout whose HEAD is that branch (the main checkout).\n'
+    '[githooks] pre-push: 1 hook(s) failed: push-from-its-own-branch\n'
+    "error: failed to push some refs to 'origin'\n"
+)
+
+
+def test_the_githooks_runners_pre_push_refusal_is_not_retried_and_reports_the_hooks_remedy(tmp_path: Path) -> None:
+    """THE INCIDENT (2026-10-13): this exact shape read UNCLASSIFIED and was retried three times."""
+    clock = _Clock()
+    argv, counter = _child(tmp_path, fails=99, message=_GITHOOKS_REFUSAL, stream='stderr')
+    report = run_network_verb(argv, backoff_s=0.0, sleep=clock)
+    assert _ran(counter) == 1
+    assert report.diagnosis is Diagnosis.HOOK_REFUSED
+    assert report.disposition is Disposition.REFUSED
+    assert 'REFUSED: PUSH-FROM-ITS-OWN-BRANCH' in report.remedy
+    assert 'Remedy: push from the checkout' in report.remedy
+
+
 def test_a_command_that_succeeds_is_not_retried_at_all(tmp_path: Path) -> None:
     """The cheapest direction, and the one a broken loop breaks first."""
     clock = _Clock()
