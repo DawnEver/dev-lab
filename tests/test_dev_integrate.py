@@ -132,6 +132,7 @@ def test_the_cli_exits_two_on_a_refusal(work: Path, capsys: pytest.CaptureFixtur
 
 
 _RETIRED = '[tool.lab_commons.integrator]\nhost = "G"\n'
+_GARBAGE = 'not [toml' + chr(10) + _RETIRED
 
 
 def test_merge_reads_the_merged_tree_never_the_working_tree(work: Path) -> None:
@@ -155,3 +156,29 @@ def test_promote_reads_the_promoted_sha_never_the_working_tree(server, tmp_path:
     (repo / 'pyproject.toml').write_text('not [toml\n' + _RETIRED, encoding='utf-8')
     answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
     assert promote(repo, client(GITEA, Loopback(server)), tip).action == 'promote'
+
+
+@pytest.mark.parametrize('worktree', [_RETIRED, _GARBAGE])
+def test_merge_runs_the_real_commit_msg_stage_from_the_merged_tree_not_the_working_tree(
+    work: Path, worktree: str
+) -> None:
+    """THE SECOND CUT-OVER INCIDENT (2026-10-14): the stage's merge-audit row read the working tree's policy.
+
+    The merged tree opts into the family hook base, so every real commit-msg row runs (commitizen, issue-ref,
+    forge-host, merge-audit); the working tree holds the retired key the incident tripped on. The forge-host
+    row's trailer on the merge commit proves the stage ran. PLANTED CONTROL: a message the real commitizen
+    row refuses is refused, so the stage is judging and not skipped.
+    """
+    run_git(work, 'checkout', '-q', 'integrate/main')
+    commit(
+        work, 'pyproject.toml', '[tool.lab_commons.hooks]\n\n[tool.lab_commons.integrator]\ntest_roots = ["tests"]\n'
+    )
+    run_git(work, 'checkout', '-q', 'lane/x')
+    run_git(work, 'merge', '-q', '--ff-only', 'integrate/main')
+    commit(work, 'x.txt', 'x\n')
+    run_git(work, 'checkout', '-q', '--detach')
+    (work / 'pyproject.toml').write_text(worktree, encoding='utf-8')
+    sha = merge(work, 'lane/x')
+    assert 'Forge-Host:' in git_out(work, 'log', '-1', '--format=%B', sha), 'the real commit-msg stage did not run'
+    with pytest.raises(IntegrateRefused, match='commit-msg'):
+        integrate._checked_message(work, f'{sha}^{{tree}}', 'not a conventional message\n')

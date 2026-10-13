@@ -49,6 +49,8 @@ __all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'merge', 'promote'
 
 _GIT: Final = shutil.which('git') or 'git'
 _CONFLICTED: Final = 1
+#: The top-level files a commit-msg row may read its configuration from: the manifest and commitizen's own.
+_MANIFESTS: Final = frozenset({'pyproject.toml', '.cz.toml', 'cz.toml', '.cz.json', 'cz.json', '.cz.yaml', 'cz.yaml'})
 
 
 class IntegrateRefused(RuntimeError):
@@ -143,12 +145,26 @@ def _policy(root: Path, at: str) -> Policy:
 
 
 def _checked_message(root: Path, tree: str, message: str) -> str:
-    """*message* after the commit-msg rows *tree* declares (which may append a trailer); refused when one fails."""
+    """*message* after the commit-msg rows *tree* declares (which may append a trailer); refused when one fails.
+
+    The rows run with *tree*'s top-level manifests as their working tree -- a scratch directory holding
+    them, with ``GIT_DIR`` still the repository -- so every row, a tool's own config read (commitizen)
+    included, judges the commit being made and never whatever the checkout happens to hold. The
+    merge-audit row finds no merge in progress there and reads nothing; :func:`merge` audits *tree* itself
+    through :func:`lab_commons.dev.mergeaudit.judge`, the same function.
+    """
     rows = hook_table_from(pyproject_at(root, tree), f'{tree}:pyproject.toml').get('commit-msg', ())
+    git_dir = _git(root, 'rev-parse', '--absolute-git-dir').stdout.strip()
     with tempfile.TemporaryDirectory() as scratch:
+        work = Path(scratch) / 'tree'
+        work.mkdir()
+        for name in _git(root, 'ls-tree', '--name-only', tree).stdout.split():
+            if name in _MANIFESTS:
+                (work / name).write_text(_git(root, 'show', f'{tree}:{name}').stdout, encoding='utf-8')
         path = Path(scratch) / 'COMMIT_EDITMSG'
         path.write_text(message, encoding='utf-8')
-        if run_stage('commit-msg', [str(path)], root=root, hooks=rows):
+        env = {'GIT_DIR': git_dir, 'GIT_WORK_TREE': str(work)}
+        if run_stage('commit-msg', [str(path)], root=work, hooks=rows, env=env):
             msg = 'the commit-msg hook stage refused the merge message (its rows are printed above)'
             raise IntegrateRefused(msg)
         return path.read_text(encoding='utf-8')
