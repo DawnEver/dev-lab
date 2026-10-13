@@ -17,11 +17,15 @@ Declared once in the consumer's `pyproject.toml`; every key is optional and an u
 
 ```toml
 [tool.lab_commons.integrator]
-lane_prefixes = ["feat/", "fix/"]   # which origin branches are children
 integration = "integrate/main"      # the branch children merge into
 trunk = "main"                      # moved only by `forge promote`
 test_roots = ["tests"]              # what the merge audit reads
+host = "G"                          # who is prompted: a host card name or forge login; absent = nobody
 ```
+
+Which origin branches are CHILDREN is not a list here but the schedule's one rule,
+`[tool.lab_commons.schedule] classes_by_ref` ([scheduling](forge.md#scheduling)): a branch the rule classes
+is a child, served and queued; one it does not is neither.
 
 ## Many agents, one machine
 
@@ -140,9 +144,16 @@ that is not an ancestor of integration rather than merging. No merge commit ever
 
 ## Waking the integrator
 
-The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by an observer when a child's
-parts turn green. A wake carries no state: it only means "derive again now". Polling is the floor that makes a
-lost wake harmless.
+The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
+carries no state: it only means "derive again now". Polling is the floor that makes a lost wake harmless.
+
+**The observer is `forge serve`.** On the host the repo declares in `[tool.lab_commons.integrator] host`, each
+serve tick derives this same queue (`integrator.observe`) and raises an `integration` alarm per row that asks
+the integrator to act: a lane READY to merge, the integration tip PROMOTE-able, a lane or tip BLOCKED on a red
+to route. Each alarm is keyed by `<state> <branch>@<tip12>`, so the alarm de-dup state is the only memory: a
+new row or a moved tip is a new key and is delivered at once; an unchanged row repeats once per the receiver's
+`[alerts] repeat_hours`. It goes out through every alarm channel -- the stderr JSONL line a consumer routes
+(cc-config's notify), the host card, and `[alerts]`. Every other host derives nothing.
 
 ## Failure modes
 

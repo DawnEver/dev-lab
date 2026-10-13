@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev.forgealarm import AUTH, EVENT, REPEAT, Alarm, sound
+from lab_commons.dev.forgealarm import AUTH, EVENT, Alarm, repeat_window, sound
 from lab_commons.supervise.alert import Delivery, Notice
 
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -50,7 +50,23 @@ def test_a_configured_channel_takes_it_and_a_repeat_inside_the_window_is_not_del
     assert sound(ALARM, send=telegram, now=NOW + timedelta(minutes=5)) == ()
     assert _line(capsys)['repeat'] is True, 'a five-minute cron does not page every five minutes'
     assert len(sent) == 1
-    assert sound(ALARM, send=telegram, now=NOW + REPEAT) == ('telegram',), 'PLANTED CONTROL: past the window, again'
+    assert sound(ALARM, send=telegram, now=NOW + timedelta(hours=6)) == ('telegram',), 'PLANTED CONTROL: past it'
+
+
+def test_the_repeat_window_is_the_receivers_declaration() -> None:
+    """``[alerts] repeat_hours``: the person paged decides how often; absent, six hours."""
+    sent: list[Notice] = []
+
+    def telegram(notice: Notice) -> list[Delivery]:
+        sent.append(notice)
+        return [Delivery('telegram', ok=True)]
+
+    assert repeat_window({}) == timedelta(hours=6)
+    hourly = {'repeat_hours': 1}
+    assert sound(ALARM, alerts=hourly, send=telegram, now=NOW) == ('telegram',)
+    assert sound(ALARM, alerts=hourly, send=telegram, now=NOW + timedelta(minutes=30)) == ()
+    assert sound(ALARM, alerts=hourly, send=telegram, now=NOW + timedelta(hours=1)) == ('telegram',)
+    assert len(sent) == 2
 
 
 def test_a_channel_that_failed_is_tried_again_next_tick() -> None:

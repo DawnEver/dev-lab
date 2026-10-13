@@ -65,8 +65,8 @@ def test_a_second_serve_on_a_held_lock_exits_zero_doing_nothing(monkeypatch, tmp
     lock = tmp_path / 'serve.lock'
     with held(lock) as mine:
         assert mine
-        assert forgecli.main(['serve', '--mode', 'integrate', '--lock', str(lock)]) == 0
+        assert forgecli.main(['serve', '--lock', str(lock)]) == 0
     assert called == []
     assert 'another forge serve holds' in capsys.readouterr().err
-    assert forgecli.main(['serve', '--mode', 'integrate', '--lock', str(lock)]) == 0
-    assert called == [['--mode', 'integrate']]
+    assert forgecli.main(['serve', '--lock', str(lock)]) == 0
+    assert called == [[]]

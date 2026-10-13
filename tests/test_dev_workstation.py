@@ -274,11 +274,11 @@ def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst
         spawned.append(kw)
         return _Done(1 if cwd.name == 'beta' else 0)
 
-    assert workstation.serve('integrate', run=run, lock=tmp_path / 'serve.lock') == 2, 'alpha has no venv'
+    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock') == 2, 'alpha has no venv'
     assert [cwd.name for _, cwd in ran] == ['lab-commons', 'beta'], 'a missing venv never skips the next repo'
     argv, cwd = ran[0]
     assert all(kw[key] == value for kw in spawned for key, value in servetask.windowless().items())
-    assert argv == [str(root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve', '--mode', 'integrate']
+    assert argv == [str(root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve']
     assert cwd == root / 'lab-commons'
 
 
@@ -287,13 +287,13 @@ def test_serve_does_nothing_while_another_serve_holds_the_lock(tmp_path: Path, m
     lock, ran = tmp_path / 'serve.lock', []
     with held(lock) as mine:
         assert mine
-        assert workstation.serve('integrate', run=lambda *a, **_k: ran.append(a), lock=lock) == 0
+        assert workstation.serve(run=lambda *a, **_k: ran.append(a), lock=lock) == 0
     assert ran == []
 
 
 def test_serve_without_a_declaration_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'absent.toml'))
-    assert workstation.serve('integrate', lock=tmp_path / 'serve.lock') == 2
+    assert workstation.serve(lock=tmp_path / 'serve.lock') == 2
 
 
 def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
@@ -304,14 +304,13 @@ def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
     monkeypatch.setattr(servetask, 'home', lambda: tmp_path)
     seen: dict[str, object] = {}
 
-    def serve(mode: str, *, out: object = None) -> int:
-        seen.update(mode=mode, out=out)
+    def serve(*, out: object = None) -> int:
+        seen.update(out=out)
         workstation.emit('[serve] reached the log')
         return 0
 
     monkeypatch.setattr(workstation, 'serve', serve)
-    assert workstation.main(['serve', '--mode', 'develop']) == 0
-    assert seen['mode'] == 'develop'
+    assert workstation.main(['serve']) == 0
     assert seen['out'] is not None, 'the children write to the same log'
     assert '[serve] reached the log' in (tmp_path / 'serve.log').read_text(encoding='utf-8')
 

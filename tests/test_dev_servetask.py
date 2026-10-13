@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 from _arch_corpus import assert_floor, parse, rel, source_modules
 
 from lab_commons.dev import servetask
@@ -21,15 +20,15 @@ SOURCE_FLOOR = 100
 
 def test_the_task_runs_the_windowless_interpreter_from_its_checkout_every_five_minutes(tmp_path: Path) -> None:
     lab = tmp_path / 'lab-commons'
-    want = servetask.definition_of(lab, mode='integrate')
+    want = servetask.definition_of(lab)
     assert want.command == str(lab / '.venv' / 'Scripts' / 'pythonw.exe'), 'pythonw: no console window'
-    assert want.arguments == '-m lab_commons.dev.workstation serve --mode integrate'
+    assert want.arguments == '-m lab_commons.dev.workstation serve'
     assert want.working_directory == str(lab), 'the checkout is the working directory, not a `cmd /c cd`'
     assert (want.logon_type, want.hidden, want.interval) == ('InteractiveToken', 'true', 'PT5M')
 
 
 def test_the_definition_round_trips_through_the_task_xml(tmp_path: Path) -> None:
-    want = servetask.definition_of(tmp_path / 'a&b', mode='develop')
+    want = servetask.definition_of(tmp_path / 'a&b')
     xml = servetask.task_xml(want, user='DOM\\ada')
     assert '<UserId>DOM\\ada</UserId>' in xml
     assert '<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>' in xml
@@ -41,7 +40,7 @@ def test_an_older_cmd_task_reads_back_as_a_different_definition(tmp_path: Path) 
         '<?xml version="1.0" encoding="UTF-16"?><Task><Actions><Exec><Command>cmd</Command>'
         '<Arguments>/c cd /d "C:\\x" &amp;&amp; "py" -m m serve</Arguments></Exec></Actions></Task>'
     )
-    assert servetask.installed(old) != servetask.definition_of(tmp_path, mode='integrate')
+    assert servetask.installed(old) != servetask.definition_of(tmp_path)
     assert servetask.installed('') is None
     assert servetask.query_argv() == ['schtasks', '/Query', '/TN', 'lab-forge-serve', '/XML']
     assert servetask.create_argv(tmp_path / 't.xml') == [
@@ -62,11 +61,6 @@ def test_the_serve_log_is_size_capped_by_one_rotation(tmp_path: Path) -> None:
         out.write('new')
     assert log.read_text(encoding='utf-8') == 'new'
     assert log.with_name('serve.log.1').read_text(encoding='utf-8') == '0123456789'
-
-
-@pytest.mark.parametrize('mode', ['integrate', 'develop'])
-def test_the_mode_reaches_the_arguments(tmp_path: Path, mode: str) -> None:
-    assert servetask.definition_of(tmp_path, mode=mode).arguments.endswith(f'--mode {mode}')
 
 
 def _detaches(path: Path) -> bool:

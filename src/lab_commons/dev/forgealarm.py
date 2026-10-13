@@ -6,7 +6,10 @@ stored), a claim whose lease cannot be renewed (``lease``: the forge refused the
 holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot advance (``run``), and
 an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
 and a traffic jam: a candidate waiting past its class's bound (``starved``,
-:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own.
+:mod:`lab_commons.dev.forgeschedule`), keyed by the candidate so each repeats on its own. One more is not
+a failure but a PROMPT: on the host declared to own integration, the integration queue CHANGED -- a lane
+went READY, the integration tip became promotable, or a red needs routing (``integration``,
+:mod:`lab_commons.dev.integrator`), keyed by the row so each new one is delivered at once.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -19,7 +22,9 @@ AND EVERY ALARM A TICK RAISES RIDES ON THAT HOST'S CARD (:mod:`lab_commons.dev.f
 ``forge queue`` prints: the forge is the channel every machine reads, with or without ``[alerts]``.
 
 A CRON TICK EVERY FIVE MINUTES MUST NOT PAGE EVERY FIVE MINUTES. A delivery of one ``(kind, repo)``
-is repeated at most once per :data:`REPEAT` (state: ``forge-alarms.json`` beside the machine file);
+is repeated at most once per REPEAT WINDOW, which belongs to the person the alarms reach and so is
+declared in the machine file's ``[alerts] repeat_hours`` (:func:`repeat_window`; absent: 6 h)
+(state: ``forge-alarms.json`` beside the machine file);
 the structured line is written every time, because it is the log, and says ``"repeat": true`` inside
 that window so a consumer routes only the first. A channel that failed is retried on the next tick.
 """
@@ -38,7 +43,7 @@ from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
-__all__ = ['AUTH', 'EVENT', 'IDLE', 'LEASE', 'REPEAT', 'RUN', 'STARVED', 'Alarm', 'sound']
+__all__ = ['AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'RUN', 'STARVED', 'Alarm', 'repeat_window', 'sound']
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
 EVENT: Final = 'lab_commons.forge.alarm'
@@ -50,9 +55,13 @@ IDLE: Final = 'idle'
 RUN: Final = 'run'
 #: A candidate waited past its class's bound (:mod:`lab_commons.dev.forgeschedule`).
 STARVED: Final = 'starved'
+#: The integration queue changed on the host that owns integration (:mod:`lab_commons.dev.integrator`).
+INTEGRATION: Final = 'integration'
 
-#: How long one ``(kind, repo)`` delivery waits before it is delivered again.
-REPEAT: Final = timedelta(hours=6)
+
+def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
+    """How long one delivery waits before it is delivered again: ``[alerts] repeat_hours``, absent 6 h."""
+    return timedelta(hours=float(alerts.get('repeat_hours', 6)))
 
 
 @dataclass(frozen=True)
@@ -87,7 +96,9 @@ def sound(
     send: Callable[[Notice], list[Any]] | None = None,
     now: datetime | None = None,
 ) -> tuple[str, ...]:
-    """Write the alarm's line; deliver it through the configured channels unless delivered within :data:`REPEAT`.
+    """Write the alarm's line; deliver it through the configured channels unless delivered within the window.
+
+    The window is :func:`repeat_window` of *alerts*.
 
     *alerts* is the ``[alerts]`` table (default: the machine file's); *send* replaces the notifier.
     Returns the channels that took it.
@@ -98,7 +109,7 @@ def sound(
     key = ':'.join(filter(None, (alarm.kind, alarm.repo, alarm.about)))
     path = _state()
     last = _last(path)
-    due = key not in last or now - datetime.fromisoformat(last[key]) >= REPEAT
+    due = key not in last or now - datetime.fromisoformat(last[key]) >= repeat_window(table)
     delivered: tuple[str, ...] = ()
     if due:
         notice = Notice(subject=alarm.subject, body=alarm.body, severity=Severity.CRITICAL)
