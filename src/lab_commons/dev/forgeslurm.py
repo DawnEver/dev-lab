@@ -15,12 +15,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from lab_commons.compute import learned
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import config_path
 from lab_commons.dev.forgerun import Cluster, Run, Standing
 from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
-from lab_commons.hpc import learned
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, probe, submitter

@@ -109,7 +109,7 @@ per repo + sha + platform + scope in `forge-runs/` beside the machine file. Slur
 ### How a run is planned and executed
 
 - **The plan is measured.** Each record carries `durations`, `overheads` and `peaks_mb`; the next submit reads
-  them back (`lab_commons.hpc.learned`), packs whole files into shards inside the `[policy]` window, and sets the
+  them back (`lab_commons.compute.learned`), packs whole files into shards inside the `[policy]` window, and sets the
   wall limit and memory from the slowest shard and worst peak times `policy.safety`.
 - The array asks for every declared partition that admits its shard (`--partition=shortq,defq`). A task pending
   past `stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy.

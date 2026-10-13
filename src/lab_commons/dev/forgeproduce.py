@@ -17,6 +17,12 @@ is removed once the run ended -- after its record and the streamed output are ke
 checkout's ``parts/<sha>/`` (:func:`~lab_commons.dev.shatree.close_tree`). The serving checkout's HEAD
 decides nothing. A tree that cannot be built spawns nothing, and the claim is released naming the step
 that refused.
+
+WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The producer's process tree is
+sampled at every wake for its resident memory; a run that ended on its own (not superseded, not stopped)
+records its peak, wall and held cpu-seconds under ``(platform, no needs)`` -- the box half of the one
+demand table a Slurm run also writes. A box part holds the whole box, so its cpu-seconds are its wall
+times the box's cores. A signalled exit's peak is a floor (:func:`~lab_commons.compute.learned.record_run`).
 """
 
 from __future__ import annotations
@@ -32,16 +38,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.learned import Run, record_run
+from lab_commons.dev.bounded import logical_cores
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import part_context, parts_of
+from lab_commons.dev.platformparts import origin_url, part_context, parts_of
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
+from lab_commons.proc import process_tree, working_set_bytes
 
 __all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
 
@@ -58,6 +67,22 @@ class Produced:
     platform: str
     argv: tuple[str, ...]
     returncode: int
+
+
+#: Bytes in one gibibyte.
+_GB: Final = 1024.0**3
+
+
+def tree_gb(pid: int) -> float | None:
+    """Resident GB of *pid*'s whole process tree now, or ``None`` when nothing of it could be read."""
+    readings = [working_set_bytes(one) for one in process_tree(pid)]
+    known = [r for r in readings if r is not None]
+    return sum(known) / _GB if known else None
+
+
+def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
+    """Record one finished box run of *root*'s repository under ``(platform, no needs)``."""
+    record_run(origin_url(root), item.platform, (), run, killed=killed)
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -79,6 +104,8 @@ def produce(
     fetch: Callable[[Path], None] = fetch_origin,
     beat_s: float | None = None,
     beat: Callable[[timedelta], object] = lambda _elapsed: None,
+    sample: Callable[[int], float | None] = tree_gb,
+    learn: Callable[..., object] = learn_box_run,
 ) -> Produced:
     """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
@@ -95,7 +122,7 @@ def produce(
     try:
         return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
                     say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
-                    beat_s=renew_s if beat_s is None else beat_s, beat=beat)  # fmt: skip
+                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
 
@@ -116,6 +143,8 @@ def _run(
     heard: list[str],
     beat_s: float,
     beat: Callable[[timedelta], object],
+    sample: Callable[[int], float | None],
+    learn: Callable[..., object],
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
@@ -136,6 +165,7 @@ def _run(
     wake_s = min(renew_s, beat_s)
     renew_every = max(1, math.ceil(renew_s / wake_s - 1e-9))  # wakes per renewal
     wakes = 0
+    peak: float | None = None
     while True:
         try:
             returncode = proc.wait(timeout=wake_s)
@@ -146,6 +176,8 @@ def _run(
                 returncode = proc.wait()
                 say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
                 break
+            if proc.pid is not None and (now := sample(proc.pid)) is not None:
+                peak = max(peak or 0.0, now)
             fetch(root)
             tip = tip_of(root, item.ref)
             if tip and tip != item.sha and not equivalent(root, item.sha, tip):
@@ -156,27 +188,34 @@ def _run(
                 break
             wakes += 1
             beat(clock() - started)
-            if (
-                item.holder is not None and wakes % renew_every == 0
-            ):  # the heartbeat: the same claim, until the FORGE's time plus the lease
-                built = client(root)
-                try:
-                    renewed = dataclasses.replace(item.holder, until=forge_now(built) + lease)
-                except (ForgeCallFailed, OSError) as failed:
-                    say(f'[{item.platform}] could not read the forge clock to renew: {failed}')
-                    continue
-                _post(built, item, 'pending', renewed.description(), say)
+            if wakes % renew_every == 0:
+                _renew(client(root), item, lease, say)
     pump.join(timeout=5)
     say(f'[{item.platform}] exit={returncode}')
+    stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
+    if peak is not None and not superseded and not stopped:
+        wall_s = max(1.0, (clock() - started).total_seconds())
+        learn(root, item, Run(peak, wall_s * logical_cores(), wall_s), killed=returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if superseded or (posts and posts[-1].state == 'pending'):
-        stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
         reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         _carry(root, client(root), item, posts[-1], say)
     return Produced(item.ref, item.sha, item.platform, argv, returncode)
+
+
+def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], None]) -> None:
+    """The heartbeat: the same claim, until the FORGE's time plus the lease; an unheld item has none."""
+    if item.holder is None:
+        return
+    try:
+        renewed = dataclasses.replace(item.holder, until=forge_now(client) + lease)
+    except (ForgeCallFailed, OSError) as failed:
+        say(f'[{item.platform}] could not read the forge clock to renew: {failed}')
+        return
+    _post(client, item, 'pending', renewed.description(), say)
 
 
 def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callable[[str], None]) -> None:

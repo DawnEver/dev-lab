@@ -11,7 +11,7 @@ with the highest SCORE, value per cost (weighted shortest job first)::
 ``boost`` is what the user attached on the forge (a declared label such as ``priority:user``, or an
 explicit ``priority:<n>``), and the aging term grows without bound, so no candidate starves forever.
 ``expected_cost`` is core-hours on a cluster and wall-hours on a box, predicted from what the
-repository's last run measured (:mod:`lab_commons.hpc.learned`); unmeasured work is priced at a declared
+repository's last run measured (:mod:`lab_commons.compute.learned`); unmeasured work is priced at a declared
 prior. ``weight`` belongs to the HOST (its machine file's ``[schedule] weights``), so a host serving
 several repositories decides how to share itself while each repository ranks its own work. ``own`` is
 the host's too (``[serve] own_weight``, :mod:`lab_commons.dev.forgeprovides`): it multiplies the value of

@@ -2,7 +2,8 @@
 
 A test that falls through to the default root shares the HOST's live seats (a sibling's verdict, a
 stranger's directory on a cluster node) and its result then depends on who else is on the box. A
-test that means the default root says so with ``monkeypatch.delenv``.
+test that means the default root says so with ``monkeypatch.delenv``. The machine config is the
+test's own for the same reason: a finished run LEARNS beside it (:mod:`lab_commons.compute.learned`).
 """
 
 from __future__ import annotations
@@ -12,12 +13,14 @@ from typing import Final
 
 import pytest
 
+from lab_commons.config import CONFIG_ENV
 from lab_commons.resources import RESOURCE_DIR_ENV
 
 
 @pytest.fixture(autouse=True)
 def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(RESOURCE_DIR_ENV, str(tmp_path / 'lab-commons-resources'))
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
 
 
 #: Git and Git Credential Manager never ask a person: a fake forge host once popped a GCM dialog on a

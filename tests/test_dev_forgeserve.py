@@ -525,3 +525,36 @@ def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda pid: pid == 77)
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
     assert forge.posts[-1] == ('tests/windows', 'error', 'stopped')
+
+
+def test_a_finished_box_run_learns_its_peak_wall_and_held_cpu(monkeypatch, tmp_path: Path) -> None:
+    """The box half of the one demand table: the tree's peak over the wakes, keyed by the part's platform."""
+    forge, learnt = _Forge(), []
+    item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
+    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
+    monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
+    monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
+    monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
+    monkeypatch.setattr(forgeproduce, 'logical_cores', lambda: 8)
+    readings = iter([2.0, None, 3.5, 1.0])
+
+    def produce(proc: _Proc) -> None:
+        forgeproduce.produce(
+            tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, clock=lambda: NOW, say=lambda _l: None,
+            lease=timedelta(hours=6), renew_s=30.0, fetch=lambda _root: None,
+            sample=lambda _pid: next(readings), learn=lambda *a, **k: learnt.append((a, k)),
+        )  # fmt: skip
+
+    produce(_Proc(0, beats=4, pid=4242))
+    ((root, done, run), how) = learnt[0]
+    assert (root, done.platform, run.peak_mem_gb, run.cpu_s / run.wall_s, how) == (
+        tmp_path,
+        'windows',
+        3.5,
+        8.0,
+        {'killed': False},
+    )
+    produce(_Proc(0, beats=0, pid=4242))
+    assert len(learnt) == 1, 'PLANTED CONTROL: a run never sampled learns nothing'
