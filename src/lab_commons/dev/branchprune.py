@@ -74,6 +74,8 @@ STALE: Final = 'stale'
 
 _ORIGIN: Final = 'refs/remotes/origin/'
 _HOUR_S: Final = 3600.0
+#: The forge's answer for a branch that does not exist.
+_NOT_FOUND: Final = 404
 
 
 @dataclass(frozen=True)
@@ -139,7 +141,7 @@ def _live_tip(client: Client, name: str) -> str | None:
         commit = client.call('GET', f'{client.repo}/branches/{urllib.parse.quote(name, safe="/")}')['commit']
     except ForgeCallFailed as failed:
         attempts = failed.report.attempts
-        if attempts and attempts[-1].returncode == 404:  # noqa: PLR2004 -- HTTP Not Found
+        if attempts and attempts[-1].returncode == _NOT_FOUND:
             return None
         raise
     return str(commit.get('id') or commit.get('sha') or '')

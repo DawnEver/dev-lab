@@ -147,7 +147,7 @@ def test_the_declaration_defaults_to_listing_only(tmp_path: Path) -> None:
     root, _ = _planted(tmp_path)
     declared = declared_branchset(root)
     assert declared.prune_merged is False
-    assert declared.grace_hours == pytest.approx(24.0)
+    assert declared.grace_hours == pytest.approx(24.0, abs=0.0)  # exact: the default as declared
 
 
 def test_the_declaration_opts_in_and_names_its_grace(tmp_path: Path) -> None:
@@ -175,7 +175,7 @@ def test_the_survey_names_merged_idle_and_unmerged_stale_and_nothing_else(tmp_pa
         ('lane/unmerged', 'unmerged-stale', STALE),
     }
     (stale,) = [r for r in rows if r.action == STALE]
-    assert stale.idle_h == pytest.approx(72.0)
+    assert stale.idle_h == pytest.approx(72.0, abs=1e-9)  # hours; whole-second commit dates
 
 
 def test_opting_in_turns_deletable_into_delete(tmp_path: Path) -> None:
