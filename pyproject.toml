@@ -100,6 +100,7 @@ produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 [tool.lab_commons.integrator]
 trunk = "main"
 integration = "integrate/main"
+host = "G"  # the integrator session runs on G; serve there raises the `integration` prompts
 
 # This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
 # `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.

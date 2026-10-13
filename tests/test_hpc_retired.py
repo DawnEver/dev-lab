@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import admission, platformparts
+from lab_commons.dev import admission, forgecli, platformparts, workstation
 from lab_commons.hpc import __main__ as hpc_main
 from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys
 
@@ -90,3 +90,14 @@ def test_a_retired_machine_file_key_is_refused_by_name() -> None:
     with pytest.raises(ValueError, match=r'\[serve\] own_weight is retired: .*own_reserve'):
         refuse_retired_keys('serve', {'own_weight': 2, 'repos': ['a']})
     refuse_retired_keys('serve', {'repos': ['a']})
+
+
+@pytest.mark.parametrize('argv', [['serve', '--mode', 'integrate'], ['tick', '--mode', 'develop', '--json']])
+def test_a_serve_mode_is_refused_by_name_every_host_serves_every_class(argv: list[str], capsys) -> None:
+    assert forgecli.main(argv) == 2
+    assert f'`forge {argv[0]} --mode` is retired' in capsys.readouterr().err
+
+
+def test_the_workstation_task_with_a_mode_is_refused_naming_the_redeploy(capsys) -> None:
+    assert workstation.main(['serve', '--mode', 'integrate']) == 2
+    assert 'take no mode' in capsys.readouterr().err

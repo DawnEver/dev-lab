@@ -92,6 +92,28 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
 
+## One queue for every serving host
+
+Serve modes are gone (user ruling 2026-10-13): every host serves every class -- integration, PRs into it,
+feature branches, lanes, requests -- from one queue ([scheduling](forge.md#scheduling)). Each retired spelling
+is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
+
+- **A cluster account's machine file**: delete the `serve` key from `[deploy]` (on Ada it named the
+  integration mode), then re-run `python -m lab_commons.hpc deploy` so the crontab lines become plain
+  `forge serve`. A `[deploy]` still carrying the key is refused.
+- **A workstation**: re-run `python -m lab_commons.dev.workstation deploy ...` without the mode flag; it
+  rewrites the `lab-forge-serve` Task, whose old action is refused until then.
+- **A host that should take no foreign work**: have its owner reserve it whole
+  (`forge reserve <host> cpu=<all> --for login:<owner> --until ...`) instead of serving it quietly.
+- **A consumer's `pyproject.toml`**: replace the opted-in branch list under `[tool.lab_commons.schedule]` and
+  the prefix list under `[tool.lab_commons.integrator]` with ONE ordered rule, `[tool.lab_commons.schedule]
+  classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}` (the family default;
+  declare it only to differ, and a declaration replaces it whole). A branch no pattern matches is neither
+  served nor a child. Starvation bounds take a `feature` row (default 18 h).
+- **Who is prompted to integrate**: declare `[tool.lab_commons.integrator] host = "<card name or login>"`; that
+  host's serve tick raises an `integration` alarm when the queue changes.
+- **How often an alarm repeats** is the receiver's: `[alerts] repeat_hours` in the machine file (absent: 6).
+
 ## Migrating a repo to need-set parts
 
 A part is no longer an OS or an engine but a NEED-SET ([parts by need-set](hpc.md#parts-by-need-set)). The old

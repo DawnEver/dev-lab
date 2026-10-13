@@ -5,7 +5,7 @@ The counterpart of a cluster account's ``python -m lab_commons.hpc deploy``. It 
 dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.Step`.
 
 ``deploy --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 [--forge <https base>]
-[--root DIR] [--ref BRANCH] [--delegates LOGIN,...] [--mode M] [--dry-run]``, each step reporting and safe to repeat:
+[--root DIR] [--ref BRANCH] [--delegates LOGIN,...] [--dry-run]``, each step reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
@@ -24,8 +24,8 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
 
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
-``serve [--mode M]`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
-``forge serve --mode M`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
+``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
+``forge serve`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
 Its exit is the worst child's; one repo's failure never skips the next. Each child starts with no
 console window; under ``pythonw`` (no streams at all) the serve and its children write to the capped
 serve log (:func:`lab_commons.dev.servetask.open_log`).
@@ -51,6 +51,7 @@ from lab_commons.dev.servelock import default_lock, held
 from lab_commons.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_spec import LAB_COMMONS
 from lab_commons.hpc.deploy_steps import Step, Tools
+from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 if sys.platform == 'win32':
@@ -156,10 +157,8 @@ def _parser() -> argparse.ArgumentParser:
     dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
     dep.add_argument('--delegates', type=_logins, default=(), help='[reserve] delegates: who else may reserve it')
-    dep.add_argument('--mode', default='integrate', help='the serve mode the Task runs (default: integrate)')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
-    run = verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
-    run.add_argument('--mode', default='integrate')
+    verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
     return parser
 
 
@@ -269,9 +268,9 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
     return 0
 
 
-def _task(step: Step, programs: Programs, lab: Path, mode: str) -> int:
+def _task(step: Step, programs: Programs, lab: Path) -> int:
     emit(f'[task] {servetask.TASK}')
-    want = servetask.definition_of(lab, mode=mode)
+    want = servetask.definition_of(lab)
     query = _read([*programs.schtasks, *servetask.query_argv()[1:]])
     if query.returncode == 0 and servetask.installed(query.stdout) == want:
         emit(f'  in place: {want.command} {want.arguments}')
@@ -343,13 +342,11 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     tables['serve'] = {'repos': list(args.repos), 'root': str(args.root)}
     if args.delegates:
         tables['reserve'] = {'delegates': list(args.delegates)}
-    return _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS], args.mode)
+    return _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS])
 
 
-def serve(
-    mode: str, *, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None
-) -> int:
-    """``forge serve --mode`` *mode* in each ``[serve] repos`` checkout, under one lock; the worst exit.
+def serve(*, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None) -> int:
+    """``forge serve`` in each ``[serve] repos`` checkout, under one lock; the worst exit.
 
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
@@ -371,7 +368,7 @@ def serve(
                 worst = max(worst, 2)
                 continue
             emit(f'[serve] {name}', flush=True)
-            argv = [str(python), '-m', 'lab_commons.dev.forge', 'serve', '--mode', mode]
+            argv = [str(python), '-m', 'lab_commons.dev.forge', 'serve']
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
             rc = run(argv, cwd=checkout, check=False, **streams, **servetask.windowless()).returncode
             if rc:
@@ -381,17 +378,20 @@ def serve(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``deploy ...`` or ``serve [--mode M]``."""
+    """``deploy ...`` or ``serve``; a retired spelling is refused by name with its remedy."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if refused := next(filter(None, (refusal('workstation', word.split('=', 1)[0]) for word in args)), None):
+        emit(refused, err=True)
+        return 2
     if args[:1] == ['deploy']:
         return deploy(args[1:])
-    mode = _parser().parse_args(args).mode
+    _parser().parse_args(args)
     if sys.stdout is not None:
-        return serve(mode)
+        return serve()
     with servetask.open_log(servetask.log_path()) as log:  # pythonw: no console, so no streams
         sys.stdout = sys.stderr = log
         try:
-            return serve(mode, out=log)
+            return serve(out=log)
         finally:
             sys.stdout = sys.stderr = None
 

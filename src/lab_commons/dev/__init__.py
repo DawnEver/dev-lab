@@ -138,7 +138,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   verify refuses it naming the sync door, and an unreachable forge is said, never read as fresh.
 * :mod:`lab_commons.dev.selection` -- what a verify argv selects: targeted or the whole suite, and
   whether it may claim the skip census.
-* :mod:`lab_commons.dev.forgeserve` -- ``forge serve --mode M``: the one harness entry (tick, produce,
+* :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
