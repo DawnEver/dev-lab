@@ -42,7 +42,7 @@ from lab_commons.dev.hook_adoption import HookAdoption, render
 from lab_commons.dev.hooks import DENY_RULES, Remedy
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
-# whose boxes carry it ([tool.lab_commons.platforms]). Where it runs and node is absent, `NoNode` still reds.
+# whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
 pytestmark = pytest.mark.node
 
 #: An adoption that remedies EVERY rule needing a repo artefact, so the rendered file carries the

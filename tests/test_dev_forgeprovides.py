@@ -1,15 +1,10 @@
-"""WHAT A HOST PROVIDES: declared per machine, read onto its card, the only key a part needs beyond its OS."""
+"""WHAT A HOST PROVIDES: declared per machine, read onto its card; a part needs its need-set, nothing else."""
 
 from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev.forgeprovides import NO_PROVIDER, lacking, needs, provided, served_parts, unserved
-from lab_commons.hpc.platforms import read_table
-
-TABLE = read_table(
-    '[tool.lab_commons.capabilities]\njmag = { engine = true }\ndev_checkout = { on = ["windows", "macos"] }\n'
-)
+from lab_commons.dev.forgeprovides import NO_PROVIDER, present, provided, unserved
 
 
 def test_the_machine_file_declares_what_this_host_provides() -> None:
@@ -23,30 +18,22 @@ def test_a_malformed_capability_is_refused_by_name(table: dict[str, object]) -> 
         provided(table)
 
 
-def test_a_part_needs_its_engine_or_the_host_capabilities_its_os_carries() -> None:
-    assert needs(TABLE, 'jmag') == ('jmag',)
-    assert needs(TABLE, 'windows') == ('dev_checkout',)
-    assert needs(TABLE, 'linux') == (), 'the cluster part needs no host capability: a host lacking one claims it'
+def test_a_card_has_its_os_and_its_machine_file_resources() -> None:
+    assert present('windows', {'jmag': {'seats': 4}}) == {'windows', 'jmag'}
+    assert present('linux', {}) == {'linux'}
 
 
-def test_a_host_lacking_a_capability_is_never_offered_the_part() -> None:
-    assert lacking(('jmag',), {}) == f'{NO_PROVIDER} jmag'
-    assert lacking(('jmag',), {'jmag': {'seats': 4}}) == ''
-    assert lacking((), {}) == ''
+def test_the_queue_names_the_resource_no_live_host_has() -> None:
+    hosts = [present('windows', {}), present('linux', {})]
+    assert unserved({'jmag'}, hosts) == f'{NO_PROVIDER} jmag'
+    assert unserved({'dev_checkout', 'windows'}, hosts) == f'{NO_PROVIDER} dev_checkout'
+    assert unserved(set(), hosts) == '', 'base needs nothing: any live host serves it'
+    assert unserved({'windows'}, hosts) == ''
+    assert unserved({'jmag'}, [*hosts, present('windows', {'jmag': {}})]) == '', 'PLANTED CONTROL: one host has it'
 
 
-def test_a_host_serves_its_os_and_every_declared_engine_it_provides() -> None:
-    declared = ('jmag', 'windows')
-    assert served_parts('windows', {'jmag': {}}, declared, cluster=False) == ('windows', 'jmag')
-    assert served_parts('windows', {}, declared, cluster=False) == ('windows',), 'PLANTED CONTROL: not provided'
-    assert served_parts('windows', {'femm': {}}, declared, cluster=False) == ('windows',), 'not declared here'
-    assert served_parts('linux', {'jmag': {}}, declared, cluster=True) == ('linux',), 'a cluster runs no engine part'
-
-
-def test_the_queue_names_the_capability_no_live_host_provides() -> None:
-    hosts = [('windows', {}), ('linux', {})]
-    assert unserved('jmag', needs(TABLE, 'jmag'), hosts) == f'{NO_PROVIDER} jmag'
-    assert unserved('windows', needs(TABLE, 'windows'), hosts) == f'{NO_PROVIDER} dev_checkout'
-    assert unserved('linux', needs(TABLE, 'linux'), hosts) == ''
-    assert unserved('jmag', needs(TABLE, 'jmag'), [*hosts, ('windows', {'jmag': {'seats': 4}})]) == ''
-    assert unserved('macos', (), hosts) == 'no host serves macos'
+def test_a_need_set_split_across_hosts_is_still_unserved() -> None:
+    """Each resource exists somewhere, but no ONE host has both: a part runs on one host."""
+    hosts = [present('windows', {}), present('linux', {'matlab': {}})]
+    assert unserved({'matlab', 'windows'}, hosts) == f'{NO_PROVIDER} matlab+windows'
+    assert unserved(set(), []) == 'no host serves it'

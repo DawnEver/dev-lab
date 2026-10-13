@@ -2,7 +2,7 @@
 
 WHY A STATUS AND NOT A COMMENT OR A LABEL. A status is the forge's one record keyed by the exact
 commit it is about, readable by every workstation without a clone. ONE NAME FOR A PLATFORM RESULT:
-a part, posted under ``tests/<platform>`` (:mod:`lab_commons.dev.platformparts`) -- by a cluster run
+a part, posted under ``tests/<part>`` (:mod:`lab_commons.dev.platformparts`) -- by a cluster run
 and by a local verify alike -- and a claim on one is a ``pending`` status in that same context
 (:mod:`lab_commons.dev.forgetick`).
 

@@ -36,10 +36,12 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
@@ -53,10 +55,10 @@ from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
-from lab_commons.dev.localpart import post_cited, post_part
+from lab_commons.dev.localpart import part_selection, post_cited, post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
-from lab_commons.dev.platformparts import part_context, this_platform
+from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import ProducerExit, full_suite_refusal
 from lab_commons.dev.pytestout import strip_ansi
 from lab_commons.dev.reports import (
@@ -71,6 +73,7 @@ from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
@@ -457,12 +460,15 @@ def main(argv: list[str] | None = None) -> int:
     that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
     sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
 
-    A SETTLED RUN IS THEN POSTED AS THIS PLATFORM'S PART, ``tests/<platform>`` -- the one name for a
-    platform result (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become a run record
-    of the cluster's shape (scope ``full`` for a bare run, ``incremental`` for a selection), posted on
-    HEAD only when the tree was clean before and after the run and HEAD did not move. An INCONCLUSIVE
-    run is no part and posts nothing. ``--no-status`` opts out. A refused or failed post is one line;
-    it changes neither the verdict nor the exit code.
+    A SETTLED RUN IS THEN POSTED AS PARTS, ``tests/<part>`` -- one per need-set
+    (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become run records of the cluster's
+    shape (scope ``full`` for a bare run, ``incremental`` for a selection), posted on HEAD only when the
+    tree was clean before and after the run and HEAD did not move. ``--part <part>`` is the declared
+    producer's form: it runs EXACTLY that part's need-set (:func:`lab_commons.hpc.needsets.selecting`) and
+    posts that part alone; a bare run posts every part it judged whose needs this host has
+    (:func:`lab_commons.dev.localpart.post_part`). An INCONCLUSIVE run is no part and posts nothing.
+    ``--no-status`` opts out. A refused or failed post is one line; it changes neither the verdict nor
+    the exit code.
     """
     parser = argparse.ArgumentParser(
         prog='python -m lab_commons.dev.verify',
@@ -479,14 +485,19 @@ def main(argv: list[str] | None = None) -> int:
             f'{WAIT_S:.0f}s for the producer); 0 checks once and refuses'
         ),
     )
-    parser.add_argument('--no-status', action='store_true', help='do not post the run as this platform part')
+    parser.add_argument('--no-status', action='store_true', help='do not post the run as parts')
+    parser.add_argument('--part', default='', help='produce this part (tests/<part>): exactly its need-set')
     parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
     parsed = parser.parse_args(argv)
     root = project_root()
     arguments = tuple(parsed.pytest_args)
     targeted = is_targeted(root, arguments)
-    refused = None if targeted else full_suite_refusal('verify', os.environ, part_context(this_platform()))
+    refused = None if targeted else full_suite_refusal('verify', os.environ, part_context(parsed.part or BASE))
+    try:
+        posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
+    except ValueError as why:
+        refused = refused or f'verify: refused -- {why}'
     if refused is not None:
         emit(refused, err=True)
         return ProducerExit.USAGE
@@ -506,11 +517,12 @@ def main(argv: list[str] | None = None) -> int:
             f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
         )
         if not parsed.no_status:  # the cited run's outcomes are the evidence: its record posts, nothing re-runs
-            emit(post_cited(root, cited.log, arguments, head=head_sha(root), dirt=status_paths(root)))
+            emit(post_cited(root, cited.log, posted, head=head_sha(root), dirt=status_paths(root), part=parsed.part))
         return EXIT_CODES[Outcome(cited.result.lower())]
 
     def lead() -> str:
-        code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, no_status=parsed.no_status)
+        post = None if parsed.no_status else functools.partial(post_part, root, arguments=posted, part=parsed.part)
+        code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, post=post)
         return json.dumps({'code': code, 'lines': lines})
 
     answer, attached = run_once(key, lead, directory=box_directory(), poll_s=DEFAULT_POLL_S)
@@ -532,9 +544,12 @@ def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
 
 
 def _judge(
-    root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, no_status: bool
+    root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
 ) -> tuple[int, list[str]]:
-    """The leader's run: judge, stamp, cache, post the part, and return the exit code with the lines it printed."""
+    """The leader's run: judge, stamp, cache, post the parts, and return the exit code with the lines it printed.
+
+    *arguments* is what pytest ran; *post* posts the parts (``None``: ``--no-status``).
+    """
     head, start = head_sha(root), status_paths(root)
     try:
         verdict = run_verify(root, arguments, wait_s=wait_s)
@@ -563,8 +578,8 @@ def _judge(
     commit = verdict_commit(head, head_sha(root), start, status_paths(root))
     if run_key(root, ()).tree == key.tree:
         remember(cache, verdict, tree=key.tree, env=key.env, selector=key.selector, commit=commit or '')
-    if not no_status:
-        emit(post_part(root, verdict.log.path, commit, arguments, settled=verdict.result.outcome.settled))
+    if post is not None:
+        emit(post(verdict.log.path, commit, settled=verdict.result.outcome.settled))
     return EXIT_CODES[verdict.result.outcome], lines
 
 

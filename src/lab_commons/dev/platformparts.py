@@ -1,50 +1,48 @@
-"""PLATFORM PARTS -- one commit's result COMPOSED of a part per platform it ran on, held on the FORGE.
+"""PARTS -- one commit's result COMPOSED of a part per NEED-SET, held on the FORGE.
 
-THE SPLIT IS DECLARED ONCE, per marker, on two axes -- ``[tool.lab_commons.platforms]`` and
-``[tool.lab_commons.capabilities]`` (:mod:`lab_commons.hpc.platforms`). A part is named for the platform it
-RAN ON -- ``linux``, ``windows``, ``macos`` -- or for the ENGINE it needs (``jmag``), never for where it
-was launched from. EVERY COLLECTED ID IS ASSIGNED TO EXACTLY ONE PART by one rule,
-:func:`lab_commons.hpc.platforms.assign`: its one engine, else the first platform in ``PLATFORMS`` order
-that can run it (linux, else windows, else macos). A part's selection is therefore a pure function of the commit's
-table and its collected ids; no part reads another part, so every part can start at any time and in
-parallel. Each part says what it HANDS to other parts.
+A part is named for the resources its tests need (:mod:`lab_commons.hpc.needsets`): ``tests/base`` for the
+tests needing no declared resource, ``tests/jmag``, ``tests/femm+windows``... PARTS ARE DERIVED, never
+declared: every collected id belongs to exactly ONE part, its need-set, read off the markers it carries
+against the commit's ``[tool.lab_commons.tests] resources``. A part's selection is therefore a pure
+function of the commit's declaration and its collected ids; no part reads another part, so every part can
+start at any time and in parallel. Each part says what it HANDS to other parts.
 
 A PART IS A COMMIT STATUS (forge plan, user ruling 2026-10-09): context :func:`part_context`
-(``tests/<platform>``), state ``success`` (PASS) or ``failure`` (FAIL), and a description every
+(``tests/<part>``), state ``success`` (PASS) or ``failure`` (FAIL), and a description every
 workstation can read without the record -- :meth:`Part.description`::
 
-    scope=full ran=1234 hands=windows:12,macos:3 nowhere=0
+    scope=full ran=1234 hands=femm+windows:12,jmag:3
 
-``hands`` is, per OTHER platform, how many collected ids this part assigned to it; ``nowhere`` how
-many ids no declared platform can run. A part CARRIED to a reach-equivalent descendant
-(:mod:`lab_commons.dev.forgecarry`) ends ``carried from <sha12>: only inert paths changed`` and is a
-part like any other: the sha it was judged at is named, never hidden. The full per-id outcome stays in
-the run record, attached on the forge and linked as the status's ``target_url``
-(:mod:`lab_commons.dev.forgerecords`). A ``pending`` status in the same context is a CLAIM on the part
-(:mod:`lab_commons.dev.forgetick`), not a part.
+``hands`` is, per OTHER part, how many collected ids belong to it. That is how a commit's parts are
+DISCOVERED (:func:`derived`): ``base`` is always wanted, and so is every part a posted part hands to. A
+part CARRIED to a reach-equivalent descendant (:mod:`lab_commons.dev.forgecarry`) ends ``carried from
+<sha12>: only inert paths changed`` and is a part like any other: the sha it was judged at is named,
+never hidden. The full per-id outcome stays in the run record, attached on the forge and linked as the
+status's ``target_url`` (:mod:`lab_commons.dev.forgerecords`). A ``pending`` status in the same context
+is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
 
-* A part comes from a RUN record (``run-<sha>-<platform>-<req>.json.gz``): ``python -m lab_commons.hpc
-  run gather`` writes it, and ``python -m lab_commons.dev.platformparts post <record>`` queues its
-  status and the record (:mod:`lab_commons.dev.forgeoutbox`) -- posted once the commit is on origin.
-  :func:`part_of` derives the part STRICTLY: PASS only when every covered outcome is passed / skipped
-  / xfailed; a failed or error id is FAIL. A record with ANY lost or missing id is INCONCLUSIVE and is
-  REFUSED, never posted: measured 2026-10-09 a record of 50349 lost ids (a build that never produced a
-  venv) was written as a linux FAIL. Nothing covered is refused, and so is a record handing off an id
-  that is assigned to its own platform.
-* Any other producer (a consumer's door per part, ``part <name>``) calls :func:`select` with a
-  collector over its own checkout, runs the ids assigned to it and writes a record of the same shape.
+* A part comes from a RUN record (``run-<sha>-<part>-<req>.json.gz``; its ``platform`` key holds the
+  part's name): ``python -m lab_commons.hpc run gather`` writes it, and ``python -m
+  lab_commons.dev.platformparts post <record>`` queues its status and the record
+  (:mod:`lab_commons.dev.forgeoutbox`) -- posted once the commit is on origin. :func:`part_of` derives
+  the part STRICTLY: PASS only when every covered outcome is passed / skipped / xfailed; a failed or
+  error id is FAIL. A record with ANY lost or missing id is INCONCLUSIVE and is REFUSED, never posted:
+  measured 2026-10-09 a record of 50349 lost ids (a build that never produced a venv) was written as a
+  FAIL. Nothing covered is refused, and so is a record handing off an id of its own part.
+* Any other producer (a consumer's door, run as the declared ``produce``) calls :func:`select` with a
+  collector over its own checkout, runs the ids of its part and writes a record of the same shape.
 
-COMPOSITION (:func:`compose`). The latest part per platform for the commit. Every platform some part
-hands ids to must have a part; any FAIL part makes it FAIL; a part naming ``nowhere`` ids is refused
-by name, as is a missing part.
+COMPOSITION (:func:`compose`). The latest part per need-set for the commit. ``base`` must have a part,
+and so must every part some part hands ids to; any FAIL part makes it FAIL. "Every derived part green"
+is therefore what a PASS means, and what ``forge promote`` requires.
 
-HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject. A LOCAL part is ONE
-declared argv (:func:`part_argv`, read at the claimed commit) run by the own venv python of a tree the
-producer builds at that commit, cwd = that tree (:mod:`lab_commons.dev.shatree`); a
-CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluster's login node
+HOW A PART IS PRODUCED IS DECLARED ONCE, in the consuming repo's pyproject. A LOCAL part is the ONE
+declared argv (:func:`producer_argv`, read at the claimed commit, ``{part}`` filled) run by the own venv
+interpreter of a tree the producer builds at that commit, cwd = that tree (:mod:`lab_commons.dev.shatree`);
+a CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluster's login node
 (:mod:`lab_commons.dev.forgerun`), from :func:`cluster_part`::
 
-    [tool.lab_commons.hpc]                 # the cluster (linux) part
+    [tool.lab_commons.hpc]                 # a part produced on the cluster
     install = "uv sync --extra dev"          # must install the project: its venv reports the env key
     needs = ["cargo", "cc"]                # optional: login-node commands beyond git and uv
     collect = "tests"                      # optional: pytest arguments selecting the tests
@@ -52,8 +50,9 @@ CLUSTER part is a run advanced one step per ``forge serve`` tick on the cluster'
     [tool.lab_commons.parts]
     output = "output/logs"                 # base of the dated run-record directory (datedlog)
 
-    [tool.lab_commons.parts.produce.windows]   # a local part: argv after the venv python, per scope
-    full = ["-m", "lab_commons.dev.verify"]
+    [tool.lab_commons.tests]
+    resources = ["femm", "jmag"]           # the markers naming a resource (lab_commons.hpc.needsets)
+    produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]   # a local part: argv after the interpreter
 
     [tool.lab_commons.parts.refs.windows]      # optional: the refs (fnmatch) this part is produced for
     full = ["integrate/main", "main"]          # absent = every ref the serving mode serves
@@ -76,15 +75,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.compute.probe import os_name
 from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.declared import kit_tables, pyproject_at
-from lab_commons.hpc.platforms import LINUX, PART_NAME, assign, cannot_run, host_platform, runnable, table_at
+from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
-from lab_commons.hpc.shell import FULL, INCREMENTAL
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
@@ -93,8 +92,9 @@ if TYPE_CHECKING:
     from lab_commons.dev.forgestatus import Status
 
 __all__ = [
+    'BASE',
     'CONTEXT_PREFIX',
-    'LINUX',
+    'PART_FIELD',
     'PASSING',
     'ClusterPart',
     'Composition',
@@ -104,20 +104,24 @@ __all__ = [
     'UndeclaredPart',
     'cluster_part',
     'compose',
+    'derived',
     'main',
     'origin_url',
-    'part_argv',
     'part_context',
     'part_of',
     'parts_of',
+    'producer_argv',
     'select',
     'split',
     'standing',
     'this_platform',
 ]
 
-#: Every part's status context starts with this; the rest is the platform.
+#: Every part's status context starts with this; the rest is the part's name (its need-set).
 CONTEXT_PREFIX: Final = 'tests/'
+
+#: The placeholder the declared producer carries; the claimed part's name replaces it.
+PART_FIELD: Final = '{part}'
 
 #: Covered outcomes that do not fail a part: ran and passed, or declined by the test's own design.
 PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
@@ -136,12 +140,15 @@ _RESULT: Final = {state: result for result, state in _STATE.items()}
 
 _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
-    r'hands=(?P<hands>-|[a-z0-9_]+:\d+(?:,[a-z0-9_]+:\d+)*) nowhere=(?P<nowhere>\d+)'
+    r'hands=(?P<hands>-|[a-z0-9_+]+:\d+(?:,[a-z0-9_+]+:\d+)*)'
     r'(?: carried from (?P<carried>[0-9a-f]{12}): only inert paths changed)?$'
 )
 
-#: The remedy a missing part names: the tick that claims it runs :func:`part_argv`.
-_PRODUCE: Final = 'a `lab_commons.dev.forge tick` serving {platform} claims and produces it'
+#: The remedy a missing part names: a host whose resources admit it claims it and runs :func:`producer_argv`.
+_PRODUCE: Final = 'a `lab_commons.dev.forge serve` host having every resource it needs claims and produces it'
+
+#: An example of the one declared producer.
+_PRODUCE_EXAMPLE: Final = '["-m", "lab_commons.dev.verify", "--part", "{part}"]'
 
 #: Where the run records a cluster part gathers land, under the declared dated base.
 _RECORD_KIND: Final = 'parts'
@@ -155,9 +162,9 @@ class UndeclaredPart(ValueError):
     """The repo does not declare how to produce a part; the message names the pyproject key to add."""
 
 
-def part_context(platform: str) -> str:
-    """``tests/<platform>`` -- the one status context a platform's part (and a claim on it) uses."""
-    return f'{CONTEXT_PREFIX}{platform}'
+def part_context(part: str) -> str:
+    """``tests/<part>`` -- the one status context a part (and a claim on it) uses."""
+    return f'{CONTEXT_PREFIX}{part}'
 
 
 def _text(table: Mapping[str, Any], name: str, key: str, example: str, *, required: bool) -> str:
@@ -196,22 +203,23 @@ def _records(root: Path, head: str, declared: Mapping[str, Any]) -> Path:
     return dated_log(root, head, base=output, kind=_RECORD_KIND)
 
 
-def part_argv(root: Path, platform: str, *, scope: str, sha: str) -> list[str]:
-    """The ONE declared argv producing *platform*'s part at *scope*, as commit *sha* declares it (module docstring).
+def producer_argv(root: Path, part: str, *, sha: str) -> list[str]:
+    """The ONE declared producer's argv for *part*, as commit *sha* declares it, ``{part}`` filled.
 
-    It is what follows the interpreter: the producer runs it with the own venv python of the tree it built
-    at *sha* (:mod:`lab_commons.dev.shatree`), so neither half depends on where the serving checkout is.
+    It is what follows the interpreter: the producer runs it with the own venv interpreter of the tree it
+    built at *sha* (:mod:`lab_commons.dev.shatree`), so neither half depends on where the serving checkout is.
 
     Raises:
-        UndeclaredPart: a declaration it needs is absent or malformed; the message names the key.
+        UndeclaredPart: the producer is absent, malformed or never told its part; the message names the key.
 
     """
-    if not PART_NAME.match(platform) or scope not in {FULL, INCREMENTAL}:
-        msg = f'a part is a platform or an engine at scope {FULL} or {INCREMENTAL}, not {platform!r} at {scope!r}'
-        raise ValueError(msg)
-    table = f'tool.lab_commons.parts.produce.{platform}'
-    produce = _declared(root, sha).get('parts', {}).get('produce', {}).get(platform, {}).get(scope)
-    return _strings(produce, table, scope, '["-m", "lab_commons.dev.verify"]', required=True)
+    needs_of(part)  # a name that is no need-set is refused by name
+    declared = _declared(root, sha).get('tests', {}).get('produce')
+    produce = _strings(declared, 'tool.lab_commons.tests', 'produce', _PRODUCE_EXAMPLE, required=True)
+    if not any(PART_FIELD in item for item in produce):
+        msg = f'[tool.lab_commons.tests] produce must carry {PART_FIELD} so the producer is told its part: '
+        raise UndeclaredPart(msg + _PRODUCE_EXAMPLE)
+    return [item.replace(PART_FIELD, part) for item in produce]
 
 
 def part_refs(root: Path, platform: str, scope: str) -> tuple[str, ...] | None:
@@ -250,7 +258,7 @@ class ClusterPart:
 
 
 def cluster_part(root: Path, head: str) -> ClusterPart:
-    """The cluster (linux, scope full) part of commit *head*, filled from the declarations alone.
+    """A cluster (scope full) part of commit *head*, filled from the declarations alone.
 
     The build (install, needs) is NOT here: ``hpc`` reads it from the commit itself at *head*.
 
@@ -277,14 +285,13 @@ def _elided(ids: Sequence[str]) -> str:
 
 @dataclass(frozen=True)
 class Part:
-    """One platform's result for a commit, as the forge holds it."""
+    """One part's result for a commit, as the forge holds it; *platform* is the part's name (its need-set)."""
 
     platform: str
     scope: str
     result: str
     ran: int
     hands: dict[str, int] = field(default_factory=dict)
-    nowhere: int = 0
     carried: str = ''  # the sha12 this verdict was judged at, when it is carried (lab_commons.dev.forgecarry)
 
     @property
@@ -293,16 +300,17 @@ class Part:
         return _STATE[self.result]
 
     def description(self) -> str:
-        """The status description: ``scope= ran= hands= nowhere=`` (module docstring)."""
+        """The status description: ``scope= ran= hands=`` (module docstring)."""
         hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
         carried = f' carried from {self.carried}: only inert paths changed' if self.carried else ''
-        return f'scope={self.scope} ran={self.ran} hands={hands} nowhere={self.nowhere}{carried}'
+        return f'scope={self.scope} ran={self.ran} hands={hands}{carried}'
 
 
 def part_of(record: Mapping[str, Any]) -> Part:
     """The part a run record proves, by the strict rule in the module docstring.
 
-    The platform and scope are the record's own -- read, never re-declared.
+    The part and scope are the record's own -- read, never re-declared. Its ``handed`` maps every id it
+    did not cover to the part that id belongs to.
     """
     platform, scope, sha = str(record['platform']), str(record['scope']), str(record['sha'])
     outcomes: dict[str, str] = dict(record['outcomes'])
@@ -318,31 +326,26 @@ def part_of(record: Mapping[str, Any]) -> Part:
             'can cite it'
         )
         raise PartRefusal(msg)
-    handed = {node: list(record['handed'].get(node, [])) for node, out in outcomes.items() if out == _NOT_COVERED}
-    disowned = sorted(node for node, can in handed.items() if assign(can) == platform)
+    handed = {node: str(record['handed'].get(node, '')) for node, out in outcomes.items() if out == _NOT_COVERED}
+    disowned = sorted(node for node, owner in handed.items() if owner == platform)
     if disowned:
-        msg = f'the {platform} record for {sha} hands off {len(disowned)} test(s) it is assigned: {_elided(disowned)}'
+        msg = f'the {platform} record for {sha} hands off {len(disowned)} test(s) of its own part: {_elided(disowned)}'
+        raise PartRefusal(msg)
+    unowned = sorted(node for node, owner in handed.items() if not PART_NAME.match(owner))
+    if unowned:
+        msg = f'the {platform} record for {sha} hands {len(unowned)} test(s) to no part: {_elided(unowned)}'
         raise PartRefusal(msg)
     hands: dict[str, int] = {}
-    for can in handed.values():
-        owner = assign(can)
-        if owner is not None:
-            hands[owner] = hands.get(owner, 0) + 1
+    for owner in handed.values():
+        hands[owner] = hands.get(owner, 0) + 1
     failing = any(outcome not in PASSING for outcome in covered.values())
-    return Part(
-        platform=platform,
-        scope=scope,
-        result='FAIL' if failing else 'PASS',
-        ran=len(covered),
-        hands=hands,
-        nowhere=sum(1 for can in handed.values() if assign(can) is None),
-    )
+    return Part(platform=platform, scope=scope, result='FAIL' if failing else 'PASS', ran=len(covered), hands=hands)
 
 
 def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ...]]:
-    """``(parts by platform, problems)`` from a commit's LATEST status per context.
+    """``(parts by name, problems)`` from a commit's LATEST status per context.
 
-    A ``tests/<platform>`` status that is not a settled part -- a claim still ``pending``, an
+    A ``tests/<part>`` status that is not a settled part -- a claim still ``pending``, an
     ``error``, or a description this module did not write -- is a problem naming itself, never a part.
     """
     parts: dict[str, Part] = {}
@@ -350,46 +353,49 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
     for status in statuses:
         if not status.context.startswith(CONTEXT_PREFIX):
             continue
-        platform = status.context.removeprefix(CONTEXT_PREFIX)
+        name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)
-        if status.state not in _RESULT or found is None or not PART_NAME.match(platform):
+        if status.state not in _RESULT or found is None or not PART_NAME.match(name):
             problems.append(f'{status.context} is {status.state} ({status.description!r}) -- not a settled part')
             continue
         hands = {} if found['hands'] == '-' else dict(item.split(':') for item in found['hands'].split(','))
-        parts[platform] = Part(
-            platform=platform,
+        parts[name] = Part(
+            platform=name,
             scope=found['scope'],
             result=_RESULT[status.state],
             ran=int(found['ran']),
-            hands={name: int(count) for name, count in hands.items()},
-            nowhere=int(found['nowhere']),
+            hands={owner: int(count) for owner, count in hands.items()},
             carried=found['carried'] or '',
         )
     return parts, tuple(problems)
 
 
-def split(can: Mapping[str, Sequence[str]], platform: str) -> tuple[list[str], dict[str, list[str]]]:
-    """``(ids assigned to *platform*'s part, every other id with the platforms that can run it)``."""
-    mine = [node for node, platforms in can.items() if assign(platforms) == platform]
-    handed = {node: list(platforms) for node, platforms in can.items() if assign(platforms) != platform}
+def derived(statuses: Sequence[Status]) -> tuple[str, ...]:
+    """The parts a commit is known to need, sorted: :data:`BASE`, every posted part, and every part one hands to."""
+    parts, _ = parts_of(statuses)
+    return tuple(sorted({BASE, *parts, *(name for part in parts.values() for name in part.hands)}))
+
+
+def split(owners: Mapping[str, str], part: str) -> tuple[list[str], dict[str, str]]:
+    """``(the ids of *part*, every other id with the part it belongs to)`` from *owners* (id -> part)."""
+    mine = [node for node, owner in owners.items() if owner == part]
+    handed = {node: owner for node, owner in owners.items() if owner != part}
     return mine, handed
 
 
 def select(
-    root: Path, sha: str, platform: str, *, collect: Callable[[str], Sequence[str]]
-) -> tuple[list[str], dict[str, list[str]]]:
-    """:func:`split` of what *collect* yields, by the table commit *sha* of *root* declares.
+    root: Path, sha: str, part: str, *, collect: Callable[[str], Sequence[str]]
+) -> tuple[list[str], dict[str, str]]:
+    """:func:`split` of what *collect* yields, by the vocabulary commit *sha* of *root* declares.
 
     *collect* takes a pytest marker expression (``''`` for none) and returns the node ids it collects
-    in the consumer's checkout: once for everything, once per platform that cannot run some marker.
+    in the consumer's checkout: once for everything, once per declared resource.
     """
-    table = table_at(root, sha)
-    if platform not in table.parts:
-        msg = f'unknown part {platform!r}; a part is named for its platform or its engine, one of {table.parts}'
-        raise ValueError(msg)
+    vocabulary = vocabulary_at(root, sha)
+    selecting(vocabulary, part)  # a part that is no need-set over the vocabulary is refused by name
     ids = list(collect(''))
-    cannot = {name: set(collect(expr)) for name in table.parts if (expr := cannot_run(table, name))}
-    return split(runnable(ids, cannot), platform)
+    carrying = {name: set(collect(name)) for name in vocabulary.resources}
+    return split(need_sets(ids, carrying), part)
 
 
 @dataclass(frozen=True)
@@ -406,17 +412,13 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     ordered = tuple(parts[name] for name in sorted(parts))
     result = 'FAIL' if any(part.result != 'PASS' for part in ordered) else 'PASS'
     problems: list[str] = []
-    if not ordered:
-        problems.append(f'no part is posted for {head}; {_PRODUCE.format(platform=LINUX)}')
-    nowhere = sum(part.nowhere for part in ordered)
-    if nowhere:
-        named = ', '.join(f'{part.platform}={part.nowhere}' for part in ordered if part.nowhere)
-        problems.append(f'no declared platform can run some collected test(s) ({named})')
-    for platform in sorted({name for part in ordered for name in part.hands}):
-        handing = {part.platform: part.hands[platform] for part in ordered if part.hands.get(platform)}
-        if handing and platform not in parts:
-            by = ', '.join(f'{name} hands {count}' for name, count in sorted(handing.items()))
-            problems.append(f'missing the {platform} part ({by}); {_PRODUCE.format(platform=platform)}')
+    if BASE not in parts:
+        problems.append(f'no {part_context(BASE)} part is posted for {head}; {_PRODUCE}')
+    for name in sorted({name for part in ordered for name in part.hands}):
+        handing = {part.platform: part.hands[name] for part in ordered if part.hands.get(name)}
+        if handing and name not in parts:
+            by = ', '.join(f'{owner} hands {count}' for owner, count in sorted(handing.items()))
+            problems.append(f'missing the {name} part ({by}); {_PRODUCE}')
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
@@ -424,9 +426,9 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
 class Standing:
     """A commit's result as its parts on the forge say it: ``PASS``, ``FAIL``, or ``''`` while unsettled.
 
-    THE ONE READING of a platform result, shared by push admission and the integrator's queue: a FAIL
-    part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, of the
-    wrong scope, or ids runnable nowhere) leaves it ``''``; else ``PASS``.
+    THE ONE READING of a commit's parts, shared by push admission and the integrator's queue: a FAIL
+    part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, or of
+    the wrong scope) leaves it ``''``; else ``PASS``.
     """
 
     result: str
@@ -434,7 +436,7 @@ class Standing:
     problems: tuple[str, ...]
 
     def cited(self) -> str:
-        """The parts it rests on, one ``platform=RESULT/scope ran=N`` each."""
+        """The parts it rests on, one ``part=RESULT/scope ran=N`` each."""
         return ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in self.parts)
 
 
@@ -500,8 +502,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def this_platform() -> str:
-    """The platform THIS box runs a part on."""
-    return host_platform(sys.platform)
+    """The OS resource THIS box is (:func:`lab_commons.compute.probe.os_name`)."""
+    return os_name(sys.platform)
 
 
 if __name__ == '__main__':

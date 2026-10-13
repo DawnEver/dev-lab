@@ -55,7 +55,7 @@ git push origin <your-branch>
 ```
 
 Through the repo's retry wrapper where it declares one. The push is the hand-off: the forge queues the new
-sha, a producer claims it and posts `tests/<platform>`. Open a pull request into `integrate/main` when you
+sha, a producer claims it and posts `tests/<part>`. Open a pull request into `integrate/main` when you
 want the integrator to take it. A subagent never pushes; it hands its SHA to the main session.
 
 ### 4. `forge queue` -- read where everything stands
@@ -89,3 +89,69 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
+
+## Migrating a repo to need-set parts
+
+A part is no longer an OS or an engine but a NEED-SET ([parts by need-set](hpc.md#parts-by-need-set)). The old
+per-OS and per-engine tables under `[tool.lab_commons]` and the per-part producer keys are retired
+(`lab_commons.hpc.retired`); a kit reading a commit that still declares one refuses it, naming the
+replacement. Migrate in ONE commit, in the same window as the lab-commons that reads it:
+
+1. **Delete** the OS table and the capability table under `[tool.lab_commons]` (the `marker -> [OSes]` rows and
+   the engine / `on = [...]` rows), and every per-part producer key under `[tool.lab_commons.parts]`. Keep
+   `[tool.lab_commons.parts] output` (and `inert`).
+2. **Add one table**: every marker that names a resource, and the ONE local producer, told its part by
+   `{part}`:
+
+   ```toml
+   [tool.lab_commons.tests]
+   resources = ["<marker>", ...]
+   produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]   # or the repo's own door, "{part}" in it
+   ```
+
+   A marker belongs in `resources` when some host may lack what it names. A marker whose tests run on every
+   host (a solver built on every OS) is no resource: leave it out and its tests are `base`. Mark the TOOL a
+   test drives, never the OS the tool runs on; mark an OS only for a test that proves that OS's behaviour.
+3. **Markers**: every name in `resources` stays registered in `[tool.pytest.ini_options] markers`, and every
+   test needing it carries it (module `pytestmark` or a conftest hook). Nothing else in the suite changes.
+4. **A repo's own producer door** (not `verify`) takes the part name, selects with
+   `platformparts.select(root, sha, part, collect=...)` -- it returns `(its ids, {other id: its part})`, and
+   `collect` is now asked for `''` and for each resource marker alone -- and writes a run record whose
+   `platform` is the part and whose `handed` maps each other id to its part NAME (a string, no longer a list
+   of OSes). Its full-suite refusal names `platformparts.part_context(part or platformparts.BASE)`.
+5. **Hosts**: a host has a resource when its machine file declares `[capabilities.<name>]` (and, for `jmag`,
+   `matlab`, `node`, the probe finds it). A Windows box that should run FEMM parts declares
+   `[capabilities.femm]`; one that should run Windows-only parts declares nothing (its OS is measured).
+6. **Promotion**: `forge promote` now needs `tests/base` and every part a part hands to. A server-side
+   required status context should be `tests/base` only.
+
+### consumer-a (a solver repo with JMAG, FEMM, MATLAB and SIMBA tests)
+
+- `pyproject.toml`: delete the OS table (`femm`, `simba`, `xfemm`, `ngspice`, `matlab` rows), the capability
+  table (`jmag`, `node`) and the two `produce.<part>.full` keys; add
+
+  ```toml
+  [tool.lab_commons.tests]
+  resources = ["femm", "jmag", "matlab", "node", "simba"]
+  produce = ["scripts/gate/runner.py", "part", "{part}", "--full"]
+  ```
+
+  `xfemm` and `ngspice` ran on every OS, so they are no resource and their tests join `base`. `simba` was a
+  glibc constraint (the cluster's 2.28 < 2.29): it becomes a resource that the hosts able to import
+  `aesim.simba` declare as `[capabilities.simba]`. `matlab` is probed on `PATH`; NOTE the cluster account's
+  supply measures no tool, so `tests/matlab` is claimed only by a box with `matlab` until the account probe
+  reads tools.
+- `scripts/gate/_platform_part.py` and `runner.py part <name>`: accept any part name (`base`,
+  `femm+jmag`, ...), not an OS list; `select` gets the part; the record's `handed` is `{id: part}`; the
+  collection store answers `''` and each single resource marker; `part_context(part or this_platform())`
+  becomes `part_context(part or BASE)`. A base part for the incremental run is the newest record of the SAME
+  part.
+- Retired-name registry (its retired-entries modules): add the rows this lab-commons retired
+  if the repo mirrors them.
+
+### consumer-b (no part tables yet)
+
+- Declares no part tables today, so step 1 is empty. To have a box produce its parts (not only the cluster's
+  `base` from `[tool.lab_commons.hpc]`), add `[tool.lab_commons.parts] output` and
+  `[tool.lab_commons.tests] produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]`; add `resources`
+  only for markers naming something a host may lack.

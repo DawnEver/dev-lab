@@ -440,3 +440,11 @@ def test_a_missing_declared_output_fails_the_run_loudly(home: Path, monkeypatch)
     assert 'fields/*.vtu' in store.posts[-1]['description']
     assert [a.kind for a in alarms] == [forgerun.RUN]
     assert forgerun.live('https://f/o/r.git') == ()
+
+
+def test_a_started_run_produces_the_part_it_claimed(home: Path) -> None:
+    """A cluster claims any need-set it has (base, linux, ...); its run posts THAT part, never a fixed one."""
+    part = ClusterPart('https://f/o/r.git', 'tests', home / 'parts')
+    run = forgerun.start(Work('integrate/main', SHA, 'linux+matlab', 'mine', HERE, cluster=part), HERE)
+    assert run.platform == 'linux+matlab'
+    assert forgerun.start(Work('integrate/main', SHA, 'base', 'mine', HERE, cluster=part), HERE).platform == 'base'

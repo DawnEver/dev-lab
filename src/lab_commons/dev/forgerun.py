@@ -68,6 +68,7 @@ from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context
 from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.run import NotSubmitted
 from lab_commons.hpc.shell import FULL
@@ -164,7 +165,7 @@ class Run:
     phase: str = CLAIMED_PHASE
     job_ids: tuple[str, ...] = ()
     record: str = ''
-    platform: str = 'linux'
+    platform: str = BASE  # the part (its need-set) this run produces
     scope: str = FULL
     outputs: tuple[str, ...] = ()  # declared at request time; only these are packed
     artefact: str = ''  # the artefact run id, fixed before the first put so a resumed tick re-puts the same key
@@ -229,15 +230,11 @@ def start(work: Work, owner: Claim) -> Run:
     if work.cluster is None:
         msg = f'{work.sha[:12]}: a cluster run needs a claimed cluster part'
         raise ValueError(msg)
+    part = work.cluster
     run = Run(
-        repo_url=work.cluster.repo_url,
-        sha=work.sha,
-        ref=work.ref,
-        collect=work.cluster.collect,
-        output=str(work.cluster.output),
-        owner=owner.description(),
-        outputs=work.cluster.outputs,
-    )
+        repo_url=part.repo_url, sha=work.sha, ref=work.ref, collect=part.collect, output=str(part.output),
+        owner=owner.description(), platform=work.platform, outputs=part.outputs,
+    )  # fmt: skip
     save(run)
     return run
 

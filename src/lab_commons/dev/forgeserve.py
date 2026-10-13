@@ -109,6 +109,7 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.needsets import needs_of
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 from lab_commons.proc import system_memory
@@ -174,14 +175,14 @@ def serve(
     cores = os.cpu_count() or 1
     sized = learned_demand(repo, cluster=seat is not None, cores=cores)
     seated = () if seat is not None else tuple(holders())
-    running = [*(sized(run.platform, frozenset()) for run in runs), *seat_running(seated, cores=cores)]
+    running = [*(sized(needs_of(run.platform)) for run in runs), *seat_running(seated, cores=cores)]
     book = read_ledger(client(root))
     leases = tuple(one.reservation for one in book.entries if not one.refused)
     try:
         ticked = tick(
             root, mode, client=client, machine=machine, seat=seat, lease=lease, fetch=fetch, host=host,
             supply=supply, reservations=leases, running=running,
-            usage=standing.usage if standing else None, weights=host_weights(table), provides=provides,
+            usage=standing.usage if standing else None, weights=host_weights(table),
         )  # fmt: skip
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:

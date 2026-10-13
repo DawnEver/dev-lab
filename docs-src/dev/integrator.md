@@ -1,7 +1,7 @@
 # The integrator
 
 The integrator is the one session that merges child branches into the integration branch and moves the trunk.
-It runs no tests: it reads `tests/<platform>` parts from the forge. Its loop is `forge integration` (merge
+It runs no tests: it reads `tests/<part>` parts from the forge. Its loop is `forge integration` (merge
 what is ready, report on every child), push, and `forge promote` when integration is fully green. Everyone
 else syncs their branch with `forge sync` and opens pull requests into integration.
 
@@ -86,7 +86,7 @@ python -m lab_commons.dev.forge integration
 
 - Fetches origin and each PR head (`pull/N/head`, including PRs on a GitHub mirror remote).
 - Per child, says: merged into integration at `<sha>`, or deferred and why; behind N, clean or the conflicting
-  files; its upstream set; the head's `tests/<platform>` states and the open `area:*` issues citing it;
+  files; its upstream set; the head's `tests/<part>` states and the open `area:*` issues citing it;
   promoted once the trunk holds the merge.
 - **The report is one comment per PR**, found by a hidden marker and edited in place. A child without a PR gets
   an `integration` commit status on its head, posted only when it changed.
@@ -113,7 +113,7 @@ python -m lab_commons.dev.forge promote
 ```
 
 `TRUNK-MOVES-BY-FAST-FORWARD`: a fast-forward push of the trunk to the integration tip when every required
-`tests/<platform>` part stands PASS at scope `full`. It refuses naming the missing parts, and refuses a trunk
+`tests/<part>` part stands PASS at scope `full`. It refuses naming the missing parts, and refuses a trunk
 that is not an ancestor of integration rather than merging. No merge commit ever lands on the trunk.
 
 ## The merge audit
