@@ -71,10 +71,10 @@ from lab_commons.compute.model import (
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
+from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body
 from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import part_refs
-from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL
 
@@ -258,7 +258,6 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
     return tuple(raw for raw in listed if not is_pull(raw) and label in _labels(raw))
 
 
-_REQUEST_PLATFORM: Final = re.compile(r'^\s*platform\s*=\s*["\'](?P<platform>[\w-]+)["\']', re.MULTILINE)
 _REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)
 
 
@@ -297,13 +296,20 @@ def _part_refs(
     return refs
 
 
-def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> list[Candidate]:
+def _requests(root: Path, client: Client, repo: str, schedule: Schedule, now: datetime) -> list[Candidate]:
+    """Every request issue as a job: its producer and sha from the body, its need-set as that sha declares it.
+
+    A request whose producer is undeclared is still listed (part ``''``): the claim pass refuses it by name.
+    """
     found = []
     for raw in labelled_issues(client, schedule.request_label):
-        declared = _REQUEST_PLATFORM.search(raw.get('body') or '')
+        producer, sha = parse_body(raw.get('body') or '')
         created = raw.get('created_at') or ''
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
-        platform = declared['platform'] if declared else BASE
+        try:
+            platform = declared_request(root, sha, producer).part
+        except UndeclaredRequest:
+            platform = ''
         number = int(raw['number'])
         origin = str((raw.get('user') or {}).get('login', ''))
         host = _REQUEST_HOST.search(raw.get('body') or '')
@@ -311,7 +317,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
             Candidate(
                 repo,
                 f'issue/{number}',
-                '',
+                sha,
                 platform,
                 REQUEST,
                 since,
@@ -320,6 +326,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
                 number=number,
                 origin=origin,
                 origin_host=host['host'] if host else '',
+                producer=producer,
             )
         )
     return found
@@ -363,12 +370,17 @@ def candidates(
         for ref, sha, kind, labels, number, by in _part_refs(root, client, schedule, policy, say=say)
         for platform in parts(sha)
     ]
-    found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
+    found += optional('request issues', lambda: _requests(root, client, repo, schedule, now), say)
     return tuple(one for one in found if _ref_served(root, one, say))
 
 
 def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:
-    """Whether *wanted*'s part declares its ref (``[tool.lab_commons.parts.refs]``); an exclusion is SAID."""
+    """Whether *wanted*'s part declares its ref (``[tool.lab_commons.parts.refs]``); an exclusion is SAID.
+
+    A request is no part: it is asked for by name at its sha, so no part's ref filter applies to it.
+    """
+    if wanted.kind == REQUEST:
+        return True
     admits = part_refs(root, wanted.platform, wanted.scope)
     if admits is None or any(fnmatch.fnmatchcase(wanted.ref, one) for one in admits):
         return True

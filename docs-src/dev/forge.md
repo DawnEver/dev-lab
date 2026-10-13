@@ -144,7 +144,9 @@ newest commit lacks, or a request issue.
   (`integration`), every open PR into it (`pr`), every other origin branch the ONE CLASS RULE names
   (`classes_by_ref`, ordered, first match: `feat/*` and `fix/*` are `feature`, `lane/*` is `branch` by
   default; a branch no pattern matches is not served), and every open issue labelled `forge:request`
-  (`request`; its part from `platform = "<p>"` in the body, else `base`). A ref's tip is one candidate per
+  (`request`: a body naming `producer = "<name>"` and `sha = "<40-hex>"`; the producer is declared at that
+  sha under `[tool.lab_commons.requests.<name>]` with `argv` and its need-set `needs`, admitted like a part
+  and claimed on context `request/<n>` -- `lab_commons.dev.forgerequest`). A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names the integrator's
   children ([the integrator](integrator.md)).
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest

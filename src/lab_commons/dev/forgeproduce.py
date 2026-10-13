@@ -11,7 +11,10 @@ on that tip, naming the sha it was judged at; a producer past
 :data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
 its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose. A LOAN
 a reservation holder preempts (*yields* names the lease at a wake) has its process tree stopped and its
-claim released ``preempted by reservation <id>``: OPEN again, re-queued, never an error.
+claim released ``preempted by reservation <id>``: OPEN again, re-queued, never an error. A REQUEST (context
+``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
+is SETTLED here from the exit code (:func:`lab_commons.dev.forgerequest.settle`), and its ref ``issue/<n>``
+has no tip, so nothing supersedes it.
 
 THE PART IS JUDGED AT THE CLAIMED SHA, in a tree this producer owns (:mod:`lab_commons.dev.shatree`):
 the declared argv (read at the sha) runs with that tree's own interpreter, cwd = the tree, and the tree
@@ -53,10 +56,11 @@ from lab_commons.compute.model import Resources
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
+from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import origin_url, part_context, parts_of
+from lab_commons.dev.platformparts import origin_url, parts_of
 from lab_commons.dev.producer import ProducerExit, preempted, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
@@ -167,7 +171,7 @@ def _run(
     watch: Callable[[Resources], object],
     yields: Callable[[], int],
 ) -> Produced:
-    context = part_context(item.platform)
+    context = item.context
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
     proc = below_normal(
         spawn,
@@ -217,7 +221,9 @@ def _run(
         wall_s = max(1.0, (clock() - started).total_seconds())
         learn(root, item, Run(usage.peak, usage.cpu_s, wall_s), killed=returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
-    if superseded or displaced or (posts and posts[-1].state == 'pending'):
+    if context.startswith(CONTEXT_PREFIX) and not displaced and posts and posts[-1].state == 'pending':
+        _settle(client(root), item, returncode, ''.join(heard), say)  # a request: its producer posts nothing
+    elif superseded or displaced or (posts and posts[-1].state == 'pending'):
         reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         reason = preempted(displaced) if displaced else reason
@@ -293,9 +299,19 @@ def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callabl
         say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
+def _settle(client: Client, item: Work, returncode: int, log: str, say: Callable[[str], None]) -> None:
+    """A request's result from its exit code: commented (with the log's tail) on its issue, then posted."""
+    state, description = result(returncode, (item.holder.machine or item.holder.login) if item.holder else '-')
+    try:
+        settle(client, int(item.context.removeprefix(CONTEXT_PREFIX)), state, description, log=log)
+    except ForgeCallFailed as failed:
+        say(f'[{item.platform}] could not comment the result: {failed}')
+    _post(client, item, state, description, say)
+
+
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:
     try:
-        status_post(client, item.sha, context=part_context(item.platform), state=state, description=description)
+        status_post(client, item.sha, context=item.context, state=state, description=description)
     except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
         say(f'[{item.platform}] could not post {state}: {failed}')
     else:

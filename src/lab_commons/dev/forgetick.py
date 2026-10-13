@@ -89,7 +89,7 @@ from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import derived, origin_url, part_context, this_platform
+from lab_commons.dev.platformparts import derived, origin_url, this_platform
 from lab_commons.dev.producer import preempted
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
@@ -204,10 +204,10 @@ def tick(
     work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
     for item in work:
         who = f' by {item.holder.login}@{item.holder.machine or "-"}' if item.holder else ''
-        lines.append(f'{item.state:<7} {part_context(item.platform):<14} {item.ref}  {item.sha[:12]}{who}')
+        lines.append(f'{item.state:<7} {item.context:<14} {item.ref}  {item.sha[:12]}{who}')
     for item in claimed:
         how = f'a cluster run as {serve.hpc}' if item.cluster else shlex.join(item.argv)
-        lines.append(f'produce {part_context(item.platform)}: {how}')
+        lines.append(f'produce {item.context}: {how}')
     lines += [f'refused {reason}' for reason in refused]
     lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
     lines += [f'artefacts {taken.store_why}'] if taken.store_why else []

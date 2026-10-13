@@ -74,7 +74,7 @@ commit's parts. Details: [the forge](forge.md#the-queue).
 |---|---|---|
 | `priority:user` | a PR or issue | adds the declared boost to its value in the queue |
 | `priority:<n>` | a PR or issue | adds `n` |
-| `forge:request` | an issue | makes the issue a queued request (`platform = "<p>"` in the body) |
+| `forge:request` | an issue | makes the issue a queued request (`producer` and `sha` in the body; the producer declared under `[tool.lab_commons.requests.<name>]`) |
 | `keep` | a PR or issue | pins its sha's artefacts past retention |
 | `area:<name>` | an issue, written by `forge route` | one open list of reds per area; fix them on your branch |
 
