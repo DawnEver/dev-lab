@@ -7,7 +7,7 @@ is never STORED -- it is recomputed from what origin holds, which makes it idemp
 construction: a duplicate wake, a lost wake or a wake racing a poll all print the same queue.
 
 THE RULE. A lane is an origin branch under a DECLARED prefix, not yet absorbed by the integration
-branch (``git cherry``: no ``+`` line). ONE NAME FOR A PLATFORM RESULT: the ``tests/<platform>``
+branch (``git cherry``: no ``+`` line). ONE NAME FOR A PLATFORM RESULT: the ``tests/<part>``
 parts on a tip (:func:`lab_commons.dev.platformparts.standing`), the same reading push admission
 makes. A lane is READY when its EXACT tip's parts stand PASS (any scope); BLOCKED on a FAIL part;
 WAITING otherwise. A status is keyed on a sha, so a moved or force-pushed lane loses its green by

@@ -1,8 +1,9 @@
 """WHAT GETS PRODUCED, AND IN WHAT ORDER -- one work queue, derived from git and the forge, never stored.
 
-Every candidate is a part a ref's newest commit lacks -- ``(repo, ref, sha, platform, scope)`` -- or an
-issue REQUEST. Each has a numeric VALUE and an expected COST; a claimer takes the feasible candidate
-with the highest SCORE, value per cost (weighted shortest job first)::
+Every candidate is a part a ref's newest commit lacks -- ``(repo, ref, sha, part, scope)`` -- or an
+issue REQUEST. Which parts a commit needs is DERIVED (:func:`lab_commons.dev.platformparts.derived`):
+``base``, and every part its posted parts hand ids to. Each has a numeric VALUE and an expected COST; a
+claimer takes the feasible candidate with the highest SCORE, value per cost (weighted shortest job first)::
 
     value = base[class] + boost + aging_rate * wait_hours
     score = weight[repo] * value / expected_cost
@@ -29,7 +30,7 @@ family default and a repository overrides key by key (a table key by table key):
     prior_cost_h = 4.0
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
-platform, over its ref's budget, or not admitted here -- naming the resources it lacks
+part, over its ref's budget, or not admitted here -- naming the resources it lacks
 (:func:`lab_commons.compute.model.admit`). A candidate waiting longer than its class's
 ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
@@ -67,6 +68,7 @@ from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import part_refs
+from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.shell import FULL
 
 __all__ = [
@@ -255,7 +257,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
         declared = _REQUEST_PLATFORM.search(raw.get('body') or '')
         created = raw.get('created_at') or ''
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
-        platform = declared['platform'] if declared else 'linux'
+        platform = declared['platform'] if declared else BASE
         number = int(raw['number'])
         origin = str((raw.get('user') or {}).get('login', ''))
         found.append(
@@ -281,13 +283,15 @@ def candidates(
     client: Client,
     *,
     repo: str,
-    platforms: Sequence[str],
+    parts: Callable[[str], Sequence[str]],
     schedule: Schedule,
     policy: Policy,
     now: datetime,
     say: Callable[[str], None] = lambda _: None,
 ) -> tuple[Candidate, ...]:
-    """Every candidate *mode* serves, ONE per ref and platform: the ref's newest sha (coalesced). Fetches nothing.
+    """Every candidate *mode* serves, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
+
+    *parts* names the parts a sha needs (:func:`lab_commons.dev.platformparts.derived` over its statuses).
 
     ``integrate``: the integration branch, every open PR into it (labels from the PR), every opted-in
     branch, and every request issue -- each kept only where its part's ref filter admits its ref
@@ -299,7 +303,7 @@ def candidates(
     found = [
         Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), FULL, labels=labels, number=number, origin=by)
         for ref, sha, kind, labels, number, by in _part_refs(root, mode, client, schedule, policy, say=say)
-        for platform in platforms
+        for platform in parts(sha)
     ]
     if mode == 'integrate':
         found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)

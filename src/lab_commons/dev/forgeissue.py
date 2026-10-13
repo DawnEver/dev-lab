@@ -6,7 +6,7 @@ ago. The family's readiness signal is ref movement on ``origin`` (the-three-part
 state of an issue is computed from exactly that, every time it is asked:
 
     done         the issue is closed, or ``Closes #N`` is on the default branch
-    ready        a lane referencing it has a tip whose ``tests/<platform>`` parts stand PASS
+    ready        a lane referencing it has a tip whose ``tests/<part>`` parts stand PASS
     in-progress  an origin branch carries a commit ``Refs #N`` (or ``Closes``/``Fixes``), or is
                  named ``fix/<N>-...``
     todo         open, and nothing on origin references it

@@ -29,7 +29,7 @@ from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, probe, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
-from lab_commons.hpc.platforms import table_at
+from lab_commons.hpc.needsets import vocabulary_at
 from lab_commons.hpc.progress import Progress, where
 from lab_commons.hpc.records import held_outcomes, run_shas
 from lab_commons.hpc.run import load_state, submit_run
@@ -79,7 +79,8 @@ class SlurmCluster:
             sha=run.sha,
             repo_url=run.repo_url,
             collect=run.collect,
-            table=table_at(self.root, run.sha),
+            vocabulary=vocabulary_at(self.root, run.sha),
+            part=run.platform,
             pack_from=self.root,
             builds=builds_at(self.root, run.sha, python=''),
         )
@@ -90,20 +91,21 @@ class SlurmCluster:
             cost=self.config.cost,
             policy=self.config.policy,
             history=learned.learned(run.repo_url),
-            carry=lambda env: self.carry(run.sha, env),
+            carry=lambda env: self.carry(run.sha, env, run.platform),
         )
         return [one['job_id'] for one in state['rounds']]
 
-    def carry(self, sha: str, env: str) -> dict[str, tuple[str, str, str]]:
-        """The outcomes *sha*'s run takes from the nearest earlier runs of env *env* (module docstring).
+    def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[str, str, str]]:
+        """The outcomes *sha*'s run of *part* takes from the nearest earlier runs of that part and env *env*.
 
-        A run of another env is never read: the env is the one dependency no footprint holds.
+        A run of another part ran other ids; a run of another env is never read -- the env is the one
+        dependency no footprint holds.
         """
         runners = self._runners()
         held = {}
         for ancestor in nearest(self.root, sha, run_shas(self.machine, runners)):
             state, shell = load_state(ancestor, self.machine, runners)
-            if state.get('env') == env:
+            if state.get('env') == env and state.get('platform') == part:
                 held[ancestor] = held_outcomes(state, shell)
         return carry_from(self.root, sha, held)
 

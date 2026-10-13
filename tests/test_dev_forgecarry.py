@@ -81,13 +81,13 @@ def test_a_non_descendant_never_carries(tmp_path: Path) -> None:
 
 
 def test_a_carried_part_names_its_source_and_still_admits() -> None:
-    part = Part('windows', 'full', 'PASS', 12, carried='a' * 12)
+    part = Part('base', 'full', 'PASS', 12, carried='a' * 12)
     text = part.description()
-    assert text.endswith(f'carried from {"a" * 12}: only inert paths changed')
-    parts, problems = parts_of([Status('tests/windows', 'success', text, '')])
+    assert text.endswith(f'carried from {"a" * 12}: every outcome carried by footprint')
+    parts, problems = parts_of([Status('tests/base', 'success', text, '')])
     assert problems == ()
-    assert parts['windows'] == part
-    assert standing([Status('tests/windows', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
+    assert parts['base'] == part
+    assert standing([Status('tests/base', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
 
 
 class _Forge:
@@ -119,7 +119,7 @@ class _Proc:
             cmd = 'fake'
             raise subprocess.TimeoutExpired(cmd, timeout or 0)
         if not self.killed:
-            verdict = 'scope=full ran=7 hands=- nowhere=0'
+            verdict = 'scope=full ran=7 hands=-'
             self.forge.post(None, self.sha, context='tests/windows', state='success', description=verdict,
                             target_url='https://f/record')  # fmt: skip
         return 0
@@ -153,7 +153,7 @@ def test_a_docs_only_descendant_keeps_the_local_run_and_gets_the_carried_status(
     assert not proc.killed, 'a reach-equivalent tip lets the run finish'
     (carried,) = forge.history(None, b)
     assert (carried.context, carried.state, carried.url) == ('tests/windows', 'success', 'https://f/record')
-    expected = f'scope=full ran=7 hands=- nowhere=0 carried from {a[:12]}: only inert paths changed'
+    expected = f'scope=full ran=7 hands=- carried from {a[:12]}: every outcome carried by footprint'
     assert carried.description == expected
 
 
@@ -170,11 +170,11 @@ def test_a_tip_already_settled_is_never_overwritten_by_a_carry(monkeypatch, tmp_
     a = _repo(tmp_path)
     b = _commit(tmp_path, DOCS, 'docs')
     forge = _Forge()
-    forge.post(None, b, context='tests/windows', state='failure', description='scope=full ran=7 hands=- nowhere=0')
+    forge.post(None, b, context='tests/windows', state='failure', description='scope=full ran=7 hands=-')
     monkeypatch.setattr(forgecarry, 'status_history', forge.history)
     _push(tmp_path, b)
     assert forgecarry.carry_target(tmp_path, None, ref=REF, sha=a, platform='windows') == ''
-    assert forgecarry.carry_target(tmp_path, None, ref=REF, sha=a, platform='linux') == b
+    assert forgecarry.carry_target(tmp_path, None, ref=REF, sha=a, platform='base') == b
 
 
 class _Slurm:

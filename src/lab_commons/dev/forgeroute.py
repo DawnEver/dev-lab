@@ -1,8 +1,8 @@
 """FAILURE ROUTING: a run record's reds, grouped by AREA, each area kept in ONE open forge issue.
 
 An area is a source region with one long-lived issue. The repo declares its areas ONCE, as data, in
-``[tool.lab_commons.areas]`` of its pyproject -- read AT THE COMMIT the record ran, like the platform
-table (:mod:`lab_commons.hpc.platforms`)::
+``[tool.lab_commons.areas]`` of its pyproject -- read AT THE COMMIT the record ran, like the need
+vocabulary (:mod:`lab_commons.hpc.needsets`)::
 
     [tool.lab_commons.areas]
     default = "triage"                       # where a red no glob claims goes; absent -> "unowned"
@@ -14,7 +14,7 @@ first area that matches owns it. ``**`` spans directories, ``*`` and ``?`` stay 
 THE ISSUE IS FOUND BY ITS TITLE, ``area:<name>``, among the OPEN issues, so routing the same record
 twice writes nothing the second time. Its body is the area's current list: a red id is ``- [ ]``, an id
 listed earlier that THIS record ran green is ticked ``- [x]``, and an id this record did not run is left
-as it was (another platform's red is not green here). When no ``- [ ]`` row remains the issue is
+as it was (another part's red is not green here). When no ``- [ ]`` row remains the issue is
 closed with a comment naming the sha. Unowned reds land in the default area, so a red is never dropped.
 
 OWNERS are data too, in ``[tool.lab_commons.forge.owners]``: a key is an area name or a branch glob

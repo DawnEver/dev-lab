@@ -29,9 +29,9 @@ from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
+from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
-from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import fold, held_outcomes, read_record, read_streams, record_name, run_shas, write_record
@@ -426,7 +426,7 @@ def _submit(fake: FakeRunCluster, **kw: object) -> str:
         sha=SHA,
         repo_url='https://g/r.git',
         builds=Builds(install='true', env_key='k1'),
-        table=Table(rows={'win': ('windows',)}),
+        vocabulary=Vocabulary(('win',)),
     )
     return submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0', **kw)
 
@@ -451,13 +451,13 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     assert record['sha'] == SHA
     assert {k: v for k, v in record['prep'].items() if k != 'ship'} == {'env': 12, 'collect': 3}, 'prep is measurable'
     assert record['prep']['ship'] >= 0, 'so is the fetch/pack'
-    assert record['handed'] == {'tests/w.py::t': ['windows']}, 'handed names the platforms that CAN run it'
+    assert record['handed'] == {'tests/w.py::t': 'win'}, 'handed names the part each id belongs to'
     assert (record['platform'], record['system'], record['cluster'], record['python']) == (
-        'linux',
+        BASE,
         'linux-x86_64/glibc2.28',
         'login.example',
         '3.13.1',
-    ), 'platform is the part it is; system is the box it ran on'
+    ), 'platform is the part it is (its need-set); system is the box it ran on'
     assert (record['scope'], record['req'], record['env']) == ('full', 't0', 'e0ffee0123456789')
     assert (record['account'], record['job_ids']) == ('acct-free', ['4243'])
     assert record['plan']['comment'] == 'lc:ws=ws-a'
@@ -637,9 +637,9 @@ def test_a_venv_that_cannot_name_its_env_refuses_the_run() -> None:
     assert not fake.manifests
 
 
-def test_the_record_is_named_for_its_sha_platform_and_request_and_round_trips_gzipped(tmp_path: Path) -> None:
+def test_the_record_is_named_for_its_sha_part_and_request_and_round_trips_gzipped(tmp_path: Path) -> None:
     record = _run(FakeRunCluster())
-    assert record_name(record) == f'run-{SHA}-linux-t0.json.gz'
+    assert record_name(record) == f'run-{SHA}-base-t0.json.gz'
     path = write_record(record, tmp_path / 'runs')
     assert path == tmp_path / 'runs' / record_name(record)
     assert read_record(path) == record
@@ -1136,7 +1136,7 @@ def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> 
     part = part_of(record)
     assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, 'FAIL'), 'carried is never counted as run'
     assert part.description().endswith(f'kept={A_SHA[:12]}:2')
-    assert parts_of([Status('tests/linux', 'failure', part.description(), '')])[0]['linux'] == part
+    assert parts_of([Status(f'tests/{part.platform}', 'failure', part.description(), '')])[0][part.platform] == part
 
 
 def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> None:

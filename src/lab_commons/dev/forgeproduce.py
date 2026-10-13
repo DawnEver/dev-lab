@@ -20,7 +20,7 @@ that refused.
 
 WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The producer's process tree is
 sampled at every wake for its resident memory; a run that ended on its own (not superseded, not stopped)
-records its peak, wall and held cpu-seconds under ``(platform, no needs)`` -- the box half of the one
+records its peak, wall and held cpu-seconds under ``(local, its need-set)`` -- the box half of the one
 demand table a Slurm run also writes. A box part holds the whole box, so its cpu-seconds are its wall
 times the box's cores. A signalled exit's peak is a floor (:func:`~lab_commons.compute.learned.record_run`).
 
@@ -43,7 +43,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.compute.learned import Run, record_run
+from lab_commons.compute.learned import LOCAL, Run, record_run
 from lab_commons.dev.bounded import logical_cores
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
@@ -55,6 +55,7 @@ from lab_commons.dev.platformparts import origin_url, part_context, parts_of
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
+from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 
 __all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
@@ -86,8 +87,8 @@ def tree_gb(pid: int) -> float | None:
 
 
 def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
-    """Record one finished box run of *root*'s repository under ``(platform, no needs)``."""
-    record_run(origin_url(root), item.platform, (), run, killed=killed)
+    """Record one finished box run of *root*'s repository under ``(local, the part's need-set)``."""
+    record_run(origin_url(root), LOCAL, needs_of(item.platform), run, killed=killed)
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -237,7 +238,7 @@ def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callabl
     except ForgeCallFailed as failed:
         say(f'[{item.platform}] could not carry to {target[:12]}: {failed}')
     else:
-        say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: only inert paths changed')
+        say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:

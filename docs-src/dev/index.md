@@ -3,7 +3,7 @@
 How the family's repositories are developed: who writes code, who proves it, and how it reaches `main`.
 
 - Authors edit in a worktree, measure only what they touched, commit and push. Nobody runs a full suite to push.
-- The forge holds every verdict: `forge serve` hosts claim a pushed sha and post its `tests/<platform>` parts.
+- The forge holds every verdict: `forge serve` hosts claim a pushed sha and post its `tests/<part>` parts.
 - `integrate/main` coordinates; `main` moves only by `forge promote`, when every part is a full PASS.
 - `.claude/rules/**` in each repo holds hard constraints only and is read on every turn; these pages hold the
   mechanism and are read when you do the thing.

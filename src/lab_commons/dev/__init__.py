@@ -144,7 +144,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.forgecarry` -- REACH-CARRY: an outcome stands at a descendant whose diff misses its
   test's footprint; per outcome on a cluster run, per part when every test carries.
 * :mod:`lab_commons.dev.footprint` -- the repo paths a test file's outcome can depend on, derived statically.
-* :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<platform>`` part, in the cluster
+* :mod:`lab_commons.dev.localpart` -- a local run as a ``tests/<part>`` part, in the cluster
   record's shape.
 * :mod:`lab_commons.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
   selector: a judged key is cited, not re-run. It decides no push.
@@ -155,8 +155,8 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.integrationhome` -- INTEGRATION-LIVES-IN-THE-MAIN-CHECKOUT: refuses a commit on
   the integration branch or trunk from a linked worktree, and reports the main checkout's lag; and
   PUSH-FROM-ITS-OWN-BRANCH: refuses a push of either branch from any local ref but its namesake.
-* :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per platform it ran on (linux
-  from the cluster, windows/macos from a box), each a ``tests/<platform>`` status on the forge.
+* :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
+  (``base``, ``jmag``, ``femm+windows``...), each a ``tests/<part>`` status on the forge.
 * :mod:`lab_commons.dev.producer` -- the producer exit contract: what a part producer's exit code
   means to ``forge serve`` (PASS, FAIL, refused argv, INCONCLUSIVE, UNREACHABLE), one source.
 * :mod:`lab_commons.dev.dep` -- the family's ONE door for mutating a Python environment, decided by
@@ -274,7 +274,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`lab_commons.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`lab_commons.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
-* :mod:`lab_commons.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``) and what a part needs.
+* :mod:`lab_commons.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``); no live host
+  having a part's need-set is named.
 * :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: close the issues a repo declared finished; never delete.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
@@ -290,7 +291,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
-* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<platform> parts.
+* :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
 * :mod:`lab_commons.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
 * :mod:`lab_commons.dev.forgepulls` -- PR list/retarget and ONE marker-found comment per subject, both forges.
 * :mod:`lab_commons.dev.forgepromote` -- ``forge promote``: the trunk FAST-FORWARDS to a full-PASS integration tip.

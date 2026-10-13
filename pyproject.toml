@@ -82,14 +82,21 @@ pruned_paths = ['.claude/worktrees']
 [tool.lab_commons.hpc]
 install = "uv sync --all-extras"
 
-# The run record's root, and the argv producing each platform's part (`forge tick`, scope full).
-# linux has no argv here: `forge serve` on the cluster login node advances its run, from [tool.lab_commons.hpc].
+# The run record's root (lab_commons.dev.platformparts).
 [tool.lab_commons.parts]
 output = "output/logs"
-produce.windows.full = ["-m", "lab_commons.dev.verify"]
+
+# One need vocabulary (lab_commons.hpc.needsets): a test marks the resources it needs, and its part is its
+# need-set -- tests/base, tests/dev_checkout, tests/node, tests/dev_checkout+node. A host claims a part when
+# its machine file's [capabilities.<name>] (and the probe, for node) give it every one; the cluster's per-sha
+# tree has neither. `produce` is the ONE local producer of every part ({part} filled); a cluster part runs
+# from [tool.lab_commons.hpc].
+[tool.lab_commons.tests]
+resources = ["dev_checkout", "node"]
+produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 
 # The family branch flow: integrate/main coordinates; main moves only by `forge promote` (fast-forward)
-# once every tests/<platform> part of an integration commit stands PASS at scope full.
+# once every derived tests/<part> of an integration commit stands PASS at scope full.
 [tool.lab_commons.integrator]
 trunk = "main"
 integration = "integrate/main"
@@ -140,14 +147,6 @@ markers = [
     "dev_checkout: asserts a developer-checkout invariant (hooks installed, branches on origin, worktree placement)",
     "node: drives the agent-guard engine through a real `node`, which the cluster's compute nodes do not carry",
 ]
-
-# Which platforms can run a marked test (lab_commons.hpc.platforms). The cluster's linux tree is a bare
-# worktree of one sha, not a developer checkout: a dev_checkout test is assigned to the windows part.
-[tool.lab_commons.capabilities]
-# Host capabilities: `on` is the OSes their serving hosts run; the cluster's per-sha tree has neither.
-dev_checkout = { on = ["windows", "macos"] }
-# Ada's compute nodes carry no `node` (measured 2026-10-12); the engine runs where an agent does.
-node = { on = ["windows", "macos"] }
 
 [tool.ruff]
 line-length = 120
