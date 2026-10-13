@@ -225,6 +225,39 @@ def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch,
     assert Claim.parse(renewed[0]) == dataclasses.replace(ME, until=FORGE_NOW + forgeserve.DEFAULT_LEASE)
 
 
+def test_a_producing_host_keeps_publishing_its_card_while_the_producer_runs(monkeypatch, tmp_path: Path) -> None:
+    """A part runs for hours inline; the card must tick at the tick period, holding the part, so STALE means down."""
+    forge, cards = _Forge(), []
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0, beats=3)}, forge, cards=cards)
+    during = cards[:-1]  # the last card is the one published after the tick
+    assert len(during) == 3, 'one card per heartbeat while producing'
+    assert all(card.holds[0].startswith(f'{SHA[:12]} windows producing') for card in during)
+    assert len([d for c, s, d in forge.posts if s == 'pending']) == 3, 'every beat inside the renew interval renews'
+
+
+def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(monkeypatch, tmp_path: Path) -> None:
+    """The card beats at the tick period; the claim is still renewed on its own, longer, cadence."""
+    forge, beats = _Forge(), []
+    item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
+    monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
+    monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
+    monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
+    monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
+    waits: list[float | None] = []
+    proc = _Proc(0, beats=6)
+    inner = proc.wait
+    proc.wait = lambda timeout=None: waits.append(timeout) or inner(timeout)  # type: ignore[method-assign]
+    forgeproduce.produce(
+        tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, clock=lambda: NOW, say=lambda _l: None,
+        lease=timedelta(hours=6), renew_s=30.0, beat_s=10.0, beat=beats.append, fetch=lambda _root: None,
+    )  # fmt: skip
+    assert waits[0] == 10.0, 'the loop wakes at the beat, not the lease third'
+    assert len(beats) == 6
+    assert len([d for c, s, d in forge.posts if s == 'pending']) == 2, 'renewed on beats 3 and 6 only'
+
+
 def test_a_crashed_producer_releases_its_claim(monkeypatch, tmp_path: Path) -> None:
     """PLANTED: the producer dies without posting; its pending claim must not be left to age out."""
     forge = _Forge()

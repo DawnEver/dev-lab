@@ -207,8 +207,12 @@ def publish_card(
     alarms: Sequence[Alarm] = (),
     artefacts: str = '',
     provides: Mapping[str, Mapping[str, Any]] | None = None,
+    progress: str = '',
 ) -> None:
-    """Publish this serving host's card after a tick, with the *alarms* it raised; a refusal is said, never fatal."""
+    """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
+
+    *progress* is what a local part it holds has done so far (``producing 42m``), published while it runs.
+    """
     built = client(root)
     try:
         runs = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerun.live(origin_url(root)))
@@ -220,7 +224,9 @@ def publish_card(
             tick_minutes=float(table.get('tick_minutes', 5)),
             headroom=asdict(standing.headroom) if standing else {},
             facts=standing.facts if standing else {},
-            holds=runs if seat is not None else tuple(f'{one.sha[:12]} {one.platform}' for one in claimed),
+            holds=runs
+            if seat is not None
+            else tuple(f'{one.sha[:12]} {one.platform} {progress}'.rstrip() for one in claimed),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
             artefacts=artefacts,
