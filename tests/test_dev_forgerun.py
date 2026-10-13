@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import artefacts, forgerun, forgeship, forgeslurm
+from lab_commons.dev import artefacts, forgecarry, forgerun, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, Claim, Work
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
@@ -151,7 +151,7 @@ def _tick(
 def test_each_tick_advances_the_run_and_a_restart_resumes_without_resubmitting(home: Path, monkeypatch) -> None:
     store, slurm = _Store(), _Slurm(home / 'run.json.gz')
     posted: list[Path] = []
-    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, path: posted.append(path) or 'posted')
     _start(home, store)
     after = _tick(store, slurm)
     assert after is not None
@@ -274,7 +274,7 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
         msg = 'INCONCLUSIVE: 3 lost'
         raise PartRefusal(msg)
 
-    monkeypatch.setattr(forgerun, 'post', refuse)
+    monkeypatch.setattr(forgecarry, 'post', refuse)
     _start(home, store)
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
@@ -403,7 +403,7 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
 def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted(home: Path, monkeypatch) -> None:
     root, big, slurm = _shipping(home, monkeypatch)
     posted: list[Path] = []
-    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, path: posted.append(path) or 'posted')
     store = _Store()
     _start(home, store, outputs=('fields/*.h5',))
     assert _tick(store, slurm, root=root) is None
@@ -420,7 +420,7 @@ def test_declared_outputs_are_stored_and_named_in_the_record_before_it_is_posted
 def test_planted_control_nothing_declared_stores_nothing(home: Path, monkeypatch) -> None:
     root, big, slurm = _shipping(home, monkeypatch)
     posted: list[Path] = []
-    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, path: posted.append(path) or 'posted')
     store = _Store()
     _start(home, store)
     assert _tick(store, slurm, root=root) is None
@@ -431,7 +431,7 @@ def test_planted_control_nothing_declared_stores_nothing(home: Path, monkeypatch
 def test_a_missing_declared_output_fails_the_run_loudly(home: Path, monkeypatch) -> None:
     root, _big, slurm = _shipping(home, monkeypatch)
     posted: list[Path] = []
-    monkeypatch.setattr(forgerun, 'post', lambda _root, path: posted.append(path) or 'posted')
+    monkeypatch.setattr(forgecarry, 'post', lambda _root, path: posted.append(path) or 'posted')
     store, alarms = _Store(), []
     _start(home, store, outputs=('fields/*.h5', 'fields/*.vtu'))
     assert _tick(store, slurm, root=root, alarms=alarms) is None

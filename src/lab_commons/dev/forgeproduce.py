@@ -2,7 +2,9 @@
 
 Extracted from :mod:`lab_commons.dev.forgeserve` (its module docstring states the contract): the output
 streams prefixed ``[platform]``; the claim is renewed on the FORGE's clock every *renew_s* while the
-producer lives; a ref that moved on stops it (``superseded by <sha>``); a producer past
+producer lives; a ref that moved on stops it (``superseded by <sha>``) unless the new tip is
+reach-equivalent (:mod:`lab_commons.dev.forgecarry`) -- then the run finishes and its part is also posted
+on that tip, naming the sha it was judged at; a producer past
 :data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
 its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose.
 
@@ -27,11 +29,12 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forge import fetch_origin
+from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgeschedule import tip_of
-from lab_commons.dev.forgestatus import status_history, status_post
+from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import part_context
+from lab_commons.dev.platformparts import part_context, parts_of
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
@@ -133,7 +136,7 @@ def _run(
                 break
             fetch(root)
             tip = tip_of(root, item.ref)
-            if tip and tip != item.sha:
+            if tip and tip != item.sha and not equivalent(root, item.sha, tip):
                 proc.kill()
                 returncode = proc.wait()
                 superseded = tip
@@ -155,7 +158,25 @@ def _run(
         reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
+    elif posts and posts[-1].state in SETTLED:
+        _carry(root, client(root), item, posts[-1], say)
     return Produced(item.ref, item.sha, item.platform, argv, returncode)
+
+
+def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callable[[str], None]) -> None:
+    """Post *verdict* -- the part judged at the item's sha -- also on the ref's tip when it is reach-equivalent."""
+    target = carry_target(root, client, ref=item.ref, sha=item.sha, platform=item.platform)
+    part = parts_of([verdict])[0].get(item.platform)
+    if not target or part is None:
+        return
+    carried = dataclasses.replace(part, carried=item.sha[:12])
+    try:
+        status_post(client, target, context=verdict.context, state=verdict.state, description=carried.description(),
+                    target_url=verdict.url)  # fmt: skip
+    except ForgeCallFailed as failed:
+        say(f'[{item.platform}] could not carry to {target[:12]}: {failed}')
+    else:
+        say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: only inert paths changed')
 
 
 def _post(client: Client, item: Work, state: str, description: str, say: Callable[[str], None]) -> None:

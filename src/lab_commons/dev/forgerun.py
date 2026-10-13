@@ -34,7 +34,9 @@ PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``buildi
 ``running 40/93 done 12/93``, ``publishing`` -- the owner re-posts its pending claim with that progress
 (:class:`lab_commons.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
 status links the run record. A run whose REF MOVED ON is SUPERSEDED (:func:`supersede`): its Slurm jobs
-are cancelled and its claim released as ``superseded by <sha>``, so nothing finishes for nothing.
+are cancelled and its claim released as ``superseded by <sha>``, so nothing finishes for nothing -- unless
+the new tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`): then the run finishes, and its
+record is posted on the tip too, as a part naming the sha it was judged at.
 
 THE FILE IS SCHEMA-VERSIONED (:data:`SCHEMA`). A tool upgraded under a live run never reads a run
 of another schema: :func:`live` refuses with the remedy (:class:`ForeignSchema`), so the run is
@@ -57,12 +59,13 @@ from lab_commons.config import config_path
 from lab_commons.dev import forgeship
 from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
+from lab_commons.dev.forgecarry import equivalent, publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgeroute import pyproject_at, route
 from lab_commons.dev.forgeschedule import Headroom, tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import PartRefusal, part_context, post
+from lab_commons.dev.platformparts import PartRefusal, part_context
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.run import NotSubmitted
@@ -279,7 +282,7 @@ def advance(
             run = _report(client, run, 'publishing', lease, say)
         if run.phase == GATHERED:
             run = _ship(root, run, client=client, cluster=cluster, say=say, tag=tag)
-            say(post(root, Path(run.record)))
+            say(publish(root, Path(run.record), client=client, ref=run.ref, sha=run.sha, platform=run.platform))
             run = _step(run, phase=PUBLISHED)
     except (MissingOutput, NotSubmitted, PartRefusal) as why:
         say(f'{tag}: {why}')
@@ -322,11 +325,11 @@ def supersede(run: Run, tip: str, *, client: Client, cluster: Cluster, say: Call
 def supersede_moved(
     root: Path, runs: list[Run], *, client: Client, cluster: Cluster, say: Callable[[str], None]
 ) -> list[Run]:
-    """:func:`supersede` every run whose ref's origin tip moved on; the runs kept."""
+    """:func:`supersede` every run whose ref's origin tip moved on to a tip it is not equivalent to; the runs kept."""
     kept = []
     for run in runs:
         tip = tip_of(root, run.ref)
-        if tip and tip != run.sha:
+        if tip and tip != run.sha and not equivalent(root, run.sha, tip):
             supersede(run, tip, client=client, cluster=cluster, say=say)
         else:
             kept.append(run)

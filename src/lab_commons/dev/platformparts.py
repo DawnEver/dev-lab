@@ -16,9 +16,12 @@ workstation can read without the record -- :meth:`Part.description`::
     scope=full ran=1234 hands=windows:12,macos:3 nowhere=0
 
 ``hands`` is, per OTHER platform, how many collected ids this part assigned to it; ``nowhere`` how
-many ids no declared platform can run. The full per-id outcome stays in the run record, attached on
-the forge and linked as the status's ``target_url`` (:mod:`lab_commons.dev.forgerecords`). A ``pending``
-status in the same context is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
+many ids no declared platform can run. A part CARRIED to a reach-equivalent descendant
+(:mod:`lab_commons.dev.forgecarry`) ends ``carried from <sha12>: only inert paths changed`` and is a
+part like any other: the sha it was judged at is named, never hidden. The full per-id outcome stays in
+the run record, attached on the forge and linked as the status's ``target_url``
+(:mod:`lab_commons.dev.forgerecords`). A ``pending`` status in the same context is a CLAIM on the part
+(:mod:`lab_commons.dev.forgetick`), not a part.
 
 * A part comes from a RUN record (``run-<sha>-<platform>-<req>.json.gz``): ``python -m lab_commons.hpc
   run gather`` writes it, and ``python -m lab_commons.dev.platformparts post <record>`` queues its
@@ -59,6 +62,7 @@ never a command with a hole in it.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import re
 import sys
 from dataclasses import dataclass, field
@@ -125,7 +129,8 @@ _RESULT: Final = {state: result for result, state in _STATE.items()}
 
 _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
-    r'hands=(?P<hands>-|[a-z0-9_]+:\d+(?:,[a-z0-9_]+:\d+)*) nowhere=(?P<nowhere>\d+)$'
+    r'hands=(?P<hands>-|[a-z0-9_]+:\d+(?:,[a-z0-9_]+:\d+)*) nowhere=(?P<nowhere>\d+)'
+    r'(?: carried from (?P<carried>[0-9a-f]{12}): only inert paths changed)?$'
 )
 
 #: The remedy a missing part names: the tick that claims it runs :func:`part_argv`.
@@ -259,6 +264,7 @@ class Part:
     ran: int
     hands: dict[str, int] = field(default_factory=dict)
     nowhere: int = 0
+    carried: str = ''  # the sha12 this verdict was judged at, when it is carried (lab_commons.dev.forgecarry)
 
     @property
     def state(self) -> str:
@@ -268,7 +274,8 @@ class Part:
     def description(self) -> str:
         """The status description: ``scope= ran= hands= nowhere=`` (module docstring)."""
         hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
-        return f'scope={self.scope} ran={self.ran} hands={hands} nowhere={self.nowhere}'
+        carried = f' carried from {self.carried}: only inert paths changed' if self.carried else ''
+        return f'scope={self.scope} ran={self.ran} hands={hands} nowhere={self.nowhere}{carried}'
 
 
 def part_of(record: Mapping[str, Any]) -> Part:
@@ -335,6 +342,7 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
             ran=int(found['ran']),
             hands={name: int(count) for name, count in hands.items()},
             nowhere=int(found['nowhere']),
+            carried=found['carried'] or '',
         )
     return parts, tuple(problems)
 
@@ -430,11 +438,18 @@ def _settled(*, failed: bool, problems: Sequence[str]) -> str:
     return '' if problems else 'PASS'
 
 
-def post(root: Path, path: Path) -> str:
-    """Queue the part *path*'s record proves, with the record attached, and flush; returns the lines."""
+def post(root: Path, path: Path, onto: str = '') -> str:
+    """Queue the part *path*'s record proves, with the record attached, and flush; returns the lines.
+
+    *onto* names a reach-equivalent descendant (:mod:`lab_commons.dev.forgecarry`): the same part is
+    posted THERE instead, naming the record's sha it was judged at.
+    """
     record = read_record(path)
     part = part_of(record)
-    enqueue(root, Post(str(record['sha']), part_context(part.platform), part.state, part.description()), record=path)
+    if onto:
+        part = dataclasses.replace(part, carried=str(record['sha'])[:12])
+    sha = onto or str(record['sha'])
+    enqueue(root, Post(sha, part_context(part.platform), part.state, part.description()), record=path)
     lines = flush(root)
     return '\n'.join([f'[platformparts] {part.platform} part {part.result}: {part.description()}', *lines])
 

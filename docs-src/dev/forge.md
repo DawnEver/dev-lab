@@ -110,6 +110,12 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
 - **Supersede.** When a ref moves on, its in-flight run is cancelled and released `superseded by <sha12>`.
+- **Carry, not supersede, across an inert diff** (`lab_commons.dev.forgecarry`). A repo declares the paths
+  no test reads, `[tool.lab_commons.parts] inert = [".claude/memory/**", "docs-src/**", "*.md"]`
+  (`fnmatch`, `*` crosses `/`). When the new tip descends from the run's sha and every path in
+  `git diff --no-renames` matches, the run finishes; its part is posted on its own sha and on the tip as
+  `scope=... carried from <sha12>: only inert paths changed`, which admission and promote read as the part
+  it is. One non-inert path, no ancestry, nothing declared, or a tip already settled: no carry.
 
 ## Scheduling
 
