@@ -328,17 +328,11 @@ def summary(done: Outcome, usage: Usage | None, *, applied: bool) -> list[str]:
     total = sum(paths for paths, _, _ in done.by_rule.values())
     lines.append(f'[retention] {verb} {total} paths, {done.freed_bytes / _MB:.1f} MB, {done.freed_files} files')
     if usage is not None:
-        gb = 1024**3
-        block = (
-            f'bytes {usage.used / gb:.1f}/{usage.limit / gb:.1f} GB -> {(usage.used - done.freed_bytes) / gb:.1f} GB'
-        )
-        lines.append(f'[retention] usage {block}')
+        gb, after = 1024**3, usage.used - done.freed_bytes
+        lines.append(f'[retention] usage bytes {usage.used / gb:.1f}/{usage.limit / gb:.1f} GB -> {after / gb:.1f} GB')
         if usage.files is not None and usage.files_limit:
-            now, after = usage.files, usage.files - done.freed_files
-            ceiling = usage.files_limit
-            lines.append(
-                f'[retention] usage files {now}/{ceiling} ({now / ceiling:.1%}) -> {after} ({after / ceiling:.1%})'
-            )
+            now, left, cap = usage.files, usage.files - done.freed_files, usage.files_limit
+            lines.append(f'[retention] usage files {now}/{cap} ({now / cap:.1%}) -> {left} ({left / cap:.1%})')
     return lines
 
 
