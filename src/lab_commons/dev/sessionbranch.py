@@ -22,7 +22,8 @@ The invariants refused here by name, with NO network call beyond the push itself
   (:func:`lab_commons.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
   Judged from ``[tool.lab_commons.integrator] merges_only_since`` forward: no retroactive check.
 
-There is no bypass: a guard that cannot judge (no branch set) refuses.
+Every ref is judged by the declaration its pushed tip carries, never the working tree's. There is no bypass:
+a guard that cannot judge (no branch set at that tip) refuses.
 """
 
 from __future__ import annotations
@@ -35,8 +36,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
-from lab_commons.dev.lanepolicy import Policy, load_policy
+from lab_commons.dev.branchset import BranchSetNotDeclared, branchset_at
+from lab_commons.dev.lanepolicy import Policy, policy_at
 from lab_commons.dev.mergeaudit import MergeAuditError, judge
 from lab_commons.log import emit
 
@@ -143,16 +144,23 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
 
 
 def refusals(root: Path, lines: str) -> list[str]:
-    """Every refusal for the push *lines* describe; local reads only."""
-    try:
-        declared = declared_branchset(root)
-    except BranchSetNotDeclared as exc:
-        return [f'{P2}: this checkout declares no readable branch set, so no session branch can be judged: {exc}']
-    policy = load_policy(root)
-    guarded = {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}
+    """Every refusal for the push *lines* describe; local reads only.
+
+    Each ref is judged by the declaration its PUSHED tip carries (the old tip's, for a deletion) -- never the
+    working tree's, which may be any branch or none.
+    """
     found: list[str] = []
     for fields in (line.split() for line in lines.splitlines()):
-        if len(fields) == _FIELDS and fields[2] in guarded:
+        if len(fields) != _FIELDS or not fields[2].startswith(_HEADS):
+            continue
+        at = fields[3] if _zero(fields[1]) else fields[1]
+        try:
+            declared = branchset_at(root, at)
+            policy = policy_at(root, at)
+        except (BranchSetNotDeclared, ValueError, subprocess.CalledProcessError) as exc:
+            found.append(f'{P2}: {at[:12]} declares no readable branch set, so {fields[2]} cannot be judged: {exc}')
+            continue
+        if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             found += _judge_ref(root, policy, fields)
     return found
 

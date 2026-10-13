@@ -35,11 +35,13 @@ from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgestatus import status_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.githooks.runner import run_stage
-from lab_commons.dev.lanepolicy import Policy, load_policy
+from lab_commons.dev.githooks.table import hook_table_from
+from lab_commons.dev.lanepolicy import Policy, policy_at
 from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, judge
 from lab_commons.dev.platformparts import standing
 from lab_commons.dev.sessionbranch import MERGED_BRANCH
 from lab_commons.dev.trialmerge import contains, rev
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 
@@ -83,9 +85,13 @@ def _move(root: Path, branch: str, new: str, old: str | None) -> None:
 
 
 def merge(root: Path, branch: str, *, audit: Sequence[str] = ()) -> str:
-    """Merge *branch* into the local integration branch with no working tree; the new tip (or the old, if merged)."""
-    policy = load_policy(root)
-    target = policy.integration
+    """Merge *branch* into the local integration branch with no working tree; the new tip (or the old, if merged).
+
+    The declaration is read from COMMITS, never the working tree: the integration branch's name from
+    *branch*'s tip (the commit arriving), then the whole policy from the MERGED tree -- the commit being made
+    declares the policy it lands under -- which must name the same integration branch.
+    """
+    target = _policy(root, branch).integration
     _unchecked_out(root, target)
     if (_git(root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).returncode == 0:
         msg = f'{root} is in the middle of a merge; finish or abort it first (its commit-msg rows would judge it)'
@@ -105,8 +111,13 @@ def merge(root: Path, branch: str, *, audit: Sequence[str] = ()) -> str:
         msg = f'git merge-tree failed: {tried.stderr.strip()}'
         raise IntegrateRefused(msg)
     tree = tried.stdout.splitlines()[0].strip()
+    policy = _policy(root, tree)
+    if policy.integration != target:
+        msg = f'the merged tree declares integration {policy.integration!r}, but {branch} declares {target!r}'
+        raise IntegrateRefused(msg)
     ledger = ''.join(f'{TRAILER}: {line}\n' for line in audit)
-    message = _checked_message(root, f'chore(merge): {branch} into {target}\n\n{MERGED_BRANCH}: {branch}\n{ledger}')
+    text = f'chore(merge): {branch} into {target}\n\n{MERGED_BRANCH}: {branch}\n{ledger}'
+    message = _checked_message(root, tree, text)
     try:
         problems = judge(root, [tip, other], tree, message, roots=policy.test_roots, label=f'{branch} into {target}')
     except MergeAuditError as error:
@@ -123,12 +134,21 @@ def merge(root: Path, branch: str, *, audit: Sequence[str] = ()) -> str:
     return sha
 
 
-def _checked_message(root: Path, message: str) -> str:
-    """*message* after the repo's own commit-msg stage (which may append a trailer); refused when a row fails."""
+def _policy(root: Path, at: str) -> Policy:
+    try:
+        return policy_at(root, at)
+    except (ValueError, subprocess.CalledProcessError) as exc:
+        msg = f'the declaration at {at} cannot be read: {exc}'
+        raise IntegrateRefused(msg) from exc
+
+
+def _checked_message(root: Path, tree: str, message: str) -> str:
+    """*message* after the commit-msg rows *tree* declares (which may append a trailer); refused when one fails."""
+    rows = hook_table_from(pyproject_at(root, tree), f'{tree}:pyproject.toml').get('commit-msg', ())
     with tempfile.TemporaryDirectory() as scratch:
         path = Path(scratch) / 'COMMIT_EDITMSG'
         path.write_text(message, encoding='utf-8')
-        if run_stage('commit-msg', [str(path)], root=root):
+        if run_stage('commit-msg', [str(path)], root=root, hooks=rows):
             msg = 'the commit-msg hook stage refused the merge message (its rows are printed above)'
             raise IntegrateRefused(msg)
         return path.read_text(encoding='utf-8')
@@ -155,8 +175,11 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
 
 
 def promote(root: Path, client: Client, sha: str) -> Promotion:
-    """:func:`decide`, then the local fast-forward of the trunk ref when it says ``promote``."""
-    policy = load_policy(root)
+    """:func:`decide`, then the local fast-forward of the trunk ref when it says ``promote``.
+
+    The declaration is the one *sha* -- the commit being promoted -- carries, never the working tree's.
+    """
+    policy = _policy(root, sha)
     _unchecked_out(root, policy.trunk)
     found = decide(root, client, policy, sha)
     if found.action == 'promote':
@@ -180,14 +203,15 @@ def main(
     verbs.add_parser('promote').add_argument('sha')
     args = parser.parse_args(argv)
     root = Path.cwd() if cwd is None else cwd
-    policy = load_policy(root)
     try:
         if args.verb == 'merge':
             sha = merge(root, args.branch, audit=args.audit)
-            emit(f'[integrate] {policy.integration} at {sha}; publish it: git push origin {policy.integration}')
+            target = _policy(root, sha).integration
+            emit(f'[integrate] {target} at {sha}; publish it: git push origin {target}')
             return 0
         fetch(root)
         found = promote(root, client or client_for(root), args.sha)
+        trunk = _policy(root, args.sha).trunk
     except IntegrateRefused as refused:
         emit(f'[integrate] REFUSED: {refused}', err=True)
         return 2
@@ -195,12 +219,12 @@ def main(
         emit(f'[integrate] {failed}', err=True)
         return 1
     if found.action == 'refused':
-        emit(f'[integrate] REFUSED: {policy.trunk} stays where it is.', err=True)
+        emit(f'[integrate] REFUSED: {trunk} stays where it is.', err=True)
         for reason in found.reasons:
             emit(f'[integrate]   {reason}', err=True)
         return 2
     verb = 'already at' if found.action == 'current' else 'fast-forwarded to'
-    emit(f'[integrate] {policy.trunk} {verb} {found.sha}; publish it: git push origin {policy.trunk}')
+    emit(f'[integrate] {trunk} {verb} {found.sha}; publish it: git push origin {trunk}')
     return 0
 
 

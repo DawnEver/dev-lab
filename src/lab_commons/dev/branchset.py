@@ -30,10 +30,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import subprocess
 import tomllib
 from pathlib import Path
 
 from lab_commons.dev.checkout import authority_for, git_out, origin_branches
+from lab_commons.hpc.declared import pyproject_at
 from lab_commons.log import emit
 
 __all__ = [
@@ -43,6 +45,8 @@ __all__ = [
     'Candidate',
     'Census',
     'apply_local',
+    'branchset_at',
+    'branchset_from',
     'census',
     'declared_branchset',
     'main',
@@ -106,8 +110,28 @@ def declared_branchset(root: Path) -> BranchSet:
     """
     manifest = root / 'pyproject.toml'
     try:
-        data = tomllib.loads(manifest.read_text(encoding='utf-8'))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+        text = manifest.read_text(encoding='utf-8')
+    except OSError as exc:
+        msg = f'{manifest} is not a readable TOML manifest: {exc}'
+        raise BranchSetNotDeclared(msg) from exc
+    return branchset_from(text, str(manifest))
+
+
+def branchset_at(root: Path, rev: str) -> BranchSet:
+    """The branch set commit or tree *rev* of *root* declares -- never the working tree's."""
+    try:
+        text = pyproject_at(root, rev)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        msg = f'{rev}:pyproject.toml is not readable in {root}: {exc}'
+        raise BranchSetNotDeclared(msg) from exc
+    return branchset_from(text, f'{rev}:pyproject.toml')
+
+
+def branchset_from(text: str, manifest: str) -> BranchSet:
+    """The branch set *text* declares; *manifest* names where it came from in every refusal."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
         msg = f'{manifest} is not a readable TOML manifest: {exc}'
         raise BranchSetNotDeclared(msg) from exc
     table = data.get('tool', {}).get('lab_commons', {}).get('branchset')

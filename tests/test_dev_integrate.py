@@ -129,3 +129,29 @@ def test_the_cli_exits_two_on_a_refusal(work: Path, capsys: pytest.CaptureFixtur
     run_git(work, 'checkout', '-q', 'integrate/main')
     assert integrate.main(['merge', 'lane/x'], cwd=work) == 2
     assert 'REFUSED' in capsys.readouterr().err
+
+
+_RETIRED = '[tool.lab_commons.integrator]\nhost = "G"\n'
+
+
+def test_merge_reads_the_merged_tree_never_the_working_tree(work: Path) -> None:
+    """THE CUT-OVER INCIDENT (2026-10-14): a working tree on an old commit carried the retired ``host`` key.
+
+    PLANTED CONTROL: the same retired key committed on the branch -- so the merged tree declares it -- refuses.
+    """
+    commit(work, 'x.txt', 'x\n')
+    (work / 'pyproject.toml').write_text('not [toml\n' + _RETIRED, encoding='utf-8')
+    assert merge(work, 'lane/x')
+    commit(work, 'pyproject.toml', _RETIRED)
+    with pytest.raises(IntegrateRefused, match='host is retired'):
+        merge(work, 'lane/x')
+
+
+def test_promote_reads_the_promoted_sha_never_the_working_tree(server, tmp_path: Path) -> None:
+    _, repo = clone_pair(tmp_path)
+    tip = advance(repo, 'integrate/main', 'f.txt', 'f\n')
+    run_git(repo, 'checkout', '-q', '--detach')
+    run_git(repo, 'branch', '-f', 'main', 'origin/main')
+    (repo / 'pyproject.toml').write_text('not [toml\n' + _RETIRED, encoding='utf-8')
+    answer('GET', f'{GAPI}/statuses/{tip}', (200, [_part()]))
+    assert promote(repo, client(GITEA, Loopback(server)), tip).action == 'promote'

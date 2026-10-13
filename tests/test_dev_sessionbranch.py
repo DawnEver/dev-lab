@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.sessionbranch import P3
+from lab_commons.dev.sessionbranch import P2, P3
 
 _GIT = shutil.which('git') or 'git'
 _DECL = (
@@ -209,10 +209,31 @@ def test_creating_the_integration_branch_judges_only_commits_after_the_declared_
     assert done.returncode != 0
     assert 'merges_only_since' in done.stderr
     seed = _git(repo, 'rev-parse', 'stable')
+    _git(repo, 'checkout', 'lane/x')
     text = (repo / 'pyproject.toml').read_text(encoding='utf-8')
     (repo / 'pyproject.toml').write_text(text + f"merges_only_since = '{seed}'\n", encoding='utf-8')
+    _git(repo, 'commit', '-am', 'chore: start INTEGRATION-IS-MERGES-ONLY at the seed')
+    message = 'chore(merge): lane/x into int/line\n\nMerged-Branch: lane/x\n'
+    merge = _git(repo, 'commit-tree', 'lane/x^{tree}', '-p', seed, '-p', 'lane/x', '-m', message)
+    _git(repo, 'branch', '-f', 'int/line', merge)
+    _git(repo, 'checkout', 'stable')
     done = _push(repo, 'int/line')
     assert done.returncode == 0, done.stderr
+
+
+def test_a_push_is_judged_by_its_pushed_tip_never_the_working_tree(repo: Path) -> None:
+    """PLANTED: a working tree holding garbage and a retired key changes no verdict either way."""
+    (repo / 'pyproject.toml').write_text(
+        'this is [not toml\n[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8'
+    )
+    _git(repo, 'branch', '-f', 'feat/s', _git(repo, 'commit-tree', 'stable^{tree}', '-p', 'feat/s', '-m', 'feat: s'))
+    done = _push(repo, 'feat/s')
+    assert done.returncode == 0, done.stderr
+    _git(
+        repo, 'branch', '-f', 'lane/x', _git(repo, 'commit-tree', 'stable^{tree}', '-p', 'feat/s', '-m', 'feat: other')
+    )
+    refused = _push(repo, 'lane/x:feat/s')
+    assert P2 in refused.stderr, 'the guard still judges, from the pushed tip'
 
 
 def test_two_sessions_in_two_worktrees_of_one_repo_on_one_host_never_share_a_writer(repo: Path, tmp_path: Path) -> None:
