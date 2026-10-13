@@ -41,7 +41,7 @@ from lab_commons.dev.boxwait import MEASURE_WAIT_S
 from lab_commons.dev.cpuseat import CPU_POOL
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
-from lab_commons.dev.platformparts import part_context, part_of, this_platform
+from lab_commons.dev.platformparts import part_context, part_of
 from lab_commons.dev.producer import PRODUCING_VAR, ProducerExit, producing
 from lab_commons.dev.reports import (
     SKIP_CEILING,
@@ -56,7 +56,7 @@ from lab_commons.dev.runcache import CachedRun, runs
 from lab_commons.dev.verdict import Outcome, Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
-from lab_commons.hpc.platforms import Table
+from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
 from lab_commons.resources import Basis, Exhausted
 
@@ -864,7 +864,7 @@ class TestTheTeeOnAColouredStep:
 @pytest.fixture(autouse=True)
 def _as_the_producer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Most tests here drive a FULL run, which only a producer ``forge serve`` spawned may take."""
-    for name, value in producing(part_context(this_platform()), 'a' * 40).items():
+    for name, value in producing(part_context(BASE), 'a' * 40).items():
         monkeypatch.setenv(name, value)
 
 
@@ -918,17 +918,18 @@ def _patched_main(
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(localpart, 'local_record', lambda _root, **fields: fields)
+    monkeypatch.setattr(localpart, 'read_outcomes', lambda _judged: {'t::a': 'passed'})
+    monkeypatch.setattr(localpart, 'owners', lambda _root, _sha, reported, _collect: dict.fromkeys(reported, BASE))
+    monkeypatch.setattr(localpart, 'present_here', lambda: frozenset({'windows'}))
+    monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
     assert verify.main([]) == EXIT_CODES[Outcome.PASS]
     return posted
 
 
-def test_a_judged_clean_run_posts_this_platforms_full_part_on_head(monkeypatch, tmp_path: Path) -> None:
+def test_a_judged_clean_run_posts_its_base_part_on_head(monkeypatch, tmp_path: Path) -> None:
     posted = _patched_main(monkeypatch, tmp_path, heads=['a' * 40, 'a' * 40], dirt=[(), ()])
-    assert [(record['sha'], record['platform'], record['scope']) for record in posted] == [
-        ('a' * 40, localpart.this_platform(), 'full')
-    ]
+    assert [(record['sha'], record['part'], record['scope']) for record in posted] == [('a' * 40, BASE, 'full')]
 
 
 def test_a_dirty_tree_queues_nothing_and_keeps_the_exit_code(monkeypatch, tmp_path: Path) -> None:
@@ -1025,7 +1026,7 @@ def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str,
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
     (tmp_path / 'judged.outcomes').mkdir()
     (tmp_path / 'judged.outcomes' / 'outcomes.json').write_text(json.dumps(judged), encoding='utf-8')
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: Table())
+    monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: Vocabulary())
     posted: list[Path] = []
     monkeypatch.setattr(localpart, 'post', lambda _root, path: posted.append(path) or 'posted')
     return posted
@@ -1121,17 +1122,18 @@ def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_p
     assert verify.main(['--no-status', '--rerun']) == ProducerExit.PASS
 
 
-def test_a_held_box_exits_3_from_a_real_process() -> None:
+def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
-    A child holds this box's CPU seat and a second ``python -m lab_commons.dev.verify --lock-wait-s 0``
-    runs; whatever already holds the seat on this box (a sibling's heavy run) only makes the wait real.
-    Its selection is its own, so the run key differs from any enclosing verify and it cannot attach to it.
-    The second run is INTERACTIVE (a developer's targeted verify): a producer ``forge serve`` spawned takes
-    no box seat (:mod:`lab_commons.dev.boxwait`), so the seat is the interactive runs' alone.
+    A targeted verify is LIGHT (user ruling 2026-10-13: light runs never queue on a heavy holder), so
+    what refuses it is its own pool full: a child holds every light seat of a PRIVATE record root, and a
+    second ``python -m lab_commons.dev.verify --lock-wait-s 0`` runs against that root. Its selection is
+    its own, so the run key differs from any enclosing verify and it cannot attach to it.
     """
+    records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path)}
     holder = subprocess.Popen(
         [sys.executable, '-c', _HOLD_SEAT],
+        env=os.environ | records,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -1139,7 +1141,7 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
     )
     try:
         assert holder.stdout is not None
-        holder.stdout.readline()  # 'held' or the refusal: either way the seat is now taken
+        assert holder.stdout.readline().strip() == 'held', 'the planted holder never took the light seats'
         done = subprocess.run(
             [
                 sys.executable,
@@ -1155,7 +1157,7 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
                 'held_box_probe',
             ],
             cwd=Path(__file__).resolve().parents[1],
-            env={name: value for name, value in os.environ.items() if name != PRODUCING_VAR},
+            env={name: value for name, value in os.environ.items() if name != PRODUCING_VAR} | records,
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -1169,16 +1171,45 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
     assert 'this box is held and nothing was measured' in done.stderr
 
 
-#: A child that takes the box's CPU seat and holds it until killed (the seat may already be held).
+#: A child that takes EVERY light seat of its record root and holds them until killed.
 _HOLD_SEAT: Final = (
-    'import sys, time\n'
-    'from lab_commons.dev.cpuseat import CpuSeat\n'
-    'from lab_commons.resources import Exhausted\n'
-    'try:\n'
-    "    with CpuSeat('planted-holder', wait_s=0).held():\n"
-    "        print('held', flush=True)\n"
-    '        time.sleep(600)\n'
-    'except Exhausted:\n'
-    "    print('already held', flush=True)\n"
+    'import contextlib, os, time\n'
+    'from lab_commons.dev.cpuseat import LIGHT_WIDTH, CpuSeat\n'
+    'with contextlib.ExitStack() as stack:\n'
+    '    for one in range(max(1, (os.cpu_count() or 1) // LIGHT_WIDTH)):\n'
+    "        stack.enter_context(CpuSeat(f'planted-light-{one}', {'memory': 1}, saturating=False).held())\n"
+    "    print('held', flush=True)\n"
     '    time.sleep(600)\n'
 )
+
+
+def test_a_producer_told_its_part_runs_exactly_its_need_set_and_posts_it_alone(monkeypatch, tmp_path: Path) -> None:
+    """``verify --part femm`` is the declared producer's form: one -m selecting the need-set, one part posted."""
+    _cached(monkeypatch, tmp_path)
+    declared = '[tool.lab_commons.parts]\noutput = "out"\n[tool.lab_commons.tests]\nresources = ["femm", "jmag"]\n'
+    (tmp_path / 'pyproject.toml').write_text(declared, encoding='utf-8')
+    for name, value in producing(part_context('femm'), 'a' * 40).items():
+        monkeypatch.setenv(name, value)
+    ran: list[tuple[str, ...]] = []
+    monkeypatch.setattr(verify, 'run_verify', lambda _root, arguments, **_k: ran.append(arguments) or _judged(tmp_path))
+    posts: list[tuple[tuple[str, ...], str]] = []
+
+    def post(*_a: object, arguments: tuple[str, ...], part: str, **_k: object) -> str:
+        posts.append((arguments, part))
+        return 'posted'
+
+    monkeypatch.setattr(verify, 'post_part', post)
+    assert verify.main(['--part', 'femm']) == ProducerExit.PASS
+    assert ran == [('-m', 'femm and not jmag')]
+    assert posts == [((), 'femm')], 'its own selection is the part, of scope full'
+
+
+def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatch, tmp_path: Path, capsys) -> None:
+    """PLANTED CONTROL: a need-set naming an undeclared resource selects nothing a test can carry."""
+    _cached(monkeypatch, tmp_path)
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nresources = ["femm"]\n', encoding='utf-8')
+    for name, value in producing(part_context('matlab'), 'a' * 40).items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a refused part ran'))
+    assert verify.main(['--part', 'matlab']) == ProducerExit.USAGE
+    assert "needs ['matlab']" in capsys.readouterr().err

@@ -22,18 +22,23 @@ WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The produ
 sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
 a run that ended on its own (not superseded, not stopped) records its peak, wall and MEASURED cpu-seconds
-under ``(platform, no needs)`` -- the box half of the one demand table a Slurm run also writes. Each wake
+under ``(local, its need-set)`` -- the box half of the one demand table a Slurm run also writes. Each wake
 also hands *watch* what the tree uses now (cores busy since the last wake, resident GB), so a serve that
 keeps claiming while it runs can see it. A signalled exit's peak is a floor
 (:func:`~lab_commons.compute.learned.record_run`).
+
+A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): a light run is
+admitted beside a heavy part (:mod:`lab_commons.dev.boxwait`), and the scheduler keeps it responsive.
 """
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import math
 import os
 import subprocess
+import sys
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -41,7 +46,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.compute.learned import Run, record_run
+from lab_commons.compute.learned import LOCAL, Run, record_run
 from lab_commons.compute.model import Resources
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
@@ -53,6 +58,7 @@ from lab_commons.dev.platformparts import origin_url, part_context, parts_of
 from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
+from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
@@ -86,8 +92,8 @@ def tree_gb(pid: int) -> float | None:
 
 
 def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
-    """Record one finished box run of *root*'s repository under ``(platform, no needs)``."""
-    record_run(origin_url(root), item.platform, (), run, killed=killed)
+    """Record one finished box run of *root*'s repository under ``(local, the part's need-set)``."""
+    record_run(origin_url(root), LOCAL, needs_of(item.platform), run, killed=killed)
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -158,7 +164,8 @@ def _run(
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
-    proc = spawn(
+    proc = below_normal(
+        spawn,
         list(argv),
         cwd=tree,
         env=os.environ | producing(context, item.sha),
@@ -269,3 +276,24 @@ def _post(client: Client, item: Work, state: str, description: str, say: Callabl
         say(f'[{item.platform}] could not post {state}: {failed}')
     else:
         say(f'[{item.platform}] {state}: {description}')
+
+
+#: The POSIX niceness a producer runs at: below normal, so an interactive run keeps the scheduler's favour.
+BELOW_NORMAL_NICE: Final = 10
+
+
+def below_normal[P](spawn: Callable[..., P], argv: list[str], **kwargs: object) -> P:
+    """Start *argv* through *spawn* at BELOW-NORMAL priority, which its descendants inherit.
+
+    Windows: ``BELOW_NORMAL_PRIORITY_CLASS`` at creation. POSIX has no creation flag (``preexec_fn`` is
+    unsafe beside serve's threads), so a real child is reniced at once, before it spawns workers; a
+    renice the OS refuses (a parent already nicer, a child already gone) leaves it where it is.
+    """
+    if sys.platform == 'win32':
+        flags = int(kwargs.pop('creationflags', 0) or 0) | subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        return spawn(argv, creationflags=flags, **kwargs)
+    proc = spawn(argv, **kwargs)
+    if isinstance(proc, subprocess.Popen):
+        with contextlib.suppress(OSError):
+            os.setpriority(os.PRIO_PROCESS, proc.pid, BELOW_NORMAL_NICE)
+    return proc

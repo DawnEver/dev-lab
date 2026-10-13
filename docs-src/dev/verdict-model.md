@@ -34,7 +34,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 |---|---|
 | a child branch | none: push; the forge produces its parts afterwards |
 | the integration branch | none: the integrator merges on the children's parts |
-| `main` | every `tests/<platform>` part of HEAD a PASS at scope `full`, read from the forge |
+| `main` | every `tests/<part>` part of HEAD a PASS at scope `full`, read from the forge |
 
 - **The bar is the increment, not the tree** (`VERDICT-BAR-IS-THE-INCREMENT`): a red your change did not cause
   is inventory, routed to its `area:*` issue, never your blocker.
@@ -50,6 +50,11 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - A key the run cache already holds is cited without running (`lab_commons.dev.runcache`); `--rerun` overrides.
 - A measure waits at most `MEASURE_WAIT_S` for the box and then refuses naming the holder; the producer queues
   (`boxwait.WAIT_S`).
+- Only a run that SATURATES the box takes its seat. A LIGHT run (a targeted selection, width capped at
+  `cpuseat.LIGHT_WIDTH`) is admitted by its declared memory and never waits on a heavy holder; heavy still
+  excludes heavy (user ruling 2026-10-13, `boxwait.hold_run_seats(memory_bytes=)`).
+- A heavy part is offered only for the refs its `[tool.lab_commons.parts.refs.<part>] <scope>` admits
+  (`platformparts.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
 
 ## The verdict itself
 

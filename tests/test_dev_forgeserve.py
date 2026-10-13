@@ -353,7 +353,7 @@ def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypat
 def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monkeypatch, tmp_path: Path) -> None:
     cluster_claim = dataclasses.replace(ME, hpc='ada/alice')
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
-    work = Work('integrate/main', SHA, 'linux', 'mine', cluster_claim, cluster=part)
+    work = Work('integrate/main', SHA, 'base', 'mine', cluster_claim, cluster=part)
     advanced: list[tuple[str, str]] = []
 
     def advance(_root: Path, run: forgerun.Run, **kwargs: object) -> forgerun.Run:
@@ -376,7 +376,7 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
 def test_a_run_with_no_cluster_to_advance_on_alarms_and_waits(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
-    forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', ME, cluster=part), ME)
+    forgerun.start(Work('integrate/main', SHA, 'base', 'mine', ME, cluster=part), ME)
 
     def no_grant() -> None:
         msg = 'no [[hpc.grant]] has user = "alice"'
@@ -392,16 +392,16 @@ def test_the_alarms_a_tick_raises_ride_on_its_host_card(monkeypatch, tmp_path: P
     """A stuck run is read from the forge, not from a cron log. PLANTED CONTROL: a calm tick's card is clean."""
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     cards: list = []
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, cards=cards, host='linux')
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, cards=cards, host='base')
     assert cards[-1].alarms == ()
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
-    forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', ME, cluster=part), ME)
+    forgerun.start(Work('integrate/main', SHA, 'base', 'mine', ME, cluster=part), ME)
 
     def no_grant() -> None:
         msg = 'no [[hpc.grant]] has user = "alice"'
         raise ValueError(msg)
 
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=no_grant, cards=cards, host='linux')
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=no_grant, cards=cards, host='base')
     (raised,) = cards[-1].alarms
     assert raised['kind'] == RUN
     assert raised['subject'] == f'the cluster run of {SHA[:12]} cannot advance'
@@ -462,9 +462,9 @@ def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None
     ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'not admitted: lacking cpu'),))
     mine = _lease(1, 'ada/alice')
     book = Ledger(1, {}, (mine, _lease(2, 'ada/bob'), _lease(3, 'ada/alice', until=NOW)))
-    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='linux', book=book)
+    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='base', book=book)
     (card,) = cards
-    assert (card.host, card.login, card.platform) == ('ada/alice', 'alice', 'linux')
+    assert (card.host, card.login, card.platform) == ('ada/alice', 'alice', 'base')
     assert card.supply == {'cpu': 64.0, 'mem_gb': 128.0, 'submits': 10.0}
     assert card.facts == {'partitions': {'defq': 2880}}
     assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
@@ -560,7 +560,7 @@ def test_a_superseded_cluster_run_is_cancelled_and_released(monkeypatch, tmp_pat
     )
     assert report.in_flight == ()
     assert slurm.cancelled == ['77']
-    assert forge.posts[-1] == ('tests/linux', 'error', f'superseded by {tip[:12]}')
+    assert forge.posts[-1] == ('tests/base', 'error', f'superseded by {tip[:12]}')
     assert forgerun.live('https://f/o/r.git') == ()
     assert any('superseded' in line for line in said)
 

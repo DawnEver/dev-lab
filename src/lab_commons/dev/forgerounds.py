@@ -30,6 +30,7 @@ from lab_commons.dev.forgehosts import publish_card
 from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgetick import TickReport, tick
 from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.hpc.needsets import needs_of
 from lab_commons.resources import CPU, MEMORY, Holder
 
 __all__ = ['Producing', 'Rounds', 'locked_fetch', 'seat_running', 'supply_now']
@@ -64,7 +65,7 @@ class Rounds:
     slurm: forgerun.Cluster | None
     say: Callable[[str], None]
     cores: int
-    sized: Callable[[str, frozenset[str]], Demand]
+    sized: Callable[[frozenset[str]], Demand]
     supplied: Callable[[Resources], Supply]
     seated: Callable[[], tuple[Holder, ...]]
     ticking: Mapping[str, Any]
@@ -96,7 +97,7 @@ class Rounds:
         supply = self.supplied(self.producing.using())
         seated = self.seated()
         running = [
-            *(self.sized(run.platform, frozenset()) for run in self.runs),
+            *(self.sized(needs_of(run.platform)) for run in self.runs),
             *seat_running(seated, cores=self.cores),
             *self.producing.running(self.sized),
         ]
@@ -226,10 +227,10 @@ class Producing:
         with self._lock:
             return frozenset(sha for sha, _platform in self._live)
 
-    def running(self, sized: Callable[[str, frozenset[str]], Demand]) -> list[Demand]:
+    def running(self, sized: Callable[[frozenset[str]], Demand]) -> list[Demand]:
         """Each live producer at its learned demand."""
         with self._lock:
-            return [sized(item.platform, item.needs) for item in self._live.values()]
+            return [sized(needs_of(item.platform)) for item in self._live.values()]
 
     def using(self) -> Resources:
         """What the live producers were last measured using, summed."""

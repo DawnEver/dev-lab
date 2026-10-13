@@ -333,12 +333,13 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-09 AT 495 after the platform-part assignment rule and its tests landed: 405 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 502 after the floating-tip env key and timed prep steps: 412 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 517 after the forge outbox, records, tick and route (and their tests): 427 keeps 90.
-#: RE-MEASURED 2026-10-10 AT 519 after the claimed-part argv (part_argv and its tests): 429 keeps 90.
+#: RE-MEASURED 2026-10-10 AT 519 after the claimed-part argv and its tests: 429 keeps 90.
 #: RE-MEASURED 2026-10-10 AT 524 after the seats split, the run cache and forge serve: 440 keeps 84.
 #: RE-MEASURED 2026-10-11 AT 532 after the branch-flow modules: 460 keeps 72.
 #: RE-MEASURED 2026-10-12 AT 560 after the forge owners, issue routing and hygiene modules: 490 keeps 70.
 #: RE-MEASURED 2026-10-13 AT 581 after the workstation deploy and its tests: 511 keeps 70.
-CONSTANT_FLOOR = 511
+#: RE-MEASURED 2026-10-13 AT 603 after the compute model, probe, learned and ledger modules: 533 keeps 70.
+CONSTANT_FLOOR = 533
 CONSTANT_HEADROOM = 90
 
 

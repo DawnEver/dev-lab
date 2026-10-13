@@ -190,7 +190,7 @@ def serve(
         ticking={
             'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
             'reservations': tuple(one.reservation for one in book.entries if not one.refused),
-            'usage': standing.usage if standing else None, 'weights': host_weights(table), 'provides': provides,
+            'usage': standing.usage if standing else None, 'weights': host_weights(table),
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,

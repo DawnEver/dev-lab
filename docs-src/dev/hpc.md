@@ -77,12 +77,13 @@ setup = ["module load git/2.42.0"]   # optional, prepended to every array task
 `forge serve` drives two short calls on the login node, one step per tick. They refuse (exit 2) on a box
 without `sbatch`.
 
-1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--python 3.13]`
+1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--part <need-set>] [--python 3.13]`
    checks the login node's prerequisites, fetches, builds, collects, plans and submits round 0, writes
-   `~/ci/runs/<sha>/state.json` and returns in minutes. `incremental` needs `--only`; `full` refuses it.
+   `~/ci/runs/<sha>/state.json` and returns in minutes. `--part` (default `base`) is the need-set it runs; every
+   other collected id is handed to its own part. `incremental` needs `--only`; `full` refuses it.
 2. `python -m lab_commons.hpc run gather --sha <40-hex> -o <dir> [--wait]`: still running, it prints where the
    run is and exits 3; a finished round is folded and its unfinished ids re-submitted as the next round; once
-   nothing is left it writes `<dir>/run-<sha>-<platform>-<req>.json.gz` and exits 1 if any id is red, lost or
+   nothing is left it writes `<dir>/run-<sha>-<part>-<req>.json.gz` and exits 1 if any id is red, lost or
    missing.
 
 To run ANY entry (not pytest) at a commit, `python -m lab_commons.hpc run build --sha <40-hex> --repo-url <https>`
@@ -91,7 +92,7 @@ prints the job-file lines that reuse that tree and env: `workdir = "~/ci/trees/<
 A job file with them and `entry = "<module>:<function>"` is then submitted with `submit -c <job.toml>`.
 
 The cluster run state is a resumable tick (`forgerun`): `claimed -> submitted -> gathered -> published`, kept
-per repo + sha + platform + scope in `forge-runs/` beside the machine file. Slurm is the truth: jobs named
+per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is the truth: jobs named
 `run-<sha12>` with no recorded state are orphans, alarmed and never resubmitted.
 
 ### What a run reuses
@@ -116,30 +117,45 @@ per repo + sha + platform + scope in `forge-runs/` beside the machine file. Slur
 - **Outcomes are streamed**, one JSON line per test phase keyed by pytest's `nodeid`, so a killed shard keeps
   what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with doubled memory
   after an out-of-memory kill; only what is still unfinished after that is `lost`.
-- The record holds `{sha, req, scope, platform, system, env, account, job_ids, cluster, python, prep, plan,
+- The record holds (`platform` is the part's name) `{sha, req, scope, platform, system, env, account, job_ids, cluster, python, prep, plan,
   rounds, outcomes, reasons, handed, durations, overheads, peaks_mb}`. Outcomes: `passed`, `failed`, `error`,
   `skipped`, `xfailed`, `not-covered`, `lost`, `missing`. Only `passed` means passed.
 
-## Platform parts
+## Parts by need-set
 
-- **Two independent axes**, per marker, in the tested repo's `pyproject.toml`, read at the sha
-  (`lab_commons.hpc.platforms`). The OS axis, `[tool.lab_commons.platforms] com = ["windows"]`, holds real OS
-  constraints only. The capability axis, `[tool.lab_commons.capabilities]`, holds what a test needs beyond the
-  OS: an ENGINE (`jmag = { engine = true }`) gets its own part `tests/jmag`; a HOST capability
-  (`dev_checkout = { on = ["windows", "macos"] }`) names the OSes its serving hosts run and creates no part.
-  An unlisted marker runs everywhere. A capability row (`dev_checkout`, `node`, `jmag`) left under `platforms`
-  is refused, naming the move.
-- **Every id is assigned to exactly one part** (`platforms.assign`): one engine marker -> that engine's part;
-  two -> nowhere; otherwise the first of `linux`, `windows`, `macos` that can run it. Parts are independent and
-  can run in any order, in parallel.
-- **A host claims only what it provides** (`lab_commons.dev.forgeprovides`): its machine file declares
-  `[capabilities.<name>]` (e.g. `[capabilities.jmag] seats = 4`, compute concurrency), shown on its card as
-  `provides`. A part needs its engine, or every host capability whose `on` names its OS; a host lacking one is
-  never offered it, and `forge queue` labels it `no host provides <cap>`. The cluster's linux part needs none.
+- **One vocabulary, one table**, in the tested repo's `pyproject.toml`, read at the sha
+  (`lab_commons.hpc.needsets`):
+
+  ```toml
+  [tool.lab_commons.tests]
+  resources = ["femm", "jmag", "windows"]                          # markers that name a resource
+  produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]   # the ONE local producer, {part} filled
+  ```
+
+  Every resource is equal: a tool, an OS, a host fact. A test that needs one carries its marker (registered in
+  `[tool.pytest.ini_options] markers` as usual). A test needing a tool marks the TOOL, never the OS the tool
+  runs on -- the OS follows from where the tool exists. A test marks an OS only when it proves that OS's
+  behaviour.
+- **A test's need-set is its part** (`needsets.need_sets`): the declared markers it carries, named sorted and
+  `+`-joined (`femm+windows`), or `base` for none. Every id belongs to exactly one part; parts are independent
+  and run in any order, in parallel. Status context `tests/<part>`; the name round-trips (`needsets.needs_of`).
+- **A part selects with one `-m`** (`needsets.selecting`): its own resources, and `not` every other declared
+  one -- `tests/base` of the table above is `not femm and not jmag and not windows`.
+- **Parts are discovered, not listed.** Every run collects the whole suite once plus once per resource and
+  records, per id it does not cover, the part it belongs to (`handed`); the posted description says
+  `hands=<part>:<n>,...`. `base` is always wanted, and a part handed to is wanted next (`platformparts.derived`).
+- **A host claims a part when it HAS its need-set** (`lab_commons.compute.model.admit`). What a host has is
+  measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every `[capabilities.<name>]`
+  its machine file declares that the tool's probe finds (`jmag`, `matlab`, `node` are probed; any other
+  declared name is present as declared). `seats` is its concurrency. A part no live host has the needs of waits
+  `no host provides <resource>` in `forge queue`: blocked, never red, never skipped.
 - **A part is strict**: PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is
   FAIL; any `lost`/`missing` id makes it INCONCLUSIVE and it is not posted.
-- A non-cluster part calls `platformparts.select(root, sha, platform, collect=...)`, runs its assigned ids and
-  records what it handed to other parts. A consumer exposes it as one door per part name (`part <name>`).
+- A producer other than `verify` calls `platformparts.select(root, sha, part, collect=...)` (``(its ids, every
+  other id -> its part)``), runs its ids and writes a record of the same shape. The cluster runs a part with
+  `hpc run submit --part <part>`; `forge serve` passes the claimed part.
+- **Demand is learned per need-set** (`lab_commons.compute.learned`): a finished run is kept under
+  `(producer, need-set)`, the producer `local` for a box part and `slurm` for a cluster part.
 
 ## Job files
 

@@ -2,7 +2,7 @@
 
 THE DEFECT (live 2026-10-12, integrate/main 4e394b6). The cluster's serving checkout of lab-commons moved
 only when a human re-ran the deploy, so the producer judged with code older than what it judged: it read
-a ``[tool.lab_commons.capabilities]`` table it did not know as empty. The producer is itself part of what
+a table newer than itself as empty. The producer is itself part of what
 is integrated; a host that serves it must follow it.
 
 WHO. A host whose machine file declares ``[deploy]`` (:mod:`lab_commons.hpc.deploy_spec`) -- a cluster
