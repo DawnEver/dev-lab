@@ -1,7 +1,8 @@
 """``forge integration``: the integration tick -- integration's standing for EVERY open child branch.
 
-A child branch is a declared lane on ``origin`` or the head of an open pull request (on ``origin``, or
-on a GitHub mirror remote, whose fork heads are fetched as ``pull/N/head``). The integrator never
+A child branch is an ``origin`` branch the schedule's one rule classes (``classes_by_ref``) or the head
+of an open pull request (on ``origin``, or on a GitHub mirror remote, whose fork heads are fetched as ``pull/N/head``).
+The integrator never
 writes one; it only REPORTS on it. Per child branch, against ``origin/<integration>`` and with no
 checkout (:mod:`lab_commons.dev.trialmerge`):
 
@@ -18,7 +19,9 @@ against the trunk is first RETARGETED to integration, with a comment saying why.
 
 The tick FETCHES (origin, and each PR head) through the retry wrapper; everything after is a read
 of the object store and the forge. Last, the repo's declared issue hygiene runs
-(:func:`lab_commons.dev.forgetidy.tidy`), so finished issues are closed on the integrator's cadence.
+(:func:`lab_commons.dev.forgetidy.tidy`), so finished issues are closed on the integrator's cadence,
+and every undeclared origin branch idle past its grace is listed (:func:`lab_commons.dev.branchprune.listing`):
+``deletable`` when the repo has not opted into pruning. Deleting is the serve tick's, never this verb's.
 """
 
 from __future__ import annotations
@@ -28,11 +31,16 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+from lab_commons.compute.model import Schedule
+from lab_commons.dev.branchprune import listing
+from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_origin, forge_from_remote
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert, pr_list, pr_retarget
+from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import Status, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
 from lab_commons.dev.forgetidy import load_hygiene, tidy
@@ -167,12 +175,12 @@ def _git(root: Path, *args: str) -> str:
     return done.stdout if done.returncode == 0 else ''
 
 
-def _lanes(root: Path, policy: Policy) -> list[tuple[str, str]]:
+def _lanes(root: Path, policy: Policy, schedule: Schedule) -> list[tuple[str, str]]:
     found = []
     for line in _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING).splitlines():
         ref, sha = line.split(' ')
         branch = ref.removeprefix(_TRACKING)
-        if branch.startswith(policy.lane_prefixes) and branch not in {policy.trunk, policy.integration}:
+        if schedule.class_of(branch) is not None and branch not in {policy.trunk, policy.integration}:
             found.append((branch, sha))
     return found
 
@@ -211,7 +219,7 @@ def tick(
             if remote == 'origin':
                 with_pr.add(pr.head)
     origin = dict(venues)['origin']
-    children += [Child(b, sha, origin) for b, sha in _lanes(root, policy) if b not in with_pr]
+    children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
     for child in children:
         said = feedback(root, child, policy)
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
@@ -253,7 +261,8 @@ def main(
         venues = _venues(root)
         lines = tick(root, venues, load_policy(root))
         lines += [f'tidy: {line}' for line in tidy(dict(venues)['origin'], load_hygiene(root))]
-    except (ForgeCallFailed, ListingIncomplete) as failed:
+        lines += [f'branch: {row.line()}' for row in listing(root, dict(venues)['origin'], now=datetime.now(UTC))]
+    except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
         return 1
     except (OSError, ValueError) as exc:

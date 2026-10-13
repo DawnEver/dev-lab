@@ -20,6 +20,7 @@ import pytest
 
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import servetask, workstation
+from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.servelock import held
 from lab_commons.dev.venvpath import venv_interpreter
 
@@ -219,6 +220,26 @@ def test_a_dirty_checkout_is_refused_and_a_behind_one_is_fast_forwarded(box: Box
     assert box.deploy() == 2
 
 
+def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
+    box: Box, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One repo's refusal never stops the others: it leaves [serve] repos, its owner is alarmed, the exit is 2."""
+    raised: list[Alarm] = []
+    programs = replace(box.programs, alarm=raised.append)
+    argv = [*DEPLOY, '--root', str(box.root)]
+    assert workstation.deploy(argv, programs=programs) == 0
+    (box.root / 'beta' / '.git' / 'DIRTY').touch()
+    (box.root / 'alpha' / '.git' / 'UP_SHA').write_text('b' * 40)
+    capsys.readouterr()
+    assert workstation.deploy(argv, programs=programs) == 2
+    assert f'git -C {box.root / "alpha"} merge --ff-only -q @{{u}}' in box.calls(), 'the planted control moves on'
+    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
+    assert declared['serve']['repos'] == ['lab-commons', 'alpha'], 'a refused repo is not served'
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
+    assert 'beta' in capsys.readouterr().err
+    assert [(one.repo, 'local changes' in one.body) for one in raised] == [(f'{FORGE}/beta.git', True)]
+
+
 def test_a_missing_checkout_without_a_forge_is_refused(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
     argv = ['--repos', REPOS, '--root', str(box.root)]
     assert workstation.deploy(argv, programs=box.programs) == 2
@@ -274,11 +295,11 @@ def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst
         spawned.append(kw)
         return _Done(1 if cwd.name == 'beta' else 0)
 
-    assert workstation.serve('integrate', run=run, lock=tmp_path / 'serve.lock') == 2, 'alpha has no venv'
+    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock') == 2, 'alpha has no venv'
     assert [cwd.name for _, cwd in ran] == ['lab-commons', 'beta'], 'a missing venv never skips the next repo'
     argv, cwd = ran[0]
     assert all(kw[key] == value for kw in spawned for key, value in servetask.windowless().items())
-    assert argv == [str(root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve', '--mode', 'integrate']
+    assert argv == [str(root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve']
     assert cwd == root / 'lab-commons'
 
 
@@ -287,13 +308,13 @@ def test_serve_does_nothing_while_another_serve_holds_the_lock(tmp_path: Path, m
     lock, ran = tmp_path / 'serve.lock', []
     with held(lock) as mine:
         assert mine
-        assert workstation.serve('integrate', run=lambda *a, **_k: ran.append(a), lock=lock) == 0
+        assert workstation.serve(run=lambda *a, **_k: ran.append(a), lock=lock) == 0
     assert ran == []
 
 
 def test_serve_without_a_declaration_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'absent.toml'))
-    assert workstation.serve('integrate', lock=tmp_path / 'serve.lock') == 2
+    assert workstation.serve(lock=tmp_path / 'serve.lock') == 2
 
 
 def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
@@ -304,14 +325,13 @@ def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
     monkeypatch.setattr(servetask, 'home', lambda: tmp_path)
     seen: dict[str, object] = {}
 
-    def serve(mode: str, *, out: object = None) -> int:
-        seen.update(mode=mode, out=out)
+    def serve(*, out: object = None) -> int:
+        seen.update(out=out)
         workstation.emit('[serve] reached the log')
         return 0
 
     monkeypatch.setattr(workstation, 'serve', serve)
-    assert workstation.main(['serve', '--mode', 'develop']) == 0
-    assert seen['mode'] == 'develop'
+    assert workstation.main(['serve']) == 0
     assert seen['out'] is not None, 'the children write to the same log'
     assert '[serve] reached the log' in (tmp_path / 'serve.log').read_text(encoding='utf-8')
 

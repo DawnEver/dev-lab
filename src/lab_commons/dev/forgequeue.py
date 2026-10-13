@@ -9,6 +9,10 @@ claim carries (:class:`lab_commons.dev.forgeclaim.Claim`); every host card, stal
 class's bound. A candidate EVERY live host serving it refuses to admit says so, naming each host and the
 resources it lacks there (``no host admits it -- box-g lacking cpu; ada/alice lacking mem_gb``). It fetches
 ``origin`` first so the refs it ranks are the forge's, and posts nothing.
+
+It also lists every undeclared origin branch idle past its grace (:mod:`lab_commons.dev.branchprune`):
+``deletable`` (merged, the repo has not opted into pruning), ``delete`` (the integration host prunes it on
+its next tick) or ``stale`` (unmerged: alarmed, never deleted).
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ from lab_commons.compute import ledger
 from lab_commons.compute.learned import learned
 from lab_commons.compute.model import REQUEST, Candidate, Ranked, expected_cost, rank, starved
 from lab_commons.config import section
+from lab_commons.dev.branchprune import listing
+from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgehosts import HostCard
@@ -70,7 +76,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         return histories[sha]
 
     found = candidates(
-        root, 'integrate', client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
+        root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
         policy=load_policy(root), now=now,
     )  # fmt: skip
     book = ledger.read(client)
@@ -105,9 +111,14 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
+    try:
+        branches = [dataclasses.asdict(row) for row in listing(root, client, now=now)]
+    except BranchSetNotDeclared as undeclared:  # the queue still reads; the branch rows say why they are absent
+        branches = [{'action': 'unread', 'ref': '-', 'sha': '', 'rule': str(undeclared), 'idle_h': 0.0}]
     return {
         'now': now.isoformat(),
         'queue': [_row(item) for item in ranked],
+        'branches': branches,
         'in_flight': in_flight,
         'hosts': [
             {
@@ -115,6 +126,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 'holds': list(card.holds),
                 'alarms': list(card.alarms),
                 'running': list(card.running),
+                'preempted': list(card.preempted),
                 'reservations': [dict(r) for r in card.reservations],
                 'stale': card.stale(now),
             }
@@ -143,7 +155,9 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     return reasons[0][1] if reasons else ''
 
 
-def _amounts(resources: Mapping[str, float]) -> str:
+def _amounts(resources: Mapping[str, float] | str) -> str:
+    if isinstance(resources, str):  # a whole-scope lease: 'all'
+        return resources
     return ','.join(f'{name}={amount:g}' for name, amount in sorted(resources.items()))
 
 
@@ -171,6 +185,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
                 f'supply {_amounts(h["supply"])}  holds {", ".join(h["holds"]) or "nothing"}'
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
+            *([f'    PREEMPTED {", ".join(h["preempted"])}'] if h.get('preempted') else []),
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']
@@ -179,6 +194,11 @@ def render(view_: Mapping[str, Any]) -> list[str]:
         f'  {r["id"]}  {r["scope"]}  {_amounts(r["resources"])}  for {r["for"]}  until {r["until"]}  by {r["by"]}'
         + (f'  REFUSED: {r["refused"]}' if r['refused'] else '')
         for r in view_.get('reservations', ())
+    ] or ['  (none)']
+    lines += ['', 'origin branches (undeclared, idle past the grace):']
+    lines += [
+        f'  {b["action"]:<9} {b["ref"]}  {b["sha"][:12]}  {b["rule"]}, idle {b["idle_h"]:.0f} h'
+        for b in view_.get('branches', ())
     ] or ['  (none)']
     lines += ['', 'starved:']
     lines += [f'  {r["candidate"]} waited {r["wait_h"]:.1f} h -- {r["blocked"]}' for r in view_['starved']] or [

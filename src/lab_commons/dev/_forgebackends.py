@@ -28,6 +28,8 @@ class Backend:
     fixed_host: str | None = None
     headers: tuple[tuple[str, str], ...] = ()
     page_param: str = 'limit'
+    #: Where a branch is DELETED, relative to the repository collection; ``{name}`` is the branch.
+    branch_delete: str = 'branches/{name}'
 
     def host(self, forge: Forge) -> str:
         """The API host: GitHub's is fixed, a Gitea forge serves its API on its own host."""
@@ -52,6 +54,7 @@ GITHUB: Final = Backend(
     list_query='state={state}&per_page={limit}',
     fixed_host='api.github.com',
     page_param='per_page',
+    branch_delete='git/refs/heads/{name}',
     headers=(
         ('Accept', 'application/vnd.github+json'),
         ('X-GitHub-Api-Version', '2022-11-28'),

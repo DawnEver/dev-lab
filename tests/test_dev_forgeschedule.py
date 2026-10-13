@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
-from lab_commons.dev.forgeschedule import host_weights, load_schedule, parse_usage
+from lab_commons.dev.forgeschedule import host_weights, load_schedule, parse_usage, vouched
 from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
@@ -66,12 +66,36 @@ def test_a_repo_override_changes_the_order(tmp_path: Path) -> None:
     pr, branch = _cand('feat/x', 'pr'), _cand('exp/y', 'branch')
     assert _order(rank([branch, pr], {'o/r': FAMILY}, NOW, cost_h={}))[0] == 'feat/x'
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.schedule]\nclasses = {branch = 90}\nbranches = ["exp/*"]\n', encoding='utf-8'
+        '[tool.lab_commons.schedule]\nclasses = {branch = 90}\nclasses_by_ref = {"exp/*" = "branch"}\n',
+        encoding='utf-8',
     )
     declared = load_schedule(tmp_path)
     assert declared.classes['pr'] == 60, 'a key it omits keeps the family default'
-    assert declared.branches == ('exp/*',)
+    assert declared.classes_by_ref == {'exp/*': 'branch'}, 'an ordered rule is replaced whole, never merged'
     assert _order(rank([pr, branch], {'o/r': declared}, NOW, cost_h={}))[0] == 'exp/y'
+
+
+def test_the_class_rule_is_ordered_and_first_match_wins() -> None:
+    rule = Schedule(classes_by_ref={'feat/hot/*': 'pr', 'feat/*': 'feature'})
+    assert (rule.class_of('feat/hot/x'), rule.class_of('feat/x'), rule.class_of('wip/x')) == ('pr', 'feature', None)
+    assert FAMILY.class_of('feat/x') == 'feature', 'the family default: a feature branch is its own class'
+    assert FAMILY.class_of('lane/x') == 'branch'
+    assert FAMILY.base('pr') > FAMILY.base('feature') > FAMILY.base('branch')
+    assert 'feature' in FAMILY.starve_after_hours
+
+
+def test_a_rule_naming_an_unvalued_class_is_refused(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.lab_commons.schedule]\nclasses_by_ref = {"x/*" = "nightly"}\n', encoding='utf-8'
+    )
+    with pytest.raises(ValueError, match='nightly'):
+        load_schedule(tmp_path)
+
+
+def test_the_retired_allow_list_is_refused_by_name_with_the_rule_that_replaced_it(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.schedule]\nbranches = []\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='classes_by_ref'):
+        load_schedule(tmp_path)
 
 
 def test_an_unknown_schedule_key_is_refused(tmp_path: Path) -> None:
@@ -109,3 +133,23 @@ def test_a_blocked_candidate_past_its_class_bound_is_starved() -> None:
 def test_usage_is_core_hours_per_run_job() -> None:
     sacct = 'run-abcdef123456|7200\nrun-abcdef123456|3600\nother|99999\nrun-ffffffffffff|\n'
     assert parse_usage(sacct) == {'abcdef123456': 3.0}
+
+
+def test_a_reserved_candidate_ranks_first_over_a_higher_score() -> None:
+    """A lease holder is not starved by higher-scored foreign work; CONTROL: nothing reserved keeps the score order."""
+    head = _cand('integrate/main', 'integration')
+    lane = _cand('lane/x', 'branch')
+    schedules = {'o/r': Schedule()}
+    assert [r.candidate for r in rank([lane, head], schedules, NOW, cost_h={})] == [head, lane]
+    held = rank([lane, head], schedules, NOW, cost_h={}, reserved=lambda one: one.ref == 'lane/x')
+    assert [(r.candidate, r.reserved) for r in held] == [(lane, True), (head, False)]
+
+
+def test_an_origin_host_stands_only_where_its_login_owns_or_is_delegated_the_host() -> None:
+    claimed = dataclasses.replace(_cand('lane/x', 'pr'), origin='bob', origin_host='G')
+    owners = {'G': ('alice', 'bob'), 'H': ('carol',)}
+    assert vouched([claimed], owners) == (claimed,)
+    forged = dataclasses.replace(claimed, origin_host='H')
+    assert vouched([forged], owners) == (dataclasses.replace(forged, origin_host=''),)
+    unknown = dataclasses.replace(claimed, origin_host='Z')
+    assert vouched([unknown], owners)[0].origin_host == ''

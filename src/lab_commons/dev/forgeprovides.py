@@ -10,7 +10,7 @@ probe also finds it (:func:`lab_commons.compute.probe.tools`)::
 
     [capabilities.dev_checkout]
 
-Whether THIS host may claim a part is the admission's (:func:`lab_commons.compute.model.admit`: the
+Whether THIS host may claim a part is the admission's (:func:`lab_commons.compute.admission.admit`: the
 part's needs present, its demand within the supply). What the queue says about EVERY live host is
 :func:`unserved`: a part whose needs no live host has is BLOCKED naming the resource, never red, never
 skipped.

@@ -134,7 +134,7 @@ def test_a_blocking_pre_push_hook_is_a_run_this_door_stops() -> None:
 
 
 _SERVE = {
-    30: (1, 'python -m lab_commons.dev.forge serve --mode integrate --lock x'),
+    30: (1, 'python -m lab_commons.dev.forge serve --lock x'),
     31: (30, 'python scripts/gate/runner.py part jmag --full'),
     32: (31, 'python -m pytest -n 4'),
 }

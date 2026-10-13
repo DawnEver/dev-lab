@@ -5,7 +5,7 @@ The counterpart of a cluster account's ``python -m lab_commons.hpc deploy``. It 
 dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.Step`.
 
 ``deploy --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 [--forge <https base>]
-[--root DIR] [--ref BRANCH] [--delegates LOGIN,...] [--mode M] [--dry-run]``, each step reporting and safe to repeat:
+[--root DIR] [--ref BRANCH] [--delegates LOGIN,...] [--dry-run]``, each step reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
@@ -24,8 +24,13 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
 
 ``--dry-run`` reads but changes nothing. A second run changes nothing.
 
-``serve [--mode M]`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
-``forge serve --mode M`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
+A REFUSAL IN STEPS 3-5 BELONGS TO ITS REPO (incident 2026-10-13, the cluster deploy's twin): the repo is
+reported with its reason, skipped by the later steps and left out of ``[serve] repos`` so the Task never
+serves it; the deploy finishes for the others, raises one forge ``run`` alarm per refused repo
+(:mod:`lab_commons.dev.forgealarm`), and exits 2 naming each.
+
+``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
+``forge serve`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
 Its exit is the worst child's; one repo's failure never skips the next. Each child starts with no
 console window; under ``pythonw`` (no streams at all) the serve and its children write to the capped
 serve log (:func:`lab_commons.dev.servetask.open_log`).
@@ -46,11 +51,13 @@ from typing import IO, Any, Final
 from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
 from lab_commons.dev._machinefile import diff, merged
+from lab_commons.dev.forgealarm import RUN, Alarm, sound
 from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.servelock import default_lock, held
 from lab_commons.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_spec import LAB_COMMONS
 from lab_commons.hpc.deploy_steps import Step, Tools
+from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 if sys.platform == 'win32':
@@ -110,6 +117,7 @@ class Programs:
     com: Callable[[str], Path | None] = com_server
     windows: bool = os.name == 'nt'
     home: Path = field(default_factory=servetask.home)
+    alarm: Callable[[Alarm], object] = sound
 
 
 def _read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -156,10 +164,8 @@ def _parser() -> argparse.ArgumentParser:
     dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
     dep.add_argument('--delegates', type=_logins, default=(), help='[reserve] delegates: who else may reserve it')
-    dep.add_argument('--mode', default='integrate', help='the serve mode the Task runs (default: integrate)')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
-    run = verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
-    run.add_argument('--mode', default='integrate')
+    verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
     return parser
 
 
@@ -192,10 +198,11 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
 
 @dataclass(frozen=True)
 class _Moved:
-    """A checkout step's outcome: its exit, and whether HEAD moved."""
+    """A checkout step's outcome: its exit, whether HEAD moved, and why it was refused."""
 
     rc: int
     moved: bool = False
+    why: str = ''
 
 
 def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> _Moved:
@@ -204,8 +211,7 @@ def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: 
         return _Moved(step.change(f'{checkout.name}: git clone -b {ref} {url} {checkout}', clone), moved=True)
     git = [*programs.git, '-C', str(checkout)]
     if _read([*git, 'status', '--porcelain']).stdout.strip():
-        emit(f'deploy refused: {checkout} has local changes; commit or clean them, then re-run', err=True)
-        return _Moved(2)
+        return _Moved(2, why=f'{checkout} has local changes; commit or clean them, then re-run')
     if step.dry:
         return _Moved(step.change(f'{checkout.name}: git fetch, then fast-forward to its upstream when behind', []))
     return _fast_forward(step, git, checkout.name)
@@ -216,8 +222,7 @@ def _fast_forward(step: Step, git: Sequence[str], name: str) -> _Moved:
         return _Moved(rc)
     head, upstream = (_read([*git, 'rev-parse', rev]).stdout.strip() for rev in ('HEAD', '@{u}'))
     if not upstream:
-        emit(f'deploy refused: {name} tracks no upstream; `git branch -u origin/<ref>` in it, then re-run', err=True)
-        return _Moved(2)
+        return _Moved(2, why=f'{name} tracks no upstream; `git branch -u origin/<ref>` in it, then re-run')
     if head == upstream:
         emit(f'  {name}: current at {head[:12]}')
         return _Moved(0)
@@ -269,9 +274,9 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
     return 0
 
 
-def _task(step: Step, programs: Programs, lab: Path, mode: str) -> int:
+def _task(step: Step, programs: Programs, lab: Path) -> int:
     emit(f'[task] {servetask.TASK}')
-    want = servetask.definition_of(lab, mode=mode)
+    want = servetask.definition_of(lab)
     query = _read([*programs.schtasks, *servetask.query_argv()[1:]])
     if query.returncode == 0 and servetask.installed(query.stdout) == want:
         emit(f'  in place: {want.command} {want.arguments}')
@@ -303,24 +308,26 @@ def _preflight(args: argparse.Namespace, tools: Programs, checkouts: Mapping[str
     return urls
 
 
-def _checkouts(step: Step, tools: Programs, checkouts: Mapping[str, Path], urls: Mapping[str, str], ref: str) -> int:
-    """Clone or fast-forward each checkout, then bootstrap its venv and install its hooks where needed."""
+def _checkouts(
+    step: Step, tools: Programs, checkouts: Mapping[str, Path], urls: Mapping[str, str], ref: str
+) -> dict[str, str]:
+    """Clone or fast-forward each checkout, then bootstrap its venv and install its hooks where needed.
+
+    A repo whose step fails is refused ALONE: skipped by every later step and returned by name with its
+    reason -- one repo's outdated state never stops the others.
+    """
     emit('[checkouts] clone, or fast-forward a clean checkout')
-    moved: dict[str, bool] = {}
-    for name, co in checkouts.items():
-        done = _checkout(step, tools, co, url=urls[name], ref=ref)
-        if done.rc:
-            return done.rc
-        moved[name] = done.moved
+    done = {name: _checkout(step, tools, co, url=urls[name], ref=ref) for name, co in checkouts.items()}
+    refused = {name: one.why or f'checkout exited {one.rc}' for name, one in done.items() if one.rc}
     emit('[venvs] -m lab_commons.dev.dep --bootstrap where missing or moved')
     for name, co in checkouts.items():
-        if rc := _venv(step, tools, co, name, moved=moved[name]):
-            return rc
+        if name not in refused and (rc := _venv(step, tools, co, name, moved=done[name].moved)):
+            refused[name] = f'its venv bootstrap exited {rc}'
     emit('[hooks] hook_install --install where not live')
     for name, co in checkouts.items():
-        if rc := _hooks(step, tools, co, name):
-            return rc
-    return 0
+        if name not in refused and (rc := _hooks(step, tools, co, name)):
+            refused[name] = f'its hook install exited {rc}'
+    return refused
 
 
 def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
@@ -337,19 +344,20 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
         emit(f'deploy refused: {urls}', err=True)
         return 2
     step = Step(Tools(git=tools.git), dry=args.dry_run)
-    if rc := _checkouts(step, tools, checkouts, urls, args.ref):
-        return rc
+    refused = _checkouts(step, tools, checkouts, urls, args.ref)
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
-    tables['serve'] = {'repos': list(args.repos), 'root': str(args.root)}
+    tables['serve'] = {'repos': [name for name in args.repos if name not in refused], 'root': str(args.root)}
     if args.delegates:
         tables['reserve'] = {'delegates': list(args.delegates)}
-    return _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS], args.mode)
+    rc = _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS])
+    for name, why in refused.items():
+        tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
+        emit(f'deploy refused {name} (left out of [serve] repos): {why}', err=True)
+    return rc or (2 if refused else 0)
 
 
-def serve(
-    mode: str, *, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None
-) -> int:
-    """``forge serve --mode`` *mode* in each ``[serve] repos`` checkout, under one lock; the worst exit.
+def serve(*, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None) -> int:
+    """``forge serve`` in each ``[serve] repos`` checkout, under one lock; the worst exit.
 
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
@@ -371,7 +379,7 @@ def serve(
                 worst = max(worst, 2)
                 continue
             emit(f'[serve] {name}', flush=True)
-            argv = [str(python), '-m', 'lab_commons.dev.forge', 'serve', '--mode', mode]
+            argv = [str(python), '-m', 'lab_commons.dev.forge', 'serve']
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
             rc = run(argv, cwd=checkout, check=False, **streams, **servetask.windowless()).returncode
             if rc:
@@ -381,17 +389,20 @@ def serve(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``deploy ...`` or ``serve [--mode M]``."""
+    """``deploy ...`` or ``serve``; a retired spelling is refused by name with its remedy."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if refused := next(filter(None, (refusal('workstation', word.split('=', 1)[0]) for word in args)), None):
+        emit(refused, err=True)
+        return 2
     if args[:1] == ['deploy']:
         return deploy(args[1:])
-    mode = _parser().parse_args(args).mode
+    _parser().parse_args(args)
     if sys.stdout is not None:
-        return serve(mode)
+        return serve()
     with servetask.open_log(servetask.log_path()) as log:  # pythonw: no console, so no streams
         sys.stdout = sys.stderr = log
         try:
-            return serve(mode, out=log)
+            return serve(out=log)
         finally:
             sys.stdout = sys.stderr = None
 

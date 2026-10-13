@@ -100,6 +100,7 @@ produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 [tool.lab_commons.integrator]
 trunk = "main"
 integration = "integrate/main"
+host = "G"  # the integrator session runs on G; serve there raises the `integration` prompts
 
 # This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
 # `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
@@ -130,6 +131,9 @@ request_max_age_days = 14
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
+# User ruling 2026-10-13 ("origin should not carry this junk"): the integration host (integrator.host) deletes
+# merged undeclared origin branches idle >= grace_hours (lab_commons.dev.branchprune).
+prune_merged = true
 
 [tool.lab_commons.doors]
 # This repo's exits, keyed by deny-rule ID. The agent guard runs from whichever project a session

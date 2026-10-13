@@ -146,6 +146,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgehosts': ('original',),
     'forgeprovides': ('original',),
     'forgetidy': ('original',),
+    'branchprune': ('original',),
     'forgeslurm': ('original',),
     'forgeship': ('original',),
     'artefacts': ('original',),

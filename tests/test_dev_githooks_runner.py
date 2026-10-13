@@ -56,8 +56,14 @@ class _Recorder:
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
     assert set(table) == {'pre-commit', 'commit-msg', 'pre-push'}
-    assert {hook.id for hook in table['pre-push']} == {'push-from-its-own-branch'}
-    assert {hook.id for hook in table['commit-msg']} == {'commitizen', 'integration-home', 'issue-ref', 'merge-audit'}
+    assert {hook.id for hook in table['pre-push']} == {'push-from-its-own-branch', 'branchset-push'}
+    assert {hook.id for hook in table['commit-msg']} == {
+        'commitizen',
+        'forge-host',
+        'integration-home',
+        'issue-ref',
+        'merge-audit',
+    }
     assert len(table['pre-commit']) >= 8, 'a floor: a base that lost its file checks would read as clean'
 
 
@@ -102,7 +108,8 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         '[[tool.lab_commons.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
         encoding='utf-8',
     )
-    assert [hook.id for hook in hook_table(tmp_path)['pre-push']] == ['push-from-its-own-branch', 'admission']
+    pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
+    assert pre_push == ['push-from-its-own-branch', 'branchset-push', 'admission']
 
 
 def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:

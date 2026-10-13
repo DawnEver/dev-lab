@@ -8,6 +8,11 @@ as running demand and its sha as busy, and starts a producer thread for each loc
 (:class:`Producing`, each one :func:`lab_commons.dev.forgeproduce.produce`). The next round comes one tick
 period later or when a producer ends; none comes after a producer was STOPPED on purpose
 (:mod:`lab_commons.dev.stoprun`). Every producer thread is joined before the rounds return or raise.
+
+A ROUND PREEMPTS WHAT A HOLDER NEEDS (:mod:`lab_commons.dev.forgelend`). Every run here is counted with the
+lease it borrows from; a loan the round's tick says a reservation holder preempts is withdrawn when it is a
+cluster run, and told to yield when it is a local producer -- which stops it at its next wake and releases it
+``preempted by reservation <id>``, open again.
 """
 
 from __future__ import annotations
@@ -21,16 +26,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from lab_commons.compute.admission import Held
 from lab_commons.compute.model import Demand, Resources, Supply, total
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgehosts import publish_card
+from lab_commons.dev.forgelend import held_part, held_run, preempt_runs
 from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgetick import TickReport, tick
 from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.hpc.needsets import needs_of
 from lab_commons.resources import CPU, MEMORY, Holder
 
 __all__ = ['Producing', 'Rounds', 'locked_fetch', 'seat_running', 'supply_now']
@@ -59,7 +65,6 @@ class Rounds:
 
     root: Path
     repo: str
-    mode: str
     alarm: Callable[[Alarm], object]
     runs: list[forgerun.Run]
     slurm: forgerun.Cluster | None
@@ -97,12 +102,12 @@ class Rounds:
         supply = self.supplied(self.producing.using())
         seated = self.seated()
         running = [
-            *(self.sized(needs_of(run.platform)) for run in self.runs),
-            *seat_running(seated, cores=self.cores),
+            *(held_run(run, self.sized) for run in self.runs),
+            *(Held(one) for one in seat_running(seated, cores=self.cores)),
             *self.producing.running(self.sized),
         ]
         ticked = _tick(
-            self.repo, self.root, self.mode, self.alarm, **self.ticking,
+            self.repo, self.root, self.alarm, **self.ticking,
             supply=supply, running=running, busy=self.producing.shas(),
         )  # fmt: skip
         client = self.ticking['client'](self.root)
@@ -111,10 +116,12 @@ class Rounds:
             self.say(line)
         if self.slurm is not None:
             self.runs = forgerun.supersede_moved(self.root, self.runs, client=client, cluster=self.slurm, say=self.say)
+            self.runs = preempt_runs(self.runs, ticked.preempt, client=client, cluster=self.slurm, say=self.say)
         local = [item for item in ticked.claimed if item.cluster is None or item.holder is None]
         self.runs += [forgerun.start(item, item.holder) for item in ticked.claimed if item not in local and item.holder]
         for item in local:
             self.producing.start(item)
+        self.producing.preempt(ticked.preempt)
         return ticked
 
     def card(self, claimed: Sequence[Work], progress: Mapping[tuple[str, str], str] | None = None) -> None:
@@ -125,6 +132,7 @@ class Rounds:
             supply=self.latest['supply'], reservations=self.leased(self.latest['now']), progress=progress,
             running=(*(f'{run.sha[:12]} {run.platform}' for run in self.runs),
                      *(one.describe() for one in self.latest['seated'])),
+            preempted=[f'{one.label} by reservation {one.on_loan}' for one in ticked.preempt],
         )  # fmt: skip
 
 
@@ -148,10 +156,10 @@ def supply_now(
     return Supply(name, probed.resources - reserve() + given_back, probed.present)
 
 
-def _tick(repo: str, root: Path, mode: str, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
+def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
     """One :func:`~lab_commons.dev.forgetick.tick`; the forge refusing the stored credential alarms before it raises."""
     try:
-        return tick(root, mode, **kwargs)
+        return tick(root, **kwargs)
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
             machine = kwargs.get('machine') or 'this host'
@@ -186,6 +194,7 @@ class Producing:
         self._progress: dict[tuple[str, str], str] = {}
         self._done: dict[tuple[str, str], Produced] = {}
         self._failed: list[BaseException] = []
+        self._yielding: dict[tuple[str, str], int] = {}  # a loan a holder preempts -> the lease
 
     def start(self, item: Work) -> None:
         """Produce *item* in a thread of its own."""
@@ -208,9 +217,13 @@ class Producing:
             with self._lock:
                 self._using[key] = using
 
+        def yields() -> int:
+            with self._lock:
+                return self._yielding.get(key, 0)
+
         produced: Produced | None = None
         try:
-            produced = self._produce(item, beat=beat, watch=watch)
+            produced = self._produce(item, beat=beat, watch=watch, yields=yields)
         finally:  # a producer that raised hands its exception to join, which raises it in serve's own thread
             with self._lock:
                 if produced is None:
@@ -227,10 +240,17 @@ class Producing:
         with self._lock:
             return frozenset(sha for sha, _platform in self._live)
 
-    def running(self, sized: Callable[[frozenset[str]], Demand]) -> list[Demand]:
-        """Each live producer at its learned demand."""
+    def running(self, sized: Callable[[frozenset[str]], Demand]) -> list[Held]:
+        """Each live producer at its learned demand, with the lease it borrows from."""
         with self._lock:
-            return [sized(needs_of(item.platform)) for item in self._live.values()]
+            return [held_part(item, sized) for item in self._live.values()]
+
+    def preempt(self, loans: Sequence[Held]) -> None:
+        """Tell each live producer among *loans* to yield to the holder of the lease it borrows from."""
+        with self._lock:
+            for one in loans:
+                if one.job is not None and (one.job.sha, one.job.producer) in self._live:
+                    self._yielding[one.job.sha, one.job.producer] = one.on_loan
 
     def using(self) -> Resources:
         """What the live producers were last measured using, summed."""

@@ -38,7 +38,7 @@ On the login host you chose, store your own forge token once (`git config --glob
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
 - **The crontab line**, per repo, every 5 minutes:
-  `cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve --mode integrate >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+  `cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
@@ -144,7 +144,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 - **Parts are discovered, not listed.** Every run collects the whole suite once plus once per resource and
   records, per id it does not cover, the part it belongs to (`handed`); the posted description says
   `hands=<part>:<n>,...`. `base` is always wanted, and a part handed to is wanted next (`platformparts.derived`).
-- **A host claims a part when it HAS its need-set** (`lab_commons.compute.model.admit`). What a host has is
+- **A host claims a part when it HAS its need-set** (`lab_commons.compute.admission.admit`). What a host has is
   measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every `[capabilities.<name>]`
   its machine file declares that the tool's probe finds (`jmag`, `matlab`, `node` are probed; any other
   declared name is present as declared). `seats` is its concurrency. A part no live host has the needs of waits

@@ -138,7 +138,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   verify refuses it naming the sync door, and an unreachable forge is said, never read as fresh.
 * :mod:`lab_commons.dev.selection` -- what a verify argv selects: targeted or the whole suite, and
   whether it may claim the skip census.
-* :mod:`lab_commons.dev.forgeserve` -- ``forge serve --mode M``: the one harness entry (tick, produce,
+* :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
@@ -268,7 +268,10 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
+* :mod:`lab_commons.dev.forgelend` -- loans read back as running, and a preempted cluster loan withdrawn.
+* :mod:`lab_commons.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``host:H`` reservation matches.
 * :mod:`lab_commons.dev.forgereserve` -- ``forge reserve`` / ``forge release``: leases in the ledger.
+* :mod:`lab_commons.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.
 * :mod:`lab_commons.dev.forgecred` -- how a stored secret (:mod:`lab_commons.credentials`) meets a forge.
 * :mod:`lab_commons.dev.forgeclaim` -- a claim is a pending status with a lease; the earliest wins the race.
@@ -315,6 +318,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.lab_commons]``.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
+* :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: the integration host deletes merged idle origin
+  branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
 * :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
 * :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.

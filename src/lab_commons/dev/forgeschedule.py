@@ -8,7 +8,14 @@ claimer takes the feasible candidate with the highest SCORE, value per cost (wei
     value = base[class] + boost + aging_rate * wait_hours
     score = weight[repo] * value / expected_cost
 
-``base`` is an OPEN table of classes (``integration``, ``pr``, ``branch``, ``request`` by family default),
+EVERY HOST SERVES EVERY CLASS, from this one queue: ORDER is the rank, FIT is the admission
+(:func:`lab_commons.compute.admission.admit`), and exclusivity is a reservation -- a host that takes no
+foreign work is reserved whole by its owner. A candidate's class comes from where it is: the declared
+integration branch is ``integration``, the head of an open PR into it ``pr``, an issue carrying the
+request label ``request``, and any other origin branch the class ONE ORDERED RULE names
+(``classes_by_ref``, first match); a branch no pattern matches is not served.
+
+``base`` is an OPEN table of classes (``integration``, ``pr``, ``feature``, ``branch``, ``request`` by family default),
 ``boost`` is what the user attached on the forge (a declared label such as ``priority:user``, or an
 explicit ``priority:<n>``), and the aging term grows without bound, so no candidate starves forever.
 ``expected_cost`` is core-hours on a cluster and wall-hours on a box, predicted from what the
@@ -21,17 +28,17 @@ THE NUMBERS ARE DATA, declared once in ``[tool.lab_commons.schedule]``; :class:`
 family default and a repository overrides key by key (a table key by table key)::
 
     [tool.lab_commons.schedule]
-    classes = {integration = 100, pr = 60, branch = 30, request = 20}
+    classes = {integration = 100, pr = 60, feature = 45, branch = 30, request = 20}
     aging_rate = 10                  # value per hour waited
-    starve_after_hours = {integration = 6, pr = 12, branch = 24, request = 48}
+    starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, request = 48}
     daily_budget_core_h = {branch = 200}   # per ref of the class, per 24 h; absent = unbounded
     boosts = {"priority:user" = 1000}
-    branches = ["exp/*"]             # opted-in child branches (fnmatch), class ``branch``
+    classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered; replaces whole
     prior_cost_h = 4.0
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
 part, over its ref's budget, or not admitted here -- naming the resources it lacks
-(:func:`lab_commons.compute.model.admit`). A candidate waiting longer than its class's
+(:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
 ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
 The pure scoring -- :class:`~lab_commons.compute.model.Schedule`, :func:`~lab_commons.compute.model.rank` -- lives
@@ -46,13 +53,12 @@ import re
 import subprocess
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.compute.model import (
-    BRANCH,
     INTEGRATION,
     PR,
     REQUEST,
@@ -69,11 +75,13 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import part_refs
 from lab_commons.hpc.needsets import BASE
+from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL
 
 __all__ = [
     'NOT_ADMITTED',
     'NO_HOST',
+    'ORIGIN_HOST',
     'OVER_BUDGET',
     'candidates',
     'host_weights',
@@ -85,6 +93,7 @@ __all__ = [
     'repo_name',
     'starved_alarms',
     'tip_of',
+    'vouched',
 ]
 
 #: Why a candidate is not claimed -- the prefix of :attr:`Ranked.blocked`.
@@ -103,6 +112,14 @@ def load_schedule(root: Path) -> Schedule:
         with manifest.open('rb') as handle:
             declared = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get(SCHEDULE_TABLE, {})
     default = Schedule()
+    retired = [
+        f'{key} is retired: {RETIRED[f"{SCHEDULE_TABLE}] {key}"]}'
+        for key in declared
+        if f'{SCHEDULE_TABLE}] {key}' in RETIRED
+    ]
+    if retired:
+        msg = f'[tool.lab_commons.{SCHEDULE_TABLE}] in {manifest}: ' + '; '.join(retired)
+        raise ValueError(msg)
     known = {one.name for one in dataclasses.fields(Schedule)}
     unknown = sorted(set(declared) - known)
     if unknown:
@@ -115,10 +132,17 @@ def load_schedule(root: Path) -> Schedule:
     defaults = dataclasses.asdict(default)
     for key, given in declared.items():
         current = defaults[key]
-        merged[key] = {**current, **given} if isinstance(current, Mapping) else given
-    if 'branches' in merged:
-        merged['branches'] = tuple(merged['branches'])
-    return dataclasses.replace(default, **merged)
+        replaces = key == 'classes_by_ref' or not isinstance(current, Mapping)
+        merged[key] = given if replaces else {**current, **given}
+    schedule = dataclasses.replace(default, **merged)
+    undeclared = sorted(set(schedule.classes_by_ref.values()) - set(schedule.classes))
+    if undeclared:
+        msg = (
+            f'[tool.lab_commons.{SCHEDULE_TABLE}] classes_by_ref in {manifest} names class(es) {undeclared} '
+            f'that classes does not value: {sorted(schedule.classes)}'
+        )
+        raise ValueError(msg)
+    return schedule
 
 
 def host_weights(table: Mapping[str, Any]) -> dict[str, float]:
@@ -194,6 +218,30 @@ def _when(root: Path, sha: str, fallback: datetime) -> datetime:
     return datetime.fromisoformat(stamp).astimezone(UTC) if stamp else fallback
 
 
+#: The commit trailer naming the host card a commit was made on (written by the ``forge-host`` commit-msg hook).
+ORIGIN_HOST: Final = 'Forge-Host'
+
+
+def _trailer(root: Path, sha: str, key: str) -> str:
+    """The last *key* trailer of commit *sha*; ``''`` when it carries none."""
+    values = _git(root, 'show', '-s', f'--format=%(trailers:key={key},valueonly)', sha).split()
+    return values[-1] if values else ''
+
+
+def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -> tuple[Candidate, ...]:
+    """*found* with each ``origin_host`` kept only where its FORGE-RECORDED login owns or is delegated that host.
+
+    A trailer or a request body is text anyone can write; the forge records who authored the PR or the
+    issue, and the hosts issue who owns each card (*owners*: host -> its login and its ``[reserve]`` delegates).
+    """
+    return tuple(
+        one
+        if not one.origin_host or one.origin in owners.get(one.origin_host, ())
+        else dataclasses.replace(one, origin_host='')
+        for one in found
+    )
+
+
 def _tips(root: Path) -> dict[str, str]:
     listed = _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING)
     return {ref.removeprefix(_TRACKING): sha for ref, sha in (line.split(' ') for line in listed.splitlines() if line)}
@@ -211,6 +259,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
 
 
 _REQUEST_PLATFORM: Final = re.compile(r'^\s*platform\s*=\s*["\'](?P<platform>[\w-]+)["\']', re.MULTILINE)
+_REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)
 
 
 def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[str], None]) -> Sequence[T]:
@@ -229,12 +278,10 @@ def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[st
 
 
 def _part_refs(
-    root: Path, mode: str, client: Client, schedule: Schedule, policy: Policy, *, say: Callable[[str], None]
+    root: Path, client: Client, schedule: Schedule, policy: Policy, *, say: Callable[[str], None]
 ) -> list[tuple[str, str, str, tuple[str, ...], int, str]]:
-    """``(ref, newest sha, class, labels, PR number, PR author)`` of every ref *mode* serves."""
+    """``(ref, newest sha, class, labels, PR number, PR author)`` of every served ref (module docstring)."""
     tips = _tips(root)
-    if mode != 'integrate':
-        return [(b, s, BRANCH, (), 0, '') for b, s in sorted(tips.items()) if b.startswith(policy.lane_prefixes)]
     refs = (
         [(policy.integration, tips[policy.integration], INTEGRATION, (), 0, '')] if policy.integration in tips else []
     )
@@ -243,11 +290,10 @@ def _part_refs(
         if pull.base == policy.integration and pull.head != policy.integration and sha:
             refs.append((pull.head, sha, PR, pull.labels, pull.number, pull.author))
     served = {ref for ref, *_ in refs}
-    refs += [
-        (branch, sha, BRANCH, (), 0, '')
-        for branch, sha in sorted(tips.items())
-        if branch not in served and any(fnmatch.fnmatchcase(branch, one) for one in schedule.branches)
-    ]
+    for branch, sha in sorted(tips.items()):
+        kind = schedule.class_of(branch)
+        if kind is not None and branch not in served and branch not in {policy.integration, policy.trunk}:
+            refs.append((branch, sha, kind, (), 0, ''))
     return refs
 
 
@@ -260,6 +306,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
         platform = declared['platform'] if declared else BASE
         number = int(raw['number'])
         origin = str((raw.get('user') or {}).get('login', ''))
+        host = _REQUEST_HOST.search(raw.get('body') or '')
         found.append(
             Candidate(
                 repo,
@@ -272,6 +319,7 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
                 labels=_labels(raw),
                 number=number,
                 origin=origin,
+                origin_host=host['host'] if host else '',
             )
         )
     return found
@@ -279,7 +327,6 @@ def _requests(client: Client, repo: str, schedule: Schedule, now: datetime) -> l
 
 def candidates(
     root: Path,
-    mode: str,
     client: Client,
     *,
     repo: str,
@@ -289,24 +336,34 @@ def candidates(
     now: datetime,
     say: Callable[[str], None] = lambda _: None,
 ) -> tuple[Candidate, ...]:
-    """Every candidate *mode* serves, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
+    """Every candidate, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
 
     *parts* names the parts a sha needs (:func:`lab_commons.dev.platformparts.derived` over its statuses).
 
-    ``integrate``: the integration branch, every open PR into it (labels from the PR), every opted-in
-    branch, and every request issue -- each kept only where its part's ref filter admits its ref
+    The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
+    classes, and every request issue -- each kept only where its part's ref filter admits its ref
     (:func:`lab_commons.dev.platformparts.part_refs`, the exclusion said through *say*) -- PRs and requests
-    :func:`optional`, a failure said through *say*. ``develop``: the lanes, as class ``branch``. ``quiet``: none.
+    :func:`optional`, a failure said through *say*.
     """
-    if mode == 'quiet':
-        return ()
     found = [
-        Candidate(repo, ref, sha, platform, kind, _when(root, sha, now), FULL, labels=labels, number=number, origin=by)
-        for ref, sha, kind, labels, number, by in _part_refs(root, mode, client, schedule, policy, say=say)
+        Candidate(
+            repo,
+            ref,
+            sha,
+            platform,
+            kind,
+            _when(root, sha, now),
+            FULL,
+            labels=labels,
+            number=number,
+            origin=by,
+            origin_host=_trailer(root, sha, ORIGIN_HOST) if by else '',
+            session=ref,
+        )
+        for ref, sha, kind, labels, number, by in _part_refs(root, client, schedule, policy, say=say)
         for platform in parts(sha)
     ]
-    if mode == 'integrate':
-        found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
+    found += optional('request issues', lambda: _requests(client, repo, schedule, now), say)
     return tuple(one for one in found if _ref_served(root, one, say))
 
 
