@@ -26,7 +26,7 @@ from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
-from lab_commons.hpc.measured import Measured
+from lab_commons.hpc.measured import OOM_GROWTH, Measured
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.platforms import Table
@@ -54,6 +54,12 @@ IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
 GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', cpus=64, partitions=('shortq', 'defq'))
 SHA = 'a' * 40
 SOURCE = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'pytest_item.py'
+
+
+@pytest.fixture(autouse=True)
+def _machine_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every gather learns beside the machine file: never this box's own."""
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'machine' / 'config.toml'))
 
 
 def test_the_item_runner_is_standalone() -> None:
@@ -281,6 +287,37 @@ def test_memory_is_the_worst_measured_peak_with_margin() -> None:
     assert measured.mem_gb([['a.py::t'], ['c.py::t']], Cost(mem_gb=9), Policy(safety=1.5)) == 9, 'unmeasured: cost'
 
 
+def test_a_measured_peak_raises_the_memory_and_never_lowers_it_under_the_declared_cost() -> None:
+    """Ada 2026-10-12: a 150 MB peak priced 225M, OOM; 429M, OOM; 598M passed -- 16 OOMs in a day.
+
+    The peak is the pytest child's; the task's cgroup also holds the item runner, so the declared cost
+    is the floor a measurement may only raise.
+    """
+    measured = Measured(peaks_mb={'a.py': 150.0})
+    assert measured.mem_gb([['a.py::t']], Cost(mem_gb=1), Policy(safety=1.5)) == 1
+    assert measured.mem_gb([['a.py::t']], Cost(mem_gb=0.1), Policy(safety=1.5)) == pytest.approx(
+        150.0 * 1.5 / 1024, rel=1e-12, abs=0.0
+    ), 'PLANTED CONTROL: over the floor the peak decides'
+
+
+def test_a_peak_read_at_a_kill_is_a_floor_grown_like_a_retry_and_never_lowers_a_known_peak() -> None:
+    """Ada 2026-10-13: 24 children OOM-killed at 1 GB read peaks of ~1120 MB -- the limit, not the need.
+
+    Kept as measured, the next run asks 1.5x the limit and dies again; the retry after an OOM asks
+    OOM_GROWTH x, and so does the record.
+    """
+    killed = {'seconds': {}, 'done': {'done': -9, 'wall': 30.0, 'peak_mb': 1120.0}}
+    measured = Measured()
+    measured.learn(['a.py::t'], killed)
+    assert measured.peaks_mb == {'a.py': 1120.0 * OOM_GROWTH}
+    known = Measured(peaks_mb={'a.py': 3493.0})
+    known.learn(['a.py::t'], killed)
+    assert known.peaks_mb == {'a.py': 3493.0}, 'a kill at a lower limit says nothing new'
+    finished = {'seconds': {'a.py::t': 1.0}, 'done': {'done': 0, 'wall': 30.0, 'peak_mb': 700.0}}
+    known.learn(['a.py::t'], finished)
+    assert known.peaks_mb == {'a.py': 700.0}, 'PLANTED CONTROL: a finished item is measured, newer wins'
+
+
 # -- the run flow ------------------------------------------------------------------------------------
 
 
@@ -454,6 +491,21 @@ def test_an_out_of_memory_round_doubles_the_memory_of_the_next() -> None:
     record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True))
     first, second = record['rounds']
     assert second['mem_mb'] == 2 * first['mem_mb']
+
+
+def test_every_folded_round_teaches_its_repo_not_only_the_record() -> None:
+    """A run superseded before its record has still measured what it ran.
+
+    Ada 2026-10-13: no downstream run of the day reached its record, so none was learned, and every
+    round 0 planned all ~4670 files blind at 1 GB.
+    """
+    _submit(FakeRunCluster(dies=frozenset({'tests/b.py'})))
+    assert learned.learned('https://g/r.git') == {}, 'PLANTED CONTROL: nothing folded, nothing learned'
+    fake = FakeRunCluster(dies=frozenset({'tests/b.py'}))
+    _submit(fake)
+    assert _gather(fake) is None, 'round 0 folded and its unfinished ids re-submitted: no record yet'
+    taught = learned.learned('https://g/r.git')
+    assert taught['peaks_mb'].keys() >= {'tests/a.py'}, 'what round 0 measured is history already'
 
 
 def test_history_prices_the_plan_and_names_nothing_unmeasured() -> None:
