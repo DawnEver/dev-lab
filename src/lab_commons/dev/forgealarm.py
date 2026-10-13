@@ -32,7 +32,8 @@ that window so a consumer routes only the first. A channel that failed is retrie
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+import sys
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -43,7 +44,7 @@ from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
-__all__ = ['AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'RUN', 'STARVED', 'Alarm', 'repeat_window', 'sound']
+__all__ = ['AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'RUN', 'STARVED', 'Alarm', 'main', 'repeat_window', 'sound']
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
 EVENT: Final = 'lab_commons.forge.alarm'
@@ -121,3 +122,18 @@ def sound(
     line = {'event': EVENT, 'kind': alarm.kind, 'repo': alarm.repo, 'subject': alarm.subject}
     emit(json.dumps({**line, 'body': alarm.body, 'delivered': list(delivered), 'repeat': not due}), err=True)
     return delivered
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``<kind> <repo> <subject> <body>``: sound one alarm from a process that imports no dev code (the hpc deploy)."""
+    try:
+        kind, repo, subject, body = sys.argv[1:] if argv is None else argv
+    except ValueError:
+        emit('usage: python -m lab_commons.dev.forgealarm <kind> <repo> <subject> <body>', err=True)
+        return 2
+    sound(Alarm(kind, repo, subject, body))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
