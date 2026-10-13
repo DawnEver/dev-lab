@@ -154,9 +154,7 @@ def post_part(
         chosen = [part]
     else:
         here = (present or present_here)()
-        chosen = sorted({owned[node] for node in outcomes if needs_of(owned[node]) <= here})
-    if not chosen:
-        return 'part: not posted -- this host has the needs of no part this run judged'
+        chosen = sorted({owned[node] for node in outcomes if needs_of(owned[node]) <= here}) or [BASE]
     scope = INCREMENTAL if arguments else FULL
     return '\n'.join(
         post_local(

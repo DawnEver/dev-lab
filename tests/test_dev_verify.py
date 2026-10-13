@@ -1208,6 +1208,8 @@ def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatc
     """PLANTED CONTROL: a need-set naming an undeclared resource selects nothing a test can carry."""
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nresources = ["femm"]\n', encoding='utf-8')
+    for name, value in producing(part_context('matlab'), 'a' * 40).items():
+        monkeypatch.setenv(name, value)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a refused part ran'))
     assert verify.main(['--part', 'matlab']) == ProducerExit.USAGE
     assert "needs ['matlab']" in capsys.readouterr().err

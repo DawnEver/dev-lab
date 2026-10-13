@@ -87,13 +87,13 @@ def test_an_inert_list_that_is_not_strings_is_refused_by_name(tmp_path: Path) ->
 
 
 def test_a_carried_part_names_its_source_and_still_admits() -> None:
-    part = Part('windows', 'full', 'PASS', 12, carried='a' * 12)
+    part = Part('base', 'full', 'PASS', 12, carried='a' * 12)
     text = part.description()
     assert text.endswith(f'carried from {"a" * 12}: only inert paths changed')
-    parts, problems = parts_of([Status('tests/windows', 'success', text, '')])
+    parts, problems = parts_of([Status('tests/base', 'success', text, '')])
     assert problems == ()
-    assert parts['windows'] == part
-    assert standing([Status('tests/windows', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
+    assert parts['base'] == part
+    assert standing([Status('tests/base', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
 
 
 class _Forge:
