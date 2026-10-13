@@ -112,7 +112,7 @@ from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
-from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, forge_now, this_machine, this_seat
+from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import card_host, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
@@ -221,10 +221,9 @@ def serve(
     )
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     serve_prune(root, client(root), host=name, now=clock(), say=say, alarm=alarm)
-    pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
-    if pending and not claimed and not left:
+    if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
-        named = ', '.join(f'{item.ref} {item.sha[:12]}' for item in pending)
+        named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
     for one in starved_alarms(ticked.queue, load_schedule(root), repo):
         alarm(one)

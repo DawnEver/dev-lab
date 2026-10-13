@@ -432,12 +432,20 @@ def test_the_alarms_a_tick_raises_ride_on_its_host_card(monkeypatch, tmp_path: P
 def test_an_account_idle_with_work_pending_alarms(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: the same pending request, claimed, raises nothing."""
     pending = Work('integrate/main', SHA, 'windows', OPEN)
-    idle = TickReport((pending,), (), ('tick',), ('tests/windows: not claimed -- no produce declared',))
+    why = 'tests/windows: not claimed -- its declared outputs could exceed threshold_mb'
+    idle = TickReport((pending,), (), ('tick',), (why,), pending=(pending,))
     _report, _said, alarms = _serve(monkeypatch, tmp_path, idle)
     assert [a.kind for a in alarms] == [IDLE]
     assert 'not claimed' in alarms[0].body
     claimed = dataclasses.replace(pending, state='mine', holder=ME, argv=('verify',))
     _report, _said, alarms = _serve(monkeypatch, tmp_path, _claimed(claimed), {'verify': _Proc(0)})
+    assert alarms == []
+
+
+def test_work_this_host_cannot_serve_never_makes_it_idle(monkeypatch, tmp_path: Path) -> None:
+    """Another platform's open part is in every host's work; only the tick's servable *pending* alarms idle."""
+    elsewhere = Work('integrate/main', SHA, 'linux', OPEN)
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((elsewhere,), (), ('tick',)))
     assert alarms == []
 
 

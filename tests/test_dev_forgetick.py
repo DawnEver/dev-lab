@@ -712,6 +712,7 @@ def test_a_part_base_hands_to_is_claimed_where_its_needs_are_present(server, tmp
     lacking = _tick(repo, server, dry_run=True, supply=BOX, demand=_one_core)
     assert [(w.platform, w.state) for w in lacking.work] == [(BASE, DONE), ('jmag', OPEN)]
     assert [item.blocked for item in lacking.queue] == [f'{NOT_ADMITTED}: lacking jmag']
+    assert lacking.pending == (), 'a part needing a tool absent here is no work this host could serve'
     answer('GET', f'{API}/statuses/{sha}', (200, [_base('jmag:2')]), (200, [_base('jmag:2'), _post(2, ME, 'jmag')]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     with_jmag = Supply('G', Resources(cpu=4, mem_gb=32, jmag=4), frozenset({'cpu', 'mem_gb', 'windows', 'jmag'}))
@@ -731,6 +732,7 @@ def test_two_parts_of_one_sha_never_share_a_tree_in_one_tick(server, tmp_path: P
     report = _tick(repo, server, supply=roomy, demand=_one_core)
     assert [w.platform for w in report.claimed] == ['dev_checkout']
     assert [item.blocked for item in report.queue] == [f'the tree of {sha[:12]} is producing another part here']
+    assert [w.platform for w in report.pending] == ['jmag'], 'PLANTED CONTROL: servable here, only busy now'
 
 
 def test_a_cluster_claims_what_it_has_and_never_a_part_needing_dev_checkout(server, tmp_path: Path) -> None:

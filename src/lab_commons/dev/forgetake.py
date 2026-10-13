@@ -58,6 +58,7 @@ class ClaimPass:
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
     queue: list[Ranked] = dataclasses.field(default_factory=list)
+    pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
     preempt: list[Held] = dataclasses.field(default_factory=list)  # loans a holder's claim here displaces
     admitted: dict[tuple[str, str], tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
 
@@ -87,6 +88,8 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
+            if needs_of(wanted.platform) <= self.supply.present:
+                self.pending.append(one)
 
     def reserved(self, wanted: Candidate) -> bool:
         """Whether a live lease on this host is for *wanted*: it then ranks first here."""
