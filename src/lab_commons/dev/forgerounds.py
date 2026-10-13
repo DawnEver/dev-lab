@@ -65,7 +65,6 @@ class Rounds:
 
     root: Path
     repo: str
-    mode: str
     alarm: Callable[[Alarm], object]
     runs: list[forgerun.Run]
     slurm: forgerun.Cluster | None
@@ -108,7 +107,7 @@ class Rounds:
             *self.producing.running(self.sized),
         ]
         ticked = _tick(
-            self.repo, self.root, self.mode, self.alarm, **self.ticking,
+            self.repo, self.root, self.alarm, **self.ticking,
             supply=supply, running=running, busy=self.producing.shas(),
         )  # fmt: skip
         client = self.ticking['client'](self.root)
@@ -157,10 +156,10 @@ def supply_now(
     return Supply(name, probed.resources - reserve() + given_back, probed.present)
 
 
-def _tick(repo: str, root: Path, mode: str, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
+def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
     """One :func:`~lab_commons.dev.forgetick.tick`; the forge refusing the stored credential alarms before it raises."""
     try:
-        return tick(root, mode, **kwargs)
+        return tick(root, **kwargs)
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
             machine = kwargs.get('machine') or 'this host'

@@ -13,8 +13,8 @@ THE TASK, as one ``schtasks /Create /XML`` definition (:func:`task_xml`):
 * every 5 minutes; a tick still running when the next fires is skipped (``IgnoreNew``);
 * as THIS user, only while logged on (``InteractiveToken``, no stored password): the forge credential
   and a vendor's scheduler are per user, and JMAG's COM classes need the user's session;
-* the action ``<lab-commons checkout>/.venv/Scripts/pythonw.exe -m lab_commons.dev.workstation serve
-  --mode <mode>``, its working directory the checkout, the Task ``Hidden``.
+* the action ``<lab-commons checkout>/.venv/Scripts/pythonw.exe -m lab_commons.dev.workstation serve``,
+  its working directory the checkout, the Task ``Hidden``.
 
 INVISIBLE ON A WORKSTATION, MEASURED 2026-10-13: the earlier action ``cmd /c cd /d <checkout> && python
 ...`` opened a console window every five minutes while the user worked. ``pythonw.exe`` is a
@@ -127,9 +127,9 @@ def this_user() -> str:
     return f'{domain}\\{user}' if domain else user
 
 
-def definition_of(lab: Path, *, mode: str = 'integrate') -> Definition:
+def definition_of(lab: Path) -> Definition:
     """The Task that serves every declared repo from the lab-commons checkout *lab*, with no window."""
-    arguments = f'-m lab_commons.dev.workstation serve --mode {mode}'
+    arguments = '-m lab_commons.dev.workstation serve'
     return Definition(command=str(lab / _VENV_PYTHONW), arguments=arguments, working_directory=str(lab))
 
 

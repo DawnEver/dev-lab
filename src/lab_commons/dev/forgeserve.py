@@ -1,4 +1,4 @@
-"""THE HARNESS ENTRY -- ``python -m lab_commons.dev.forge serve --mode M``, one call that serves a checkout.
+"""THE HARNESS ENTRY -- ``python -m lab_commons.dev.forge serve``, one call that serves a checkout.
 
 ONE SOURCE FOR THE PROTOCOL. A harness used to restate the forge protocol step by step -- tick, run the
 claimed argv, watch, publish, route -- and with it this family's venv layout and output tree, so every
@@ -76,6 +76,11 @@ waiting past its class's bound raises a ``starved`` alarm, and this host's CARD 
 (:mod:`lab_commons.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
+THE FORGE PROMPTS THE INTEGRATOR: on the host declared to own integration (``[tool.lab_commons.integrator]
+host``, matched against this host's card name and its forge login), the tick derives the integration
+queue and raises an ``integration`` alarm per new row that asks for action
+(:func:`lab_commons.dev.integrator.observe`). Every other host derives nothing.
+
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`lab_commons.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
 work it could serve is pending each raise an alarm.
@@ -113,8 +118,9 @@ from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
 from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
-from lab_commons.dev.forgetick import MODES
+from lab_commons.dev.forgestatus import status_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
+from lab_commons.dev.integrator import observe
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
@@ -141,7 +147,6 @@ class ServeReport:
 
 def serve(
     root: Path,
-    mode: str,
     *,
     client: Callable[[Path], Client],
     machine: str,
@@ -181,7 +186,7 @@ def serve(
     beat_s = float(table.get('tick_minutes', 5)) * 60
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
     host_rounds = Rounds(
-        root, repo, mode, alarm, runs, slurm=slurm, say=say, cores=cores,
+        root, repo, alarm, runs, slurm=slurm, say=say, cores=cores,
         sized=learned_demand(repo, cluster=seat is not None, cores=cores),
         supplied=functools.partial(
             supply_now, name=name, standing=standing, box_room=box_room, provides=provides,
@@ -214,14 +219,14 @@ def serve(
     )
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
-    if mode != 'quiet' and pending and not claimed and not left:
+    if pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]}' for item in pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
     for one in starved_alarms(ticked.queue, load_schedule(root), repo):
         alarm(one)
-    if mode != 'quiet':
-        card(claimed)
+    card(claimed)
+    _prompt(root, repo, client(root), hosts={name}, say=say, alarm=alarm)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -230,6 +235,23 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
+
+
+def _prompt(
+    root: Path,
+    repo: str,
+    built: Client,
+    *,
+    hosts: set[str],
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+) -> None:
+    """Raise the integrator's prompts when this host owns integration; a forge failure is said, not raised."""
+    try:
+        for one in observe(root, repo, hosts={*hosts, built.whoami()}, statuses=lambda sha: status_list(built, sha)):
+            alarm(one)
+    except ForgeCallFailed as failed:
+        say(f'[serve] the integration queue was not derived: {failed}')
 
 
 def box_reserve(table: Mapping[str, Any] | None = None) -> Resources:
@@ -306,9 +328,8 @@ def main(
     transport: Transport = https_transport,
     seat_of: Callable[[], ClusterAccount | None] = this_seat,
 ) -> int:
-    """``serve --mode integrate|develop|quiet [--json]``: 0 served, 1 forge or run state failed, 2 contract broke."""
+    """``serve [--json]``: 0 served, 1 forge or run state failed, 2 contract broke."""
     parser = argparse.ArgumentParser(prog='lab_commons.dev.forge serve', description=__doc__.splitlines()[0])
-    parser.add_argument('--mode', required=True, choices=MODES, help='which refs this checkout serves')
     parser.add_argument('--lease-hours', type=float, default=DEFAULT_LEASE.total_seconds() / 3600)
     parser.add_argument('--json', action='store_true', help='print the whole report as JSON')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
@@ -322,7 +343,6 @@ def main(
     try:
         report = serve(
             root,
-            args.mode,
             client=build,
             machine=machine,
             seat=seat,

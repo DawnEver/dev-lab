@@ -26,18 +26,21 @@ suite to learn whether a sha is green, and you never wait for one to push.
 
 ## Producing parts: `forge serve`
 
-`python -m lab_commons.dev.forge serve --mode integrate|develop|quiet` is the one call a crontab or harness
-makes on a producer host. Each tick it:
+`python -m lab_commons.dev.forge serve` is the one call a crontab or harness makes on a producer host. It
+takes no mode: EVERY HOST SERVES EVERY CANDIDATE CLASS from one queue ([scheduling](#scheduling)). The rank
+decides ORDER, the admission decides FIT, and a reservation decides EXCLUSIVITY: a host that takes no foreign
+work is one its owner has reserved whole (`forge reserve <host> --all --for login:<owner> --until ...`).
+Each tick it:
 
-1. flushes the status outbox (`quiet` stops here);
+1. flushes the status outbox;
 2. fetches origin and builds the queue of every derived part ([scheduling](#scheduling));
 3. claims in rank order WHILE JOBS ADMIT ([admission](#admission)), posting `pending` for each;
 4. runs every claimed local part at once, one thread each (streamed, each claim renewed every third of the
    lease), or advances a cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
-5. posts the part with its record attached, and edits its host card.
+5. posts the part with its record attached, and edits its host card;
+6. on the host that owns integration, prompts the integrator ([integration alarm](#alarms)).
 
-- `--mode integrate` serves the integration branch, open PRs into it and opted-in branches; `--mode develop`
-  serves the lanes. `forge tick` is the same claim step without producing (`--dry-run` to preview).
+- `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
   `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `~/.cache/lab-forge/serve.lock` elsewhere.
 - **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
@@ -137,10 +140,13 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
 One work queue, derived from git and the forge every tick and never stored. Each candidate is a part a ref's
 newest commit lacks, or a request issue.
 
-- **Candidates** (`forgeschedule.candidates`): in integrate mode the integration branch (`integration`), every
-  open PR into it (`pr`), every opted-in branch (`branch`), every open issue labelled `forge:request`
-  (`request`; its part from `platform = "<p>"` in the body, else `base`). In develop mode, the lanes. A
-  ref's tip is one candidate per part it needs (`base`, and every part its posted parts hand to).
+- **Candidates** (`forgeschedule.candidates`), the same on every host: the integration branch
+  (`integration`), every open PR into it (`pr`), every other origin branch the ONE CLASS RULE names
+  (`classes_by_ref`, ordered, first match: `feat/*` and `fix/*` are `feature`, `lane/*` is `branch` by
+  default; a branch no pattern matches is not served), and every open issue labelled `forge:request`
+  (`request`; its part from `platform = "<p>"` in the body, else `base`). A ref's tip is one candidate per
+  part it needs (`base`, and every part its posted parts hand to). The same rule names the integrator's
+  children ([the integrator](integrator.md)).
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
   `weight[repo] * value / expected_cost` (weighted shortest job first). Aging grows without bound, so no
   class starves forever.
@@ -155,16 +161,17 @@ newest commit lacks, or a request issue.
   it, its wait and its blocking reason -- for a job that does not fit, the resources it lacks.
 
 The numbers are data, `[tool.lab_commons.schedule]` over the family default
-(`lab_commons.compute.model.Schedule`), overridden key by key:
+(`lab_commons.compute.model.Schedule`), overridden key by key -- except `classes_by_ref`, an ordered rule a
+declaration replaces whole. Every class the rule names must be valued in `classes`:
 
 ```toml
 [tool.lab_commons.schedule]
-classes = {integration = 100, pr = 60, branch = 30, request = 20}
+classes = {integration = 100, pr = 60, feature = 45, branch = 30, request = 20}
 aging_rate = 10                                    # value per hour waited
-starve_after_hours = {integration = 6, pr = 12, branch = 24, request = 48}
+starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, request = 48}
 daily_budget_core_h = {}                           # class -> core-hours one ref may use per 24 h
 boosts = {"priority:user" = 1000}                  # label -> value; `priority:<n>` adds n
-branches = []                                      # opted-in child branches
+classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered, first match
 request_label = "forge:request"
 prior_cost_h = 4.0
 ```
@@ -263,8 +270,13 @@ moment (`36h`, `2d`, or ISO). A daily-moving share is a reservation that expires
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
 "delivered", "repeat"}` to stderr for: `auth` (401/403 or no credential), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
-pending) and `starved`. The machine file's `[alerts]` table (telegram, email, webhook) delivers them; one
-`(kind, repo[, candidate])` is delivered at most once per 6 h.
+pending), `starved`, and `integration` -- not a failure but a PROMPT: on the host the repo declares to own
+integration (`[tool.lab_commons.integrator] host`, a card name or a forge login), each tick derives the
+integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
+BLOCKED red to route), keyed by state, branch and tip, so a new row is delivered at once
+([the integrator](integrator.md#waking-the-integrator)). The machine file's `[alerts]` table (telegram,
+email, webhook) delivers them; one `(kind, repo[, about])` is delivered at most once per `[alerts]
+repeat_hours` (absent: 6) -- the receiver's decision, so it lives in the receiver's machine file.
 
 ## Records and the outbox
 

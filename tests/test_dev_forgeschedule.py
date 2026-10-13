@@ -66,12 +66,36 @@ def test_a_repo_override_changes_the_order(tmp_path: Path) -> None:
     pr, branch = _cand('feat/x', 'pr'), _cand('exp/y', 'branch')
     assert _order(rank([branch, pr], {'o/r': FAMILY}, NOW, cost_h={}))[0] == 'feat/x'
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.schedule]\nclasses = {branch = 90}\nbranches = ["exp/*"]\n', encoding='utf-8'
+        '[tool.lab_commons.schedule]\nclasses = {branch = 90}\nclasses_by_ref = {"exp/*" = "branch"}\n',
+        encoding='utf-8',
     )
     declared = load_schedule(tmp_path)
     assert declared.classes['pr'] == 60, 'a key it omits keeps the family default'
-    assert declared.branches == ('exp/*',)
+    assert declared.classes_by_ref == {'exp/*': 'branch'}, 'an ordered rule is replaced whole, never merged'
     assert _order(rank([pr, branch], {'o/r': declared}, NOW, cost_h={}))[0] == 'exp/y'
+
+
+def test_the_class_rule_is_ordered_and_first_match_wins() -> None:
+    rule = Schedule(classes_by_ref={'feat/hot/*': 'pr', 'feat/*': 'feature'})
+    assert (rule.class_of('feat/hot/x'), rule.class_of('feat/x'), rule.class_of('wip/x')) == ('pr', 'feature', None)
+    assert FAMILY.class_of('feat/x') == 'feature', 'the family default: a feature branch is its own class'
+    assert FAMILY.class_of('lane/x') == 'branch'
+    assert FAMILY.base('pr') > FAMILY.base('feature') > FAMILY.base('branch')
+    assert 'feature' in FAMILY.starve_after_hours
+
+
+def test_a_rule_naming_an_unvalued_class_is_refused(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.lab_commons.schedule]\nclasses_by_ref = {"x/*" = "nightly"}\n', encoding='utf-8'
+    )
+    with pytest.raises(ValueError, match='nightly'):
+        load_schedule(tmp_path)
+
+
+def test_the_retired_allow_list_is_refused_by_name_with_the_rule_that_replaced_it(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.schedule]\nbranches = []\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='classes_by_ref'):
+        load_schedule(tmp_path)
 
 
 def test_an_unknown_schedule_key_is_refused(tmp_path: Path) -> None:

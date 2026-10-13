@@ -13,21 +13,27 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, make_repo, run_git
 
+from lab_commons.compute.model import Schedule
+from lab_commons.dev.forgealarm import INTEGRATION
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.integrator import (
     BLOCKED,
+    MERGE,
     PARTS_NEEDED,
     PROMOTE,
     WAITING,
     LaneRef,
     lane_ready,
     main,
+    observe,
+    prompts,
     read_refs,
     ready_lanes,
 )
 from lab_commons.dev.lanepolicy import Policy, load_policy
 
-_POLICY = Policy(lane_prefixes=('feat/', 'fix/'))
+_POLICY = Policy()
+_SCHEDULE = Schedule()
 
 
 def _ref(branch: str, tip: str, at: int = 0, *, absorbed: bool = False) -> LaneRef:
@@ -72,10 +78,9 @@ def test_a_status_on_an_older_tip_does_not_carry_to_a_moved_or_force_pushed_one(
     assert [(lane.branch, lane.state) for lane in queue.held] == [('feat/a', WAITING)]
 
 
-def test_undeclared_prefixes_absorbed_lanes_and_the_integration_branches_are_never_queued() -> None:
+def test_absorbed_lanes_and_the_integration_branches_are_never_queued() -> None:
     green = _GREEN
     refs = (
-        _ref('wip/x', 'w'),
         _ref('feat/done', 'f', absorbed=True),
         _ref('integrate/main', 'i', absorbed=True),
         _ref('main', 'm'),
@@ -108,14 +113,19 @@ def test_the_integration_tip_not_on_main_is_judged_by_its_full_parts(parts: tupl
     assert (queue.promotion.branch, queue.promotion.state) == ('integrate/main', state)
 
 
-def test_the_consumer_declares_prefixes_and_branches(tmp_path: Path) -> None:
+def test_the_consumer_declares_its_branches_and_who_is_prompted(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[tool.lab_commons.integrator]\nlane_prefixes = ["lane/"]\nintegration = "stage"\n',
-        encoding='utf-8',
+        '[tool.lab_commons.integrator]\nintegration = "stage"\nhost = "G"\n', encoding='utf-8'
     )
-    policy = load_policy(tmp_path)
-    assert policy == Policy(lane_prefixes=('lane/',), integration='stage')
+    assert load_policy(tmp_path) == Policy(integration='stage', host='G')
     assert load_policy(tmp_path / 'absent') == Policy()
+
+
+def test_the_retired_prefix_list_is_refused_by_name_with_the_rule_that_replaced_it(tmp_path: Path) -> None:
+    retired = 'lane' + '_prefixes'
+    (tmp_path / 'pyproject.toml').write_text(f'[tool.lab_commons.integrator]\n{retired} = ["x/"]\n', 'utf-8')
+    with pytest.raises(ValueError, match='classes_by_ref'):
+        load_policy(tmp_path)
 
 
 def test_a_malformed_declaration_is_refused_by_name(tmp_path: Path) -> None:
@@ -150,8 +160,8 @@ def _repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
 def test_read_refs_marks_what_the_integration_branch_already_holds(tmp_path: Path) -> None:
     repo, tips = _repo(tmp_path)
-    found = {ref.branch: ref for ref in read_refs(repo, _POLICY)}
-    assert set(found) == {'feat/in', 'feat/out', 'integrate/main'}
+    found = {ref.branch: ref for ref in read_refs(repo, _POLICY, _SCHEDULE)}
+    assert set(found) == {'feat/in', 'feat/out', 'integrate/main'}, 'wip/x: no class, so not a lane'
     assert found['feat/in'].absorbed
     assert not found['feat/out'].absorbed
     assert found['feat/out'].tip == tips['feat/out']
@@ -172,3 +182,39 @@ def test_the_poll_entry_prints_the_ordered_queue(tmp_path: Path, capsys: pytest.
     assert printed['promotion']['state'] == PARTS_NEEDED
     assert main(['queue'], cwd=repo, statuses=statuses) == 0
     assert f'merge  feat/out  {tips["feat/out"][:12]}' in capsys.readouterr().out
+
+
+def test_the_classes_rule_names_the_lanes(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same refs, a rule that classes ``wip/*`` -- and only then is it a lane."""
+    repo, _ = _repo(tmp_path)
+    wip = Schedule(classes_by_ref={'wip/*': 'branch'})
+    assert {ref.branch for ref in read_refs(repo, _POLICY, wip)} == {'wip/x', 'integrate/main'}
+
+
+def test_each_ready_promotable_or_red_row_is_one_prompt_keyed_by_its_tip() -> None:
+    refs = (_ref('feat/ok', 'o'), _ref('feat/red', 'r'), _ref('feat/wait', 'w'), _ref('integrate/main', 'i'))
+    queue = ready_lanes(refs, {'o': _GREEN, 'r': _RED, 'i': _GREEN}, _POLICY)
+    alarms = prompts(queue, 'o/r')
+    assert {(a.kind, a.about) for a in alarms} == {
+        (INTEGRATION, f'{MERGE} feat/ok@o'),
+        (INTEGRATION, f'{BLOCKED} feat/red@r'),
+        (INTEGRATION, f'{PROMOTE} integrate/main@i'),
+    }, 'a waiting lane prompts nobody'
+    moved = prompts(ready_lanes((_ref('feat/ok', 'o2'),), {'o2': _GREEN}, _POLICY), 'o/r')
+    assert [a.about for a in moved] == [f'{MERGE} feat/ok@o2'], 'a moved tip is a NEW prompt, delivered at once'
+
+
+def test_only_the_declared_integration_host_is_prompted(tmp_path: Path) -> None:
+    repo, tips = _repo(tmp_path)
+    green = {tips['feat/out']: _GREEN}
+    (repo / 'pyproject.toml').write_text('[tool.lab_commons.integrator]\nhost = "G"\n', encoding='utf-8')
+    asked: list[str] = []
+
+    def statuses(sha: str) -> tuple[Status, ...]:
+        asked.append(sha)
+        return green.get(sha, ())
+
+    assert observe(repo, 'o/r', hosts={'H', 'bob'}, statuses=statuses) == []
+    assert asked == [], 'another host derives nothing'
+    found = observe(repo, 'o/r', hosts={'G', 'alice'}, statuses=statuses)
+    assert [a.about for a in found] == [f'{MERGE} feat/out@{tips["feat/out"][:12]}']

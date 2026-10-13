@@ -70,7 +70,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
         return histories[sha]
 
     found = candidates(
-        root, 'integrate', client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
+        root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
         policy=load_policy(root), now=now,
     )  # fmt: skip
     book = ledger.read(client)
