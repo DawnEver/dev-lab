@@ -201,7 +201,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         pushes = [(args.remote_ref, _head(args.root))]
     else:
         stdin = '' if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
-        pushes = [(line.remote_ref, line.local_sha) for line in parse_push_lines(stdin) if not line.deleted]
+        lines = parse_push_lines(stdin)
+        if lines and all(line.deleted for line in lines):
+            return 0  # a deletion publishes no commit: nothing to admit
+        pushes = [(line.remote_ref, line.local_sha) for line in lines if not line.deleted]
     if not pushes:
         parser.error("no ref to judge: pass --remote-ref, or run as a pre-push hook (git's ref lines on stdin)")
     policy = load_policy(args.root)
