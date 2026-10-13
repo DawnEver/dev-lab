@@ -250,7 +250,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     waits: list[float | None] = []
     proc = _Proc(0, beats=6)
     inner = proc.wait
-    proc.wait = lambda timeout=None: waits.append(timeout) or inner(timeout)  # type: ignore[method-assign]
+    monkeypatch.setattr(proc, 'wait', lambda timeout=None: waits.append(timeout) or inner(timeout))
     forgeproduce.produce(
         tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, clock=lambda: NOW, say=lambda _l: None,
         lease=timedelta(hours=6), renew_s=30.0, beat_s=10.0, beat=beats.append, fetch=lambda _root: None,
