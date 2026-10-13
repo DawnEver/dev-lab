@@ -73,8 +73,9 @@ is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`lab_commons.dev.forgeschedule`). Before the tick a cluster host
 reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
-other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released), a candidate
-waiting past its class's bound raises a ``starved`` alarm, and this host's CARD is published on the forge
+other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released); on the host that
+owns integration ONLY, a part no host admits waiting past its class's bound raises a ``starved`` alarm,
+read across every host card; and this host's CARD is published on the forge
 (:mod:`lab_commons.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
@@ -109,21 +110,23 @@ from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
-from lab_commons.dev.branchprune import serve_prune
+from lab_commons.dev.branchprune import owns_integration, serve_prune
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STORAGE, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
-from lab_commons.dev.forgehosts import card_host, recording
+from lab_commons.dev.forgehosts import HostCard, card_host, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
 from lab_commons.dev.forgeprovides import provided
+from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
 from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.integrator import observe
+from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
@@ -228,8 +231,7 @@ def serve(
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
-    for one in starved_alarms(ticked.queue, load_schedule(root), repo):
-        alarm(one)
+    _starved(root, repo, client(root), book.cards, host=name, say=say, alarm=alarm)
     card(claimed)
     _prompt(root, repo, client(root), hosts={name}, say=say, alarm=alarm)
     broken = tuple(
@@ -240,6 +242,33 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
+
+
+def _starved(
+    root: Path,
+    repo: str,
+    built: Client,
+    cards: Sequence[HostCard],
+    *,
+    host: str,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+) -> None:
+    """On the integration host only: a ``starved`` alarm for each part NO host admits, read across every card.
+
+    Each host sees only its own queue, so one host's wait is not starvation, and N hosts alarming one part
+    is N pages: the ONE owner is the host that owns integration (:func:`owns_integration`).
+    """
+    if not owns_integration(load_policy(root), built, host):
+        return
+    schedule = load_schedule(root)
+    try:
+        queue, _ = forge_queue(root, built, cards, now=forge_now(built), schedule=schedule)
+    except ForgeCallFailed as failed:
+        say(f'[serve] the queue across hosts was not read: {failed}')
+        return
+    for one in starved_alarms([item for item in queue if unadmitted(item.blocked)], schedule, repo):
+        alarm(one)
 
 
 def _prompt(

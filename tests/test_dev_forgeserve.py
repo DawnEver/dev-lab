@@ -477,16 +477,28 @@ def _waiting(kind: str, waited_h: float, blocked: str) -> Ranked:
     return Ranked(one, 60.0, 4.0, 15.0, waited_h, blocked)
 
 
-def test_a_candidate_waiting_past_its_bound_raises_a_starved_alarm_naming_why(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED CONTROLS: the same wait unblocked, and a blocked wait under the bound, raise nothing."""
-    jammed = TickReport((), (), ('tick',), (), (_waiting('pr', 13, 'not admitted: lacking cpu, mem_gb'),))
-    _report, _said, alarms = _serve(monkeypatch, tmp_path, jammed)
+def _starving(monkeypatch: pytest.MonkeyPatch, *, owner: bool, queue: list[Ranked]) -> None:
+    monkeypatch.setattr(forgeserve, 'owns_integration', lambda _policy, _client, host: owner and host == 'G')
+    monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (queue, []))
+
+
+def test_only_the_integration_host_raises_starved_for_a_part_no_host_admits(monkeypatch, tmp_path: Path) -> None:
+    """ONE owner reads the queue ACROSS hosts; a part some host admits is no starvation, only a wait.
+
+    PLANTED CONTROLS: a blocked wait under the bound and a wait one host only has to finish raise nothing on
+    the owner, and a host that does not own integration raises nothing for the same queue, nor for its own.
+    """
+    nobody = 'no host admits it -- G lacking cpu; ada/alice lacking mem_gb'
+    queue = [_waiting('pr', 13, nobody), _waiting('pr', 11, nobody), _waiting('pr', 14, 'the tree is busy here')]
+    _starving(monkeypatch, owner=True, queue=queue)
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ('tick',)))
     (alarm,) = alarms
     assert (alarm.kind, alarm.about) == (STARVED, f'feat/x@{SHA[:12]}:windows')
     assert 'waited 13.0 h, past its 12 h bound' in alarm.body
-    assert 'not admitted: lacking cpu, mem_gb' in alarm.body, 'the starved alarm names the resources it lacks'
-    calm = TickReport((), (), ('tick',), (), (_waiting('pr', 13, ''), _waiting('pr', 11, 'not admitted: lacking cpu')))
-    assert _serve(monkeypatch, tmp_path, calm)[2] == []
+    assert nobody in alarm.body, 'the starved alarm names every host and what it lacks'
+    _starving(monkeypatch, owner=False, queue=queue)
+    own = TickReport((), (), ('tick',), (), (_waiting('pr', 13, 'not admitted: lacking cpu, mem_gb'),))
+    assert _serve(monkeypatch, tmp_path, own)[2] == []
 
 
 def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
