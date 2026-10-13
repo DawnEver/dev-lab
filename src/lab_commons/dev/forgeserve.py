@@ -21,9 +21,11 @@ run in any process without it.
 
 A LOCAL PRODUCER RUNS INLINE AND HOLDS ITS CLAIM: its output streams prefixed ``[platform]``, its
 claim is renewed (the same claim, ``until`` = the forge's time plus the lease) every third of the
-lease while it lives, and when it ends with its context still pending the claim is RELEASED as
-``error`` with the reason its exit code names, so nobody waits out a lease for a dead producer. A
-CLUSTER part is never a blocking process: each call advances it and returns (:mod:`lab_commons.dev.forgerun`).
+lease while it lives, its host card is published every tick period while it lives (``holds <sha>
+<part> producing <minutes>m``, so a busy host never reads STALE), and when it ends with its context
+still pending the claim is RELEASED as ``error`` with the reason its exit code names, so nobody
+waits out a lease for a dead producer. A CLUSTER part is never a blocking process: each call
+advances it and returns (:mod:`lab_commons.dev.forgerun`).
 
 EXIT CODES ARE READ BY ONE CONTRACT, :mod:`lab_commons.dev.producer`: 0/1 a posted PASS/FAIL part,
 2 the argv refused, 3 INCONCLUSIVE (released, a human decides), 4 UNREACHABLE infrastructure
@@ -46,6 +48,7 @@ work it could serve is pending each raise an alarm.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import subprocess
 import sys
@@ -134,6 +137,12 @@ def serve(
         runs = forgerun.supersede_moved(root, runs, client=client(root), cluster=slurm, say=say)
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     produced: list[Produced] = []
+    card = functools.partial(
+        publish_card, root, ticked.queue, client=client, machine=machine, seat=seat, host=host, standing=standing,
+        table=table, say=say, alarms=raised, artefacts=ticked.artefacts, provides=provides,
+    )  # fmt: skip
+
+    beat_s = float(table.get('tick_minutes', 5)) * 60
     for item in ticked.claimed:
         if item.cluster is not None and item.holder is not None:
             runs.append(forgerun.start(item, item.holder))
@@ -149,6 +158,10 @@ def serve(
                     lease=lease,
                     renew_s=every,
                     fetch=fetch,
+                    beat_s=beat_s,
+                    beat=lambda elapsed, one=item: card(
+                        (one,), progress=f'producing {elapsed.total_seconds() // 60:.0f}m'
+                    ),
                 )
             )
     left = _advance(
@@ -163,9 +176,7 @@ def serve(
     for one in starved_alarms(ticked.queue, load_schedule(root), repo):
         alarm(one)
     if mode != 'quiet':
-        publish_card(root, ticked.queue, ticked.claimed, client=client, machine=machine, seat=seat, host=host,
-                     standing=standing, table=table, say=say, alarms=raised, artefacts=ticked.artefacts,
-                     provides=provides)  # fmt: skip
+        card(ticked.claimed)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced

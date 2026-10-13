@@ -1,8 +1,11 @@
 """ONE LOCAL PART, PRODUCED INLINE: run the claimed argv, stream it, hold its claim, release what it left.
 
 Extracted from :mod:`lab_commons.dev.forgeserve` (its module docstring states the contract): the output
-streams prefixed ``[platform]``; the claim is renewed on the FORGE's clock every *renew_s* while the
-producer lives; a ref that moved on stops it (``superseded by <sha>``) unless the new tip is
+streams prefixed ``[platform]``; the loop wakes every *beat_s* (the host's tick period) and calls
+*beat* with the time produced so far -- serve publishes its host card there, so a host busy for hours
+still ticks and ``forge queue``'s STALE keeps meaning down; the claim is renewed on the FORGE's clock
+every *renew_s* (counted in wakes) while the producer lives; a ref that moved on stops it
+(``superseded by <sha>``) unless the new tip is
 reach-equivalent (:mod:`lab_commons.dev.forgecarry`) -- then the run finishes and its part is also posted
 on that tip, naming the sha it was judged at; a producer past
 :data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
@@ -19,6 +22,7 @@ that refused.
 from __future__ import annotations
 
 import dataclasses
+import math
 import os
 import subprocess
 import threading
@@ -73,6 +77,8 @@ def produce(
     lease: timedelta,
     renew_s: float,
     fetch: Callable[[Path], None] = fetch_origin,
+    beat_s: float | None = None,
+    beat: Callable[[timedelta], object] = lambda _elapsed: None,
 ) -> Produced:
     """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
@@ -88,7 +94,8 @@ def produce(
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
         return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
-                    say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard)  # fmt: skip
+                    say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
+                    beat_s=renew_s if beat_s is None else beat_s, beat=beat)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
 
@@ -107,6 +114,8 @@ def _run(
     renew_s: float,
     fetch: Callable[[Path], None],
     heard: list[str],
+    beat_s: float,
+    beat: Callable[[timedelta], object],
 ) -> Produced:
     context = part_context(item.platform)
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
@@ -124,9 +133,12 @@ def _run(
     pump.start()
     started = clock()
     superseded = ''
+    wake_s = min(renew_s, beat_s)
+    renew_every = max(1, math.ceil(renew_s / wake_s - 1e-9))  # wakes per renewal
+    wakes = 0
     while True:
         try:
-            returncode = proc.wait(timeout=renew_s)
+            returncode = proc.wait(timeout=wake_s)
             break
         except subprocess.TimeoutExpired:
             if (clock() - started).total_seconds() > PRODUCE_WALL_S:
@@ -142,7 +154,11 @@ def _run(
                 superseded = tip
                 say(f'[{item.platform}] stopped: {item.ref} moved on to {tip[:12]}')
                 break
-            if item.holder is not None:  # the heartbeat: the same claim, until the FORGE's time plus the lease
+            wakes += 1
+            beat(clock() - started)
+            if (
+                item.holder is not None and wakes % renew_every == 0
+            ):  # the heartbeat: the same claim, until the FORGE's time plus the lease
                 built = client(root)
                 try:
                     renewed = dataclasses.replace(item.holder, until=forge_now(built) + lease)
