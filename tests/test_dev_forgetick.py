@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.compute.model import INTEGRATION, PR, REQUEST
+from lab_commons.compute.model import INTEGRATION, PR, REQUEST, Resources, Supply
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
@@ -31,7 +31,7 @@ from lab_commons.dev.forgeclaim import (
     assess,
     serving,
 )
-from lab_commons.dev.forgeschedule import OUTRANKED, OVER_BUDGET, Headroom, candidates, load_schedule
+from lab_commons.dev.forgeschedule import NO_HEADROOM, OUTRANKED, OVER_BUDGET, candidates, load_schedule
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
@@ -40,6 +40,7 @@ from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.grants import workstation
 
+SLURM = frozenset({'cpu', 'mem_gb', 'submits'})
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 LATER = NOW + timedelta(hours=6)
 ME = Claim('G', 'alice', LATER)
@@ -455,9 +456,11 @@ def test_over_budget_or_no_headroom_is_not_claimed_and_says_so(server, tmp_path:
     over = _tick(repo, server, usage={head[:12]: 12.0})
     assert over.claimed == ()
     assert over.queue[0].blocked == f'{OVER_BUDGET}: integrate/main used 12.0 of 10 core-h in 24 h'
-    full = _tick(repo, server, headroom=Headroom(cores=8, submits=0))
+    full = _tick(repo, server, supply=Supply('slurm:alice', Resources(cpu=8, mem_gb=64, submits=0), SLURM))
     assert full.claimed == ()
-    assert 'QOS' in full.queue[0].blocked
+    assert full.queue[0].blocked == f'{NO_HEADROOM}: lacking submits'
+    busy = _tick(repo, server, supply=Supply('ws', Resources(mem_gb=64), frozenset({'cpu', 'mem_gb'})))
+    assert busy.queue[0].blocked == f'{NO_HEADROOM}: lacking cpu'
     assert not [r for r in Recorder.received if r['method'] == 'POST']
 
 

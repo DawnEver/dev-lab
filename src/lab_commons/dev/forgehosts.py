@@ -15,7 +15,7 @@ the oldest; the loser is closed by ``forge tidy`` (:mod:`lab_commons.dev.forgeti
 
 The card says who the host is (``<cluster>/<account>`` or the machine), the platform it
 serves, what else it PROVIDES (its machine file's ``[capabilities]``,
-:mod:`lab_commons.dev.forgeprovides`), its headroom and the cluster facts it read locally (partitions,
+:mod:`lab_commons.dev.forgeprovides`), its supply and the cluster facts it read locally (partitions,
 quota), when it last ticked (the
 forge's clock), what it holds with live progress, why each candidate it saw waits, why it cannot write the
 large artefact store when it cannot, and EVERY ALARM the tick raised (:mod:`lab_commons.dev.forgealarm`): an
@@ -222,7 +222,7 @@ def publish_card(
             platform=serving(host or this_platform(), seat).platform,
             ticked=forge_now(built).isoformat(),
             tick_minutes=float(table.get('tick_minutes', 5)),
-            headroom=asdict(standing.headroom) if standing else {},
+            headroom=dict(standing.supply.resources) if standing else {},
             facts=standing.facts if standing else {},
             holds=runs
             if seat is not None

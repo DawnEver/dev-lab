@@ -13,12 +13,11 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.compute.model import Candidate, Ranked
+from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
-from lab_commons.dev.forgeschedule import Headroom
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
@@ -145,7 +144,7 @@ def _serve(
         say=said.append,
         alarm=alarms.append,
         renew_s=0.01,
-        box_room=lambda: Headroom(cores=4),
+        box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)),
         table={},
         fetch=lambda _root: None,
         host=host,
@@ -161,7 +160,9 @@ class _Slurm:
         self.cancelled: list[str] = []
 
     def standing(self) -> forgerun.Standing:
-        return forgerun.Standing(Headroom(cores=64, submits=10), {}, {'partitions': {'defq': 2880}})
+        return forgerun.Standing(
+            Supply('slurm:alice', Resources(cpu=64, mem_gb=128, submits=10)), {}, {'partitions': {'defq': 2880}}
+        )
 
     def cancel(self, run: forgerun.Run) -> list[str]:
         self.cancelled += run.job_ids
@@ -410,7 +411,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
     with pytest.raises(ForgeCallFailed):
         forgeserve.serve(
             tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
-            box_room=lambda: Headroom(cores=4), table={},
+            box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)), table={},
         )  # fmt: skip
     assert [a.kind for a in alarms] == [AUTH]
 
@@ -433,16 +434,16 @@ def test_a_candidate_waiting_past_its_bound_raises_a_starved_alarm_naming_why(mo
 
 
 def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
-    """Who it is, what it serves, its headroom and facts, and why each candidate waits."""
+    """Who it is, what it serves, its supply and facts, and why each candidate waits."""
     cards: list = []
-    ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'no headroom: no free core here'),))
+    ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'no headroom: lacking cpu'),))
     _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='linux')
     (card,) = cards
     assert (card.host, card.login, card.platform) == ('ada/alice', 'alice', 'linux')
-    assert card.headroom == {'cores': 64, 'submits': 10}
+    assert card.headroom == {'cpu': 64.0, 'mem_gb': 128.0, 'submits': 10.0}
     assert card.facts == {'partitions': {'defq': 2880}}
     assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
-    assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'no headroom: no free core here'}
+    assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'no headroom: lacking cpu'}
 
 
 def _moved_on(tmp_path: Path) -> str:

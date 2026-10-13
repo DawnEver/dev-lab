@@ -2,9 +2,10 @@
 
 Everything here runs ON the cluster login node (``lab_commons.hpc``'s own shell, never ``ssh``):
 submitting and gathering a run, where its jobs stand (:func:`progress_text`, the phrase its claim
-carries), cancelling a superseded run, and the account's STANDING read locally each tick -- headroom
-(free cores of the grant, the QOS's remaining submissions), the last day's core-hours per run from
-``sacct``, and the partitions and quota a host card publishes.
+carries), cancelling a superseded run, and the account's STANDING read locally each tick -- its supply
+(cpu, memory and the QOS's remaining submissions over every grant,
+:func:`lab_commons.compute.probe.account`), the last day's core-hours per run from ``sacct``,
+and the partitions and quota a host card publishes.
 """
 
 from __future__ import annotations
@@ -14,16 +15,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from lab_commons.compute import probe as supply_probe
+from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import config_path
 from lab_commons.dev.forgerun import Cluster, Run, Standing
-from lab_commons.dev.forgeschedule import USAGE_COMMAND, Headroom, parse_usage
+from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from lab_commons.hpc import learned
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, probe, submitter
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
-from lab_commons.hpc.plan import headroom
 from lab_commons.hpc.platforms import table_at
 from lab_commons.hpc.progress import Progress, where
 from lab_commons.hpc.run import load_state, submit_run
@@ -114,18 +116,25 @@ class SlurmCluster:
         return ids
 
     def standing(self) -> Standing:
-        """Probe the first grant locally: headroom (cores, QOS submissions), the last day's use, partitions."""
-        grant = self.machine.grants[0]
-        shell = self.connect(grant)
-        snapshot = probe(shell, grant.slurm_account)
-        qos = snapshot.quota.default_qos
-        room = Headroom(headroom(snapshot, grant.cpus, self.machine.workstation), snapshot.quota.submit_room(qos))
+        """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
+        read = []
+        for grant in self.machine.grants:
+            snapshot = probe(self.connect(grant), grant.slurm_account)
+            read.append((grant.cpus, snapshot, snapshot.quota.default_qos))
+        supply = supply_probe.account(self.scope, read, workstation=self.machine.workstation)
+        _, snapshot, qos = read[0]
+        shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {
             'quota_cpus': snapshot.quota.cpus,
             'qos': qos,
             'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
         }
-        return Standing(room, parse_usage(shell(USAGE_COMMAND, None)), facts)
+        return Standing(supply, parse_usage(shell(USAGE_COMMAND, None)), facts)
+
+    @property
+    def scope(self) -> str:
+        """What this account's supply is named: ``slurm:<user>``."""
+        return f'slurm:{self.machine.grants[0].user}'
 
 
 def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
@@ -151,5 +160,5 @@ def standing_of(build: Callable[[], Cluster]) -> tuple[Cluster | None, Standing 
         return None, None, str(why)
     try:
         return slurm, slurm.standing(), ''
-    except (RuntimeError, OSError, ValueError) as why:  # Slurm did not answer: no headroom is claimed on
-        return slurm, Standing(Headroom(cores=0)), str(why)
+    except (RuntimeError, OSError, ValueError) as why:  # Slurm did not answer: an empty supply claims nothing
+        return slurm, Standing(Supply('slurm', Resources())), str(why)

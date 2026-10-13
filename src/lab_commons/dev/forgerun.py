@@ -55,6 +55,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Final, Protocol
 
+from lab_commons.compute.model import Supply
 from lab_commons.config import config_path
 from lab_commons.dev import forgeship
 from lab_commons.dev.artefacts import MissingOutput, run_id
@@ -62,7 +63,7 @@ from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgecarry import equivalent, publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgeroute import pyproject_at, route
-from lab_commons.dev.forgeschedule import Headroom, tip_of
+from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context
@@ -115,9 +116,9 @@ class ForeignSchema(RuntimeError):
 
 @dataclass(frozen=True)
 class Standing:
-    """What this account can take on, read locally on the login node: headroom, the last day's use, facts."""
+    """What this account can take on, read locally on the login node: its supply, the last day's use, facts."""
 
-    headroom: Headroom
+    supply: Supply
     usage: dict[str, float] = dataclasses.field(default_factory=dict)
     facts: dict[str, object] = dataclasses.field(default_factory=dict)
 
