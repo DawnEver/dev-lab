@@ -3,12 +3,13 @@
 ORIGIN IS THE TRIGGER (forge plan, user rulings 2026-10-09). There is no request object: a pushed ref
 whose tip lacks a ``tests/<part>`` part IS the request for that part; which parts a tip needs is
 DERIVED (:func:`lab_commons.dev.platformparts.derived`): ``base``, and every part a posted part hands to.
-Which refs a checkout serves is its MODE: ``integrate`` serves the integration branch, its PRs, opted-in
-branches and requests, ``develop`` the lanes (named by the repo's ``[tool.lab_commons.integrator]``),
-``quiet`` serves nothing. A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgeclaim`).
+EVERY HOST SERVES EVERY CANDIDATE CLASS from one queue -- the integration branch, its PRs, every child
+branch the schedule's rule classes, and requests (:mod:`lab_commons.dev.forgeschedule`); the rank orders
+it, the admission fits it, and a host that takes no foreign work is reserved whole by its owner.
+A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgeclaim`).
 
-WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
-``quiet``, fetch ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
+WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), fetch
+``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
 value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
 (:func:`lab_commons.compute.model.admit`: the part's need-set present here, its demand within the supply),
 and give each claimed part what produces it: the ONE producer the claimed commit declares
@@ -48,7 +49,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from lab_commons.compute.learned import learned, learned_demand
 from lab_commons.compute.model import (
@@ -112,9 +113,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
 from lab_commons.log import emit
 
-__all__ = ['MODES', 'TickReport', 'main', 'tick']
-
-MODES: Final = ('integrate', 'develop', 'quiet')
+__all__ = ['TickReport', 'main', 'tick']
 
 
 @dataclass(frozen=True)
@@ -135,7 +134,6 @@ class TickReport:
 
 def tick(
     root: Path,
-    mode: str,
     *,
     client: Callable[[Path], Client],
     machine: str,
@@ -168,17 +166,11 @@ def tick(
     all present waits ``not admitted: lacking <resource>``. *busy* are the shas a producer
     here is judging now: their trees are taken, so no part of them is claimed.
     """
-    if mode not in MODES:
-        msg = f'a mode is one of {MODES}, not {mode!r}'
-        raise ValueError(msg)
     lines: list[str] = []
     try:
         lines += flush(root, client=client)
     except PostFailed as failed:
         lines += str(failed).splitlines()
-    if mode == 'quiet':
-        lines.append('tick: quiet -- this checkout serves nothing')
-        return TickReport((), (), tuple(lines))
     fetch(root)
     built = client(root)
     histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
@@ -195,7 +187,6 @@ def tick(
     schedule, repo = load_schedule(root), repo_name(built)
     found = candidates(
         root,
-        mode,
         built,
         repo=repo,
         parts=lambda sha: derived(history(sha)),
@@ -324,7 +315,6 @@ def _producer(root: Path, work: Work, serve: Serving) -> Work:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='lab_commons.dev.forge tick', description=__doc__.splitlines()[0])
-    parser.add_argument('--mode', required=True, choices=MODES, help='which refs this checkout serves')
     parser.add_argument('--dry-run', action='store_true', help='list the requests and their state; claim nothing')
     parser.add_argument(
         '--lease-hours', type=float, default=DEFAULT_LEASE.total_seconds() / 3600, help='how long a claim holds'
@@ -343,7 +333,7 @@ def main(
     seat_of: Callable[[], ClusterAccount | None] = this_seat,
     host: str | None = None,
 ) -> int:
-    """``tick --mode integrate|develop|quiet [--dry-run] [--lease-hours H] [--json]``; exit 1 when the forge fails."""
+    """``tick [--dry-run] [--lease-hours H] [--json]``; exit 1 when the forge fails."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
 
@@ -354,7 +344,6 @@ def main(
     try:
         report = tick(
             root,
-            args.mode,
             client=build,
             machine=this_machine(seat),
             seat=seat,

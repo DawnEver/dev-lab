@@ -32,6 +32,8 @@ from lab_commons.dev import (
     servekit,
     servelock,
 )
+from lab_commons.hpc.retired import refusal
+from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -63,6 +65,9 @@ def main(argv: Sequence[str]) -> int:
     """Route *argv* to the door owning its noun; returns that door's exit code."""
     args = list(argv)
     if args[:1] and args[0] in NOUNS:
+        if refused := next(filter(None, (refusal(f'forge {args[0]}', w.split('=', 1)[0]) for w in args[1:])), None):
+            emit(refused, err=True)
+            return 2
         return NOUNS[args[0]](args[1:])
     if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
         return forgeissue.main(args[1:])

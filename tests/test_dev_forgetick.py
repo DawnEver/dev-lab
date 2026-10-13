@@ -16,7 +16,18 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.compute.model import INTEGRATION, PR, REQUEST, Candidate, Demand, For, Reservation, Resources, Supply
+from lab_commons.compute.model import (
+    FEATURE,
+    INTEGRATION,
+    PR,
+    REQUEST,
+    Candidate,
+    Demand,
+    For,
+    Reservation,
+    Resources,
+    Supply,
+)
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
@@ -142,7 +153,7 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
     (repo / 'pyproject.toml').write_text(PRODUCE, encoding='utf-8')  # committed: the producer is read AT the sha
     tips = {}
-    for branch in ('integrate/main', 'feat/a', 'fix/b', 'other'):
+    for branch in ('integrate/main', 'topic/a', 'wip/b', 'other'):
         (repo / branch.replace('/', '_')).write_text(branch, encoding='utf-8')
         run_git(repo, 'add', '.')
         run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', branch)
@@ -172,7 +183,6 @@ def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetic
     forge = Forge('forge.example.org', 'o', 'r')
     return tick(
         repo,
-        kwargs.pop('mode', 'integrate'),
         client=lambda _root: client(forge, Loopback(server)),
         machine='G',
         seat=kwargs.pop('seat', None),
@@ -239,18 +249,6 @@ def test_a_dry_run_lists_and_posts_nothing(server, tmp_path: Path) -> None:
     assert not [r for r in Recorder.received if r['method'] == 'POST']
 
 
-def test_a_quiet_checkout_never_fetches_and_never_claims(tmp_path: Path) -> None:
-    """PLANTED CONTROL: quiet with a fetch and a forge that fail if touched."""
-    repo, _tips = _origin(tmp_path)
-
-    def touched(_root: Path) -> None:
-        pytest.fail('a quiet checkout touched origin')
-
-    report = tick(repo, 'quiet', client=touched, machine='G', seat=None, fetch=touched, host='windows')
-    assert report.work == ()
-    assert 'quiet' in report.lines[-1]
-
-
 def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) -> None:
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
@@ -270,7 +268,7 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
             ],
         ),
     )
-    argv = ['--mode', 'integrate', '--json']
+    argv = ['--json']
     code = forgetick.main(
         argv,
         cwd=repo,
@@ -296,7 +294,7 @@ def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path,
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     code = forgetick.main(
-        ['--mode', 'integrate', '--json'],
+        ['--json'],
         cwd=repo,
         env=credential_env(tmp_path),
         transport=Loopback(server),
@@ -385,8 +383,8 @@ def _sized(**by_ref: float) -> object:
 
 def _head_and_pr(tips: dict[str, str], *, claim_pr: bool = True, claim_head: bool = True) -> tuple[str, str]:
     """The head and a boosted PR (it ranks first), each answering a claim that holds when posted."""
-    head, lane = tips['integrate/main'], tips['feat/a']
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane, 'priority:user')]))
+    head, lane = tips['integrate/main'], tips['topic/a']
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane, 'priority:user')]))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     for sha, claimed in ((head, claim_head), (lane, claim_pr)):
         answer('GET', f'{API}/statuses/{sha}', (200, []), *([(200, [_post(1, ME)])] if claimed else []))
@@ -410,7 +408,7 @@ def test_two_small_jobs_are_both_admitted_on_one_tick(server, tmp_path: Path) ->
     """No one-claim-per-tick rule: both fit the box, so both are claimed in rank order."""
     repo, tips = _origin(tmp_path)
     head, lane = _head_and_pr(tips)
-    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, feat_a=8))
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8))
     assert [w.sha for w in report.claimed] == [lane, head]
     assert [item.blocked for item in report.queue] == []
 
@@ -419,14 +417,14 @@ def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, 
     """The boosted PR ranks first and does not fit; the head behind it does. PLANTED CONTROL: 64 GB takes both."""
     repo, tips = _origin(tmp_path)
     head, lane = _head_and_pr(tips, claim_pr=False)
-    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, feat_a=40))
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=40))
     assert [w.sha for w in report.claimed] == [head]
     (waiting,) = report.queue
     assert (waiting.candidate.sha, waiting.blocked) == (lane, f'{NOT_ADMITTED}: lacking mem_gb')
     Recorder.received.clear()
     _head_and_pr(tips)
     roomy = Supply('G', Resources(cpu=4, mem_gb=64), BOX.listed)
-    assert [w.sha for w in _tick(repo, server, supply=roomy, demand=_sized(head=8, feat_a=40)).claimed] == [lane, head]
+    assert [w.sha for w in _tick(repo, server, supply=roomy, demand=_sized(head=8, topic_a=40)).claimed] == [lane, head]
 
 
 def test_a_reservation_for_others_withholds_and_one_for_this_repo_does_not(server, tmp_path: Path) -> None:
@@ -459,11 +457,14 @@ def _pull(number: int, head: str, sha: str, *labels: str) -> dict[str, object]:
     }
 
 
-def test_the_mode_names_its_candidates_one_per_ref(server, tmp_path: Path) -> None:
-    """Integrate: the integration head, PRs into it, opted-in branches, requests. Develop: the lanes."""
+_RULE = '[tool.lab_commons.schedule]\nclasses_by_ref = {"oth*" = "branch", "wip/*" = "feature"}\n'
+
+
+def test_every_host_names_every_class_one_candidate_per_ref(server, tmp_path: Path) -> None:
+    """One queue: the integration head, PRs into it, every branch the rule classes, requests."""
     repo, tips = _origin(tmp_path)
-    (repo / 'pyproject.toml').write_text(PRODUCE + '[tool.lab_commons.schedule]\nbranches = ["oth*"]\n', 'utf-8')
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', tips['feat/a'], 'priority:user')]))
+    (repo / 'pyproject.toml').write_text(PRODUCE + _RULE, 'utf-8')
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'], 'priority:user')]))
     request = {
         'number': 9,
         'body': 'platform = "windows"\n',
@@ -474,72 +475,69 @@ def test_the_mode_names_its_candidates_one_per_ref(server, tmp_path: Path) -> No
     forge = Forge('forge.example.org', 'o', 'r')
     built = client(forge, Loopback(server))
     found = candidates(
-        repo, 'integrate', built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
+        repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
         policy=Policy(), now=NOW,
     )  # fmt: skip
     got = {(c.ref, c.sha, c.kind, c.labels) for c in found}
     assert got == {
         ('integrate/main', tips['integrate/main'], INTEGRATION, ()),
-        ('feat/a', tips['feat/a'], PR, ('priority:user',)),
+        ('topic/a', tips['topic/a'], PR, ('priority:user',)),
+        ('wip/b', tips['wip/b'], FEATURE, ()),
         ('other', tips['other'], 'branch', ()),
         ('issue/9', '', REQUEST, ('forge:request',)),
-    }
-    develop = candidates(
-        repo, 'develop', built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
-        policy=Policy(), now=NOW,
-    )  # fmt: skip
-    assert {c.ref for c in develop} == {'feat/a', 'fix/b'}
+    }, 'topic/a is a PR head, so it is served once, as pr'
 
 
 def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_exclude(server, tmp_path: Path) -> None:
     """HEAVY NEVER ON DEVELOPMENT BRANCHES (user ruling 2026-10-13): ``parts.refs.<part>.<scope>`` filters refs.
 
-    The PR, the opted-in branch and the request are all served by ``integrate`` and all excluded from
+    The PR, the classed branches and the request are all served and all excluded from
     ``tests/windows`` at ``full``; each exclusion is SAID. PLANTED CONTROL: the same refs with no filter
-    are all candidates (:func:`test_the_mode_names_its_candidates_one_per_ref`), and a part the filter
+    are all candidates (:func:`test_every_host_names_every_class_one_candidate_per_ref`), and a part the filter
     does not name (``jmag``) keeps every ref.
     """
     repo, tips = _origin(tmp_path)
     refs = '[tool.lab_commons.parts.refs.windows]\nfull = ["integrate/main", "main"]\n'
-    (repo / 'pyproject.toml').write_text(PRODUCE + refs + '[tool.lab_commons.schedule]\nbranches = ["oth*"]\n', 'utf-8')
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', tips['feat/a'])]))
+    (repo / 'pyproject.toml').write_text(PRODUCE + refs + _RULE, 'utf-8')
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'])]))
     request = {'number': 9, 'body': 'platform = "windows"\n', 'labels': [{'name': 'forge:request'}]}
     answer('GET', f'{API}/issues', (200, [request]))
     notes: list[str] = []
     found = candidates(
-        repo, 'integrate', client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
+        repo, client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
         parts=lambda _sha: ('windows', 'jmag'), schedule=load_schedule(repo), policy=Policy(), now=NOW,
         say=notes.append,
     )  # fmt: skip
     assert {(c.ref, c.platform) for c in found} == {
         ('integrate/main', 'windows'),
         ('integrate/main', 'jmag'),
-        ('feat/a', 'jmag'),
+        ('topic/a', 'jmag'),
+        ('wip/b', 'jmag'),
         ('other', 'jmag'),
     }
     assert sorted(note for note in notes if 'tests/windows' in note) == sorted(
         f'[serve] {ref} is not served tests/windows at full: [tool.lab_commons.parts.refs.windows] full '
         f"admits ['integrate/main', 'main']"
-        for ref in ('feat/a', 'other', 'issue/9')
+        for ref in ('topic/a', 'wip/b', 'other', 'issue/9')
     )
 
 
 def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path) -> None:
     """A user-boosted PR jumps the integration head. PLANTED CONTROL: the label removed, the head is claimed."""
     repo, tips = _origin(tmp_path)
-    head, lane = tips['integrate/main'], tips['feat/a']
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane, 'priority:user')]))
+    head, lane = tips['integrate/main'], tips['topic/a']
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane, 'priority:user')]))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{head}', (200, []))
     answer('GET', f'{API}/statuses/{lane}', (200, []), (200, [_post(1, ME)]))
     answer('POST', f'{API}/statuses/{lane}', (201, {}))
     report = _tick(repo, server)
-    assert [w.ref for w in report.claimed] == ['feat/a']
+    assert [w.ref for w in report.claimed] == ['topic/a']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'integrate/main'
     assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu', 'unmeasured, a box part is the whole box'
     Recorder.received.clear()
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane)]))
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
     answer('POST', f'{API}/statuses/{head}', (201, {}))
     assert [w.ref for w in _tick(repo, server).claimed] == ['integrate/main']
@@ -570,7 +568,7 @@ def _integrate(server, tmp_path: Path, notes: list[str]) -> set[tuple[str, str]]
     repo, _ = _origin(tmp_path)
     built = client(Forge('forge.example.org', 'o', 'r'), Loopback(server))
     found = candidates(
-        repo, 'integrate', built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
+        repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
         policy=Policy(), now=NOW, say=notes.append,
     )  # fmt: skip
     return {(c.ref, c.kind) for c in found}
@@ -710,9 +708,9 @@ def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(s
     """
     repo, tips = _origin(tmp_path)
     bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.tomorrow]\nrows = 1\n')
-    run_git(repo, 'update-ref', 'refs/remotes/origin/feat/a', bad)
+    run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', bad)
     head = _declare(repo, tips, PRODUCE)
-    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', bad, 'priority:user')]))
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', bad, 'priority:user')]))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{bad}', (200, []))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
@@ -720,7 +718,7 @@ def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(s
     report = _tick(repo, server)
     assert [w.ref for w in report.claimed] == ['integrate/main']
     (waiting,) = report.queue
-    assert waiting.candidate.ref == 'feat/a'
+    assert waiting.candidate.ref == 'topic/a'
     assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: this lab-commons does not know')
     assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
 

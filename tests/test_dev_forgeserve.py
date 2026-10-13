@@ -18,7 +18,7 @@ from lab_commons.compute.ledger import Entry, Ledger
 from lab_commons.compute.model import Candidate, Demand, For, Ranked, Reservation, Resources, Supply
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
-from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
@@ -113,6 +113,7 @@ def _serve(
     later: tuple[TickReport, ...] = (),
     ticks: list[dict] | None = None,
     table: dict | None = None,
+    observe=None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -150,9 +151,9 @@ def _serve(
         (spawned if spawned is not None else []).append({'argv': argv, **kwargs})
         return (procs or {})[argv[1]]  # argv[0] is the tree's own interpreter
 
+    monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
     report = forgeserve.serve(
         tmp_path,
-        'integrate',
         client=_client,
         machine='G',
         seat=seat,
@@ -234,10 +235,25 @@ def test_a_producer_refusing_its_argv_is_a_broken_contract_not_a_skip(monkeypatc
 def test_the_cli_exits_two_on_a_broken_contract(monkeypatch, tmp_path: Path, capsys) -> None:
     broken = forgeserve.ServeReport((), (), (), (), ('windows aaaa: the producer refused its argv: verify --x',))
     monkeypatch.setattr(forgeserve, 'serve', lambda *_a, **_k: broken)
-    assert forgeserve.main(['--mode', 'integrate'], cwd=tmp_path, seat_of=lambda: None) == ProducerExit.USAGE
+    assert forgeserve.main([], cwd=tmp_path, seat_of=lambda: None) == ProducerExit.USAGE
     assert 'CONTRACT BROKEN' in capsys.readouterr().err
     with pytest.raises(SystemExit):
-        forgeserve.main(['--mode', 'nonsense'], cwd=tmp_path)
+        forgeserve.main(['--nonsense'], cwd=tmp_path)
+
+
+def test_the_serve_tick_prompts_the_integrator_through_the_alarm_channel(monkeypatch, tmp_path: Path) -> None:
+    """The observer docs-src/dev/integrator.md describes: serve asks it with this host's card name and login."""
+    asked: list[set[str]] = []
+    prompt = Alarm(INTEGRATION, 'o/r', 'feat/a is READY', 'merge it', about='merge feat/a@abc')
+
+    def observe(_root: Path, _repo: str, *, hosts: set[str], statuses: object) -> list[Alarm]:
+        assert callable(statuses)
+        asked.append(hosts)
+        return [prompt]
+
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe)
+    assert asked == [{'G', 'alice'}]
+    assert prompt in alarms
 
 
 def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch, tmp_path: Path) -> None:
@@ -432,7 +448,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
     alarms: list = []
     with pytest.raises(ForgeCallFailed):
         forgeserve.serve(
-            tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
+            tmp_path, client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
             box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)), table={},
             reserve=Resources, holders=tuple, read_ledger=lambda _client: Ledger(None, {}, ()),
         )  # fmt: skip
