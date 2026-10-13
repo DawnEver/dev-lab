@@ -54,6 +54,7 @@ from lab_commons.dev.producer import ProducerExit, preempted, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.grants import workstation
 from lab_commons.hpc.needsets import BASE
+from lab_commons.hpc.retired import RETIRED
 
 SLURM = frozenset({'cpu', 'mem_gb', 'submits'})
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
@@ -174,6 +175,9 @@ def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
     run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', tips['integrate/main'])
     return tips['integrate/main']
 
+
+#: A retired table, read off the registry: its spelling lives there and nowhere else.
+RETIRED_TABLE = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
 
 PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]\n'
 
@@ -781,7 +785,7 @@ def test_a_retired_declaration_is_refused_once_on_its_own_commit_and_never_waits
     older), so that sha waits, unposted, for a host that can read it.
     """
     repo, tips = _origin(tmp_path)
-    bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.platforms]\nrows = 1\n')
+    bad = _declare(repo, tips, PRODUCE + f'{RETIRED_TABLE}\nrows = 1\n')
     run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', bad)
     head = _declare(repo, tips, PRODUCE)
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', bad, 'priority:user')]))

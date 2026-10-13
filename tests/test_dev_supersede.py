@@ -83,7 +83,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 # that lost a third of its corpus. RE-TAKEN rather than the headroom widened; that direction is the
 # waiver nothing uses.
 # RE-TAKEN 2026-10-11 AT 128 after the five-lane integration: floor 115.
-KIT_FLOOR = 128  # re-taken 2026-10-12 at 141 after forgecred and the forge owners, routing and hygiene modules
+KIT_FLOOR = 145  # re-taken 2026-10-13 at 161 after the compute system, requests, retention and forge-audit modules
 KIT_HEADROOM = 25
 
 #: Both halves of the validation need a population or the separation is vacuous. MEASURED over the

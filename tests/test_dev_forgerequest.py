@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 import test_dev_forgetick
 from _forge_fake import Recorder, answer, git_out, run_git
-from test_dev_forgetick import API, LATER, PRODUCE, _declare, _origin, _tick
+from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
 from lab_commons.compute.model import REQUEST, Resources, Supply
 from lab_commons.dev import forgeproduce
@@ -189,6 +189,6 @@ def test_a_table_this_kit_does_not_know_is_the_readers_defect_never_the_requests
     newer = _declare(repo, tips, GOLDENS + '[tool.lab_commons.tomorrow]\nrows = 1\n')
     with pytest.raises(OutdatedKit):
         declared_request(repo, newer, 'femm_goldens')
-    older = _declare(repo, tips, GOLDENS + '[tool.lab_commons.platforms]\nrows = 1\n')
+    older = _declare(repo, tips, GOLDENS + f'{RETIRED_TABLE}\nrows = 1\n')
     with pytest.raises(UndeclaredRequest, match='retired'):
         declared_request(repo, older, 'femm_goldens')
