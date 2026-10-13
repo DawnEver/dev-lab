@@ -836,3 +836,25 @@ def test_a_preempted_loan_is_open_again_never_settled() -> None:
     assert _assess([_pending(ME, 1), released]) == (OPEN, None)
     crashed = dataclasses.replace(released, description=release_reason(9))
     assert _assess([_pending(ME, 1), crashed])[0] != OPEN
+
+
+def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:
+    """A stale PR head declares no producer; it is refused there and nowhere else -- never the whole repo.
+
+    PLANTED CONTROL: the boosted PR outranks the head, so it is assessed first; a repo-wide refusal would
+    then block the head too (motronics 2026-10-13: one 13-day-old branch idled every Ada account).
+    """
+    repo, tips = _origin(tmp_path)
+    stale = _declare(repo, tips, '')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', stale)
+    head = _declare(repo, tips, PRODUCE)
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', stale, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{stale}', (200, []))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server)
+    assert [w.ref for w in report.claimed] == ['integrate/main']
+    (waiting,) = report.queue
+    assert waiting.candidate.ref == 'topic/a'
+    assert 'tool.lab_commons.tests] produce' in waiting.blocked

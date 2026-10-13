@@ -1,7 +1,7 @@
 """THE CLAIM PASS of a tick (:mod:`lab_commons.dev.forgetick`): walk the ranked queue, claim each candidate that admits.
 
 Each candidate becomes a :class:`~lab_commons.compute.model.Job` carrying its need-set and its origin
-(login, vouched host, session); it is blocked by a refused declaration, an unproducible repo, its sha's
+(login, vouched host, session); it is blocked by a refused declaration, a producer its sha cannot build, its sha's
 tree being busy here, its ref's budget, or admission -- and otherwise claimed, its demand then counted as
 running for every later candidate -- ON LOAN from a reservation when it borrows one's idle part, and
 DISPLACING the loans it preempts when it holds one (:func:`lab_commons.compute.admission.admit`); those loans
@@ -47,7 +47,7 @@ class ClaimPass:
     reservations: tuple[Reservation, ...] = ()
     taken: list[Held] = dataclasses.field(default_factory=list)  # what runs, then each claim
     trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
-    unproducible: str = ''  # why the repo's producer cannot be built here; blocks every later candidate
+    unproducible: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its producer cannot be built
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     tables: dict[str, tuple[Vocabulary, str]] = dataclasses.field(default_factory=dict)
     history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
@@ -90,7 +90,7 @@ class ClaimPass:
         busy = not self.serve.hpc and wanted.sha in self.trees
         why = (
             refused
-            or self.unproducible
+            or self.unproducible.get(wanted.sha, '')
             or (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
             or over_budget(self.root, wanted, self.schedule, self.usage)
             or self._admission(wanted, needed)
@@ -123,8 +123,8 @@ class ClaimPass:
             one = _producer(self.root, one, self.serve)
         except (UndeclaredPart, FileNotFoundError) as why:
             self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
-            self.unproducible = f'{NO_HOST} can produce it: {why}'
-            return one, self.unproducible
+            self.unproducible[wanted.sha] = f'{NO_HOST} can produce it: {why}'
+            return one, self.unproducible[wanted.sha]
         if one.cluster is not None and one.cluster.outputs and self.store_why:
             why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
             self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
