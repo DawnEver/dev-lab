@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, run_git
 
+from lab_commons.dev import retention
 from lab_commons.dev.diskusage import Usage, parse_mmlsquota
 from lab_commons.dev.retention import (
     Plan,
@@ -153,6 +154,27 @@ def test_apply_logs_every_deletion_and_dry_run_deletes_nothing(home: Path) -> No
     assert {'path', 'bytes', 'rule'} <= row.keys()
     assert done.freed_bytes > 0
     assert done.over is False
+
+
+def test_the_cli_is_a_dry_run_reporting_paths_bytes_and_files_per_rule(home: Path, monkeypatch) -> None:
+    """Ada's binding ceiling is the FILE quota: the dry run says what goes per rule and where files would land."""
+    said: list[str] = []
+    quota = Usage(used=10 * 10**9, limit=1000 * 10**9, files=960_000, files_limit=2_000_000)
+    monkeypatch.setattr(retention, '_plan_for', lambda *_a, **_k: _plan(home))
+    monkeypatch.setattr(retention, 'read_usage', lambda *_a, **_k: quota)
+    monkeypatch.setattr(retention, '_live_shas', set)
+    monkeypatch.setattr(retention, 'section', lambda _name: {'log_max_mb': 1, 'uv_prune': False})
+    monkeypatch.setattr(retention, 'emit', said.append)
+    assert retention.main(['--cluster']) == 0
+    assert (home / 'ci' / 'runs' / 'a1').exists(), 'without --apply nothing is touched'
+    summary = [line for line in said if line.startswith('[retention]')]
+    assert '[retention] would delete run-not-a-carry-source: 4 paths, 0.0 MB, 8 files' in summary
+    assert any(line.startswith('[retention] would delete 15 paths') for line in summary), summary
+    assert any('files 960000/2000000 (48.0%) -> ' in line for line in summary), summary
+    said.clear()
+    assert retention.main(['--cluster', '--apply']) == 0
+    assert not (home / 'ci' / 'runs' / 'a1').exists(), 'PLANTED CONTROL: --apply deletes'
+    assert any(line.startswith('[retention] deleted run-not-a-carry-source') for line in said), said
 
 
 def test_quota_pressure_prunes_harder_until_target_and_reports_still_over(home: Path) -> None:

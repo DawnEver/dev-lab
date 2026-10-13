@@ -79,6 +79,7 @@ __all__ = [
     'load_policy',
     'main',
     'serve_pass',
+    'summary',
     'workstation_plan',
 ]
 
@@ -132,11 +133,12 @@ class Plan:
 
 @dataclass(frozen=True)
 class Outcome:
-    """What one apply freed, and whether usage is still at the pressure line."""
+    """What one apply freed, and whether usage is still at the pressure line; *by_rule* is (paths, bytes, files)."""
 
     freed_bytes: int
     freed_files: int
     over: bool
+    by_rule: Mapping[str, tuple[int, int, int]] = dataclasses.field(default_factory=dict)
 
 
 def _age(path: Path, now: datetime) -> timedelta:
@@ -286,6 +288,7 @@ def apply(
 ) -> Outcome:
     """Delete *plan*'s paths -- then its harder ones while *usage* is over ``pressure`` -- one JSON line each."""
     freed = [0, 0]
+    by_rule: dict[str, tuple[int, int, int]] = {}
 
     def one(doomed: Doomed) -> None:
         if not (doomed.path.exists() or doomed.path.is_symlink()):
@@ -293,7 +296,10 @@ def apply(
         size, files = measure(doomed.path)
         if not dry_run:
             _remove(doomed)
-        freed[0], freed[1] = freed[0] + size, freed[1] + (0 if doomed.rotate else files)
+        files = 0 if doomed.rotate else files
+        freed[0], freed[1] = freed[0] + size, freed[1] + files
+        paths, total, count = by_rule.get(doomed.rule, (0, 0, 0))
+        by_rule[doomed.rule] = (paths + 1, total + size, count + files)
         row = {'path': str(doomed.path), 'bytes': size, 'files': files, 'rule': doomed.rule, 'dry_run': dry_run}
         say(json.dumps({'event': EVENT, **row}))
 
@@ -309,7 +315,31 @@ def apply(
         if not dry_run:
             run(list(argv), capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
     over = usage is not None and usage.fraction(*freed) >= policy.pressure
-    return Outcome(freed[0], freed[1], over)
+    return Outcome(freed[0], freed[1], over, by_rule)
+
+
+def summary(done: Outcome, usage: Usage | None, *, applied: bool) -> list[str]:
+    """One line per rule (paths, MB, files), the total, then usage now -> after for bytes and FILES."""
+    verb = 'deleted' if applied else 'would delete'
+    lines = [
+        f'[retention] {verb} {rule}: {paths} paths, {size / _MB:.1f} MB, {files} files'
+        for rule, (paths, size, files) in sorted(done.by_rule.items())
+    ]
+    total = sum(paths for paths, _, _ in done.by_rule.values())
+    lines.append(f'[retention] {verb} {total} paths, {done.freed_bytes / _MB:.1f} MB, {done.freed_files} files')
+    if usage is not None:
+        gb = 1024**3
+        block = (
+            f'bytes {usage.used / gb:.1f}/{usage.limit / gb:.1f} GB -> {(usage.used - done.freed_bytes) / gb:.1f} GB'
+        )
+        lines.append(f'[retention] usage {block}')
+        if usage.files is not None and usage.files_limit:
+            now, after = usage.files, usage.files - done.freed_files
+            ceiling = usage.files_limit
+            lines.append(
+                f'[retention] usage files {now}/{ceiling} ({now / ceiling:.1%}) -> {after} ({after / ceiling:.1%})'
+            )
+    return lines
 
 
 def _live_shas() -> set[str]:
@@ -382,7 +412,12 @@ def serve_pass(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m lab_commons.dev.retention [--apply]``: this host's plan, one line per path; 0 always."""
+    """``python -m lab_commons.dev.retention [--cluster] [--apply]``: a DRY RUN unless ``--apply``; 0 always.
+
+    One JSON line per path (path, bytes, files, rule), then :func:`summary` -- per rule, the total, and usage
+    now -> after for bytes and files (Ada's binding ceiling is its FILE quota). Run it in the served checkout:
+    on a cluster it judges that repo's runs only.
+    """
     parser = argparse.ArgumentParser(prog='lab_commons.dev.retention', description=__doc__.splitlines()[0])
     parser.add_argument('--cluster', action='store_true', help="plan ~/ci (default: this checkout's forge trees)")
     parser.add_argument('--apply', action='store_true', help='delete; without it nothing is touched')
@@ -391,9 +426,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     plan = _plan_for(Path.cwd(), policy, cluster=args.cluster, home=home, now=now, live=_live_shas())
     usage = read_usage(home if args.cluster else Path.cwd(), cluster=args.cluster)
     done = apply(plan, policy, usage=usage, dry_run=not args.apply, say=emit)
-    after = f'; usage then {usage.fraction(done.freed_bytes, done.freed_files):.1%}' if usage else ''
-    verb = 'freed' if args.apply else 'would free'
-    emit(f'[retention] {verb} {done.freed_bytes / _MB:.1f} MB, {done.freed_files} files{after}')
+    for line in summary(done, usage, applied=args.apply):
+        emit(line)
     return 0
 
 

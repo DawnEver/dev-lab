@@ -72,7 +72,7 @@ Each tick it:
   Every deletion is one JSON line (path, bytes, files, rule). At `pressure` of the block or file quota it
   also removes its kept carry sources oldest first down to `target`, and raises a `storage` alarm if still over. The
   policy is the kit defaults, overridden per key by the machine file's `[retention]` table (an unknown key is
-  refused). Preview: `python -m lab_commons.dev.retention [--cluster]` lists the plan and deletes nothing.
+  refused). Preview: `python -m lab_commons.dev.retention [--cluster]` is a DRY RUN: one line per path, then per rule paths, MB and files, and usage now -> after for bytes and FILES (Ada binds on files); `--apply` deletes.
 - **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
   must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The
