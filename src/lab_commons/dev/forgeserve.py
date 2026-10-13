@@ -16,7 +16,8 @@ cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
 on the host that owns integration, prune merged idle origin branches (:func:`lab_commons.dev.branchprune.serve_prune`);
-flush the outbox again.
+run the storage retention pass when due (:mod:`lab_commons.dev.retention`; still over quota raises a
+``storage`` alarm); flush the outbox again.
 
 SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
 claimed part in its environment (:func:`lab_commons.dev.producer.producing`), and a full tier refuses to
@@ -107,11 +108,11 @@ from lab_commons.compute.learned import learned_demand
 from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
-from lab_commons.dev import forgerun, forgeship
+from lab_commons.dev import forgerun, forgeship, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
-from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, Alarm, sound
+from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STORAGE, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, OPEN, STALE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import card_host, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
@@ -167,11 +168,12 @@ def serve(
     reserve: Callable[[], Resources] | None = None,
     holders: Callable[[], Sequence[Holder]] = CpuSeat.holders,
     read_ledger: Callable[[Client], ledger.Ledger] = ledger.read,
+    retain: Callable[..., retention.Outcome | None] = retention.serve_pass,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
     *reserve* is this box's own reserve (default: :func:`box_reserve`), *holders* who holds the box seat
-    now, *read_ledger* the reservations' reader -- each a seam a test fakes.
+    now, *read_ledger* the reservations' reader, *retain* the retention pass -- each a seam a test fakes.
     """
     repo = origin_url(root)
     table = section('schedule') if table is None else table
@@ -220,6 +222,7 @@ def serve(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
     )
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
+    _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), host=name, now=clock(), say=say, alarm=alarm)
     pending = [item for item in ticked.work if item.state in {OPEN, STALE}]
     if pending and not claimed and not left:
@@ -283,6 +286,27 @@ def _tidy(
         forgeship.tidy(root, client(root), account=seat.account, say=say)
     except (OSError, ValueError) as why:
         alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
+
+
+def _retain(
+    root: Path,
+    repo: str,
+    retain: Callable[..., retention.Outcome | None],
+    *,
+    cluster: bool,
+    who: str,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+) -> None:
+    """The retention pass when due; a failure, or usage still over the pressure line after it, alarms."""
+    try:
+        done = retain(root, cluster=cluster, say=say)
+    except (OSError, ValueError) as why:
+        alarm(Alarm(RUN, repo, f'the storage retention pass failed on {who}', str(why)))
+        return
+    if done is not None and done.over:
+        body = f'freed {done.freed_bytes} bytes and {done.freed_files} files; still over [retention] pressure'
+        alarm(Alarm(STORAGE, repo, f'{who} storage is still near its quota', body))
 
 
 def _advance(

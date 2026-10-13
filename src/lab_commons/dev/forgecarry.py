@@ -53,6 +53,7 @@ __all__ = [
     'equivalent',
     'nearest',
     'publish',
+    'read_by',
 ]
 
 #: The states that are a part's verdict; ``pending`` is a claim and ``error`` a release.
@@ -135,6 +136,16 @@ def nearest(root: Path, b: str, shas: Iterable[str]) -> list[str]:
             count = _git(root, 'rev-list', '--count', f'{sha}..{b}').stdout.strip()
             distance[sha] = int(count) if count.isdigit() else 0
     return sorted(distance, key=distance.__getitem__)[:NEAREST]
+
+
+def read_by(root: Path, b: str, shas: Iterable[str]) -> list[str]:
+    """The runs among *shas* that *b*'s run reads: its own earlier run first, then its :func:`nearest`.
+
+    THE ONE SELECTION -- the cluster carry reads exactly these (:meth:`lab_commons.dev.forgeslurm.SlurmCluster.carry`)
+    and storage retention keeps exactly these (:func:`lab_commons.dev.retention.carry_sources`).
+    """
+    shas = set(shas)
+    return [*([b] if b in shas else []), *nearest(root, b, shas)]
 
 
 def carry_from(
