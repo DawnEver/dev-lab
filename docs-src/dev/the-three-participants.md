@@ -11,7 +11,7 @@ a hint, never a trigger.
 |---|---|---|
 | human | sets goals, reviews, accepts; decides forge settings and remote deletions | accepts "done" from an agent without its tests |
 | author (any box, the weakest included) | edits in a worktree on its session branch, measures what it touched, commits, pushes | runs a full suite; merges another child's branch |
-| producer (a box with capacity, or a cluster) | runs `forge serve`: claims a sha lacking its part, runs it, posts `tests/<platform>` | produces a part it did not claim |
+| producer (a box with capacity, or a cluster) | runs `forge serve`: claims a sha lacking its part, runs it, posts `tests/<part>` | produces a part it did not claim |
 | integrator (one session) | `forge integration`, pushes integration, `forge promote` | runs tests; writes a child branch |
 | owner (per area) | fixes the reds in its `area:<name>` issue on its own branch | is interrupted by another area's reds |
 

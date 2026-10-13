@@ -44,7 +44,7 @@ from typing import Any, Final
 from lab_commons.compute.model import Ranked, Supply
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import Alarm
-from lab_commons.dev.forgeclaim import Claim, Work, forge_now, serving
+from lab_commons.dev.forgeclaim import Claim, Work, forge_now, serving, this_machine, this_seat
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_list, comment_upsert, issues, marker
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
@@ -66,6 +66,7 @@ __all__ = [
     'publish_card',
     'read_cards',
     'recording',
+    'this_host',
 ]
 
 #: The title of the issue every host card hangs on.
@@ -216,6 +217,16 @@ def _loan(holder: Claim | None) -> str:
 def card_host(machine: str, seat: ClusterAccount | None) -> str:
     """The name a host's card, its supply and every reservation on it share: the seat, else the machine."""
     return str(seat) if seat is not None else machine or socket.gethostname().split('.')[0]
+
+
+def this_host() -> str:
+    """The :func:`card_host` here -- ``<cluster>/<account>`` on a cluster login node, else the box.
+
+    The one name a tick here publishes its card under and the ``Forge-Host`` stamp writes
+    (:mod:`lab_commons.dev.forgeorigin`), so a ``host:`` reservation on that card matches the jobs made here.
+    """
+    seat = this_seat()
+    return card_host(this_machine(seat), seat)
 
 
 def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:

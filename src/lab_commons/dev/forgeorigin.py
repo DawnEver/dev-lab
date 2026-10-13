@@ -5,7 +5,8 @@ the pusher's LOGIN -- every session on a workstation may push as one login -- so
 commit, as a trailer this hook writes. It is CLAIMED, never trusted: a reader keeps it only where the
 forge-recorded author of the PR vouches for it, as that host card's owner or a ``[reserve]`` delegate
 (:func:`lab_commons.dev.forgeschedule.vouched`). The host is the card name a tick on this machine
-publishes (``$HARNESS_MACHINE``, else the hostname). The one family hook that rewrites its input: it
+publishes (:func:`lab_commons.dev.forgehosts.this_host`: ``<cluster>/<account>`` on a cluster login node).
+The one family hook that rewrites its input: it
 appends the trailer (replacing an earlier one) and never refuses a commit.
 """
 
@@ -16,8 +17,7 @@ import sys
 from collections.abc import Sequence
 
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
-from lab_commons.dev.forgeclaim import this_machine
-from lab_commons.dev.forgehosts import card_host
+from lab_commons.dev.forgehosts import this_host
 from lab_commons.dev.forgeschedule import ORIGIN_HOST
 from lab_commons.log import emit
 
@@ -37,7 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """The hook: stamp the message file git hands it; 0 on every path, and a failure is SAID."""
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        stamp(args[-1], card_host(this_machine(None), None))
+        stamp(args[-1], this_host())
     except (IndexError, OSError, subprocess.SubprocessError) as failed:
         emit(f'[forge-host] no origin host stamped: {failed}', err=True)
     return 0

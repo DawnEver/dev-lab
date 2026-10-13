@@ -1,7 +1,7 @@
 """THE CLAIM PASS of a tick (:mod:`lab_commons.dev.forgetick`): walk the ranked queue, claim each candidate that admits.
 
-Each candidate becomes a :class:`~lab_commons.compute.model.Job` carrying its origin (login, vouched host,
-session); it is blocked by a refused declaration, a lacking capability, an unproducible repo, its sha's
+Each candidate becomes a :class:`~lab_commons.compute.model.Job` carrying its need-set and its origin
+(login, vouched host, session); it is blocked by a refused declaration, an unproducible repo, its sha's
 tree being busy here, its ref's budget, or admission -- and otherwise claimed, its demand then counted as
 running for every later candidate -- ON LOAN from a reservation when it borrows one's idle part, and
 DISPLACING the loans it preempts when it holds one (:func:`lab_commons.compute.admission.admit`); those loans
@@ -12,31 +12,19 @@ are collected in :attr:`ClaimPass.preempt` for the serve loop to stop and releas
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from lab_commons.compute.admission import Admission, Held, admit
-from lab_commons.compute.model import (
-    REQUEST,
-    Candidate,
-    Job,
-    Ranked,
-    Reservation,
-    Resources,
-    Schedule,
-    Supply,
-)
+from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Reservation, Resources, Schedule, Supply
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, Claim, Serving, Work, assess, claim
-from lab_commons.dev.forgeprovides import lacking, needs
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
-from lab_commons.dev.forgestatus import status_history
+from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import Client
-from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_argv, part_context
-from lab_commons.hpc.platforms import Table, declared_at
-from lab_commons.hpc.shell import FULL
+from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
+from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
 
 __all__ = ['ClaimPass']
 
@@ -61,8 +49,8 @@ class ClaimPass:
     trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
     unproducible: str = ''  # why the repo's producer cannot be built here; blocks every later candidate
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
-    provides: Mapping[str, Any] = dataclasses.field(default_factory=dict)
-    tables: dict[str, tuple[Table, str]] = dataclasses.field(default_factory=dict)
+    tables: dict[str, tuple[Vocabulary, str]] = dataclasses.field(default_factory=dict)
+    history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
@@ -76,7 +64,7 @@ class ClaimPass:
         if wanted.kind == REQUEST:  # requests are ranked and shown; no producer claims one yet
             self.queue.append(dataclasses.replace(item, blocked=f'{NO_HOST} claims requests yet'))
             return
-        state, holder = assess(status_history(self.client, wanted.sha), wanted.platform, me=self.me, now=self.now)
+        state, holder = assess(self.history(wanted.sha), wanted.platform, me=self.me, now=self.now)
         one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder)
         blocked, needed = self._blocked(wanted) if state in CLAIMABLE else ('', frozenset[str]())
         if state in CLAIMABLE and not blocked and self.dry_run:
@@ -89,13 +77,8 @@ class ClaimPass:
 
     def reserved(self, wanted: Candidate) -> bool:
         """Whether a live lease on this host is for *wanted*: it then ranks first here."""
-        needed = self._needs(wanted) if wanted.sha else frozenset[str]()
-        job = self._job(wanted, needed)
+        job = self._job(wanted, needs_of(wanted.platform))
         return any(one.holds_for(job, self.supply.scope, self.now) for one in self.reservations)
-
-    def _needs(self, wanted: Candidate) -> frozenset[str]:
-        table, _ = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
-        return frozenset(needs(table, wanted.platform))
 
     def _job(self, wanted: Candidate, needed: frozenset[str]) -> Job:
         return Job(self.repo, wanted.sha, wanted.platform, needed, wanted.origin, wanted.origin_host, wanted.session)
@@ -103,11 +86,10 @@ class ClaimPass:
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         _, refused = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
-        needed = self._needs(wanted)
+        needed = needs_of(wanted.platform)
         busy = not self.serve.hpc and wanted.sha in self.trees
         why = (
             refused
-            or lacking(sorted(needed), self.provides)
             or self.unproducible
             or (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
             or over_budget(self.root, wanted, self.schedule, self.usage)
@@ -159,4 +141,4 @@ class ClaimPass:
 def _producer(root: Path, work: Work, serve: Serving) -> Work:
     if serve.hpc:
         return dataclasses.replace(work, cluster=cluster_part(root, work.sha))
-    return dataclasses.replace(work, argv=tuple(part_argv(root, work.platform, scope=FULL, sha=work.sha)))
+    return dataclasses.replace(work, argv=tuple(producer_argv(root, work.platform, sha=work.sha)))

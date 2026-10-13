@@ -30,13 +30,13 @@ from lab_commons.config import section
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgehosts import HostCard
-from lab_commons.dev.forgeprovides import declared_parts, needs, unserved
+from lab_commons.dev.forgeprovides import present, unserved
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, candidates, host_weights, load_schedule, repo_name
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import origin_url
-from lab_commons.hpc.platforms import Table, declared_at
+from lab_commons.dev.platformparts import derived, origin_url
+from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
 from lab_commons.log import emit
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
@@ -62,20 +62,25 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     fetch(root)
     now = forge_now(client)
     schedule, repo = load_schedule(root), repo_name(client)
+    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
+
+    def history(sha: str) -> tuple[Status, ...]:
+        if sha not in histories:
+            histories[sha] = status_history(client, sha) if sha else ()
+        return histories[sha]
+
     found = candidates(
-        root, 'integrate', client, repo=repo, platforms=declared_parts(root), schedule=schedule,
+        root, 'integrate', client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
         policy=load_policy(root), now=now,
     )  # fmt: skip
     book = ledger.read(client)
     cards = book.cards
-    histories: dict[str, tuple[Status, ...]] = {}
     nobody = Claim('', '', now)
     waiting: list[Candidate] = []
     in_flight: list[dict[str, Any]] = []
     for one in found:
         if one.kind != REQUEST:
-            history = histories.setdefault(one.sha, status_history(client, one.sha) if one.sha else ())
-            state, holder = assess(history, one.platform, me=nobody, now=now)
+            state, holder = assess(history(one.sha), one.platform, me=nobody, now=now)
             if state == DONE:
                 continue
             if state == CLAIMED and holder is not None:
@@ -87,17 +92,16 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 continue
         waiting.append(one)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)
-    read: dict[str, tuple[Table, str]] = {}
+    read: dict[str, tuple[Vocabulary, str]] = {}
 
-    def declared(sha: str) -> tuple[Table, str]:
-        return read.setdefault(sha, declared_at(root, sha) if sha else (Table(), ''))
+    def declared(sha: str) -> tuple[Vocabulary, str]:
+        return read.setdefault(sha, declared_at(root, sha) if sha else (Vocabulary(), ''))
 
     weights = host_weights(section('schedule'))
     ranked = [
         dataclasses.replace(
             item,
-            blocked=declared(item.candidate.sha)[1]
-            or _why(item.candidate, cards, now, needs(declared(item.candidate.sha)[0], item.candidate.platform)),
+            blocked=declared(item.candidate.sha)[1] or _why(item.candidate, cards, now),
         )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
@@ -122,12 +126,16 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     }
 
 
-def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime, needed: Sequence[str]) -> str:
+def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
+    try:
+        needed = needs_of(candidate.platform)
+    except ValueError as why:
+        return str(why)
     live = [card for card in cards if not card.stale(now)]
-    unclaimable = unserved(candidate.platform, needed, [(card.platform, card.provides) for card in live])
+    unclaimable = unserved(needed, [present(card.platform, card.provides) for card in live])
     if unclaimable:
         return unclaimable
-    serving = [card for card in live if candidate.platform in {card.platform, *card.provides}]
+    serving = [card for card in live if needed <= present(card.platform, card.provides)]
     reasons = [(card.host, card.waiting[candidate.key]) for card in serving if candidate.key in card.waiting]
     refused = [(host, why) for host, why in reasons if why.startswith(f'{NOT_ADMITTED}: ')]
     if refused and len(refused) == len(serving):

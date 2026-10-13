@@ -1,4 +1,4 @@
-"""PLATFORM PARTS: one declaration per marker, one assignment rule, a strict part from a run record."""
+"""PARTS: one per need-set, derived from the suite; a strict part from a run record; one declared producer."""
 
 from __future__ import annotations
 
@@ -13,23 +13,22 @@ from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
-from lab_commons.hpc.platforms import Table, assign, cannot_run, host_platform, read_table, runnable
+from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.run import NotSubmitted
 
 SHA = 'a' * 40
 
 PYPROJECT = """
-[tool.lab_commons.platforms]
-femm = ["windows"]
-matlab = ["windows", "linux"]
+[tool.lab_commons.tests]
+resources = ["femm", "windows"]
 """
 
 
-def _record(outcomes: dict[str, str], handed: dict[str, list[str]] | None = None) -> dict[str, object]:
+def _record(outcomes: dict[str, str], handed: dict[str, str] | None = None, part: str = BASE) -> dict[str, object]:
     return {
         'sha': SHA,
-        'platform': 'linux',
+        'platform': part,
         'system': 'linux-x86_64/glibc2.28',
         'scope': 'full',
         'req': 't0',
@@ -41,29 +40,17 @@ def _record(outcomes: dict[str, str], handed: dict[str, list[str]] | None = None
     }
 
 
-def test_the_table_is_one_declaration_per_marker() -> None:
-    table = read_table(PYPROJECT)
-    assert table.rows == {'femm': ('windows',), 'matlab': ('windows', 'linux')}
-    assert cannot_run(table, 'linux') == 'femm'
-    assert cannot_run(table, 'macos') == 'femm or matlab'
-    assert cannot_run(table, 'windows') == '', 'an unlisted marker runs everywhere'
-    assert read_table('[project]\nname = "x"\n') == Table()
-    with pytest.raises(ValueError, match='platforms are a list'):
-        read_table('[tool.lab_commons.platforms]\nfemm = ["win32"]\n')
-    assert host_platform('win32') == 'windows'
-
-
 def test_the_part_is_derived_strictly_from_the_run() -> None:
     passing = _record(
         {'t::a': 'passed', 't::b': 'skipped', 't::c': 'xfailed', 't::f': 'not-covered', 't::m': 'not-covered'},
-        {'t::f': ['windows'], 't::m': ['windows', 'macos']},
+        {'t::f': 'femm', 't::m': 'femm+windows'},
     )
     part = platformparts.part_of(passing)
-    assert (part.platform, part.scope, part.result, part.state) == ('linux', 'full', 'PASS', 'success'), (
-        "platform and scope are the record's"
+    assert (part.platform, part.scope, part.result, part.state) == (BASE, 'full', 'PASS', 'success'), (
+        "part and scope are the record's"
     )
-    assert (part.ran, part.hands, part.nowhere) == (3, {'windows': 2}, 0)
-    assert part.description() == 'scope=full ran=3 hands=windows:2 nowhere=0'
+    assert (part.ran, part.hands) == (3, {'femm': 1, 'femm+windows': 1})
+    assert part.description() == 'scope=full ran=3 hands=femm:1,femm+windows:1'
     for bad in ('failed', 'error'):
         failing = platformparts.part_of(_record({'t::a': 'passed', 't::x': bad}))
         assert (failing.result, failing.state) == ('FAIL', 'failure'), bad
@@ -71,7 +58,7 @@ def test_the_part_is_derived_strictly_from_the_run() -> None:
 
 @pytest.mark.parametrize('unrun', ['lost', 'missing'])
 def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_posted(unrun: str) -> None:
-    """Measured 2026-10-09: 50349 lost ids from a build that never made a venv were written as a linux FAIL."""
+    """Measured 2026-10-09: 50349 lost ids from a build that never made a venv were written as a FAIL."""
     outcomes = {'t::a': 'passed', 't::e': 'error', 't::x': unrun}
     with pytest.raises(platformparts.PartRefusal, match=r'INCONCLUSIVE: 1 of 3 .*t::x'):
         platformparts.part_of(_record(outcomes))
@@ -79,64 +66,67 @@ def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_posted(unrun:
         platformparts.part_of(_record({'t::f': 'not-covered'}))
 
 
-def test_a_record_handing_off_its_own_ids_is_refused() -> None:
-    """PLANTED CONTROL: linux handing off an id linux can run is a selection defect, not a part."""
-    with pytest.raises(platformparts.PartRefusal, match='it is assigned: t::a'):
-        platformparts.part_of(_record({'t::b': 'passed', 't::a': 'not-covered'}, {'t::a': ['linux', 'windows']}))
+def test_a_record_handing_off_its_own_ids_or_to_no_part_is_refused() -> None:
+    """PLANTED CONTROL: base handing off a base id is a selection defect, not a part."""
+    with pytest.raises(platformparts.PartRefusal, match='of its own part: t::a'):
+        platformparts.part_of(_record({'t::b': 'passed', 't::a': 'not-covered'}, {'t::a': BASE}))
+    with pytest.raises(platformparts.PartRefusal, match='to no part: t::a'):
+        platformparts.part_of(_record({'t::b': 'passed', 't::a': 'not-covered'}, {'t::a': ''}))
 
 
 def test_the_description_round_trips_through_a_status() -> None:
-    part = platformparts.Part('windows', 'full', 'FAIL', ran=7, hands={'macos': 1}, nowhere=2)
-    status = Status(platformparts.part_context('windows'), part.state, part.description(), 'u')
+    part = platformparts.Part('femm+windows', 'full', 'FAIL', ran=7, hands={BASE: 1})
+    status = Status(platformparts.part_context('femm+windows'), part.state, part.description(), 'u')
     parts, problems = platformparts.parts_of([status, Status('ci/foreign', 'success', 'not a part', '')])
-    assert parts == {'windows': part}
+    assert parts == {'femm+windows': part}
     assert problems == ()
-    _, claimed = platformparts.parts_of([Status('tests/linux', 'pending', 'claim machine=G', '')])
+    _, claimed = platformparts.parts_of([Status('tests/base', 'pending', 'claim machine=G', '')])
     assert 'not a settled part' in claimed[0]
 
 
-def test_every_id_is_assigned_to_exactly_one_part_by_one_rule() -> None:
-    """The rule: linux if it can run there, else windows, else macos; nowhere is ``None``."""
-    assert assign(['linux', 'windows', 'macos']) == 'linux'
-    assert assign(['macos', 'windows']) == 'windows', 'the rule reads PLATFORMS order, not the list order'
-    assert assign(['macos']) == 'macos'
-    assert assign([]) is None
-    can = {'t::a': ['linux', 'windows', 'macos'], 't::f': ['windows'], 't::m': ['windows', 'macos'], 't::n': []}
-    for platform in ('linux', 'windows', 'macos'):
-        mine, handed = platformparts.split(can, platform)
-        assert set(mine).isdisjoint(handed), platform
-        assert set(mine) | set(handed) == set(can), platform
-    assert platformparts.split(can, 'windows') == (['t::f', 't::m'], {'t::a': can['t::a'], 't::n': []})
-    assert platformparts.split(can, 'linux')[0] == ['t::a']
+def test_a_commits_parts_are_derived_from_what_its_parts_hand_to() -> None:
+    """Nothing posted: base alone is known. A posted part names every part it handed ids to."""
+    assert platformparts.derived([]) == (BASE,)
+    base = platformparts.Part(BASE, 'full', 'PASS', ran=2, hands={'femm': 3, 'jmag': 1})
+    posted = [Status('tests/base', base.state, base.description(), '')]
+    assert platformparts.derived(posted) == (BASE, 'femm', 'jmag')
+
+
+def test_every_id_belongs_to_exactly_one_part() -> None:
+    owners = {'t::a': BASE, 't::f': 'femm', 't::w': 'windows'}
+    for part in (BASE, 'femm', 'windows'):
+        mine, handed = platformparts.split(owners, part)
+        assert set(mine).isdisjoint(handed), part
+        assert set(mine) | set(handed) == set(owners), part
+    assert platformparts.split(owners, 'femm') == (['t::f'], {'t::a': BASE, 't::w': 'windows'})
 
 
 def test_a_part_selects_from_its_own_collection_without_reading_any_ledger(tmp_path: Path, monkeypatch) -> None:
-    """No part is recorded anywhere, and windows still selects: the selection reads only table and ids."""
-    monkeypatch.setattr(platformparts, 'table_at', lambda _root, _sha: read_table(PYPROJECT))
-    collected = {'': ['t::a', 't::f', 't::m'], 'femm': ['t::f'], 'femm or matlab': ['t::f', 't::m']}
-    mine, handed = platformparts.select(tmp_path, SHA, 'windows', collect=collected.__getitem__)
-    assert mine == ['t::f']
-    assert handed == {'t::a': ['linux', 'windows', 'macos'], 't::m': ['linux', 'windows']}
-    assert runnable(['t::f'], {'linux': {'t::f'}}) == {'t::f': ['windows', 'macos']}
-    with pytest.raises(ValueError, match='one of'):
-        platformparts.select(tmp_path, SHA, 'win32', collect=collected.__getitem__)
+    """No part is recorded anywhere, and femm+windows still selects: it reads only the vocabulary and ids."""
+    monkeypatch.setattr(platformparts, 'vocabulary_at', lambda _root, _sha: read_vocabulary(PYPROJECT))
+    collected = {'': ['t::a', 't::f', 't::fw'], 'femm': ['t::f', 't::fw'], 'windows': ['t::fw']}
+    mine, handed = platformparts.select(tmp_path, SHA, 'femm+windows', collect=collected.__getitem__)
+    assert mine == ['t::fw']
+    assert handed == {'t::a': BASE, 't::f': 'femm'}
+    with pytest.raises(ValueError, match='not a part name'):
+        platformparts.select(tmp_path, SHA, 'windows+femm', collect=collected.__getitem__)
 
 
 def test_the_cli_queues_the_part_with_its_record_and_flushes(tmp_path: Path, monkeypatch, capsys) -> None:
     source = write_record(_record({'t::a': 'passed'}), tmp_path / 'runs')
     queued: list = []
     monkeypatch.setattr(platformparts, 'enqueue', lambda _root, post, *, record: queued.append((post, record)))
-    monkeypatch.setattr(platformparts, 'flush', lambda _root: ['status: held tests/linux'])
+    monkeypatch.setattr(platformparts, 'flush', lambda _root: ['status: held tests/base'])
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == 0
     post, record = queued[0]
     assert (post.sha, post.context, post.state, post.description) == (
         SHA,
-        'tests/linux',
+        'tests/base',
         'success',
-        'scope=full ran=1 hands=- nowhere=0',
+        'scope=full ran=1 hands=-',
     )
     assert record == source
-    assert 'status: held tests/linux' in capsys.readouterr().out
+    assert 'status: held tests/base' in capsys.readouterr().out
     empty = write_record({**_record({}), 'req': 't1'}, tmp_path / 'runs')
     assert platformparts.main(['post', str(empty), '--root', str(tmp_path)]) == 1
     assert len(queued) == 1, 'a refused part is never queued'
@@ -151,9 +141,9 @@ collect = "tests"
 [tool.lab_commons.parts]
 output = "output/logs"
 
-[tool.lab_commons.parts.produce.windows]
-full = ["scripts/gate/runner.py", "gate", "--platform", "windows", "--full"]
-incremental = ["scripts/gate/runner.py", "gate", "--platform", "windows"]
+[tool.lab_commons.tests]
+resources = ["femm", "jmag"]
+produce = ["scripts/gate/runner.py", "part", "{part}", "--full"]
 """
 
 
@@ -190,13 +180,26 @@ def test_the_cluster_part_carries_the_declared_outputs_and_a_malformed_list_is_r
         platformparts.cluster_part(repo, sha)
 
 
-def test_a_local_part_runs_the_declared_producer_per_scope(tmp_path: Path) -> None:
-    """The argv is the one the CLAIMED COMMIT declares (the working tree is emptied); the tree's python runs it."""
+@pytest.mark.parametrize('part', [BASE, 'jmag', 'femm+jmag'])
+def test_every_part_runs_the_one_declared_producer_told_its_part(tmp_path: Path, part: str) -> None:
+    """The argv is the one the CLAIMED COMMIT declares (the working tree is emptied), {part} filled."""
     repo, sha = _checkout(tmp_path, DECLARED)
-    full = platformparts.part_argv(repo, 'windows', scope='full', sha=sha)
-    assert full == ['scripts/gate/runner.py', 'gate', '--platform', 'windows', '--full']
-    incremental = platformparts.part_argv(repo, 'windows', scope='incremental', sha=sha)
-    assert incremental[-1] == 'windows'
+    assert platformparts.producer_argv(repo, part, sha=sha) == ['scripts/gate/runner.py', 'part', part, '--full']
+
+
+@pytest.mark.parametrize(
+    ('produce', 'named'),
+    [
+        ('', r'\[tool\.lab_commons\.tests\] produce as a non-empty array'),
+        ('produce = ["-m", "lab_commons.dev.verify"]\n', r'must carry \{part\}'),
+    ],
+)
+def test_a_producer_never_told_its_part_is_refused(tmp_path: Path, produce: str, named: str) -> None:
+    """PLANTED CONTROL: the full declaration fills the argv; dropping {part} or the producer refuses by key."""
+    line = 'produce = ["scripts/gate/runner.py", "part", "{part}", "--full"]\n'
+    repo, sha = _checkout(tmp_path, DECLARED.replace(line, produce))
+    with pytest.raises(platformparts.UndeclaredPart, match=named):
+        platformparts.producer_argv(repo, BASE, sha=sha)
 
 
 @pytest.mark.parametrize(
@@ -214,19 +217,6 @@ def test_a_missing_cluster_declaration_is_refused_naming_its_key(tmp_path: Path,
         platformparts.cluster_part(repo, sha)
 
 
-@pytest.mark.parametrize('platform', ['windows', 'linux', 'macos'])
-def test_a_local_part_of_any_platform_needs_its_own_produce_declaration(tmp_path: Path, platform: str) -> None:
-    """A linux box OFF a cluster is a local producer like any other; only a cluster seat runs the cluster part."""
-    declared = DECLARED.replace(
-        '[tool.lab_commons.parts.produce.windows]', f'[tool.lab_commons.parts.produce.{platform}]'
-    )
-    repo, sha = _checkout(tmp_path, declared)
-    assert platformparts.part_argv(repo, platform, scope='full', sha=sha)[0] == 'scripts/gate/runner.py'
-    other = next(name for name in ('windows', 'linux', 'macos') if name != platform)
-    with pytest.raises(platformparts.UndeclaredPart, match=rf'produce\.{other}\] full'):
-        platformparts.part_argv(repo, other, scope='full', sha=sha)
-
-
 def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(monkeypatch, capsys) -> None:
     """``hpc run submit`` by hand: a build that submitted nothing exits 3 (INCONCLUSIVE) and names its log.
 
@@ -240,7 +230,7 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
 
     monkeypatch.setattr(hpc_cli, 'load_grants', lambda: None)
     monkeypatch.setattr(hpc_cli, 'builds_at', lambda *_a, **_k: ())
-    monkeypatch.setattr(hpc_cli, 'table_at', lambda *_a: Table())
+    monkeypatch.setattr(hpc_cli, 'vocabulary_at', lambda *_a: Vocabulary())
     monkeypatch.setattr(hpc_cli, 'submitter', lambda: None)
     monkeypatch.setattr(hpc_cli, 'submit_run', failed_build)
     flags = ['--repo-url', 'u', '--collect', 't']
@@ -248,79 +238,73 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
     assert log in capsys.readouterr().err
 
 
-def _status(platform: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
-    return Status(f'tests/{platform}', state, f'scope={scope} ran=2 hands={hands} nowhere=0', '')
+def _status(part: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
+    return Status(f'tests/{part}', state, f'scope={scope} ran=2 hands={hands}', '')
 
 
-def test_the_standing_is_the_one_reading_of_a_platform_result() -> None:
-    """PASS only when nothing is missing; a FAIL part is FAIL whatever else; unsettled otherwise."""
-    assert platformparts.standing([_status('linux')], head=SHA).result == 'PASS'
+def test_the_standing_requires_base_and_every_part_handed_to() -> None:
+    """PASS only when base and every derived part stand; a FAIL part is FAIL whatever else; unsettled otherwise."""
+    assert platformparts.standing([_status(BASE)], head=SHA).result == 'PASS'
     assert platformparts.standing([], head=SHA).result == ''
-    assert platformparts.standing([_status('linux', hands='windows:1')], head=SHA).result == ''
-    both = [_status('linux', hands='windows:1'), _status('windows')]
+    assert platformparts.standing([_status('jmag')], head=SHA).result == '', 'no base: nothing proves the rest'
+    assert platformparts.standing([_status(BASE, hands='femm+windows:1')], head=SHA).result == ''
+    both = [_status(BASE, hands='femm+windows:1'), _status('femm+windows')]
     assert platformparts.standing(both, head=SHA).result == 'PASS'
-    red = [_status('linux', 'failure'), _status('windows', 'pending')]
+    red = [_status(BASE, 'failure'), _status('femm', 'pending')]
     assert platformparts.standing(red, head=SHA).result == 'FAIL'
-    incremental = [_status('linux', scope='incremental')]
+    incremental = [_status(BASE, scope='incremental')]
     assert platformparts.standing(incremental, head=SHA).result == 'PASS'
     full = platformparts.standing(incremental, head=SHA, scope='full')
     assert full.result == ''
     assert any('scope incremental' in problem for problem in full.problems)
 
 
-def test_a_local_run_becomes_a_record_of_the_cluster_shape(tmp_path: Path, monkeypatch) -> None:
-    """A local verify covers every id it judged that its platform can run, and hands off only the rest."""
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: read_table(PYPROJECT))
-    outcomes = {'t::a': 'passed', 't::f': 'failed', 't::m': 'skipped'}
-    collected = {'femm': ['t::f'], 'femm or matlab': ['t::f', 't::m']}
+def test_a_local_run_becomes_one_record_per_part_of_the_cluster_shape(tmp_path: Path, monkeypatch) -> None:
+    """A local run covers the ids of the part it records and hands every other id to its own part."""
+    monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: read_vocabulary(PYPROJECT))
+    outcomes = {'t::a': 'passed', 't::f': 'failed', 't::w': 'skipped'}
+    collected = {'': ['t::a', 't::f', 't::w', 't::fw'], 'femm': ['t::f', 't::fw'], 'windows': ['t::w', 't::fw']}
+    owned = localpart.owners(tmp_path, SHA, list(outcomes), collected.__getitem__)
+    assert owned == {'t::a': BASE, 't::f': 'femm', 't::w': 'windows', 't::fw': 'femm+windows'}
 
-    def local(platform: str) -> dict[str, object]:
-        return localpart.local_record(
-            tmp_path,
-            sha=SHA,
-            platform=platform,
-            scope='full',
-            req='verify-x',
-            outcomes=outcomes,
-            reasons={'t::m': 'no matlab here', 't::f': 'no femm here'},
-            collect=collected.__getitem__,
-        )
+    def local(part: str) -> dict[str, object]:
+        reasons = {'t::w': 'skipped here', 't::f': 'red'}
+        fields = {'sha': SHA, 'scope': 'full', 'req': 'verify-x', 'outcomes': outcomes, 'reasons': reasons}
+        return localpart.local_record(part=part, owned=owned, **fields)
 
-    on_linux = local('linux')
-    assert on_linux['outcomes'] == {'t::a': 'passed', 't::m': 'skipped', 't::f': 'not-covered'}
-    assert on_linux['handed'] == {'t::f': ['windows']}
-    assert on_linux['reasons'] == {'t::m': 'no matlab here'}
-    part = platformparts.part_of(on_linux)
-    assert (part.platform, part.result, part.ran, part.hands) == ('linux', 'PASS', 2, {'windows': 1})
-    on_windows = platformparts.part_of(local('windows'))
-    assert (on_windows.result, on_windows.ran, on_windows.hands) == ('FAIL', 3, {})
+    base = local(BASE)
+    assert base['outcomes'] == {'t::a': 'passed', **dict.fromkeys(['t::f', 't::w', 't::fw'], 'not-covered')}
+    assert base['handed'] == {'t::f': 'femm', 't::w': 'windows', 't::fw': 'femm+windows'}
+    assert base['reasons'] == {}
+    part = platformparts.part_of(base)
+    assert (part.platform, part.result, part.ran) == (BASE, 'PASS', 1)
+    assert part.hands == {'femm': 1, 'windows': 1, 'femm+windows': 1}, 'the parts this commit needs, discovered'
+    femm = platformparts.part_of(local('femm'))
+    assert (femm.result, femm.ran, femm.hands) == ('FAIL', 1, {BASE: 1, 'windows': 1, 'femm+windows': 1})
 
 
-def test_a_windows_verify_of_a_repo_with_no_table_covers_what_it_ran(tmp_path: Path, monkeypatch) -> None:
-    """Live 2026-10-11 (lab-commons ff3106e): no table made every id linux's and a windows verify covered nothing.
+def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path: Path, monkeypatch) -> None:
+    """Live 2026-10-11 (lab-commons ff3106e): a windows verify of a repo with no table covered nothing.
 
     PLANTED CONTROL: a run that judged no test is still refused, so an empty part is never a pass.
     """
-    monkeypatch.setattr(localpart, 'table_at', lambda _root, _sha: Table())
+    monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: Vocabulary())
+    reported = {'t::a': 'passed', 't::s': 'skipped'}
+    owned = localpart.owners(tmp_path, SHA, list(reported), lambda _e: pytest.fail('nothing is declared'))
+    assert owned == dict.fromkeys(reported, BASE)
 
     def local(outcomes: dict[str, str]) -> dict[str, object]:
-        return localpart.local_record(
-            tmp_path,
-            sha=SHA,
-            platform='windows',
-            scope='full',
-            req='r',
-            outcomes=outcomes,
-            reasons={'t::s': 'why'},
-            collect=lambda _expr: pytest.fail('no marker is declared, so nothing is collected'),
-        )
+        fields = {'sha': SHA, 'scope': 'full', 'req': 'r', 'reasons': {'t::s': 'why'}}
+        return localpart.local_record(part=BASE, outcomes=outcomes, owned=owned, **fields)
 
-    on_windows = local({'t::a': 'passed', 't::s': 'skipped'})
-    assert on_windows['outcomes'] == {'t::a': 'passed', 't::s': 'skipped'}
-    assert on_windows['reasons'] == {'t::s': 'why'}
-    assert platformparts.part_of(on_windows).hands == {}
+    record = local(reported)
+    assert record['outcomes'] == reported
+    assert record['reasons'] == {'t::s': 'why'}
+    assert platformparts.part_of(record).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.part_of(local({}))
+        platformparts.part_of(
+            localpart.local_record(part=BASE, outcomes={}, owned={}, sha=SHA, scope='full', req='r', reasons={})
+        )
 
 
 def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, monkeypatch) -> None:
@@ -336,17 +320,3 @@ def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, mon
 
     monkeypatch.setattr(platformparts, 'flush', down)
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE
-
-
-def test_this_repo_assigns_its_dev_checkout_tests_off_the_cluster() -> None:
-    """The cluster's linux tree is no developer checkout: a ``dev_checkout`` test is assigned, never skipped."""
-    table = read_table((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8'))
-    assert 'dev_checkout' in cannot_run(table, 'linux').split(' or ')
-    assert assign([p for p in ('linux', 'windows', 'macos') if p in table.rows['dev_checkout']]) == 'windows'
-
-
-def test_this_repo_assigns_its_node_tests_off_the_cluster() -> None:
-    """Ada's compute nodes carry no ``node`` (measured 2026-10-12): an engine test is assigned, never skipped."""
-    table = read_table((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8'))
-    assert cannot_run(table, 'linux') == 'dev_checkout or node'
-    assert assign([p for p in ('linux', 'windows', 'macos') if p in table.rows['node']]) == 'windows'

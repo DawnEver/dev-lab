@@ -41,6 +41,7 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Final
 
+from lab_commons.compute.probe import OS_NAMES
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import ClusterPart, part_context
@@ -48,7 +49,6 @@ from lab_commons.dev.producer import REQUEUED
 from lab_commons.hpc.account import ClusterAccount, cluster_account
 from lab_commons.hpc.cluster import local_runner
 from lab_commons.hpc.grants import workstation
-from lab_commons.hpc.platforms import LINUX
 
 __all__ = [
     'CLAIMABLE',
@@ -134,7 +134,7 @@ class Claim:
 
 @dataclass(frozen=True)
 class Serving:
-    """The part this box can produce: its platform, and the cluster account it runs under (``''`` = here)."""
+    """Where this box produces: its OS, and the cluster account it runs under (``''`` = here)."""
 
     platform: str
     hpc: str = ''
@@ -142,7 +142,7 @@ class Serving:
 
 @dataclass(frozen=True)
 class Work:
-    """One request and where it stands: a ref's tip lacking (or holding) one platform's part.
+    """One request and where it stands: a ref's tip lacking (or holding) one part; *platform* is the part's name.
 
     A claimed part carries what produces it: a local *argv* -- as the sha declares it, run by the interpreter
     of the producer's tree at the sha -- or a *cluster* part advanced by serve.
@@ -158,8 +158,8 @@ class Work:
 
 
 def serving(host: str, seat: ClusterAccount | None) -> Serving:
-    """The one part this box serves: its own platform, as a cluster run when it is a linux box on a cluster."""
-    return Serving(host, str(seat) if seat is not None and host == LINUX else '')
+    """How this box serves: its OS, producing as a cluster run when it is a linux box on a cluster."""
+    return Serving(host, str(seat) if seat is not None and host == OS_NAMES['linux'] else '')
 
 
 def this_seat() -> ClusterAccount | None:

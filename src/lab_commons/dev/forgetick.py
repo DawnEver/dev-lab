@@ -1,44 +1,53 @@
 """REQUESTS through the forge -- ``python -m lab_commons.dev.forge tick``, the call any harness tick makes.
 
 ORIGIN IS THE TRIGGER (forge plan, user rulings 2026-10-09). There is no request object: a pushed ref
-whose tip lacks a ``tests/<platform>`` part IS the request for that part. Which refs a checkout serves
-is its MODE: ``integrate`` serves the integration branch, its PRs, opted-in branches and requests,
-``develop`` the lanes (named by the repo's ``[tool.lab_commons.integrator]``), ``quiet`` serves nothing.
-A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgeclaim`).
+whose tip lacks a ``tests/<part>`` part IS the request for that part; which parts a tip needs is
+DERIVED (:func:`lab_commons.dev.platformparts.derived`): ``base``, and every part a posted part hands to.
+Which refs a checkout serves is its MODE: ``integrate`` serves the integration branch, its PRs, opted-in
+branches and requests, ``develop`` the lanes (named by the repo's ``[tool.lab_commons.integrator]``),
+``quiet`` serves nothing. A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgeclaim`).
 
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), stop if
 ``quiet``, fetch ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
 value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
-(:func:`lab_commons.compute.admission.admit`), and give each claimed part what produces it: a local argv as
-the claimed commit declares it (:func:`lab_commons.dev.platformparts.part_argv`; the producer runs it in
-a tree at that commit) or a cluster part (:func:`lab_commons.dev.platformparts.cluster_part`). A part
+(:func:`lab_commons.compute.admission.admit`: the part's need-set present here, its demand within the supply),
+and give each claimed part what produces it: the ONE producer the claimed commit declares
+(:func:`lab_commons.dev.platformparts.producer_argv`, ``{part}`` filled; the producer runs it in a tree at
+that commit) or a cluster part (:func:`lab_commons.dev.platformparts.cluster_part`). A part
 whose producer the repo does not declare is not claimed; its refusal names the pyproject key to add. A
 cluster host whose rclone remote is unusable (:func:`lab_commons.dev.artefacts.remote_problem`) claims
 no part with declared outputs -- they could exceed ``threshold_mb`` -- and says why; a part with none is
 still claimed. It runs nothing itself.
 
 ADMISSION, NOT ONE CLAIM A TICK. Each candidate is a :class:`~lab_commons.compute.model.Job` whose
-demand is what its last run measured (:func:`~lab_commons.compute.learned.learned_demand`); it is admitted when it fits
-this host's supply less others' reservations and less everything already RUNNING -- the runs in flight
+demand is what its last run of ``(producer, need-set)`` measured
+(:func:`~lab_commons.compute.learned.learned_demand`); it is admitted when it fits
+this host's supply less the idle part of others' reservations and less everything already RUNNING -- the runs in flight
 here, an interactive run holding the box seat, and every part this tick claimed before it. A job that
 does not fit is skipped and a smaller lower-ranked one is still claimed; the skipped one waits naming
 the resources it lacks (``not admitted: lacking cpu``). Several parts may therefore run on one host at
 once. Two parts of ONE sha are never claimed by one box in one tick: a local part is judged in its
 sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
 
-A BOX JOB'S WIDTH FOLLOWS ITS BOX. A box run spreads over the cores it is given
-(:func:`lab_commons.dev.bounded.worker_width`), so its cpu demand is capped at the box's supply: a job
-that measured the whole box is admitted alone, and never starved by a core the own reserve keeps back.
+A RESERVATION LENDS (:mod:`lab_commons.compute.admission`): a job may be claimed ON LOAN into a lease's
+idle part (its claim says ``on_loan=<id>``), and a lease holder's job that loans block PREEMPTS them --
+:attr:`TickReport.preempt`, for the serve loop to stop and release. A job a live lease here is for ranks first.
+
+A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
+wall (:class:`lab_commons.proccpu.TreeCpu`), never capped to the box: a job that kept eight cores busy does
+not fit in four. Unmeasured, it takes every core free now, so it is admitted alone.
+Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shlex
 import sys
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -53,8 +62,8 @@ from lab_commons.compute.model import (
     Resources,
     Supply,
     expected_cost,
-    fitted,
     rank,
+    submitted,
 )
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
@@ -74,21 +83,12 @@ from lab_commons.dev.forgeclaim import (
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeprovides import declared_parts, served_parts
-from lab_commons.dev.forgeschedule import (
-    candidates,
-    load_schedule,
-    repo_name,
-    vouched,
-)
+from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
+from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import (
-    origin_url,
-    part_context,
-    this_platform,
-)
+from lab_commons.dev.platformparts import derived, origin_url, part_context, this_platform
 from lab_commons.dev.producer import preempted
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.log import emit
@@ -135,7 +135,7 @@ def tick(
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
-    provides: Mapping[str, Any] | None = None,
+    busy: Iterable[str] = (),
     owners: Mapping[str, Collection[str]] | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
@@ -148,12 +148,12 @@ def tick(
     in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
-    repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). *provides* is
-    this host's machine-file ``[capabilities]`` (:mod:`lab_commons.dev.forgeprovides`; none by default): it
-    adds the engine parts it serves and blocks a part needing what it lacks. *owners* is who may vouch for
-    each host card (host -> its login and delegates; :class:`lab_commons.compute.ledger.Ledger`): a job's
-    ORIGIN host stands only where its forge-recorded login is one of them, and a job a live lease on this
-    host is for ranks FIRST here.
+    repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). Which resources
+    this host has is *supply*'s ``present`` (:mod:`lab_commons.compute.probe`): a part whose need-set is not
+    all present waits ``not admitted: lacking <resource>``. *busy* are the shas a producer
+    here is judging now: their trees are taken, so no part of them is claimed. *owners* is who may vouch
+    for each host card (host -> its login and delegates): a job's ORIGIN host stands only where its
+    forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`).
     """
     if mode not in MODES:
         msg = f'a mode is one of {MODES}, not {mode!r}'
@@ -168,6 +168,13 @@ def tick(
         return TickReport((), (), tuple(lines))
     fetch(root)
     built = client(root)
+    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
+
+    def history(sha: str) -> tuple[Status, ...]:
+        if sha not in histories:
+            histories[sha] = status_history(built, sha)
+        return histories[sha]
+
     login = built.whoami()
     now = forge_now(built)
     serve = serving(host or this_platform(), seat)
@@ -179,7 +186,7 @@ def tick(
             mode,
             built,
             repo=repo,
-            platforms=served_parts(serve.platform, provides or {}, declared_parts(root), cluster=bool(serve.hpc)),
+            parts=lambda sha: derived(history(sha)),
             schedule=schedule,
             policy=load_policy(root),
             now=now,
@@ -191,13 +198,14 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or Supply(machine or 'this host', Resources(cpu=cores))
-    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=cores)
-    sized = demand or (lambda wanted, needed: by_part(wanted.platform, needed))
+    free = max(1, math.floor(room.resources['cpu']))  # an unmeasured box run takes every core free now
+    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=free)
+    sized = demand or (lambda _wanted, needed: by_part(needed))
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
-        size=lambda wanted, needed: fitted(sized(wanted, needed), room, cluster=bool(serve.hpc)),
-        reservations=tuple(reservations), taken=list(running),
-        store_why=probe(root) if serve.hpc else '', provides=provides or {},
+        size=lambda wanted, needed: submitted(sized(wanted, needed), room),
+        reservations=tuple(reservations), taken=list(running), trees=set(busy),
+        store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, reserved=taken.reserved)
     for item in ranked:

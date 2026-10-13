@@ -1,6 +1,6 @@
 """RUN RECORDS on the forge -- attachments, never refs, so they can be CLEANED (forge plan, data by lifetime).
 
-WHERE A RECORD LIVES. A run record (``run-<sha>-<platform>-<req>.json.gz``, :mod:`lab_commons.hpc.records`)
+WHERE A RECORD LIVES. A run record (``run-<sha>-<part>-<req>.json.gz``, :mod:`lab_commons.hpc.records`)
 is evidence every workstation must be able to read, so it goes to the forge -- but not into git: a
 per-sha ref piles up and slows every ref listing (user ruling 2026-10-09), and a blob in history can
 never be removed. The forge's attachment store is the one channel that is both shared and deletable.
@@ -55,7 +55,7 @@ __all__ = [
 RECORDS_TITLE: Final = 'run records'
 
 _RECORDS_BODY: Final = (
-    'Run records (`run-<sha>-<platform>-<req>.json.gz`) are attached here so each `tests/<platform>` '
+    'Run records (`run-<sha>-<part>-<req>.json.gz`) are attached here so each `tests/<part>` '
     'status can link its evidence without a ref or a git object. Pruned by '
     '`python -m lab_commons.dev.forge records prune`; nothing else belongs on this issue.'
 )

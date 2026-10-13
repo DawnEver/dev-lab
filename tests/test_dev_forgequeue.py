@@ -100,7 +100,7 @@ def test_a_cards_alarms_and_a_stale_cards_silence_are_shown_by_the_queue(server)
 
 def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
-    (repo / 'pyproject.toml').write_text('[tool.lab_commons.parts.produce.windows]\nfull = ["x"]\n', 'utf-8')
+    (repo / 'pyproject.toml').write_text('[tool.lab_commons.tests]\nproduce = ["x", "{part}"]\n', 'utf-8')
     tips = {}
     for branch in ('integrate/main', 'feat/a'):
         run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', branch)
@@ -120,7 +120,7 @@ def _pull(head: str, sha: str) -> dict[str, object]:
 
 def _forge_of(tips: dict[str, str], cards: list[HostCard]) -> None:
     running = Claim('hpclogin02', 'alice', NOW + timedelta(hours=6), 'ada/alice', 'running 40/93 done 12/93')
-    claim = {'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': running.description()}
+    claim = {'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': running.description()}
     answer('GET', '/api/v1/user', (200, {'login': 'carol'}))
     answer('GET', f'{API}/pulls', (200, [_pull('feat/a', tips['feat/a'])]))
     answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
@@ -138,7 +138,7 @@ def test_the_queue_shows_progress_hosts_and_why_work_waits(server, tmp_path: Pat
     seen = forgequeue.view(repo, built, fetch=lambda _root: None)
     assert seen['in_flight'] == [
         {
-            'candidate': f'integrate/main@{tips["integrate/main"][:12]}:windows',
+            'candidate': f'integrate/main@{tips["integrate/main"][:12]}:base',
             'owner': 'ada/alice',
             'login': 'alice',
             'progress': 'running 40/93 done 12/93',
@@ -146,8 +146,8 @@ def test_the_queue_shows_progress_hosts_and_why_work_waits(server, tmp_path: Pat
         }
     ]
     (waiting,) = seen['queue']
-    assert (waiting['candidate'], waiting['class']) == (f'feat/a@{tips["feat/a"][:12]}:windows', 'pr')
-    assert waiting['blocked'] == 'no host serves windows', 'the only windows card is stale'
+    assert (waiting['candidate'], waiting['class']) == (f'feat/a@{tips["feat/a"][:12]}:base', 'pr')
+    assert waiting['blocked'] == 'no host serves it', 'the only card is stale'
     assert [(h['host'], h['stale']) for h in seen['hosts']] == [('box-g', True)]
     key = waiting['candidate']
     _forge_of(tips, [_card('box-g', 'windows', NOW, waiting={key: 'not admitted: lacking cpu'})])
@@ -163,7 +163,7 @@ def test_a_candidate_no_host_admits_names_each_host_and_what_it_lacks(server, tm
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(tmp_path / 'home' / 'config.toml'))
     repo, tips = _origin(tmp_path)
     built = client(FORGE, Loopback(server))
-    key = f'feat/a@{tips["feat/a"][:12]}:windows'
+    key = f'feat/a@{tips["feat/a"][:12]}:base'
     g = _card('box-g', 'windows', NOW, waiting={key: 'not admitted: lacking cpu'}, supply={'cpu': 0.5})
     h = _card('box-h', 'windows', NOW, waiting={key: 'not admitted: lacking mem_gb'}, running=('gate measure',))
     _forge_of(tips, [g, h])
@@ -189,7 +189,7 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
     assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'reservations', 'starved'}
-    assert printed['queue'][0]['blocked'] == 'no host serves windows'
+    assert printed['queue'][0]['blocked'] == 'no host serves it'
 
 
 def test_a_card_states_why_its_host_cannot_write_the_artefact_store() -> None:

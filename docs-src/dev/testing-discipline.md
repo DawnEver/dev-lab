@@ -12,9 +12,9 @@ and who runs it, is on [the verdict model](verdict-model.md).
   hook makes the classification visible to `-m`. A test in a heavy subtree that drives nothing heavy is carved
   back out by name.
 - Live vendor tools run only in the heavy tier.
-- Which PART runs a test is a separate declaration, `[tool.lab_commons.platforms]` (OS) and
-  `[tool.lab_commons.capabilities]` (engines, host capabilities)
-  ([HPC clusters](hpc.md#platform-parts)).
+- Which PART runs a test is its NEED-SET: the resource markers it carries, out of the repo's one
+  `[tool.lab_commons.tests] resources` list ([HPC clusters](hpc.md#parts-by-need-set)). Mark the tool a test
+  drives, not the OS the tool happens to run on.
 
 ## xfail, never skip
 

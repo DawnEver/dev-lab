@@ -21,18 +21,20 @@ import pytest
 from lab_commons.compute import learned
 from lab_commons.compute.learned import OOM_GROWTH, Measured
 from lab_commons.config import CONFIG_ENV
+from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.platformparts import part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
+from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
-from lab_commons.hpc.platforms import Table
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
-from lab_commons.hpc.records import fold, read_record, read_streams, record_name, write_record
+from lab_commons.hpc.records import fold, held_outcomes, read_record, read_streams, record_name, run_shas, write_record
 from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
@@ -424,7 +426,7 @@ def _submit(fake: FakeRunCluster, **kw: object) -> str:
         sha=SHA,
         repo_url='https://g/r.git',
         builds=Builds(install='true', env_key='k1'),
-        table=Table(rows={'win': ('windows',)}),
+        vocabulary=Vocabulary(('win',)),
     )
     return submit_run(spec, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, stamp='t0', **kw)
 
@@ -449,13 +451,13 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     assert record['sha'] == SHA
     assert {k: v for k, v in record['prep'].items() if k != 'ship'} == {'env': 12, 'collect': 3}, 'prep is measurable'
     assert record['prep']['ship'] >= 0, 'so is the fetch/pack'
-    assert record['handed'] == {'tests/w.py::t': ['windows']}, 'handed names the platforms that CAN run it'
+    assert record['handed'] == {'tests/w.py::t': 'win'}, 'handed names the part each id belongs to'
     assert (record['platform'], record['system'], record['cluster'], record['python']) == (
-        'linux',
+        BASE,
         'linux-x86_64/glibc2.28',
         'login.example',
         '3.13.1',
-    ), 'platform is the part it is; system is the box it ran on'
+    ), 'platform is the part it is (its need-set); system is the box it ran on'
     assert (record['scope'], record['req'], record['env']) == ('full', 't0', 'e0ffee0123456789')
     assert (record['account'], record['job_ids']) == ('acct-free', ['4243'])
     assert record['plan']['comment'] == 'lc:ws=ws-a'
@@ -635,9 +637,9 @@ def test_a_venv_that_cannot_name_its_env_refuses_the_run() -> None:
     assert not fake.manifests
 
 
-def test_the_record_is_named_for_its_sha_platform_and_request_and_round_trips_gzipped(tmp_path: Path) -> None:
+def test_the_record_is_named_for_its_sha_part_and_request_and_round_trips_gzipped(tmp_path: Path) -> None:
     record = _run(FakeRunCluster())
-    assert record_name(record) == f'run-{SHA}-linux-t0.json.gz'
+    assert record_name(record) == f'run-{SHA}-base-t0.json.gz'
     path = write_record(record, tmp_path / 'runs')
     assert path == tmp_path / 'runs' / record_name(record)
     assert read_record(path) == record
@@ -1106,3 +1108,55 @@ def test_a_failed_run_build_is_inconclusive(
     _build_cli(monkeypatch, FakeRunCluster(build_fails=True))
     assert cli.main(['run', 'build', '--sha', SHA, '--repo-url', 'u']) == 3
     assert 'could not find `cargo`' in capsys.readouterr().err
+
+
+# -- carried outcomes (lab_commons.dev.forgecarry) ------------------------------------------------------
+
+A_SHA = 'a' * 40
+
+
+def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> None:
+    fake, envs = FakeRunCluster(), []
+
+    def carry(env: str) -> dict[str, tuple[str, str, str]]:
+        envs.append(env)
+        return {
+            'tests/a.py::t1': ('passed', A_SHA, A_SHA),
+            'tests/a.py::t2': ('failed', A_SHA, A_SHA),
+            'x::y': ('passed', A_SHA, A_SHA),
+        }
+
+    record = _run(fake, carry=carry)
+    assert envs == ['e0ffee0123456789'], 'the carry is asked for the env the build reported'
+    submitted = {node for item in fake.manifests[0]['items'] for node in item['ids']}
+    assert submitted == {'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5'}
+    assert record['carried'] == {'tests/a.py::t1': A_SHA, 'tests/a.py::t2': A_SHA}, 'an id not collected is not taken'
+    assert record['outcomes']['tests/a.py::t2'] == 'failed', 'a carried red stays red'
+    assert record['scope'] == FULL, 'a carried run is still the full suite'
+    part = part_of(record)
+    assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, 'FAIL'), 'carried is never counted as run'
+    assert part.description().endswith(f'kept={A_SHA[:12]}:2')
+    assert parts_of([Status(f'tests/{part.platform}', 'failure', part.description(), '')])[0][part.platform] == part
+
+
+def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> None:
+    fake = FakeRunCluster()
+    ids = ['tests/a.py::t1', 'tests/a.py::t2', 'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5']
+    state = _submit(fake, carry=lambda _env: dict.fromkeys(ids, ('passed', A_SHA, A_SHA)))
+    assert not fake.manifests, 'nothing was submitted'
+    assert state['rounds'] == []
+    assert _gather(fake) == state['record']
+    assert part_of(state['record']).ran == 0
+
+
+def test_a_superseded_run_holds_its_folded_rounds_and_every_id_its_last_round_streamed() -> None:
+    fake = FakeRunCluster(dies=frozenset({'tests/b.py'}), kills=5)
+    state = _submit(fake)
+    held = held_outcomes(json.loads(fake.state), fake)
+    assert held == {
+        'tests/a.py::t1': ('passed', SHA),
+        'tests/a.py::t2': ('passed', SHA),
+        'tests/b.py::t3': ('passed', SHA),
+    }, 'the killed item kept what it streamed; the handed id is not an outcome'
+    assert state['sha'] == SHA
+    assert run_shas(MACHINE, {GRANT.account: lambda _c, _s: f'/h/ci/runs/{SHA}/state.json\n'}) == [SHA]

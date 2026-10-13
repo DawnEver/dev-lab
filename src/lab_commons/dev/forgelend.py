@@ -20,25 +20,26 @@ from lab_commons.dev.forgestatus import status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import preempted
+from lab_commons.hpc.needsets import needs_of
 
 __all__ = ['held_part', 'held_run', 'job_of', 'preempt_runs']
 
-_Sized = Callable[[str, frozenset[str]], Mapping[str, float]]
+_Sized = Callable[[frozenset[str]], Mapping[str, float]]
 
 
 def job_of(one: forgerun.Run | Work) -> Job:
     """The job a run or a claimed part is: what a holder's lease matches (its session is its ref)."""
-    return Job('', one.sha, one.platform, session=one.ref)
+    return Job('', one.sha, one.platform, needs_of(one.platform), session=one.ref)
 
 
 def held_run(run: forgerun.Run, sized: _Sized) -> Held:
     """A cluster run in flight as what runs here: its learned demand, its job, the lease it borrows from."""
-    return Held(Resources(sized(run.platform, frozenset())), job_of(run), _on_loan(Claim.parse(run.owner)))
+    return Held(Resources(sized(needs_of(run.platform))), job_of(run), _on_loan(Claim.parse(run.owner)))
 
 
 def held_part(item: Work, sized: _Sized) -> Held:
     """A local part this serve produces, as what runs here."""
-    return Held(Resources(sized(item.platform, frozenset())), job_of(item), _on_loan(item.holder))
+    return Held(Resources(sized(needs_of(item.platform))), job_of(item), _on_loan(item.holder))
 
 
 def _on_loan(holder: Claim | None) -> int:

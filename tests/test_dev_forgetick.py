@@ -51,6 +51,7 @@ from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.producer import ProducerExit, preempted, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.grants import workstation
+from lab_commons.hpc.needsets import BASE
 
 SLURM = frozenset({'cpu', 'mem_gb', 'submits'})
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
@@ -71,11 +72,11 @@ def server() -> Iterator[ThreadingHTTPServer]:
         yield httpd
 
 
-def _pending(claim: Claim, status_id: int, platform: str = 'windows') -> Status:
+def _pending(claim: Claim, status_id: int, platform: str = BASE) -> Status:
     return Status(f'tests/{platform}', 'pending', claim.description(), '', status_id, claim.login)
 
 
-def _assess(history: list[Status], platform: str = 'windows') -> tuple[str, Claim | None]:
+def _assess(history: list[Status], platform: str = BASE) -> tuple[str, Claim | None]:
     return assess(history, platform, me=ME, now=NOW)
 
 
@@ -83,14 +84,14 @@ def test_a_claim_round_trips_through_its_description() -> None:
     cluster = Claim('', 'bob', LATER, 'ada/bob')
     assert cluster.description() == 'claim machine=- login=bob until=2026-10-10T18:00:00Z hpc=ada/bob'
     assert Claim.parse(cluster.description()) == cluster
-    assert Claim.parse('scope=full ran=1 hands=- nowhere=0') is None
+    assert Claim.parse('scope=full ran=1 hands=-') is None
     assert Claim.parse('claim machine=G login=a until=not-a-time hpc=-') is None
 
 
 def test_no_post_is_open_a_settled_part_is_done_and_my_live_claim_is_mine() -> None:
     assert _assess([]) == (OPEN, None)
-    assert _assess([Status('tests/linux', 'success', 'x', '', 1)]) == (OPEN, None), 'another platform is not mine'
-    assert _assess([_pending(ME, 1), Status('tests/windows', 'failure', 'scope=full', '', 2)]) == (DONE, None)
+    assert _assess([Status('tests/jmag', 'success', 'x', '', 1)]) == (OPEN, None), 'another part is not mine'
+    assert _assess([_pending(ME, 1), Status('tests/base', 'failure', 'scope=full', '', 2)]) == (DONE, None)
     assert _assess([_pending(ME, 1)]) == (MINE, ME)
 
 
@@ -111,8 +112,8 @@ def test_a_stale_local_claim_is_retaken_by_anyone_serving_the_platform() -> None
 
 def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None:
     """PLANTED CONTROL: the same ``error`` state released for any other reason stays done."""
-    outage = Status('tests/windows', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
-    inconclusive = Status('tests/windows', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
+    outage = Status('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
+    inconclusive = Status('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
     assert _assess([_pending(ME, 1), outage]) == (OPEN, None)
     assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 
@@ -139,7 +140,7 @@ def test_my_holding_claim_is_my_latest_renewal() -> None:
 
 
 def test_a_foreign_pending_status_is_not_a_claim() -> None:
-    assert _assess([Status('tests/windows', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
+    assert _assess([Status('tests/base', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
 
 
 def test_a_box_serves_only_its_own_platform_and_never_a_cluster_over_ssh() -> None:
@@ -172,11 +173,11 @@ def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
     return tips['integrate/main']
 
 
-PRODUCE = '[tool.lab_commons.parts.produce.windows]\nfull = ["-m", "lab_commons.dev.verify"]\n'
+PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]\n'
 
 
-def _argv() -> list[str]:
-    return ['-m', 'lab_commons.dev.verify']
+def _argv(part: str = BASE) -> list[str]:
+    return ['-m', 'lab_commons.dev.verify', '--part', part]
 
 
 def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetick.TickReport:
@@ -201,15 +202,15 @@ def test_a_tick_claims_an_open_request_and_names_the_command(server, tmp_path: P
         'GET',
         f'{API}/statuses/{sha}',
         (200, []),
-        (200, [{'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': ME.description()}]),
+        (200, [{'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': ME.description()}]),
     )
-    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/windows', 'status': 'pending'}))
+    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/base', 'status': 'pending'}))
     report = _tick(repo, server)
-    assert [(w.ref, w.platform, w.state) for w in report.claimed] == [('integrate/main', 'windows', MINE)]
+    assert [(w.ref, w.platform, w.state) for w in report.claimed] == [('integrate/main', BASE, MINE)]
     posted = next(r for r in Recorder.received if r['method'] == 'POST')
-    assert posted['body'] == {'state': 'pending', 'context': 'tests/windows', 'description': ME.description()}
+    assert posted['body'] == {'state': 'pending', 'context': 'tests/base', 'description': ME.description()}
     assert report.claimed[0].argv == tuple(_argv()), 'the producer the claimed commit declares'
-    assert any(line.startswith('produce tests/windows:') for line in report.lines)
+    assert any(line.startswith('produce tests/base:') for line in report.lines)
 
 
 def test_a_part_the_repo_cannot_produce_is_never_claimed(server, tmp_path: Path) -> None:
@@ -222,7 +223,7 @@ def test_a_part_the_repo_cannot_produce_is_never_claimed(server, tmp_path: Path)
     report = _tick(repo, server)
     assert report.claimed == ()
     assert not [r for r in Recorder.received if r['method'] == 'POST']
-    assert 'tool.lab_commons.parts.produce.windows] full' in report.refused[0]
+    assert 'tool.lab_commons.tests] produce' in report.refused[0]
 
 
 def test_a_tick_that_loses_the_race_claims_nothing(server, tmp_path: Path) -> None:
@@ -230,8 +231,8 @@ def test_a_tick_that_loses_the_race_claims_nothing(server, tmp_path: Path) -> No
     sha = tips['integrate/main']
     bob = Claim('H', 'bob', LATER)
     raced = [
-        {'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': bob.description()},
-        {'id': 2, 'context': 'tests/windows', 'status': 'pending', 'description': ME.description()},
+        {'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': bob.description()},
+        {'id': 2, 'context': 'tests/base', 'status': 'pending', 'description': ME.description()},
     ]
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, raced))
@@ -274,9 +275,9 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
             [
                 {
                     'id': 1,
-                    'context': 'tests/windows',
+                    'context': 'tests/base',
                     'status': 'success',
-                    'description': 'scope=full ran=1 hands=- nowhere=0',
+                    'description': 'scope=full ran=1 hands=-',
                 }
             ],
         ),
@@ -298,12 +299,12 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
     assert printed['refused'] == []
 
 
-def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, capsys) -> None:
+def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path, capsys) -> None:
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
     me = Claim(workstation() or '', 'alice', NOW + DEFAULT_LEASE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    mine = {'id': 1, 'context': 'tests/windows', 'status': 'pending', 'description': me.description()}
+    mine = {'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': me.description()}
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     code = forgetick.main(
@@ -317,10 +318,10 @@ def test_the_cli_json_carries_each_claimed_part_argv(server, tmp_path: Path, cap
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
-    assert printed['claimed'] == [{'ref': 'integrate/main', 'sha': sha, 'platform': 'windows', 'argv': _argv()}]
+    assert printed['claimed'] == [{'ref': 'integrate/main', 'sha': sha, 'platform': BASE, 'argv': _argv()}]
 
 
-def _post(status_id: int, claim: Claim, platform: str = 'windows') -> dict[str, object]:
+def _post(status_id: int, claim: Claim, platform: str = BASE) -> dict[str, object]:
     return {'id': status_id, 'context': f'tests/{platform}', 'status': 'pending', 'description': claim.description()}
 
 
@@ -369,14 +370,14 @@ def test_a_cluster_seat_claims_a_cluster_part_and_no_argv(server, tmp_path: Path
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     report = _tick(repo, server, seat=SEAT, host='linux')
     (claimed,) = report.claimed
-    assert (claimed.platform, claimed.state, claimed.holder, claimed.argv) == ('linux', MINE, me, ())
+    assert (claimed.platform, claimed.state, claimed.holder, claimed.argv) == (BASE, MINE, me, ())
     assert claimed.cluster is not None
     assert claimed.cluster.repo_url == 'https://forge.example.org/o/r.git'
-    assert any(line == 'produce tests/linux: a cluster run as ada/alice' for line in report.lines)
+    assert any(line == 'produce tests/base: a cluster run as ada/alice' for line in report.lines)
 
 
 BOX = Supply('G', Resources(cpu=4, mem_gb=32), frozenset({'cpu', 'mem_gb', 'windows'}))
@@ -385,7 +386,7 @@ BOX = Supply('G', Resources(cpu=4, mem_gb=32), frozenset({'cpu', 'mem_gb', 'wind
 def _sized(**by_ref: float) -> object:
     """A fake demand: a core and *by_ref* GB for the candidate of each ref (``integrate/main`` spelled ``head``).
 
-    Memory, because a box job's cpu is elastic -- capped at the box's (`compute.model.fitted`) -- and memory is not.
+    Memory is the one resource the tests built on it vary.
     """
 
     def size(wanted: Candidate, _needs: frozenset[str]) -> Demand:
@@ -489,22 +490,6 @@ def test_a_holder_blocked_by_a_loan_preempts_it_and_a_holder_with_room_preempts_
         assert report.preempt == displaced, need
 
 
-def test_two_parts_of_one_sha_never_share_a_tree_in_one_tick(server, tmp_path: Path) -> None:
-    """A box judges a part in its sha's tree; the second part of the sha waits for the next tick."""
-    repo, tips = _origin(tmp_path)
-    sha = _declare(repo, tips, CAPABLE)
-    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, ME, 'jmag')]))
-    answer('POST', f'{API}/statuses/{sha}', (201, {}))
-    roomy = Supply('G', Resources(cpu=8, jmag=4, dev_checkout=1), frozenset({'cpu', 'jmag', 'dev_checkout'}))
-    report = _tick(
-        repo, server, supply=roomy, demand=lambda *_: Demand(cpu=1),
-        provides={'dev_checkout': {}, 'jmag': {'seats': 4}},
-    )  # fmt: skip
-    assert [w.platform for w in report.claimed] == ['jmag']
-    assert [item.blocked for item in report.queue] == [f'the tree of {sha[:12]} is producing another part here']
-
-
 def _pull(number: int, head: str, sha: str, *labels: str) -> dict[str, object]:
     return {
         'number': number,
@@ -534,7 +519,7 @@ def test_the_mode_names_its_candidates_one_per_ref(server, tmp_path: Path) -> No
     forge = Forge('forge.example.org', 'o', 'r')
     built = client(forge, Loopback(server))
     found = candidates(
-        repo, 'integrate', built, repo='o/r', platforms=('windows',), schedule=load_schedule(repo),
+        repo, 'integrate', built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
         policy=Policy(), now=NOW,
     )  # fmt: skip
     got = {(c.ref, c.sha, c.kind, c.labels) for c in found}
@@ -545,7 +530,7 @@ def test_the_mode_names_its_candidates_one_per_ref(server, tmp_path: Path) -> No
         ('issue/9', '', REQUEST, ('forge:request',)),
     }
     develop = candidates(
-        repo, 'develop', built, repo='o/r', platforms=('windows',), schedule=load_schedule(repo),
+        repo, 'develop', built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
         policy=Policy(), now=NOW,
     )  # fmt: skip
     assert {c.ref for c in develop} == {'feat/a', 'fix/b'}
@@ -568,7 +553,8 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     notes: list[str] = []
     found = candidates(
         repo, 'integrate', client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
-        platforms=('windows', 'jmag'), schedule=load_schedule(repo), policy=Policy(), now=NOW, say=notes.append,
+        parts=lambda _sha: ('windows', 'jmag'), schedule=load_schedule(repo), policy=Policy(), now=NOW,
+        say=notes.append,
     )  # fmt: skip
     assert {(c.ref, c.platform) for c in found} == {
         ('integrate/main', 'windows'),
@@ -629,7 +615,7 @@ def _integrate(server, tmp_path: Path, notes: list[str]) -> set[tuple[str, str]]
     repo, _ = _origin(tmp_path)
     built = client(Forge('forge.example.org', 'o', 'r'), Loopback(server))
     found = candidates(
-        repo, 'integrate', built, repo='o/r', platforms=('windows',), schedule=load_schedule(repo),
+        repo, 'integrate', built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo),
         policy=Policy(), now=NOW, say=notes.append,
     )  # fmt: skip
     return {(c.ref, c.kind) for c in found}
@@ -690,7 +676,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
     )
     me = Claim('G', 'alice', LATER, 'ada/alice')
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me)]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     report = _tick(repo, server, seat=SEAT, host='linux', probe=lambda _root: problem)
     assert bool(report.claimed) is claims
@@ -701,56 +687,74 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
         assert any(_MISSING in item.blocked for item in report.queue)
 
 
-CAPABLE = (
-    PRODUCE
-    + '[tool.lab_commons.parts.produce.jmag]\nfull = ["-m", "lab_commons.dev.verify", "-m", "jmag"]\n'
-    + '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
-    + '[tool.lab_commons.capabilities]\njmag = { engine = true }\ndev_checkout = { on = ["windows"] }\n'
+NEEDS = (
+    '[tool.lab_commons.tests]\nresources = ["dev_checkout", "jmag", "linux"]\n'
+    'produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]\n'
+    '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
 )
 
 
-def test_a_host_providing_an_engine_claims_its_part_and_one_lacking_it_is_never_offered(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same host, the same head, without ``[capabilities.jmag]``, serves windows alone."""
+def _base(hands: str) -> dict[str, object]:
+    """A settled base part handing ids to the parts *hands* names -- how a commit's other parts are discovered."""
+    return {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': f'scope=full ran=3 hands={hands}'}
+
+
+def _one_core(*_: object) -> Demand:
+    return Demand(cpu=1)
+
+
+def test_a_part_base_hands_to_is_claimed_where_its_needs_are_present(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same host and head without jmag present waits, naming jmag."""
     repo, tips = _origin(tmp_path)
-    sha = _declare(repo, tips, CAPABLE)
+    sha = _declare(repo, tips, NEEDS)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, []))
-    lacking = _tick(repo, server, dry_run=True, provides={'dev_checkout': {}})
-    assert [w.platform for w in lacking.work] == ['windows']
-    able = _tick(repo, server, dry_run=True, provides={'dev_checkout': {}, 'jmag': {'seats': 4}})
-    assert sorted(w.platform for w in able.work) == ['jmag', 'windows']
-
-
-def test_a_part_needing_a_capability_this_host_lacks_waits_labelled(server, tmp_path: Path) -> None:
-    repo, tips = _origin(tmp_path)
-    sha = _declare(repo, tips, CAPABLE)
-    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, []))
-    report = _tick(repo, server, provides={})
-    assert report.claimed == ()
-    assert [item.blocked for item in report.queue] == ['no host provides dev_checkout']
-    assert not [r for r in Recorder.received if r['method'] == 'POST']
-
-
-def test_the_cluster_part_stays_claimable_by_a_host_lacking_dev_checkout(server, tmp_path: Path) -> None:
-    """The cluster case (coordinator ruling 2026-10-12): ``dev_checkout`` never makes the linux part unclaimable."""
-    repo, tips = _origin(tmp_path)
-    sha = _declare(repo, tips, CAPABLE)
-    me = Claim('G', 'alice', LATER, 'ada/alice')
-    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, me, 'linux')]))
+    answer('GET', f'{API}/statuses/{sha}', (200, [_base('jmag:2')]))
+    lacking = _tick(repo, server, dry_run=True, supply=BOX, demand=_one_core)
+    assert [(w.platform, w.state) for w in lacking.work] == [(BASE, DONE), ('jmag', OPEN)]
+    assert [item.blocked for item in lacking.queue] == [f'{NOT_ADMITTED}: lacking jmag']
+    answer('GET', f'{API}/statuses/{sha}', (200, [_base('jmag:2')]), (200, [_base('jmag:2'), _post(2, ME, 'jmag')]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
-    report = _tick(repo, server, seat=SEAT, host='linux', provides={'jmag': {'seats': 4}})
-    assert [(w.platform, w.state) for w in report.claimed] == [('linux', MINE)], 'and a cluster runs no engine part'
+    with_jmag = Supply('G', Resources(cpu=4, mem_gb=32, jmag=4), frozenset({'cpu', 'mem_gb', 'windows', 'jmag'}))
+    able = _tick(repo, server, supply=with_jmag, demand=_one_core)
+    assert [(w.platform, w.state, w.argv) for w in able.claimed] == [('jmag', MINE, tuple(_argv('jmag')))]
+
+
+def test_two_parts_of_one_sha_never_share_a_tree_in_one_tick(server, tmp_path: Path) -> None:
+    """A box judges a part in its sha's tree; the second part of the sha waits for the next tick."""
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, NEEDS)
+    hands = 'dev_checkout:1,jmag:1'
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, [_base(hands)]), (200, [_base(hands), _post(2, ME, 'dev_checkout')]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    roomy = Supply('G', Resources(cpu=8, jmag=4, dev_checkout=1), frozenset({'cpu', 'jmag', 'dev_checkout'}))
+    report = _tick(repo, server, supply=roomy, demand=_one_core)
+    assert [w.platform for w in report.claimed] == ['dev_checkout']
+    assert [item.blocked for item in report.queue] == [f'the tree of {sha[:12]} is producing another part here']
+
+
+def test_a_cluster_claims_what_it_has_and_never_a_part_needing_dev_checkout(server, tmp_path: Path) -> None:
+    """The cluster case (coordinator ruling 2026-10-12): a dev_checkout part never lands on its per-sha tree."""
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, NEEDS)
+    me = Claim('G', 'alice', LATER, 'ada/alice')
+    hands = 'dev_checkout:1,linux:2'
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, [_base(hands)]), (200, [_base(hands), _post(2, me, 'linux')]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    account = Supply('ada/alice', Resources(cpu=8, mem_gb=64, linux=8), frozenset({'cpu', 'mem_gb', 'linux'}))
+    report = _tick(repo, server, seat=SEAT, host='linux', supply=account, demand=_one_core)
+    assert [(w.platform, w.state) for w in report.claimed] == [('linux', MINE)]
+    assert [item.blocked for item in report.queue] == [f'{NOT_ADMITTED}: lacking dev_checkout']
 
 
 def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:
-    """One PR head declares a capability on the OS axis; the kit refuses it there and nowhere else.
+    """One PR head declares a table this kit does not know; the kit refuses it there and nowhere else.
 
     PLANTED CONTROL: the boosted PR outranks the head, so without the refusal it -- not the head -- is claimed.
     """
     repo, tips = _origin(tmp_path)
-    bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.platforms]\njmag = ["windows"]\n')
+    bad = _declare(repo, tips, PRODUCE + '[tool.lab_commons.tomorrow]\nrows = 1\n')
     run_git(repo, 'update-ref', 'refs/remotes/origin/feat/a', bad)
     head = _declare(repo, tips, PRODUCE)
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', bad, 'priority:user')]))
@@ -762,8 +766,41 @@ def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(s
     assert [w.ref for w in report.claimed] == ['integrate/main']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'feat/a'
-    assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: [tool.lab_commons.platforms] jmag')
+    assert waiting.blocked.startswith(f'declaration at {bad[:12]} refused: this lab-commons does not know')
     assert not [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+
+
+def test_a_box_job_is_admitted_at_the_cores_it_measured_never_capped_to_the_box(server, tmp_path: Path) -> None:
+    """A box job's cpu demand is what its run MEASURED (cpu-seconds over wall): eight busy cores do not fit in four.
+
+    PLANTED CONTROL: the same head measuring four cores fits the same box and is claimed.
+    """
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    wide = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=8))
+    assert wide.claimed == ()
+    assert wide.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu'
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    fits = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=4))
+    assert [w.ref for w in fits.claimed] == ['integrate/main']
+
+
+def test_a_sha_a_producer_here_is_judging_is_busy_and_not_claimed(server, tmp_path: Path) -> None:
+    """Serve claims while it produces: the tree of a sha in production is taken. PLANTED CONTROL: not busy, claimed."""
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    busy = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=1), busy={head})
+    assert busy.claimed == ()
+    assert busy.queue[0].blocked == f'the tree of {head[:12]} is producing another part here'
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    free = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=1))
+    assert [w.ref for w in free.claimed] == ['integrate/main']
 
 
 def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:
@@ -807,7 +844,7 @@ def test_a_claim_on_loan_names_its_lease_and_parses_back() -> None:
 
 def test_a_preempted_loan_is_open_again_never_settled() -> None:
     """PLANTED CONTROL: the same release with a crash's reason settles the part."""
-    released = Status('tests/windows', 'error', preempted(5), '', 2, 'alice')
+    released = Status(f'tests/{BASE}', 'error', preempted(5), '', 2, 'alice')
     assert _assess([_pending(ME, 1), released]) == (OPEN, None)
     crashed = dataclasses.replace(released, description=release_reason(9))
     assert _assess([_pending(ME, 1), crashed])[0] != OPEN
