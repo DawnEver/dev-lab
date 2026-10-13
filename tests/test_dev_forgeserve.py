@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import subprocess
+import threading
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -13,7 +14,8 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
+from lab_commons.compute.ledger import Entry, Ledger
+from lab_commons.compute.model import Candidate, Demand, For, Ranked, Reservation, Resources, Supply
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, RUN, STARVED
@@ -26,6 +28,7 @@ from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, rel
 from lab_commons.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
+from lab_commons.resources import CPU, MEMORY, Holder, JobHandle
 
 SHA = 'a' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -104,11 +107,14 @@ def _serve(
     host: str | None = None,
     tidy=lambda _root, _client, **_kw: (),
     trees: _Trees | None = None,
+    seen: dict[str, object] | None = None,
+    holders: tuple[Holder, ...] = (),
+    book: Ledger | None = None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     said: list[str] = []
     alarms: list = []
     forge = forge or _Forge()
-    seen: dict[str, object] = {}
+    seen = seen if seen is not None else {}
     cards = cards if cards is not None else []
 
     def tick(*_a: object, **kwargs: object) -> TickReport:
@@ -144,12 +150,15 @@ def _serve(
         say=said.append,
         alarm=alarms.append,
         renew_s=0.01,
-        box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)),
+        box_room=lambda scope, **_: Supply(scope, Resources(cpu=4, mem_gb=32)),
         table={},
         fetch=lambda _root: None,
         host=host,
+        reserve=lambda: Resources(cpu=1, mem_gb=8),
+        holders=lambda: holders,
+        read_ledger=lambda _client: book or Ledger(None, {}, ()),
     )
-    said.append(f'in_flight={seen.get("in_flight")}')
+    said.append(f'running={seen.get("running")}')
     return report, said, alarms
 
 
@@ -346,9 +355,9 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert report.produced == (), 'a cluster part is never a blocking process'
     assert advanced == [(forgerun.CLAIMED_PHASE, 'ada/alice')]
     assert report.in_flight == (SHA,)
-    assert 'in_flight=False' in said
+    assert 'running=[]' in said
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
-    assert 'in_flight=True' in said, 'the next tick reads the run back from disk and claims nothing more'
+    assert f'running={[Demand(cpu=1)]}' in said, 'the next tick reads the run back from disk as running demand'
     assert len(advanced) == 2
 
 
@@ -413,6 +422,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
         forgeserve.serve(
             tmp_path, 'integrate', client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
             box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)), table={},
+            reserve=Resources, holders=tuple, read_ledger=lambda _client: Ledger(None, {}, ()),
         )  # fmt: skip
     assert [a.kind for a in alarms] == [AUTH]
 
@@ -424,27 +434,91 @@ def _waiting(kind: str, waited_h: float, blocked: str) -> Ranked:
 
 def test_a_candidate_waiting_past_its_bound_raises_a_starved_alarm_naming_why(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROLS: the same wait unblocked, and a blocked wait under the bound, raise nothing."""
-    jammed = TickReport((), (), ('tick',), (), (_waiting('pr', 13, 'outranked by integrate/main@x'),))
+    jammed = TickReport((), (), ('tick',), (), (_waiting('pr', 13, 'not admitted: lacking cpu, mem_gb'),))
     _report, _said, alarms = _serve(monkeypatch, tmp_path, jammed)
     (alarm,) = alarms
     assert (alarm.kind, alarm.about) == (STARVED, f'feat/x@{SHA[:12]}:windows')
     assert 'waited 13.0 h, past its 12 h bound' in alarm.body
-    assert 'outranked by integrate/main@x' in alarm.body
-    calm = TickReport((), (), ('tick',), (), (_waiting('pr', 13, ''), _waiting('pr', 11, 'outranked by y')))
+    assert 'not admitted: lacking cpu, mem_gb' in alarm.body, 'the starved alarm names the resources it lacks'
+    calm = TickReport((), (), ('tick',), (), (_waiting('pr', 13, ''), _waiting('pr', 11, 'not admitted: lacking cpu')))
     assert _serve(monkeypatch, tmp_path, calm)[2] == []
 
 
 def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
-    """Who it is, what it serves, its supply and facts, and why each candidate waits."""
+    """Who it is, what it serves, its supply and facts, its live reservations, and why each candidate waits."""
     cards: list = []
-    ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'no headroom: lacking cpu'),))
-    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='linux')
+    ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'not admitted: lacking cpu'),))
+    mine = _lease(1, 'ada/alice')
+    book = Ledger(1, {}, (mine, _lease(2, 'ada/bob'), _lease(3, 'ada/alice', until=NOW)))
+    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='linux', book=book)
     (card,) = cards
     assert (card.host, card.login, card.platform) == ('ada/alice', 'alice', 'linux')
-    assert card.headroom == {'cpu': 64.0, 'mem_gb': 128.0, 'submits': 10.0}
+    assert card.supply == {'cpu': 64.0, 'mem_gb': 128.0, 'submits': 10.0}
     assert card.facts == {'partitions': {'defq': 2880}}
     assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
-    assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'no headroom: lacking cpu'}
+    assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'not admitted: lacking cpu'}
+    assert card.reservations == (mine.row(),), 'the live leases on THIS host: not another, not an expired one'
+
+
+def _lease(lease_id: int, scope: str, *, until: datetime = NOW + timedelta(days=1), refused: str = '') -> Entry:
+    return Entry(lease_id, Reservation(scope, Resources(cpu=2), For(login='bob'), until, 'alice'), refused)
+
+
+def _holder(what: str, **demands: int) -> Holder:
+    return Holder('lab-commons-cpu', JobHandle('pid', '1'), what, demands)
+
+
+def test_a_box_admits_against_its_probe_less_its_own_reserve(monkeypatch, tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen)
+    supply = seen['supply']
+    assert isinstance(supply, Supply)
+    assert (supply.scope, dict(supply.resources)) == ('G', {'cpu': 3.0, 'mem_gb': 24.0}), 'probe 4/32 less 1/8'
+
+
+def test_an_interactive_run_holding_the_box_seat_counts_as_running(monkeypatch, tmp_path: Path) -> None:
+    """At what it declared; the whole box when it declared nothing. PLANTED CONTROL: no holder, nothing runs."""
+    seen: dict[str, object] = {}
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen)
+    assert seen['running'] == []
+    declared = _holder('gate measure', **{CPU.name: 2, MEMORY.name: 4 * 1024**3})
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, holders=(declared, _holder('verify:x')))
+    assert seen['running'] == [Demand(cpu=2, mem_gb=4), Demand(cpu=os.cpu_count() or 1)]
+
+
+def test_every_authorised_lease_reaches_the_admission_and_a_refused_one_never(monkeypatch, tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+    held, refused = _lease(1, 'G'), _lease(2, 'G', refused='bob may not reserve G')
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, book=Ledger(1, {}, (held, refused)))
+    assert seen['reservations'] == (held.reservation,)
+
+
+def test_two_admitted_local_parts_are_produced_at_once(monkeypatch, tmp_path: Path) -> None:
+    """Each part runs in its own thread with its own claim: the first producer waits until the second started.
+
+    Sequential production would deadlock the first on that wait (bounded: it then fails the assertion).
+    """
+    other = 'b' * 40
+    first = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('first',))
+    second = Work('feat/a', other, 'windows', 'mine', ME, argv=('second',))
+    started = threading.Event()
+
+    class _Waits(_Proc):
+        def wait(self, timeout: float | None = None) -> int:
+            assert started.wait(timeout=10), 'the second producer never started while the first ran'
+            return super().wait(timeout)
+
+    class _Starts(_Proc):
+        def wait(self, timeout: float | None = None) -> int:
+            started.set()
+            return super().wait(timeout)
+
+    procs = {'first': _Waits(0), 'second': _Starts(1)}
+    spawned: list[dict] = []
+    trees = _Trees(tmp_path)
+    report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(first, second), procs, spawned=spawned, trees=trees)
+    assert [(p.sha, p.returncode) for p in report.produced] == [(SHA, 0), (other, 1)], 'reported in claim order'
+    assert sorted(trees.closed) == sorted([SHA, other]), 'each part in its own tree'
 
 
 def _moved_on(tmp_path: Path) -> str:

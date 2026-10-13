@@ -28,9 +28,9 @@ makes on a producer host. Each tick it:
 
 1. flushes the status outbox (`quiet` stops here);
 2. fetches origin and builds the queue for its own platform ([scheduling](#scheduling));
-3. claims the best feasible candidate by posting `pending`;
-4. runs a claimed local part inline (streamed, its claim renewed every third of the lease), or advances a
-   cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
+3. claims in rank order WHILE JOBS ADMIT ([admission](#admission)), posting `pending` for each;
+4. runs every claimed local part at once, one thread each (streamed, each claim renewed every third of the
+   lease), or advances a cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
 5. posts the part with its record attached, and edits its host card.
 
 - `--mode integrate` serves the integration branch, open PRs into it and opted-in branches; `--mode develop`
@@ -134,10 +134,9 @@ newest commit lacks, or a request issue.
   adds `n`.
 - **Budgets.** A cluster charges each run's core-hours to its ref; a ref at its class's `daily_budget_core_h`
   is not claimed. A box meters no core-hours.
-- **Feasibility.** A claimer considers its own platform only: a cluster needs one free core of its grant and
-  one QOS submission; a box needs its CPU seat free.
+- **Admission** decides FIT; rank only decides ORDER ([admission](#admission)).
 - **Starvation.** A candidate waiting past its class's `starve_after_hours` raises a `starved` alarm naming
-  it, its wait and its blocking reason.
+  it, its wait and its blocking reason -- for a job that does not fit, the resources it lacks.
 
 The numbers are data, `[tool.lab_commons.schedule]` over the family default
 (`lab_commons.compute.model.Schedule`), overridden key by key:
@@ -153,6 +152,25 @@ branches = []                                      # opted-in child branches
 request_label = "forge:request"
 prior_cost_h = 4.0
 ```
+
+### Admission
+
+A tick walks the ranked queue and claims each candidate that ADMITS (`compute.model.admit`): its needs are
+present here and its demand fits `supply - reservations not for it - running`. A job that does not fit is
+skipped and a smaller, lower-ranked one is still claimed, so several parts run on one host at once.
+
+- **Demand** is what the part's last run measured (`compute.learned`, keyed by part); unmeasured, a box part
+  is the whole box and a cluster part one core. A box job's cpu is capped at the box's supply: it spreads over
+  the cores it is given, so a whole-box job is admitted alone and never starved by the own reserve.
+- **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); a box's probe
+  (free cores, available memory, OS, tools) less its user's own reserve (`[reserve]` margins).
+- **Reservations**: every authorised live lease on the ledger ([reservations](#reservations)).
+- **Running**: each cluster run in flight here at its learned demand, each part this tick already claimed,
+  and each INTERACTIVE run holding the box seat (`CpuSeat`: a developer's `gate measure` or `verify`) at
+  what it declared, else the whole box. A producer `forge serve` spawned takes no box seat.
+- **Two parts of one sha** are never claimed by one box in one tick: each is judged in its sha's tree.
+- A job that does not fit waits `not admitted: lacking <resource>`; when every live host serving it says so,
+  `forge queue` shows `no host admits it -- <host> lacking <resource>; ...`.
 
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
@@ -171,10 +189,12 @@ progress, every host card (stale flagged), every live reservation (a refused wri
 starved candidate. It posts nothing.
 
 - **Blocking reasons**: `no host serves <platform>`, `over budget: <ref> used X of Y core-h in 24 h`,
-  `no headroom: ...`, `outranked by <candidate>`, `no host can produce it: <undeclared key>`.
+  `not admitted: lacking <resource>`, `no host admits it -- <host> lacking <resource>; ...`,
+  `the tree of <sha12> is producing another part here`, `no host can produce it: <undeclared key>`.
 - **Host cards** (`forgehosts`): each serving host edits one comment on the ONE `forge hosts` issue: who it
-  is, its platform, headroom, cluster facts (partitions, quota, QOS), its last tick, what it holds and why each
-  candidate it saw waits. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
+  is, its platform, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
+  last tick, what it holds, what else `running` on it, its live `reservations`, and why each candidate it saw
+  waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
   the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
 - **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge integration`): removes what

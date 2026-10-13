@@ -402,7 +402,7 @@ def _cli_on_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
 @pytest.mark.parametrize(
     ('argv', 'remedy'),
     [
-        (['probe'], 'host card carries its headroom'),
+        (['probe'], 'host card carries its supply'),
         (['run', 'status'], 'shows its progress'),
         (['run', 'watch'], 'forge serve'),
     ],

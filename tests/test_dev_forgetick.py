@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.compute.model import INTEGRATION, PR, REQUEST, Resources, Supply
+from lab_commons.compute.model import INTEGRATION, PR, REQUEST, Candidate, Demand, For, Reservation, Resources, Supply
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
@@ -31,7 +31,7 @@ from lab_commons.dev.forgeclaim import (
     assess,
     serving,
 )
-from lab_commons.dev.forgeschedule import NO_HEADROOM, OUTRANKED, OVER_BUDGET, candidates, load_schedule
+from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
@@ -367,14 +367,97 @@ def test_a_cluster_seat_claims_a_cluster_part_and_no_argv(server, tmp_path: Path
     assert any(line == 'produce tests/linux: a cluster run as ada/alice' for line in report.lines)
 
 
-def test_a_run_in_flight_claims_nothing_more(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the open request the first tick test claims."""
+BOX = Supply('G', Resources(cpu=4, mem_gb=32), frozenset({'cpu', 'mem_gb', 'windows'}))
+
+
+def _sized(**by_ref: float) -> object:
+    """A fake demand: a core and *by_ref* GB for the candidate of each ref (``integrate/main`` spelled ``head``).
+
+    Memory, because a box job's cpu is elastic -- capped at the box's (`compute.model.fitted`) -- and memory is not.
+    """
+
+    def size(wanted: Candidate, _needs: frozenset[str]) -> Demand:
+        return Demand(cpu=1, mem_gb=by_ref['head' if wanted.ref == 'integrate/main' else wanted.ref.replace('/', '_')])
+
+    return size
+
+
+def _head_and_pr(tips: dict[str, str], *, claim_pr: bool = True, claim_head: bool = True) -> tuple[str, str]:
+    """The head and a boosted PR (it ranks first), each answering a claim that holds when posted."""
+    head, lane = tips['integrate/main'], tips['feat/a']
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    for sha, claimed in ((head, claim_head), (lane, claim_pr)):
+        answer('GET', f'{API}/statuses/{sha}', (200, []), *([(200, [_post(1, ME)])] if claimed else []))
+        answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    return head, lane
+
+
+def test_a_running_demand_withholds_what_it_holds(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: nothing running, the same head on the same box is claimed."""
     repo, tips = _origin(tmp_path)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))
-    report = _tick(repo, server, in_flight=True)
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8), running=[Demand(mem_gb=30)])
     assert report.claimed == ()
-    assert [w.state for w in report.work] == [OPEN]
+    assert [(w.state, item.blocked) for w, item in zip(report.work, report.queue, strict=True)] == [
+        (OPEN, f'{NOT_ADMITTED}: lacking mem_gb')
+    ]
+
+
+def test_two_small_jobs_are_both_admitted_on_one_tick(server, tmp_path: Path) -> None:
+    """No one-claim-per-tick rule: both fit the box, so both are claimed in rank order."""
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips)
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, feat_a=8))
+    assert [w.sha for w in report.claimed] == [lane, head]
+    assert [item.blocked for item in report.queue] == []
+
+
+def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, tmp_path: Path) -> None:
+    """The boosted PR ranks first and does not fit; the head behind it does. PLANTED CONTROL: 64 GB takes both."""
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips, claim_pr=False)
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, feat_a=40))
+    assert [w.sha for w in report.claimed] == [head]
+    (waiting,) = report.queue
+    assert (waiting.candidate.sha, waiting.blocked) == (lane, f'{NOT_ADMITTED}: lacking mem_gb')
+    Recorder.received.clear()
+    _head_and_pr(tips)
+    roomy = Supply('G', Resources(cpu=4, mem_gb=64), BOX.listed)
+    assert [w.sha for w in _tick(repo, server, supply=roomy, demand=_sized(head=8, feat_a=40)).claimed] == [lane, head]
+
+
+def test_a_reservation_for_others_withholds_and_one_for_this_repo_does_not(server, tmp_path: Path) -> None:
+    repo, tips = _origin(tmp_path)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{tips["integrate/main"]}', (201, {}))
+    lease = Reservation('G', Resources(mem_gb=30), For(login='bob'), LATER, 'alice')
+    held = _tick(repo, server, supply=BOX, demand=_sized(head=8), reservations=[lease])
+    assert (held.claimed, held.queue[0].blocked) == ((), f'{NOT_ADMITTED}: lacking mem_gb')
+    elsewhere = dataclasses.replace(lease, scope='H')
+    ours = dataclasses.replace(lease, for_=For(repo='o/r'))
+    expired = dataclasses.replace(lease, until=NOW - timedelta(minutes=1))
+    for lent in (elsewhere, ours, expired):
+        answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []), (200, [_post(1, ME)]))
+        assert len(_tick(repo, server, supply=BOX, demand=_sized(head=8), reservations=[lent]).claimed) == 1, lent
+
+
+def test_two_parts_of_one_sha_never_share_a_tree_in_one_tick(server, tmp_path: Path) -> None:
+    """A box judges a part in its sha's tree; the second part of the sha waits for the next tick."""
+    repo, tips = _origin(tmp_path)
+    sha = _declare(repo, tips, CAPABLE)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [_post(1, ME, 'jmag')]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    roomy = Supply('G', Resources(cpu=8, jmag=4, dev_checkout=1), frozenset({'cpu', 'jmag', 'dev_checkout'}))
+    report = _tick(
+        repo, server, supply=roomy, demand=lambda *_: Demand(cpu=1),
+        provides={'dev_checkout': {}, 'jmag': {'seats': 4}},
+    )  # fmt: skip
+    assert [w.platform for w in report.claimed] == ['jmag']
+    assert [item.blocked for item in report.queue] == [f'the tree of {sha[:12]} is producing another part here']
 
 
 def _pull(number: int, head: str, sha: str, *labels: str) -> dict[str, object]:
@@ -436,7 +519,7 @@ def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp
     assert [w.ref for w in report.claimed] == ['feat/a']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'integrate/main'
-    assert waiting.blocked == f'{OUTRANKED} by feat/a@{lane[:12]}:windows'
+    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu', 'unmeasured, a box part is the whole box'
     Recorder.received.clear()
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'feat/a', lane)]))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
@@ -444,8 +527,8 @@ def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp
     assert [w.ref for w in _tick(repo, server).claimed] == ['integrate/main']
 
 
-def test_over_budget_or_no_headroom_is_not_claimed_and_says_so(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same open head under budget with headroom is claimed (the first tick test)."""
+def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL: the same open head under budget on a box that admits it is claimed (the first tick test)."""
     repo, tips = _origin(tmp_path)
     head = tips['integrate/main']
     (repo / 'pyproject.toml').write_text(
@@ -458,9 +541,9 @@ def test_over_budget_or_no_headroom_is_not_claimed_and_says_so(server, tmp_path:
     assert over.queue[0].blocked == f'{OVER_BUDGET}: integrate/main used 12.0 of 10 core-h in 24 h'
     full = _tick(repo, server, supply=Supply('slurm:alice', Resources(cpu=8, mem_gb=64, submits=0), SLURM))
     assert full.claimed == ()
-    assert full.queue[0].blocked == f'{NO_HEADROOM}: lacking submits'
+    assert full.queue[0].blocked == f'{NOT_ADMITTED}: lacking submits'
     busy = _tick(repo, server, supply=Supply('ws', Resources(mem_gb=64), frozenset({'cpu', 'mem_gb'})))
-    assert busy.queue[0].blocked == f'{NO_HEADROOM}: lacking cpu'
+    assert busy.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu'
     assert not [r for r in Recorder.received if r['method'] == 'POST']
 
 

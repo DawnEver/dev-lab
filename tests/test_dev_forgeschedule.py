@@ -101,7 +101,7 @@ def test_a_blocked_candidate_past_its_class_bound_is_starved() -> None:
     """PLANTED CONTROLS: the same wait unblocked, and a wait under the bound, are not starved."""
     old = rank([_cand('feat/x', 'pr', waited_h=13)], {'o/r': FAMILY}, NOW, cost_h={})[0]
     young = rank([_cand('feat/y', 'pr', waited_h=11)], {'o/r': FAMILY}, NOW, cost_h={})[0]
-    blocked = [dataclasses.replace(item, blocked='outranked by x') for item in (old, young)]
+    blocked = [dataclasses.replace(item, blocked='not admitted: lacking cpu') for item in (old, young)]
     assert [i.candidate.ref for i in starved(blocked, {'o/r': FAMILY})] == ['feat/x']
     assert starved([old], {'o/r': FAMILY}) == ()
 

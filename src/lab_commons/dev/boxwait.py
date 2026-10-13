@@ -11,6 +11,12 @@ start anyway (the harm), refuse instantly (a re-run loop), block forever (a cras
 hang). This module is the fourth: queue on a deadline, say who you are waiting for while you wait,
 and refuse NAMING the holder when the deadline passes.
 
+A RUN ``forge serve`` SPAWNED TAKES NO CPU SEAT (``PRODUCING_VAR`` set, :mod:`lab_commons.dev.producer`):
+serve admitted it against the box's measured supply (:mod:`lab_commons.dev.forgeserve`), several may run
+at once, and a seat taken by each would serialise them again. The seat stays the INTERACTIVE runs'
+-- a developer's measure or verify -- and serve reads its holders as running demand. The environment
+seat is still taken: a mutation of the producer's own environment mid-run is still the harm.
+
 It is separate from :mod:`lab_commons.dev.verify` because verify is one adopter and not the only
 one -- a gate runner in a sibling repo needs the same three lines and must not reimplement them, and
 an entry point that reimplemented them would be the second definition this family keeps paying for.
@@ -19,12 +25,14 @@ an entry point that reimplemented them would be the second definition this famil
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 import time
 from typing import Final
 
 from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.envseat import EnvironmentSeat
+from lab_commons.dev.producer import PRODUCING_VAR
 from lab_commons.log import emit
 from lab_commons.resources import Exhausted
 
@@ -85,9 +93,16 @@ def hold_run_seats(stack: contextlib.ExitStack, what: str, *, wait_s: float, pol
             spelling here would be a second definition of "the box is busy".
 
     """
-    lock = CpuSeat(what, wait_s=0.0)
     started = time.monotonic()
     deadline = started + max(0.0, wait_s)
+    if PRODUCING_VAR not in os.environ:  # a producer serve admitted takes no box seat (the module docstring)
+        _hold_box(stack, what, started, deadline, poll_s)
+    remaining = max(0.0, deadline - time.monotonic())
+    stack.enter_context(EnvironmentSeat(sys.prefix, what, wait_s=remaining, poll_s=poll_s).held())
+
+
+def _hold_box(stack: contextlib.ExitStack, what: str, started: float, deadline: float, poll_s: float) -> None:
+    lock = CpuSeat(what, wait_s=0.0)
     announced: float | None = None
     while True:
         try:
@@ -102,8 +117,6 @@ def hold_run_seats(stack: contextlib.ExitStack, what: str, *, wait_s: float, pol
             time.sleep(min(poll_s, max(0.0, deadline - time.monotonic())))
         else:
             break
-    remaining = max(0.0, deadline - time.monotonic())
-    stack.enter_context(EnvironmentSeat(sys.prefix, what, wait_s=remaining, poll_s=poll_s).held())
 
 
 def holders_line(exhausted: Exhausted) -> str:

@@ -101,3 +101,29 @@ def test_a_failed_lookup_opens_nothing_and_alarms() -> None:
     with pytest.raises(ForgeCallFailed):
         publish(forge, _card('ada/alice'))
     assert not forge.issues_by_number
+
+
+def test_a_card_carries_its_supply_running_and_reservations_and_reads_back() -> None:
+    lease = {'id': 7, 'scope': 'ada/alice', 'resources': {'cpu': 2.0}, 'for': 'login bob', 'until': NOW.isoformat()}
+    card = HostCard(
+        'ada/alice', 'alice', 'linux', NOW.isoformat(), supply={'cpu': 3.0}, running=('gate measure',),
+        reservations=(lease,),
+    )  # fmt: skip
+    forge = StateForge()
+    publish(forge, card)
+    assert read_cards(forge) == (card,)
+    assert 'running: gate measure' in next(iter(forge.comments.values()))[0]['body']
+
+
+def test_a_card_written_before_a_field_was_renamed_reads_without_it() -> None:
+    """A field a version no longer declares is not read: a fleet mid-upgrade never crashes its readers.
+
+    PLANTED CONTROL: the same body with the field this version declares reads it.
+    """
+    forge = StateForge()
+    publish(forge, HostCard('ada/alice', 'alice', 'linux', NOW.isoformat(), supply={'cpu': 3.0}))
+    (comment,) = next(iter(forge.comments.values()))
+    current = read_cards(forge)
+    comment['body'] = comment['body'].replace('"supply"', '"retired_key"')
+    (old,) = read_cards(forge)
+    assert (current[0].supply, old.supply) == ({'cpu': 3.0}, {})

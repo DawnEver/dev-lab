@@ -2,7 +2,8 @@
 
 One workstation rations CPU, memory and vendor seats across every repo and worktree on it. A job declares what
 it will cost, and one broker in an installed package (`lab_commons.resources`) admits it against what live peers
-already claim; the box's CPU seat (`lab_commons.dev.cpuseat`) serialises test sessions. Declare a job's cost,
+already claim; the box's CPU seat (`lab_commons.dev.cpuseat`) serialises INTERACTIVE test sessions (a `forge serve`
+producer takes none: serve admits it, [forge](forge.md#admission)). Declare a job's cost,
 measure the box's capacities once, and never evict another party's run.
 
 ## The four axes

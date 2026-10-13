@@ -1127,6 +1127,8 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
     A child holds this box's CPU seat and a second ``python -m lab_commons.dev.verify --lock-wait-s 0``
     runs; whatever already holds the seat on this box (a sibling's heavy run) only makes the wait real.
     Its selection is its own, so the run key differs from any enclosing verify and it cannot attach to it.
+    The second run is INTERACTIVE (a developer's targeted verify): a producer ``forge serve`` spawned takes
+    no box seat (:mod:`lab_commons.dev.boxwait`), so the seat is the interactive runs' alone.
     """
     holder = subprocess.Popen(
         [sys.executable, '-c', _HOLD_SEAT],
@@ -1148,10 +1150,12 @@ def test_a_held_box_exits_3_from_a_real_process() -> None:
                 '--lock-wait-s',
                 '0',
                 '--',
+                'tests/test_dev_verify.py',
                 '-k',
                 'held_box_probe',
             ],
             cwd=Path(__file__).resolve().parents[1],
+            env={name: value for name, value in os.environ.items() if name != PRODUCING_VAR},
             capture_output=True,
             text=True,
             encoding='utf-8',
