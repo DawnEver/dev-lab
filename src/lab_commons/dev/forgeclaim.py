@@ -156,9 +156,9 @@ class Work:
 
     *platform* is the part's name -- a request's need-set spelled the same way. A part and a request are one
     noun on one path, told apart only by *context*, the status context its claim and result are posted in:
-    ``tests/<part>`` for a part (the default), ``request/<n>`` for a request. A claimed job carries what
-    produces it: a local *argv* -- as the sha declares it, run by the interpreter of the producer's tree at
-    the sha -- or a *cluster* part advanced by serve.
+    ``tests/<part>`` for a part (the default), *request* -- ``request/<n>`` -- for a request. A claimed job
+    carries what produces it: a local *argv* -- as the sha declares it, run by the interpreter of the
+    producer's tree at the sha -- or a *cluster* part advanced by serve.
     """
 
     ref: str
@@ -168,12 +168,12 @@ class Work:
     holder: Claim | None = None
     argv: tuple[str, ...] = ()
     cluster: ClusterPart | None = None
-    context: str = ''
+    request: str = ''
 
-    def __post_init__(self) -> None:
-        """A job named by no context is a part: ``tests/<part>``."""
-        if not self.context:
-            object.__setattr__(self, 'context', part_context(self.platform))
+    @property
+    def context(self) -> str:
+        """The status context: the *request* one when it is a request, else the part's ``tests/<part>``."""
+        return self.request or part_context(self.platform)
 
 
 def serving(host: str, seat: ClusterAccount | None) -> Serving:

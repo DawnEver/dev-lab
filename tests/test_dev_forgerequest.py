@@ -153,7 +153,7 @@ def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s: SimpleNamespace(path=tmp_path, python='py'))
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, **_kw: 'removed')
-    item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, context='request/9')
+    item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(
         tmp_path, item, client=lambda _r: client, spawn=lambda *_a, **_k: _Proc(code), clock=lambda: LATER,
         say=said.append, lease=LATER - LATER, renew_s=1.0, fetch=lambda _r: None,
