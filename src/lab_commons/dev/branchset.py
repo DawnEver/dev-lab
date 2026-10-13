@@ -8,8 +8,9 @@ and read by :func:`declared_branchset`::
     [tool.lab_commons.branchset]
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
-    prune_merged = true            # the integration host's serve tick DELETES merged idle origin branches
+    prune_merged = true            # the integration lease holder's serve tick DELETES merged idle origin branches
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
+    lease_hours = 12               # how long a session's lease on its branch lives unrenewed
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
@@ -50,7 +51,7 @@ __all__ = [
 ]
 
 _TABLE = '[tool.lab_commons.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'prune_merged', 'grace_hours'})
+_KEYS = frozenset({'trunk', 'sessions', 'prune_merged', 'grace_hours', 'lease_hours'})
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
@@ -72,6 +73,8 @@ class BranchSet:
     prune_merged: bool = False
     #: How long a branch tip sits idle before it is pruned (merged) or alarmed (unmerged).
     grace_hours: float = 24.0
+    #: How long a session's lease on its branch lives unrenewed (:mod:`lab_commons.dev.sessionlease`).
+    lease_hours: float = 12.0
 
     @property
     def declared(self) -> frozenset[str]:
@@ -131,7 +134,11 @@ def declared_branchset(root: Path) -> BranchSet:
     if isinstance(grace, bool) or not isinstance(grace, int | float) or grace < 0:
         msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
-    return BranchSet(trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace))
+    lease = table.get('lease_hours', 12.0)
+    if isinstance(lease, bool) or not isinstance(lease, int | float) or lease <= 0:
+        msg = f'{_TABLE} lease_hours in {manifest} is {lease!r}; it must be a positive number of hours'
+        raise BranchSetNotDeclared(msg)
+    return BranchSet(trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), lease_hours=float(lease))
 
 
 def _local_branches(root: Path) -> tuple[str, ...] | None:
