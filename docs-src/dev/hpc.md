@@ -144,7 +144,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 - **Parts are discovered, not listed.** Every run collects the whole suite once plus once per resource and
   records, per id it does not cover, the part it belongs to (`handed`); the posted description says
   `hands=<part>:<n>,...`. `base` is always wanted, and a part handed to is wanted next (`platformparts.derived`).
-- **A host claims a part when it HAS its need-set** (`lab_commons.compute.model.admit`). What a host has is
+- **A host claims a part when it HAS its need-set** (`lab_commons.compute.admission.admit`). What a host has is
   measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every `[capabilities.<name>]`
   its machine file declares that the tool's probe finds (`jmag`, `matlab`, `node` are probed; any other
   declared name is present as declared). `seats` is its concurrency. A part no live host has the needs of waits

@@ -209,3 +209,17 @@ def test_the_queue_shows_the_origin_branches_a_human_may_delete() -> None:
     lines = forgequeue.render(view)
     assert f'  deletable lane/done  {"a" * 12}  merged-idle, idle 30 h' in lines
     assert f'  stale     lane/left  {"b" * 12}  unmerged-stale, idle 96 h' in lines
+
+
+def test_a_cards_preempted_loans_round_trip_and_are_shown_by_the_queue(server) -> None:
+    """PLANTED CONTROL: a card that preempted nothing shows no PREEMPTED line."""
+    built = client(FORGE, Loopback(server))
+    loud = _card('box-g', 'windows', NOW, preempted=('aaaaaaaaaaaa windows by reservation 5',))
+    quiet = _card('box-h', 'windows', NOW)
+    answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
+    answer('GET', f'{API}/issues/3/comments', (200, [_comment(i, c) for i, c in enumerate((loud, quiet))]))
+    cards = read_cards(built)
+    assert cards[0].preempted == loud.preempted
+    hosts = [{**asdict(c), 'holds': list(c.holds), 'stale': False} for c in cards]
+    lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
+    assert [line for line in lines if 'PREEMPTED' in line] == ['    PREEMPTED aaaaaaaaaaaa windows by reservation 5']

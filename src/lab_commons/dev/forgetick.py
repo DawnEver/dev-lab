@@ -11,7 +11,7 @@ A part is claimed as a pending status with a lease (:mod:`lab_commons.dev.forgec
 WHAT A TICK DOES, in order: flush the status outbox (:mod:`lab_commons.dev.forgeoutbox`), fetch
 ``origin``, rank every candidate this box could serve (:mod:`lab_commons.dev.forgeschedule`:
 value per cost, each waiting one naming why), CLAIM IN RANK ORDER WHILE JOBS ADMIT
-(:func:`lab_commons.compute.model.admit`: the part's need-set present here, its demand within the supply),
+(:func:`lab_commons.compute.admission.admit`: the part's need-set present here, its demand within the supply),
 and give each claimed part what produces it: the ONE producer the claimed commit declares
 (:func:`lab_commons.dev.platformparts.producer_argv`, ``{part}`` filled; the producer runs it in a tree at
 that commit) or a cluster part (:func:`lab_commons.dev.platformparts.cluster_part`). A part
@@ -23,12 +23,16 @@ still claimed. It runs nothing itself.
 ADMISSION, NOT ONE CLAIM A TICK. Each candidate is a :class:`~lab_commons.compute.model.Job` whose
 demand is what its last run of ``(producer, need-set)`` measured
 (:func:`~lab_commons.compute.learned.learned_demand`); it is admitted when it fits
-this host's supply less others' reservations and less everything already RUNNING -- the runs in flight
+this host's supply less the idle part of others' reservations and less everything already RUNNING -- the runs in flight
 here, an interactive run holding the box seat, and every part this tick claimed before it. A job that
 does not fit is skipped and a smaller lower-ranked one is still claimed; the skipped one waits naming
 the resources it lacks (``not admitted: lacking cpu``). Several parts may therefore run on one host at
 once. Two parts of ONE sha are never claimed by one box in one tick: a local part is judged in its
 sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
+
+A RESERVATION LENDS (:mod:`lab_commons.compute.admission`): a job may be claimed ON LOAN into a lease's
+idle part (its claim says ``on_loan=<id>``), and a lease holder's job that loans block PREEMPTS them --
+:attr:`TickReport.preempt`, for the serve loop to stop and release. A job a live lease here is for ranks first.
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
 wall (:class:`lab_commons.proccpu.TreeCpu`), never capped to the box: a job that kept eight cores busy does
@@ -39,29 +43,25 @@ Where the supply counts ``submits`` (a cluster account), a claim takes one.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import math
 import os
 import shlex
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from lab_commons.compute.admission import Held
 from lab_commons.compute.learned import learned, learned_demand
 from lab_commons.compute.model import (
-    REQUEST,
     Candidate,
-    Job,
     Ranked,
     Reservation,
     Resources,
-    Schedule,
     Supply,
-    admit,
     expected_cost,
     rank,
     submitted,
@@ -75,42 +75,23 @@ from lab_commons.dev.forge import (
     https_transport,
 )
 from lab_commons.dev.forgeclaim import (
-    CLAIMABLE,
     DEFAULT_LEASE,
-    MINE,
     Claim,
-    Serving,
     Work,
-    assess,
-    claim,
     forge_now,
     serving,
     this_machine,
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeschedule import (
-    NO_HOST,
-    NOT_ADMITTED,
-    candidates,
-    load_schedule,
-    over_budget,
-    repo_name,
-)
+from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
 from lab_commons.dev.forgestatus import Status, status_history
+from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import (
-    UndeclaredPart,
-    cluster_part,
-    derived,
-    origin_url,
-    part_context,
-    producer_argv,
-    this_platform,
-)
+from lab_commons.dev.platformparts import derived, origin_url, part_context, this_platform
+from lab_commons.dev.producer import preempted
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.needsets import Vocabulary, declared_at, needs_of
 from lab_commons.log import emit
 
 __all__ = ['TickReport', 'main', 'tick']
@@ -130,6 +111,8 @@ class TickReport:
     queue: tuple[Ranked, ...] = ()
     #: Why this host cannot write the large artefact store, ``''`` when it can (stated on its host card).
     artefacts: str = ''
+    #: The loans a reservation holder's claim displaces here: the serve loop stops and releases each.
+    preempt: tuple[Held, ...] = ()
 
 
 def tick(
@@ -144,19 +127,21 @@ def tick(
     host: str | None = None,
     supply: Supply | None = None,
     reservations: Sequence[Reservation] = (),
-    running: Sequence[Mapping[str, float]] = (),
+    running: Sequence[Held] = (),
     demand: Callable[[Candidate, frozenset[str]], Mapping[str, float]] | None = None,
     usage: Mapping[str, float] | None = None,
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
     busy: Iterable[str] = (),
+    owners: Mapping[str, Collection[str]] | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
     *supply* is what this host or account has now (:mod:`lab_commons.compute.probe`; default: a box's
     cores); *reservations* the ledger's leases (:mod:`lab_commons.compute.ledger`; one on another scope,
-    expired, or for the job itself withholds nothing); *running* the demands already running here;
+    expired, or for the job itself keeps nothing from it; a live one lends its idle part); *running* what
+    already runs here (each loan named);
     *demand* a candidate's size (default: what it measured); *usage* the core-hours each run sha12 used
     in the last day (a cluster's ``sacct``; ``None`` meters nothing, so no budget binds);
     *weights* this host's per-repo multipliers; *measured* the repository's last run measurements
@@ -164,7 +149,9 @@ def tick(
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). Which resources
     this host has is *supply*'s ``present`` (:mod:`lab_commons.compute.probe`): a part whose need-set is not
     all present waits ``not admitted: lacking <resource>``. *busy* are the shas a producer
-    here is judging now: their trees are taken, so no part of them is claimed.
+    here is judging now: their trees are taken, so no part of them is claimed. *owners* is who may vouch
+    for each host card (host -> its login and delegates): a job's ORIGIN host stands only where its
+    forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`).
     """
     lines: list[str] = []
     try:
@@ -185,30 +172,33 @@ def tick(
     serve = serving(host or this_platform(), seat)
     me = Claim(machine, login, now + lease, serve.hpc)
     schedule, repo = load_schedule(root), repo_name(built)
-    found = candidates(
-        root,
-        built,
-        repo=repo,
-        parts=lambda sha: derived(history(sha)),
-        schedule=schedule,
-        policy=load_policy(root),
-        now=now,
-        say=lines.append,
+    found = vouched(
+        candidates(
+            root,
+            built,
+            repo=repo,
+            parts=lambda sha: derived(history(sha)),
+            schedule=schedule,
+            policy=load_policy(root),
+            now=now,
+            say=lines.append,
+        ),
+        owners or {},
     )
     cores = 1 if serve.hpc else os.cpu_count() or 1
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
-    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     room = supply or Supply(machine or 'this host', Resources(cpu=cores))
     free = max(1, math.floor(room.resources['cpu']))  # an unmeasured box run takes every core free now
     by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=free)
     sized = demand or (lambda _wanted, needed: by_part(needed))
-    taken = _Taking(
+    taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
         reservations=tuple(reservations), taken=list(running), trees=set(busy),
         store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip
+    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, reserved=taken.reserved)
     for item in ranked:
         taken.consider(item)
     work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
@@ -221,96 +211,10 @@ def tick(
     lines += [f'refused {reason}' for reason in refused]
     lines += [f'waiting {item.candidate.key}: {item.blocked}' for item in queue if item.blocked]
     lines += [f'artefacts {taken.store_why}'] if taken.store_why else []
-    return TickReport(tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why)
-
-
-@dataclass
-class _Taking:
-    """The claim pass over the ranked queue: each candidate that admits is claimed, the rest say why not."""
-
-    root: Path
-    client: Client
-    serve: Serving
-    me: Claim
-    now: datetime
-    schedule: Schedule
-    usage: Mapping[str, float] | None
-    dry_run: bool
-    repo: str
-    supply: Supply
-    size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
-    reservations: tuple[Reservation, ...] = ()
-    taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
-    trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
-    unproducible: str = ''  # why the repo's producer cannot be built here; blocks every later candidate
-    store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
-    tables: dict[str, tuple[Vocabulary, str]] = dataclasses.field(default_factory=dict)
-    history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
-    work: list[Work] = dataclasses.field(default_factory=list)
-    claimed: list[Work] = dataclasses.field(default_factory=list)
-    refused: list[str] = dataclasses.field(default_factory=list)
-    queue: list[Ranked] = dataclasses.field(default_factory=list)
-
-    def consider(self, item: Ranked) -> None:
-        """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
-        wanted = item.candidate
-        if wanted.kind == REQUEST:  # requests are ranked and shown; no producer claims one yet
-            self.queue.append(dataclasses.replace(item, blocked=f'{NO_HOST} claims requests yet'))
-            return
-        state, holder = assess(self.history(wanted.sha), wanted.platform, me=self.me, now=self.now)
-        one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder)
-        blocked, needed = self._blocked(wanted) if state in CLAIMABLE else ('', frozenset[str]())
-        if state in CLAIMABLE and not blocked and not self.dry_run:
-            one, blocked = self._take(one, wanted, needed)
-        self.work.append(one)
-        if one.state in CLAIMABLE:
-            self.queue.append(dataclasses.replace(item, blocked=blocked))
-
-    def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
-        """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
-        _, refused = self.tables.setdefault(wanted.sha, declared_at(self.root, wanted.sha))
-        needed = needs_of(wanted.platform)
-        busy = not self.serve.hpc and wanted.sha in self.trees
-        why = (
-            refused
-            or self.unproducible
-            or (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
-            or over_budget(self.root, wanted, self.schedule, self.usage)
-            or self._admission(wanted, needed)
-        )
-        return why, needed
-
-    def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
-        job = Job(self.repo, wanted.sha, wanted.platform, needed, wanted.origin)
-        verdict = admit(
-            job, self.size(wanted, needed), self.supply,
-            reservations=self.reservations, running=self.taken, now=self.now,
-        )  # fmt: skip
-        return '' if verdict else f'{NOT_ADMITTED}: {verdict.why}'
-
-    def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
-        try:  # what produces it BEFORE the claim: a part nobody can produce is never claimed
-            one = _producer(self.root, one, self.serve)
-        except (UndeclaredPart, FileNotFoundError) as why:
-            self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
-            self.unproducible = f'{NO_HOST} can produce it: {why}'
-            return one, self.unproducible
-        if one.cluster is not None and one.cluster.outputs and self.store_why:
-            why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
-            self.refused.append(f'{part_context(one.platform)}: not claimed -- {why}')
-            return one, why
-        one = claim(self.client, one, self.me)
-        if one.state == MINE:
-            self.claimed.append(one)
-            self.taken.append(self.size(wanted, needed))
-            self.trees.add(wanted.sha)
-        return one, ''
-
-
-def _producer(root: Path, work: Work, serve: Serving) -> Work:
-    if serve.hpc:
-        return dataclasses.replace(work, cluster=cluster_part(root, work.sha))
-    return dataclasses.replace(work, argv=tuple(producer_argv(root, work.platform, sha=work.sha)))
+    lines += [f'preempt {one.label}: {preempted(one.on_loan)}' for one in taken.preempt]
+    return TickReport(
+        tuple(work), tuple(claimed), tuple(lines), tuple(refused), tuple(queue), taken.store_why, tuple(taken.preempt)
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
