@@ -341,9 +341,16 @@ class FakeRunCluster:
         active: int = 0,
         env: str = 'e0ffee0123456789',
         collected: str | None = None,
+        hog: str = '',
+        mem_ceiling: str = '360G',
     ) -> None:
-        """*have*: the cache holds the commit; *oom*: round 0 is OUT_OF_MEMORY; *active*: sacct polls RUNNING."""
+        """*have*: the cache holds the commit; *oom*: round 0 is OUT_OF_MEMORY; *active*: sacct polls RUNNING.
+
+        *hog*: an id whose item is OOM-killed in every round it runs in; *mem_ceiling*: the account's quota
+        memory; *closed* (set later): every grant refuses the next round.
+        """
         self.have, self.dies, self.kills, self.oom = have, dies, kills, oom
+        self.hog, self.mem_ceiling, self.closed = hog, mem_ceiling, False
         self.build_fails, self.lacking, self.active = build_fails, lacking, active
         self.env, self.collected = env, collected
         self.state = ''
@@ -366,7 +373,9 @@ class FakeRunCluster:
         if command.startswith('for c in'):
             return ''.join(f'@@@ missing {c}\n' for c in self.lacking)
         if command.startswith('echo "@@@ nodes"'):
-            return IDLE + '@@@ shared\n8 lc:ws=other\n'
+            quota = 'cpu=0' if self.closed else 'cpu=96'
+            probed = IDLE.replace('|free|cpu=96,', f'|free|{quota},').replace('mem=360G', f'mem={self.mem_ceiling}')
+            return probed + '@@@ shared\n8 lc:ws=other\n'
         if 'cat-file' in command:
             return 'have\n' if self.have else 'missing\n'
         if '@@@ facts' in command and self.build_fails:
@@ -392,7 +401,7 @@ class FakeRunCluster:
             self.active -= 1
             return '\n'.join(f'1_{i}|RUNNING' for i in range(9)) + '\n'
         if 'sacct' in command:
-            state = 'OUT_OF_MEMORY' if self.oom and len(self.manifests) == 1 else 'TIMEOUT'
+            state = 'OUT_OF_MEMORY' if (self.oom and len(self.manifests) == 1) or self.hog else 'TIMEOUT'
             hour = 1 + len(self.manifests)
             rows = (
                 f'1_{i}|{state if i == 0 else "COMPLETED"}|2026-10-11T0{hour}:00:00|2026-10-11T0{hour}:01:00'
@@ -411,6 +420,11 @@ class FakeRunCluster:
             killed = dying and item['ids'][0].split('::')[0] in self.dies
             ran = item['ids'][: len(item['ids']) // 2] if killed else item['ids']
             out.append(f'@@@ {index}.jsonl')
+            if self.hog in item['ids']:
+                ran = item['ids'][: item['ids'].index(self.hog)]
+                out += [json.dumps({'id': n, 'outcome': 'passed', 's': 1.0}) for n in ran]
+                out.append(json.dumps({'done': -9, 'wall': 5.0, 'peak_mb': 1024.0}))
+                continue
             out += [json.dumps({'id': n, 'outcome': 'passed', 's': 1.0}) for n in ran]
             if not killed:
                 out.append(json.dumps({'done': 0, 'wall': 5.0 + len(ran), 'peak_mb': 2048.0}))
@@ -493,6 +507,40 @@ def test_an_out_of_memory_round_doubles_the_memory_of_the_next() -> None:
     record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True))
     first, second = record['rounds']
     assert second['mem_mb'] == 2 * first['mem_mb']
+
+
+def test_an_oom_item_is_bisected_at_the_grantable_ceiling_and_its_lone_hog_fails_by_id() -> None:
+    """Ada 2026-10-14: an item OOM-killed at 62.7 GB was re-asked at 366.77 GB of a 360 GB quota and never ran again."""
+    fake = FakeRunCluster(hog='tests/b.py::t4', mem_ceiling='4G')
+    record = _run(fake)
+    assert [r['mem_mb'] for r in record['rounds']] == [1024, 4096], 'the grown ask is held to the quota'
+    assert [i['ids'] for i in fake.manifests[1]['items']] == [['tests/b.py::t4'], ['tests/b.py::t5']]
+    assert record['outcomes']['tests/b.py::t4'] == 'failed', 'the hog alone at the ceiling is its own failure'
+    why = 'OUT_OF_MEMORY alone at 4096 MB, the most any grant gives (peak 1024 MB)'
+    assert record['reasons']['tests/b.py::t4'] == why
+    assert [record['outcomes'][f'tests/b.py::t{n}'] for n in (3, 5)] == ['passed', 'passed'], 'its mates got results'
+
+
+def test_an_oom_item_under_the_ceiling_is_retried_not_failed() -> None:
+    """PLANTED CONTROL: a lone id killed BELOW the ceiling is not yet proven a hog -- it is re-asked bigger."""
+    fake = FakeRunCluster(hog='tests/b.py::t4', mem_ceiling='360G')
+    _submit(fake)
+    _gather(fake)
+    assert _gather(fake) is None, 'still bisecting/growing, not settled'
+    assert 'tests/b.py::t4' not in json.loads(fake.state)['outcomes']
+
+
+def test_a_round_no_grant_can_take_settles_as_an_error_naming_why() -> None:
+    """Ada 2026-10-14: 'cannot advance: no grant can take this work' repeated for hours, and no verdict came."""
+    fake = FakeRunCluster(dies=frozenset({'tests/b.py'}))
+    _submit(fake)
+    fake.closed = True
+    record = _gather(fake)
+    assert record is not None, 'an unplaceable round settles the run in the same gather'
+    assert [record['outcomes'][f'tests/b.py::t{n}'] for n in (4, 5)] == ['error', 'error']
+    assert record['reasons']['tests/b.py::t4'].startswith('could not be placed: no grant can take this work')
+    assert record['outcomes']['tests/b.py::t3'] == 'passed', 'PLANTED CONTROL: what ran keeps its result'
+    assert len(fake.manifests) == 1, 'nothing was submitted'
 
 
 def test_every_folded_round_teaches_its_repo_not_only_the_record() -> None:
