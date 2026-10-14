@@ -241,7 +241,7 @@ class Producing:
             return frozenset(sha for sha, _platform in self._live)
 
     def running(self, sized: Callable[[frozenset[str]], Demand]) -> list[Held]:
-        """Each live producer at its learned demand, with the lease it borrows from."""
+        """Each live producer at what it holds (:func:`~lab_commons.compute.learned.learned_hold`), and its lease."""
         with self._lock:
             return [held_part(item, sized) for item in self._live.values()]
 

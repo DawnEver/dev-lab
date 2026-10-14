@@ -34,7 +34,8 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read
   on another scope, expired, or for the job keeps nothing from it; a live one LENDS its idle part, and
   each round withdraws or stops a loan a holder preempts (:mod:`lab_commons.dev.forgerounds`).
 * RUNNING -- each cluster run in flight here, at its learned demand; each LOCAL PRODUCER this serve is
-  running, at its learned demand -- and since the probe already reads what it busies, what it was last
+  running, at what it HOLDS (:func:`~lab_commons.compute.learned.learned_hold`: the cores it kept busy, else
+  every core) -- and since the probe already reads what it busies, what it was last
   measured using (:func:`lab_commons.dev.forgeproduce.produce`'s *watch*) is given back to the supply,
   so it is counted once; and each INTERACTIVE run holding the
   box seat (:class:`~lab_commons.dev.cpuseat.CpuSeat`, a developer's ``gate measure`` or ``verify``), at
@@ -105,7 +106,7 @@ from typing import Any
 
 from lab_commons.compute import ledger
 from lab_commons.compute import probe as supply_probe
-from lab_commons.compute.learned import learned_demand
+from lab_commons.compute.learned import learned_hold
 from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
@@ -194,7 +195,7 @@ def serve(
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
     host_rounds = Rounds(
         root, repo, alarm, runs, slurm=slurm, say=say, cores=cores,
-        sized=learned_demand(repo, cluster=seat is not None, cores=cores),
+        sized=learned_hold(repo, cluster=seat is not None, cores=cores),
         supplied=functools.partial(
             supply_now, name=name, standing=standing, box_room=box_room, provides=provides,
             reserve=reserve or box_reserve,
