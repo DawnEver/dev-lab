@@ -340,7 +340,7 @@ def _retain(
         alarm(Alarm(RUN, repo, f'the storage retention pass failed on {who}', str(why)))
         return
     if done is not None and done.over:
-        body = f'freed {done.freed_bytes} bytes and {done.freed_files} files; still over [retention] pressure'
+        body = done.alarm or f'freed {done.freed_bytes} bytes and {done.freed_files} files; still over pressure'
         alarm(Alarm(STORAGE, repo, f'{who} storage is still near its quota', body))
 
 

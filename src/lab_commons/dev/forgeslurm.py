@@ -6,12 +6,15 @@ carries), cancelling a superseded run, the outcomes a run CARRIES from the neare
 finished records and the finished shards of superseded ones (:mod:`lab_commons.dev.forgecarry`) -- and the
 account's STANDING read locally each tick -- its supply
 (cpu, memory and the QOS's remaining submissions over every grant,
-:func:`lab_commons.compute.probe.account`), the last day's core-hours per run from ``sacct``,
-and the partitions and quota a host card publishes.
+:func:`lab_commons.compute.probe.account`, and the home's FILE headroom read by
+:func:`lab_commons.dev.diskusage.read_usage`), the last day's core-hours per run from ``sacct``,
+and the partitions, quota and storage a host card publishes. An unreadable quota is stated on the card
+(``storage: unread``) and leaves files uncapped; a home at its file limit claims nothing and the card says so.
 """
 
 from __future__ import annotations
 
+import math
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +24,7 @@ from lab_commons.compute import learned
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import config_path
+from lab_commons.dev.diskusage import Usage, read_usage, storage_text
 from lab_commons.dev.forgecarry import carry_from, read_by
 from lab_commons.dev.forgerun import Cluster, Run, Standing
 from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
@@ -48,6 +52,10 @@ def progress_text(where_: Progress) -> str:
     return f'running {where_.running}/{where_.shards} done {where_.done}/{where_.shards}'
 
 
+def _home_quota() -> Usage | None:
+    return read_usage(Path.home(), cluster=True)
+
+
 @dataclass(frozen=True)
 class SlurmCluster:
     """:class:`Cluster` through ``lab_commons.hpc`` and this login node's own shell (:func:`slurm_cluster`)."""
@@ -56,6 +64,7 @@ class SlurmCluster:
     machine: Machine
     config: Config
     connect: Callable[[Grant], Runner]
+    quota: Callable[[], Usage | None] = _home_quota
 
     def _runners(self) -> dict[tuple[str, str], Runner]:
         return {grant.account: self.connect(grant) for grant in self.machine.grants}
@@ -149,13 +158,16 @@ class SlurmCluster:
         for grant in self.machine.grants:
             snapshot = probe(self.connect(grant), grant.slurm_account)
             read.append((snapshot, snapshot.quota.default_qos))
-        supply = supply_probe.account(self.scope, read)
+        usage = self.quota()
+        left = usage.files_left if usage is not None else None
+        supply = supply_probe.account(self.scope, read, files=math.inf if left is None else left)
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {
             'quota_cpus': snapshot.quota.cpus,
             'qos': qos,
             'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
+            'storage': storage_text(usage),
         }
         return Standing(supply, parse_usage(shell(USAGE_COMMAND, None)), facts)
 

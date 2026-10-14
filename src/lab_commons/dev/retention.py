@@ -37,8 +37,12 @@ tree or env being built), or a path outside the roots the plan was given. Then `
 QUOTA-AWARE. The account's usage (``mmlsquota``; a workstation's disk) is read every tick; at
 ``pressure`` of the block OR file quota the pass runs at once and, after the plan, removes the
 :attr:`Plan.harder` runs -- this repo's kept carry sources, never one in flight, OLDEST FIRST (a lost
-source only costs the re-run it would have saved) -- until usage is back to ``target``. Still over: the
-pass says so and serve raises a ``storage`` alarm (:mod:`lab_commons.dev.forgealarm`). EVERY DELETION IS
+source only costs the re-run it would have saved) -- until usage is back to ``target``. When FILES are
+the binding limit the harder runs go MOST FILES FIRST instead, a run with its tree, since that is what
+frees the ceiling that binds. Still over: the pass says so and serve raises a ``storage`` alarm
+(:mod:`lab_commons.dev.forgealarm`) whose body is :func:`lab_commons.dev.diskusage.pressure_text` --
+which limit, used/limit for each, and the home's biggest directories by file count, the ones the forge
+does not own named and never touched. EVERY DELETION IS
 ONE JSON LINE (path, bytes, files, rule), and ``python -m lab_commons.dev.retention`` prints this host's
 plan without deleting anything.
 """
@@ -59,7 +63,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.config import config_path, section
-from lab_commons.dev.diskusage import Usage, measure, read_usage, writable
+from lab_commons.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, writable
 from lab_commons.dev.forgecarry import read_by
 from lab_commons.dev.forgerun import directory as run_files
 from lab_commons.dev.platformparts import origin_url
@@ -139,6 +143,7 @@ class Outcome:
     freed_files: int
     over: bool
     by_rule: Mapping[str, tuple[int, int, int]] = dataclasses.field(default_factory=dict)
+    alarm: str = ''  # still over: the body of the storage alarm (lab_commons.dev.diskusage.pressure_text)
 
 
 def _age(path: Path, now: datetime) -> timedelta:
@@ -306,7 +311,8 @@ def apply(
     for doomed in plan.doomed:
         one(doomed)
     if usage is not None and usage.fraction(*freed) >= policy.pressure:
-        for doomed in plan.harder:
+        files_bind = usage.binding(*freed) == 'files'  # then a run with its tree, most files first
+        for doomed in files_first(plan.harder, lambda d: d.path) if files_bind else plan.harder:
             if usage.fraction(*freed) <= policy.target:
                 break
             one(doomed)
@@ -327,13 +333,8 @@ def summary(done: Outcome, usage: Usage | None, *, applied: bool) -> list[str]:
     ]
     total = sum(paths for paths, _, _ in done.by_rule.values())
     lines.append(f'[retention] {verb} {total} paths, {done.freed_bytes / _MB:.1f} MB, {done.freed_files} files')
-    if usage is not None:
-        gb, after = 1024**3, usage.used - done.freed_bytes
-        lines.append(f'[retention] usage bytes {usage.used / gb:.1f}/{usage.limit / gb:.1f} GB -> {after / gb:.1f} GB')
-        if usage.files is not None and usage.files_limit:
-            now, left, cap = usage.files, usage.files - done.freed_files, usage.files_limit
-            lines.append(f'[retention] usage files {now}/{cap} ({now / cap:.1%}) -> {left} ({left / cap:.1%})')
-    return lines
+    after = usage.after(done.freed_bytes, done.freed_files) if usage is not None else []
+    return lines + [f'[retention] {line}' for line in after]
 
 
 def _live_shas() -> set[str]:
@@ -401,6 +402,9 @@ def serve_pass(
             return None
         plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, now=now, live=live())
         done = apply(plan, policy, usage=measured, dry_run=False, say=say, run=run)
+        if done.over:
+            freed = (done.freed_bytes, done.freed_files)
+            done = dataclasses.replace(done, alarm=pressure_text(measured, freed, home if cluster else None))
         state.write_text(json.dumps({'last': now.isoformat(), 'freed_bytes': done.freed_bytes}), encoding='utf-8')
     return done
 
