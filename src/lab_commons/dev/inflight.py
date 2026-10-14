@@ -14,7 +14,7 @@ claimed afresh, so a crash never leaves a queue waiting forever. A leader that R
 claim and writes no result, and its followers take the key over in turn -- nothing was measured,
 so there is nothing to share.
 
-THE DIRECTORY IS BOX-WIDE, NOT PER REPO: the caller passes the box lock's own resource directory,
+THE DIRECTORY IS BOX-WIDE, NOT PER REPO: the caller passes the broker's resource directory,
 outside every repository, because two worktrees whose trees hash alike ARE the same request.
 
 WHAT THE RESULT IS, is the caller's: an opaque string (a verify run serialises its verdict line, its
@@ -32,8 +32,8 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.proc import pid_alive
+from lab_commons.resources import Broker
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,8 +61,8 @@ class RunKey:
 
 
 def box_directory() -> Path:
-    """The box-wide claim directory: beside the box lock's records, outside every repository."""
-    return CpuSeat.resource_dir() / 'inflight'
+    """The box-wide claim directory: beside the broker's records, outside every repository."""
+    return Broker().resource_dir() / 'inflight'
 
 
 def claim_path(directory: Path, key: RunKey) -> Path:

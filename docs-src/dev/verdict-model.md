@@ -48,11 +48,10 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - A request with the same `(tree, env, selector)` as a run in flight attaches to it and receives its answer
   (`lab_commons.dev.inflight`).
 - A key the run cache already holds is cited without running (`lab_commons.dev.runcache`); `--rerun` overrides.
-- A measure waits at most `MEASURE_WAIT_S` for the box and then refuses naming the holder; the producer queues
-  (`boxwait.WAIT_S`).
-- Only a run that SATURATES the box takes its seat. A LIGHT run (a targeted selection, width capped at
-  `cpuseat.LIGHT_WIDTH`) is admitted by its declared memory and never waits on a heavy holder; heavy still
-  excludes heavy (user ruling 2026-10-13, `boxwait.hold_run_seats(memory_bytes=)`).
+- A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
+- A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: at most
+  `SELECTION_CPU` cores, `SELECTION_MEM_GB`, `SELECTION_WALL_S`) beside whatever else fits; a producer runs
+  at the demand serve admitted it at ([box resources](box-resources.md)).
 - A heavy part is offered only for the refs its `[tool.lab_commons.parts.refs.<part>] <scope>` admits
   (`platformparts.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
 

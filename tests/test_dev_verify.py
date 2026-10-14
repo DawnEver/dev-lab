@@ -36,9 +36,8 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev import localpart, platformparts, verify
-from lab_commons.dev.boxwait import MEASURE_WAIT_S
-from lab_commons.dev.cpuseat import CPU_POOL
+from lab_commons.box import BOX_ENV, GB, KILLED, REFUSED, Capacity, Refused
+from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.platformparts import part_context, part_of
@@ -58,7 +57,6 @@ from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build
 from lab_commons.dev.verify import _tee as tee_step
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
-from lab_commons.resources import Basis, Exhausted
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -629,9 +627,6 @@ class TestThePlantedControl:
         (tmp_path / 'tests' / 'test_other.py').write_text('def test_a() -> None: ...\n', encoding='utf-8')
         commands = []
 
-        def no_seat(_stack, _what, **_kwargs: object) -> None:
-            return None
-
         def recorded_step(command, *, cwd, handle, extra_env=None) -> int:
             assert cwd == tmp_path
             commands.append(tuple(command))
@@ -642,7 +637,7 @@ class TestThePlantedControl:
             handle.flush()
             return 0
 
-        monkeypatch.setattr(verify, 'hold_run_seats', no_seat)
+        monkeypatch.setattr(verify, 'boxed', _unboxed)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path, selection)
         expected_command = (sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *verify.OUTCOME_PLUGIN)
@@ -684,7 +679,7 @@ class TestThePlantedControl:
             handle.flush()
             return 0
 
-        monkeypatch.setattr(verify, 'hold_run_seats', lambda _stack, _what, **_kwargs: None)
+        monkeypatch.setattr(verify, 'boxed', _unboxed)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path)
         assert verdict.result.outcome is Outcome.INCONCLUSIVE
@@ -886,7 +881,7 @@ def test_a_selection_is_a_measure_needs_no_claim_and_waits_briefly(monkeypatch, 
     waits: list[float] = []
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, wait_s, **_k: waits.append(wait_s) or _judged(tmp_path))
     assert verify.main(['--no-status', '--rerun', 'tests/a.py::test_x']) == ProducerExit.PASS
-    assert waits == [MEASURE_WAIT_S]
+    assert waits == [verifybox.MEASURE_WAIT_S]
 
 
 def test_only_an_argument_naming_the_tree_makes_a_run_targeted(tmp_path: Path) -> None:
@@ -1068,8 +1063,15 @@ def test_a_run_that_judged_no_test_still_posts_no_part(monkeypatch, tmp_path: Pa
     assert 'covers no test' in said
 
 
-def _held(*_a: object, **_k: object) -> None:
-    raise Exhausted(CPU_POOL, 'box_seats', needed=1, available=0, basis=Basis.CONSERVATIVE_DEFAULT, what='heavy')
+def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], dict[str, str]]:
+    """The pytest step as given: these tests are about what verify JUDGES, not the box it runs in."""
+    return argv, {}
+
+
+#: What the box CLI prints when it never ran the step (``lab_commons.box.__main__``).
+_REFUSED_LINE: Final = (
+    'box: refused -- cpu: wants 4 of 3; verify:other (pid 7) holds 3 until 2026-10-15T00:00:00+00:00\n'
+)
 
 
 def _unreadable(_path: Path) -> LogRef:
@@ -1082,7 +1084,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
     monkeypatch.setattr(verify, 'family_freshness', lambda _root: ('', ''))
-    monkeypatch.setattr(verify, 'hold_run_seats', lambda *_a, **_k: None)
+    monkeypatch.setattr(verify, 'boxed', _unboxed)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
     monkeypatch.setattr(verify, 'read_hooks', lambda _root, **_kw: clean)
 
@@ -1097,7 +1099,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
 @pytest.mark.parametrize(
     ('path', 'pytest_text', 'pytest_code', 'plant'),
     [
-        ('held box', '', 0, ('hold_run_seats', _held)),
+        ('box refused', _REFUSED_LINE, REFUSED, None),
         ('empty selection', 'no tests ran in 0.01s\n', 5, None),
         ('unusable log', '1 passed in 0.1s\n', 0, ('LogRef', SimpleNamespace(of=_unreadable))),
     ],
@@ -1125,12 +1127,11 @@ def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_p
 def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
-    A targeted verify is LIGHT (user ruling 2026-10-13: light runs never queue on a heavy holder), so
-    what refuses it is its own pool full: a child holds every light seat of a PRIVATE record root, and a
-    second ``python -m lab_commons.dev.verify --lock-wait-s 0`` runs against that root. Its selection is
-    its own, so the run key differs from any enclosing verify and it cannot attach to it.
+    A child holds every core of a PRIVATE box ledger, and a second ``python -m lab_commons.dev.verify
+    --lock-wait-s 0`` runs against that ledger: its pytest step is refused by the box. Its selection is its
+    own, so the run key differs from any enclosing verify and it cannot attach to it.
     """
-    records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path)}
+    records = {'LAB_COMMONS_RESOURCE_DIR': str(tmp_path), BOX_ENV: str(tmp_path / 'box.sqlite')}
     holder = subprocess.Popen(
         [sys.executable, '-c', _HOLD_SEAT],
         env=os.environ | records,
@@ -1169,15 +1170,15 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
         holder.wait(timeout=30)
     assert done.returncode == ProducerExit.INCONCLUSIVE, done.stdout + done.stderr
     assert 'this box is held and nothing was measured' in done.stderr
+    assert 'planted-holder' in done.stderr, 'the refusal names the holder'
 
 
-#: A child that takes EVERY light seat of its record root and holds them until killed.
+#: A child that claims EVERY core of its box ledger and holds them until killed.
 _HOLD_SEAT: Final = (
-    'import contextlib, os, time\n'
-    'from lab_commons.dev.cpuseat import LIGHT_WIDTH, CpuSeat\n'
-    'with contextlib.ExitStack() as stack:\n'
-    '    for one in range(max(1, (os.cpu_count() or 1) // LIGHT_WIDTH)):\n'
-    "        stack.enter_context(CpuSeat(f'planted-light-{one}', {'memory': 1}, saturating=False).held())\n"
+    'import math, time\n'
+    'from lab_commons.box import Capacity, Demand, admit\n'
+    'cores = math.floor(Capacity.read().cpu)\n'
+    "with admit(Demand(cpu=cores, mem_gb=0.5, wall_s=600, seats={}), 'planted-holder', 5, key='planted'):\n"
     "    print('held', flush=True)\n"
     '    time.sleep(600)\n'
 )
@@ -1213,3 +1214,28 @@ def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatc
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a refused part ran'))
     assert verify.main(['--part', 'matlab']) == ProducerExit.USAGE
     assert "needs ['matlab']" in capsys.readouterr().err
+
+
+def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(monkeypatch) -> None:
+    """The step is held to its declared claim; a producer serve spawned is ALREADY in the box at its demand."""
+    monkeypatch.delenv(PRODUCING_VAR, raising=False)
+    small = Capacity(cpu=2.0, mem_bytes=16 * GB, seats={})
+    monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: small))
+    argv, width = verifybox.boxed(Path('r'), ['py', '-m', 'pytest'], queue_s=5)
+    assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
+    assert argv[argv.index('--') + 1 :] == ['py', '-m', 'pytest']
+    assert argv[argv.index('--cpu') + 1] == '2', 'capped at the box'
+    assert argv[argv.index('--queue-s') + 1] == '5'
+    assert width == {'PYTEST_XDIST_AUTO_NUM_WORKERS': '2'}
+    monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')
+    assert verifybox.boxed(Path('r'), ['py'], queue_s=5) == (['py'], {}), 'PLANTED CONTROL: the producer is not reboxed'
+
+
+def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:
+    log = tmp_path / 'step.log'
+    log.write_text(f'$ python -m lab_commons.box run ...\n{_REFUSED_LINE}', encoding='utf-8')
+    with pytest.raises(Refused, match='verify:other'):
+        verifybox.ended_in_the_box(REFUSED, log)
+    (killed,) = verifybox.ended_in_the_box(KILLED, log)
+    assert 'the box killed pytest' in killed
+    assert verifybox.ended_in_the_box(0, log) == (), 'PLANTED CONTROL: a step that ran is judged by pytest'

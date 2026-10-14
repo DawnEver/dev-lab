@@ -24,6 +24,22 @@ ordering only. P3 lands that and moves the box host's forge path onto `lab_commo
 | standalone `forge tick` supply on a box | the whole `Capacity` (no holdings) | deterministic, and a tick alone runs nothing |
 | retired spellings | registered in `hpc/retired.py`; `forge reserve|release` and `workstation --delegates` refuse by name | NO compatibility: the old door names its replacement and does nothing |
 
+## The verify door and the supervisor (second commit)
+
+| question | decision | why |
+|---|---|---|
+| what a selection declares | `dev.verifybox.selection_demand`: <= 4 cores (= xdist workers), 8 GB, 3600 s, killed past each | the old LIGHT run declared 2 GiB for ADMISSION only; an enforced limit needs a number a real selection fits |
+| what is boxed | the pytest step only; ruff runs unboxed; the ENVIRONMENT seat (`envseat`) is still held across all three steps | the env seat guards a different resource (dependency mutation) and is not superseded |
+| a producer's own verify | not boxed again (`PRODUCING_VAR`) | serve already ran it in the box at its admitted demand: no nested double claim |
+| `--lock-wait-s` | kept as the spelling; it is the box queue ceiling (and the env seat wait) | P5 callers type it; the rename is not worth a flag day |
+| `inflight` / `familyheads` cache dir | `resources.Broker().resource_dir()` | they only needed "a box-wide directory outside every repo", which the broker still owns |
+| `supervise` `run_capped` | `SystemdProcessManager.run_capped` runs `box.command(...)` at `CAPPED_CPU = 1`, `ceiling_gb(memory_max)`, wall = timeout, queue 120 s | one manager per machine; the box's scope replaces the hand-built `systemd-run --scope` |
+| rule `ONE-BOX-ONE-LOCK` | ID kept, statement and guards rewritten to the box ledger | consumers cite the ID; the meaning (one rendezvous per machine) holds |
+
+RISK, unverified here (Windows box): the box's Linux backend uses `systemd-run --user --scope`. A supervisor
+running as a SYSTEM service with no user manager gets every `run_capped` REFUSED (reported, never run
+unbounded). Check on the host before deploying; the fix would be a system-scope path in `box/_linux.py`.
+
 ## Deferred
 
 - P4: the cluster `held_run` double count (a cluster run in flight is still `running` at `cluster_demand`).

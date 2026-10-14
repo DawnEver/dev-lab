@@ -1,6 +1,6 @@
 """``lab_commons.dev.famtests.storedreadings`` -- every arm driven GREEN and driven RED.
 
-EVERY RED HERE IS REACHABLE, which is the difference from ``boxseat``'s suite and is worth stating
+EVERY RED HERE IS REACHABLE, which is the difference from a seat famtest's suite and is worth stating
 because it is a property of the subject rather than of the effort put in: this body reads TEXT and
 compares it against a callable the consumer supplies, so both halves of every arm can be planted
 without replacing anything under test. Nothing is stubbed and nothing is monkeypatched; the only

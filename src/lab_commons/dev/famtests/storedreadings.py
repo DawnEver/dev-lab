@@ -254,8 +254,8 @@ def assert_the_reader_still_convicts(*, spelling: str) -> None:
     Every plant is a row this function writes, judged by the real :func:`claims_in`,
     :func:`assert_stored_readings_are_live` and :func:`assert_history_is_dated` -- nothing is stubbed.
     The one injected thing is *derive*, which MUST be injected because a planted row names no file:
-    that is the boundary :mod:`lab_commons.dev.famtests.boxseat` and
-    :mod:`lab_commons.dev.famtests.depdoor` already set, and it is stated rather than hidden.
+    that is the boundary :mod:`lab_commons.dev.famtests.depdoor` already set, and it is stated rather
+    than hidden.
 
     Args:
         spelling: one labelled reading this repo's rows are written in, e.g. ``'own'``. NO DEFAULT:

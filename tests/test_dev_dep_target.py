@@ -27,9 +27,8 @@ def _live_verdict(tmp_path, monkeypatch, *, python: str = sys.executable) -> Ite
     ready.unlink(missing_ok=True)
     code = (
         'import json,pathlib,sys\n'
-        'from lab_commons.dev.cpuseat import CpuSeat\n'
         'from lab_commons.dev.envseat import EnvironmentSeat\n'
-        'with CpuSeat("gate:environment-A").held(), EnvironmentSeat(sys.prefix, "gate:environment-A").held():\n'
+        'with EnvironmentSeat(sys.prefix, "gate:environment-A").held():\n'
         ' pending=pathlib.Path(sys.argv[1]).with_suffix(".tmp")\n'
         ' pending.write_text(\n'
         '  json.dumps({"prefix":sys.prefix,"python":sys.executable}),encoding="utf-8")\n'

@@ -433,7 +433,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'mutation DURING a run is PREVENTED by exclusion; mutation BETWEEN runs is DETECTED by the key '
             'and remedied by RETIRING the verdict anchors. Each worktree owns its environment; agents may '
             'bootstrap and sync their own through the door without human approval, never mutate main from '
-            'a lane. The CPU lock remains box-wide, independently of environment exclusion. A repo that '
+            'a lane. The box ledger stays machine-wide, independently of environment exclusion. A repo that '
             'declares no verdict anchors has that gap RENDERED, never silently skipped.'
         ),
         ('tests/test_dev_dep.py', 'tests/test_dev_dep_target.py'),
@@ -441,20 +441,20 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-BOX-ONE-LOCK',
         (
-            'A run that SATURATES the box TAKES the box, through the ONE rendezvous every repo on it can reach -- '
-            'not a lock named in one tree, which a sibling cannot find and so cannot obey: the party that takes '
-            'none runs, the party that takes one is starved by what it cannot see. So the rendezvous is a PATH, '
-            'not a mechanism. A held box is QUEUED for on a ceiling, naming the holder while waiting, and on the '
-            'deadline refused INCONCLUSIVE naming it -- starting anyway is the harm, refusing instantly a re-run '
-            'loop, blocking forever a crash rendered as a hang. A recorded holder is identified by more than its '
-            'pid, because a reused pid makes a dead holder immortal. A LIGHT run (a targeted selection at a '
-            'capped width) takes NO seat: it is admitted by its declared memory against free memory and never '
-            'waits on a heavy holder, and heavy still excludes heavy (user ruling 2026-10-13).'
+            'Every run on a machine DECLARES its demand -- cores, memory, a wall and tool seats -- on the ONE box '
+            'ledger every repo and session on it reaches (lab_commons.box, a machine-wide path, never a lock named '
+            'in one tree), is admitted only when the declared sum fits the box after its [reserve] margins, and '
+            'runs INSIDE a kernel limit sized to that claim: killed past its memory or wall, so a claim is never '
+            'idle-but-held and never exceeded. A waiter holds nothing and gives up at its own queue ceiling, '
+            'refused naming the dimension short and every holder with its deadline -- starting anyway is the harm, '
+            'blocking forever a crash rendered as a hang. A recorded holder is identified by more than its pid, '
+            'because a reused pid makes a dead holder immortal. Nothing is reserved, lent or preempted (user '
+            'ruling 2026-10-14): priority orders, it never claims.'
         ),
         (
-            'tests/test_two_repos_cannot_both_hold_the_cpu_seat.py',
+            'tests/test_box.py',
+            'tests/test_box_run_enforced.py',
             'tests/test_liveness.py',
-            'tests/test_dev_boxwait.py',
         ),
     ),
 )

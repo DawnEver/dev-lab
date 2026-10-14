@@ -1,7 +1,7 @@
 """THE ENVIRONMENT SEAT: a verdict and a mutation never share one Python environment.
 
-TWO RESOURCES, TWO NAMES. :class:`~lab_commons.dev.cpuseat.CpuSeat` is the MACHINE's CPU capacity,
-contended by RUNS only -- a dependency sync is not CPU-saturating and never takes it. This seat is
+TWO RESOURCES, TWO NAMES. The box ledger (:mod:`lab_commons.box`) is the MACHINE's capacity, claimed
+by RUNS only -- a dependency sync is not a run and never claims it. This seat is
 keyed by ONE environment (the resolved prefix of its interpreter), and is what a run and a mutation
 of THAT environment contend for. A verify in repo A therefore never refuses a sync of repo B's venv,
 while a sync of A's venv mid-verify is refused naming the run.

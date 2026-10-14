@@ -5,7 +5,7 @@ modules. A reader -- human or model -- takes that list as the surface. Nothing c
 
 MEASURED 2026-09-16, and this is why the guard exists rather than a repair. Listing the directory
 against the bullets found THREE public modules with no line: ``devdocs`` (landing that day) and
-``boxwait`` and ``dep``, which had landed HOURS earlier in separate commits. A four-agent race on the
+a bounded-wait module and ``dep``, which had landed HOURS earlier in separate commits. A four-agent race on the
 file made the gap visible, but the gap PREDATED the race -- the inventory had simply never been
 checked, and the check is ``ls``. That is the dominant defect in its cheapest form: a declaration
 asserting a property the code does not enforce, where enforcing it costs one test.

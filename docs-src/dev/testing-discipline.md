@@ -35,9 +35,9 @@ and who runs it, is on [the verdict model](verdict-model.md).
 
 ## One test session per box
 
-- The hazard is the SESSION, not the tier: a serial run is not "small". Every run holds the box's CPU seat
-  (`lab_commons.dev.cpuseat`); a second request waits a bounded time, attaches to an identical run, or is
-  refused naming the holder.
+- The hazard is the SESSION, not the tier: a serial run is not "small". Every run declares its claim on the
+  box ledger and is held to it ([box resources](box-resources.md)); a second request waits a bounded time,
+  attaches to an identical run, or is refused naming the holder.
 - Independent vendor tools may run concurrently where a repo has measured that they can; the per-vendor
   grouping bounds memory, not the box.
 - A full suite runs once per sha, on a producer ([the forge](forge.md)); you run a targeted measure.
