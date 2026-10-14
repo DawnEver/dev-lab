@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -448,3 +448,21 @@ def test_a_started_run_produces_the_part_it_claimed(home: Path) -> None:
     run = forgerun.start(Work('integrate/main', SHA, 'linux+matlab', 'mine', HERE, cluster=part), HERE)
     assert run.platform == 'linux+matlab'
     assert forgerun.start(Work('integrate/main', SHA, 'base', 'mine', HERE, cluster=part), HERE).platform == 'base'
+
+
+def test_an_orphan_array_is_named_by_its_own_job_id_never_its_pending_range(tmp_path: Path) -> None:
+    """``squeue -o %i`` spells a pending array ``7683032_[12-68%1]``; scancel refuses it and the tick died.
+
+    PLANTED CONTROL: the runner answers only the ``%F`` query; a ``%i`` query would get the range back.
+    """
+    asked: list[str] = []
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return '7683032 7683032 7683040' if command.endswith('-o %F') else '7683032_[12-68%1]'
+
+    machine: Any = SimpleNamespace(grants=[object()])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: runner)
+    run: Any = SimpleNamespace(sha='a' * 40)
+    assert cluster.orphans(run) == ['7683032', '7683040']
+    assert asked == [f'squeue -h --me -n run-{"a" * 12} -o %F']

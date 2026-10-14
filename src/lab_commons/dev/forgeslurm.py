@@ -69,9 +69,13 @@ class SlurmCluster:
         return [one['job_id'] for one in state['rounds']]
 
     def orphans(self, run: Run) -> list[str]:
-        """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>``)."""
+        """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>``), one id per array.
+
+        ``%F`` is the array's own job id: ``%i`` spells a pending array as ``7683032_[12-68%1]``, which
+        ``scancel`` refuses, and that refusal crashed every tick of a host holding one (Ada, 2026-10-14).
+        """
         shell = self.connect(self.machine.grants[0])
-        return shell(f'squeue -h --me -n run-{run.sha[:12]} -o %i', None).split()
+        return sorted(set(shell(f'squeue -h --me -n run-{run.sha[:12]} -o %F', None).split()))
 
     def submit(self, run: Run) -> list[str]:
         """Fetch, build, collect, plan and submit round 0 (:func:`lab_commons.hpc.run.submit_run`)."""
