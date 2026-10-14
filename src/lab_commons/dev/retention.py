@@ -26,6 +26,10 @@ overrides any of them, and an unknown key is refused. What each rule PROVES befo
   ``.log``/``.lock``) no kept run was built with: a run state names its build keys
   (``builds = {env, native}``, :func:`lab_commons.hpc.run.submit_run`). A kept run of an older state that
   names none makes both rules decide nothing -- an unprovable reference is a reference.
+* ``cargo-unreferenced`` -- a ``cargo-target/<native key>`` (:func:`lab_commons.hpc.builds.cargo_target`)
+  no kept run was built with, by the same proof. Anything else in ``cargo-target/`` (the retired shared
+  target's ``release/``, ``debug/``) names no key and goes too; a deploy's target is cache, and losing it
+  costs one full native build.
 * ``pack-not-in-flight``, ``slurm-out-finished`` (``~/slurm-*.out`` older than ``slurm_out_days``),
   ``log-over-size`` (rotated to ``.1``, the previous ``.1`` replaced), ``forge-tree-stale`` (a
   workstation's ``.claude/worktrees/forge-*`` its producer failed to remove, :mod:`lab_commons.dev.shatree`).
@@ -226,11 +230,12 @@ def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, young: t
     if not all(isinstance(b, dict) for b in builds):
         return []
     out = []
-    for kind, directory in (('env', ci / 'envs'), ('native', ci / 'native')):
+    # ``cargo-target/<native key>`` is lab_commons.hpc.builds.cargo_target, keyed like ``native/<key>``
+    for kind, where in (('env', 'envs'), ('native', 'native'), ('native', 'cargo-target')):
         named = {b.get(kind) for b in builds if isinstance(b, dict)}
         out += [
-            Doomed(e, f'{kind}-unreferenced')
-            for e in _entries(directory)
+            Doomed(e, f'{"cargo" if where == "cargo-target" else kind}-unreferenced')
+            for e in _entries(ci / where)
             if e.name.split('.')[0] not in named and _age(e, now) >= young
         ]
     return out

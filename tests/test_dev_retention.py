@@ -111,6 +111,17 @@ def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
     assert trees == {'runs', 'trees'}, 'a run goes with its tree'
 
 
+def test_a_cargo_target_goes_when_no_kept_run_names_its_native_key(home: Path) -> None:
+    """``cargo-target/<native key>`` follows its key; the retired shared target's dirs name no key."""
+    targets = home / 'ci' / 'cargo-target'
+    for name in ('n3', 'n4', 'n9', 'release'):
+        _dir(targets / name, OLD)
+    _touch(targets / 'n9.lock', OLD)
+    _dir(targets / 'n8', YOUNG)
+    doomed = {d.path.name: d.rule for d in _plan(home).doomed if d.path.parent == targets}
+    assert doomed == {'n9': 'cargo-unreferenced', 'n9.lock': 'cargo-unreferenced', 'release': 'cargo-unreferenced'}
+
+
 def test_harder_is_this_repos_carry_sources_oldest_first_never_in_flight(home: Path) -> None:
     plan = _plan(home)
     harder = [d.path.name for d in plan.harder if d.path.parent.name == 'runs']
