@@ -34,7 +34,16 @@ from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
 from lab_commons.hpc.progress import parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
-from lab_commons.hpc.records import fold, held_outcomes, read_record, read_streams, record_name, run_shas, write_record
+from lab_commons.hpc.records import (
+    files_made,
+    fold,
+    held_outcomes,
+    read_record,
+    read_streams,
+    record_name,
+    run_shas,
+    write_record,
+)
 from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
@@ -1052,6 +1061,20 @@ def test_a_gathered_record_plans_the_next_submit_of_its_repo_and_no_other(
     state = _submit(FakeRunCluster(), history=learned.learned('https://g/r.git'))
     assert state['rounds'][0]['unmeasured'] == []
     assert _submit(FakeRunCluster())['rounds'][0]['unmeasured'] == ['tests/a.py', 'tests/b.py']
+
+
+def test_a_runs_file_cost_is_one_count_of_its_tree_run_and_env_and_unread_is_unmeasured() -> None:
+    """The home's FILE quota is a supply (user ruling 2026-10-14): a run's file cost is learned like its memory."""
+    asked: list[str] = []
+
+    def home(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return '12345\n'
+
+    state = {'sha': SHA, 'builds': {'env': 'e1', 'native': 'n1'}}
+    assert files_made(home, state) == 12345.0
+    assert asked == [f'find "$HOME"/ci/trees/{SHA} "$HOME"/ci/runs/{SHA} "$HOME"/ci/envs/e1 -xdev 2>/dev/null | wc -l']
+    assert files_made(lambda *_a: '', state) == 0.0, 'PLANTED CONTROL: unread is 0, the prior prices it'
 
 
 def test_history_is_no_flag_and_its_spelling_is_refused_with_the_remedy(capsys: pytest.CaptureFixture[str]) -> None:

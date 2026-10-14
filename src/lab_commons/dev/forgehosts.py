@@ -122,6 +122,7 @@ class HostCard:
         engines = ''.join(f' + `{name}`' for name in sorted(self.provides))
         head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
+        head += f'\n\nstorage: {self.facts["storage"]}' if 'storage' in self.facts else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
         head += f'\n\npreempted: {", ".join(self.preempted)}' if self.preempted else ''
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
