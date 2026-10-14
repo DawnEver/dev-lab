@@ -12,6 +12,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import ClassVar
@@ -25,7 +26,7 @@ from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.platformparts import part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
-from lab_commons.hpc.builds import Builds
+from lab_commons.hpc.builds import Builds, cargo_target
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine
@@ -727,8 +728,19 @@ def test_env_and_native_builds_share_persistent_caches_and_cargo_is_locked() -> 
     builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', 'uv sync', env_key='e1', native_key='n1')
     script = build_script(RunSpec(sha=SHA, repo_url='u', builds=builds))
     assert ' UV_CACHE_DIR="$HOME"/ci/uv-cache' in script, 'one uv cache across every env key'
-    assert 'export CARGO_TARGET_DIR="$HOME"/ci/cargo-target' in script, 'a rust edit compiles only changed crates'
-    assert 'flock 8' in script, 'two native keys building at once take turns on the shared target'
+    assert 'export CARGO_TARGET_DIR="$HOME"/ci/cargo-target/n1\n' in script, "the target is the native key's own"
+    assert 'flock 8' in script, 'two runs building one native key take turns on its target'
+    other = build_script(RunSpec(sha=SHA, repo_url='u', builds=replace(builds, native_key='n2')))
+    assert 'CARGO_TARGET_DIR="$HOME"/ci/cargo-target/n2\n' in other
+    assert 'CARGO_TARGET_DIR="$HOME"/ci/cargo-target\n' not in script, 'PLANTED CONTROL: no account-wide target'
+
+
+def test_a_cargo_target_is_shared_only_by_identical_native_inputs() -> None:
+    """Cargo's freshness is mtime-based: a target shared across different sources reuses stale artifacts."""
+    assert cargo_target('n1') == cargo_target('n1')
+    assert cargo_target('n1') != cargo_target('n2')
+    with pytest.raises(ValueError, match='native key'):
+        cargo_target('')
 
 
 def test_prep_steps_are_timed_into_the_tree_log_and_the_record() -> None:
