@@ -72,7 +72,7 @@ from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body
-from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
+from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import part_refs
 from lab_commons.hpc.retired import RETIRED
@@ -84,6 +84,7 @@ __all__ = [
     'ORIGIN_HOST',
     'OVER_BUDGET',
     'candidates',
+    'head_login',
     'host_weights',
     'labelled_issues',
     'load_schedule',
@@ -228,6 +229,28 @@ def _trailer(root: Path, sha: str, key: str) -> str:
     return values[-1] if values else ''
 
 
+def head_login(client: Client, sha: str) -> str:
+    """The forge login commit *sha* resolves to (author, else committer); ``''`` when the forge resolves none.
+
+    The forge maps the commit's email to an account; git's own author text is never read as a login, so an
+    unresolved head carries no origin -- and no login priority -- rather than a guess. A credential refusal raises.
+    """
+    path = f'{client.repo}/commits/{sha}' if client.backend is GITHUB else f'{client.repo}/git/commits/{sha}'
+    try:
+        raw = client.call('GET', path)
+    except ForgeCallFailed as failed:
+        if failed.report.attempts and failed.report.attempts[-1].returncode in AUTH_REFUSED:
+            raise
+        return ''
+    if not isinstance(raw, Mapping):
+        return ''
+    for role in ('author', 'committer'):
+        who = raw.get(role)
+        if isinstance(who, Mapping) and who.get('login'):
+            return str(who['login'])
+    return ''
+
+
 def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -> tuple[Candidate, ...]:
     """*found* with each ``origin_host`` kept only where its FORGE-RECORDED login owns or is delegated that host.
 
@@ -350,26 +373,30 @@ def candidates(
     The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
     (:func:`lab_commons.dev.platformparts.part_refs`, the exclusion said through *say*) -- PRs and requests
-    :func:`optional`, a failure said through *say*.
+    :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
+    login the forge resolves for its commit (:func:`head_login`), ``''`` when it resolves none.
     """
-    found = [
-        Candidate(
-            repo,
-            ref,
-            sha,
-            platform,
-            kind,
-            _when(root, sha, now),
-            FULL,
-            labels=labels,
-            number=number,
-            origin=by,
-            origin_host=_trailer(root, sha, ORIGIN_HOST) if by else '',
-            session=ref,
-        )
-        for ref, sha, kind, labels, number, by in _part_refs(root, client, schedule, policy, say=say)
-        for platform in parts(sha)
-    ]
+    found = []
+    for ref, sha, kind, labels, number, pr_author in _part_refs(root, client, schedule, policy, say=say):
+        needed = parts(sha)
+        by = (pr_author or head_login(client, sha)) if needed else ''
+        found += [
+            Candidate(
+                repo,
+                ref,
+                sha,
+                platform,
+                kind,
+                _when(root, sha, now),
+                FULL,
+                labels=labels,
+                number=number,
+                origin=by,
+                origin_host=_trailer(root, sha, ORIGIN_HOST) if by else '',
+                session=ref,
+            )
+            for platform in needed
+        ]
     found += optional('request issues', lambda: _requests(root, client, repo, schedule, now), say)
     return tuple(one for one in found if _ref_served(root, one, say))
 

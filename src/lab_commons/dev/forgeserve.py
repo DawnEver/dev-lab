@@ -109,6 +109,7 @@ from lab_commons.compute import ledger
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.learned import learned_hold
 from lab_commons.compute.model import Resources, Supply
+from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
 from lab_commons.dev.branchprune import serve_prune
@@ -185,6 +186,7 @@ def serve(
     runs = list(forgerun.live(repo)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
     provides = provided(section('capabilities'))
+    priority = Priority.of(section(PRIORITY_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     name = card_host(machine, seat)
     cores = os.cpu_count() or 1
@@ -205,11 +207,12 @@ def serve(
             'reservations': tuple(one.reservation for one in book.entries if not one.refused),
             'usage': standing.usage if standing else None, 'weights': host_weights(table),
             'owners': {host_: (owner.login, *owner.delegates) for host_, owner in book.owners.items()},
+            'priority': priority,
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'provides': provides,
-            'delegates': reserve_table(section('reserve')).delegates,
+            'delegates': reserve_table(section('reserve')).delegates, 'priority': priority.row(),
         },
         leased=lambda now: [one.row() for one in book.live(now) if one.reservation.scope == name],
         produce=functools.partial(
