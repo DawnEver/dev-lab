@@ -30,6 +30,7 @@ from typing import Any
 from lab_commons.compute import ledger
 from lab_commons.compute.learned import learned
 from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank, starved
+from lab_commons.compute.priority import Priority
 from lab_commons.config import section
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
@@ -53,8 +54,9 @@ _STALE = '  STALE (no tick published: host down, cron line gone, or its forge cr
 __all__ = ['forge_queue', 'main', 'render', 'unadmitted', 'view']
 
 
-def _row(item: Ranked) -> dict[str, Any]:
+def _row(item: Ranked, favoured: Sequence[str] = ()) -> dict[str, Any]:
     return {
+        'priority': list(favoured),
         'candidate': item.candidate.key,
         'class': item.candidate.kind,
         'value': round(item.value, 2),
@@ -74,13 +76,18 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     cards = book.cards
     ranked, in_flight = forge_queue(root, client, cards, now=now, schedule=schedule)
     repo = repo_name(client)
+    live = [card for card in cards if not card.stale(now)]
+
+    def row(item: Ranked) -> dict[str, Any]:
+        return _row(item, [card.host for card in live if card.favours(item.candidate)])
+
     try:
         branches = [dataclasses.asdict(row) for row in listing(root, client, now=now)]
     except BranchSetNotDeclared as undeclared:  # the queue still reads; the branch rows say why they are absent
         branches = [{'action': 'unread', 'ref': '-', 'sha': '', 'rule': str(undeclared), 'idle_h': 0.0}]
     return {
         'now': now.isoformat(),
-        'queue': [_row(item) for item in ranked],
+        'queue': [row(item) for item in ranked],
         'branches': branches,
         'in_flight': in_flight,
         'hosts': [
@@ -96,7 +103,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
             for card in cards
         ],
         'reservations': [one.row() for one in book.entries if now < one.reservation.until],
-        'starved': [_row(item) for item in starved(ranked, {repo: schedule})],
+        'starved': [row(item) for item in starved(ranked, {repo: schedule})],
     }
 
 
@@ -201,11 +208,12 @@ def _amounts(resources: Mapping[str, float] | str) -> str:
 
 def render(view_: Mapping[str, Any]) -> list[str]:
     """The view as the lines a human reads."""
-    lines = [f'forge time {view_["now"]}', '', 'queue (highest score first):']
+    lines = [f'forge time {view_["now"]}', '', 'queue (highest score first; * = a host orders it first):']
     lines.append(f'  {"class":<12} {"value":>8} {"cost_h":>7} {"score":>9} {"wait_h":>7}  candidate -- blocked')
     lines += [
         f'  {r["class"]:<12} {r["value"]:>8.1f} {r["cost_h"]:>7.2f} {r["score"]:>9.2f} {r["wait_h"]:>7.1f}  '
         f'{r["candidate"]} -- {r["blocked"] or "claimable"}'
+        + (f'  * priority on {", ".join(r["priority"])}' if r.get('priority') else '')
         for r in view_['queue']
     ] or ['  (empty)']
     lines += ['', 'in flight:']
@@ -223,6 +231,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
                 f'supply {_amounts(h["supply"])}  holds {", ".join(h["holds"]) or "nothing"}'
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
+            *([f'    priority {Priority.of(h["priority"]).text()}'] if any(h.get('priority', {}).values()) else []),
             *([f'    PREEMPTED {", ".join(h["preempted"])}'] if h.get('preempted') else []),
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )

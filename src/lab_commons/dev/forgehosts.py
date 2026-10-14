@@ -41,7 +41,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.compute.model import Ranked, Supply
+from lab_commons.compute.model import Candidate, Ranked, Supply
+from lab_commons.compute.priority import Priority
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Claim, Work, forge_now, serving, this_machine, this_seat
@@ -105,6 +106,11 @@ class HostCard:
     provides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # machine-file [capabilities]
     delegates: tuple[str, ...] = ()  # the logins this host's user lets reserve it (machine-file [reserve])
     preempted: tuple[str, ...] = ()  # this tick's: each loan a reservation holder displaced, and the lease
+    priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
+
+    def favours(self, candidate: Candidate) -> bool:
+        """Whether this host's declared ``[priority]`` orders *candidate* first."""
+        return Priority.of(self.priority).matches(candidate)
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -118,6 +124,7 @@ class HostCard:
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
         head += f'\n\npreempted: {", ".join(self.preempted)}' if self.preempted else ''
+        head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
@@ -260,6 +267,7 @@ def publish_card(
     running: Sequence[str] = (),
     reservations: Sequence[Mapping[str, Any]] = (),
     preempted: Sequence[str] = (),
+    priority: Mapping[str, Sequence[str]] | None = None,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
@@ -267,7 +275,8 @@ def publish_card(
     published while they run. *delegates* are the logins this host's user lets reserve it
     (:mod:`lab_commons.compute.ledger`). *supply* is what the tick admitted against (default: the
     cluster standing's), *running* what else runs here, *reservations* the live leases on this host,
-    *preempted* the loans this tick displaced. A hold on loan says ``on_loan=<lease id>``.
+    *preempted* the loans this tick displaced, *priority* the subjects this host orders first.
+    A hold on loan says ``on_loan=<lease id>``.
     """
     progress = progress or {}
     built = client(root)
@@ -299,6 +308,7 @@ def publish_card(
             provides=dict(provides or {}),
             delegates=tuple(delegates),
             preempted=tuple(preempted),
+            priority=dict(priority or {}),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:

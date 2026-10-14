@@ -34,6 +34,9 @@ A RESERVATION LENDS (:mod:`lab_commons.compute.admission`): a job may be claimed
 idle part (its claim says ``on_loan=<id>``), and a lease holder's job that loans block PREEMPTS them --
 :attr:`TickReport.preempt`, for the serve loop to stop and release. A job a live lease here is for ranks first.
 
+PRIORITY IS ORDERING (:mod:`lab_commons.compute.priority`): a job this host's ``[priority]`` names is
+considered before every other; it takes no supply and preempts nothing.
+
 A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
 wall (:class:`lab_commons.proccpu.TreeCpu`), never capped to the box: a job that kept eight cores busy does
 not fit in four. A BOX part ASKS one core and its memory -- its producer sizes itself to the cores it
@@ -67,6 +70,8 @@ from lab_commons.compute.model import (
     rank,
     submitted,
 )
+from lab_commons.compute.priority import PRIORITY_TABLE, Priority
+from lab_commons.config import section
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
     NoCredential,
@@ -138,6 +143,7 @@ def tick(
     probe: Callable[[Path], str] = remote_problem,
     busy: Iterable[str] = (),
     owners: Mapping[str, Collection[str]] | None = None,
+    priority: Priority | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -154,7 +160,9 @@ def tick(
     all present waits ``not admitted: lacking <resource>``. *busy* are the shas a producer
     here is judging now: their trees are taken, so no part of them is claimed. *owners* is who may vouch
     for each host card (host -> its login and delegates): a job's ORIGIN host stands only where its
-    forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`).
+    forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`). *priority* is this
+    host's declared ordering (default: its machine file's ``[priority]``, :mod:`lab_commons.compute.priority`):
+    a matching candidate is considered before every other, and nothing is set aside for it.
     """
     lines: list[str] = []
     try:
@@ -203,7 +211,9 @@ def tick(
         reservations=tuple(reservations), taken=list(running), trees=set(busy),
         store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip
-    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, reserved=taken.reserved)
+    ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights, reserved=taken.reserved,
+        priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,
+    )  # fmt: skip
     for item in ranked:
         taken.consider(item)
     work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
