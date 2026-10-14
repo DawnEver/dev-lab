@@ -64,6 +64,14 @@ def test_a_home_at_its_file_limit_refuses_admission_naming_files_and_the_numbers
     assert admit(JOB, demand, _supply(AT_BYTE_LIMIT), now=NOW), 'PLANTED CONTROL: 1.5 M files of headroom admits'
 
 
+def test_a_supply_that_states_no_files_refuses_nothing_on_files() -> None:
+    """A box, or an account whose quota went unread, lists no ``files``: the prior must not make it unclaimable."""
+    demand = learned.learned_demand(REPO, cluster=True)(frozenset())
+    full = _supply(AT_FILE_LIMIT)
+    assert admit(JOB, demand, Supply(full.scope, full.resources, full.present - {'files'}), now=NOW)
+    assert not admit(JOB, demand, full, now=NOW), 'PLANTED CONTROL: stated at 0, it refuses'
+
+
 def test_a_measured_file_cost_replaces_the_prior() -> None:
     learned.record_run(REPO, learned.SLURM, (), learned.Run(0.0, 1.0, 1.0, files=1200.0))
     assert learned.learned_demand(REPO, cluster=True)(frozenset())['files'] == 1200.0
