@@ -126,8 +126,9 @@ def test_the_shipped_planted_control_passes(tmp_path: Path) -> None:
 #: Undeclared origin branches awaiting a remote delete. The six merged lanes pinned here were deleted
 #: on 2026-10-04, so the set is empty. TWO-SIDED: a new undeclared branch reds, and so does this pin
 #: outliving a deleted branch -- shrink it in the change that deletes one.
-#: ``feat/hpc`` (2026-10-08): the Slurm lane, deleted from origin once it is merged into ``main``.
-_PENDING_DELETION: frozenset[str] = frozenset({'feat/hpc'})
+#: ``feat/hpc`` (2026-10-08) left origin by 2026-10-14; the merged ``lane/compute-*`` and
+#: ``lane/request-producer`` were deleted on 2026-10-14. Nothing is pending.
+_PENDING_DELETION: frozenset[str] = frozenset()
 
 
 @pytest.mark.dev_checkout
