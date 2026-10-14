@@ -29,17 +29,16 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.box import KILLED, REFUSED
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
 __all__ = [
-    'PREEMPTED',
     'PRODUCING_VAR',
-    'REQUEUED',
     'RETRYABLE',
     'ProducerExit',
     'full_suite_refusal',
-    'preempted',
     'producing',
     'release_reason',
 ]
@@ -76,12 +75,8 @@ class ProducerExit(IntEnum):
     UNREACHABLE = 4
 
 
-#: The description prefix of a released claim the next tick may claim again (:func:`release_reason`).
+#: The description prefix of a released claim the next tick may claim again (:func:`release_reason`): OPEN, not settled.
 RETRYABLE: Final = 'released: unreachable'
-#: The release of a loan a reservation holder PREEMPTED: open again, re-queued like :data:`RETRYABLE`.
-PREEMPTED: Final = 'released: preempted by reservation'
-#: The release prefixes that leave a part OPEN (claimable again), not settled.
-REQUEUED: Final = (RETRYABLE, PREEMPTED)
 
 
 def release_reason(code: int) -> str:
@@ -92,10 +87,7 @@ def release_reason(code: int) -> str:
         ProducerExit.USAGE: 'released: producer refused its argv (exit 2)',
         ProducerExit.INCONCLUSIVE: 'released: inconclusive (exit 3) -- no part',
         ProducerExit.UNREACHABLE: f'{RETRYABLE} (exit 4) -- infrastructure did not answer; retried next tick',
+        REFUSED: f'{RETRYABLE} (exit {REFUSED}) -- the box had no room for its declared demand; retried next tick',
+        KILLED: f'released: the box killed it past its declared memory or wall (exit {KILLED})',
     }
     return reasons.get(code, f'released: producer crashed (exit {code})')
-
-
-def preempted(lease_id: int) -> str:
-    """The ``error`` description releasing a loan the holder of reservation *lease_id* preempted (re-queued)."""
-    return f'{PREEMPTED} {lease_id}'

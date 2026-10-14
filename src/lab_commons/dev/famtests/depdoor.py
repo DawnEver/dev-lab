@@ -32,8 +32,8 @@ holder on that seat and, on the other side, on an unrelated environment that mus
 
 A *root* BULLET STOOD HERE UNTIL 2026-09-19 AND NAMED A KEYWORD NO FUNCTION IN THIS MODULE TAKES.
 None of the seven ``assert_*`` bodies has ever had a ``root`` parameter; the argument belongs to
-:func:`lab_commons.dev.famtests.boxseat.assert_the_rendezvous_is_outside_this_repository`, whose
-own docstring carries the same sentence verbatim -- so the line was a paragraph that travelled
+a famtest of the box seat since retired, whose own docstring carried the same sentence verbatim --
+so the line was a paragraph that travelled
 between two modules rather than a claim anybody checked. It cost no red, because a docstring
 naming an argument that does not exist raises nothing; a consumer lane found it by trying to PASS
 it. This is the dominant defect in this codebase's own words -- a declaration asserting a property

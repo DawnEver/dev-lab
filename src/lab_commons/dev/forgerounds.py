@@ -1,18 +1,13 @@
 """SERVE'S ROUNDS -- claim while producing: admit, claim, start, wait; again while a local producer lives.
 
 Extracted from :mod:`lab_commons.dev.forgeserve` (its module docstring states the sequence). A round reads
-what this host admits against NOW -- the box probe less its own reserve, with what this serve's own
-producers were last measured using given back (the probe reads them busy, and they are counted RUNNING at
-their demand, so they count once) -- runs :func:`lab_commons.dev.forgetick.tick` with every live producer
-as running demand and its sha as busy, and starts a producer thread for each local part it claimed
-(:class:`Producing`, each one :func:`lab_commons.dev.forgeproduce.produce`). The next round comes one tick
-period later or when a producer ends; none comes after a producer was STOPPED on purpose
-(:mod:`lab_commons.dev.stoprun`). Every producer thread is joined before the rounds return or raise.
-
-A ROUND PREEMPTS WHAT A HOLDER NEEDS (:mod:`lab_commons.dev.forgelend`). Every run here is counted with the
-lease it borrows from; a loan the round's tick says a reservation holder preempts is withdrawn when it is a
-cluster run, and told to yield when it is a local producer -- which stops it at its next wake and releases it
-``preempted by reservation <id>``, open again.
+what this host admits against NOW (:func:`supply_now`: a cluster's standing, else what the box ledger can
+still admit -- every producer this serve started and every interactive run is a claim on it already), runs
+:func:`lab_commons.dev.forgetick.tick` with each cluster run in flight as running demand and every live
+producer's sha as busy, and starts a producer thread for each local part it claimed (:class:`Producing`,
+each one :func:`lab_commons.dev.forgeproduce.produce`). The next round comes one tick period later or when a
+producer ends; none comes after a producer was STOPPED on purpose (:mod:`lab_commons.dev.stoprun`). Every
+producer thread is joined before the rounds return or raise.
 """
 
 from __future__ import annotations
@@ -22,26 +17,24 @@ import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.compute.admission import Held
-from lab_commons.compute.model import Demand, Resources, Supply, total
+from lab_commons.box import Capacity, Holding
+from lab_commons.compute import probe
+from lab_commons.compute.model import Demand, Supply
 from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import AUTH, Alarm
-from lab_commons.dev.forgeclaim import Work, forge_now
+from lab_commons.dev.forgeclaim import Work
 from lab_commons.dev.forgehosts import publish_card
-from lab_commons.dev.forgelend import held_part, held_run, preempt_runs
 from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgetick import TickReport, tick
 from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.resources import CPU, MEMORY, Holder
+from lab_commons.hpc.needsets import needs_of
 
-__all__ = ['Producing', 'Rounds', 'locked_fetch', 'seat_running', 'supply_now']
-
-_GB = 1024.0**3
+__all__ = ['Producing', 'Rounds', 'locked_fetch', 'supply_now']
 
 
 def locked_fetch(fetch: Callable[[Path], None]) -> Callable[[Path], None]:
@@ -60,7 +53,8 @@ class Rounds:
     """Serve's ROUNDS (the module docstring): admit and claim, start what was claimed, wait; while a producer lives.
 
     *ticking* and *carding* are the keywords every :func:`~lab_commons.dev.forgetick.tick` and every host card
-    share; *supplied* is :func:`supply_now` given what this serve's producers use; *runs* the cluster runs here.
+    share; *supplied* is :func:`supply_now` with its host bound, *holding* the box ledger's claims now (none on a
+    cluster); *runs* the cluster runs here, each running at *sized* of its need-set.
     """
 
     root: Path
@@ -69,13 +63,11 @@ class Rounds:
     runs: list[forgerun.Run]
     slurm: forgerun.Cluster | None
     say: Callable[[str], None]
-    cores: int
     sized: Callable[[frozenset[str]], Demand]
-    supplied: Callable[[Resources], Supply]
-    seated: Callable[[], tuple[Holder, ...]]
+    supplied: Callable[[Sequence[Holding]], Supply]
+    holding: Callable[[], Sequence[Holding]]
     ticking: Mapping[str, Any]
     carding: Mapping[str, Any]
-    leased: Callable[[datetime], list[Mapping[str, Any]]]
     produce: Callable[..., Produced]
     latest: dict[str, Any] = dataclasses.field(default_factory=dict)  # the last round: what the card shows
 
@@ -99,29 +91,23 @@ class Rounds:
 
     def one(self) -> TickReport:
         """One round: what this host admits against now, the tick, and a start for everything it claimed."""
-        supply = self.supplied(self.producing.using())
-        seated = self.seated()
-        running = [
-            *(held_run(run, self.sized) for run in self.runs),
-            *(Held(one) for one in seat_running(seated, cores=self.cores)),
-            *self.producing.running(self.sized),
-        ]
+        held = tuple(self.holding())
+        supply = self.supplied(held)
+        running = [self.sized(needs_of(run.platform)) for run in self.runs]
         ticked = _tick(
             self.repo, self.root, self.alarm, **self.ticking,
             supply=supply, running=running, busy=self.producing.shas(),
         )  # fmt: skip
         client = self.ticking['client'](self.root)
-        self.latest.update(ticked=ticked, supply=supply, seated=seated, now=forge_now(client))
+        self.latest.update(ticked=ticked, supply=supply, held=held)
         for line in ticked.lines:
             self.say(line)
         if self.slurm is not None:
             self.runs = forgerun.supersede_moved(self.root, self.runs, client=client, cluster=self.slurm, say=self.say)
-            self.runs = preempt_runs(self.runs, ticked.preempt, client=client, cluster=self.slurm, say=self.say)
         local = [item for item in ticked.claimed if item.cluster is None or item.holder is None]
         self.runs += [forgerun.start(item, item.holder) for item in ticked.claimed if item not in local and item.holder]
         for item in local:
             self.producing.start(item)
-        self.producing.preempt(ticked.preempt)
         return ticked
 
     def card(self, claimed: Sequence[Work], progress: Mapping[tuple[str, str], str] | None = None) -> None:
@@ -129,31 +115,23 @@ class Rounds:
         ticked = self.latest['ticked']
         publish_card(
             self.root, ticked.queue, claimed, **self.carding, artefacts=ticked.artefacts,
-            supply=self.latest['supply'], reservations=self.leased(self.latest['now']), progress=progress,
+            supply=self.latest['supply'], progress=progress,
             running=(*(f'{run.sha[:12]} {run.platform}' for run in self.runs),
-                     *(one.describe() for one in self.latest['seated'])),
-            preempted=[f'{one.label} by reservation {one.on_loan}' for one in ticked.preempt],
+                     *(f'{one.what} (pid {one.pid})' for one in self.latest['held'])),
         )  # fmt: skip
 
 
 def supply_now(
-    given_back: Resources,
+    held: Sequence[Holding],
     *,
     name: str,
     standing: forgerun.Standing | None,
-    box_room: Callable[..., Supply],
-    provides: Mapping[str, Any],
-    reserve: Callable[[], Resources],
+    capacity: Callable[[], Capacity] = Capacity.read,
 ) -> Supply:
-    """What this round admits against: the cluster standing, else the box's probe less its own reserve.
-
-    *given_back* is what this serve's own producers were last measured using: the probe reads it busy, and
-    they are counted at their demand as RUNNING, so it is given back here to be counted once.
-    """
+    """What this round admits against: the cluster standing, else the box's capacity less its ledger's claims *held*."""
     if standing is not None:
         return dataclasses.replace(standing.supply, scope=name)
-    probed = box_room(name, capabilities=provides)
-    return Supply(name, probed.resources - reserve() + given_back, probed.present)
+    return probe.box(name, capacity=capacity(), holdings=held)
 
 
 def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
@@ -167,20 +145,12 @@ def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: obj
         raise
 
 
-def seat_running(holders: Sequence[Holder], *, cores: int) -> list[Demand]:
-    """Each holder of the box seat as running demand: the cores and memory it declared, else the whole box."""
-    return [
-        Demand(cpu=float(one.demands.get(CPU.name) or cores), mem_gb=one.demands.get(MEMORY.name, 0) / _GB)
-        for one in holders
-    ]
-
-
 class Producing:
     """The local producers this serve runs, one thread each (the module docstring): started, measured, joined.
 
     *produce* is :func:`lab_commons.dev.forgeproduce.produce` with everything but the part bound; each call
-    is given its own *beat* (publishing the card with EVERY live part's progress) and *watch* (what its
-    tree uses now). Results are kept in start order.
+    is given its own *beat* (publishing the card with EVERY live part's progress). Results are kept in start
+    order.
     """
 
     def __init__(self, produce: Callable[..., Produced], *, card: Callable[..., None]) -> None:
@@ -190,11 +160,9 @@ class Producing:
         self._threads: list[threading.Thread] = []
         self._order: list[Work] = []
         self._live: dict[tuple[str, str], Work] = {}
-        self._using: dict[tuple[str, str], Resources] = {}
         self._progress: dict[tuple[str, str], str] = {}
         self._done: dict[tuple[str, str], Produced] = {}
         self._failed: list[BaseException] = []
-        self._yielding: dict[tuple[str, str], int] = {}  # a loan a holder preempts -> the lease
 
     def start(self, item: Work) -> None:
         """Produce *item* in a thread of its own."""
@@ -213,17 +181,9 @@ class Producing:
                 self._progress[key] = f'producing {elapsed.total_seconds() // 60:.0f}m'
                 self._card(list(self._live.values()), progress=dict(self._progress))
 
-        def watch(using: Resources) -> None:
-            with self._lock:
-                self._using[key] = using
-
-        def yields() -> int:
-            with self._lock:
-                return self._yielding.get(key, 0)
-
         produced: Produced | None = None
         try:
-            produced = self._produce(item, beat=beat, watch=watch, yields=yields)
+            produced = self._produce(item, beat=beat)
         finally:  # a producer that raised hands its exception to join, which raises it in serve's own thread
             with self._lock:
                 if produced is None:
@@ -231,7 +191,6 @@ class Producing:
                 else:
                     self._done[key] = produced
                 self._live.pop(key, None)
-                self._using.pop(key, None)
                 self._progress.pop(key, None)
                 self._lock.notify_all()
 
@@ -239,23 +198,6 @@ class Producing:
         """The shas a live producer is judging: their trees are taken."""
         with self._lock:
             return frozenset(sha for sha, _platform in self._live)
-
-    def running(self, sized: Callable[[frozenset[str]], Demand]) -> list[Held]:
-        """Each live producer at what it holds (:func:`~lab_commons.compute.learned.learned_hold`), and its lease."""
-        with self._lock:
-            return [held_part(item, sized) for item in self._live.values()]
-
-    def preempt(self, loans: Sequence[Held]) -> None:
-        """Tell each live producer among *loans* to yield to the holder of the lease it borrows from."""
-        with self._lock:
-            for one in loans:
-                if one.job is not None and (one.job.sha, one.job.producer) in self._live:
-                    self._yielding[one.job.sha, one.job.producer] = one.on_loan
-
-    def using(self) -> Resources:
-        """What the live producers were last measured using, summed."""
-        with self._lock:
-            return total(self._using.values())
 
     def stopped(self) -> bool:
         """Whether a producer was stopped on purpose (:mod:`lab_commons.dev.stoprun`)."""

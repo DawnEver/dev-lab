@@ -8,7 +8,7 @@ somewhere harmless. Its red is "the grader stopped grading", which cannot be pla
 replacing the thing under test. What IS driven here instead is the layer under it:
 :func:`~lab_commons.dev.famtests.countpins.count_pins` is called directly with EQUALITY on all seven
 planted shapes and under two different vocabularies, which is the same claim without a stub in it.
-``boxseat`` and ``venvspelling`` set that precedent in this package.
+``venvspelling`` set that precedent in this package.
 
 THIS REPO TAKES THE READING AND NOT THE VERDICT, and the bottom of this file says why with the
 measurement that decided it. A body that has only ever run on a planted ``tmp_path`` tree is a

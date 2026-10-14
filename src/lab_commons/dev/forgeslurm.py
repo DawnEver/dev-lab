@@ -111,7 +111,7 @@ class SlurmCluster:
     def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[str, str, str]]:
         """The outcomes *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
 
-        Its own earlier run is one stopped before it ended -- a loan a reservation holder preempted -- whose
+        Its own earlier run is one stopped before it ended -- released retryable and claimed again -- whose
         finished shards stand as they are (:func:`lab_commons.dev.forgecarry.carry_from`).
 
         A run of another part ran other ids; a run of another env is never read -- the env is the one

@@ -7,11 +7,8 @@ refused, a request name it does not declare, or a producer NO host kind can buil
 commit's own context once (:func:`lab_commons.dev.forgeclaim.refuse`) and never queued; a table this kit
 does not know is the serving host's defect, so that sha waits. Any other job is blocked by this host's
 kind lacking its producer, its sha's tree being busy here, its ref's budget, or admission -- and otherwise
-claimed, its demand then counted as running for every later
-candidate -- ON LOAN from a reservation when it borrows one's idle part, and DISPLACING the loans it
-preempts when it holds one (:func:`lab_commons.compute.admission.admit`); those loans are collected
-in :attr:`ClaimPass.preempt` for the serve loop to stop and release.
-:meth:`ClaimPass.reserved` is what ranks a lease holder's job first.
+claimed, its demand then counted as running for every later candidate
+(:func:`lab_commons.compute.admission.admit`).
 """
 
 from __future__ import annotations
@@ -22,8 +19,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from lab_commons.compute.admission import Admission, Held, admit
-from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Reservation, Resources, Schedule, Supply
+from lab_commons.compute.admission import Admission, admit
+from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
 from lab_commons.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
@@ -51,9 +48,7 @@ class ClaimPass:
     repo: str
     supply: Supply
     size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
-    hold: Callable[[Candidate, frozenset[str]], Mapping[str, float]]  # what a claim holds once running
-    reservations: tuple[Reservation, ...] = ()
-    taken: list[Held] = dataclasses.field(default_factory=list)  # what runs, then each claim
+    taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
     trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
@@ -64,7 +59,6 @@ class ClaimPass:
     refused: list[str] = dataclasses.field(default_factory=list)
     queue: list[Ranked] = dataclasses.field(default_factory=list)
     pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
-    preempt: list[Held] = dataclasses.field(default_factory=list)  # loans a holder's claim here displaces
     admitted: dict[str, tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
     requests: dict[tuple[str, str], Declared] = dataclasses.field(default_factory=dict)  # (sha, name) -> it
 
@@ -102,14 +96,6 @@ class ClaimPass:
         except (UndeclaredRequest, OutdatedKit):
             return False
 
-    def reserved(self, wanted: Candidate) -> bool:
-        """Whether a live lease on this host is for *wanted*: it then ranks first here."""
-        try:
-            job = self._job(wanted, self._needs(wanted))
-        except (UndeclaredRequest, ValueError):  # refused by name when it is considered
-            return False
-        return any(one.holds_for(job, self.supply.scope, self.now) for one in self.reservations)
-
     def _declared(self, wanted: Candidate) -> Declared:
         """A request's producer as its sha declares it, read once a tick; raises :class:`UndeclaredRequest`."""
         key = (wanted.sha, wanted.producer)
@@ -123,7 +109,7 @@ class ClaimPass:
 
     def _job(self, wanted: Candidate, needed: frozenset[str]) -> Job:
         producer = wanted.producer if wanted.kind == REQUEST else wanted.platform
-        return Job(self.repo, wanted.sha, producer, needed, wanted.origin, wanted.origin_host, wanted.session)
+        return Job(self.repo, wanted.sha, producer, needed)
 
     def _own(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
         """*one* with what produces it here, and why not (``''``: it is producible here).
@@ -173,32 +159,20 @@ class ClaimPass:
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
         job = self._job(wanted, needed)
-        verdict = admit(
-            job,
-            self.size(wanted, needed),
-            self.supply,
-            reservations=self.reservations,
-            running=self.taken,
-            now=self.now,
-        )
+        verdict = admit(job, self.size(wanted, needed), self.supply, running=self.taken)
         self.admitted[wanted.key] = (job, verdict)
         return '' if verdict else f'{NOT_ADMITTED}: {verdict.why}'
 
-    def _took(self, wanted: Candidate, needed: frozenset[str]) -> Admission:
-        """Count *wanted*'s claim as running -- on loan, or displacing the loans it preempts -- and say how."""
-        job, verdict = self.admitted[wanted.key]
-        self.preempt += verdict.preempt
-        self.taken = [one for one in self.taken if one not in verdict.preempt]
-        self.taken.append(Held(Resources(self.hold(wanted, needed)), job, verdict.on_loan, self.now))
-        return verdict
+    def _took(self, wanted: Candidate, needed: frozenset[str]) -> None:
+        """Count *wanted*'s claim as running at its demand."""
+        self.taken.append(Resources(self.size(wanted, needed)))
 
     def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:
         if one.cluster is not None and one.cluster.outputs and self.store_why:
             why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
             self.refused.append(f'{one.context}: not claimed -- {why}')
             return one, why
-        _, verdict = self.admitted[wanted.key]
-        one = claim(self.client, one, dataclasses.replace(self.me, on_loan=verdict.on_loan))
+        one = claim(self.client, dataclasses.replace(one, demand=self.size(wanted, needed)), self.me)
         if one.state == MINE:
             self.claimed.append(one)
             self._took(wanted, needed)

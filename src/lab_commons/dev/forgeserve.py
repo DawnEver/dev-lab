@@ -25,22 +25,13 @@ run in any process without it.
 
 WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read here before it:
 
-* SUPPLY -- a cluster account's standing (:mod:`lab_commons.dev.forgeslurm`); a box's probe
-  (:func:`lab_commons.compute.probe.box`) less its user's OWN RESERVE (the machine file's ``[reserve]``
-  margins, :func:`lab_commons.box.machine.own_reserve`; the probe already reads what is busy now, so
-  what the user uses is not subtracted twice). Named as the card is (:func:`~lab_commons.dev.forgehosts.card_host`),
-  so a lease on this host is a lease on this supply.
-* RESERVATIONS -- every authorised lease on the ledger (:func:`lab_commons.compute.ledger.read`); a lease
-  on another scope, expired, or for the job keeps nothing from it; a live one LENDS its idle part, and
-  each round withdraws or stops a loan a holder preempts (:mod:`lab_commons.dev.forgerounds`).
-* RUNNING -- each cluster run in flight here, at its learned demand; each LOCAL PRODUCER this serve is
-  running, at what it HOLDS (:func:`~lab_commons.compute.learned.learned_hold`: the cores it kept busy, else
-  every core) -- and since the probe already reads what it busies, what it was last
-  measured using (:func:`lab_commons.dev.forgeproduce.produce`'s *watch*) is given back to the supply,
-  so it is counted once; and each INTERACTIVE run holding the
-  box seat (:class:`~lab_commons.dev.cpuseat.CpuSeat`, a developer's ``gate measure`` or ``verify``), at
-  what it declared, else the whole box. The seat no longer decides what serve claims: it only makes an
-  interactive run visible to it. A producer serve spawned takes no box seat (:mod:`lab_commons.dev.verify`).
+* SUPPLY -- a cluster account's standing (:mod:`lab_commons.dev.forgeslurm`); on a box, what its ONE
+  ledger can still admit (:func:`lab_commons.dev.forgerounds.supply_now`): the box's capacity after the
+  machine file's ``[reserve]`` margins less every claim on it -- each producer this serve runs (it runs in
+  the box at its declared demand, :mod:`lab_commons.dev.forgeproduce`) and each interactive ``verify``
+  (:mod:`lab_commons.dev.verify`) alike. Named as the card is (:func:`~lab_commons.dev.forgehosts.card_host`).
+* RUNNING -- each cluster run in flight here, at its learned demand
+  (:func:`~lab_commons.compute.learned.cluster_demand`).
 
 SEVERAL LOCAL PARTS AT ONCE, ONE THREAD EACH, and why that shape: ``produce`` already owns one child --
 its stream, its beats, its renewals, its release -- and is blocking, so N admitted parts are N calls of
@@ -95,7 +86,6 @@ from __future__ import annotations
 import argparse
 import functools
 import json
-import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -104,20 +94,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box.machine import own_reserve, provided, reserve_table
-from lab_commons.compute import ledger
-from lab_commons.compute import probe as supply_probe
-from lab_commons.compute.learned import learned_hold
-from lab_commons.compute.model import Resources, Supply
+from lab_commons.box import Holding, holdings
+from lab_commons.box.machine import provided
+from lab_commons.compute.learned import cluster_demand
+from lab_commons.compute.model import Supply
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
 from lab_commons.dev.branchprune import serve_prune
-from lab_commons.dev.cpuseat import CpuSeat
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, STORAGE, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
-from lab_commons.dev.forgehosts import HostCard, card_host, recording
+from lab_commons.dev.forgehosts import HostCard, card_host, card_owners, read_cards, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
@@ -133,12 +121,8 @@ from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
-from lab_commons.proc import system_memory
-from lab_commons.resources import Holder
 
-__all__ = ['ServeReport', 'box_reserve', 'main', 'raise_once', 'serve']
-
-_GB = 1024.0**3
+__all__ = ['ServeReport', 'main', 'raise_once', 'serve']
 
 
 @dataclass(frozen=True)
@@ -167,17 +151,15 @@ def serve(
     alarm: Callable[[Alarm], object] = sound,
     renew_s: float | None = None,
     host: str | None = None,
-    box_room: Callable[..., Supply] = supply_probe.box,
     table: Mapping[str, Any] | None = None,
-    reserve: Callable[[], Resources] | None = None,
-    holders: Callable[[], Sequence[Holder]] = CpuSeat.holders,
-    read_ledger: Callable[[Client], ledger.Ledger] = ledger.read,
+    supplied: Callable[..., Supply] = supply_now,
+    holding: Callable[[], Sequence[Holding]] = holdings,
     retain: Callable[..., retention.Outcome | None] = retention.serve_pass,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
-    *reserve* is this box's own reserve (default: :func:`box_reserve`), *holders* who holds the box seat
-    now, *read_ledger* the reservations' reader, *retain* the retention pass -- each a seam a test fakes.
+    *supplied* is what a round admits against (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding*
+    the box ledger's claims now, *retain* the retention pass -- each a seam a test fakes.
     """
     repo = origin_url(root)
     table = section('schedule') if table is None else table
@@ -189,32 +171,23 @@ def serve(
     priority = Priority.of(section(PRIORITY_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     name = card_host(machine, seat)
-    cores = os.cpu_count() or 1
-    book = read_ledger(client(root))
+    cards = read_cards(client(root))
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     beat_s = float(table.get('tick_minutes', 5)) * 60
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
     host_rounds = Rounds(
-        root, repo, alarm, runs, slurm=slurm, say=say, cores=cores,
-        sized=learned_hold(repo, cluster=seat is not None, cores=cores),
-        supplied=functools.partial(
-            supply_now, name=name, standing=standing, box_room=box_room, provides=provides,
-            reserve=reserve or box_reserve,
-        ),
-        seated=(lambda: ()) if seat is not None else lambda: tuple(holders()),
+        root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo),
+        supplied=functools.partial(supplied, name=name, standing=standing),
+        holding=(lambda: ()) if seat is not None else holding,
         ticking={
             'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
-            'reservations': tuple(one.reservation for one in book.entries if not one.refused),
             'usage': standing.usage if standing else None, 'weights': host_weights(table),
-            'owners': {host_: (owner.login, *owner.delegates) for host_, owner in book.owners.items()},
-            'priority': priority,
+            'owners': card_owners(cards), 'priority': priority,
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
-            'say': say, 'alarms': raised, 'provides': provides,
-            'delegates': reserve_table(section('reserve')).delegates, 'priority': priority.row(),
+            'say': say, 'alarms': raised, 'provides': provides, 'priority': priority.row(),
         },
-        leased=lambda now: [one.row() for one in book.live(now) if one.reservation.scope == name],
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
             fetch=fetched, beat_s=beat_s,
@@ -234,7 +207,7 @@ def serve(
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
         alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
-    _starved(root, repo, client(root), book.cards, say=say, alarm=alarm)
+    _starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
     _prompt(root, repo, client(root), say=say, alarm=alarm)
     broken = tuple(
@@ -293,16 +266,6 @@ def _prompt(
         raise_once(built, INTEGRATION, found, alarm=alarm)
     except ForgeCallFailed as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
-
-
-def box_reserve(table: Mapping[str, Any] | None = None) -> Resources:
-    """The own reserve of this box: the machine file's ``[reserve]`` margins over its cores and memory.
-
-    What the box's user is using now is not added: the probe's supply already reads it as busy.
-    """
-    memory = system_memory()
-    total = Resources(cpu=os.cpu_count() or 1, mem_gb=memory.total_bytes / _GB if memory else 0.0)
-    return Resources(own_reserve(total, {}, reserve_table(section('reserve') if table is None else table)))
 
 
 def _tidy(

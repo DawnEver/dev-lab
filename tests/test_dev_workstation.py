@@ -159,19 +159,13 @@ def test_a_dry_run_reads_but_touches_nothing_and_prints_the_diff(box: Box, capsy
 
 
 def test_unrelated_tables_and_comments_are_kept(box: Box) -> None:
-    hand = '# this box\n[[hpc.grant]]\nuser = "me"  # mine\n\n[reserve]\ndelegates = ["bob"]  # ruled\n'
+    hand = '# this box\n[[hpc.grant]]\nuser = "me"  # mine\n\n[reserve]\ncpu_margin = 2  # ruled\n'
     box.machine.parent.mkdir(parents=True)
     box.machine.write_text(hand, encoding='utf-8')
-    assert box.deploy('--delegates', 'bob') == 0
+    assert box.deploy() == 0
     text = box.machine.read_text(encoding='utf-8')
     assert text.startswith('# this box\n[[hpc.grant]]\nuser = "me"  # mine\n')
-    assert 'delegates = ["bob"]  # ruled' in text, 'an equal value keeps its line'
-
-
-def test_delegates_are_written_as_who_else_may_reserve_this_box(box: Box) -> None:
-    assert box.deploy('--delegates', 'bob, carol,bob') == 0
-    declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    assert declared['reserve'] == {'delegates': ['bob', 'carol']}
+    assert 'cpu_margin = 2  # ruled' in text, 'an unrelated table keeps its line'
 
 
 def test_no_stored_credential_is_refused_with_the_manual_step(

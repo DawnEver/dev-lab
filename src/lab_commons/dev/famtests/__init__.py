@@ -137,13 +137,6 @@ WHAT IS HERE, one module per shared body:
   a ``::`` RECIPE BLOCK in a module docstring, so recipe blocks are scanned and narrative prose --
   where this family records a retirement -- is not.
 
-* :mod:`lab_commons.dev.famtests.boxseat` -- the repo's own verdict entry point takes the box's one
-  seat, releases it, and cannot buy an exemption with a pool name of its own. The PAIR to
-  ``depdoor``, and the boundary between them is worth stating because both import ``CpuSeat``: this
-  one is about the EXCLUSION and plants two parties sharing nothing but a path; that one plants a
-  holder only so an ADAPTER can be caught answering "nobody" forever. The entry point is an ARGUMENT
-  here where both forks hard-coded :func:`lab_commons.dev.verify.run_verify` -- a repo with a runner
-  of its own would have asserted about a function it does not call, and read green.
 
 * :mod:`lab_commons.dev.famtests.density` -- what fraction of a module's own lines name something
   that exists only in this checkout's world. The one half of a placement roster that is IDENTICAL in

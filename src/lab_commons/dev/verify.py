@@ -35,7 +35,6 @@ EXIT CODES, and the two non-zero ones are DIFFERENT ON PURPOSE:
 from __future__ import annotations
 
 import argparse
-import contextlib
 import functools
 import json
 import os
@@ -46,11 +45,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
+from lab_commons.box import Refused
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
-from lab_commons.dev.boxwait import LIGHT_ENV, LIGHT_MEMORY_BYTES, MEASURE_WAIT_S, WAIT_S, hold_run_seats, holders_line
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
+from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
@@ -73,6 +73,7 @@ from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verifybox import MEASURE_WAIT_S, WAIT_S, boxed, ended_in_the_box
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 from lab_commons.resources import DEFAULT_POLL_S, Exhausted
@@ -362,22 +363,18 @@ def run_verify(
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
-    A TARGETED selection is a LIGHT run (:mod:`lab_commons.dev.boxwait`): it takes no box seat, is
-    admitted by ``LIGHT_MEMORY_BYTES`` and runs at the capped width, so it never queues on a heavy holder.
+    The pytest step RUNS IN THE BOX (:mod:`lab_commons.dev.verifybox`) at its declared claim: admitted
+    on the machine's one ledger within *wait_s*, held to its cores, memory and wall. The interpreter's
+    ENVIRONMENT seat (:class:`~lab_commons.dev.envseat.EnvironmentSeat`) is held across all three steps, so
+    no dependency door mutates the environment the run is judged in.
 
     The skip allowance is read BEFORE any step launches, so a declaration nobody can parse is
     refused against a tree that has not yet spent twenty minutes being tested -- and so is an entry
     whose SUBJECT has left the checkout (:func:`~lab_commons.dev.reports.stale_declarations`), which
     is the one side of the ratchet a selected invocation can still judge.
 
-    THE BOX IS HELD ACROSS ALL THREE STEPS and not only pytest, because the measured harm was 194
-    CPU-minutes of a process TREE and ruff over a large tree is not free either.
-
-    IT IS TAKEN AFTER :func:`~lab_commons.dev.reports.declared_skips` AND NOT BEFORE, which is the
-    one place this departs from the plan it implements. That call is documented to run before any
-    step launches so an unparseable declaration is refused against a tree that has not yet spent
-    twenty minutes being tested; acquiring first would make the same refusal arrive up to thirty
-    minutes later, having queued for a box it was never going to use.
+    THE SEAT IS TAKEN AFTER :func:`~lab_commons.dev.reports.declared_skips` AND NOT BEFORE: an
+    unparseable declaration is refused against a tree that has not yet queued for anything.
 
     THE LOG IS READ BACK STREAMED AND IS NEVER RESIDENT, which is why the last two lines go through
     :mod:`lab_commons.dev._logdistil` rather than ``path.read_text()``. MEASURED 2026-09-18: a
@@ -389,8 +386,9 @@ def run_verify(
 
     Raises:
         MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
-        Exhausted: the box was held by another run for the whole of *wait_s*. Nothing was measured,
-            so there is no verdict to return; :func:`main` renders it as INCONCLUSIVE.
+        Exhausted: another run held this environment for the whole of *wait_s*.
+        Refused: the box had no room for the selection within *wait_s*. Nothing was measured either
+            way, so there is no verdict to return; :func:`main` renders both as INCONCLUSIVE.
         UnverifiableLog: the log came out empty or unreadable, so no verdict may rest on it.
             :class:`~lab_commons.dev.logref.LogRef` refuses an empty log, and this refuses with it
             rather than stamping a verdict whose evidence says nothing; :func:`main` renders it as
@@ -404,10 +402,8 @@ def run_verify(
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'
     reports: list[StepReport] = []
-    with contextlib.ExitStack() as box, path.open('w', encoding='utf-8') as handle:
-        light = is_targeted(root, pytest_args)
-        memory = LIGHT_MEMORY_BYTES if light else None
-        hold_run_seats(box, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s, memory_bytes=memory)
+    seat = EnvironmentSeat(sys.prefix, f'verify:{root.name}', wait_s=wait_s, poll_s=poll_s)
+    with seat.held(), path.open('w', encoding='utf-8') as handle:
         reports.append(read_hooks(root, handle=handle))
         for name, arguments in RUFF_STEPS:
             reports.append(read_ruff(name, _tee([sys.executable, '-m', *arguments], cwd=root, handle=handle)))
@@ -416,11 +412,12 @@ def run_verify(
             durations.LEDGER_TREE_VAR: content_address(root, MEASURED_TARGETS),
             durations.LEDGER_ENV_VAR: env_key(env_manifest()),
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
-            **(LIGHT_ENV if light else {}),
         }
-        command = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *pytest_args]
-        code = _tee(command, cwd=root, handle=handle, extra_env=stamp)
+        pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *pytest_args]
+        argv, width = boxed(root, pytest, queue_s=wait_s)
+        code = _tee(argv, cwd=root, handle=handle, extra_env=stamp | width)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
+    cut = ended_in_the_box(code, path)
     complete_census, scope_refusal = census_scope(pytest_args)
     report = read_pytest(distillate.text, returncode=code, allowed_skips=allowed, complete_skip_census=complete_census)
     reports.append(
@@ -429,7 +426,7 @@ def run_verify(
                 name=report.name,
                 reported=report.reported,
                 failures=report.failures,
-                truncated=(*report.truncated, *scope_refusal, *vanished),
+                truncated=(*report.truncated, *scope_refusal, *vanished, *cut),
             )
         )
     )
@@ -455,10 +452,11 @@ def main(argv: list[str] | None = None) -> int:
     person who typed the declaration, and a stack trace tells them about this module instead. It
     exits INCONCLUSIVE, because nothing was measured.
 
-    :class:`~lab_commons.resources.Exhausted` takes the same route, for the same reason and with the
-    same exit code: another run holds this box, nothing was measured, and INCONCLUSIVE is what a run
-    that cannot say is required to say. The line NAMES the holder and the remedy, because "busy"
-    sends its reader to the process table to guess and guessing wrong kills somebody's evidence.
+    :class:`~lab_commons.resources.Exhausted` (the environment held) and :class:`~lab_commons.box.Refused`
+    (no room in the box) take the same route, for the same reason and with the same exit code: nothing was
+    measured, and INCONCLUSIVE is what a run that cannot say is required to say. The line NAMES the holder
+    and the remedy, because "busy" sends its reader to the process table to guess and guessing wrong kills
+    somebody's evidence.
 
     A SETTLED RUN IS THEN POSTED AS PARTS, ``tests/<part>`` -- one per need-set
     (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become run records of the cluster's
@@ -557,10 +555,11 @@ def _judge(
         line = f'verify refuses to run: {exc}'
         emit(line, err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
-    except Exhausted as exc:
+    except (Exhausted, Refused) as exc:
+        held = '; '.join(one.describe() for one in exc.holders) if isinstance(exc, Exhausted) else str(exc)
         line = (
-            f'verify: inconclusive -- this box is held and nothing was measured. Held by: '
-            f'{holders_line(exc)}. Wait for it, or stop that holder, then re-run; '
+            f'verify: inconclusive -- this box is held and nothing was measured. Held by: {held}. '
+            f'Wait for it, or stop that holder, then re-run; '
             f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait.'
         )
         emit(line, err=True)

@@ -20,7 +20,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev.cpuseat import CpuSeat
+from lab_commons.box import BOX_ENV, Demand, admit
 from lab_commons.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
@@ -102,10 +102,11 @@ def test_a_run_holding_another_environment_does_not_refuse(tmp_path: Path) -> No
     assert report.returncode == 0
 
 
-def test_the_machine_cpu_seat_is_not_an_environment_guard() -> None:
-    """A run's CPU seat is a machine resource: holding it alone never refuses a dependency change."""
+def test_a_box_claim_is_not_an_environment_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run's box claim is a machine resource: holding it alone never refuses a dependency change."""
+    monkeypatch.setenv(BOX_ENV, str(tmp_path / 'box.sqlite'))
     run = _Run()
-    with CpuSeat('verify:a-run-on-this-machine').held():
+    with admit(Demand(cpu=1, mem_gb=0.5, wall_s=60, seats={}), 'verify:a-run-on-this-machine', 0, key='k'):
         mutate(_REQS, port=Port(name='repo-under-test'), run=run)
     assert len(run.calls) == 1
 

@@ -4,9 +4,8 @@ Read-only, and read from the forge, so any machine with a forge credential sees 
 node sees: every waiting candidate with its class, value, expected cost, score, wait and what blocks it
 (:mod:`lab_commons.dev.forgeschedule`); every run in flight with its owner and the live progress its
 claim carries (:class:`lab_commons.dev.forgeclaim.Claim`); every host card, stale ones flagged
-(:mod:`lab_commons.dev.forgehosts`) with its supply and what runs on it; every live reservation
-(:mod:`lab_commons.compute.ledger`), a refused writer's flagged; and every candidate starved past its
-class's bound. A candidate EVERY live host serving it refuses to admit says so, naming each host and the
+(:mod:`lab_commons.dev.forgehosts`) with its supply and what runs on it; and every candidate starved
+past its class's bound. A candidate EVERY live host serving it refuses to admit says so, naming each host and the
 resources it lacks there (``no host admits it -- box-g lacking cpu; ada/alice lacking mem_gb``). It fetches
 ``origin`` first so the refs it ranks are the forge's, and posts nothing.
 
@@ -27,7 +26,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from lab_commons.compute import ledger
 from lab_commons.compute.learned import learned
 from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank, starved
 from lab_commons.compute.priority import Priority
@@ -36,7 +34,7 @@ from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
-from lab_commons.dev.forgehosts import HostCard
+from lab_commons.dev.forgehosts import HostCard, read_cards
 from lab_commons.dev.forgeprovides import present, unserved
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, request_context
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, candidates, host_weights, load_schedule, repo_name
@@ -72,8 +70,7 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
     fetch(root)
     now = forge_now(client)
     schedule = load_schedule(root)
-    book = ledger.read(client)
-    cards = book.cards
+    cards = read_cards(client)
     ranked, in_flight = forge_queue(root, client, cards, now=now, schedule=schedule)
     repo = repo_name(client)
     live = [card for card in cards if not card.stale(now)]
@@ -96,13 +93,10 @@ def view(root: Path, client: Client, *, fetch: Callable[[Path], None] = fetch_or
                 'holds': list(card.holds),
                 'alarms': list(card.alarms),
                 'running': list(card.running),
-                'preempted': list(card.preempted),
-                'reservations': [dict(r) for r in card.reservations],
                 'stale': card.stale(now),
             }
             for card in cards
         ],
-        'reservations': [one.row() for one in book.entries if now < one.reservation.until],
         'starved': [row(item) for item in starved(ranked, {repo: schedule})],
     }
 
@@ -232,16 +226,9 @@ def render(view_: Mapping[str, Any]) -> list[str]:
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
             *([f'    priority {Priority.of(h["priority"]).text()}'] if any(h.get('priority', {}).values()) else []),
-            *([f'    PREEMPTED {", ".join(h["preempted"])}'] if h.get('preempted') else []),
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']
-    lines += ['', 'reservations:']
-    lines += [
-        f'  {r["id"]}  {r["scope"]}  {_amounts(r["resources"])}  for {r["for"]}  until {r["until"]}  by {r["by"]}'
-        + (f'  REFUSED: {r["refused"]}' if r['refused'] else '')
-        for r in view_.get('reservations', ())
-    ] or ['  (none)']
     lines += ['', 'origin branches (undeclared, idle past the grace):']
     lines += [
         f'  {b["action"]:<9} {b["ref"]}  {b["sha"][:12]}  {b["rule"]}, idle {b["idle_h"]:.0f} h'

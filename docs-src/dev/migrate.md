@@ -103,8 +103,8 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
   `forge serve`. A `[deploy]` still carrying the key is refused.
 - **A workstation**: re-run `python -m lab_commons.dev.workstation deploy ...` without the mode flag; it
   rewrites the `lab-forge-serve` Task, whose old action is refused until then.
-- **A host that should take no foreign work**: have its owner reserve it whole
-  (`forge reserve <host> --all --for login:<owner> --until ...`) instead of serving it quietly.
+- **A host that should take no foreign work**: do not run `forge serve` on it; to have it take its own
+  work first, name it in the machine file's `[priority]` (ordering only -- nothing is reserved).
 - **A consumer's `pyproject.toml`**: replace the opted-in branch list under `[tool.lab_commons.schedule]` and
   the prefix list under `[tool.lab_commons.integrator]` with ONE ordered rule, `[tool.lab_commons.schedule]
   classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}` (the family default;

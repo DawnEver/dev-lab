@@ -35,8 +35,6 @@ are too unqualified to survive being flattened into a namespace this wide.
   gate runner, the half needing no case library, no solver and no vendor engine, so the three repos
   with no verdict-producing invocation at all now have the same one. NOT RE-EXPORTED for its own
   reason: it runs as ``__main__``, and importing it here makes ``runpy`` warn it was already loaded.
-* :mod:`lab_commons.dev.cpuseat` — one CPU-saturating run at a time, ON the broker that already
-  ships in this package rather than beside it.
 * :mod:`lab_commons.dev.profile` — ``RepoProfile``, so attaching a repo is a substitution -- with
   one measured caveat recorded in its docstring: ``resolve_home``'s auto-detection anchors on its
   own file, so a profile carries an ``anchor`` for the checkout it describes.
@@ -127,11 +125,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   second module rather than a wider ``units``: a scan that refuses a unit-spelling NAME rewards the
   LOSSY repair -- deleting the suffix silences it and records the unit nowhere. This proves the unit
   reached the VALUE instead, and ``migration_conflicts`` refuses a key in both waiver and registry.
-* :mod:`lab_commons.dev.boxwait` -- the adoption half of ``cpuseat``: what a dev tier DOES when it
-  finds the box held. Three answers are wrong (start anyway, refuse instantly, block forever) and
-  this is the fourth -- queue on a DEADLINE, say who you are waiting for while you wait, and refuse
-  NAMING the holder when the deadline passes. Separate from ``verify`` because verify is one adopter
-  and not the only one.
+* :mod:`lab_commons.dev.verifybox` -- the verify door's box claim: a selection's pytest step runs in the
+  box at a declared, enforced demand; a producer serve spawned is not boxed twice.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
 * :mod:`lab_commons.dev.familyheads` -- a floating git package behind its forge head makes an env STALE;
@@ -265,9 +260,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
-* :mod:`lab_commons.dev.forgelend` -- loans read back as running, and a preempted cluster loan withdrawn.
-* :mod:`lab_commons.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``host:H`` reservation matches.
-* :mod:`lab_commons.dev.forgereserve` -- ``forge reserve`` / ``forge release``: leases in the ledger.
+* :mod:`lab_commons.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`lab_commons.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`lab_commons.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.
@@ -370,7 +363,6 @@ from lab_commons.dev.cjk import assert_floor as assert_cjk_floor
 from lab_commons.dev.cjk import ratchet as cjk_ratchet
 from lab_commons.dev.cjk import scan_files as scan_cjk_files
 from lab_commons.dev.content import ABSENT, DEFAULT_IGNORES, content_address, file_digest
-from lab_commons.dev.cpuseat import CPU_POOL, CpuSeat
 from lab_commons.dev.docwidth import (
     INJECTED_BASENAMES,
     INJECTED_EXEMPT_PREFIXES,
@@ -404,7 +396,6 @@ from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selec
 __all__ = [
     'ABSENT',
     'CJK_RANGES',
-    'CPU_POOL',
     'DEFAULT_IGNORES',
     'DENY_RULES',
     'EXCLUDED_TOKENS',
@@ -420,7 +411,6 @@ __all__ = [
     'CJKOccurrence',
     'CJKScan',
     'Citation',
-    'CpuSeat',
     'DenyRule',
     'HookAdoption',
     'IncompleteRun',

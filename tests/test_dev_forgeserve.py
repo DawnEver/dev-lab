@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import os
 import subprocess
 import threading
@@ -14,27 +15,24 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.compute.admission import Held
-from lab_commons.compute.ledger import Entry, Ledger
-from lab_commons.compute.model import Candidate, Demand, For, Job, Ranked, Reservation, Resources, Supply
+from lab_commons.box import GB, KILLED, REFUSED, Capacity, Holding
+from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgelend, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, STORAGE, Alarm
+from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeroute import Routed
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
-from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, preempted, release_reason
-from lab_commons.dev.retention import Outcome
+from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
 from lab_commons.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.shell import FULL
-from lab_commons.resources import CPU, MEMORY, Holder, JobHandle
 
 SHA = 'a' * 40
+BOX = Capacity(cpu=3.0, mem_bytes=24 * GB, seats={})
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
 FORGE_NOW = NOW + timedelta(minutes=7)  # the forge's clock, deliberately not the host's
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))
@@ -130,8 +128,7 @@ def _serve(
     tidy=lambda _root, _client, **_kw: (),
     trees: _Trees | None = None,
     seen: dict[str, object] | None = None,
-    holders: tuple[Holder, ...] = (),
-    book: Ledger | None = None,
+    holding: tuple[Holding, ...] = (),
     later: tuple[TickReport, ...] = (),
     ticks: list[dict] | None = None,
     table: dict | None = None,
@@ -164,6 +161,7 @@ def _serve(
     monkeypatch.setattr(forgerounds, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgehosts, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     monkeypatch.setattr(forgeserve, 'flush', lambda _root, **_k: ['status: tests/windows=failure'])
     monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
@@ -175,12 +173,13 @@ def _serve(
 
     def spawn(argv: list[str], **kwargs: object) -> _Proc:
         (spawned if spawned is not None else []).append({'argv': argv, **kwargs})
-        return (procs or {})[argv[1]]  # argv[0] is the tree's own interpreter
+        return (procs or {})[argv[argv.index('--') + 2]]  # boxed: after '--', the tree's own interpreter
 
     monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (list(starving), []))
+    monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
     report = forgeserve.serve(
         tmp_path,
         client=_client,
@@ -192,13 +191,11 @@ def _serve(
         say=said.append,
         alarm=alarms.append,
         renew_s=0.01,
-        box_room=lambda scope, **_: Supply(scope, Resources(cpu=4, mem_gb=32)),
         table=table or {},
         fetch=lambda _root: None,
         host=host,
-        reserve=lambda: Resources(cpu=1, mem_gb=8),
-        holders=lambda: holders,
-        read_ledger=lambda _client: book or Ledger(None, {}, ()),
+        supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX),
+        holding=lambda: holding,
         retain=retain,
     )
     said.append(f'running={seen.get("running")}')
@@ -252,6 +249,25 @@ def test_the_producer_is_spawned_holding_its_claim_and_nothing_else_is(monkeypat
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, spawned=spawned)
     assert [kwargs['env'][PRODUCING_VAR] for kwargs in spawned] == [f'tests/windows@{SHA}']
     assert PRODUCING_VAR not in os.environ, "the claim is the child's, never leaked into serve itself"
+
+
+def test_the_producer_runs_in_the_box_at_the_demand_it_was_admitted_at(monkeypatch, tmp_path: Path) -> None:
+    """Admission and enforcement are one number: unmeasured, a box part declares the whole box capacity."""
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    spawned: list[dict] = []
+    monkeypatch.setattr(forgeproduce.Capacity, 'read', staticmethod(lambda: BOX))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, spawned=spawned)
+    (argv,) = [one['argv'] for one in spawned]
+    assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
+    assert argv[argv.index('--cpu') + 1] == '3'
+    assert argv[argv.index('--mem-gb') + 1] == '24'
+    assert argv[argv.index('--fingerprint') + 1] == SHA
+    assert argv[argv.index('--') + 2 :] == ['verify']
+    admitted = dataclasses.replace(local, demand={'cpu': 2.0, 'mem_gb': 5.5})
+    spawned.clear()
+    _serve(monkeypatch, tmp_path, _claimed(admitted), {'verify': _Proc(0)}, spawned=spawned)
+    (argv,) = [one['argv'] for one in spawned]
+    assert (argv[argv.index('--cpu') + 1], argv[argv.index('--mem-gb') + 1]) == ('2', '5.5'), 'what it was admitted at'
 
 
 def test_a_producer_refusing_its_argv_is_a_broken_contract_not_a_skip(monkeypatch, tmp_path: Path) -> None:
@@ -325,6 +341,7 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
+    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     waits: list[float | None] = []
     proc = _Proc(0, beats=6)
     inner = proc.wait
@@ -359,7 +376,9 @@ def test_a_local_part_is_judged_in_its_own_tree_at_the_claimed_sha(monkeypatch, 
         monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, spawned=spawned, trees=trees
     )
     tree = tmp_path / 'trees' / SHA[:12]
-    assert [(k['argv'], k['cwd']) for k in spawned] == [([str(tree / 'python'), 'verify', '--full'], tree)]
+    assert [(k['argv'][k['argv'].index('--') + 1 :], k['cwd']) for k in spawned] == [
+        ([str(tree / 'python'), 'verify', '--full'], tree)
+    ]
     assert (trees.opened, trees.closed) == ([SHA], [SHA])
     assert report.produced[0].argv == (str(tree / 'python'), 'verify', '--full')
     assert f'[windows] tree {SHA[:12]}: removed' in said
@@ -396,6 +415,8 @@ def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypat
     for code, reason in (
         (ProducerExit.INCONCLUSIVE, release_reason(ProducerExit.INCONCLUSIVE)),
         (ProducerExit.UNREACHABLE, RETRYABLE),
+        (REFUSED, RETRYABLE),  # the box had no room in time: open again, never red
+        (KILLED, 'released: the box killed it'),
     ):
         forge = _Forge()
         forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
@@ -426,11 +447,9 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert 'running=[]' in said
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
     (line,) = [one for one in said if one.startswith('running=')][-1:]
-    assert "demand=Resources({'cpu': 1.0, 'files': 50000.0})" in line, (
+    assert line == "running=[Demand({'cpu': 1.0, 'files': 50000.0})]", (
         'the next tick reads the run back from disk as running demand'
     )
-    assert f"sha='{SHA}'" in line
-    assert 'on_loan=0' in line
     assert len(advanced) == 2
 
 
@@ -498,13 +517,13 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))  # never this box's own machine file
     monkeypatch.setattr(forgerounds, 'tick', tick)
     monkeypatch.setattr(forgeserve, 'origin_url', lambda _root: 'https://f/o/r.git')
+    monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
     alarms: list = []
     with pytest.raises(ForgeCallFailed):
         forgeserve.serve(
             tmp_path, client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
-            box_room=lambda scope, **_: Supply(scope, Resources(cpu=4)), table={},
-            reserve=Resources, holders=tuple, read_ledger=lambda _client: Ledger(None, {}, ()),
-            retain=lambda _root, **_kw: None,
+            table={}, supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX),
+            holding=tuple, retain=lambda _root, **_kw: None,
         )  # fmt: skip
     assert [a.kind for a in alarms] == [AUTH]
 
@@ -539,52 +558,67 @@ def test_any_host_raises_starved_for_a_part_no_host_admits_and_n_hosts_page_once
 
 
 def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None:
-    """Who it is, what it serves, its supply and facts, its live reservations, and why each candidate waits."""
+    """Who it is, what it serves, its supply and facts, and why each candidate waits."""
     cards: list = []
     ticked = TickReport((), (), ('tick',), (), (_waiting('pr', 1, 'not admitted: lacking cpu'),))
-    mine = _lease(1, 'ada/alice')
-    book = Ledger(1, {}, (mine, _lease(2, 'ada/bob'), _lease(3, 'ada/alice', until=NOW)))
-    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='base', book=book)
+    _serve(monkeypatch, tmp_path, ticked, seat=SEAT, cluster=_Slurm, cards=cards, host='base')
     (card,) = cards
     assert (card.host, card.login, card.platform) == ('ada/alice', 'alice', 'base')
     assert card.supply == {'cpu': 64.0, 'mem_gb': 128.0, 'submits': 10.0}
     assert card.facts == {'partitions': {'defq': 2880}}
     assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
     assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'not admitted: lacking cpu'}
-    assert card.reservations == (mine.row(),), 'the live leases on THIS host: not another, not an expired one'
 
 
-def _lease(lease_id: int, scope: str, *, until: datetime = NOW + timedelta(days=1), refused: str = '') -> Entry:
-    return Entry(lease_id, Reservation(scope, Resources(cpu=2), For(login='bob'), until, 'alice'), refused)
+def test_a_box_admits_against_its_capacity_less_every_box_ledger_claim(monkeypatch, tmp_path: Path) -> None:
+    """The box ledger is the ONE source: an interactive verify and a producer are claims on it alike.
 
-
-def _holder(what: str, **demands: int) -> Holder:
-    return Holder('lab-commons-cpu', JobHandle('pid', '1'), what, demands)
-
-
-def test_a_box_admits_against_its_probe_less_its_own_reserve(monkeypatch, tmp_path: Path) -> None:
+    PLANTED CONTROL: no claim on the ledger, the whole capacity is admitted against.
+    """
     seen: dict[str, object] = {}
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen)
     supply = seen['supply']
     assert isinstance(supply, Supply)
-    assert (supply.scope, dict(supply.resources)) == ('G', {'cpu': 3.0, 'mem_gb': 24.0}), 'probe 4/32 less 1/8'
+    assert (supply.scope, supply.resources['cpu'], supply.resources['mem_gb']) == ('G', 3.0, 24.0)
+    verify = Holding('verify:r', 1, cpu=2, mem_bytes=4 * GB, seats={}, deadline=0.0)
+    cards: list = []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, holding=(verify,), cards=cards)
+    assert (seen['supply'].resources['cpu'], seen['supply'].resources['mem_gb']) == (1.0, 20.0)
+    assert seen['running'] == [], 'a ledger claim is in the supply already, never counted twice'
+    assert cards[-1].running == ('verify:r (pid 1)',)
 
 
-def test_an_interactive_run_holding_the_box_seat_counts_as_running(monkeypatch, tmp_path: Path) -> None:
-    """At what it declared; the whole box when it declared nothing. PLANTED CONTROL: no holder, nothing runs."""
-    seen: dict[str, object] = {}
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen)
-    assert seen['running'] == []
-    declared = _holder('gate measure', **{CPU.name: 2, MEMORY.name: 4 * 1024**3})
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, holders=(declared, _holder('verify:x')))
-    assert seen['running'] == [Held(Demand(cpu=2, mem_gb=4)), Held(Demand(cpu=os.cpu_count() or 1))]
+class _Until(_Proc):
+    """A producer that lives, beating, until *event* is set."""
+
+    def __init__(self, event: threading.Event, code: int = 0, pid: int | None = None) -> None:
+        super().__init__(code, pid=pid)
+        self.event = event
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self.event.wait(timeout=timeout):
+            return self.code
+        cmd = 'fake'
+        raise subprocess.TimeoutExpired(cmd, timeout or 0)
 
 
-def test_every_authorised_lease_reaches_the_admission_and_a_refused_one_never(monkeypatch, tmp_path: Path) -> None:
-    seen: dict[str, object] = {}
-    held, refused = _lease(1, 'G'), _lease(2, 'G', refused='bob may not reserve G')
-    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seen=seen, book=Ledger(1, {}, (held, refused)))
-    assert seen['reservations'] == (held.reservation,)
+class _Sets(_Proc):
+    """A producer that beats *beats* times (a little apart), then sets *event* and exits."""
+
+    def __init__(self, event: threading.Event, code: int = 0, beats: int = 0, pid: int | None = None) -> None:
+        super().__init__(code, beats=beats, pid=pid)
+        self.event = event
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self.beats:
+            self.event.wait(timeout=0.02)
+        code = super().wait(timeout)
+        self.event.set()
+        return code
+
+
+#: A tick period short enough that a second round comes while a producer runs.
+QUICK = {'tick_minutes': 0.001}
 
 
 def test_two_admitted_local_parts_are_produced_at_once(monkeypatch, tmp_path: Path) -> None:
@@ -719,6 +753,7 @@ def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> 
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
+    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     return forgeproduce.produce(
         tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, say=lambda _l: None,
         lease=timedelta(hours=6), renew_s=30.0, fetch=lambda _root: None, **kwargs,
@@ -760,56 +795,6 @@ def test_a_run_with_no_cpu_reading_learns_nothing(monkeypatch, tmp_path: Path) -
     assert learnt == []
 
 
-def test_each_wake_hands_watch_the_cores_busy_since_the_last(monkeypatch, tmp_path: Path) -> None:
-    """What the producer's tree uses NOW, for a serve that keeps claiming while it runs."""
-    watched: list[Resources] = []
-    clock = {'now': NOW}
-    readings = iter([20.0, 50.0])
-
-    def cpu() -> float:  # ten seconds pass between two readings of the tree
-        clock['now'] += timedelta(seconds=10)
-        return next(readings)
-
-    _produce_one(
-        monkeypatch, tmp_path, _Proc(0, beats=2, pid=4242), clock=lambda: clock['now'],
-        sample=lambda _pid: 2.0, meter=lambda _pid: cpu, learn=lambda *_a, **_k: None, watch=watched.append,
-    )  # fmt: skip
-    assert [(one['cpu'], one['mem_gb']) for one in watched] == [(2.0, 2.0), (3.0, 2.0)]
-
-
-class _Until(_Proc):
-    """A producer that lives, beating, until *event* is set."""
-
-    def __init__(self, event: threading.Event, code: int = 0, pid: int | None = None) -> None:
-        super().__init__(code, pid=pid)
-        self.event = event
-
-    def wait(self, timeout: float | None = None) -> int:
-        if self.event.wait(timeout=timeout):
-            return self.code
-        cmd = 'fake'
-        raise subprocess.TimeoutExpired(cmd, timeout or 0)
-
-
-class _Sets(_Proc):
-    """A producer that beats *beats* times (a little apart), then sets *event* and exits."""
-
-    def __init__(self, event: threading.Event, code: int = 0, beats: int = 0, pid: int | None = None) -> None:
-        super().__init__(code, beats=beats, pid=pid)
-        self.event = event
-
-    def wait(self, timeout: float | None = None) -> int:
-        if self.beats:
-            self.event.wait(timeout=0.02)
-        code = super().wait(timeout)
-        self.event.set()
-        return code
-
-
-#: A tick period short enough that a second round comes while a producer runs.
-QUICK = {'tick_minutes': 0.001}
-
-
 def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkeypatch, tmp_path: Path) -> None:
     """Serve keeps ticking while a producer lives: the next round sees it RUNNING and its sha BUSY, and claims more.
 
@@ -828,7 +813,9 @@ def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkey
     assert [(p.sha, p.returncode) for p in report.produced] == [(SHA, 0), (other, 1)], 'in start order'
     assert ticks[0]['busy'] == frozenset()
     assert ticks[1]['busy'] == frozenset({SHA}), 'the tree of a part being produced is taken'
-    assert len(ticks[1]['running']) == len(ticks[0]['running']) + 1, 'the live producer runs at its demand'
+    assert ticks[1]['running'] == ticks[0]['running'], (
+        'a live producer is a box ledger claim: in the supply, never twice'
+    )
     assert any(len(card.holds) == 2 for card in cards), 'a card while both run names both'
     assert report.tick == ('tick: one line', 'tick: one line'), 'every round says what it claimed'
 
@@ -862,7 +849,7 @@ def test_a_producer_stopped_on_purpose_ends_the_claiming(monkeypatch, tmp_path: 
 
     ticks, spawned = run(77)
     assert len(ticks) == 1
-    assert [one['argv'][1] for one in spawned] == ['stopped', 'lives']
+    assert sorted(one['argv'][one['argv'].index('--') + 2] for one in spawned) == ['lives', 'stopped']
     ticks, _spawned = run(0)
     assert len(ticks) >= 2, 'PLANTED CONTROL: a crash is not a stop; the host claims on'
 
@@ -886,68 +873,3 @@ def test_a_round_that_raises_joins_every_producer_first(monkeypatch, tmp_path: P
         _serve(monkeypatch, tmp_path, _claimed(first), procs, table=QUICK)
     assert ended.is_set(), 'the producer ended before serve raised'
     assert not [t for t in threading.enumerate() if t.name.startswith('produce-')]
-
-
-# --- a reservation holder preempts a loan (user ruling 2026-10-13) --------------------------------------
-
-LOANED = dataclasses.replace(ME, on_loan=5)
-
-
-def _loan(platform: str) -> Held:
-    return Held(Demand(cpu=1), Job('', SHA, platform), on_loan=5, since=NOW)
-
-
-def test_a_preempted_cluster_loan_is_cancelled_released_requeued_and_shown(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the same run, a tick preempting nothing -- kept and advanced."""
-    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
-    forge = _Forge()
-    monkeypatch.setattr(forgelend, 'status_post', forge.post)
-    monkeypatch.setattr(forgerun, 'advance', lambda _root, run, **_k: run)
-    run = forgerun.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), LOANED.description(),
-                       phase=forgerun.SUBMITTED, job_ids=('77',))  # fmt: skip
-    forgerun.save(run)
-    seen: dict[str, object] = {}
-    kept, _said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, seen=seen)
-    assert kept.in_flight == (SHA,)
-    assert [one.on_loan for one in seen['running']] == [5], 'the run is read back as on loan from lease 5'
-    slurm, cards = _Slurm(), []
-    displaced = dataclasses.replace(TickReport((), (), ()), preempt=(_loan(BASE),))
-    report, _said, _alarms = _serve(
-        monkeypatch, tmp_path, displaced, forge, seat=SEAT, cluster=lambda: slurm, cards=cards
-    )  # fmt: skip
-    assert report.in_flight == ()
-    assert slurm.cancelled == ['77']
-    assert forge.posts[-1] == (f'tests/{BASE}', 'error', preempted(5))
-    assert forgerun.live('https://f/o/r.git') == ()
-    assert cards[-1].preempted == (f'{SHA[:12]} {BASE} by reservation 5',)
-
-
-def test_a_local_loan_yields_at_a_beat_when_a_holder_would_preempt_it(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED CONTROL: a round preempting ANOTHER sha's loan leaves this part to run to its end."""
-    forge = _Forge()
-    item = Work('integrate/main', SHA, 'windows', 'mine', LOANED, argv=('verify',))
-    displaced = dataclasses.replace(_claimed(item), preempt=(_loan('windows'),))
-    _report, said, _alarms = _serve(monkeypatch, tmp_path, displaced, {'verify': _Proc(0, beats=50)}, forge)
-    assert forge.posts[-1] == ('tests/windows', 'error', preempted(5))
-    assert any(f'stopped: {preempted(5)}' in line for line in said)
-    forge = _Forge()
-    other = Held(Demand(cpu=1), Job('', 'b' * 40, 'windows'), on_loan=5, since=NOW)
-    displaced = dataclasses.replace(_claimed(item), preempt=(other,))
-    _report, said, _alarms = _serve(monkeypatch, tmp_path, displaced, {'verify': _Proc(0, beats=3)}, forge)
-    assert not any(preempted(5) in line for line in said), 'ran to its end'
-    assert all(post[2] != preempted(5) for post in forge.posts)
-
-
-def test_the_retention_pass_runs_each_serve_and_alarms_only_when_still_over(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED CONTROL: a pass that freed enough raises nothing; one still over raises ``storage``."""
-    asked: list[dict] = []
-    quiet = TickReport((), (), ('tick',), (), ())
-
-    def retain(*, over: bool) -> object:
-        return lambda _root, **kw: asked.append(kw) or Outcome(10, 1, over)
-
-    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, retain=retain(over=False))
-    assert alarms == []
-    assert asked[0]['cluster'] is False
-    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, retain=retain(over=True))
-    assert [a.kind for a in alarms] == [STORAGE]

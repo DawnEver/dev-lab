@@ -14,7 +14,7 @@ import test_dev_forgetick
 from _forge_fake import Recorder, answer, git_out, run_git
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
-from lab_commons.compute.model import REQUEST, Resources, Supply
+from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.dev import forgeproduce
 from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from lab_commons.dev.forgerequest import (
@@ -39,6 +39,11 @@ GOLDENS = (
 )
 FEMM_HOST = Supply('G', Resources(cpu=4.0, femm=1.0, windows=1.0), frozenset({'cpu', 'femm', 'windows'}))
 PLAIN_HOST = Supply('G', Resources(cpu=4.0), frozenset({'cpu', 'windows'}))
+
+
+def _one_core(_wanted: object, needs: frozenset[str]) -> Demand:
+    """A request measured at one core, one seat of each need: it fits a four-core host."""
+    return Demand({'cpu': 1, **dict.fromkeys(needs, 1.0)})
 
 
 def _request(repo: Path, tips: dict[str, str], producer: str) -> str:
@@ -67,7 +72,7 @@ def test_a_declared_request_is_admitted_and_claimed_where_its_needs_are_present(
     mine = {'id': 2, 'context': 'request/9', 'status': 'pending', 'description': ME.description()}
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
-    report = _tick(repo, server, supply=FEMM_HOST)
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
     (claimed,) = report.claimed
     assert (claimed.ref, claimed.sha, claimed.state, claimed.context) == ('issue/9', sha, MINE, 'request/9')
     assert claimed.platform == 'femm+windows', 'its need-set, spelled as a part is'
@@ -82,7 +87,7 @@ def test_a_host_lacking_a_needed_resource_does_not_admit_it(server, tmp_path: Pa
     repo, tips = _origin(tmp_path)
     sha = _request(repo, tips, 'femm_goldens')
     answer('GET', f'{API}/statuses/{sha}', (200, []))
-    report = _tick(repo, server, supply=PLAIN_HOST)
+    report = _tick(repo, server, supply=PLAIN_HOST, demand=_one_core)
     assert report.claimed == ()
     assert not [r for r in Recorder.received if r['method'] == 'POST']
     (waiting,) = [item for item in report.queue if item.candidate.kind == REQUEST]
@@ -99,7 +104,7 @@ def test_an_undeclared_producer_name_is_refused_not_run(server, tmp_path: Path) 
     sha = _request(repo, tips, 'rm_rf')
     answer('GET', f'{API}/statuses/{sha}', (200, []))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
-    report = _tick(repo, server, supply=FEMM_HOST)
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
     assert report.claimed == ()
     assert report.queue == ()
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']

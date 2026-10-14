@@ -153,7 +153,7 @@ def carry_from(
 ) -> dict[str, tuple[str, str, str]]:
     """``{node: (outcome, origin sha, run sha)}`` *b* takes from *runs* -- ``{run sha: {node: (outcome, origin)}}``.
 
-    An earlier run of *b* ITSELF -- a loan a reservation holder preempted, released open and claimed again --
+    An earlier run of *b* ITSELF -- one released retryable (an outage, a box with no room) and claimed again --
     gives every outcome it holds first: nothing changed, so each stands. Then only the :func:`nearest` runs are
     read, and an id takes the nearest run's outcome that :func:`carried` keeps. *origin* is the sha the outcome
     was RUN at (an outcome carried again keeps its first origin);

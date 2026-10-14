@@ -70,8 +70,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-12 at 258: forge-schedule's split modules, artefacts/artefactstores, forgeship, selection.
 #: Re-taken 2026-10-12 at 267 (serve-task, serve-lock, forge-produce, forge-provides, a retired hook): 220 -> 227.
 #: Re-taken 2026-10-13 at 273 (six modules since): 227 -> 232.
-#: Re-taken 2026-10-13 at 278-279 (compute.probe; compute.ledger and forgereserve, merged): 232 -> 237.
-#: Re-taken 2026-10-13 at 288 (admission, forgelend, forgeorigin, forgetake; retention, diskusage): 237 -> 247.
+#: Re-taken 2026-10-13 at 278-279 (compute.probe and two lease modules, merged): 232 -> 237.
+#: Re-taken 2026-10-13 at 288 (admission, forgeorigin, forgetake, a lease module; retention, diskusage): 237 -> 247.
 #: Re-taken 2026-10-14 at 293 (box: __init__, demand, ledger): 247 -> 253.
 #: Re-taken 2026-10-14 at 299 (box: run, _win, _linux, __main__ and the two before): 253 -> 259.
 MODULE_FLOOR = 259

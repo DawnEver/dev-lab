@@ -91,7 +91,7 @@ def _grant(**extra: object) -> str:
     [
         ({}, r'no \[hpc\] table'),
         (_grant() + '[[grant]]\nuser = "u"\nhosts = ["g"]\nslurm_account = "s"\n', 'granted twice'),
-        (_grant(cpus='64'), r'\[\[hpc\.grant\]\] cpus is retired.*forge reserve'),
+        (_grant(cpus='64'), r'\[\[hpc\.grant\]\] cpus is retired.*admission fits'),
         (_grant(key='"x"'), 'unknown keys'),
         (_grant(account='"u@h"'), 'unknown keys'),
         (_grant(hosts='[]'), 'at least one login host'),

@@ -28,8 +28,7 @@ suite to learn whether a sha is green, and you never wait for one to push.
 
 `python -m lab_commons.dev.forge serve` is the one call a crontab or harness makes on a producer host. It
 takes no mode: EVERY HOST SERVES EVERY CANDIDATE CLASS from one queue ([scheduling](#scheduling)). The rank
-decides ORDER, the admission decides FIT, and a reservation decides EXCLUSIVITY: a host that takes no foreign
-work is one its owner has reserved whole (`forge reserve <host> --all --for login:<owner> --until ...`).
+decides ORDER and the admission decides FIT; nothing is reserved, lent or preempted (user ruling 2026-10-14).
 Each tick it:
 
 1. flushes the status outbox;
@@ -113,8 +112,8 @@ A second run changes nothing. In order, it:
    follows), or fast-forwards an existing clean checkout. A dirty checkout is refused;
 3. bootstraps each `.venv` (`-m lab_commons.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
-4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`), `[serve] repos, root` and, with `--delegates a,b`,
-   `[reserve] delegates` into `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
+4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root` into
+   `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
 5. writes the one `lab-forge-serve` Task from its XML definition, and only when the installed one reads back
    different -- so a re-run replaces an older `cmd /c` Task.
 
@@ -192,20 +191,18 @@ prior_cost_h = 4.0
 ### Admission
 
 A tick walks the ranked queue and claims each candidate that ADMITS (`compute.admission.admit`): its needs are
-present here and its demand fits `supply - running - the idle part of leases not for it`, else it borrows one
-lease's idle part (on loan) or, as a holder, preempts loans in its lease ([reservations](#reservations)). A job that does not fit is
-skipped and a smaller, lower-ranked one is still claimed, so several parts run on one host at once.
+present here and its demand fits `supply - running`. A job that does not fit is skipped and a smaller,
+lower-ranked one is still claimed, so several parts run on one host at once.
 
-- **Demand** is what the part's last run measured (`compute.learned`, keyed by part); unmeasured, a box part
-  is every core free now (admitted alone) and a cluster part one core. A box run's cpu is MEASURED -- the
-  cpu-seconds of its process tree over its wall (`proccpu.TreeCpu`) -- and never capped: eight busy cores do not
-  fit in four.
-- **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); a box's probe
-  (free cores, available memory, OS, tools) less its user's own reserve (`[reserve]` margins).
-- **Reservations**: every authorised live lease on the ledger ([reservations](#reservations)).
-- **Running**: each cluster run in flight here at its learned demand, each part this tick already claimed,
-  and each INTERACTIVE run holding the box seat (`CpuSeat`: a developer's `gate measure` or `verify`) at
-  what it declared, else the whole box. A producer `forge serve` spawned takes no box seat.
+- **Demand** is what the part's last run measured (`compute.learned`, keyed by part). A box part is admitted at
+  exactly what it then DECLARES to the box (`compute.learned.box_demand`: the cores it kept busy and its peak
+  memory with headroom, else the whole box; one seat of each tool it needs), and its producer runs in the box
+  at that claim ([box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
+- **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); on a box, what its
+  ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` margins (`cpu_margin`,
+  default 1 core; `mem_margin`, default 0.25 of its memory) less every claim on it -- each producer serve runs
+  and each interactive `verify` alike.
+- **Running**: each cluster run in flight here at its learned demand, and each part this tick already claimed.
 - **Two parts of one sha** are never claimed by one box in one tick: each is judged in its sha's tree.
 - A job that does not fit waits `not admitted: lacking <resource>`; when every live host serving it says so,
   `forge queue` shows `no host admits it -- <host> lacking <resource>; ...`.
@@ -224,8 +221,7 @@ python -m lab_commons.dev.forge queue [--json]
 
 The one status command, from the forge alone, on any machine with a forge credential. It fetches origin and
 prints the queue (class, value, cost, score, wait, blocking reason), every run in flight with its owner and
-progress, every host card (stale flagged), every live reservation (a refused writer's flagged), every
-starved candidate, and every undeclared origin branch idle past its grace (`deletable`, `delete` or `stale`;
+progress, every host card (stale flagged), every starved candidate, and every undeclared origin branch idle past its grace (`deletable`, `delete` or `stale`;
 see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 
 - **Blocking reasons**: `no host serves it`, `no host provides <resource>` (no live card has every resource
@@ -234,7 +230,7 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
   `the tree of <sha12> is producing another part here`, `no host can produce it: <undeclared key>`.
 - **Host cards** (`forgehosts`): each serving host edits one comment on the ONE `forge hosts` issue: who it
   is, its OS, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
-  last tick, what it holds, what else `running` on it, its live `reservations`, and why each candidate it saw
+  last tick, what it holds, what else `running` on it (each box ledger claim), and why each candidate it saw
   waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
   the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
@@ -244,40 +240,6 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
   delete rights closes instead and says so); `green_areas` (an `area:*` issue with no `- [ ]` row) and
   `request_max_age_days` only CLOSE. It says so in ONE comment on the hosts issue; absent the table, it reads nothing.
 - `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
-
-## Reservations
-
-```
-python -m lab_commons.dev.forge reserve <host|account> <res=amount,...>|--all --for login:X|host:H|session:S|repo:Y|needs:a+b --until <iso|duration>
-python -m lab_commons.dev.forge release <id>
-```
-
-A reservation is a LEASE of some resources -- or, with `--all`, the WHOLE scope, re-read at each admission --
-on one host or cluster account (a host card's name), for one login, host, session, repo or need-set, until a
-moment (`36h`, `2d`, or ISO). A daily-moving share is a reservation that expires daily.
-
-- **Whom it is for** (user ruling 2026-10-13: a session or workstation may hold a share). `login:X` matches the
-  forge login of a PR or request; `session:S` the ref a job was pushed to (one lane is one agent session);
-  `host:H` the host a job was created on -- a `Forge-Host: H` trailer the `forge-host` commit-msg hook stamps
-  (`dev.forgeorigin`), or `host = "H"` in a request's body -- kept only where the forge-recorded author of the PR
-  or issue is H's card owner or one of its `[reserve] delegates`. A job a live lease is for ranks FIRST there.
-- **It LENDS what its holders leave idle** (`compute.admission`): a job it is not for is admitted beside it, or
-  ON LOAN into its idle part -- the claim says `on_loan=<id>`, and the card's holds show it. A holder's job that
-  does not fit because of loans PREEMPTS them, newest first and only as many as needed: a cluster loan is
-  cancelled, a local one is stopped at its next wake (its tree, through `stoprun`), and either is released
-  `preempted by reservation <id>` -- open again, re-queued, never an error. The card and `forge queue` list
-  what each tick preempted. A holder with room beside the loans preempts nothing.
-
-- **Stored once**, as one comment on the `forge hosts` issue beside the cards (`compute.ledger`); its id is the
-  forge's comment id, and `forge queue` lists the live ones.
-- **Who may write** (user ruling 2026-10-13): the host's own login -- the author the forge records on its card
-  -- or a login its user designates in the machine file's `[reserve] delegates = [...]`, published on the card.
-  Anyone else is refused before posting, and EVERY READER judges each lease by its forge-recorded author, so a
-  lease posted around the verb counts for nothing. The writer, the host's login or a delegate may release it.
-- **The own reserve** is not a lease: what the box's own user is using now plus `[reserve] cpu_margin` (default 1
-  core) and `mem_margin` (default 0.25 of the box's memory), subtracted from the box's supply and lent to nobody.
-- A machine file says what a host HAS and who may reserve it, never how it is divided: a cluster grant carries
-  no share, and an account is divided by the reservations its owner writes.
 
 ## Alarms
 
