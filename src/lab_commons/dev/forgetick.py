@@ -36,7 +36,9 @@ idle part (its claim says ``on_loan=<id>``), and a lease holder's job that loans
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A box run's cpu is the cpu-seconds its process tree used over its
 wall (:class:`lab_commons.proccpu.TreeCpu`), never capped to the box: a job that kept eight cores busy does
-not fit in four. Unmeasured, it takes every core free now, so it is admitted alone.
+not fit in four. A BOX part ASKS one core and its memory -- its producer sizes itself to the cores it
+finds -- and, once claimed, HOLDS the cores it kept busy, else every core, so it runs alone unless it measured
+less (:func:`~lab_commons.compute.learned.learned_hold`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
 
@@ -44,7 +46,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import shlex
 import sys
@@ -55,7 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from lab_commons.compute.admission import Held
-from lab_commons.compute.learned import learned, learned_demand
+from lab_commons.compute.learned import learned, learned_demand, learned_hold
 from lab_commons.compute.model import (
     Candidate,
     Ranked,
@@ -191,12 +192,14 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or Supply(machine or 'this host', Resources(cpu=cores))
-    free = max(1, math.floor(room.resources['cpu']))  # an unmeasured box run takes every core free now
-    by_part = learned_demand(origin_url(root), cluster=bool(serve.hpc), cores=free)
-    sized = demand or (lambda _wanted, needed: by_part(needed))
+    asked = learned_demand(origin_url(root), cluster=bool(serve.hpc))
+    holds = learned_hold(origin_url(root), cluster=bool(serve.hpc), cores=cores)
+    sized = demand or (lambda _wanted, needed: asked(needed))
+    held = demand or (lambda _wanted, needed: holds(needed))
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
+        hold=lambda wanted, needed: submitted(held(wanted, needed), room),
         reservations=tuple(reservations), taken=list(running), trees=set(busy),
         store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip

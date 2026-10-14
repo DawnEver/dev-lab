@@ -51,6 +51,7 @@ class ClaimPass:
     repo: str
     supply: Supply
     size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
+    hold: Callable[[Candidate, frozenset[str]], Mapping[str, float]]  # what a claim holds once running
     reservations: tuple[Reservation, ...] = ()
     taken: list[Held] = dataclasses.field(default_factory=list)  # what runs, then each claim
     trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
@@ -188,7 +189,7 @@ class ClaimPass:
         job, verdict = self.admitted[wanted.key]
         self.preempt += verdict.preempt
         self.taken = [one for one in self.taken if one not in verdict.preempt]
-        self.taken.append(Held(Resources(self.size(wanted, needed)), job, verdict.on_loan, self.now))
+        self.taken.append(Held(Resources(self.hold(wanted, needed)), job, verdict.on_loan, self.now))
         return verdict
 
     def _take(self, one: Work, wanted: Candidate, needed: frozenset[str]) -> tuple[Work, str]:

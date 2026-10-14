@@ -588,7 +588,7 @@ def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp
     assert [w.ref for w in report.claimed] == ['topic/a']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'integrate/main'
-    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu', 'unmeasured, a box part is the whole box'
+    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu', 'a claimed box part, unmeasured, holds every core'
     Recorder.received.clear()
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
