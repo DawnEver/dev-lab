@@ -418,7 +418,7 @@ def test_a_running_demand_keeps_what_it_holds(server, tmp_path: Path) -> None:
     report = _tick(repo, server, supply=BOX, demand=_sized(head=8), running=[Held(Demand(mem_gb=30))])
     assert report.claimed == ()
     assert [(w.state, item.blocked) for w, item in zip(report.work, report.queue, strict=True)] == [
-        (OPEN, f'{NOT_ADMITTED}: lacking mem_gb')
+        (OPEN, f'{NOT_ADMITTED}: lacking mem_gb (8 asked, 2 free)')
     ]
 
 
@@ -438,7 +438,7 @@ def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, 
     report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=40))
     assert [w.sha for w in report.claimed] == [head]
     (waiting,) = report.queue
-    assert (waiting.candidate.sha, waiting.blocked) == (lane, f'{NOT_ADMITTED}: lacking mem_gb')
+    assert (waiting.candidate.sha, waiting.blocked) == (lane, f'{NOT_ADMITTED}: lacking mem_gb (40 asked, 32 free)')
     Recorder.received.clear()
     _head_and_pr(tips)
     roomy = Supply('G', Resources(cpu=4, mem_gb=64), BOX.listed)
@@ -588,7 +588,9 @@ def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp
     assert [w.ref for w in report.claimed] == ['topic/a']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'integrate/main'
-    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu', 'a claimed box part, unmeasured, holds every core'
+    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu (1 asked, 0 free)', (
+        'a claimed box part, unmeasured, holds every core'
+    )
     Recorder.received.clear()
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
@@ -610,9 +612,9 @@ def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path
     assert over.queue[0].blocked == f'{OVER_BUDGET}: integrate/main used 12.0 of 10 core-h in 24 h'
     full = _tick(repo, server, supply=Supply('slurm:alice', Resources(cpu=8, mem_gb=64, submits=0), SLURM))
     assert full.claimed == ()
-    assert full.queue[0].blocked == f'{NOT_ADMITTED}: lacking submits'
+    assert full.queue[0].blocked == f'{NOT_ADMITTED}: lacking submits (1 asked, 0 free)'
     busy = _tick(repo, server, supply=Supply('ws', Resources(mem_gb=64), frozenset({'cpu', 'mem_gb'})))
-    assert busy.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu'
+    assert busy.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu (1 asked, 0 free)'
     assert not [r for r in Recorder.received if r['method'] == 'POST']
 
 
@@ -832,7 +834,7 @@ def test_a_box_job_is_admitted_at_the_cores_it_measured_never_capped_to_the_box(
     answer('GET', f'{API}/statuses/{head}', (200, []))
     wide = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=8))
     assert wide.claimed == ()
-    assert wide.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu'
+    assert wide.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu (8 asked, 4 free)'
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
     answer('POST', f'{API}/statuses/{head}', (201, {}))
     fits = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=4))
