@@ -24,10 +24,10 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lab_commons.box.machine import provided
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
 from lab_commons.dev.forgeoutbox import PostFailed
-from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
 from lab_commons.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory, this_platform

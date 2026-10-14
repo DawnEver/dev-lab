@@ -27,7 +27,7 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read
 
 * SUPPLY -- a cluster account's standing (:mod:`lab_commons.dev.forgeslurm`); a box's probe
   (:func:`lab_commons.compute.probe.box`) less its user's OWN RESERVE (the machine file's ``[reserve]``
-  margins, :func:`lab_commons.compute.ledger.own_reserve`; the probe already reads what is busy now, so
+  margins, :func:`lab_commons.box.machine.own_reserve`; the probe already reads what is busy now, so
   what the user uses is not subtracted twice). Named as the card is (:func:`~lab_commons.dev.forgehosts.card_host`),
   so a lease on this host is a lease on this supply.
 * RESERVATIONS -- every authorised lease on the ledger (:func:`lab_commons.compute.ledger.read`); a lease
@@ -104,10 +104,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from lab_commons.box.machine import own_reserve, provided, reserve_table
 from lab_commons.compute import ledger
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.learned import learned_hold
-from lab_commons.compute.ledger import own_reserve, reserve_table
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
@@ -119,7 +119,6 @@ from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_mac
 from lab_commons.dev.forgehosts import HostCard, card_host, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
-from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
 from lab_commons.dev.forgeroute import reconcile
@@ -300,7 +299,7 @@ def box_reserve(table: Mapping[str, Any] | None = None) -> Resources:
     """
     memory = system_memory()
     total = Resources(cpu=os.cpu_count() or 1, mem_gb=memory.total_bytes / _GB if memory else 0.0)
-    return own_reserve(total, {}, reserve_table(section('reserve') if table is None else table))
+    return Resources(own_reserve(total, {}, reserve_table(section('reserve') if table is None else table)))
 
 
 def _tidy(
