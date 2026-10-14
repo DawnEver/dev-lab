@@ -48,11 +48,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Final
 
+from lab_commons.box.machine import provided
 from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
 from lab_commons.dev._machinefile import diff, merged
 from lab_commons.dev.forgealarm import RUN, Alarm, sound
-from lab_commons.dev.forgeprovides import provided
 from lab_commons.dev.servelock import default_lock, held
 from lab_commons.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_spec import LAB_COMMONS

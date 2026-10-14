@@ -18,30 +18,15 @@ skipped.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
-from typing import Any, Final
+from collections.abc import Collection, Sequence
+from typing import Final
 
 from lab_commons.dev.forgeschedule import NO_HOST
-from lab_commons.hpc.needsets import RESOURCE_NAME
 
-__all__ = ['NO_PROVIDER', 'present', 'provided', 'unserved']
+__all__ = ['NO_PROVIDER', 'present', 'unserved']
 
 #: How a part no host may claim is labelled: ``no host provides <resource>``.
 NO_PROVIDER: Final = f'{NO_HOST} provides'
-
-_WHERE: Final = 'the machine file'
-
-
-def provided(table: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    """The machine file's ``[capabilities]``: ``{name: facts}``; a malformed row is refused by name."""
-    out: dict[str, dict[str, Any]] = {}
-    for name, facts in table.items():
-        seats = facts.get('seats', 1) if isinstance(facts, dict) else None
-        if not RESOURCE_NAME.match(name) or not isinstance(seats, int) or isinstance(seats, bool) or seats < 1:
-            msg = f'{_WHERE}: [capabilities.{name}] must be a table named {RESOURCE_NAME.pattern}, seats a positive int'
-            raise ValueError(msg)
-        out[name] = dict(facts)
-    return out
 
 
 def present(platform: str, provides: Collection[str]) -> frozenset[str]:

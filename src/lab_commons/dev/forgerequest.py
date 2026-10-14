@@ -34,9 +34,10 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
-from lab_commons.hpc.needsets import RESOURCE_NAME, part_name
+from lab_commons.hpc.needsets import part_name
 
 if TYPE_CHECKING:
     from pathlib import Path
