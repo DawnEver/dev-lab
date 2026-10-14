@@ -135,17 +135,17 @@ def test_usage_is_core_hours_per_run_job() -> None:
     assert parse_usage(sacct) == {'abcdef123456': 3.0}
 
 
-def test_a_reserved_candidate_ranks_first_over_a_higher_score() -> None:
-    """A lease holder is not starved by higher-scored foreign work; CONTROL: nothing reserved keeps the score order."""
+def test_a_priority_candidate_ranks_first_over_a_higher_score() -> None:
+    """A host's priority orders, it reserves nothing; CONTROL: no priority keeps the score order."""
     head = _cand('integrate/main', 'integration')
     lane = _cand('lane/x', 'branch')
     schedules = {'o/r': Schedule()}
     assert [r.candidate for r in rank([lane, head], schedules, NOW, cost_h={})] == [head, lane]
-    held = rank([lane, head], schedules, NOW, cost_h={}, reserved=lambda one: one.ref == 'lane/x')
-    assert [(r.candidate, r.reserved) for r in held] == [(lane, True), (head, False)]
+    first = rank([lane, head], schedules, NOW, cost_h={}, priority=lambda one: one.ref == 'lane/x')
+    assert [(r.candidate, r.priority) for r in first] == [(lane, True), (head, False)]
 
 
-def test_an_origin_host_stands_only_where_its_login_owns_or_is_delegated_the_host() -> None:
+def test_an_origin_host_stands_only_where_its_login_publishes_the_host_card() -> None:
     claimed = dataclasses.replace(_cand('lane/x', 'pr'), origin='bob', origin_host='G')
     owners = {'G': ('alice', 'bob'), 'H': ('carol',)}
     assert vouched([claimed], owners) == (claimed,)

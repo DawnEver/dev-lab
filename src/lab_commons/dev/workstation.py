@@ -5,7 +5,7 @@ The counterpart of a cluster account's ``python -m lab_commons.hpc deploy``. It 
 dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.Step`.
 
 ``deploy --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 [--forge <https base>]
-[--root DIR] [--ref BRANCH] [--delegates LOGIN,...] [--dry-run]``, each step reporting and safe to repeat:
+[--root DIR] [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
    its Scheduler COM classes when ``jmag`` is. Every missing item is refused at once, each with its remedy.
@@ -16,9 +16,8 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
 4. VENVS: ``-m lab_commons.dev.dep --bootstrap <checkout>`` when the venv is missing or the checkout moved.
 5. HOOKS: ``-m lab_commons.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``) and
-   ``[serve] repos, root`` and ``[reserve] delegates`` (the logins this box's user lets reserve it,
-   :mod:`lab_commons.compute.ledger`) merged in place; every other table, key and comment is kept,
-   and ``--dry-run`` prints the diff.
+   ``[serve] repos, root`` merged in place; every other table, key and comment is kept, and
+   ``--dry-run`` prints the diff.
 7. TASK: the one ``lab-forge-serve`` Scheduled Task (:mod:`lab_commons.dev.servetask`), registered from
    its XML definition and rewritten only when the installed one reads back different.
 
@@ -150,10 +149,6 @@ def _repos(text: str) -> tuple[str, ...]:
     return repos
 
 
-def _logins(text: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(part.strip() for part in text.split(',') if part.strip()))
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.workstation', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -163,7 +158,6 @@ def _parser() -> argparse.ArgumentParser:
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
     dep.add_argument('--ref', default='integrate/main', help='the branch a new clone follows')
-    dep.add_argument('--delegates', type=_logins, default=(), help='[reserve] delegates: who else may reserve it')
     dep.add_argument('--dry-run', action='store_true', help='print every action; change nothing')
     verbs.add_parser('serve', help="the Task's action: serve every [serve] repo under one lock")
     return parser
@@ -347,8 +341,6 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
     tables['serve'] = {'repos': [name for name in args.repos if name not in refused], 'root': str(args.root)}
-    if args.delegates:
-        tables['reserve'] = {'delegates': list(args.delegates)}
     rc = _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS])
     for name, why in refused.items():
         tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))

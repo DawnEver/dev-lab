@@ -101,3 +101,15 @@ def test_a_serve_mode_is_refused_by_name_every_host_serves_every_class(argv: lis
 def test_the_workstation_task_with_a_mode_is_refused_naming_the_redeploy(capsys) -> None:
     assert workstation.main(['serve', '--mode', 'integrate']) == 2
     assert 'take no mode' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('verb', ['reserve', 'release'])
+def test_a_lease_verb_is_refused_by_name_nothing_is_reserved(verb: str, capsys) -> None:
+    """Reservations, leases, lending and preemption are deleted (user ruling 2026-10-14)."""
+    assert forgecli.main([verb, 'G', 'cpu=2']) == 2
+    assert f'`forge {verb}` is retired' in capsys.readouterr().err
+
+
+def test_a_workstation_delegate_is_refused_by_name(capsys) -> None:
+    assert workstation.main(['deploy', '--delegates', 'bob']) == 2
+    assert '`workstation --delegates` is retired' in capsys.readouterr().err

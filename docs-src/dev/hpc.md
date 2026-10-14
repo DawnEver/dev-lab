@@ -66,7 +66,7 @@ setup = ["module load git/2.42.0"]   # optional, prepended to every array task
 ```
 
 - A missing table, a duplicate account or an empty `hosts` is refused with the key named; a `cpus` share is retired
-  and refused by name: an account is divided by reservations its owner writes ([reservations](forge.md#reservations)).
+  and refused by name: admission fits each job against what the account has free now ([admission](forge.md#admission)).
   No secrets in the file.
 - **Usage is read, never stored.** Every job carries `--comment=lc:ws=<host>`; headroom is the quota minus what
   the account's jobs hold, read from `squeue --me`.

@@ -41,8 +41,8 @@ from __future__ import annotations
 import dataclasses
 import re
 import socket
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Final
@@ -51,7 +51,7 @@ from lab_commons.compute.probe import OS_NAMES
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import ClusterPart, part_context
-from lab_commons.dev.producer import REQUEUED
+from lab_commons.dev.producer import RETRYABLE
 from lab_commons.hpc.account import ClusterAccount, cluster_account
 from lab_commons.hpc.cluster import local_runner
 from lab_commons.hpc.grants import workstation
@@ -94,7 +94,7 @@ REFUSED_AT_COMMIT: Final = 'refused at this commit:'
 _NOBODY: Final = '-'
 _CLAIM: Final = re.compile(
     r'^claim machine=(?P<machine>\S+) login=(?P<login>\S+) until=(?P<until>\S+) hpc=(?P<hpc>\S+)'
-    r'(?: on_loan=(?P<on_loan>\d+))?(?: -- (?P<progress>.+))?$'
+    r'(?: -- (?P<progress>.+))?$'
 )
 #: The longest status description every forge stores whole (GitHub's limit); progress is cut to fit.
 DESCRIPTION_LIMIT: Final = 140
@@ -113,13 +113,11 @@ class Claim:
     until: datetime
     hpc: str = ''
     progress: str = ''
-    on_loan: int = 0  # the reservation this claim borrows from (0: none); a holder of it may preempt the claim
 
     def description(self) -> str:
         """The pending status's description (module docstring), progress cut to :data:`DESCRIPTION_LIMIT`."""
         until = self.until.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
         head = f'claim machine={self.machine or _NOBODY} login={self.login} until={until} hpc={self.hpc or _NOBODY}'
-        head += f' on_loan={self.on_loan}' if self.on_loan else ''
         if not self.progress:
             return head
         return f'{head} -- {self.progress}'[:DESCRIPTION_LIMIT]
@@ -135,7 +133,7 @@ class Claim:
         except ValueError:
             return None
         machine, hpc = (found[key] if found[key] != _NOBODY else '' for key in ('machine', 'hpc'))
-        return cls(machine, found['login'], until, hpc, found['progress'] or '', int(found['on_loan'] or 0))
+        return cls(machine, found['login'], until, hpc, found['progress'] or '')
 
     def same_owner(self, other: Claim) -> bool:
         """The same person, on the same machine, under the same cluster account (module docstring)."""
@@ -158,7 +156,8 @@ class Work:
     noun on one path, told apart only by *context*, the status context its claim and result are posted in:
     ``tests/<part>`` for a part (the default), *request* -- ``request/<n>`` -- for a request. A claimed job
     carries what produces it: a local *argv* -- as the sha declares it, run by the interpreter of the
-    producer's tree at the sha -- or a *cluster* part advanced by serve.
+    producer's tree at the sha -- or a *cluster* part advanced by serve. *demand* is what a claim was admitted
+    at: a local producer declares exactly that to the box (:func:`lab_commons.dev.forgeproduce.boxed`).
     """
 
     ref: str
@@ -169,6 +168,7 @@ class Work:
     argv: tuple[str, ...] = ()
     cluster: ClusterPart | None = None
     request: str = ''
+    demand: Mapping[str, float] = field(default_factory=dict)
 
     @property
     def context(self) -> str:
@@ -198,7 +198,7 @@ def assess(history: Sequence[Status], context: str, *, me: Claim, now: datetime)
     """
     posts = [status for status in history if status.context == context]
     if posts and posts[-1].state != 'pending':  # a claim released by an outage is open again
-        return (OPEN if posts[-1].description.startswith(REQUEUED) else DONE), None
+        return (OPEN if posts[-1].description.startswith(RETRYABLE) else DONE), None
     settled = max((index for index, status in enumerate(posts) if status.state != 'pending'), default=-1)
     claims = [found for status in posts[settled + 1 :] if (found := Claim.parse(status.description)) is not None]
     if not claims:

@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.compute.admission import Held
+from lab_commons.box import GB, Capacity
 from lab_commons.compute.model import (
     FEATURE,
     INTEGRATION,
@@ -24,12 +24,10 @@ from lab_commons.compute.model import (
     REQUEST,
     Candidate,
     Demand,
-    For,
-    Job,
-    Reservation,
     Resources,
     Supply,
 )
+from lab_commons.compute.priority import Priority
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
@@ -50,7 +48,7 @@ from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.producer import ProducerExit, preempted, release_reason
+from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.grants import workstation
 from lab_commons.hpc.needsets import BASE
@@ -415,7 +413,7 @@ def test_a_running_demand_keeps_what_it_holds(server, tmp_path: Path) -> None:
     repo, tips = _origin(tmp_path)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))
-    report = _tick(repo, server, supply=BOX, demand=_sized(head=8), running=[Held(Demand(mem_gb=30))])
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8), running=[Demand(mem_gb=30)])
     assert report.claimed == ()
     assert [(w.state, item.blocked) for w, item in zip(report.work, report.queue, strict=True)] == [
         (OPEN, f'{NOT_ADMITTED}: lacking mem_gb (8 asked, 2 free)')
@@ -428,6 +426,9 @@ def test_two_small_jobs_are_both_admitted_on_one_tick(server, tmp_path: Path) ->
     head, lane = _head_and_pr(tips)
     report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8))
     assert [w.sha for w in report.claimed] == [lane, head]
+    assert [dict(w.demand) for w in report.claimed] == [{'cpu': 1, 'mem_gb': 8}] * 2, (
+        'each carries what it was admitted at'
+    )
     assert [item.blocked for item in report.queue] == []
 
 
@@ -449,49 +450,6 @@ def _claimed_as(tips: dict[str, str]) -> list[str]:
     """The claim descriptions this tick posted on the head."""
     path = f'{API}/statuses/{tips["integrate/main"]}'
     return [one['body']['description'] for one in Recorder.received if one['method'] == 'POST' and one['path'] == path]
-
-
-def test_a_reservation_for_others_lends_its_idle_part_and_the_claim_says_on_loan(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL: a lease elsewhere, for this repo, or expired lends nothing -- the claim is not on loan."""
-    repo, tips = _origin(tmp_path)
-    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []), (200, [_post(1, ME)]))
-    answer('POST', f'{API}/statuses/{tips["integrate/main"]}', (201, {}))
-    lease = Reservation('G', Resources(mem_gb=30), For(login='bob'), LATER, 'alice', id=5)
-    lent = _tick(repo, server, supply=BOX, demand=_sized(head=8), reservations=[lease])
-    assert len(lent.claimed) == 1
-    assert [one.endswith('on_loan=5') for one in _claimed_as(tips)] == [True]
-    elsewhere = dataclasses.replace(lease, scope='H')
-    ours = dataclasses.replace(lease, for_=For(repo='o/r'))
-    expired = dataclasses.replace(lease, until=NOW - timedelta(minutes=1))
-    for plain in (elsewhere, ours, expired):
-        Recorder.received.clear()
-        answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []), (200, [_post(1, ME)]))
-        assert len(_tick(repo, server, supply=BOX, demand=_sized(head=8), reservations=[plain]).claimed) == 1, plain
-        assert ['on_loan' in one for one in _claimed_as(tips)] == [False], plain
-
-
-def test_a_holder_blocked_by_a_loan_preempts_it_and_a_holder_with_room_preempts_nothing(server, tmp_path: Path) -> None:
-    """The PR is lane topic/a's, which holds a lease that a foreign run borrows; it is told to the serve loop.
-
-    PLANTED CONTROL: the same loan, a holder job small enough to fit beside it -- nothing is preempted.
-    """
-    repo, tips = _origin(tmp_path)
-    lane = tips['topic/a']
-    lease = Reservation('G', Resources(mem_gb=24), For(session='topic/a'), LATER, 'alice', id=5)
-    loan = Held(Demand(mem_gb=24), Job('', 'f' * 40, 'windows'), on_loan=5, since=NOW)
-    for need, displaced in ((16, (loan,)), (8, ())):
-        Recorder.received.clear()
-        answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
-        answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-        for sha in (lane, tips['integrate/main']):
-            answer('GET', f'{API}/statuses/{sha}', (200, []))
-        report = _tick(
-            repo, server, dry_run=True, supply=BOX, reservations=[lease], running=[loan],
-            demand=_sized(head=8, topic_a=need),
-        )  # fmt: skip
-        assert report.queue[0].candidate.ref == 'topic/a'
-        assert report.preempt == displaced, need
 
 
 def _pull(number: int, head: str, sha: str, *labels: str) -> dict[str, object]:
@@ -575,8 +533,9 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     )
 
 
-def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path) -> None:
+def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path, monkeypatch) -> None:
     """A user-boosted PR jumps the integration head. PLANTED CONTROL: the label removed, the head is claimed."""
+    monkeypatch.setattr(forgetick.Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
     repo, tips = _origin(tmp_path)
     head, lane = tips['integrate/main'], tips['topic/a']
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane, 'priority:user')]))
@@ -588,8 +547,8 @@ def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp
     assert [w.ref for w in report.claimed] == ['topic/a']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'integrate/main'
-    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu (1 asked, 0 free)', (
-        'a claimed box part, unmeasured, holds every core'
+    assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)', (
+        'a claimed box part, unmeasured, declares the whole box'
     )
     Recorder.received.clear()
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
@@ -610,10 +569,20 @@ def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path
     over = _tick(repo, server, usage={head[:12]: 12.0})
     assert over.claimed == ()
     assert over.queue[0].blocked == f'{OVER_BUDGET}: integrate/main used 12.0 of 10 core-h in 24 h'
-    full = _tick(repo, server, supply=Supply('slurm:alice', Resources(cpu=8, mem_gb=64, submits=0), SLURM))
+    full = _tick(
+        repo,
+        server,
+        supply=Supply('slurm:alice', Resources(cpu=8, mem_gb=64, submits=0), SLURM),
+        demand=lambda *_: Demand(cpu=1),
+    )
     assert full.claimed == ()
     assert full.queue[0].blocked == f'{NOT_ADMITTED}: lacking submits (1 asked, 0 free)'
-    busy = _tick(repo, server, supply=Supply('ws', Resources(mem_gb=64), frozenset({'cpu', 'mem_gb'})))
+    busy = _tick(
+        repo,
+        server,
+        supply=Supply('ws', Resources(mem_gb=64), frozenset({'cpu', 'mem_gb'})),
+        demand=lambda *_: Demand(cpu=1),
+    )
     assert busy.queue[0].blocked == f'{NOT_ADMITTED}: lacking cpu (1 asked, 0 free)'
     assert not [r for r in Recorder.received if r['method'] == 'POST']
 
@@ -867,40 +836,25 @@ def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ('lease_for', 'owners', 'first'),
+    ('favoured', 'owners', 'first'),
     [
-        (For(session='topic/a'), {}, 'topic/a'),
-        (For(host='B'), {'B': ('bob',)}, 'topic/a'),  # bob authored the PR and owns B: the trailer stands
-        (For(host='B'), {'B': ('carol',)}, 'integrate/main'),  # CONTROL: B is carol's, bob cannot vouch for it
-        (For(session='fix/b'), {}, 'integrate/main'),  # CONTROL: a lease for another session
+        ({'sessions': ['topic/a']}, {}, 'topic/a'),
+        ({'hosts': ['B']}, {'B': ('bob',)}, 'topic/a'),  # bob authored the PR and publishes B: the trailer stands
+        ({'hosts': ['B']}, {'B': ('carol',)}, 'integrate/main'),  # CONTROL: B is carol's, bob cannot vouch for it
+        ({'sessions': ['fix/b']}, {}, 'integrate/main'),  # CONTROL: another session
     ],
 )
-def test_a_job_a_live_lease_here_is_for_ranks_first(server, tmp_path: Path, lease_for: For, owners, first) -> None:
-    """The PR (class pr) outscores nothing against the head (class integration) -- unless a lease here is for it."""
+def test_a_job_this_hosts_priority_names_ranks_first(server, tmp_path: Path, favoured: dict, owners, first) -> None:
+    """The PR (class pr) outscores nothing against the head (class integration) -- unless this host favours it."""
     repo, tips = _origin(tmp_path)
     lane = _stamped_lane(repo, tips, 'B')
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
     for sha in (lane, tips['integrate/main']):
         answer('GET', f'{API}/statuses/{sha}', (200, []))
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    lease = Reservation('G', Resources(cpu=1), lease_for, LATER, 'alice')
-    report = _tick(repo, server, dry_run=True, reservations=[lease], owners=owners, demand=lambda *_: Demand(cpu=1))
+    priority = Priority.of(favoured)
+    report = _tick(repo, server, dry_run=True, priority=priority, owners=owners, demand=lambda *_: Demand(cpu=1))
     assert report.queue[0].candidate.ref == first
-
-
-def test_a_claim_on_loan_names_its_lease_and_parses_back() -> None:
-    loaned = dataclasses.replace(ME, on_loan=5, progress='running 3/9')
-    assert ' on_loan=5 -- running 3/9' in loaned.description()
-    assert Claim.parse(loaned.description()) == loaned
-    assert 'on_loan' not in ME.description()  # CONTROL: a claim not on loan says nothing of it
-
-
-def test_a_preempted_loan_is_open_again_never_settled() -> None:
-    """PLANTED CONTROL: the same release with a crash's reason settles the part."""
-    released = Status(f'tests/{BASE}', 'error', preempted(5), '', 2, 'alice')
-    assert _assess([_pending(ME, 1), released]) == (OPEN, None)
-    crashed = dataclasses.replace(released, description=release_reason(9))
-    assert _assess([_pending(ME, 1), crashed])[0] != OPEN
 
 
 def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:

@@ -82,7 +82,7 @@ run = ["cz", "check", "--allow-abort", "--commit-msg-file"]
 id = "issue-ref"
 run = ["python", "-m", "lab_commons.dev.issueref"]
 
-# The origin host a reservation `for host:H` matches, as a `Forge-Host:` trailer (lab_commons.dev.forgeorigin).
+# The origin host a `[priority] hosts` entry matches, as a `Forge-Host:` trailer (lab_commons.dev.forgeorigin).
 # The one row that WRITES: it appends the trailer and never blocks.
 [[commit-msg]]
 id = "forge-host"

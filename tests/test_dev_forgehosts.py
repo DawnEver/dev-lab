@@ -103,12 +103,10 @@ def test_a_failed_lookup_opens_nothing_and_alarms() -> None:
     assert not forge.issues_by_number
 
 
-def test_a_card_carries_its_supply_running_and_reservations_and_reads_back() -> None:
-    lease = {'id': 7, 'scope': 'ada/alice', 'resources': {'cpu': 2.0}, 'for': 'login bob', 'until': NOW.isoformat()}
+def test_a_card_carries_its_supply_and_running_and_reads_back() -> None:
     card = HostCard(
-        'ada/alice', 'alice', 'linux', NOW.isoformat(), supply={'cpu': 3.0}, running=('gate measure',),
-        reservations=(lease,),
-    )  # fmt: skip
+        'ada/alice', 'a', 'linux', NOW.isoformat(), supply={'cpu': 3.0}, running=('gate measure',)
+    )  # 'a' writes it
     forge = StateForge()
     publish(forge, card)
     assert read_cards(forge) == (card,)

@@ -4,9 +4,9 @@
 state and comment reads, ``auth`` for the token, ``publish`` for the status outbox, ``records`` for
 run records, ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
-for the branch flow, ``tidy`` for declared issue hygiene, ``reserve`` / ``release`` for leases; anything
-else is the issue/PR door. The verbs live in the sibling modules, which import :mod:`forge`, so
-:mod:`forge` reaches this module only from its entry point.
+for the branch flow, ``tidy`` for declared issue hygiene; anything else is the issue/PR door. The verbs
+live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
+entry point.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from lab_commons.dev import (
     forgeoutbox,
     forgequeue,
     forgerecords,
-    forgereserve,
     forgeroute,
     forgeserve,
     forgestatus,
@@ -51,8 +50,6 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'sync': forgesync.main,
     'integration': forgeintegration.main,
     'tidy': forgetidy.main,
-    'reserve': forgereserve.reserve_main,
-    'release': forgereserve.release_main,
 }
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
@@ -62,6 +59,9 @@ ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
 def main(argv: Sequence[str]) -> int:
     """Route *argv* to the door owning its noun; returns that door's exit code."""
     args = list(argv)
+    if args[:1] and (retired := refusal('forge', args[0])):
+        emit(retired, err=True)
+        return 2
     if args[:1] and args[0] in NOUNS:
         if refused := next(filter(None, (refusal(f'forge {args[0]}', w.split('=', 1)[0]) for w in args[1:])), None):
             emit(refused, err=True)

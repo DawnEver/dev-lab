@@ -9,8 +9,8 @@ claimer takes the feasible candidate with the highest SCORE, value per cost (wei
     score = weight[repo] * value / expected_cost
 
 EVERY HOST SERVES EVERY CLASS, from this one queue: ORDER is the rank, FIT is the admission
-(:func:`lab_commons.compute.admission.admit`), and exclusivity is a reservation -- a host that takes no
-foreign work is reserved whole by its owner. A candidate's class comes from where it is: the declared
+(:func:`lab_commons.compute.admission.admit`); a host's ``[priority]`` orders, and claims nothing
+(:mod:`lab_commons.compute.priority`). A candidate's class comes from where it is: the declared
 integration branch is ``integration``, the head of an open PR into it ``pr``, an issue carrying the
 request label ``request``, and any other origin branch the class ONE ORDERED RULE names
 (``classes_by_ref``, first match); a branch no pattern matches is not served.
@@ -22,7 +22,7 @@ explicit ``priority:<n>``), and the aging term grows without bound, so no candid
 repository's last run measured (:mod:`lab_commons.compute.learned`); unmeasured work is priced at a declared
 prior. ``weight`` belongs to the HOST (its machine file's ``[schedule] weights``), so a host serving
 several repositories decides how to share itself while each repository ranks its own work. A host's
-own user is served by its own reserve (:mod:`lab_commons.compute.ledger`), never by a lift in the order.
+own user is served by its own reserve (:mod:`lab_commons.box.machine`), never by a lift in the order.
 
 THE NUMBERS ARE DATA, declared once in ``[tool.lab_commons.schedule]``; :class:`Schedule` holds the
 family default and a repository overrides key by key (a table key by table key)::
@@ -252,10 +252,11 @@ def head_login(client: Client, sha: str) -> str:
 
 
 def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -> tuple[Candidate, ...]:
-    """*found* with each ``origin_host`` kept only where its FORGE-RECORDED login owns or is delegated that host.
+    """*found* with each ``origin_host`` kept only where its FORGE-RECORDED login publishes that host card.
 
     A trailer or a request body is text anyone can write; the forge records who authored the PR or the
-    issue, and the hosts issue who owns each card (*owners*: host -> its login and its ``[reserve]`` delegates).
+    issue, and the hosts issue who authored each card
+    (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`).
     """
     return tuple(
         one

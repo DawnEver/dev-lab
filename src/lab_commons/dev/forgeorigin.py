@@ -1,9 +1,9 @@
-"""The commit-msg stamp of a commit's ORIGIN HOST: ``Forge-Host: <host card>`` (``forge reserve --for host:H``).
+"""The commit-msg stamp of a commit's ORIGIN HOST: ``Forge-Host: <host card>``.
 
-A reservation ``for host:H`` serves the jobs host H created. Git records no host and the forge records only
+A host's ``[priority] hosts`` orders the jobs host H created first. Git records no host and the forge records only
 the pusher's LOGIN -- every session on a workstation may push as one login -- so the host travels in the
 commit, as a trailer this hook writes. It is CLAIMED, never trusted: a reader keeps it only where the
-forge-recorded author of the PR vouches for it, as that host card's owner or a ``[reserve]`` delegate
+forge-recorded author of the PR vouches for it, as the login that publishes that host card
 (:func:`lab_commons.dev.forgeschedule.vouched`). The host is the card name a tick on this machine
 publishes (:func:`lab_commons.dev.forgehosts.this_host`: ``<cluster>/<account>`` on a cluster login node).
 The one family hook that rewrites its input: it

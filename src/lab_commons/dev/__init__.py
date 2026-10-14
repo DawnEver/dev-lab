@@ -265,9 +265,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
-* :mod:`lab_commons.dev.forgelend` -- loans read back as running, and a preempted cluster loan withdrawn.
-* :mod:`lab_commons.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``host:H`` reservation matches.
-* :mod:`lab_commons.dev.forgereserve` -- ``forge reserve`` / ``forge release``: leases in the ledger.
+* :mod:`lab_commons.dev.forgeorigin` -- the commit-msg ``Forge-Host:`` stamp a ``[priority] hosts`` entry matches.
 * :mod:`lab_commons.dev.forgetake` -- the claim pass of a tick: each ranked candidate claimed while it admits.
 * :mod:`lab_commons.dev.forgerequest` -- a request: an issue-declared job ranked, admitted and run on the part path.
 * :mod:`lab_commons.dev.forgetick` -- requests derived from origin; the best feasible one claimed each tick.

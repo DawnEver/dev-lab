@@ -123,16 +123,16 @@ def test_equivalence_is_derived_every_test_carries_and_no_test_file_is_added(tmp
     assert not forgecarry.equivalent(tmp_path, added, code), 'PLANTED: a path inside one footprint'
 
 
-def test_a_preempted_run_of_the_same_sha_gives_every_outcome_it_finished(tmp_path: Path) -> None:
-    """A loan preempted by a reservation holder is claimed again at the SAME sha: its finished shards stand.
+def test_an_earlier_run_of_the_same_sha_gives_every_outcome_it_finished(tmp_path: Path) -> None:
+    """A run released retryable is claimed again at the SAME sha: its finished shards stand.
 
     PLANTED CONTROL: without that run, only the ancestor's outcomes the footprint keeps are carried.
     """
     a = _repo(tmp_path)
     b = _commit(tmp_path, {'src/pkg/util.py': 'Y = 2\n'})  # inside test_core's footprint
     ancestor = dict.fromkeys(NODES, ('passed', a))
-    preempted = {'tests/test_core.py::test_x': ('failed', b), 'tests/test_other.py::test_z': ('skipped', b)}
-    taken = forgecarry.carry_from(tmp_path, b, {a: ancestor, b: preempted})
+    earlier = {'tests/test_core.py::test_x': ('failed', b), 'tests/test_other.py::test_z': ('skipped', b)}
+    taken = forgecarry.carry_from(tmp_path, b, {a: ancestor, b: earlier})
     assert taken['tests/test_core.py::test_x'] == ('failed', b, b), 'its own finished outcome, never re-judged'
     assert taken['tests/test_other.py::test_z'] == ('skipped', b, b)
     control = forgecarry.carry_from(tmp_path, b, {a: ancestor})

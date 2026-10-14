@@ -17,10 +17,13 @@ The card says who the host is (:func:`card_host`: ``<cluster>/<account>`` or the
 platform it serves, what else it PROVIDES (its machine file's ``[capabilities]``,
 :mod:`lab_commons.dev.forgeprovides`), its SUPPLY as the tick admitted against it and the cluster facts
 it read locally (partitions, quota), when it last ticked (the forge's clock), what it holds with live
-progress, what else RUNS on it (an interactive run holding the box seat, a cluster run in flight), the
-live RESERVATIONS on it (:mod:`lab_commons.compute.ledger`), why each candidate it saw waits, why it cannot write the
+progress, what else RUNS on it (every claim on its box ledger, a cluster run in flight), why each
+candidate it saw waits, why it cannot write the
 large artefact store when it cannot, and EVERY ALARM the tick raised (:mod:`lab_commons.dev.forgealarm`): an
 alarm on an unattended host is read here, from any machine, not from a cron log nobody opens.
+
+A CARD'S LOGIN IS ITS FORGE-RECORDED AUTHOR (:func:`card_of`): anyone with a credential can post a comment,
+so the login a body states is never trusted -- it is what vouches for a job's origin host.
 
 A CARD IS READ BY ITS FIELDS: a key this version does not declare is not read, so a card published
 before a field was renamed reads as that field empty -- never as a crash of every reader.
@@ -45,7 +48,7 @@ from lab_commons.compute.model import Candidate, Ranked, Supply
 from lab_commons.compute.priority import Priority
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import Alarm
-from lab_commons.dev.forgeclaim import Claim, Work, forge_now, serving, this_machine, this_seat
+from lab_commons.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_list, comment_upsert, issues, marker
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
@@ -60,6 +63,7 @@ __all__ = [
     'HostsIssueLost',
     'card_host',
     'card_of',
+    'card_owners',
     'hosts_issue',
     'hosts_issues',
     'is_hosts',
@@ -98,14 +102,11 @@ class HostCard:
     supply: Mapping[str, Any] = field(default_factory=dict)  # what the tick admitted against
     facts: Mapping[str, Any] = field(default_factory=dict)
     holds: tuple[str, ...] = ()
-    running: tuple[str, ...] = ()  # what else runs here: a seat holder, a cluster run in flight
-    reservations: tuple[Mapping[str, Any], ...] = ()  # the live leases on this host (ledger rows)
+    running: tuple[str, ...] = ()  # what else runs here: a box ledger claim, a cluster run in flight
     waiting: Mapping[str, str] = field(default_factory=dict)
     alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
     artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
     provides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # machine-file [capabilities]
-    delegates: tuple[str, ...] = ()  # the logins this host's user lets reserve it (machine-file [reserve])
-    preempted: tuple[str, ...] = ()  # this tick's: each loan a reservation holder displaced, and the lease
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
 
     def favours(self, candidate: Candidate) -> bool:
@@ -124,17 +125,13 @@ class HostCard:
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         head += f'\n\nstorage: {self.facts["storage"]}' if 'storage' in self.facts else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
-        head += f'\n\npreempted: {", ".join(self.preempted)}' if self.preempted else ''
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
             'holds': list(self.holds),
             'alarms': [dict(a) for a in self.alarms],
-            'delegates': list(self.delegates),
             'running': list(self.running),
-            'preempted': list(self.preempted),
-            'reservations': [dict(r) for r in self.reservations],
         }
         return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
@@ -205,25 +202,23 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
 
 
 def card_of(comment: Comment) -> HostCard | None:
-    """The host card *comment* carries, or ``None`` when it carries none."""
+    """The host card *comment* carries, its login the comment's forge-recorded author; ``None`` when it carries none."""
     found = _BLOCK.search(comment.body) if f'lab-commons:{_SUBJECT}' in comment.body else None
     if found is None:
         return None
     raw = json.loads(found['json'])
     known = {key: value for key, value in raw.items() if key in HostCard.__dataclass_fields__}
-    tupled = {
-        key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'delegates', 'running', 'reservations', 'preempted')
-    }
-    return HostCard(**{**known, **tupled})
+    tupled = {key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'running')}
+    return HostCard(**{**known, **tupled, 'login': comment.author or known.get('login', '')})
 
 
-def _loan(holder: Claim | None) -> str:
-    """`` on_loan=<lease id>`` for a hold borrowed from a reservation; ``''`` otherwise."""
-    return f' on_loan={holder.on_loan}' if holder is not None and holder.on_loan else ''
+def card_owners(cards: Sequence[HostCard]) -> dict[str, tuple[str, ...]]:
+    """Who may vouch for each host card: ``host -> (its forge-recorded login,)``."""
+    return {card.host: (card.login,) for card in cards}
 
 
 def card_host(machine: str, seat: ClusterAccount | None) -> str:
-    """The name a host's card, its supply and every reservation on it share: the seat, else the machine."""
+    """The name a host's card and its supply share: the seat, else the machine."""
     return str(seat) if seat is not None else machine or socket.gethostname().split('.')[0]
 
 
@@ -231,7 +226,7 @@ def this_host() -> str:
     """The :func:`card_host` here -- ``<cluster>/<account>`` on a cluster login node, else the box.
 
     The one name a tick here publishes its card under and the ``Forge-Host`` stamp writes
-    (:mod:`lab_commons.dev.forgeorigin`), so a ``host:`` reservation on that card matches the jobs made here.
+    (:mod:`lab_commons.dev.forgeorigin`), so a job made here names the card it came from.
     """
     seat = this_seat()
     return card_host(this_machine(seat), seat)
@@ -263,29 +258,20 @@ def publish_card(
     artefacts: str = '',
     provides: Mapping[str, Mapping[str, Any]] | None = None,
     progress: Mapping[tuple[str, str], str] | None = None,
-    delegates: Sequence[str] = (),
     supply: Supply | None = None,
     running: Sequence[str] = (),
-    reservations: Sequence[Mapping[str, Any]] = (),
-    preempted: Sequence[str] = (),
     priority: Mapping[str, Sequence[str]] | None = None,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
     *progress* is what each local part it holds has done so far, by ``(sha, platform)`` (``producing 42m``),
-    published while they run. *delegates* are the logins this host's user lets reserve it
-    (:mod:`lab_commons.compute.ledger`). *supply* is what the tick admitted against (default: the
-    cluster standing's), *running* what else runs here, *reservations* the live leases on this host,
-    *preempted* the loans this tick displaced, *priority* the subjects this host orders first.
-    A hold on loan says ``on_loan=<lease id>``.
+    published while they run. *supply* is what the tick admitted against (default: the cluster
+    standing's), *running* what else runs here, *priority* the subjects this host orders first.
     """
     progress = progress or {}
     built = client(root)
     try:
-        runs = tuple(
-            f'{run.sha[:12]} {run.progress or run.phase}{_loan(Claim.parse(run.owner))}'
-            for run in forgerun.live(origin_url(root))
-        )
+        runs = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerun.live(origin_url(root)))
         card = HostCard(
             host=card_host(machine, seat),
             login=built.whoami(),
@@ -297,18 +283,13 @@ def publish_card(
             holds=runs
             if seat is not None
             else tuple(
-                f'{one.sha[:12]} {one.platform} {progress.get((one.sha, one.platform), "")}'.rstrip()
-                + _loan(one.holder)
-                for one in claimed
+                f'{one.sha[:12]} {one.platform} {progress.get((one.sha, one.platform), "")}'.rstrip() for one in claimed
             ),
             running=tuple(running),
-            reservations=tuple(reservations),
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
             artefacts=artefacts,
             provides=dict(provides or {}),
-            delegates=tuple(delegates),
-            preempted=tuple(preempted),
             priority=dict(priority or {}),
         )
         say(f'[serve] host card {publish(built, card)}')

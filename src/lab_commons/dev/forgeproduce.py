@@ -7,11 +7,13 @@ still ticks and ``forge queue``'s STALE keeps meaning down; the claim is renewed
 every *renew_s* (counted in wakes) while the producer lives; a ref that moved on stops it
 (``superseded by <sha>``) unless the new tip is
 reach-equivalent (:mod:`lab_commons.dev.forgecarry`) -- then the run finishes and its part is also posted
-on that tip, naming the sha it was judged at; a producer past
-:data:`PRODUCE_WALL_S` is killed; and a claim it left ``pending`` is released as ``error`` with the reason
-its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose. A LOAN
-a reservation holder preempts (*yields* names the lease at a wake) has its process tree stopped and its
-claim released ``preempted by reservation <id>``: OPEN again, re-queued, never an error. A REQUEST (context
+on that tip, naming the sha it was judged at; and a claim it left ``pending`` is released as ``error`` with
+the reason its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose.
+
+THE PRODUCER RUNS IN THE BOX (:func:`boxed`, :func:`lab_commons.box.command`): admitted on this machine's
+box ledger at exactly the demand the tick admitted it at (:func:`lab_commons.compute.learned.box_demand`),
+and killed by the box past that memory or :data:`~lab_commons.compute.learned.BOX_WALL_S`. A box with no
+room releases the claim retryable; a kill is released naming it. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
 is SETTLED here from the exit code (:func:`lab_commons.dev.forgerequest.settle`), and its ref ``issue/<n>``
 has no tip, so nothing supersedes it.
@@ -27,13 +29,11 @@ WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The produ
 sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
 a run that ended on its own (not superseded, not stopped) records its peak, wall and MEASURED cpu-seconds
-under ``(local, its need-set)`` -- the box half of the one demand table a Slurm run also writes. Each wake
-also hands *watch* what the tree uses now (cores busy since the last wake, resident GB), so a serve that
-keeps claiming while it runs can see it. A signalled exit's peak is a floor
-(:func:`~lab_commons.compute.learned.record_run`).
+under ``(local, its need-set)`` -- the box half of the one demand table a Slurm run also writes. A run the
+box killed records its peak as a floor (:func:`~lab_commons.compute.learned.record_run`).
 
-A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): a light run is
-admitted beside a heavy part (:mod:`lab_commons.dev.boxwait`), and the scheduler keeps it responsive.
+A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): an interactive
+run admitted beside it on the box ledger keeps the scheduler's favour.
 """
 
 from __future__ import annotations
@@ -45,14 +45,14 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.compute.learned import LOCAL, Run, record_run
-from lab_commons.compute.model import Resources
+from lab_commons.box import GB, KILLED, Capacity, Demand, command
+from lab_commons.compute.learned import BOX_WALL_S, LOCAL, Run, record_run
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
@@ -61,7 +61,7 @@ from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
-from lab_commons.dev.producer import ProducerExit, preempted, producing, release_reason
+from lab_commons.dev.producer import ProducerExit, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
 from lab_commons.dev.stoprun import declared_signatures, process_table, stop
@@ -69,10 +69,11 @@ from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
-__all__ = ['PRODUCE_WALL_S', 'Produced', 'produce']
+__all__ = ['BOX_QUEUE_S', 'Produced', 'boxed', 'produce']
 
-#: How long a produced part may run before it is called hung, in seconds.
-PRODUCE_WALL_S: Final = 24 * 3600
+#: How long a producer waits for its box claim, in seconds: the tick admitted it against the box ledger, so
+#: only a run admitted in between can be in its way -- then the claim is released and retried next tick.
+BOX_QUEUE_S: Final = 60.0
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,20 @@ def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
     record_run(origin_url(root), LOCAL, needs_of(item.platform), run, killed=killed)
 
 
+def boxed(item: Work, argv: Sequence[str], capacity: Capacity) -> list[str]:
+    """*argv* run through the box at the demand the tick admitted *item* at (the module docstring).
+
+    An item claimed with no demand declares the whole *capacity*, as an unmeasured box part does
+    (:func:`~lab_commons.compute.learned.box_demand`).
+    """
+    asked = item.demand or {'cpu': capacity.cpu, 'mem_gb': capacity.mem_bytes / GB}
+    seats = {name: 1 for name in needs_of(item.platform) if name in capacity.seats}
+    cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
+    demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=BOX_WALL_S, seats=seats)
+    what = f'{item.context}@{item.sha[:12]}'
+    return command(argv, demand, BOX_QUEUE_S, key=item.context, what=what, fingerprint=item.sha)
+
+
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
     for line in stream:
         heard.append(line)
@@ -125,12 +140,12 @@ def produce(
     sample: Callable[[int], float | None] = tree_gb,
     learn: Callable[..., object] = learn_box_run,
     meter: Callable[[int], Callable[[], float | None]] = lambda pid: TreeCpu(pid).sample,
-    watch: Callable[[Resources], object] = lambda _using: None,
-    yields: Callable[[], int] = lambda: 0,
+    capacity: Callable[[], Capacity] | None = None,
 ) -> Produced:
     """Run one local part's argv in its tree at the sha, streaming it and holding its claim; release what it left.
 
-    The tree is built first and removed last (:mod:`lab_commons.dev.shatree`). At each heartbeat the ref is
+    The tree is built first and removed last (:mod:`lab_commons.dev.shatree`); the argv runs in the box
+    (:func:`boxed`, sized against *capacity*, default this box's). At each heartbeat the ref is
     re-read from ``origin``: a ref that moved on stops the producer, and its claim is released ``superseded by <sha>``.
     """
     try:
@@ -141,10 +156,12 @@ def produce(
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
-        return _run(root, item, (str(tree.python), *item.argv), tree.path, client=client, spawn=spawn, clock=clock,
+        argv = (str(tree.python), *item.argv)
+        held = boxed(item, argv, (capacity or Capacity.read)())
+        return _run(root, item, (argv, held), tree.path, client=client, spawn=spawn, clock=clock,
                     say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
                     beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
-                    meter=meter, watch=watch, yields=yields)  # fmt: skip
+                    meter=meter)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
 
@@ -152,7 +169,7 @@ def produce(
 def _run(
     root: Path,
     item: Work,
-    argv: tuple[str, ...],
+    argvs: tuple[tuple[str, ...], list[str]],
     tree: Path,
     *,
     client: Callable[[Path], Client],
@@ -168,14 +185,13 @@ def _run(
     sample: Callable[[int], float | None],
     learn: Callable[..., object],
     meter: Callable[[int], Callable[[], float | None]],
-    watch: Callable[[Resources], object],
-    yields: Callable[[], int],
 ) -> Produced:
+    argv, held = argvs  # what the part runs, and that argv run through the box
     context = item.context
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
     proc = below_normal(
         spawn,
-        list(argv),
+        held,
         cwd=tree,
         env=os.environ | producing(context, item.sha),
         stdout=subprocess.PIPE,
@@ -188,27 +204,21 @@ def _run(
     pump.start()
     started = clock()
     superseded = ''
-    displaced = 0  # the reservation whose holder preempted this loan
     wake_s = min(renew_s, beat_s)
     renew_every = max(1, math.ceil(renew_s / wake_s - 1e-9))  # wakes per renewal
     wakes = 0
-    usage = _Usage(meter(proc.pid) if proc.pid is not None else lambda: None, watch, started)
+    usage = _Usage(meter(proc.pid) if proc.pid is not None else lambda: None)
     while True:
         try:
             returncode = proc.wait(timeout=wake_s)
             break
         except subprocess.TimeoutExpired:
-            if (clock() - started).total_seconds() > PRODUCE_WALL_S:
-                proc.kill()
-                returncode = proc.wait()
-                say(f'[{item.platform}] killed: past the {PRODUCE_WALL_S} s wall')
-                break
-            usage.wake(sample(proc.pid) if proc.pid is not None else None, clock)
-            superseded, displaced, why = _interrupted(root, item, fetch, yields)
-            if why:
+            usage.wake(sample(proc.pid) if proc.pid is not None else None)
+            superseded = _superseded(root, item, fetch)
+            if superseded:
                 _halt(root, proc)
                 returncode = proc.wait()
-                say(f'[{item.platform}] stopped: {why}')
+                say(f'[{item.platform}] stopped: {item.ref} moved on to {superseded[:12]}')
                 break
             wakes += 1
             beat(clock() - started)
@@ -217,16 +227,15 @@ def _run(
     pump.join(timeout=5)
     say(f'[{item.platform}] exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
-    if usage.peak is not None and usage.cpu_s > 0 and not superseded and not stopped and not displaced:
+    if usage.peak is not None and usage.cpu_s > 0 and not superseded and not stopped:
         wall_s = max(1.0, (clock() - started).total_seconds())
-        learn(root, item, Run(usage.peak, usage.cpu_s, wall_s), killed=returncode < 0)
+        learn(root, item, Run(usage.peak, usage.cpu_s, wall_s), killed=returncode == KILLED or returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
-    if context.startswith(CONTEXT_PREFIX) and not displaced and posts and posts[-1].state == 'pending':
+    if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(client(root), item, returncode, ''.join(heard), say)  # a request: its producer posts nothing
-    elif superseded or displaced or (posts and posts[-1].state == 'pending'):
+    elif superseded or (posts and posts[-1].state == 'pending'):
         reason = 'stopped' if stopped else release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
-        reason = preempted(displaced) if displaced else reason
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         _carry(root, client(root), item, posts[-1], say)
@@ -234,34 +243,24 @@ def _run(
 
 
 class _Usage:
-    """What one producer's tree has used: its peak GB and MEASURED cpu-seconds, and what it uses now."""
+    """What one producer's tree has used: its peak GB and MEASURED cpu-seconds."""
 
-    def __init__(self, cpu: Callable[[], float | None], watch: Callable[[Resources], object], at: datetime) -> None:
-        self._cpu, self._watch, self._at = cpu, watch, at
+    def __init__(self, cpu: Callable[[], float | None]) -> None:
+        self._cpu = cpu
         self.peak: float | None = None
         self.cpu_s = 0.0
 
-    def wake(self, gb: float | None, clock: Callable[[], datetime]) -> None:
-        """Read the tree once: keep its peak and cpu-seconds; hand *watch* the cores busy since the last wake."""
+    def wake(self, gb: float | None) -> None:
+        """Read the tree once: keep its peak and cpu-seconds."""
         self.peak = self.peak if gb is None else max(self.peak or 0.0, gb)
-        cpu_s = max(self.cpu_s, self._cpu() or 0.0)
-        now = clock()
-        span = (now - self._at).total_seconds()
-        cores = (cpu_s - self.cpu_s) / span if span > 0 else 0.0
-        self._watch(Resources(cpu=cores, mem_gb=gb or 0.0))
-        self.cpu_s, self._at = cpu_s, now
+        self.cpu_s = max(self.cpu_s, self._cpu() or 0.0)
 
 
-def _interrupted(
-    root: Path, item: Work, fetch: Callable[[Path], None], yields: Callable[[], int]
-) -> tuple[str, int, str]:
-    """``(tip it was superseded by, lease that preempted it, why)`` at a wake; ``('', 0, '')`` to keep running."""
+def _superseded(root: Path, item: Work, fetch: Callable[[Path], None]) -> str:
+    """The tip *item*'s ref moved on to, not reach-equivalent to its sha; ``''`` to keep running."""
     fetch(root)
     tip = tip_of(root, item.ref)
-    if tip and tip != item.sha and not equivalent(root, item.sha, tip):
-        return tip, 0, f'{item.ref} moved on to {tip[:12]}'
-    displaced = yields()
-    return '', displaced, preempted(displaced) if displaced else ''
+    return tip if tip and tip != item.sha and not equivalent(root, item.sha, tip) else ''
 
 
 def _halt(root: Path, proc: subprocess.Popen[str]) -> None:

@@ -16,7 +16,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from lab_commons.dev import forgequeue
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import Claim
-from lab_commons.dev.forgehosts import HOSTS_TITLE, HostCard, publish, read_cards
+from lab_commons.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 NOW_HTTP = 'Sun, 11 Oct 2026 12:00:00 GMT'
@@ -188,7 +188,7 @@ def test_the_queue_cli_prints_json(server, tmp_path: Path, monkeypatch, capsys) 
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
-    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'reservations', 'starved', 'branches'}
+    assert set(printed) == {'now', 'queue', 'in_flight', 'hosts', 'starved', 'branches'}
     assert printed['queue'][0]['blocked'] == 'no host serves it'
 
 
@@ -211,15 +211,19 @@ def test_the_queue_shows_the_origin_branches_a_human_may_delete() -> None:
     assert f'  stale     lane/left  {"b" * 12}  unmerged-stale, idle 96 h' in lines
 
 
-def test_a_cards_preempted_loans_round_trip_and_are_shown_by_the_queue(server) -> None:
-    """PLANTED CONTROL: a card that preempted nothing shows no PREEMPTED line."""
+def test_a_cards_login_is_its_forge_recorded_author_never_what_its_body_says(server) -> None:
+    """Anyone with a credential can post a card naming any login: the forge's record of the writer is read.
+
+    PLANTED CONTROL: a comment the forge records no author for keeps the card's own login.
+    """
     built = client(FORGE, Loopback(server))
-    loud = _card('box-g', 'windows', NOW, preempted=('aaaaaaaaaaaa windows by reservation 5',))
-    quiet = _card('box-h', 'windows', NOW)
+    forged, plain = _card('box-g', 'windows', NOW), _card('box-h', 'windows', NOW)
     answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
-    answer('GET', f'{API}/issues/3/comments', (200, [_comment(i, c) for i, c in enumerate((loud, quiet))]))
+    answer(
+        'GET',
+        f'{API}/issues/3/comments',
+        (200, [{**_comment(1, forged), 'user': {'login': 'mallory'}}, _comment(2, plain)]),
+    )
     cards = read_cards(built)
-    assert cards[0].preempted == loud.preempted
-    hosts = [{**asdict(c), 'holds': list(c.holds), 'stale': False} for c in cards]
-    lines = forgequeue.render({'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': hosts, 'starved': []})
-    assert [line for line in lines if 'PREEMPTED' in line] == ['    PREEMPTED aaaaaaaaaaaa windows by reservation 5']
+    assert [(c.host, c.login) for c in cards] == [('box-g', 'mallory'), ('box-h', 'alice')]
+    assert card_owners(cards) == {'box-g': ('mallory',), 'box-h': ('alice',)}
