@@ -11,7 +11,7 @@ On the login host you chose, store your own forge token once (`git config --glob
 `chmod 600 ~/.git-credentials`, then `python -m lab_commons.dev.forge auth login`), then paste:
 
 ```
-[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
+[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=$D/src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
 ```
 
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
