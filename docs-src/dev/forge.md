@@ -66,7 +66,7 @@ Each tick it:
   run of its repo that no origin branch tip can carry from (the carry's own `forgecarry.nearest` selection per
   tip, plus the tip's own run), an abandoned run, a tree, env, native build (keys the run state records as
   `builds`) or pack nothing kept names, finished `~/slurm-*.out`, and `~/.cache/lab-forge-*.log` past
-  `log_max_mb` (rotated); never a run in flight, nothing younger than `min_age_hours`. On a workstation it
+  `log_max_mb` (rotated); never a run in flight, never a tree a queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`; an unreadable queue keeps every tree), nothing younger than `min_age_hours`. On a workstation it
   removes the stale `forge-*` trees of the serving checkout. Then `uv cache prune` and `git worktree prune`.
   Every deletion is one JSON line (path, bytes, files, rule). At `pressure` of the block or file quota it
   also removes its kept carry sources oldest first down to `target`, and raises a `storage` alarm if still over. The

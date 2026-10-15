@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -19,9 +21,11 @@ from lab_commons.dev.retention import (
     carry_sources,
     cluster_plan,
     load_policy,
+    occupied_trees,
     serve_pass,
     workstation_plan,
 )
+from lab_commons.hpc.slurm import parse_workdirs
 
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
 OLD = NOW - timedelta(days=10)
@@ -247,3 +251,54 @@ def test_serve_pass_runs_once_per_interval(home: Path, tmp_path: Path) -> None:
 
 def _no_run(*_: object, **__: object) -> None:
     return None
+
+
+# ``squeue --me -h -t PENDING,RUNNING -o %Z``: a job-file job submits from its run dir under the tree
+SQUEUE = '/gpfs01/home/u/ci/trees/orphan/.lab-hpc/sweep-20261015\n/gpfs01/home/u/ci/trees/a3\n/gpfs01/home/u/scratch\n'
+
+
+def test_slurm_workdirs_name_the_trees_jobs_occupy() -> None:
+    assert parse_workdirs(SQUEUE) == [
+        '/gpfs01/home/u/ci/trees/orphan/.lab-hpc/sweep-20261015',
+        '/gpfs01/home/u/ci/trees/a3',
+        '/gpfs01/home/u/scratch',
+    ]
+    assert occupied_trees(parse_workdirs(SQUEUE)) == {'orphan', 'a3'}
+
+
+def test_a_tree_a_slurm_job_runs_in_is_kept_under_every_rule(home: Path) -> None:
+    occupied = occupied_trees(parse_workdirs(SQUEUE))
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=occupied)
+    doomed = {d.path for d in plan.doomed}
+    assert home / 'ci' / 'trees' / 'orphan' not in doomed, 'a job-file job runs in it'
+    assert home / 'ci' / 'trees' / 'a1' in doomed, 'PLANTED CONTROL: an unrelated tree still goes'
+    assert all(d.path.name != 'a3' for d in plan.harder), 'quota pressure never takes an occupied tree'
+    assert not any(d.rule == 'env-unreferenced' for d in plan.doomed), 'the job names no builds: unprovable'
+    near = Usage(used=95 * 10**9, limit=100 * 10**9, files=None, files_limit=None)
+    apply(plan, POLICY, usage=near, dry_run=False, say=lambda _: None, run=_no_run)
+    assert (home / 'ci' / 'trees' / 'a3').exists()
+    assert (home / 'ci' / 'trees' / 'orphan').exists()
+    assert not (home / 'ci' / 'trees' / 'a4').exists(), 'PLANTED CONTROL: pressure still prunes the rest'
+
+
+def test_an_unreadable_queue_deletes_no_tree(home: Path) -> None:
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=None)
+    near = Usage(used=95 * 10**9, limit=100 * 10**9, files=None, files_limit=None)
+    apply(plan, POLICY, usage=near, dry_run=False, say=lambda _: None, run=_no_run)
+    trees = home / 'ci' / 'trees'
+    assert {t.name for t in trees.iterdir()} >= {'a1', 'a2', 'a3', 'a4', 'a5', 'g1', 'orphan'}
+    assert not (home / 'ci' / 'runs' / 'a1').exists(), 'PLANTED CONTROL: the run rules still decide runs'
+    assert not any(d.rule.endswith('-unreferenced') and d.rule != 'tree-unreferenced' for d in plan.doomed)
+
+
+def test_the_queue_read_fails_closed() -> None:
+    def broken(*_: object, **__: object) -> object:
+        raise FileNotFoundError(2, 'squeue')
+
+    def answer(code: int, out: str) -> Callable[..., object]:
+        return lambda *_, **__: subprocess.CompletedProcess([], code, out, '')
+
+    assert retention.slurm_occupied(run=broken) is None, 'no squeue: unprovable'
+    assert retention.slurm_occupied(run=answer(1, '')) is None, 'squeue failed: unprovable'
+    assert retention.slurm_occupied(run=answer(0, SQUEUE)) == {'orphan', 'a3'}
+    assert retention.slurm_occupied(run=answer(0, '')) == set(), 'an empty queue occupies nothing'
