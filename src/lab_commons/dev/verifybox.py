@@ -7,8 +7,9 @@ and :func:`boxed` spells its pytest argv through :func:`lab_commons.box.command`
 within the caller's queue ceiling and kills it past its claim. A tree the box already holds (its
 ``INSIDE_ENV``, e.g. a producer serve spawned) is NOT boxed again: it is already held to its claim.
 
-:func:`ended_in_the_box` reads the CLI's two exit codes back: a refusal means nothing ran (raised, so the
-door reports INCONCLUSIVE naming the holder), a kill means the run was cut short (a truncation).
+:func:`ended_in_the_box` reads the box's RECORD back (``--outcome``, never the exit code, which is pytest's own):
+a refusal means nothing ran (raised, so the door reports INCONCLUSIVE naming the holder), a kill means the
+run was cut short and no record means the box itself crashed (each a truncation).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import os
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import KILLED, REFUSED, Capacity, Demand, Refused, command
+from lab_commons.box import Capacity, Demand, Refused, command, read_ended
 from lab_commons.box.run import INSIDE_ENV
 
 __all__ = [
@@ -48,9 +49,6 @@ SELECTION_MEM_GB: Final = 8.0
 #: The wall a selection declares, in seconds: killed past it.
 SELECTION_WALL_S: Final = 3600
 
-#: What the box CLI prints before it exits :data:`~lab_commons.box.REFUSED` (``lab_commons.box.__main__``).
-_REFUSED_PREFIX: Final = 'box: refused -- '
-
 
 def selection_demand(capacity: Capacity) -> Demand:
     """A selection's box claim: :data:`SELECTION_CPU` cores capped at the box, memory and wall as declared."""
@@ -58,24 +56,34 @@ def selection_demand(capacity: Capacity) -> Demand:
     return Demand(cpu=cpu, mem_gb=SELECTION_MEM_GB, wall_s=SELECTION_WALL_S, seats={})
 
 
-def boxed(root: Path, argv: list[str], *, queue_s: float) -> tuple[list[str], dict[str, str]]:
-    """*argv* run in the box at :func:`selection_demand`, and the env capping pytest-xdist at its cores."""
-    if INSIDE_ENV in os.environ:
-        return argv, {}
-    demand = selection_demand(Capacity.read())
-    spelled = command(argv, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}')
-    return spelled, {'PYTEST_XDIST_AUTO_NUM_WORKERS': str(demand.cpu)}
+def boxed(
+    root: Path, argv: list[str], *, queue_s: float, outcome: Path
+) -> tuple[list[str], dict[str, str], Path | None]:
+    """*argv* run in the box at :func:`selection_demand`, the env capping pytest-xdist at its cores, and its record.
 
-
-def ended_in_the_box(code: int, log: Path) -> tuple[str, ...]:
-    """Why the box ended the step whose output is *log*, as a truncation; raises :class:`Refused` when it never ran.
-
-    A refused step printed one line and nothing else, so reading its log back is reading a few bytes.
+    The record is *outcome* when the box runs it, ``None`` for a tree the box already holds (not reboxed).
     """
-    if code == REFUSED:
-        with log.open(encoding='utf-8', errors='replace') as handle:
-            said = [line.strip().removeprefix(_REFUSED_PREFIX) for line in handle if line.startswith(_REFUSED_PREFIX)]
-        raise Refused(said[-1] if said else 'the box refused the run')
-    if code == KILLED:
-        return (f'the box killed pytest past its declared {SELECTION_MEM_GB:g} GB or {SELECTION_WALL_S} s',)
+    if INSIDE_ENV in os.environ:
+        return argv, {}, None
+    demand = selection_demand(Capacity.read())
+    spelled = command(argv, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}', outcome=outcome)
+    return spelled, {'PYTEST_XDIST_AUTO_NUM_WORKERS': str(demand.cpu)}, outcome
+
+
+def ended_in_the_box(record: Path | None) -> tuple[str, ...]:
+    """Why the box ended the step it recorded at *record*, as a truncation; raises :class:`Refused` when it never ran.
+
+    ``None`` is a step the box did not run (already inside a claim): pytest's own code judges it.
+    """
+    if record is None:
+        return ()
+    ended = read_ended(record)
+    if isinstance(ended, Refused):
+        raise ended
+    if ended is None:
+        return (f'the box crashed: it left no record at {record} of how pytest ended',)
+    if ended.killed:
+        return (
+            f'the box killed pytest past its declared {SELECTION_MEM_GB:g} GB or {SELECTION_WALL_S} s ({ended.reason})',
+        )
     return ()

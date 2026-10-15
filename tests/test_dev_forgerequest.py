@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 import test_dev_forgetick
+from _box_fake import ended, record
 from _forge_fake import Recorder, answer, git_out, run_git
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
@@ -160,7 +161,8 @@ def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, **_kw: 'removed')
     item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(
-        tmp_path, item, client=lambda _r: client, spawn=lambda *_a, **_k: _Proc(code), clock=lambda: LATER,
+        tmp_path, item, client=lambda _r: client, spawn=lambda argv, **_k: record(argv, ended(code)) or _Proc(code),
+        clock=lambda: LATER,
         say=said.append, lease=LATER - LATER, renew_s=1.0, fetch=lambda _r: None,
     )  # fmt: skip
     return forge, comments
