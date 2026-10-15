@@ -49,8 +49,9 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
   (`lab_commons.dev.inflight`).
 - A key the run cache already holds is cited without running (`lab_commons.dev.runcache`); `--rerun` overrides.
 - A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
-- A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: at most
-  `SELECTION_CPU` cores, `SELECTION_MEM_GB`, `SELECTION_WALL_S`) beside whatever else fits; a producer runs
+- A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: one core per
+  worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, at most `SELECTION_CPU` unless
+  the caller names a width -- `SELECTION_MEM_GB`, `SELECTION_WALL_S`) beside whatever else fits; a producer runs
   at the demand serve admitted it at ([box resources](box-resources.md)).
 - A heavy part is offered only for the refs its `[tool.lab_commons.parts.refs.<part>] <scope>` admits
   (`platformparts.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).

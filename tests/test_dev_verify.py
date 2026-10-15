@@ -1065,19 +1065,19 @@ def test_a_run_that_judged_no_test_still_posts_no_part(monkeypatch, tmp_path: Pa
     assert 'covers no test' in said
 
 
-def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], dict[str, str], Path | None]:
+def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], Path | None]:
     """The pytest step as given: these tests are about what verify JUDGES, not the box it runs in."""
-    return argv, {}, None
+    return argv, None
 
 
 #: Why the box refused the step (the ``--outcome`` record ``lab_commons.box.__main__`` writes).
 _REFUSED_WHY: Final = 'cpu: wants 4 of 3; verify:other (pid 7) holds 3 until 2026-10-15T00:00:00+00:00'
 
 
-def _refusing(_root: Path, argv: list[str], *, outcome: Path, **_k: object) -> tuple[list[str], dict[str, str], Path]:
+def _refusing(_root: Path, argv: list[str], *, outcome: Path, **_k: object) -> tuple[list[str], Path]:
     """The box refused the pytest step: its record says so, whatever code the step exits with."""
     write_ended(outcome, Refused(_REFUSED_WHY))
-    return argv, {}, outcome
+    return argv, outcome
 
 
 def _unreadable(_path: Path) -> LogRef:
@@ -1223,23 +1223,54 @@ def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatc
     assert "needs ['matlab']" in capsys.readouterr().err
 
 
-def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(monkeypatch) -> None:
-    """The step is held to its declared claim; a tree the box ALREADY holds (a producer) is not claimed twice."""
+def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool) -> None:
     monkeypatch.delenv(INSIDE_ENV, raising=False)
     monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')  # naming a part is not being in the box
-    small = Capacity(cpu=2.0, mem_bytes=16 * GB, seats={})
-    monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: small))
-    argv, width, record = verifybox.boxed(Path('r'), ['py', '-m', 'pytest'], queue_s=5, outcome=Path('o.json'))
+    box = Capacity(cpu=cpu, mem_bytes=16 * GB, seats={})
+    monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: box))
+    monkeypatch.setattr(verifybox, 'xdist_installed', lambda: xdist)
+
+
+def _claimed(argv: list[str]) -> tuple[str, list[str]]:
+    """The cores the box claim declares, and the pytest argv it runs."""
+    return argv[argv.index('--cpu') + 1], argv[argv.index('--') + 1 :]
+
+
+def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(monkeypatch) -> None:
+    """The step is held to its declared claim; a tree the box ALREADY holds (a producer) is not claimed twice."""
+    _boxed_on(monkeypatch, 2.0, xdist=True)
+    argv, record = verifybox.boxed(Path('r'), ['py', '-m', 'pytest'], queue_s=5, outcome=Path('o.json'))
     assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
-    assert argv[argv.index('--') + 1 :] == ['py', '-m', 'pytest']
-    assert argv[argv.index('--cpu') + 1] == '2', 'capped at the box'
+    assert _claimed(argv) == ('2', ['py', '-m', 'pytest', '-n', '2']), 'capped at the box, -n built from it'
     assert argv[argv.index('--queue-s') + 1] == '5'
-    assert width == {'PYTEST_XDIST_AUTO_NUM_WORKERS': '2'}
-    monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
     assert record == Path('o.json')
     assert argv[argv.index('--outcome') + 1] == 'o.json'
+    monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
     reboxed = verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))
-    assert reboxed == (['py'], {}, None), 'PLANTED CONTROL: a boxed tree is not reboxed'
+    assert reboxed == (['py'], None), 'PLANTED CONTROL: a boxed tree is not reboxed'
+
+
+@pytest.mark.parametrize(
+    ('xdist', 'given', 'cores', 'runs'),
+    [
+        (True, [], '4', ['-n', '4']),
+        (False, [], '1', []),
+        (True, ['-n0'], '1', ['-n0']),
+        (True, ['-n', '2'], '2', ['-n', '2']),
+        (True, ['--numprocesses=3'], '3', ['--numprocesses=3']),
+        (True, ['-n', 'auto'], '4', ['-n', 'auto']),
+        (True, ['-p', 'no:xdist'], '1', ['-p', 'no:xdist']),
+    ],
+)
+def test_a_selection_declares_the_workers_its_pytest_runs(monkeypatch, xdist, given, cores, runs) -> None:
+    """Declared == used: the claim's cores ARE the -n the step runs (one interpreter when serial).
+
+    PLANTED CONTROLS: without xdist, ``-n0`` and ``-p no:xdist`` all run ONE interpreter and claim one
+    core, never the cap; an explicit width is the caller's and is declared as given.
+    """
+    _boxed_on(monkeypatch, 16.0, xdist=xdist)
+    argv, _record = verifybox.boxed(Path('r'), ['py', '-m', 'pytest', *given], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(argv) == (cores, ['py', '-m', 'pytest', *runs])
 
 
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:
