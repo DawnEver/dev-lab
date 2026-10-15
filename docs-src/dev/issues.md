@@ -56,8 +56,34 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 - An INCONCLUSIVE record is routed too: its reported reds are rows, and the ids it never reported are one
   `<part>: never reported` row per area. A record covering no test routes nothing.
 - Every open `area:*` issue is re-rendered on each record. Routing never closes one: with no `- [ ]` left,
-  `forge tidy` (`green_areas`) closes it.
+  `forge tidy` (`green_areas`) closes it ([issues never rot](#issues-never-rot)).
 - Routing the same record twice writes nothing. This list replaces every hand-kept list of open reds.
+
+## Issues never rot
+
+`forge serve` runs `forge tidy` on every host, every tick, for every repo it serves (user ruling 2026-10-15;
+`python -m lab_commons.dev.forge tidy --dry-run` shows the plan). Every rule is ON; a repo only tunes it in
+`[tool.lab_commons.forge.issue_hygiene]` -- these are the defaults:
+
+```toml
+[tool.lab_commons.forge.issue_hygiene]
+host_duplicates = true       # DELETE every machine-made `forge hosts` issue but the oldest (the one home)
+green_areas = true           # close an `area:*` issue with no `- [ ]` row
+request_max_age_days = 14    # close a `forge:request` issue older than this
+work_max_idle_days = 14      # close a WORK issue not updated for longer than this
+```
+
+- A WORK issue is one no machinery keeps: not the hosts issue, not `area:*`, not a request, not an alarm kept
+  as an issue (`integration: ...`, `starved: ...`; `forgealarm.ISSUE_KINDS`), and with no hidden marker in its
+  body. A comment, a claim or an edit counts as an update.
+- A comment carrying a hidden `<!-- lab-commons:<kind>... -->` marker whose kind is no `forgepulls.Marker`
+  member is DELETED, always: its writer is retired and nothing else will touch it. The writers take their
+  kind from that enum, so the set of live kinds is the writers' own.
+- An `integration: <branch> is BLOCKED on a red part` issue is kept by `forge serve`'s prompt pass
+  (`forgeroute.reconcile`), not by tidy: a row the queue no longer derives closes its issue on the next tick.
+- Everything is said in ONE summary comment on the hosts issue; a closed issue reopens to undo.
+- lab-commons declares no table: it runs on the defaults. A downstream repo declares the table only to tune
+  a value; the keys are refused by name when unknown.
 
 ## Labels the machinery reads
 

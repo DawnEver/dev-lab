@@ -54,7 +54,7 @@ def _old_publish(forge: StateForge, card: HostCard) -> None:
     listed = forge.call('GET', f'{forge.repo}/issues?state=open&type=issues&limit=50')
     number = next((r['number'] for r in listed if r['title'] == HOSTS_TITLE and not _presence_only(r)), None)
     number = number or forge.issue_create(HOSTS_TITLE, 'hosts').number
-    forgehosts.comment_upsert(forge, number, subject=f'host:{card.host}', text=card.text())
+    forgehosts.comment_upsert(forge, number, kind=forgehosts.Marker.HOST, key=card.host, text=card.text())
 
 
 def test_planted_control_the_old_lookup_opens_a_duplicate_every_tick() -> None:

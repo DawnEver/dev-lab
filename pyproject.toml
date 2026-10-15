@@ -121,12 +121,6 @@ id = "admission"
 run = ["python", "-m", "lab_commons.dev.admission", "--trunk-ref", "refs/heads/main"]
 always_run = true
 
-# What `forge tidy` (run by `forge integration`) may CLOSE -- never delete (lab_commons.dev.forgetidy).
-[tool.lab_commons.forge.issue_hygiene]
-host_duplicates = true
-green_areas = true
-request_max_age_days = 14
-
 [tool.lab_commons.branchset]
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'

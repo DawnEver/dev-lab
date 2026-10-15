@@ -15,7 +15,8 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
-on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`);
+on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`)
+and tidy the repo's issues (``forge tidy``, :func:`lab_commons.dev.forgetidy.tidy`) -- every served repo, every tick;
 run the storage retention pass when due (:mod:`lab_commons.dev.retention`; still over quota raises a
 ``storage`` alarm); flush the outbox again.
 
@@ -103,17 +104,20 @@ from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, STORAGE, Alarm, sound
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import HostCard, card_host, card_owners, read_cards, recording
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, produce
+from lab_commons.dev.forgepulls import ListingIncomplete
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
 from lab_commons.dev.forgeroute import reconcile
 from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgestatus import status_list
+from lab_commons.dev.forgetidy import load_hygiene
+from lab_commons.dev.forgetidy import tidy as issue_tidy
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.integrator import observe
 from lab_commons.dev.platformparts import origin_url
@@ -203,6 +207,7 @@ def serve(
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    _hygiene(root, client(root), say=say)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
@@ -225,8 +230,11 @@ def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Call
 
     Any host may raise these; :func:`lab_commons.dev.forgeroute.reconcile` finds the issue by its title, so
     N hosts deriving the same rows write one issue, the host that creates or changes it pages, and a row
-    no longer derived closes its issue.
+    no longer derived closes its issue. A kind outside :data:`~lab_commons.dev.forgealarm.ISSUE_KINDS` is refused.
     """
+    if kind not in ISSUE_KINDS:
+        msg = f'{kind!r} is not an issue-kept alarm kind {ISSUE_KINDS} (lab_commons.dev.forgealarm.ISSUE_KINDS)'
+        raise ValueError(msg)
     by_title = {f'{kind}: {one.subject}': one for one in alarms}
     for done in reconcile(built, f'{kind}: ', {title: one.body for title, one in by_title.items()}):
         if done.action in {'created', 'updated'} and done.area in by_title:
@@ -284,6 +292,15 @@ def _tidy(
         forgeship.tidy(root, client(root), account=seat.account, say=say)
     except (OSError, ValueError) as why:
         alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
+
+
+def _hygiene(root: Path, built: Client, *, say: Callable[[str], None]) -> None:
+    """The repo's issue hygiene, on any host every tick (idempotent: a raced close is a no-op); a failure is said."""
+    try:
+        for line in issue_tidy(built, load_hygiene(root)):
+            say(f'[serve] tidy: {line}')
+    except (ForgeCallFailed, ListingIncomplete, ValueError) as failed:
+        say(f'[serve] the issue hygiene did not run: {failed}')
 
 
 def _retain(

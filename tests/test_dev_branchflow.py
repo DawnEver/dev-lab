@@ -17,7 +17,7 @@ from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, se
 from lab_commons.dev import forgesync
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeintegration import CONTEXT, retarget_note, tick
-from lab_commons.dev.forgepulls import comment_upsert, marker
+from lab_commons.dev.forgepulls import Marker, comment_upsert, marker
 from lab_commons.dev.forgerecords import RECORDS_TAG, attach, listing
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.trialmerge import merged_at, trial
@@ -124,14 +124,14 @@ def test_sync_refuses_on_the_trunk_and_on_integration(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(('forge', 'api'), [(GITEA, GAPI), (GITHUB, HAPI)])
 def test_one_comment_is_updated_never_duplicated(server, forge: Forge, api: str) -> None:
-    existing = {'id': 9, 'body': f'{marker("integration")}\nold', 'html_url': 'c/9'}
+    existing = {'id': 9, 'body': f'{marker(Marker.INTEGRATION)}\nold', 'html_url': 'c/9'}
     answer('GET', f'{api}/issues/4/comments', (200, [{'id': 1, 'body': 'hi', 'html_url': 'c/1'}, existing]))
     answer('PATCH', f'{api}/issues/comments/9', (200, {'id': 9, 'body': 'x', 'html_url': 'c/9'}))
     built = client(forge, Loopback(server))
-    assert comment_upsert(built, 4, subject='integration', text='new')[0] == 'updated'
+    assert comment_upsert(built, 4, kind=Marker.INTEGRATION, text='new')[0] == 'updated'
     assert [r['method'] for r in Recorder.received if r['method'] != 'GET'] == ['PATCH']
-    existing['body'] = f'{marker("integration")}\nnew'
-    assert comment_upsert(built, 4, subject='integration', text='new')[0] == 'unchanged'
+    existing['body'] = f'{marker(Marker.INTEGRATION)}\nnew'
+    assert comment_upsert(built, 4, kind=Marker.INTEGRATION, text='new')[0] == 'unchanged'
     assert [r['method'] for r in Recorder.received if r['method'] != 'GET'] == ['PATCH'], 'nothing written twice'
 
 
@@ -162,7 +162,7 @@ def test_the_tick_retargets_a_trunk_pr_and_reports_each_child_once(
     }
     comments = [r['body']['body'] for r in Recorder.received if r['path'] == f'{api}/issues/4/comments' and r['body']]
     assert retarget_note(POLICY) in comments[0]
-    assert marker('integration') in comments[1]
+    assert marker(Marker.INTEGRATION) in comments[1]
     assert 'behind `integrate/main` by 1; clean' in comments[1]
     assert 'syncs from: `origin/integrate/main`' in comments[1]
     assert ('POST', f'{api}/statuses/{lane}') in writes, 'a child without a PR gets a commit status'

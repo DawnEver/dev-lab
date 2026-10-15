@@ -49,7 +49,8 @@ from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
 __all__ = [
-    'AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'LEASE', 'PRUNED', 'RUN', 'STALE_BRANCH', 'STARVED', 'STORAGE', 'Alarm',
+    'AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'ISSUE_KINDS', 'LEASE', 'PRUNED', 'RUN', 'STALE_BRANCH', 'STARVED',
+    'STORAGE', 'Alarm',
     'main', 'repeat_window', 'sound',
 ]  # fmt: skip
 
@@ -65,6 +66,9 @@ RUN: Final = 'run'
 STARVED: Final = 'starved'
 #: An integration row this host created or changed on the forge (:mod:`lab_commons.dev.integrator`).
 INTEGRATION: Final = 'integration'
+#: The kinds kept as ONE forge issue per alarm, titled ``<kind>: <subject>``
+#: (:func:`lab_commons.dev.forgeserve.raise_once` refuses any other) -- so ``forge tidy`` knows them as machine-kept.
+ISSUE_KINDS: Final = (INTEGRATION, STARVED)
 #: A host deleted merged idle origin branches, or failed to (:mod:`lab_commons.dev.branchprune`).
 PRUNED: Final = 'pruned'
 #: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`lab_commons.dev.branchprune`).

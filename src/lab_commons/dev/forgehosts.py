@@ -49,7 +49,15 @@ from lab_commons.compute.priority import Priority
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
-from lab_commons.dev.forgepulls import ListingIncomplete, comment_list, comment_upsert, issues, marker
+from lab_commons.dev.forgepulls import (
+    ListingIncomplete,
+    Marker,
+    comment_list,
+    comment_upsert,
+    issues,
+    marker,
+    marker_kinds,
+)
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
@@ -78,7 +86,7 @@ __all__ = [
 HOSTS_TITLE: Final = 'forge hosts'
 
 #: The hidden line in the hosts issue's body it is found by.
-HOSTS_MARKER: Final = marker('forge-hosts')
+HOSTS_MARKER: Final = marker(Marker.HOSTS)
 
 #: The text every hosts issue this module opened carries, marker or not: how a machine-made one is told apart.
 HOSTS_ORIGIN: Final = '(lab_commons.dev.forgehosts)'
@@ -86,7 +94,6 @@ HOSTS_ORIGIN: Final = '(lab_commons.dev.forgehosts)'
 #: How many of its own tick periods a card may age before it is stale.
 STALE_TICKS: Final = 3
 
-_SUBJECT: Final = 'host:'
 _BLOCK: Final = re.compile(r'```json\n(?P<json>.*?)\n```', re.DOTALL)
 
 
@@ -189,7 +196,7 @@ def publish(client: Client, card: HostCard) -> str:
     number = hosts_issue(client)
     if number is None:
         number = _open_hosts_issue(client)
-    action, _ = comment_upsert(client, number, subject=f'{_SUBJECT}{card.host}', text=card.text())
+    action, _ = comment_upsert(client, number, kind=Marker.HOST, key=card.host, text=card.text())
     return action
 
 
@@ -203,7 +210,7 @@ def read_cards(client: Client) -> tuple[HostCard, ...]:
 
 def card_of(comment: Comment) -> HostCard | None:
     """The host card *comment* carries, its login the comment's forge-recorded author; ``None`` when it carries none."""
-    found = _BLOCK.search(comment.body) if f'lab-commons:{_SUBJECT}' in comment.body else None
+    found = _BLOCK.search(comment.body) if Marker.HOST in marker_kinds(comment.body) else None
     if found is None:
         return None
     raw = json.loads(found['json'])

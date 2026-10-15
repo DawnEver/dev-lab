@@ -271,7 +271,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
 * :mod:`lab_commons.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``); no live host
   having a part's need-set is named.
-* :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: close the issues a repo declared finished; never delete.
+* :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
 * :mod:`lab_commons.dev.servekit` -- a deployed host fast-forwards its own lab-commons each serve tick, then re-execs.

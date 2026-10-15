@@ -24,6 +24,7 @@ from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Al
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeroute import Routed
 from lab_commons.dev.forgetick import TickReport
+from lab_commons.dev.forgetidy import Hygiene
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart
@@ -152,6 +153,7 @@ def _serve(
     issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
     starving: tuple = (),
+    issue_tidy=lambda _client, _hygiene: [],
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -195,6 +197,7 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
+    monkeypatch.setattr(forgeserve, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
     report = forgeserve.serve(
@@ -764,6 +767,35 @@ def test_every_tick_runs_the_branch_prune_on_any_host(monkeypatch, tmp_path: Pat
 
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), prune=prune)
     assert offered == [tmp_path]
+
+
+def test_every_tick_tidies_the_repos_issues_on_any_host(monkeypatch, tmp_path: Path) -> None:
+    """Issues never rot: every served repo is tidied each tick, by its defaults when it declares nothing."""
+    given: list[Hygiene] = []
+
+    def issue_tidy(_client: object, hygiene: Hygiene) -> list[str]:
+        given.append(hygiene)
+        return ['#7: closed']
+
+    _report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), issue_tidy=issue_tidy)
+    assert given == [Hygiene()]
+    assert '[serve] tidy: #7: closed' in said
+
+
+def test_a_failed_tidy_is_said_and_the_tick_goes_on(monkeypatch, tmp_path: Path) -> None:
+    def issue_tidy(_client: object, _hygiene: Hygiene) -> list[str]:
+        msg = 'bad table'
+        raise ValueError(msg)
+
+    report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), issue_tidy=issue_tidy)
+    assert '[serve] the issue hygiene did not run: bad table' in said
+    assert report.published, 'the outbox is still flushed'
+
+
+def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:
+    """``forge tidy`` exempts exactly ISSUE_KINDS as machine-kept, so raise_once may keep no other kind."""
+    with pytest.raises(ValueError, match='ISSUE_KINDS'):
+        forgeserve.raise_once(SimpleNamespace(), RUN, [], alarm=lambda _a: None)
 
 
 def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch, tmp_path: Path) -> None:
