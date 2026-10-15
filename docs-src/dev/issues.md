@@ -49,8 +49,14 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
   jmag = ["src/pkg/adapters/jmag/**", "tests/**/jmag/**"]
   ```
 
-- The body is the area's current list: a red id is `- [ ]`, an id this record ran green is ticked `- [x]`, an
-  id this record did not run is left alone. With no `- [ ]` left, the issue is closed naming the sha.
+- A row `- [ ] `<id>` (<part>) <outcome>` means: the latest record of the part that NOW selects `<id>`
+  reported it red. Routing a record of part P replaces P's rows with its reds, and drops every other row
+  whose part the record says no longer selects that id -- a retired part name, an id moved to another
+  part, an id no longer collected. A green id has no row; nothing is ever ticked.
+- An INCONCLUSIVE record is routed too: its reported reds are rows, and the ids it never reported are one
+  `<part>: never reported` row per area. A record covering no test routes nothing.
+- Every open `area:*` issue is re-rendered on each record. Routing never closes one: with no `- [ ]` left,
+  `forge tidy` (`green_areas`) closes it.
 - Routing the same record twice writes nothing. This list replaces every hand-kept list of open reds.
 
 ## Labels the machinery reads

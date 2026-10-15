@@ -279,6 +279,10 @@ def advance(
             run = _step(run, phase=GATHERED, record=str(record))
             run = _report(client, run, 'publishing', lease, say)
         if run.phase == GATHERED:
+            # routed BEFORE the part is posted: an INCONCLUSIVE record is refused a part, yet each red it
+            # reported is real (lab_commons.dev.forgeroute); re-routing an unchanged record writes nothing.
+            for one in route(client, read_record(Path(run.record)), pyproject_at(root, run.sha)):
+                say(f'{tag}: routed {one.area} {one.action}' + (f' #{one.number}' if one.number else ''))
             run = _ship(root, run, client=client, cluster=cluster, say=say, tag=tag)
             say(publish(root, Path(run.record), client=client, ref=run.ref, sha=run.sha, platform=run.platform))
             run = _step(run, phase=PUBLISHED)
@@ -287,9 +291,6 @@ def advance(
         _release(client, run, _release_reason(run, why, alarm), say)
         drop(run)
         return None
-    record = read_record(Path(run.record))
-    for one in route(client, record, pyproject_at(root, run.sha)):
-        say(f'{tag}: routed {one.area} {one.action}' + (f' #{one.number}' if one.number else ''))
     drop(run)
     say(f'{tag}: published and released')
     return None

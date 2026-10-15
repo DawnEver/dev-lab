@@ -12,10 +12,30 @@ A test id is matched by its FILE (the part before ``::``) against the globs in d
 first area that matches owns it. ``**`` spans directories, ``*`` and ``?`` stay inside one.
 
 THE ISSUE IS FOUND BY ITS TITLE, ``area:<name>``, among the OPEN issues, so routing the same record
-twice writes nothing the second time. Its body is the area's current list: a red id is ``- [ ]``, an id
-listed earlier that THIS record ran green is ticked ``- [x]``, and an id this record did not run is left
-as it was (another part's red is not green here). When no ``- [ ]`` row remains the issue is
-closed with a comment naming the sha. Unowned reds land in the default area, so a red is never dropped.
+twice writes nothing the second time.
+
+WHAT A ROW MEANS, derived rather than accumulated: ``- [ ] `<id>` (<part>) <outcome>`` says "the latest
+record of <part> -- the part that NOW selects <id> -- reported <id> red". A part is a need-set and every
+id belongs to exactly one (:mod:`lab_commons.dev.platformparts`), and every record names the owner of
+EVERY collected id: its own outcome, or ``not-covered`` with the part it is handed to. So the body is a
+pure function of the latest record per part, and routing a record of part P (:func:`render`):
+
+* REPLACES P's rows with P's reds in this record -- a row of P the record no longer reports red is gone;
+* keeps another part Q's row only while this record says Q still selects that id. A row keyed by a part
+  no record hands anything to (a retired part or platform name), or an id another part now selects, or
+  an id no longer collected, disappears -- nothing will ever run it again under that key.
+
+There is no ticked row: a green id has no row. An area with no ``- [ ]`` row left is CLOSED by
+``forge tidy`` (``green_areas``, :func:`still_red` is the one test both read); routing only writes the body.
+Every open ``area:*`` issue is re-rendered on each record, so an area the record has no red in still loses
+the rows it disowns.
+
+AN INCONCLUSIVE RECORD IS ROUTED. Its part is never posted (:func:`lab_commons.dev.platformparts.part_of`),
+but each id it DID report red is a real red, so it is a row. The ids it never reported (``lost``,
+``missing``) are not reds of their own: they become ONE row per area, ``never reported``, counting them
+and naming the first few -- the latest record says nothing about them, and that is itself the fact. A
+record covering no id is no evidence at all and routes nothing. Unowned reds land in the default area, so
+a red is never dropped.
 
 OWNERS are data too, in ``[tool.lab_commons.forge.owners]``: a key is an area name or a branch glob
 (matched against the record's ``branch``), its value a list of gitea usernames. Every owner whose key
@@ -38,6 +58,7 @@ from typing import Any, Final
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgepulls import issues
 from lab_commons.dev.forgework import Client, ForgeCallFailed, Issue, client_for
+from lab_commons.dev.platformparts import NOT_COVERED, UNRUN
 from lab_commons.hpc.records import read_record
 from lab_commons.log import emit
 
@@ -46,6 +67,7 @@ __all__ = [
     'RED',
     'Routed',
     'area_of',
+    'covers_any',
     'find_open',
     'group',
     'main',
@@ -56,15 +78,18 @@ __all__ = [
     'reconcile',
     'render',
     'route',
+    'still_red',
     'title_of',
 ]
 
 #: The area an unmatched red lands in when the repo names none.
 DEFAULT_AREA: Final = 'unowned'
-#: The outcomes routed as red; everything else that ran counts as green.
-RED: Final = frozenset({'failed', 'error', 'lost', 'missing'})
-_GREEN: Final = frozenset({'passed', 'xfailed', 'skipped'})
+#: The reported outcomes routed as red, one row per id; an id never reported is ``UNRUN``, never red.
+RED: Final = frozenset({'failed', 'error'})
 _ROW: Final = re.compile(r'^- \[( |x)\] `([^`]+)`(.*)$', re.MULTILINE)
+_OPEN: Final = re.compile(r'^- \[ \] `', re.MULTILINE)
+_TAG: Final = re.compile(r' \(([^)\s]+)\) ')
+_NAMED: Final = 5
 _REASON_CHARS: Final = 200
 _USER: Final = re.compile(r'[A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?\Z')
 
@@ -131,15 +156,41 @@ def area_of(node: str, areas: Sequence[tuple[str, Sequence[re.Pattern[str]]]], d
 
 
 def group(
-    outcomes: Mapping[str, str], areas: Sequence[tuple[str, Sequence[re.Pattern[str]]]], default: str
-) -> dict[str, tuple[set[str], set[str]]]:
-    """``{area: (red ids, green ids)}`` of one record; an area with neither is absent."""
-    grouped: dict[str, tuple[set[str], set[str]]] = {}
-    for node, outcome in outcomes.items():
-        if outcome in RED or outcome in _GREEN:
-            reds, greens = grouped.setdefault(area_of(node, areas, default), (set(), set()))
-            (reds if outcome in RED else greens).add(node)
+    record: Mapping[str, Any], areas: Sequence[tuple[str, Sequence[re.Pattern[str]]]], default: str
+) -> dict[str, dict[str, str]]:
+    """``{area: {row key: row text after the key}}`` -- *record*'s own rows; an area with none is absent.
+
+    A reported red is one row per id; the ids the record never reported are ONE row per area.
+    """
+    part, outcomes = str(record['platform']), record['outcomes']
+    reasons = record.get('reasons', {})
+    grouped: dict[str, dict[str, str]] = {}
+    unrun: dict[str, list[str]] = {}
+    for node, outcome in sorted(outcomes.items()):
+        area = area_of(node, areas, default)
+        if outcome in RED:
+            why = _reason(reasons.get(node, ''))
+            grouped.setdefault(area, {})[node] = f' ({part}) {outcome}' + (f' -- {why}' if why else '')
+        elif outcome in UNRUN:
+            unrun.setdefault(area, []).append(node)
+    for area, nodes in unrun.items():
+        named = ', '.join(nodes[:_NAMED]) + (', ...' if len(nodes) > _NAMED else '')
+        grouped.setdefault(area, {})[_unrun_key(part)] = f' ({part}) {len(nodes)} test(s) -- {named}'
     return grouped
+
+
+def _unrun_key(part: str) -> str:
+    return f'{part}: never reported'
+
+
+def covers_any(record: Mapping[str, Any]) -> bool:
+    """Whether *record* covers any id at all -- a record covering none is no evidence and routes nothing."""
+    return any(outcome != NOT_COVERED for outcome in record['outcomes'].values())
+
+
+def still_red(body: str) -> bool:
+    """Whether an area body holds a ``- [ ]`` row -- the one test routing writes and ``forge tidy`` closes by."""
+    return _OPEN.search(body) is not None
 
 
 def title_of(area: str) -> str:
@@ -147,27 +198,40 @@ def title_of(area: str) -> str:
     return f'area:{area}'
 
 
+_AREA_TITLE: Final = re.compile(re.escape(title_of('')) + r'(\S+)\Z')
+
+
 def _reason(text: str) -> str:
     first = (text or '').strip().splitlines()[0] if (text or '').strip() else ''
     return first[:_REASON_CHARS]
 
 
-def render(
-    previous: str, reds: set[str], greens: set[str], record: Mapping[str, Any], commit_url: str
-) -> tuple[str, bool]:
-    """The area body after *record*, and whether any red row remains open."""
-    rows: dict[str, tuple[bool, str]] = {}
+def render(previous: str, mine: Mapping[str, str], record: Mapping[str, Any], commit_url: str) -> str:
+    """The area body after *record*: *mine* (its :func:`group` rows here) and the rows it says still stand.
+
+    A row of another part stands only while *record* says that part selects its id (module docstring).
+    """
+    part, outcomes = str(record['platform']), record['outcomes']
+    handed = record.get('handed', {})
+    owner = {node: str(handed.get(node, '')) if out == NOT_COVERED else part for node, out in outcomes.items()}
+    current = set(owner.values())
+    rows = {}
     for mark, node, rest in _ROW.findall(previous):
-        rows[node] = (mark == 'x', rest)
-    reasons = record.get('reasons', {})
-    for node in greens & rows.keys():
-        rows[node] = (True, rows[node][1])
-    for node in reds:
-        why = _reason(reasons.get(node, ''))
-        rows[node] = (False, f' ({record["platform"]}) {record["outcomes"][node]}' + (f' -- {why}' if why else ''))
-    head = f'Last routed: run `{record["platform"]}` at [{record["sha"][:12]}]({commit_url}) (req `{record["req"]}`).'
-    lines = [f'- [{"x" if done else " "}] `{node}`{rest}' for node, (done, rest) in sorted(rows.items())]
-    return '\n'.join([head, '', *lines]) + '\n', any(not done for done, _ in rows.values())
+        tagged = _TAG.match(rest)
+        other = tagged[1] if tagged else ''
+        if mark == ' ' and other and other != part:
+            stands = owner.get(node) == other or (node == _unrun_key(other) and other in current)
+            if stands:
+                rows[node] = rest
+    rows.update(mine)
+    unrun = any(out in UNRUN for out in outcomes.values())
+    verdict = 'INCONCLUSIVE' if unrun else 'FAIL' if any(out in RED for out in outcomes.values()) else 'PASS'
+    head = (
+        f'Last routed: part `{part}` at [{record["sha"][:12]}]({commit_url}) (req `{record["req"]}`), {verdict}.'
+        ' A row is a red of the latest record of the part that now selects it.'
+    )
+    lines = [f'- [ ] `{node}`{rest}' for node, rest in sorted(rows.items())]
+    return '\n'.join([head, '', *lines]) + '\n'
 
 
 @dataclass(frozen=True)
@@ -214,36 +278,38 @@ def _unstamped(body: str) -> str:
 
 
 def route(client: Client, record: Mapping[str, Any], areas_text: str) -> tuple[Routed, ...]:
-    """Bring every area *record* touched up to date on the forge; see the module docstring."""
+    """Re-render every open area issue and every area *record* has a row in; see the module docstring.
+
+    Nothing is closed here: an issue left with no red row is ``forge tidy``'s (``green_areas``).
+    """
+    if not covers_any(record):
+        return ()
     areas, default = read_areas(areas_text)
     owners = read_owners(areas_text)
     forge = client.forge
     commit_url = f'https://{forge.host}/{forge.owner}/{forge.repo}/commit/{record["sha"]}'
+    open_numbers: dict[str, int] = {}  # the OLDEST open issue per area title, off one listing
+    for raw in issues(client, state='open'):
+        if found := _AREA_TITLE.match(str(raw.get('title', ''))):
+            open_numbers[found[1]] = min(raw['number'], open_numbers.get(found[1], raw['number']))
+    mine = group(record, areas, default)
     done = []
-    for area, (reds, greens) in sorted(group(record['outcomes'], areas, default).items()):
+    for area in sorted(mine.keys() | open_numbers.keys()):
         title = title_of(area)
         names = owners_of(area, record.get('branch', ''), owners)
         cc = '\ncc ' + ' '.join(f'@{n}' for n in names) + '\n' if names else ''
-        found = find_open(client, title)
-        if found is None:
-            if reds:
-                body, _ = render('', reds, greens, record, commit_url)
-                body += cc
-                done.append(Routed(area, 'created', client.issue_create(title, body).number))
+        number = open_numbers.get(area)
+        if number is None:
+            body = render('', mine[area], record, commit_url) + cc
+            done.append(Routed(area, 'created', client.issue_create(title, body).number))
             continue
-        previous = _unstamped(found.body)
-        body, still_red = render(previous, reds, greens, record, commit_url)
-        body += cc
-        if not still_red:
-            client.issue_edit(found.number, body)
-            client.issue_comment(found.number, f'green at {record["sha"]} on `{record["platform"]}`: closing')
-            client.issue_close(found.number)
-            done.append(Routed(area, 'closed', found.number))
-        elif _ROW.findall(body) != _ROW.findall(previous):
-            client.issue_edit(found.number, body)
-            done.append(Routed(area, 'updated', found.number))
+        previous = _unstamped(client.issue_view(number).body)
+        body = render(previous, mine.get(area, {}), record, commit_url) + cc
+        if _ROW.findall(body) != _ROW.findall(previous):
+            client.issue_edit(number, body)
+            done.append(Routed(area, 'updated', number))
         else:
-            done.append(Routed(area, 'unchanged', found.number))
+            done.append(Routed(area, 'unchanged', number))
     return tuple(done)
 
 

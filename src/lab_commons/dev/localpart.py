@@ -30,7 +30,14 @@ from lab_commons.config import section
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
-from lab_commons.dev.platformparts import PartRefusal, UndeclaredPart, post, record_directory, this_platform
+from lab_commons.dev.platformparts import (
+    NOT_COVERED,
+    PartRefusal,
+    UndeclaredPart,
+    post,
+    record_directory,
+    this_platform,
+)
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
@@ -39,9 +46,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
 
 __all__ = ['local_record', 'owners', 'part_selection', 'post_cited', 'post_local', 'post_part', 'present_here']
-
-#: The record's word for an id handed to another part (the cluster record's own).
-_NOT_COVERED = 'not-covered'
 
 
 def present_here() -> frozenset[str]:
@@ -84,7 +88,7 @@ def local_record(
         'platform': part,
         'scope': scope,
         'req': req,
-        'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, _NOT_COVERED)},
+        'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, NOT_COVERED)},
         'handed': handed,
         'reasons': {node: why for node, why in reasons.items() if node in mine},
     }

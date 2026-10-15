@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import re
 import sys
 import tomllib
 from collections.abc import Mapping, Sequence
@@ -36,7 +35,7 @@ from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgehosts import HOSTS_MARKER, HOSTS_ORIGIN, is_hosts
 from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert
 from lab_commons.dev.forgepulls import issues as list_issues
-from lab_commons.dev.forgeroute import title_of
+from lab_commons.dev.forgeroute import still_red, title_of
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.log import emit
 
@@ -45,7 +44,6 @@ __all__ = ['SUBJECT', 'Closing', 'Hygiene', 'apply', 'load_hygiene', 'main', 'pl
 #: The hidden-marker subject of the one summary comment.
 SUBJECT: Final = 'tidy'
 
-_OPEN_RED: Final = re.compile(r'^- \[ \] `', re.MULTILINE)
 _AREA_PREFIX: Final = title_of('')
 
 
@@ -122,7 +120,7 @@ def plan(issues: Sequence[Mapping[str, Any]], hygiene: Hygiene, now: datetime) -
             )
         elif raw['state'] != 'open':
             continue
-        elif hygiene.green_areas and title.startswith(_AREA_PREFIX) and not _OPEN_RED.search(body):
+        elif hygiene.green_areas and title.startswith(_AREA_PREFIX) and not still_red(body):
             closing.append(Closing(number, title, 'area issue with no red row left'))
         elif hygiene.request_max_age_days is not None and hygiene.request_label in _labels(raw):
             age = now - datetime.fromisoformat(raw['created_at'])

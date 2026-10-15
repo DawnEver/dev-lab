@@ -21,6 +21,7 @@ from lab_commons.dev.forgeroute import (
     reconcile,
     render,
     route,
+    still_red,
 )
 from lab_commons.hpc.records import write_record
 
@@ -42,8 +43,9 @@ def server() -> Iterator[ThreadingHTTPServer]:
     yield from serve()
 
 
-def _record(outcomes: dict[str, str], reasons: dict[str, str] | None = None) -> dict:
-    return {'sha': 'a' * 40, 'platform': 'linux', 'req': 'r1', 'outcomes': outcomes, 'reasons': reasons or {}}
+def _record(outcomes: dict[str, str], reasons: dict[str, str] | None = None, handed: dict | None = None) -> dict:
+    meta = {'sha': 'a' * 40, 'platform': 'base', 'req': 'r1'}
+    return meta | {'outcomes': outcomes, 'reasons': reasons or {}, 'handed': handed or {}}
 
 
 def _issue(number: int, title: str, body: str) -> dict:
@@ -70,18 +72,71 @@ def test_a_malformed_area_is_refused(bad: str) -> None:
         read_areas(bad)
 
 
-def test_group_separates_reds_from_greens_and_ignores_unknown_outcomes() -> None:
+_NODE_ONLY = 'tests/unit/hamilton/adapters/jmag/test_hooks.py::test_node'
+
+
+def _body(record: dict, area: str = 'jmag', previous: str = '') -> str:
     areas, default = read_areas(_AREAS)
-    grouped = group({_JMAG: 'failed', _STRAY: 'lost', _GREEN: 'passed', 'x.py::t': 'weird'}, areas, default)
-    assert grouped == {'jmag': ({_JMAG}, set()), 'triage': ({_STRAY}, set()), 'coupling': (set(), {_GREEN})}
+    return render(previous, group(record, areas, default).get(area, {}), record, 'u')
 
 
-def test_render_ticks_off_a_green_and_keeps_an_unrun_id_as_it_was() -> None:
-    previous = 'head\n\n- [ ] `old::green` (linux) failed\n- [ ] `other::platform` (windows) failed\n'
-    body, red = render(previous, set(), {'old::green'}, _record({'old::green': 'passed'}), 'u')
-    assert '- [x] `old::green`' in body
-    assert '- [ ] `other::platform` (windows) failed' in body, 'not run here, so not green here'
-    assert red
+def test_group_rows_reported_reds_per_id_and_folds_the_never_reported_into_one_row_per_area() -> None:
+    areas, default = read_areas(_AREAS)
+    unrun = {f'tests/jmag/test_{n}.py::t': 'lost' for n in range(7)}
+    record = _record({_JMAG: 'failed', _STRAY: 'error', _GREEN: 'passed', **unrun}, {_JMAG: 'boom\nmore'})
+    grouped = group(record, areas, default)
+    assert grouped['triage'] == {_STRAY: ' (base) error'}
+    assert grouped['jmag'][_JMAG] == ' (base) failed -- boom'
+    assert grouped['jmag']['base: never reported'].startswith(' (base) 7 test(s) -- tests/jmag/test_0.py::t, ')
+    assert grouped['jmag']['base: never reported'].endswith(', ...')
+    assert 'coupling' not in grouped, 'a green id has no row'
+
+
+def test_a_record_replaces_its_own_parts_rows_and_drops_rows_no_current_part_selects() -> None:
+    """PLANTED CONTROL, 2026-10-15: area rows tagged by a retired part outlived it forever.
+
+    The previous body holds a row of a retired platform name, a row tagged ``base`` for an id the record
+    now hands to ``node`` (it moved part), a ``node`` row for an id ``node`` still selects, a ``node`` row
+    for an id no longer collected, a ticked row and this part's own stale red. Only the ``node`` row whose
+    id ``node`` still selects stands beside this record's reds.
+    """
+    previous = (
+        'head\n\n'
+        f'- [ ] `{_JMAG}` (base) failed\n'
+        '- [ ] `tests/jmag/test_old.py::t` (linux) failed\n'
+        f'- [ ] `{_NODE_ONLY}` (base) failed\n'
+        f'- [ ] `{_NODE_ONLY}x` (node) failed\n'
+        '- [ ] `tests/jmag/test_gone.py::t` (node) error\n'
+        '- [x] `tests/jmag/test_ticked.py::t` (node) failed\n'
+        '- [ ] `node: never reported` (node) 2 test(s) -- a, b\n'
+        '- [ ] `linux: never reported` (linux) 2 test(s) -- a, b\n'
+    )
+    other = 'tests/jmag/test_new.py::t'
+    record = _record(
+        {_JMAG: 'passed', other: 'failed', _NODE_ONLY: 'not-covered', f'{_NODE_ONLY}x': 'not-covered'},
+        handed={_NODE_ONLY: 'node', f'{_NODE_ONLY}x': 'node'},
+    )
+    body = _body(record, previous=previous)
+    rows = [line for line in body.splitlines() if line.startswith('- [')]
+    assert rows == [
+        '- [ ] `node: never reported` (node) 2 test(s) -- a, b',
+        f'- [ ] `{other}` (base) failed',
+        f'- [ ] `{_NODE_ONLY}x` (node) failed',
+    ]
+    assert body.startswith('Last routed: part `base` at [aaaaaaaaaaaa](u) (req `r1`), FAIL.')
+
+
+def test_a_green_record_leaves_no_row_of_its_part_and_the_body_reads_green_to_tidy() -> None:
+    body = _body(_record({_JMAG: 'passed'}), previous=f'h\n\n- [ ] `{_JMAG}` (base) failed\n')
+    assert not still_red(body)
+    assert 'PASS.' in body
+
+
+def test_an_inconclusive_record_keeps_its_reported_reds_and_says_so() -> None:
+    body = _body(_record({_JMAG: 'failed', 'tests/jmag/test_l.py::t': 'missing'}))
+    assert f'- [ ] `{_JMAG}` (base) failed' in body
+    assert '- [ ] `base: never reported` (base) 1 test(s) -- tests/jmag/test_l.py::t' in body
+    assert 'INCONCLUSIVE.' in body
 
 
 def test_a_planted_jmag_red_and_an_unmapped_red_each_open_their_area_issue(server) -> None:
@@ -92,14 +147,14 @@ def test_a_planted_jmag_red_and_an_unmapped_red_each_open_their_area_issue(serve
     assert [(r.area, r.action) for r in routed] == [('jmag', 'created'), ('triage', 'created')]
     created = [body for method, _path, body in _writes() if method == 'POST']
     assert [c['title'] for c in created] == ['area:jmag', 'area:triage'], 'the green-only area opens nothing'
-    assert f'- [ ] `{_JMAG}` (linux) failed -- AssertionError: off' in created[0]['body']
+    assert f'- [ ] `{_JMAG}` (base) failed -- AssertionError: off' in created[0]['body']
     assert '/o/r/commit/' + 'a' * 40 in created[0]['body']
     assert _STRAY in created[1]['body'], 'an unmapped red is reported in the default area, never dropped'
 
 
 def test_routing_the_same_record_twice_writes_nothing(server) -> None:
     record = _record({_JMAG: 'failed'})
-    body, _ = render('', {_JMAG}, set(), record, 'u')
+    body = _body(record)
     answer('GET', f'{_ROOT}/issues', (200, [_issue(11, 'area:jmag', '')]))
     answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', '[G · claude · b]\n\n' + body)))
     routed = route(client(_FORGE, Loopback(server)), record, _AREAS)
@@ -108,7 +163,7 @@ def test_routing_the_same_record_twice_writes_nothing(server) -> None:
 
 
 def test_a_new_red_updates_the_existing_issue_found_by_exact_title(server) -> None:
-    body, _ = render('', {_JMAG}, set(), _record({_JMAG: 'failed'}), 'u')
+    body = _body(_record({_JMAG: 'failed'}))
     listed = [_issue(3, 'area:jmag follow-up', ''), _issue(11, 'area:jmag', '')]
     answer('GET', f'{_ROOT}/issues', (200, listed))
     answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', body)))
@@ -122,19 +177,32 @@ def test_a_new_red_updates_the_existing_issue_found_by_exact_title(server) -> No
     assert other in sent['body']
 
 
-def test_an_area_gone_green_is_ticked_commented_and_closed(server) -> None:
-    body, _ = render('', {_JMAG}, set(), _record({_JMAG: 'failed'}), 'u')
+def test_an_area_gone_green_is_rewritten_and_left_for_tidy_to_close(server) -> None:
+    """Routing never closes: ``forge tidy`` (``green_areas``) closes by the same :func:`still_red`."""
     answer('GET', f'{_ROOT}/issues', (200, [_issue(11, 'area:jmag', '')]))
-    answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', body)))
+    answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', _body(_record({_JMAG: 'failed'})))))
     answer('PATCH', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', '')))
-    answer('POST', f'{_ROOT}/issues/11/comments', (201, {'id': 1, 'body': 'b', 'html_url': 'c'}))
     routed = route(client(_FORGE, Loopback(server)), _record({_JMAG: 'passed'}), _AREAS)
-    assert [r.action for r in routed] == ['closed']
-    writes = _writes()
-    assert f'- [x] `{_JMAG}`' in writes[0][2]['body']
-    assert writes[1][0] == 'POST'
-    assert 'green at' in writes[1][2]['body']
-    assert writes[2][2] == {'state': 'closed'}
+    assert [r.action for r in routed] == ['updated']
+    [(method, _path, sent)] = _writes()
+    assert method == 'PATCH'
+    assert not still_red(sent['body'])
+
+
+def test_an_open_area_the_record_has_no_row_in_still_loses_a_retired_parts_rows(server) -> None:
+    stale = 'Last routed: run `linux` at x.\n\n- [ ] `tests/unit/hamilton/coupling/test_c.py::test_c` (linux) failed\n'
+    answer('GET', f'{_ROOT}/issues', (200, [_issue(5, 'area:coupling', stale)]))
+    answer('GET', f'{_ROOT}/issues/5', (200, _issue(5, 'area:coupling', stale)))
+    answer('PATCH', f'{_ROOT}/issues/5', (200, _issue(5, 'area:coupling', '')))
+    routed = route(client(_FORGE, Loopback(server)), _record({_GREEN: 'passed'}), _AREAS)
+    assert [(r.area, r.action) for r in routed] == [('coupling', 'updated')]
+    assert not still_red(_writes()[0][2]['body'])
+
+
+def test_a_record_covering_no_test_routes_nothing(server) -> None:
+    record = _record({_JMAG: 'not-covered'}, handed={_JMAG: 'node'})
+    assert route(client(_FORGE, Loopback(server)), record, _AREAS) == ()
+    assert Recorder.received == []
 
 
 def test_the_cli_reads_the_areas_at_the_records_commit(server, tmp_path: Path, monkeypatch) -> None:
@@ -167,7 +235,7 @@ def test_the_open_issue_is_found_on_page_two_among_pulls_without_the_search_inde
     Every query but the plain listing answers ``[]`` -- a lagging search index must not matter.
     """
     record = _record({_JMAG: 'failed'})
-    body, _ = render('', {_JMAG}, set(), record, 'u')
+    body = _body(record)
     answer('GET', f'{_ROOT}/issues', (200, []))
     pull = _issue(90, 'area:jmag', '') | {'pull_request': {'merged': False}}
     page_one = [pull] + [_issue(100 + n, f'other {n}', '') | {'pull_request': None} for n in range(49)]
