@@ -9,7 +9,7 @@ driven only by planted files is a capability with no consumer.
 A SELECTION IS RARELY IN THE COMMAND. The one ``uv sync`` in this family's shared CI workflow reads
 ``uv sync --python ${{ matrix.python-version }} $extra_flags`` -- the extras are a workflow INPUT,
 built by a shell loop from the CALLER's ``extras:`` line, and the same file is reused by every
-repo. So a row names WHERE the selection is written and pins the evidence line, and the reader is
+repo. So a row names WHERE the selection is written and the evidence text that must stand there, and the reader is
 handed the names rather than the argv. Two facts, two homes, joined here and nowhere else.
 
 WHAT THE ROWS CONVICTED THE DAY THIS WAS WRITTEN, 2026-09-19: consumer-a' ``dep_sync`` advises, in
@@ -63,7 +63,7 @@ class ScopeRowError(ValueError):
 
 
 class EvidenceGoneError(AssertionError):
-    """A row's evidence line no longer says what the row was measured from, so the selection is unpinned."""
+    """A row's evidence no longer stands on exactly one line of its file, so the selection is unpinned."""
 
 
 class ScopeDriftError(AssertionError):
@@ -82,14 +82,15 @@ class VacuousScopeCensusError(AssertionError):
 class ScopeRow:
     """One place a set of extras is chosen, with the verdict that choice leaves behind.
 
-    *evidence* is the substring that must still stand at *path*:*line*. It is what stops the row
-    outliving its subject: a selection is not a fact about this repo, so nothing else would notice
-    the day a caller's ``extras:`` line changed or a documented incantation was edited.
+    *evidence* is the substring that must stand on EXACTLY ONE line of *path*. It is what stops the
+    row outliving its subject: nothing else would notice the day a caller's ``extras:`` line changed
+    or a documented incantation was edited. The row carries no line number: the position is DERIVED
+    from the text, so an edit elsewhere in the file moves nothing the census records, while an edit
+    to the evidence itself -- or a second copy of it -- still reds.
     """
 
     repo: str
     path: str
-    line: int
     evidence: str
     selected: tuple[str, ...]
     scope: str
@@ -114,8 +115,8 @@ class ScopeRow:
 
     @property
     def key(self) -> str:
-        """``<repo>::<path>:<line>``, the spelling a refusal names a row by."""
-        return f'{self.repo}::{self.path}:{self.line}'
+        """``<repo>::<path>``, the spelling a refusal names a row by."""
+        return f'{self.repo}::{self.path}'
 
 
 def measure(manifest: str, selected: tuple[str, ...]) -> tuple[Scope, tuple[str, ...]]:
@@ -129,8 +130,11 @@ def measure(manifest: str, selected: tuple[str, ...]) -> tuple[Scope, tuple[str,
     return verdict, stranded(chosen, manifest) if verdict is Scope.STRANDS else ()
 
 
-def pruning_sites(texts: dict[tuple[str, str], str]) -> tuple[tuple[str, str, int], ...]:
-    """Every ``(repo, path, line)`` in *texts* holding a command that PRUNES a population, sorted.
+def pruning_sites(texts: dict[tuple[str, str], str]) -> tuple[tuple[str, str, str], ...]:
+    """Every ``(repo, path, command)`` in *texts* holding a command that PRUNES a population, sorted.
+
+    *command* is the stripped source line the command starts on -- its TEXT, not its position, so a
+    site is identified by what it runs and an edit elsewhere in the door moves nothing.
 
     THE OTHER SIDE OF THE RATCHET, and without it this census is a list somebody maintains by hand:
     a row set can only say that the selections it names still measure what they measured, never that
@@ -142,7 +146,7 @@ def pruning_sites(texts: dict[tuple[str, str], str]) -> tuple[tuple[str, str, in
     drive this function rather than a second copy of it that would agree with itself.
     """
     found = {
-        (repo, path, line)
+        (repo, path, text.splitlines()[line - 1].strip())
         for (repo, path), text in texts.items()
         for line, argv in commands(text)
         if selection_prunes(argv)
@@ -169,7 +173,7 @@ def assert_scopes(
     Returns the repos it actually read, so a caller can assert the one it runs in was among them.
 
     Raises:
-        EvidenceGoneError: a row's evidence is no longer at that path and line.
+        EvidenceGoneError: a row's evidence no longer stands on exactly one line of its file.
         ScopeDriftError: the join now answers something else, in either direction.
         VacuousScopeCensusError: fewer repos or rows were read than the floors allow.
 
@@ -209,17 +213,16 @@ def assert_scopes(
 
 
 def _assert_evidence(root: Path, row: ScopeRow, *, at_head: bool) -> None:
-    """Refuse unless *row*'s evidence still stands at its declared line."""
+    """Refuse unless *row*'s evidence stands on exactly one line of its file."""
     text = door_text(root, row.path, at_head=at_head)
     if text is None:
         msg = f'{row.key}: the file holding this selection is not there, so the row outlived its subject'
         raise EvidenceGoneError(msg)
-    lines = text.splitlines()
-    live = lines[row.line - 1] if 0 < row.line <= len(lines) else ''
-    if row.evidence not in live:
+    hits = [n for n, line in enumerate(text.splitlines(), 1) if row.evidence in line]
+    if len(hits) != 1:
         msg = (
-            f'{row.key}: expected {row.evidence!r} at that line and found {live.strip()!r}. A row '
-            f'records a selection made somewhere else; when that line moves, the row is measuring a '
-            f'choice nobody makes any more. Repoint it, and re-measure rather than re-typing.'
+            f'{row.key}: expected {row.evidence!r} on exactly one line and found it on {hits}. A row '
+            f'records a selection made in one place; gone, it measures a choice nobody makes any more, '
+            f'and doubled, it cannot say which copy it judged. Re-measure rather than re-typing.'
         )
         raise EvidenceGoneError(msg)

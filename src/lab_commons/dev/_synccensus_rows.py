@@ -37,7 +37,6 @@ ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
         repo='lab-commons',
         path='pyproject.toml',
-        line=257,
         evidence='extras = "dev viz-mpl viz-bokeh"',
         selected=('dev', 'viz-mpl', 'viz-bokeh'),
         scope='COMPLETE',
@@ -49,50 +48,32 @@ ROWS: tuple[ScopeRow, ...] = (
             'gates `lab_commons.dev` -- and this manifest names no pytest plugin in `addopts`, so '
             'the verdict set is pytest and ruff and both arrive. Dropping `dev` from this one line '
             'would leave CI green-looking and unable to run a single test. '
-            'REPOINTED 2026-09-19 FROM LINE 32, AND BOTH NUMBERS STAY ON RECORD. The OS-matrix merge '
-            'inserted a 16-line `runner-os` block above this input, so the evidence text moved 32 -> '
-            '48 with not one character of it changed. The SELECTION is therefore re-measured and '
-            'identical -- `dev`, COMPLETE, stranding nothing -- and only the position moved: this is '
-            'the row doing its job, since a pin that could not notice a 16-line shift could not '
-            'notice a deletion either.'
-            ' THE SELECTION GREW ON 2026-10-06, 48 -> 51, AND BOTH TEXT AND LINE MOVED THIS TIME. The '
-            'ci caller now names the two `viz-` extras as well, because an adapter whose extra is '
-            'absent degrades: with only one of the two installed, "both backends draw" is a claim no '
-            'leg of the matrix has checked. The row is RE-MEASURED rather than re-typed: `matplotlib` '
-            'and `bokeh` arrive with it, no test module imports either one unguarded (every adapter '
-            'test holds a module-scope `pytest.importorskip`), so the scope stays COMPLETE and '
-            'nothing is stranded.'
-            ' MOVED 2026-10-11 to `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml: the workflow is '
-            'rendered from that TOML, so the selection is read where it is made.'
-            ' REPOINTED 2026-10-12, 242 -> 253, text unchanged: the platform marker table and the '
-            'cluster-run comments grew above it. REPOINTED 2026-10-12, 253 -> 254: the platform table '
-            'split into its capability axis, one comment line longer. REPOINTED 2026-10-13, 254 -> 253, '
-            'text unchanged: the two part axes became one [tool.lab_commons.tests] table. REPOINTED '
-            '2026-10-13, 253 -> 257, text unchanged: the integrator host and branch-prune opt-in landed above it.'
+            'The selection grew on 2026-10-06 to name both `viz-` extras, because an adapter whose '
+            'extra is absent degrades: `matplotlib` and `bokeh` arrive with it, no test module imports '
+            'either unguarded, so the scope stays COMPLETE and nothing is stranded. Read where it is '
+            'made: the workflow is rendered from `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml.'
+            ' The row carries no line number: six hand repoints (32 -> 48 -> 51 -> 242 -> 253 -> 254 '
+            '-> 253 -> 257) each re-typed a position nothing had changed the meaning of, and the '
+            'seventh went unmade and redded base on 2026-10-15. The position is now derived from the text.'
         ),
     ),
 )
 
 #: EVERY command in this repo's declared door files that moves a POPULATION, as
-#: ``(repo, path, line)``, with why it is the only one. Compared by EQUALITY against the live scan:
+#: ``(repo, path, command text)``, with why it is the only one. Compared by EQUALITY against the live scan:
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
-SITES: dict[tuple[str, str, int], str] = {
-    ('lab-commons', 'pyproject.toml', 330): (
+SITES: dict[tuple[str, str, str], str] = {
+    ('lab-commons', 'pyproject.toml', 'uv sync --python ${{ matrix.python-version }} $extra_flags'): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '
         'answers UNMEASURED here by construction and the ROWS above carry the judgement, one per '
         'caller. Every other lock-consuming door here takes `--no-sync`, which is what '
         'makes this set a singleton rather than a sample. '
-        'REPOINTED 2026-09-19 FROM LINE 83: the OS-matrix merge added a `runner-os` input, a matrix '
-        'axis and a 30-line comment block above this step, moving the command down 36 lines. The '
-        'command TEXT is unchanged, so what this key says about the family is unchanged and only '
-        'the position was re-measured. MOVED 2026-10-11 into `[tool.lab_commons.ci."python-verify.yml"]`, '
-        'the TOML the workflow is rendered from. REPOINTED 2026-10-12, 315 -> 326, command text unchanged.'
-        ' REPOINTED 2026-10-12, 326 -> 327: the capability axis split, command text unchanged.'
-        ' REPOINTED 2026-10-13, 327 -> 326: one need vocabulary replaced both part axes, text unchanged.'
-        ' REPOINTED 2026-10-13, 326 -> 330: the integrator host and branch-prune opt-in, text unchanged.'
+        'Keyed by the command TEXT, not its line: four hand repoints each re-typed a position no '
+        'edit had given a meaning, and a fifth went unmade. Lives in `[tool.lab_commons.ci."python-verify.yml"]`, '
+        'the TOML the workflow is rendered from.'
     ),
 }
 
