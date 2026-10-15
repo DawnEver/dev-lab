@@ -17,7 +17,7 @@ cluster run one step
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
 on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`)
 and tidy the repo's issues (``forge tidy``, :func:`lab_commons.dev.forgetidy.tidy`) -- every served repo, every tick;
-run the storage retention pass when due (:mod:`lab_commons.dev.retention`; still over quota raises a
+run the storage retention pass, every tick (:mod:`lab_commons.dev.retention`; still over quota raises a
 ``storage`` alarm); flush the outbox again.
 
 SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
@@ -313,7 +313,7 @@ def _retain(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """The retention pass when due; a failure, or usage still over the pressure line after it, alarms."""
+    """The retention pass; a failure, or usage still over the pressure line after it, alarms."""
     try:
         done = retain(root, cluster=cluster, say=say)
     except (OSError, ValueError) as why:
