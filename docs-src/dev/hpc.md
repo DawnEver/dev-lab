@@ -175,6 +175,9 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 - **One record.** `<job>.submission.json` holds `placements` -- per grant its targets, item range, run directory,
   job ids, shards and plan -- and `moved`. `status` prints a line per grant, `gather` merges every slice back into
   batch order and names any grant that did not answer. A record without `placements` is refused: submit again.
+  `gather -c job.toml -o out.json --wait` polls as `status` does every `[policy] poll_seconds`, prints the status
+  line only when it changes (`pending: <why>` while a grant does not answer), and gathers once no shard is queued
+  or running. `--wait` belongs to `gather` and `run gather` only.
 - **A dead grant's slice moves.** `retry` re-submits each shard with no results file that is not active, on its own
   grant. A grant none of whose login hosts answers meets that rule for every shard, so its whole slice is spanned
   again over the grants still answering and the old placement moves to `moved`.

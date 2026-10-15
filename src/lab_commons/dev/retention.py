@@ -34,7 +34,14 @@ overrides any of them, and an unknown key is refused. What each rule PROVES befo
   ``log-over-size`` (rotated to ``.1``, the previous ``.1`` replaced), ``forge-tree-stale`` (a
   workstation's ``.claude/worktrees/forge-*`` its producer failed to remove, :mod:`lab_commons.dev.shatree`).
 
-NEVER: a run in flight (a live run file names its sha), anything younger than ``min_age_hours`` (a
+NEVER: a run in flight (a live run file names its sha), a tree a queued or running Slurm job of this account
+works in -- ANY job, a ``lab_commons.hpc submit -c`` job file's included, whose ``WorkDir`` (``squeue --me -o
+%Z``, :data:`lab_commons.hpc.slurm.WORKDIRS_COMMAND`) is ``trees/<sha>`` or anywhere under it (a job file
+submits from its run dir, ``trees/<sha>/.lab-hpc/<run>``) -- its run kept with it under every rule, quota
+pressure included, and the env/native rules deciding nothing while one runs (the job names no builds). When
+the queue cannot be read (no ``squeue``, or it fails) NO tree goes and the env/native rules decide nothing:
+an unprovable reference is a reference (measured 2026-10-15 on Ada: ``tree-unreferenced`` deleted a tree
+under a running array job, and its outputs with it). Never younger than ``min_age_hours`` (a
 tree or env being built), or a path outside the roots the plan was given. Then ``uv cache prune`` and
 ``git worktree prune`` run, so the caches and git forget what went.
 
@@ -73,6 +80,7 @@ from lab_commons.dev.forgerun import directory as run_files
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.servelock import held
 from lab_commons.dev.worktreeplace import main_checkout
+from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 from lab_commons.log import emit
 
 __all__ = [
@@ -86,7 +94,9 @@ __all__ = [
     'cluster_plan',
     'load_policy',
     'main',
+    'occupied_trees',
     'serve_pass',
+    'slurm_occupied',
     'summary',
     'workstation_plan',
 ]
@@ -182,13 +192,44 @@ def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[s
     return {sha for tip in set(tips) for sha in read_by(root, tip, shas)}
 
 
+def occupied_trees(workdirs: Iterable[str]) -> set[str]:
+    """The ``<sha>`` of every ``ci/trees/<sha>`` a Slurm job's workdir is or lies under."""
+    shas = set()
+    for workdir in workdirs:
+        parts = workdir.split('/')  # Slurm's paths are POSIX
+        shas |= {parts[i + 2] for i in range(len(parts) - 2) if parts[i : i + 2] == ['ci', 'trees'] and parts[i + 2]}
+    return shas
+
+
+def slurm_occupied(run: Callable[..., Any] = subprocess.run) -> set[str] | None:
+    """:func:`occupied_trees` of this account's queued and running jobs; ``None`` when the queue is unreadable."""
+    try:
+        done = run(list(WORKDIRS_COMMAND), capture_output=True, text=True, encoding='utf-8', errors='replace',
+                   check=False, timeout=60)  # fmt: skip
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return occupied_trees(parse_workdirs(done.stdout)) if done.returncode == 0 else None
+
+
 def cluster_plan(
-    home: Path, policy: Policy, *, now: datetime, live: Iterable[str], repo: str, sources: Iterable[str]
+    home: Path,
+    policy: Policy,
+    *,
+    now: datetime,
+    live: Iterable[str],
+    repo: str,
+    sources: Iterable[str],
+    occupied: Iterable[str] | None = (),
 ) -> Plan:
-    """The plan for one cluster account: ``~/ci`` by reference, then its slurm outputs and forge logs."""
-    ci, live, sources, young = home / 'ci', set(live), set(sources), timedelta(hours=policy.min_age_hours)
+    """The plan for one cluster account: ``~/ci`` by reference, then its slurm outputs and forge logs.
+
+    *occupied* is :func:`slurm_occupied`: those trees are in flight; ``None`` (unreadable) keeps every tree.
+    """
+    ci, sources, young = home / 'ci', set(sources), timedelta(hours=policy.min_age_hours)
+    live = set(live) | set(occupied or ())
     doomed: list[Doomed] = []
-    kept: dict[str, dict[str, Any]] = {}
+    # an occupied tree is kept; a job (or an unknown queue, keyed '') names no builds: env/native decide nothing
+    kept: dict[str, dict[str, Any]] = {sha: {} for sha in (occupied or ())} | ({'': {}} if occupied is None else {})
     harder: list[tuple[datetime, str]] = []
     for path, state, when in _runs(ci):
         sha = path.name
@@ -222,7 +263,9 @@ def cluster_plan(
     if (ci / 'cache.git').is_dir():
         commands.append((_GIT, '--git-dir', str(ci / 'cache.git'), 'worktree', 'prune'))
     commands += _uv(policy, ci / 'uv-cache')
-    return Plan(tuple(d for d in doomed if d.path.exists() or d.path.is_symlink()), hard, tuple(commands))
+    spared = ci / 'trees' if occupied is None else None  # an unreadable queue: no tree goes, by any rule
+    doomed = [d for d in doomed if d.path.parent != spared and (d.path.exists() or d.path.is_symlink())]
+    return Plan(tuple(doomed), tuple(d for d in hard if d.path.parent != spared), tuple(commands))
 
 
 def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, young: timedelta) -> list[Doomed]:
@@ -366,7 +409,8 @@ def _plan_for(root: Path, policy: Policy, *, cluster: bool, home: Path, now: dat
         repo = origin_url(root)
         mine = [p.name for p, state, _ in _runs(home / 'ci') if state.get('repo') == repo]
         sources = carry_sources(root, mine, _origin_tips(root))
-        return cluster_plan(home, policy, now=now, live=live, repo=repo, sources=sources)
+        occupied = slurm_occupied()
+        return cluster_plan(home, policy, now=now, live=live, repo=repo, sources=sources, occupied=occupied)
     return workstation_plan([main_checkout(root)], policy, now=now)
 
 
