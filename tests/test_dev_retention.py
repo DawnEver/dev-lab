@@ -139,12 +139,12 @@ def test_harder_is_this_repos_carry_sources_oldest_first_never_in_flight(home: P
     assert {d.path.parent.name for d in plan.harder} == {'runs'}, 'their trees already went: not in flight'
 
 
-def test_a_kept_run_naming_no_builds_blocks_the_env_and_native_rules(home: Path) -> None:
-    """An older run state names no build keys: an unprovable reference is a reference."""
+def test_an_in_flight_run_naming_no_builds_blocks_the_env_and_native_rules(home: Path) -> None:
+    """An older state names no build keys: IN FLIGHT, an unprovable reference is a reference."""
     state = home / 'ci' / 'runs' / 'a5' / 'state.json'
-    state.write_text(json.dumps({'sha': 'a5', 'repo': 'r', 'record': {}}), encoding='utf-8')
+    state.write_text(json.dumps({'sha': 'a5', 'repo': 'r'}), encoding='utf-8')
     _touch(state, OLD + timedelta(hours=4))
-    rules = {d.rule for d in _plan(home).doomed}
+    rules = {d.rule for d in cluster_plan(home, POLICY, now=NOW, live={'f1', 'a5'}, repo='r', sources=SOURCES).doomed}
     assert not {'env-unreferenced', 'native-unreferenced'} & rules
     assert 'run-not-a-carry-source' in rules, 'PLANTED CONTROL: the run rules still decide'
 
@@ -347,3 +347,68 @@ def test_the_queue_read_fails_closed() -> None:
     assert retentionplan.slurm_occupied(run=answer(1, '')) is None, 'squeue failed: unprovable'
     assert retentionplan.slurm_occupied(run=answer(0, SQUEUE)) == {'orphan', 'a3'}
     assert retentionplan.slurm_occupied(run=answer(0, '')) == set(), 'an empty queue occupies nothing'
+
+
+def _superseded(home: Path, sha: str, env: str, when: datetime, *, streams: datetime) -> Path:
+    """The shape 9 run states in 10 had on the served accounts: no record, a round tag, nobody gathering it."""
+    builds = {'env': env, 'native': 'n4'}
+    state = {'sha': sha, 'repo': 'r', 'builds': builds, 'current': {'tag': '20261015-055638-r0', 'job_id': '7'}}
+    path = home / 'ci' / 'runs' / sha / 'state.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state), encoding='utf-8')
+    _touch(path, when)
+    tree = _dir(home / 'ci' / 'trees' / sha, when)
+    _touch(tree / '.lab-ci' / 'env.sh', when)
+    _touch(tree / '.lab-ci' / '20261015-055638-r0' / '0.jsonl', streams)
+    _dir(tree / '.lab-ci' / '20261015-055638-r0', streams)
+    for made in (tree / '.lab-ci', tree):
+        os.utime(made, (when.timestamp(), when.timestamp()))
+    return tree
+
+
+def test_a_superseded_run_is_not_in_flight_and_its_streams_outlive_its_tree(home: Path) -> None:
+    """No record is not in flight: a superseded run is never gathered. Its tree goes, its streams and state stay."""
+    stale = NOW - timedelta(days=3)
+    tree = _superseded(home, 's1', 'e7', stale, streams=stale)
+    _dir(home / 'ci' / 'envs' / 'e7', stale)
+    plan = _plan(home)
+    assert 's1' not in in_flight(home / 'ci', POLICY, now=NOW, live={'f1'}, occupied=())
+    doomed = {d.path: d for d in plan.doomed}
+    assert doomed[tree].rule == 'tree-not-in-flight'
+    assert doomed[home / 'ci' / 'envs' / 'e7'].rule == 'env-unreferenced', 'envs follow the trees'
+    assert home / 'ci' / 'runs' / 's1' not in doomed, 'its state is a carry source, kept until abandon_days'
+    apply(plan, POLICY, usage=None, dry_run=False, say=lambda _: None, run=_no_run)
+    assert not tree.exists()
+    kept = home / 'ci' / 'runs' / 's1' / 'streams' / '20261015-055638-r0' / '0.jsonl'
+    assert kept.exists(), 'held_outcomes reads them here once the tree is gone'
+
+
+def test_a_round_that_ended_within_min_age_is_still_in_flight(home: Path) -> None:
+    """PLANTED CONTROL: the state is days old but a stream was written an hour ago -- the gather is due."""
+    _superseded(home, 's2', 'e7', NOW - timedelta(days=3), streams=YOUNG)
+    assert 's2' in in_flight(home / 'ci', POLICY, now=NOW, live=(), occupied=())
+
+
+def test_a_job_file_job_names_the_env_its_env_sh_sources(home: Path) -> None:
+    """A tree no run state names (a job-file job) is read through ``.lab-ci/env.sh``, not taken as unprovable."""
+    tree = _dir(home / 'ci' / 'trees' / 'j1', OLD)
+    _touch(tree / '.lab-ci' / 'env.sh', OLD).write_text(
+        'export VIRTUAL_ENV="/h/ci/envs/e3" PATH="/h/ci/envs/e3/bin:$PATH"\n'
+        'export PYTHONPATH="/h/ci/trees/j1/src:/h/ci/native/n0:/h/ci/bin${PYTHONPATH:+:$PYTHONPATH}"\n',
+        encoding='utf-8',
+    )
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied={'j1'})
+    doomed = _doomed(plan)
+    assert 'e3' not in doomed, 'the job sources it'
+    assert 'n0' not in doomed, 'and its native build'
+    assert doomed['n1'] == 'native-unreferenced', 'PLANTED CONTROL: the env rules still decide the rest'
+
+
+def test_an_old_recorded_run_naming_no_builds_is_no_reference(home: Path) -> None:
+    """Measured: a repo's newest recorded run predated ``builds`` -- not in flight, it references nothing."""
+    state = home / 'ci' / 'runs' / 'b1' / 'state.json'
+    state.write_text(json.dumps({'sha': 'b1', 'repo': 'other', 'record': {}}), encoding='utf-8')
+    _touch(state, OLD)
+    doomed = _doomed(_plan(home))
+    assert doomed['e2'] == 'env-unreferenced', 'only the old run named it, by no key'
+    assert 'e1' not in doomed, 'PLANTED CONTROL: the newest run naming builds still keeps its env'

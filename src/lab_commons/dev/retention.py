@@ -79,6 +79,11 @@ class Outcome:
 
 
 def _remove(doomed: Doomed) -> None:
+    for source, target in doomed.keep:
+        if source.is_dir():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(target, ignore_errors=True)
+            source.replace(target)
     if doomed.rotate:
         doomed.path.replace(doomed.path.with_name(doomed.path.name + '.1'))
     elif doomed.path.is_dir() and not doomed.path.is_symlink():
