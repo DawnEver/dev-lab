@@ -160,9 +160,27 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 ## Job files
 
 `python -m lab_commons.hpc {plan,submit,status,gather,retry} -c job.toml` runs a non-test workload described
-by a job file (`[job]`, `[cost]`, `[policy]`) on the grant whose plan finishes earliest. `submit` records the
-grant it chose in `<job>.submission.json`, so the other verbs return to the same cluster. These verbs reach the
-login host over ssh and are not how a commit's suite runs.
+by a job file (`[job]`, `[cost]`, `[policy]`) over EVERY grant that makes it finish sooner (`lab_commons.hpc.span`).
+These verbs reach the login hosts over ssh and are not how a commit's suite runs.
+
+- **The split follows throughput.** Each grant that can take the batch is planned on the whole of it -- its CPU
+  headroom, free slots, QOS limits and its home's free inodes (`df -i`, the file-count quota is a resource: a plan
+  writing more files than are free is refused) -- and its throughput is the batch's padded seconds over that
+  makespan. The items are cut into consecutive slices in proportion, so the slices end about together. The spread
+  is kept only when every slice holds at least one `shard_minutes_min` shard and its slowest slice beats the best
+  single grant (`plan.allocate`); otherwise one grant takes it all. Nothing is reserved anywhere.
+- **The tree is ensured per grant.** `[job] sha` + `repo_url` run the batch in `~/ci/trees/<sha>` with `.lab-ci/env.sh`
+  sourced (no `workdir` beside them): before submitting, each chosen grant gets `run build`'s fetch and build in its
+  own home, the env reused by its key. A grant whose build fails is dropped and the batch re-spanned without it.
+- **One record.** `<job>.submission.json` holds `placements` -- per grant its targets, item range, run directory,
+  job ids, shards and plan -- and `moved`. `status` prints a line per grant, `gather` merges every slice back into
+  batch order and names any grant that did not answer. A record without `placements` is refused: submit again.
+- **A dead grant's slice moves.** `retry` re-submits each shard with no results file that is not active, on its own
+  grant. A grant none of whose login hosts answers meets that rule for every shard, so its whole slice is spanned
+  again over the grants still answering and the old placement moves to `moved`.
+- **The forge's test runs do not span yet.** `run submit` still builds on one login node and plans each round on
+  the grants sharing that home (`run.shares_home`); spreading a round over them is the named follow-up in
+  `.claude/memory/2026/10/15/one-job-spans-every-grant.md`.
 
 ## Debugging by hand
 
