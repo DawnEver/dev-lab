@@ -274,13 +274,16 @@ def test_an_inconclusive_record_is_released_never_posted(home: Path, monkeypatch
         msg = 'INCONCLUSIVE: 3 lost'
         raise PartRefusal(msg)
 
+    routed: list[object] = []
     monkeypatch.setattr(forgecarry, 'post', refuse)
+    monkeypatch.setattr(forgerun, 'route', lambda _client, record, _areas: routed.append(record) or ())
     _start(home, store)
     assert _tick(store, slurm) is None
     assert (store.posts[-1]['status'], store.posts[-1]['description']) == (
         'error',
         release_reason(ProducerExit.INCONCLUSIVE),
     )
+    assert routed == [{'sha': SHA}], 'its reported reds are real reds: an inconclusive record is still routed'
 
 
 def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> None:

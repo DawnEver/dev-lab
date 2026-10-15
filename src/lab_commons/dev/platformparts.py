@@ -98,8 +98,10 @@ if TYPE_CHECKING:
 __all__ = [
     'BASE',
     'CONTEXT_PREFIX',
+    'NOT_COVERED',
     'PART_FIELD',
     'PASSING',
+    'UNRUN',
     'ClusterPart',
     'Composition',
     'Part',
@@ -134,10 +136,10 @@ PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
 _NAMED: Final = 5
 
 #: Outcomes of ids that never reported: they make a part INCONCLUSIVE, never FAIL.
-_UNRUN: Final = frozenset({'lost', 'missing'})
+UNRUN: Final = frozenset({'lost', 'missing'})
 
 #: The record's word for an id it handed to another part.
-_NOT_COVERED: Final = 'not-covered'
+NOT_COVERED: Final = 'not-covered'
 
 _STATE: Final = {'PASS': 'success', 'FAIL': 'failure'}
 _RESULT: Final = {state: result for result, state in _STATE.items()}
@@ -321,11 +323,11 @@ def part_of(record: Mapping[str, Any]) -> Part:
     """
     platform, scope, sha = str(record['platform']), str(record['scope']), str(record['sha'])
     outcomes: dict[str, str] = dict(record['outcomes'])
-    covered = {node: outcome for node, outcome in outcomes.items() if outcome != _NOT_COVERED}
+    covered = {node: outcome for node, outcome in outcomes.items() if outcome != NOT_COVERED}
     if not covered:
         msg = f'the {platform} record for {sha} covers no test -- an empty part is not a pass'
         raise PartRefusal(msg)
-    unrun = sorted(node for node, outcome in covered.items() if outcome in _UNRUN)
+    unrun = sorted(node for node, outcome in covered.items() if outcome in UNRUN)
     if unrun:
         msg = (
             f'the {platform} record for {sha} is INCONCLUSIVE: {len(unrun)} of {len(covered)} covered test(s) '
@@ -333,7 +335,7 @@ def part_of(record: Mapping[str, Any]) -> Part:
             'can cite it'
         )
         raise PartRefusal(msg)
-    handed = {node: str(record['handed'].get(node, '')) for node, out in outcomes.items() if out == _NOT_COVERED}
+    handed = {node: str(record['handed'].get(node, '')) for node, out in outcomes.items() if out == NOT_COVERED}
     disowned = sorted(node for node, owner in handed.items() if owner == platform)
     if disowned:
         msg = f'the {platform} record for {sha} hands off {len(disowned)} test(s) of its own part: {_elided(disowned)}'

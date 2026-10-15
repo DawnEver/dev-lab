@@ -13,7 +13,7 @@ created: 2026-10-14
 
 - The OOM test: the downstream `_weighted_by_row_bars` built two dense live x live squares (466c8917ab); fixed in
   downstream 517abc94ab. A test that hogs memory must come back as THAT test's red, never as a hung part.
-- G's CPU itself is unstable (0x1E bugchecks incl. `c0000096`, WHEA TLB errors): turbo disabled
+- That workstation's CPU itself is unstable (0x1E bugchecks incl. `c0000096`, WHEA TLB errors): turbo disabled
   (PERFBOOSTMODE 0) on 10-14. Crashes leave NUL records -- the pre-boot rule is what makes them harmless.
 - Merges today redded on rules I did not run locally (module size band, suppressions, reflection, subprocess
   encoding): run every `tests/test_arch_*.py` before an integrate merge.
