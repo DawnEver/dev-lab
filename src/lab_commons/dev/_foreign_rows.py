@@ -70,7 +70,8 @@ SCAN_FLOOR: Final = 80
 #: step of this migration rather than the first. The ceiling is what stops the number growing while
 #: the other two kinds are being emptied.
 #: RE-MEASURED 2026-10-08 at **167** after the root-capability split removed one sibling mention.
-PROSE_CEILING: Final = 163
+#: RE-MEASURED 2026-10-15 at **162** after box P3 deleted the lease/seat prose.
+PROSE_CEILING: Final = 162
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.

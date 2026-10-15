@@ -4,8 +4,8 @@ Every run on a machine declares its demand on the one box ledger and is held to 
 user ruling 2026-10-14). A selection declares :func:`selection_demand` -- at most :data:`SELECTION_CPU`
 cores (as many pytest workers), :data:`SELECTION_MEM_GB` for its whole tree and :data:`SELECTION_WALL_S` --
 and :func:`boxed` spells its pytest argv through :func:`lab_commons.box.command`, so the box admits it
-within the caller's queue ceiling and kills it past its claim. A producer ``forge serve`` spawned is NOT
-boxed again: serve already runs it in the box at the demand it admitted it at.
+within the caller's queue ceiling and kills it past its claim. A tree the box already holds (its
+``INSIDE_ENV``, e.g. a producer serve spawned) is NOT boxed again: it is already held to its claim.
 
 :func:`ended_in_the_box` reads the CLI's two exit codes back: a refusal means nothing ran (raised, so the
 door reports INCONCLUSIVE naming the holder), a kill means the run was cut short (a truncation).
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.box import KILLED, REFUSED, Capacity, Demand, Refused, command
-from lab_commons.dev.producer import PRODUCING_VAR
+from lab_commons.box.run import INSIDE_ENV
 
 __all__ = [
     'MEASURE_WAIT_S',
@@ -60,7 +60,7 @@ def selection_demand(capacity: Capacity) -> Demand:
 
 def boxed(root: Path, argv: list[str], *, queue_s: float) -> tuple[list[str], dict[str, str]]:
     """*argv* run in the box at :func:`selection_demand`, and the env capping pytest-xdist at its cores."""
-    if PRODUCING_VAR in os.environ:
+    if INSIDE_ENV in os.environ:
         return argv, {}
     demand = selection_demand(Capacity.read())
     spelled = command(argv, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}')
