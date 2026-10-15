@@ -24,7 +24,11 @@ take; it is admitted only when the declared sum fits, and it runs inside a kerne
   claim; `--lock-wait-s` is its queue ceiling.
 - `forge serve` admits a part against what the ledger can still admit, and runs its producer in the box at
   exactly that demand ([forge](forge.md#admission)); the producer's own verify does not claim again.
-- Anything else: `python -m lab_commons.box run --cpu N --mem-gb G --wall S --queue-s Q --key K -- argv`.
+- Anything else: `python -m lab_commons.box run --cpu N --mem-gb G --wall S --queue-s Q --key K --outcome P -- argv`.
+  The exit code is the child's own; how the BOX ended it -- the `Outcome` (`exit`, `memory`, `wall`) or a
+  refusal when nothing ran -- is the record at `P`, read back with `lab_commons.box.read_ended`. No record
+  after the process exited means the box itself crashed. A sentinel exit code would misread a child that
+  chose the same number, so none exists.
 
 ## Not in scope
 

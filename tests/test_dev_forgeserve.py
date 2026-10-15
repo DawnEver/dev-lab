@@ -13,9 +13,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _box_fake import ended, record
 from _forge_fake import git_out, run_git
 
-from lab_commons.box import GB, KILLED, REFUSED, Capacity, Holding
+from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
@@ -40,10 +41,24 @@ SEAT = ClusterAccount('ada', 'alice')
 
 
 class _Proc:
-    """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*."""
+    """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*; the box records *box*.
 
-    def __init__(self, code: int, lines: tuple[str, ...] = (), beats: int = 0, pid: int | None = None) -> None:
+    *box* defaults to the child's own exit; a :class:`Refused`, a killed :class:`Outcome` or ``None`` (a
+    crashed box, no record) is what the box decided instead.
+    """
+
+    _OWN: object = object()
+
+    def __init__(
+        self,
+        code: int,
+        lines: tuple[str, ...] = (),
+        beats: int = 0,
+        pid: int | None = None,
+        box: Outcome | Refused | object | None = _OWN,
+    ) -> None:
         self.code, self.beats, self.pid = code, beats, pid
+        self.box = ended(code) if box is _Proc._OWN else box
         self.stdout = iter(f'{line}\n' for line in lines)
 
     def wait(self, timeout: float | None = None) -> int:
@@ -173,7 +188,9 @@ def _serve(
 
     def spawn(argv: list[str], **kwargs: object) -> _Proc:
         (spawned if spawned is not None else []).append({'argv': argv, **kwargs})
-        return (procs or {})[argv[argv.index('--') + 2]]  # boxed: after '--', the tree's own interpreter
+        proc = (procs or {})[argv[argv.index('--') + 2]]  # boxed: after '--', the tree's own interpreter
+        record(argv, proc.box)
+        return proc
 
     monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
@@ -412,19 +429,36 @@ def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Pa
 
 def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypatch, tmp_path: Path) -> None:
     """PLANTED (live 2026-10-11): a runner over its wall said INCONCLUSIVE; serve said "refused its argv"."""
-    for code, reason in (
-        (ProducerExit.INCONCLUSIVE, release_reason(ProducerExit.INCONCLUSIVE)),
-        (ProducerExit.UNREACHABLE, RETRYABLE),
-        (REFUSED, RETRYABLE),  # the box had no room in time: open again, never red
-        (KILLED, 'released: the box killed it'),
+    for proc, reason in (
+        (_Proc(ProducerExit.INCONCLUSIVE), release_reason(ProducerExit.INCONCLUSIVE)),
+        (_Proc(ProducerExit.UNREACHABLE), RETRYABLE),
+        (_Proc(1, box=Refused('cpu: wants 4 of 3')), RETRYABLE),  # the box had no room in time: open, never red
+        (_Proc(1, box=ended(-9, 'memory')), 'released: the box killed it past its declared memory'),
+        (_Proc(1, box=None), 'released: the box crashed'),
     ):
         forge = _Forge()
         forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
         local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
-        report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(code)}, forge)
+        report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(local), {'verify': proc}, forge)
         assert report.broken == ()
         assert forge.posts[-1][1] == 'error'
         assert forge.posts[-1][2].startswith(reason)
+
+
+@pytest.mark.parametrize('code', [69, 137])
+def test_a_producer_exiting_a_former_box_sentinel_on_its_own_is_judged_by_its_code(
+    monkeypatch, tmp_path: Path, code: int
+) -> None:
+    """PLANTED (SR-20261015-002): a producer exiting 69 was re-claimed every tick, read as "the box refused it".
+
+    The box recorded the producer's OWN exit, so its code is judged as any other: a crash, never retryable.
+    """
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(code)}, forge)
+    assert forge.posts[-1][1:] == ('error', release_reason(code))
+    assert not forge.posts[-1][2].startswith(RETRYABLE)
 
 
 def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monkeypatch, tmp_path: Path) -> None:

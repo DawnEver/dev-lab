@@ -16,6 +16,12 @@ producer's mind, only its exit code, so every code means ONE thing:
 Any other code is a CRASH. Live finding 2026-10-11: a consumer runner returned ``2`` for INCONCLUSIVE
 and serve reported "the producer refused its argv" -- two meanings sharing one code is the bug.
 
+THE BOX'S DECISION IS NOT A CODE (:func:`box_release_reason`). A producer runs in the box, whose CLI exits
+with the producer's own code and writes how the box ended it to a record (``--outcome``). Reading a box
+refusal or kill off a sentinel exit code misread a producer that chose that number itself (sharp review
+SR-20261015-002: one exiting sysexits' unavailable code was re-claimed every tick forever), so the record
+decides first and the code is judged only when the producer ended on its own.
+
 THE DOOR TO A FULL SUITE IS ``forge serve`` (``VERDICTS-FROM-THE-FORGE``, user report 2026-10-11:
 agents on other workstations ran full suites locally and blocked development for hours). A verdict is
 a fact about a sha, produced ONCE, after the push, by the host that claimed the part -- so a full tier
@@ -29,7 +35,7 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.box import KILLED, REFUSED
+from lab_commons.box import Outcome, Refused
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -38,6 +44,7 @@ __all__ = [
     'PRODUCING_VAR',
     'RETRYABLE',
     'ProducerExit',
+    'box_release_reason',
     'full_suite_refusal',
     'producing',
     'release_reason',
@@ -87,7 +94,20 @@ def release_reason(code: int) -> str:
         ProducerExit.USAGE: 'released: producer refused its argv (exit 2)',
         ProducerExit.INCONCLUSIVE: 'released: inconclusive (exit 3) -- no part',
         ProducerExit.UNREACHABLE: f'{RETRYABLE} (exit 4) -- infrastructure did not answer; retried next tick',
-        REFUSED: f'{RETRYABLE} (exit {REFUSED}) -- the box had no room for its declared demand; retried next tick',
-        KILLED: f'released: the box killed it past its declared memory or wall (exit {KILLED})',
     }
     return reasons.get(code, f'released: producer crashed (exit {code})')
+
+
+def box_release_reason(ended: Outcome | Refused | None) -> str | None:
+    """The release a box record forces (refused, killed, or none: crashed); ``None`` when the producer ended itself.
+
+    A refusal is RETRYABLE (nothing ran: the box had no room in time, or no enforcer); a kill and a crash
+    are released naming what happened, never red.
+    """
+    if isinstance(ended, Refused):
+        return f'{RETRYABLE} -- the box refused it ({ended}); retried next tick'
+    if ended is None:
+        return 'released: the box crashed -- it left no record of how the producer ended'
+    if ended.killed:
+        return f'released: the box killed it past its declared {ended.reason} (exit {ended.returncode})'
+    return None

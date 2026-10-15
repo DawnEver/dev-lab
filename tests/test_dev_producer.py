@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 
 import pytest
+from _box_fake import ended
 
+from lab_commons.box import Refused
 from lab_commons.dev import verify
 from lab_commons.dev.producer import (
     PRODUCING_VAR,
     RETRYABLE,
     ProducerExit,
+    box_release_reason,
     full_suite_refusal,
     producing,
     release_reason,
@@ -46,6 +49,15 @@ def test_only_unreachable_is_released_as_retryable() -> None:
     assert retryable == {ProducerExit.UNREACHABLE}
     assert len(set(reasons.values())) == len(reasons), 'every exit is released with a reason naming it'
     assert release_reason(-9) == 'released: producer crashed (exit -9)'
+
+
+def test_the_box_record_decides_the_release_never_the_exit_code() -> None:
+    """A refusal is retryable, a kill and a crash are released naming them; the producer's own exit is its code's."""
+    assert box_release_reason(Refused('cpu: wants 4 of 3')).startswith(RETRYABLE)
+    assert 'killed it past its declared wall' in box_release_reason(ended(-9, 'wall'))
+    assert 'box crashed' in box_release_reason(None)
+    assert box_release_reason(ended(69)) is None, 'PLANTED: a producer exiting 69 itself is judged by its code'
+    assert box_release_reason(ended(137)) is None, 'PLANTED: a producer exiting 137 itself is judged by its code'
 
 
 def test_the_door_is_open_only_to_the_producer_forge_serve_spawned() -> None:

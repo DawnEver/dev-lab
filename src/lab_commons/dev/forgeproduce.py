@@ -8,12 +8,15 @@ every *renew_s* (counted in wakes) while the producer lives; a ref that moved on
 (``superseded by <sha>``) unless the new tip is
 reach-equivalent (:mod:`lab_commons.dev.forgecarry`) -- then the run finishes and its part is also posted
 on that tip, naming the sha it was judged at; and a claim it left ``pending`` is released as ``error`` with
-the reason its exit code names -- or ``stopped`` when :mod:`lab_commons.dev.stoprun` stopped it on purpose.
+the reason the box's record names, else its exit code's
+(:func:`~lab_commons.dev.producer.box_release_reason`) -- or ``stopped`` when :mod:`lab_commons.dev.stoprun`
+stopped it on purpose.
 
 THE PRODUCER RUNS IN THE BOX (:func:`boxed`, :func:`lab_commons.box.command`): admitted on this machine's
 box ledger at exactly the demand the tick admitted it at (:func:`lab_commons.compute.learned.box_demand`),
 and killed by the box past that memory or :data:`~lab_commons.compute.learned.BOX_WALL_S`. A box with no
-room releases the claim retryable; a kill is released naming it. A REQUEST (context
+room releases the claim retryable; a kill is released naming it -- both read from the box's record
+beside the run's tree, never from the exit code, which is the producer's own. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
 is SETTLED here from the exit code (:func:`lab_commons.dev.forgerequest.settle`), and its ref ``issue/<n>``
 has no tip, so nothing supersedes it.
@@ -51,7 +54,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, KILLED, Capacity, Demand, command
+from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
 from lab_commons.compute.learned import BOX_WALL_S, LOCAL, Run, record_run
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
@@ -61,7 +64,7 @@ from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
-from lab_commons.dev.producer import ProducerExit, producing, release_reason
+from lab_commons.dev.producer import ProducerExit, box_release_reason, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
 from lab_commons.dev.stoprun import declared_signatures, process_table, stop
@@ -104,8 +107,8 @@ def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
     record_run(origin_url(root), LOCAL, needs_of(item.platform), run, killed=killed)
 
 
-def boxed(item: Work, argv: Sequence[str], capacity: Capacity) -> list[str]:
-    """*argv* run through the box at the demand the tick admitted *item* at (the module docstring).
+def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path) -> list[str]:
+    """*argv* run through the box at the demand the tick admitted *item* at, recording how it ended at *outcome*.
 
     An item claimed with no demand declares the whole *capacity*, as an unmeasured box part does
     (:func:`~lab_commons.compute.learned.box_demand`).
@@ -115,7 +118,7 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity) -> list[str]:
     cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
     demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=BOX_WALL_S, seats=seats)
     what = f'{item.context}@{item.sha[:12]}'
-    return command(argv, demand, BOX_QUEUE_S, key=item.context, what=what, fingerprint=item.sha)
+    return command(argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha)
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -157,8 +160,9 @@ def produce(
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
         argv = (str(tree.python), *item.argv)
-        held = boxed(item, argv, (capacity or Capacity.read)())
-        return _run(root, item, (argv, held), tree.path, client=client, spawn=spawn, clock=clock,
+        record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
+        held = boxed(item, argv, (capacity or Capacity.read)(), record)
+        return _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
                     say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
                     beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
                     meter=meter)  # fmt: skip
@@ -170,7 +174,7 @@ def _run(
     root: Path,
     item: Work,
     argvs: tuple[tuple[str, ...], list[str]],
-    tree: Path,
+    where: tuple[Path, Path],
     *,
     client: Callable[[Path], Client],
     spawn: Callable[..., Any],
@@ -187,6 +191,7 @@ def _run(
     meter: Callable[[int], Callable[[], float | None]],
 ) -> Produced:
     argv, held = argvs  # what the part runs, and that argv run through the box
+    tree, record = where  # the run's tree, and where the box records how it ended
     context = item.context
     say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
     proc = below_normal(
@@ -227,14 +232,24 @@ def _run(
     pump.join(timeout=5)
     say(f'[{item.platform}] exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
+    ended = read_ended(record)
+    record.unlink(missing_ok=True)
+    boxed_out = box_release_reason(ended)  # the box's decision, from its record: never from the exit code
     if usage.peak is not None and usage.cpu_s > 0 and not superseded and not stopped:
         wall_s = max(1.0, (clock() - started).total_seconds())
-        learn(root, item, Run(usage.peak, usage.cpu_s, wall_s), killed=returncode == KILLED or returncode < 0)
+        learn(
+            root,
+            item,
+            Run(usage.peak, usage.cpu_s, wall_s),
+            killed=(isinstance(ended, Outcome) and ended.killed) or returncode < 0,
+        )
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
-        _settle(client(root), item, returncode, ''.join(heard), say)  # a request: its producer posts nothing
+        _settle(
+            client(root), item, (returncode, boxed_out), ''.join(heard), say
+        )  # a request: its producer posts nothing
     elif superseded or (posts and posts[-1].state == 'pending'):
-        reason = 'stopped' if stopped else release_reason(returncode)
+        reason = 'stopped' if stopped else boxed_out or release_reason(returncode)
         reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
@@ -298,9 +313,11 @@ def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callabl
         say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
-def _settle(client: Client, item: Work, returncode: int, log: str, say: Callable[[str], None]) -> None:
-    """A request's result from its exit code: commented (with the log's tail) on its issue, then posted."""
-    state, description = result(returncode, (item.holder.machine or item.holder.login) if item.holder else '-')
+def _settle(client: Client, item: Work, ended: tuple[int, str | None], log: str, say: Callable[[str], None]) -> None:
+    """A request's result -- the box's release when it ended the run, else the exit code's -- commented, then posted."""
+    returncode, boxed_out = ended
+    host = (item.holder.machine or item.holder.login) if item.holder else '-'
+    state, description = ('error', boxed_out) if boxed_out else result(returncode, host)
     try:
         settle(client, int(item.context.removeprefix(CONTEXT_PREFIX)), state, description, log=log)
     except ForgeCallFailed as failed:

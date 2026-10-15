@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _box_fake import ended, record
 from _forge_fake import git_out, run_git
 
 from lab_commons.config import CONFIG_ENV
@@ -140,7 +141,8 @@ def _produce(monkeypatch: pytest.MonkeyPatch, root: Path, a: str, then: str) -> 
     client = SimpleNamespace(answered=format_datetime(NOW, usegmt=True), whoami=lambda: 'alice')
     forgeproduce.produce(
         root, Work(REF, a, 'windows', 'mine', ME, argv=('verify',)), client=lambda _r: client,
-        spawn=lambda *_a, **_k: proc, clock=lambda: NOW, say=lambda _l: None, lease=timedelta(hours=6),
+        spawn=lambda argv, **_k: record(argv, ended(0)) or proc, clock=lambda: NOW, say=lambda _l: None,
+        lease=timedelta(hours=6),
         renew_s=1, fetch=lambda _r: None,
     )  # fmt: skip
     return forge, proc

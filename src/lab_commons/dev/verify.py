@@ -414,10 +414,10 @@ def run_verify(
             OUTCOMES_DIR_VAR: str(outcomes_dir(path)),
         }
         pytest = [sys.executable, '-m', 'pytest', *PYTEST_ARGS, *LEDGER_PLUGIN, *OUTCOME_PLUGIN, *pytest_args]
-        argv, width = boxed(root, pytest, queue_s=wait_s)
+        argv, width, record = boxed(root, pytest, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
         code = _tee(argv, cwd=root, handle=handle, extra_env=stamp | width)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
-    cut = ended_in_the_box(code, path)
+    cut = ended_in_the_box(record)
     complete_census, scope_refusal = census_scope(pytest_args)
     report = read_pytest(distillate.text, returncode=code, allowed_skips=allowed, complete_skip_census=complete_census)
     reports.append(

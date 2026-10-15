@@ -35,8 +35,9 @@ from types import SimpleNamespace
 from typing import Final
 
 import pytest
+from _box_fake import ended
 
-from lab_commons.box import BOX_ENV, GB, KILLED, REFUSED, Capacity, Refused
+from lab_commons.box import BOX_ENV, GB, Capacity, Refused, write_ended
 from lab_commons.box.run import INSIDE_ENV
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
@@ -1064,15 +1065,19 @@ def test_a_run_that_judged_no_test_still_posts_no_part(monkeypatch, tmp_path: Pa
     assert 'covers no test' in said
 
 
-def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], dict[str, str]]:
+def _unboxed(_root: Path, argv: list[str], **_k: object) -> tuple[list[str], dict[str, str], Path | None]:
     """The pytest step as given: these tests are about what verify JUDGES, not the box it runs in."""
-    return argv, {}
+    return argv, {}, None
 
 
-#: What the box CLI prints when it never ran the step (``lab_commons.box.__main__``).
-_REFUSED_LINE: Final = (
-    'box: refused -- cpu: wants 4 of 3; verify:other (pid 7) holds 3 until 2026-10-15T00:00:00+00:00\n'
-)
+#: Why the box refused the step (the ``--outcome`` record ``lab_commons.box.__main__`` writes).
+_REFUSED_WHY: Final = 'cpu: wants 4 of 3; verify:other (pid 7) holds 3 until 2026-10-15T00:00:00+00:00'
+
+
+def _refusing(_root: Path, argv: list[str], *, outcome: Path, **_k: object) -> tuple[list[str], dict[str, str], Path]:
+    """The box refused the pytest step: its record says so, whatever code the step exits with."""
+    write_ended(outcome, Refused(_REFUSED_WHY))
+    return argv, {}, outcome
 
 
 def _unreadable(_path: Path) -> LogRef:
@@ -1100,7 +1105,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
 @pytest.mark.parametrize(
     ('path', 'pytest_text', 'pytest_code', 'plant'),
     [
-        ('box refused', _REFUSED_LINE, REFUSED, None),
+        ('box refused', '', 1, ('boxed', _refusing)),
         ('empty selection', 'no tests ran in 0.01s\n', 5, None),
         ('unusable log', '1 passed in 0.1s\n', 0, ('LogRef', SimpleNamespace(of=_unreadable))),
     ],
@@ -1224,21 +1229,35 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
     monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')  # naming a part is not being in the box
     small = Capacity(cpu=2.0, mem_bytes=16 * GB, seats={})
     monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: small))
-    argv, width = verifybox.boxed(Path('r'), ['py', '-m', 'pytest'], queue_s=5)
+    argv, width, record = verifybox.boxed(Path('r'), ['py', '-m', 'pytest'], queue_s=5, outcome=Path('o.json'))
     assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
     assert argv[argv.index('--') + 1 :] == ['py', '-m', 'pytest']
     assert argv[argv.index('--cpu') + 1] == '2', 'capped at the box'
     assert argv[argv.index('--queue-s') + 1] == '5'
     assert width == {'PYTEST_XDIST_AUTO_NUM_WORKERS': '2'}
     monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
-    assert verifybox.boxed(Path('r'), ['py'], queue_s=5) == (['py'], {}), 'PLANTED CONTROL: a boxed tree is not reboxed'
+    assert record == Path('o.json')
+    assert argv[argv.index('--outcome') + 1] == 'o.json'
+    reboxed = verifybox.boxed(Path('r'), ['py'], queue_s=5, outcome=Path('o.json'))
+    assert reboxed == (['py'], {}, None), 'PLANTED CONTROL: a boxed tree is not reboxed'
 
 
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:
-    log = tmp_path / 'step.log'
-    log.write_text(f'$ python -m lab_commons.box run ...\n{_REFUSED_LINE}', encoding='utf-8')
+    """The box's RECORD decides: refused raises naming the holder, killed and crashed are truncations."""
+    record = tmp_path / 'step.outcome.json'
+    assert 'box crashed' in verifybox.ended_in_the_box(record)[0], 'no record: the box itself died'
+    write_ended(record, Refused(_REFUSED_WHY))
     with pytest.raises(Refused, match='verify:other'):
-        verifybox.ended_in_the_box(REFUSED, log)
-    (killed,) = verifybox.ended_in_the_box(KILLED, log)
+        verifybox.ended_in_the_box(record)
+    write_ended(record, ended(-9, 'memory'))
+    (killed,) = verifybox.ended_in_the_box(record)
     assert 'the box killed pytest' in killed
-    assert verifybox.ended_in_the_box(0, log) == (), 'PLANTED CONTROL: a step that ran is judged by pytest'
+    assert verifybox.ended_in_the_box(None) == (), 'a step the box did not run is judged by pytest'
+
+
+@pytest.mark.parametrize('own', [69, 137])
+def test_pytest_exiting_a_former_box_sentinel_is_judged_by_pytest(tmp_path: Path, own: int) -> None:
+    """PLANTED (SR-20261015-002): a step exiting 69 or 137 ITSELF was read as refused or killed by the box."""
+    record = tmp_path / 'step.outcome.json'
+    write_ended(record, ended(own))
+    assert verifybox.ended_in_the_box(record) == ()
