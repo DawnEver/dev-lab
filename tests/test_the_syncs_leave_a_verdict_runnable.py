@@ -94,7 +94,6 @@ def test_the_census_refuses_a_scope_planted_into_the_real_table() -> None:
         ScopeRow(
             row.repo,
             row.path,
-            row.line,
             row.evidence,
             row.selected,
             'STRANDS' if row.scope == 'COMPLETE' else 'COMPLETE',
@@ -107,13 +106,16 @@ def test_the_census_refuses_a_scope_planted_into_the_real_table() -> None:
         assert_scopes(_BASE, _PATHS, broken, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR, here=_HERE)
 
 
-def test_the_census_refuses_a_row_whose_evidence_line_moved() -> None:
-    """The second plant: the same rows pointed one line off, which is what an edit upstream looks like."""
+@pytest.mark.parametrize(
+    'evidence',
+    [pytest.param(lambda row: row.evidence + ' #gone', id='gone'), pytest.param(lambda _row: '=', id='ambiguous')],
+)
+def test_the_census_refuses_a_row_whose_evidence_is_not_on_exactly_one_line(evidence) -> None:
+    """The second plant: evidence that stands nowhere, and evidence that stands on many lines."""
     moved = tuple(
-        ScopeRow(row.repo, row.path, row.line + 1, row.evidence, row.selected, row.scope, row.stranded, row.why)
-        for row in ROWS
+        ScopeRow(row.repo, row.path, evidence(row), row.selected, row.scope, row.stranded, row.why) for row in ROWS
     )
-    with pytest.raises(EvidenceGoneError, match='expected'):
+    with pytest.raises(EvidenceGoneError, match='exactly one line'):
         assert_scopes(_BASE, _PATHS, moved, repo_floor=REPO_FLOOR, row_floor=ROW_FLOOR, here=_HERE)
 
 
@@ -128,6 +130,7 @@ def test_a_pruning_command_planted_into_a_real_door_is_found() -> None:
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
     planted = {('lab-commons', 'planted'): text.replace('uv run --no-sync', 'uv run')}
-    (line,) = [line for repo, path, line in SITES if (repo, path) == ('lab-commons', 'pyproject.toml')]
-    assert ('lab-commons', 'planted', line) in pruning_sites(planted)
-    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', line),)
+    (command,) = [command for repo, path, command in SITES if (repo, path) == ('lab-commons', 'pyproject.toml')]
+    assert ('lab-commons', 'planted', command) in pruning_sites(planted)
+    assert len(pruning_sites(planted)) > 1, 'removing the remedy surfaced no further pruning command'
+    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', command),)
