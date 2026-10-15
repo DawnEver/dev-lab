@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 from dataclasses import replace
@@ -43,6 +44,7 @@ from lab_commons.hpc.records import (
     read_streams,
     record_name,
     run_shas,
+    stream_dirs,
     write_record,
 )
 from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
@@ -129,6 +131,25 @@ def test_streams_are_read_back_per_item_in_one_command() -> None:
 
     assert read_streams(run, '"$HOME"/ci/x') == {0: '{"a": 1}', 12: '{"b": 2}\n{"c": 3}'}
     assert len(calls) == 1
+
+
+def test_streams_are_read_where_retention_kept_them_once_the_tree_is_gone(tmp_path: Path) -> None:
+    """A superseded run's tree is garbage; its round's streams moved beside its state and are read from there."""
+    tree, kept = (d.replace('"$HOME"', tmp_path.as_posix()) for d in stream_dirs('s1', 'r0'))
+    Path(kept).mkdir(parents=True)
+    (Path(kept) / '0.jsonl').write_text('{"a": 1}\n', encoding='utf-8')
+    bash = shutil.which('bash')
+    assert bash, 'the reader is a POSIX shell command'
+
+    def run(command: str, _stdin: str | None) -> str:
+        done = subprocess.run([bash, '-c', command], capture_output=True, text=True, encoding='utf-8', check=True)
+        return done.stdout
+
+    assert not Path(tree).exists()
+    assert read_streams(run, tree, kept) == {0: '{"a": 1}'}
+    Path(tree).mkdir(parents=True)
+    (Path(tree) / '0.jsonl').write_text('{"b": 2}\n', encoding='utf-8')
+    assert read_streams(run, tree, kept) == {0: '{"b": 2}'}, 'PLANTED CONTROL: the tree, while it exists, wins'
 
 
 # -- the item runner, for real ---------------------------------------------------------------------------

@@ -27,3 +27,19 @@ created: 2026-10-15
   the quota sees until `uv cache prune` drops the cache side; the next tick's quota read is the truth.
 - Workstation: unchanged rule shape -- a `forge-*` producer tree is in flight while its producer runs, is
   removed by `shatree.close_tree`, and a stale one goes by `forge-tree-stale`.
+
+## Correction, measured on the served accounts the same day (read-only)
+
+- The first rule's "no record and not abandoned" clause was wrong: 9 run states in 10 had no record (runs
+  superseded by a newer commit or released; nobody gathers them), so the first dry run kept 79 trees of 81
+  and every env. Observed per account: 35-76 states, 0-8 recorded.
+- In flight is now: live run file, Slurm workdir, or ACTIVITY within `min_age_hours` (now 6, was 24): the
+  run state, the tree, or a `.lab-ci` stream directory touched.
+- The earlier claim "the carry never reads the tree" was also wrong: `held_outcomes` reads a SUPERSEDED run's
+  round streams from `trees/<sha>/.lab-ci/<tag>`. Before such a tree goes, retention moves those streams to
+  `runs/<sha>/streams/<tag>`; `records.stream_dirs` names both places and `read_streams` takes the first that
+  exists. The unrecorded state stays until `abandon_days`.
+- Envs were blocked by two unprovable references: a job-file job's tree (no run state) -- now read through
+  the `.lab-ci/env.sh` it sources -- and a repo's newest recorded run predating `builds` -- now the newest
+  recorded run NAMING builds; a run not in flight references nothing.
+- Kept trees by clause after the fix (5 accounts): live 0/0/1/1/0, squeue 1/2/1/0/0, active<6h 3/1/7/8/2.

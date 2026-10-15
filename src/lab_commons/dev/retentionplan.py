@@ -7,16 +7,19 @@ Measured 2026-10-15 on the cluster accounts the forge serves (GPFS file quota 2 
 derived from what each is FOR, not from what happens to name it:
 
 * A TREE is the workdir of a run's jobs and the place its streams land until :func:`gather_run
-  <lab_commons.hpc.run.gather_run>` folds them into the record. After gather nothing reads it: the carry
-  reads the RUN STATE (``runs/<sha>/state.json``), never the tree, and a re-run of the sha re-adds it from
-  the bare cache (a ``git worktree add``; its env lives apart, keyed). So a tree is kept exactly while its
-  sha is IN FLIGHT, by any repo's run -- ``tree-not-in-flight`` otherwise. Keeping the newest tree per branch
-  would save one checkout at the price of ~22 k files; it does not.
+  <lab_commons.hpc.run.gather_run>` folds them into the record. Of its ~22 k files only the streams of the
+  round in flight (``.lab-ci/<tag>``, a few dozen) are read after its jobs end: the carry takes a SUPERSEDED
+  run's finished shards from them (:func:`lab_commons.hpc.records.held_outcomes`). So a tree is kept exactly
+  while its sha is IN FLIGHT, by any repo's run -- ``tree-not-in-flight`` otherwise -- and before an
+  unrecorded run's tree goes its streams MOVE beside its state (:func:`lab_commons.hpc.records.stream_dirs`).
+  A re-run of the sha re-adds the tree from the bare cache (its env lives apart, keyed). Keeping the newest
+  tree per branch would save one checkout at the price of ~22 k files; it does not.
 * An ENV (``envs/<key>``), a NATIVE build and its ``cargo-target/<key>`` are kept while an in-flight run
   was built with them, plus the newest recorded run's per repo -- the next commit of that repo most likely
   shares its key, and a rebuild costs minutes. ``env-unreferenced``/``native-unreferenced``/
   ``cargo-unreferenced`` otherwise. An in-flight sha whose builds cannot be read (a job-file job in a tree no
-  run state names, an older state, an unreadable queue) makes these rules decide nothing: an unprovable
+  run state names reads its env from the ``.lab-ci/env.sh`` it sources; an older state, an unreadable
+  ``env.sh`` or an unreadable queue) makes these rules decide nothing: an unprovable
   reference is a reference. uv HARDLINKS each env's files to ``UV_CACHE_DIR`` (``UV_LINK_MODE=hardlink``,
   :mod:`lab_commons.hpc.shell`), so an env's own inodes are its directories and the files uv writes; the
   rest go only once ``uv cache prune`` drops the cache entry too.
@@ -24,14 +27,18 @@ derived from what each is FOR, not from what happens to name it:
 IN FLIGHT IS ONE FUNCTION, :func:`in_flight`, and every rule that keeps something for being in flight
 reads it: a sha a live run file names (``forge-runs/``), a tree a queued or running Slurm job of this
 account works in (``squeue --me -o %Z`` at or under ``trees/<sha>`` -- a job file submits from
-``trees/<sha>/.lab-hpc/<run>``), a run not yet gathered (no ``record``) and not abandoned, or a run state
-or tree younger than ``min_age_hours`` (being built). An unreadable queue (``None``) keeps every tree.
+``trees/<sha>/.lab-hpc/<run>``), or a sha ACTIVE within ``min_age_hours`` -- its run state, its tree, or a
+stream directory under ``.lab-ci`` touched (being built, or a round ended and not yet gathered). An unreadable
+queue (``None``) keeps every tree. NOT "no record yet": measured 2026-10-15 on the served accounts, 9 run
+states in 10 had no record -- runs SUPERSEDED by a newer commit or released, which nobody will ever gather --
+and that clause kept 79 trees of 81 and every env.
 
 THE OTHER RULES. ``run-not-a-carry-source``: a recorded run of THIS serve's repo no origin branch tip
 carries from (:func:`carry_sources`, the carry's own selection) -- its state goes; the kept sources are
 the :attr:`Plan.harder` runs, removed oldest first only under quota pressure. ``run-abandoned``: no record,
-nothing live, untouched ``abandon_days``. ``pack-not-in-flight``, ``slurm-out-finished``,
-``log-over-size`` (rotated), and on a workstation ``forge-tree-stale``: a ``.claude/worktrees/forge-*``
+not in flight, untouched ``abandon_days`` (a state is a few files, and the carry reads it).
+``pack-not-in-flight``, ``slurm-out-finished``, ``log-over-size`` (rotated), and on a workstation
+``forge-tree-stale``: a ``.claude/worktrees/forge-*``
 its producer (:mod:`lab_commons.dev.shatree`) failed to remove -- the same rule, since a producer's tree is
 in flight exactly while its producer runs.
 
@@ -43,6 +50,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import shutil
 import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -52,6 +60,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forgecarry import read_by
+from lab_commons.hpc.records import KEPT_STREAMS
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 
@@ -77,7 +86,7 @@ _GIT: Final = shutil.which('git') or 'git'
 class Policy:
     """The kit defaults; the machine file's ``[retention]`` overrides any key (module docstring)."""
 
-    min_age_hours: float = 24.0
+    min_age_hours: float = 6.0
     abandon_days: float = 7.0
     log_max_mb: float = 20.0
     slurm_out_days: float = 7.0
@@ -103,6 +112,7 @@ class Doomed:
     path: Path
     rule: str
     rotate: bool = False
+    keep: tuple[tuple[Path, Path], ...] = ()  # (from, to): moved out before the path goes
 
 
 @dataclass(frozen=True)
@@ -136,14 +146,17 @@ def runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
     return out
 
 
+def _active(tree: Path, now: datetime) -> timedelta:
+    """How long since *tree* was last touched: itself, its ``.lab-ci``, or any stream directory in it."""
+    lab = tree / '.lab-ci'
+    return min(_age(path, now) for path in [tree, *([lab, *_entries(lab)] if lab.is_dir() else [])])
+
+
 def in_flight(ci: Path, policy: Policy, *, now: datetime, live: Iterable[str], occupied: Iterable[str]) -> set[str]:
-    """THE shas in flight (module docstring): live, occupied, ungathered and not abandoned, or being built."""
-    young, abandon = timedelta(hours=policy.min_age_hours), timedelta(days=policy.abandon_days)
-    shas = set(live) | set(occupied)
-    for path, state, when in runs(ci):
-        if now - when < young or ('record' not in state and now - when < abandon):
-            shas.add(path.name)
-    return shas | {tree.name for tree in _entries(ci / 'trees') if _age(tree, now) < young}
+    """THE shas in flight (module docstring): live, occupied, or active within ``min_age_hours``."""
+    young = timedelta(hours=policy.min_age_hours)
+    shas = set(live) | set(occupied) | {path.name for path, _, when in runs(ci) if now - when < young}
+    return shas | {tree.name for tree in _entries(ci / 'trees') if _active(tree, now) < young}
 
 
 def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[str]:
@@ -199,7 +212,8 @@ def cluster_plan(
         if sha in flying:
             continue
         if 'record' not in state:
-            doomed.append(Doomed(path, 'run-abandoned'))
+            if now - when >= timedelta(days=policy.abandon_days):
+                doomed.append(Doomed(path, 'run-abandoned'))
         elif state.get('repo') != repo:
             continue  # another repo's serve judges its own runs
         elif sha in sources:
@@ -207,8 +221,13 @@ def cluster_plan(
         else:
             doomed.append(Doomed(path, 'run-not-a-carry-source'))
     if occupied is not None:
-        doomed += [Doomed(tree, 'tree-not-in-flight') for tree in _entries(ci / 'trees') if tree.name not in flying]
-    doomed += _unreferenced_builds(ci, _needed_builds(states, flying, occupied), now, policy)
+        unrecorded = {path.name: state for path, state, _ in states if 'record' not in state}
+        doomed += [
+            Doomed(tree, 'tree-not-in-flight', keep=_kept_streams(ci, tree.name, unrecorded.get(tree.name)))
+            for tree in _entries(ci / 'trees')
+            if tree.name not in flying
+        ]
+    doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
     doomed += _home_rules(home, policy, now)
     hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
@@ -220,21 +239,43 @@ def cluster_plan(
     return Plan(tuple(doomed), hard, tuple(commands))
 
 
-def _needed_builds(
-    states: list[tuple[Path, dict[str, Any], datetime]], flying: set[str], occupied: Iterable[str] | None
-) -> list[object]:
-    """The ``builds`` of each in-flight run and each repo's newest recorded run; ``None`` where one is unread.
+def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
+    """An unrecorded run's round streams, moved to where :func:`lab_commons.hpc.records.stream_dirs` reads them."""
+    tag = str(((state or {}).get('current') or {}).get('tag', ''))
+    if not tag:
+        return ()
+    return ((ci / 'trees' / sha / '.lab-ci' / tag, ci / 'runs' / sha / KEPT_STREAMS / tag),)
 
-    A job in a tree no run state names, and an unreadable queue, name builds nobody can read.
+
+def _sourced_builds(tree: Path) -> object:
+    """The ``{env, native}`` keys a job-file job in *tree* sources from ``.lab-ci/env.sh``; ``None`` unread."""
+    try:
+        text = (tree / '.lab-ci' / 'env.sh').read_text(encoding='utf-8')
+    except OSError:
+        return None
+    env, native = re.search(r'/ci/envs/([^/"\s:]+)', text), re.search(r'/ci/native/([^/"\s:]+)', text)
+    return {'env': env.group(1), 'native': native.group(1) if native else None} if env else None
+
+
+def _needed_builds(
+    ci: Path, states: list[tuple[Path, dict[str, Any], datetime]], flying: set[str], occupied: Iterable[str] | None
+) -> list[object]:
+    """The ``builds`` of each in-flight run and each repo's newest recorded run naming any; ``None`` unread.
+
+    A job in a tree no run state names reads the ``env.sh`` it sources; an unreadable queue reads nothing.
     """
     by_sha = {path.name: state for path, state, _ in states}
     needed = [by_sha[sha].get('builds') for sha in sorted(flying) if sha in by_sha]
-    needed += [None for sha in (() if occupied is None else occupied) if sha not in by_sha]
+    needed += [_sourced_builds(ci / 'trees' / sha) for sha in sorted(occupied or ()) if sha not in by_sha]
     needed += [None] if occupied is None else []
     newest: dict[str, tuple[datetime, object]] = {}
     for _, state, when in states:
         repo = str(state.get('repo', ''))
-        if 'record' in state and (repo not in newest or when >= newest[repo][0]):
+        if (
+            'record' in state
+            and isinstance(state.get('builds'), dict)
+            and (repo not in newest or when >= newest[repo][0])
+        ):
             newest[repo] = (when, state.get('builds'))
     return needed + [builds for _, builds in newest.values()]
 
