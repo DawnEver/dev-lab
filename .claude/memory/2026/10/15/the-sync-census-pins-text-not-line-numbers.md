@@ -1,4 +1,6 @@
 ---
+name: the-sync-census-pins-text-not-line-numbers
+description: the sync census pinned evidence by hand-typed line numbers, so deleting six pyproject lines redded four base tests; a row now finds its evidence by text and must match exactly one line
 created: 2026-10-15
 ---
 # The sync census pins TEXT, not line numbers
