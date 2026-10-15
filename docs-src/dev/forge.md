@@ -61,17 +61,24 @@ Each tick it:
   `.venv` (`-m lab_commons.dev.dep --bootstrap <tree>`). The declared argv runs there with that tree's
   interpreter, and the tree is removed once the run ends. The serving checkout's HEAD decides nothing about
   what is judged. A tree that cannot be built spawns nothing; the claim is released naming the step.
-- **Serve cleans its own storage** (`lab_commons.dev.retention`), at most once per `every_hours` and at once
-  when usage nears the quota -- no cron line of its own. On a cluster it plans `~/ci` by reference: a finished
-  run of its repo that no origin branch tip can carry from (the carry's own `forgecarry.nearest` selection per
-  tip, plus the tip's own run), an abandoned run, a tree, env, native build (keys the run state records as
-  `builds`) or pack nothing kept names, finished `~/slurm-*.out`, and `~/.cache/lab-forge-*.log` past
-  `log_max_mb` (rotated); never a run in flight, never a tree a queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`; an unreadable queue keeps every tree), nothing younger than `min_age_hours`. On a workstation it
-  removes the stale `forge-*` trees of the serving checkout. Then `uv cache prune` and `git worktree prune`.
-  Every deletion is one JSON line (path, bytes, files, rule). At `pressure` of the block or file quota it
-  also removes its kept carry sources oldest first down to `target`, and raises a `storage` alarm if still over. The
-  policy is the kit defaults, overridden per key by the machine file's `[retention]` table (an unknown key is
-  refused). Preview: `python -m lab_commons.dev.retention [--cluster]` is a DRY RUN: one line per path, then per rule paths, MB and files, and usage now -> after for bytes and FILES (Ada binds on files); `--apply` deletes.
+- **Serve cleans its own storage every tick** (`lab_commons.dev.retention` runs what `lab_commons.dev.retentionplan`
+  decides; no cron line of its own). Files are the binding HPC resource, so the rules follow what each thing is
+  FOR. One function says what is IN FLIGHT (`retentionplan.in_flight`): a sha a live run file names, a tree a
+  queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`), a run not
+  yet gathered and not abandoned, or anything younger than `min_age_hours`. A tree is kept only while its sha is
+  in flight (`tree-not-in-flight`): after gather nothing reads it, and a re-run re-adds it from the bare cache.
+  An env, native build or cargo target is kept while an in-flight run or its repo's newest recorded run names it
+  in `builds`; an unreadable reference keeps them all, an unreadable queue keeps every tree. A finished run's
+  STATE goes when no origin branch tip can carry from it; finished `~/slurm-*.out` and oversized
+  `~/.cache/lab-forge-*.log` (rotated) go too. On a workstation it removes the stale `forge-*` trees of the
+  serving checkout. `git worktree prune` and `uv cache prune` follow a pass that deleted something; envs hardlink
+  from the shared uv cache (`UV_LINK_MODE=hardlink`). Every deletion is one JSON line (path, bytes, files, rule).
+  The file budget is the account's quota, the same reading admission uses as the `files` supply: at `pressure`
+  of the block or file quota the kept carry-source runs also go, oldest first (most files first when files
+  bind), down to `target`, and a `storage` alarm is raised if still over. The policy is the kit defaults,
+  overridden per key by the machine file's `[retention]` table (an unknown or retired key is refused). Preview:
+  `python -m lab_commons.dev.retention [--cluster]` is a DRY RUN: one line per path, then per rule paths, MB and
+  files, and usage now -> after for bytes and FILES; `--apply` deletes.
 - **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
   must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The

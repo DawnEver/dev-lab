@@ -728,6 +728,7 @@ def test_env_and_native_builds_share_persistent_caches_and_cargo_is_locked() -> 
     builds = Builds(('uv.lock',), ('src',), ('rust',), 'make', 'uv sync', env_key='e1', native_key='n1')
     script = build_script(RunSpec(sha=SHA, repo_url='u', builds=builds))
     assert ' UV_CACHE_DIR="$HOME"/ci/uv-cache' in script, 'one uv cache across every env key'
+    assert ' UV_LINK_MODE=hardlink' in script, 'an env shares its inodes with the cache: files are a quota'
     assert 'export CARGO_TARGET_DIR="$HOME"/ci/cargo-target/n1\n' in script, "the target is the native key's own"
     assert 'flock 8' in script, 'two runs building one native key take turns on its target'
     other = build_script(RunSpec(sha=SHA, repo_url='u', builds=replace(builds, native_key='n2')))

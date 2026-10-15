@@ -1,4 +1,4 @@
-"""Storage retention: only what the policy proves unreferenced is deleted, each deletion logged; quota prunes harder."""
+"""Storage retention: a tree or env goes once nothing in flight needs it, every tick, each deletion logged."""
 
 from __future__ import annotations
 
@@ -12,17 +12,17 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.dev import retention
+from lab_commons.dev import retention, retentionplan
 from lab_commons.dev.diskusage import Usage, parse_mmlsquota
-from lab_commons.dev.retention import (
+from lab_commons.dev.retention import apply, serve_pass
+from lab_commons.dev.retentionplan import (
     Plan,
     Policy,
-    apply,
     carry_sources,
     cluster_plan,
+    in_flight,
     load_policy,
     occupied_trees,
-    serve_pass,
     workstation_plan,
 )
 from lab_commons.hpc.slurm import parse_workdirs
@@ -98,10 +98,14 @@ def _plan(home: Path) -> Plan:
 def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
     plan = _plan(home)
     assert _doomed(plan) == {
-        'a1': 'run-not-a-carry-source',
-        'a2': 'run-not-a-carry-source',
-        'g1': 'run-abandoned',
-        'orphan': 'tree-unreferenced',
+        'a1': 'tree-not-in-flight',  # its state goes too: run-not-a-carry-source (below)
+        'a2': 'tree-not-in-flight',
+        'a3': 'tree-not-in-flight',
+        'a4': 'tree-not-in-flight',
+        'a5': 'tree-not-in-flight',
+        'b1': 'tree-not-in-flight',
+        'g1': 'tree-not-in-flight',
+        'orphan': 'tree-not-in-flight',
         'e3': 'env-unreferenced',
         'e3.log': 'env-unreferenced',
         'n0': 'native-unreferenced',
@@ -111,8 +115,11 @@ def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
         'slurm-1.out': 'slurm-out-finished',
         'lab-forge-r.log': 'log-over-size',
     }
-    trees = {d.path.parent.name for d in plan.doomed if d.rule.startswith('run-')}
-    assert trees == {'runs', 'trees'}, 'a run goes with its tree'
+    runs = {d.path.name: d.rule for d in plan.doomed if d.path.parent.name == 'runs'}
+    assert runs == {'a1': 'run-not-a-carry-source', 'a2': 'run-not-a-carry-source', 'g1': 'run-abandoned'}
+    assert (home / 'ci' / 'runs' / 'a3') not in {d.path for d in plan.doomed}, 'a carry source keeps its STATE'
+    kept = {'f1', 'building'}
+    assert not {d.path.name for d in plan.doomed if d.path.parent.name == 'trees'} & kept, 'in flight: kept'
 
 
 def test_a_cargo_target_goes_when_no_kept_run_names_its_native_key(home: Path) -> None:
@@ -128,8 +135,8 @@ def test_a_cargo_target_goes_when_no_kept_run_names_its_native_key(home: Path) -
 
 def test_harder_is_this_repos_carry_sources_oldest_first_never_in_flight(home: Path) -> None:
     plan = _plan(home)
-    harder = [d.path.name for d in plan.harder if d.path.parent.name == 'runs']
-    assert harder == ['a3', 'a4', 'a5'], "f1 is in flight, b1 is another repo's"
+    assert [d.path.name for d in plan.harder] == ['a3', 'a4', 'a5'], "f1 is in flight, b1 is another repo's"
+    assert {d.path.parent.name for d in plan.harder} == {'runs'}, 'their trees already went: not in flight'
 
 
 def test_a_kept_run_naming_no_builds_blocks_the_env_and_native_rules(home: Path) -> None:
@@ -137,9 +144,36 @@ def test_a_kept_run_naming_no_builds_blocks_the_env_and_native_rules(home: Path)
     state = home / 'ci' / 'runs' / 'a5' / 'state.json'
     state.write_text(json.dumps({'sha': 'a5', 'repo': 'r', 'record': {}}), encoding='utf-8')
     _touch(state, OLD + timedelta(hours=4))
-    rules = set(_doomed(_plan(home)).values())
+    rules = {d.rule for d in _plan(home).doomed}
     assert not {'env-unreferenced', 'native-unreferenced'} & rules
     assert 'run-not-a-carry-source' in rules, 'PLANTED CONTROL: the run rules still decide'
+
+
+def test_in_flight_is_live_occupied_ungathered_or_being_built(home: Path) -> None:
+    """The ONE definition every keep-for-flight rule reads; the abandoned and the gathered are not in it."""
+    flying = in_flight(home / 'ci', POLICY, now=NOW, live={'x9'}, occupied={'a2'})
+    assert flying == {'x9', 'a2', 'building'}, 'f1 is past abandon_days: only its live run file keeps it'
+
+
+def test_an_env_is_kept_for_an_in_flight_run_or_its_repos_newest_run_only(home: Path) -> None:
+    """A kept carry source's env goes: the carry reads its state, never its env. The newest run's stays."""
+    for sha, env in (('a3', 'e8'), ('a4', 'e9')):
+        state = home / 'ci' / 'runs' / sha / 'state.json'
+        data = json.loads(state.read_text(encoding='utf-8'))
+        state.write_text(json.dumps({**data, 'builds': {'env': env, 'native': 'n4'}}), encoding='utf-8')
+        _touch(state, OLD + timedelta(hours=int(sha[1])))
+        _dir(home / 'ci' / 'envs' / env, OLD)
+    doomed = _doomed(_plan(home))
+    assert doomed['e8'] == doomed['e9'] == 'env-unreferenced', 'not in flight, not the newest'
+    assert 'e1' not in doomed, 'PLANTED CONTROL: f1 in flight and a5, the newest of r, name it'
+    assert 'e2' not in doomed, "PLANTED CONTROL: the other repo's newest run names it"
+
+
+def test_a_job_in_a_tree_a_run_built_names_that_runs_builds(home: Path) -> None:
+    """Only a job no run state explains blocks the env rules; one in a run's tree is read through its state."""
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied={'a3'})
+    assert _doomed(plan)['e3'] == 'env-unreferenced'
+    assert (home / 'ci' / 'trees' / 'a3') not in {d.path for d in plan.doomed}
 
 
 def test_carry_sources_are_the_carrys_own_nearest_runs_per_tip(tmp_path: Path) -> None:
@@ -183,8 +217,8 @@ def test_the_cli_is_a_dry_run_reporting_paths_bytes_and_files_per_rule(home: Pat
     assert retention.main(['--cluster']) == 0
     assert (home / 'ci' / 'runs' / 'a1').exists(), 'without --apply nothing is touched'
     summary = [line for line in said if line.startswith('[retention]')]
-    assert '[retention] would delete run-not-a-carry-source: 4 paths, 0.0 MB, 8 files' in summary
-    assert any(line.startswith('[retention] would delete 15 paths') for line in summary), summary
+    assert '[retention] would delete run-not-a-carry-source: 2 paths, 0.0 MB, 4 files' in summary
+    assert any(line.startswith('[retention] would delete 19 paths') for line in summary), summary
     assert any('files 960000/2000000 (48.0%) -> ' in line for line in summary), summary
     said.clear()
     assert retention.main(['--cluster', '--apply']) == 0
@@ -233,20 +267,31 @@ def test_policy_is_data_and_an_unknown_key_is_refused() -> None:
     assert load_policy({}) == Policy()
     with pytest.raises(ValueError, match='carry_keep'):
         load_policy({'carry_keep': 5})  # retired: the carry's own selection decides
+    with pytest.raises(ValueError, match='every serve tick'):
+        load_policy({'every' + '_hours': 24})  # retired: a budget read once a day is exceeded between reads
 
 
-def test_serve_pass_runs_once_per_interval(home: Path, tmp_path: Path) -> None:
-    state = tmp_path / 'state' / 'forge-retention.json'
+def test_serve_pass_runs_every_tick_and_prunes_only_after_a_deletion(home: Path, tmp_path: Path) -> None:
+    calls: list[list[str]] = []
     kwargs = {
-        'cluster': True, 'home': home, 'state': state, 'table': {'uv_prune': False},
-        'usage': lambda: None, 'live': lambda: {'f1'}, 'say': lambda _: None, 'run': _no_run,
+        'cluster': True, 'home': home, 'lock': tmp_path / 'state' / 'forge-retention.lock',
+        'table': {'uv_prune': False}, 'usage': lambda: None, 'live': lambda: {'f1'}, 'say': lambda _: None,
+        'run': lambda argv, **_: calls.append(argv),
         'planner': lambda _root, policy, **kw: cluster_plan(
             kw['home'], policy, now=kw['now'], live=kw['live'], repo='r', sources=SOURCES
         ),
     }  # fmt: skip
+    (home / 'ci' / 'cache.git').mkdir()
     assert serve_pass(Path(), now=NOW, **kwargs) is not None
     assert not (home / 'ci' / 'runs' / 'a1').exists()
-    assert serve_pass(Path(), now=NOW + timedelta(hours=1), **kwargs) is None, 'not due again within the hour'
+    assert calls, 'something went: git forgets it'
+    calls.clear()
+    _run(home, 'a6', 'e1', OLD)
+    assert serve_pass(Path(), now=NOW + timedelta(minutes=1), **kwargs) is not None, 'the next tick: no interval'
+    assert not (home / 'ci' / 'trees' / 'a6').exists()
+    calls.clear()
+    assert serve_pass(Path(), now=NOW + timedelta(minutes=2), **kwargs) is not None
+    assert calls == [], 'nothing went: no prune runs'
 
 
 def _no_run(*_: object, **__: object) -> None:
@@ -288,7 +333,7 @@ def test_an_unreadable_queue_deletes_no_tree(home: Path) -> None:
     trees = home / 'ci' / 'trees'
     assert {t.name for t in trees.iterdir()} >= {'a1', 'a2', 'a3', 'a4', 'a5', 'g1', 'orphan'}
     assert not (home / 'ci' / 'runs' / 'a1').exists(), 'PLANTED CONTROL: the run rules still decide runs'
-    assert not any(d.rule.endswith('-unreferenced') and d.rule != 'tree-unreferenced' for d in plan.doomed)
+    assert not any(d.rule.endswith('-unreferenced') or d.rule == 'tree-not-in-flight' for d in plan.doomed)
 
 
 def test_the_queue_read_fails_closed() -> None:
@@ -298,7 +343,7 @@ def test_the_queue_read_fails_closed() -> None:
     def answer(code: int, out: str) -> Callable[..., object]:
         return lambda *_, **__: subprocess.CompletedProcess([], code, out, '')
 
-    assert retention.slurm_occupied(run=broken) is None, 'no squeue: unprovable'
-    assert retention.slurm_occupied(run=answer(1, '')) is None, 'squeue failed: unprovable'
-    assert retention.slurm_occupied(run=answer(0, SQUEUE)) == {'orphan', 'a3'}
-    assert retention.slurm_occupied(run=answer(0, '')) == set(), 'an empty queue occupies nothing'
+    assert retentionplan.slurm_occupied(run=broken) is None, 'no squeue: unprovable'
+    assert retentionplan.slurm_occupied(run=answer(1, '')) is None, 'squeue failed: unprovable'
+    assert retentionplan.slurm_occupied(run=answer(0, SQUEUE)) == {'orphan', 'a3'}
+    assert retentionplan.slurm_occupied(run=answer(0, '')) == set(), 'an empty queue occupies nothing'

@@ -19,7 +19,8 @@ from lab_commons.compute.model import Job, Supply
 from lab_commons.compute.probe import account
 from lab_commons.dev import forgeslurm, retention
 from lab_commons.dev.diskusage import Usage, consumers, parse_mmlsquota, parse_quota, pressure_text, storage_text
-from lab_commons.dev.retention import Doomed, Plan, Policy, apply
+from lab_commons.dev.retention import apply
+from lab_commons.dev.retentionplan import Doomed, Plan, Policy
 from lab_commons.hpc.slurm import Node, Quota, Snapshot
 
 NOW = datetime(2026, 10, 14, 9, tzinfo=UTC)
@@ -123,7 +124,7 @@ def test_the_alarm_names_the_binding_limit_and_a_foreign_directory_it_never_dele
 def test_serve_pass_puts_the_named_alarm_on_the_outcome(tmp_path: Path) -> None:
     (tmp_path / 'experiment').mkdir()
     done = retention.serve_pass(
-        Path(), cluster=True, home=tmp_path, state=tmp_path / 'state.json', table={'uv_prune': False},
+        Path(), cluster=True, home=tmp_path, lock=tmp_path / 'retention.lock', table={'uv_prune': False},
         usage=lambda: parse_mmlsquota(AT_FILE_LIMIT), live=set, say=lambda _: None, run=lambda *_a, **_k: None,
         now=NOW, planner=lambda *_a, **_k: Plan(()),
     )  # fmt: skip

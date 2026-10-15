@@ -1,152 +1,70 @@
-"""STORAGE RETENTION -- the serve loop deletes what its own runs left behind, and only what nothing references.
+"""STORAGE RETENTION -- serve deletes what its own runs left behind, EVERY TICK, and alarms when that is not enough.
 
-THE GROWTH THIS BOUNDS, measured 2026-10-13 on Ada (``du``/``mmlsquota``, read-only): every account the
-forge serves keeps adding ``~/ci/trees/<sha>`` (a worktree per judged sha), ``~/ci/runs/<sha>``,
-``~/ci/envs/<key>`` (a venv per dependency key, 48 on one account), ``~/ci/native/<key>``, the uv cache
-and an unrotated ``~/.cache/lab-forge-<repo>.log``. Nothing removed any of it. Files, not bytes, are the
-nearer ceiling there: 0.5 M of a 2 M file quota against 10 GB of a 1000 GB block quota.
+WHAT GOES is :mod:`lab_commons.dev.retentionplan`: the policy, the one definition of IN FLIGHT, and the
+rules derived from it (a tree only while its sha is in flight; an env only while an in-flight run or its
+repo's newest recorded run was built with it). This module RUNS that plan.
 
-ONE PASS, RUN BY ``forge serve`` ITSELF (:mod:`lab_commons.dev.forgeserve`), at most once per
-``every_hours`` (state: ``forge-retention-<checkout hash>.json`` beside the machine file, one per served
-checkout) and under one lock per account, so the several serves of one account (one per served repo)
-never delete side by side. No cron line of its own.
+EVERY FORGE TICK (user ruling 2026-10-15: files are an HPC resource, and a budget read once a day is
+exceeded between reads). ``forge serve`` (:mod:`lab_commons.dev.forgeserve`) calls :func:`serve_pass`
+each tick, under one lock per account (``forge-retention.lock`` beside the machine file), so the several
+serves of one account (one per served repo) never delete side by side. A tick with nothing to delete
+deletes nothing and runs no command; ``git worktree prune`` and ``uv cache prune`` run only after a pass
+that deleted something, so git and the cache forget what went.
 
-THE POLICY IS DATA: :class:`Policy` holds the kit defaults, the machine file's ``[retention]`` table
-overrides any of them, and an unknown key is refused. What each rule PROVES before it deletes:
+THE FILE BUDGET IS THE ACCOUNT'S QUOTA, read once and used twice: ``mmlsquota`` (a workstation's disk) is
+read every tick (:func:`lab_commons.dev.diskusage.read_usage`), and the same reading is the ``files``
+supply admission compares (:mod:`lab_commons.dev.forgeslurm`). At ``pressure`` of the block OR file quota
+the pass also removes the :attr:`~lab_commons.dev.retentionplan.Plan.harder` runs -- this repo's kept
+carry sources, never one in flight, OLDEST FIRST, or MOST FILES FIRST when files bind -- until usage is
+back to ``target``. Still over: the outcome carries a ``storage`` alarm (:mod:`lab_commons.dev.forgealarm`)
+whose body is :func:`lab_commons.dev.diskusage.pressure_text` -- which limit, used/limit for each, and the
+home's biggest directories by file count, the ones the forge does not own named and never touched. The
+host alarms; it does not let jobs fail on a full quota in silence.
 
-* ``run-not-a-carry-source`` -- a finished run (its state holds a ``record``) of THIS serve's repo that
-  no live tip can carry from. The sources are the carry's OWN selection
-  (:func:`lab_commons.dev.forgecarry.read_by`, what ``SlurmCluster.carry`` reads) for every origin branch
-  tip -- the integration tip, PR heads and lane tips -- plus each tip's own run, since a commit on top of
-  a tip reads that run first (:func:`carry_sources`). Another repo's runs are its own serve's to judge.
-  Its tree goes with it.
-* ``run-abandoned`` -- no record, no live run file (``forge-runs/``), untouched for ``abandon_days``.
-* ``tree-unreferenced`` -- a ``trees/<sha>`` no kept run names.
-* ``env-unreferenced``, ``native-unreferenced`` -- an ``envs/<key>`` or ``native/<key>`` (and its
-  ``.log``/``.lock``) no kept run was built with: a run state names its build keys
-  (``builds = {env, native}``, :func:`lab_commons.hpc.run.submit_run`). A kept run of an older state that
-  names none makes both rules decide nothing -- an unprovable reference is a reference.
-* ``cargo-unreferenced`` -- a ``cargo-target/<native key>`` (:func:`lab_commons.hpc.builds.cargo_target`)
-  no kept run was built with, by the same proof. Anything else in ``cargo-target/`` (the retired shared
-  target's ``release/``, ``debug/``) names no key and goes too; a deploy's target is cache, and losing it
-  costs one full native build.
-* ``pack-not-in-flight``, ``slurm-out-finished`` (``~/slurm-*.out`` older than ``slurm_out_days``),
-  ``log-over-size`` (rotated to ``.1``, the previous ``.1`` replaced), ``forge-tree-stale`` (a
-  workstation's ``.claude/worktrees/forge-*`` its producer failed to remove, :mod:`lab_commons.dev.shatree`).
-
-NEVER: a run in flight (a live run file names its sha), a tree a queued or running Slurm job of this account
-works in -- ANY job, a ``lab_commons.hpc submit -c`` job file's included, whose ``WorkDir`` (``squeue --me -o
-%Z``, :data:`lab_commons.hpc.slurm.WORKDIRS_COMMAND`) is ``trees/<sha>`` or anywhere under it (a job file
-submits from its run dir, ``trees/<sha>/.lab-hpc/<run>``) -- its run kept with it under every rule, quota
-pressure included, and the env/native rules deciding nothing while one runs (the job names no builds). When
-the queue cannot be read (no ``squeue``, or it fails) NO tree goes and the env/native rules decide nothing:
-an unprovable reference is a reference (measured 2026-10-15 on Ada: ``tree-unreferenced`` deleted a tree
-under a running array job, and its outputs with it). Never younger than ``min_age_hours`` (a
-tree or env being built), or a path outside the roots the plan was given. Then ``uv cache prune`` and
-``git worktree prune`` run, so the caches and git forget what went.
-
-QUOTA-AWARE. The account's usage (``mmlsquota``; a workstation's disk) is read every tick; at
-``pressure`` of the block OR file quota the pass runs at once and, after the plan, removes the
-:attr:`Plan.harder` runs -- this repo's kept carry sources, never one in flight, OLDEST FIRST (a lost
-source only costs the re-run it would have saved) -- until usage is back to ``target``. When FILES are
-the binding limit the harder runs go MOST FILES FIRST instead, a run with its tree, since that is what
-frees the ceiling that binds. Still over: the pass says so and serve raises a ``storage`` alarm
-(:mod:`lab_commons.dev.forgealarm`) whose body is :func:`lab_commons.dev.diskusage.pressure_text` --
-which limit, used/limit for each, and the home's biggest directories by file count, the ones the forge
-does not own named and never touched. EVERY DELETION IS
-ONE JSON LINE (path, bytes, files, rule), and ``python -m lab_commons.dev.retention`` prints this host's
-plan without deleting anything.
+EVERY DELETION IS ONE JSON LINE (path, bytes, files, rule), and ``python -m lab_commons.dev.retention``
+prints this host's plan without deleting anything.
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
-import hashlib
 import json
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.config import config_path, section
 from lab_commons.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, writable
-from lab_commons.dev.forgecarry import read_by
 from lab_commons.dev.forgerun import directory as run_files
 from lab_commons.dev.platformparts import origin_url
+from lab_commons.dev.retentionplan import (
+    Doomed,
+    Plan,
+    Policy,
+    carry_sources,
+    cluster_plan,
+    load_policy,
+    runs,
+    slurm_occupied,
+    workstation_plan,
+)
 from lab_commons.dev.servelock import held
 from lab_commons.dev.worktreeplace import main_checkout
-from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 from lab_commons.log import emit
 
-__all__ = [
-    'EVENT',
-    'Doomed',
-    'Outcome',
-    'Plan',
-    'Policy',
-    'apply',
-    'carry_sources',
-    'cluster_plan',
-    'load_policy',
-    'main',
-    'occupied_trees',
-    'serve_pass',
-    'slurm_occupied',
-    'summary',
-    'workstation_plan',
-]
+__all__ = ['EVENT', 'Outcome', 'apply', 'main', 'serve_pass', 'summary']
 
 #: The ``event`` of every deletion line.
 EVENT: Final = 'lab_commons.forge.retention'
 
 _MB: Final = 1024**2
 _GIT: Final = shutil.which('git') or 'git'
-
-
-@dataclass(frozen=True)
-class Policy:
-    """The kit defaults; the machine file's ``[retention]`` overrides any key (module docstring)."""
-
-    every_hours: float = 24.0
-    min_age_hours: float = 24.0
-    abandon_days: float = 7.0
-    log_max_mb: float = 20.0
-    slurm_out_days: float = 7.0
-    uv_prune: bool = True
-    pressure: float = 0.85
-    target: float = 0.70
-
-
-def load_policy(table: Mapping[str, Any]) -> Policy:
-    """:class:`Policy` with *table* (the ``[retention]`` section) over its defaults; an unknown key raises."""
-    known = {field.name for field in dataclasses.fields(Policy)}
-    if unknown := sorted(set(table) - known):
-        msg = f'[retention] has no key {", ".join(unknown)}; the keys are {", ".join(sorted(known))}'
-        raise ValueError(msg)
-    return Policy(**table)
-
-
-@dataclass(frozen=True)
-class Doomed:
-    """One path the policy proved unreferenced, the rule that proved it, and how it goes."""
-
-    path: Path
-    rule: str
-    rotate: bool = False
-
-
-@dataclass(frozen=True)
-class Plan:
-    """What goes now, what goes only under quota pressure (oldest first), and the commands after."""
-
-    doomed: tuple[Doomed, ...]
-    harder: tuple[Doomed, ...] = ()
-    commands: tuple[tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -158,167 +76,6 @@ class Outcome:
     over: bool
     by_rule: Mapping[str, tuple[int, int, int]] = dataclasses.field(default_factory=dict)
     alarm: str = ''  # still over: the body of the storage alarm (lab_commons.dev.diskusage.pressure_text)
-
-
-def _age(path: Path, now: datetime) -> timedelta:
-    return now - datetime.fromtimestamp(path.lstat().st_mtime, UTC)
-
-
-def _entries(directory: Path) -> list[Path]:
-    return sorted(directory.iterdir()) if directory.is_dir() else []
-
-
-def _runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
-    """Every ``runs/<sha>`` with its state and the state's mtime; an unreadable state reads as ``{}``."""
-    out = []
-    for run in _entries(ci / 'runs'):
-        state = run / 'state.json'
-        try:
-            data = json.loads(state.read_text(encoding='utf-8'))
-            when = datetime.fromtimestamp(state.stat().st_mtime, UTC)
-        except (OSError, ValueError):
-            data, when = {}, datetime.fromtimestamp(run.lstat().st_mtime, UTC)
-        out.append((run, data if isinstance(data, dict) else {}, when))
-    return out
-
-
-def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[str]:
-    """The runs among *shas* a commit at or on top of any of *tips* would carry from (module docstring).
-
-    A tip's own :func:`~lab_commons.dev.forgecarry.read_by` covers a child's: the child reads the tip's run
-    and the tip's nearest, a subset of what the tip reads.
-    """
-    shas = set(shas)
-    return {sha for tip in set(tips) for sha in read_by(root, tip, shas)}
-
-
-def occupied_trees(workdirs: Iterable[str]) -> set[str]:
-    """The ``<sha>`` of every ``ci/trees/<sha>`` a Slurm job's workdir is or lies under."""
-    shas = set()
-    for workdir in workdirs:
-        parts = workdir.split('/')  # Slurm's paths are POSIX
-        shas |= {parts[i + 2] for i in range(len(parts) - 2) if parts[i : i + 2] == ['ci', 'trees'] and parts[i + 2]}
-    return shas
-
-
-def slurm_occupied(run: Callable[..., Any] = subprocess.run) -> set[str] | None:
-    """:func:`occupied_trees` of this account's queued and running jobs; ``None`` when the queue is unreadable."""
-    try:
-        done = run(list(WORKDIRS_COMMAND), capture_output=True, text=True, encoding='utf-8', errors='replace',
-                   check=False, timeout=60)  # fmt: skip
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return occupied_trees(parse_workdirs(done.stdout)) if done.returncode == 0 else None
-
-
-def cluster_plan(
-    home: Path,
-    policy: Policy,
-    *,
-    now: datetime,
-    live: Iterable[str],
-    repo: str,
-    sources: Iterable[str],
-    occupied: Iterable[str] | None = (),
-) -> Plan:
-    """The plan for one cluster account: ``~/ci`` by reference, then its slurm outputs and forge logs.
-
-    *occupied* is :func:`slurm_occupied`: those trees are in flight; ``None`` (unreadable) keeps every tree.
-    """
-    ci, sources, young = home / 'ci', set(sources), timedelta(hours=policy.min_age_hours)
-    live = set(live) | set(occupied or ())
-    doomed: list[Doomed] = []
-    # an occupied tree is kept; a job (or an unknown queue, keyed '') names no builds: env/native decide nothing
-    kept: dict[str, dict[str, Any]] = {sha: {} for sha in (occupied or ())} | ({'': {}} if occupied is None else {})
-    harder: list[tuple[datetime, str]] = []
-    for path, state, when in _runs(ci):
-        sha = path.name
-        if sha in live or now - when < young:
-            kept[sha] = state
-        elif 'record' not in state:
-            if now - when < timedelta(days=policy.abandon_days):
-                kept[sha] = state
-            else:
-                doomed += [Doomed(path, 'run-abandoned'), Doomed(ci / 'trees' / sha, 'run-abandoned')]
-        elif state.get('repo') != repo:
-            kept[sha] = state
-        elif sha in sources:
-            kept[sha] = state
-            harder.append((when, sha))
-        else:
-            rule = 'run-not-a-carry-source'
-            doomed += [Doomed(path, rule), Doomed(ci / 'trees' / sha, rule)]
-    gone = {d.path for d in doomed}
-    for tree in _entries(ci / 'trees'):
-        if tree not in gone and tree.name not in kept and _age(tree, now) >= young:
-            doomed.append(Doomed(tree, 'tree-unreferenced'))
-    doomed += _unreferenced_builds(ci, [state.get('builds') for state in kept.values()], now, young)
-    doomed += [
-        Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in live and _age(p, now) >= young
-    ]
-    doomed += _home_rules(home, policy, now)
-    order = [sha for _, sha in sorted(harder)]
-    hard = tuple(Doomed(where / sha, 'quota-pressure') for sha in order for where in (ci / 'runs', ci / 'trees'))
-    commands: list[tuple[str, ...]] = []
-    if (ci / 'cache.git').is_dir():
-        commands.append((_GIT, '--git-dir', str(ci / 'cache.git'), 'worktree', 'prune'))
-    commands += _uv(policy, ci / 'uv-cache')
-    spared = ci / 'trees' if occupied is None else None  # an unreadable queue: no tree goes, by any rule
-    doomed = [d for d in doomed if d.path.parent != spared and (d.path.exists() or d.path.is_symlink())]
-    return Plan(tuple(doomed), tuple(d for d in hard if d.path.parent != spared), tuple(commands))
-
-
-def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, young: timedelta) -> list[Doomed]:
-    """Env and native directories no kept run's ``builds`` names; nothing when a kept run names none."""
-    if not all(isinstance(b, dict) for b in builds):
-        return []
-    out = []
-    # ``cargo-target/<native key>`` is lab_commons.hpc.builds.cargo_target, keyed like ``native/<key>``
-    for kind, where in (('env', 'envs'), ('native', 'native'), ('native', 'cargo-target')):
-        named = {b.get(kind) for b in builds if isinstance(b, dict)}
-        out += [
-            Doomed(e, f'{"cargo" if where == "cargo-target" else kind}-unreferenced')
-            for e in _entries(ci / where)
-            if e.name.split('.')[0] not in named and _age(e, now) >= young
-        ]
-    return out
-
-
-def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
-    out = [
-        Doomed(p, 'slurm-out-finished')
-        for p in sorted(home.glob('slurm-*.out'))
-        if _age(p, now) >= timedelta(days=policy.slurm_out_days)
-    ]
-    out += [
-        Doomed(p, 'log-over-size', rotate=True)
-        for p in sorted((home / '.cache').glob('lab-forge-*.log'))
-        if p.stat().st_size > policy.log_max_mb * _MB
-    ]
-    return out
-
-
-def _uv(policy: Policy, *caches: Path) -> list[tuple[str, ...]]:
-    uv = shutil.which('uv')
-    if not policy.uv_prune or uv is None:
-        return []
-    return [*((uv, 'cache', 'prune', '--cache-dir', str(c)) for c in caches if c.is_dir()), (uv, 'cache', 'prune')]
-
-
-def workstation_plan(checkouts: Sequence[Path], policy: Policy, *, now: datetime) -> Plan:
-    """The plan for a workstation: each checkout's stale ``forge-*`` trees, then ``git worktree prune``."""
-    young = timedelta(hours=policy.min_age_hours)
-    doomed: list[Doomed] = []
-    commands: list[tuple[str, ...]] = []
-    for checkout in checkouts:
-        stale = [
-            Doomed(t, 'forge-tree-stale')
-            for t in _entries(checkout / '.claude' / 'worktrees')
-            if t.name.startswith('forge-') and _age(t, now) >= young
-        ]
-        doomed += stale
-        commands += [(_GIT, '-C', str(checkout), 'worktree', 'prune')] if stale else []
-    return Plan(tuple(doomed), (), (*commands, *_uv(policy)))
 
 
 def _remove(doomed: Doomed) -> None:
@@ -364,7 +121,7 @@ def apply(
             if usage.fraction(*freed) <= policy.target:
                 break
             one(doomed)
-    for argv in plan.commands:
+    for argv in plan.commands if by_rule else ():  # nothing went: nothing for git or the cache to forget
         say(json.dumps({'event': EVENT, 'command': list(argv), 'dry_run': dry_run}))
         if not dry_run:
             run(list(argv), capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
@@ -407,16 +164,11 @@ def _origin_tips(root: Path) -> list[str]:
 def _plan_for(root: Path, policy: Policy, *, cluster: bool, home: Path, now: datetime, live: set[str]) -> Plan:
     if cluster:
         repo = origin_url(root)
-        mine = [p.name for p, state, _ in _runs(home / 'ci') if state.get('repo') == repo]
+        mine = [p.name for p, state, _ in runs(home / 'ci') if state.get('repo') == repo]
         sources = carry_sources(root, mine, _origin_tips(root))
         occupied = slurm_occupied()
         return cluster_plan(home, policy, now=now, live=live, repo=repo, sources=sources, occupied=occupied)
     return workstation_plan([main_checkout(root)], policy, now=now)
-
-
-def _state_name(root: Path) -> str:
-    """One pass clock per served checkout: on a cluster each repo's serve judges its own runs."""
-    return f'forge-retention-{hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:12]}.json'
 
 
 def serve_pass(
@@ -424,7 +176,7 @@ def serve_pass(
     *,
     cluster: bool,
     home: Path | None = None,
-    state: Path | None = None,
+    lock: Path | None = None,
     table: Mapping[str, Any] | None = None,
     usage: Callable[[], Usage | None] | None = None,
     live: Callable[[], set[str]] = _live_shas,
@@ -433,28 +185,20 @@ def serve_pass(
     now: datetime | None = None,
     planner: Callable[..., Plan] | None = None,
 ) -> Outcome | None:
-    """One due pass (module docstring): ``None`` when not due or another serve holds the pass."""
+    """One pass, every tick (module docstring): ``None`` only when another serve of the account holds it."""
     home = Path.home() if home is None else home
-    state = config_path().parent / _state_name(root) if state is None else state
+    lock = config_path().parent / 'forge-retention.lock' if lock is None else lock
     policy = load_policy(section('retention') if table is None else table)
     now = datetime.now(UTC) if now is None else now
     measured = (usage or (lambda: read_usage(home if cluster else root, cluster=cluster)))()
-    try:
-        last = datetime.fromisoformat(json.loads(state.read_text(encoding='utf-8'))['last'])
-    except (OSError, ValueError, KeyError, TypeError):
-        last = None
-    pressed = measured is not None and measured.fraction() >= policy.pressure
-    if not pressed and last is not None and now - last < timedelta(hours=policy.every_hours):
-        return None
-    with held(state.parent / 'forge-retention.lock') as mine:  # one deleter per account
+    with held(lock) as mine:  # one deleter per account
         if not mine:
             return None
         plan = (planner or _plan_for)(root, policy, cluster=cluster, home=home, now=now, live=live())
         done = apply(plan, policy, usage=measured, dry_run=False, say=say, run=run)
-        if done.over:
-            freed = (done.freed_bytes, done.freed_files)
-            done = dataclasses.replace(done, alarm=pressure_text(measured, freed, home if cluster else None))
-        state.write_text(json.dumps({'last': now.isoformat(), 'freed_bytes': done.freed_bytes}), encoding='utf-8')
+    if done.over:
+        freed = (done.freed_bytes, done.freed_files)
+        done = dataclasses.replace(done, alarm=pressure_text(measured, freed, home if cluster else None))
     return done
 
 
