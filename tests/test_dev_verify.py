@@ -37,6 +37,7 @@ from typing import Final
 import pytest
 
 from lab_commons.box import BOX_ENV, GB, KILLED, REFUSED, Capacity, Refused
+from lab_commons.box.run import INSIDE_ENV
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -1158,7 +1159,8 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
                 'held_box_probe',
             ],
             cwd=Path(__file__).resolve().parents[1],
-            env={name: value for name, value in os.environ.items() if name != PRODUCING_VAR} | records,
+            env={name: value for name, value in os.environ.items() if name not in {PRODUCING_VAR, INSIDE_ENV}}
+            | records,
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -1217,8 +1219,9 @@ def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatc
 
 
 def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(monkeypatch) -> None:
-    """The step is held to its declared claim; a producer serve spawned is ALREADY in the box at its demand."""
-    monkeypatch.delenv(PRODUCING_VAR, raising=False)
+    """The step is held to its declared claim; a tree the box ALREADY holds (a producer) is not claimed twice."""
+    monkeypatch.delenv(INSIDE_ENV, raising=False)
+    monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')  # naming a part is not being in the box
     small = Capacity(cpu=2.0, mem_bytes=16 * GB, seats={})
     monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: small))
     argv, width = verifybox.boxed(Path('r'), ['py', '-m', 'pytest'], queue_s=5)
@@ -1227,8 +1230,8 @@ def test_a_selection_runs_its_pytest_step_in_the_box_and_a_producer_never_twice(
     assert argv[argv.index('--cpu') + 1] == '2', 'capped at the box'
     assert argv[argv.index('--queue-s') + 1] == '5'
     assert width == {'PYTEST_XDIST_AUTO_NUM_WORKERS': '2'}
-    monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')
-    assert verifybox.boxed(Path('r'), ['py'], queue_s=5) == (['py'], {}), 'PLANTED CONTROL: the producer is not reboxed'
+    monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
+    assert verifybox.boxed(Path('r'), ['py'], queue_s=5) == (['py'], {}), 'PLANTED CONTROL: a boxed tree is not reboxed'
 
 
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:
