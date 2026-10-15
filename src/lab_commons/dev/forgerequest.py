@@ -18,7 +18,7 @@ NAME the repository declares at that sha, ONCE, beside its tests' producer, so a
 anything its repository did not commit (an undeclared name is refused, never run)::
 
     [tool.lab_commons.requests.femm_goldens]
-    argv = ["-m", "motronics", "golden", "regenerate", "--reference", "femm"]   # after the tree's python
+    argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]   # after the tree's python
     needs = ["femm", "windows"]   # its NEED-SET: resource names, an OS among them, like a part's
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so

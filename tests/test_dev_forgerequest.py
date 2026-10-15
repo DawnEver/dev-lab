@@ -31,11 +31,11 @@ from lab_commons.hpc.declared import OutdatedKit
 server = test_dev_forgetick.server  # the loopback forge fixture, shared
 
 ME = Claim('G', 'alice', LATER)
-ARGV = ('-m', 'motronics', 'golden', 'regenerate', '--reference', 'femm')
+ARGV = ('-m', 'solver', 'golden', 'regenerate', '--reference', 'femm')
 GOLDENS = (
     PRODUCE
     + '[tool.lab_commons.requests.femm_goldens]\n'
-    + 'argv = ["-m", "motronics", "golden", "regenerate", "--reference", "femm"]\n'
+    + 'argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]\n'
     + 'needs = ["femm", "windows"]\n'
 )
 FEMM_HOST = Supply('G', Resources(cpu=4.0, femm=1.0, windows=1.0), frozenset({'cpu', 'femm', 'windows'}))

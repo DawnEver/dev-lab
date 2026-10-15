@@ -43,4 +43,4 @@ unbounded). Check on the host before deploying; the fix would be a system-scope 
 ## Deferred
 
 - P4: the cluster `held_run` double count (a cluster run in flight is still `running` at `cluster_demand`).
-- P5: motronics callers (its gate runner and anything importing the deleted `dev` modules).
+- P5: downstream callers (its gate runner and anything importing the deleted `dev` modules).

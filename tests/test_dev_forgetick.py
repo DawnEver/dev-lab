@@ -861,7 +861,7 @@ def test_a_sha_that_cannot_be_produced_blocks_itself_and_the_good_head_is_claime
     """A stale PR head declares no producer; it is refused there and nowhere else -- never the whole repo.
 
     PLANTED CONTROL: the boosted PR outranks the head, so it is assessed first; a repo-wide refusal would
-    then block the head too (motronics 2026-10-13: one 13-day-old branch idled every Ada account).
+    then block the head too (a downstream repo, 2026-10-13: one 13-day-old branch idled every Ada account).
     """
     repo, tips = _origin(tmp_path)
     stale = _declare(repo, tips, '')
