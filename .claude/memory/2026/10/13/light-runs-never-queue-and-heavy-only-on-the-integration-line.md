@@ -5,7 +5,7 @@ created: 2026-10-13
 ---
 # Light runs never queue; heavy only on the integration line (user ruling 2026-10-13)
 
-Source: motronics `.claude/memory/2026/10/13/HANDOFF-modeling-and-objective-gaps-for-the-transient-campaign.md` section 6, Q1-Q4.
+Source: the downstream repo's `.claude/memory/2026/10/13/HANDOFF-modeling-and-objective-gaps-for-the-transient-campaign.md` section 6, Q1-Q4.
 
 ## Q1 -- the seat binds only SATURATING runs
 
@@ -29,7 +29,7 @@ Source: motronics `.claude/memory/2026/10/13/HANDOFF-modeling-and-objective-gaps
   SERVING checkout (a branch cannot widen its own filter); `forgeschedule.candidates` drops an excluded
   candidate and SAYS it (`[serve] <ref> is not served tests/<part> at full: ...`). Absent = unchanged.
 - TRACE of host G claiming a feature sha: integrate mode serves the integration head, PRs into it, opted-in
-  `schedule.branches`, and request issues. motronics declares no `schedule.branches`; a request has no sha;
+  `schedule.branches`, and request issues. the downstream repo declares no `schedule.branches`; a request has no sha;
   the open PR #2454 `feat/winding -> integrate/main` is a PR candidate with a feature sha. So: the PR path.
 
 ## Q3 -- producers below normal priority
