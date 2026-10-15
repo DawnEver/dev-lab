@@ -5,7 +5,7 @@ submitting and gathering a run, where its jobs stand (:func:`progress_text`, the
 carries), cancelling a superseded run, the outcomes a run CARRIES from the nearest earlier runs of its env --
 finished records and the finished shards of superseded ones (:mod:`lab_commons.dev.forgecarry`) -- and the
 account's STANDING read locally each tick -- its supply
-(cpu, memory and the QOS's remaining submissions over every grant,
+(cpu, memory, the QOS's remaining submissions over every grant and the machine file's declared tools,
 :func:`lab_commons.compute.probe.account`, and the home's FILE headroom read by
 :func:`lab_commons.dev.diskusage.read_usage`), the last day's core-hours per run from ``sacct``,
 and the partitions, quota and storage a host card publishes. An unreadable quota is stated on the card
@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from lab_commons.box import declared_seats
 from lab_commons.compute import learned
 from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.model import Resources, Supply
@@ -160,7 +161,9 @@ class SlurmCluster:
             read.append((snapshot, snapshot.quota.default_qos))
         usage = self.quota()
         left = usage.files_left if usage is not None else None
-        supply = supply_probe.account(self.scope, read, files=math.inf if left is None else left)
+        supply = supply_probe.account(
+            self.scope, read, seats=declared_seats(), files=math.inf if left is None else left
+        )
         snapshot, qos = read[0]
         shell = self.connect(self.machine.grants[0])
         facts: dict[str, object] = {

@@ -52,7 +52,7 @@ def _snapshot() -> Snapshot:
 def _supply(text: str) -> Supply:
     usage = parse_mmlsquota(text)
     assert usage is not None
-    return account('slurm:alyyw103', [(_snapshot(), 'normal')], files=usage.files_left)
+    return account('slurm:me', [(_snapshot(), 'normal')], seats={}, files=usage.files_left)
 
 
 def test_a_home_at_its_file_limit_refuses_admission_naming_files_and_the_numbers() -> None:
