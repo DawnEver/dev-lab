@@ -73,7 +73,8 @@ class StateForge(Client):
             raise ForgeCallFailed(Report(('GET', 'issues'), (failed,), 1))
         state = query.get('state', 'open')
         newest = sorted(self.issues_by_number.items(), reverse=True)
-        return self._page([i for _, i in newest if state in ('all', i['state'])], query)
+        listed = [i | {'comments': len(self.comments[n])} for n, i in newest if state in ('all', i['state'])]
+        return self._page(listed, query)
 
     def _comment(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
         self._next_comment += 1

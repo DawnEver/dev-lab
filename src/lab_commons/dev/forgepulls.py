@@ -9,12 +9,18 @@ ONE COMMENT PER SUBJECT, UPDATED IN PLACE. :func:`comment_upsert` finds its comm
 MARKER (an HTML comment both forges render invisibly) and edits it; it posts only when none exists
 and writes nothing when the body is already what it would write. That is what makes a tick
 idempotent: running it twice leaves one comment, not two.
+
+EVERY MARKER KIND IS A :class:`Marker` MEMBER, and :func:`marker` takes nothing else, so the enum IS the set
+of kinds the writers emit -- not a second list kept beside them. A marker on the forge whose kind no member
+names was written by a retired writer, and ``forge tidy`` deletes its comment (:func:`marker_kinds`).
 """
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 from collections.abc import Mapping
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, is_pull, pull_of
@@ -24,10 +30,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     'ListingIncomplete',
+    'Marker',
     'comment_list',
     'comment_upsert',
     'issues',
     'marker',
+    'marker_kinds',
     'pages',
     'pr_list',
     'pr_retarget',
@@ -35,6 +43,7 @@ __all__ = [
 ]
 
 _NOT_FOUND: Final = 404
+_MARKER: Final = re.compile(r'<!-- lab-commons:([^:\s]+)(?::\S*)? -->')
 #: A listing's page size, and the pages read before it is refused as incomplete.
 _PAGE: Final = 50
 _PAGES: Final = 100
@@ -64,9 +73,23 @@ def issues(client: Client, *, state: str = 'all') -> tuple[Mapping[str, Any], ..
     )
 
 
-def marker(subject: str) -> str:
-    """The hidden line a comment about *subject* is found by."""
-    return f'<!-- lab-commons:{subject} -->'
+class Marker(StrEnum):
+    """Every kind of hidden marker a writer emits; a kind on the forge no member names is retired."""
+
+    HOSTS = 'forge-hosts'  #: the hosts issue's body (:mod:`lab_commons.dev.forgehosts`)
+    HOST = 'host'  #: one card comment per serving host, keyed by the host (:mod:`lab_commons.dev.forgehosts`)
+    INTEGRATION = 'integration'  #: a child PR's one integration comment (:mod:`lab_commons.dev.forgeintegration`)
+    TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`lab_commons.dev.forgetidy`)
+
+
+def marker(kind: Marker, key: str = '') -> str:
+    """The hidden line a comment of *kind* (about *key*, when one kind has several) is found by."""
+    return f'<!-- lab-commons:{Marker(kind)}{f":{key}" if key else ""} -->'
+
+
+def marker_kinds(text: str) -> tuple[str, ...]:
+    """The kind of every hidden marker in *text*, registered or not."""
+    return tuple(_MARKER.findall(text))
 
 
 def pr_list(client: Client, *, state: str = 'open') -> tuple[PullRequest, ...]:
@@ -104,13 +127,15 @@ def comment_list(client: Client, number: int) -> tuple[Comment, ...]:
     return tuple(comment_of(raw) for raw in pages(client, f'{client.repo}/issues/{number}/comments', {}))
 
 
-def comment_upsert(client: Client, number: int, *, subject: str, text: str) -> tuple[str, Comment | None]:
-    """Keep ONE comment about *subject* on *number* saying *text*: ``created``, ``updated`` or ``unchanged``.
+def comment_upsert(
+    client: Client, number: int, *, kind: Marker, key: str = '', text: str
+) -> tuple[str, Comment | None]:
+    """Keep ONE comment of *kind* (about *key*) on *number* saying *text*: ``created``, ``updated`` or ``unchanged``.
 
     The body is state, so it carries no provenance line -- otherwise a re-run from another machine
     would rewrite a comment whose content did not change.
     """
-    line = marker(subject)
+    line = marker(kind, key)
     body = f'{line}\n{text}'
     found = next((comment for comment in comment_list(client, number) if line in comment.body), None)
     if found is None:

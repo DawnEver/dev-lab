@@ -18,10 +18,9 @@ a commit status in context :data:`CONTEXT` on the head, posted only when it diff
 against the trunk is first RETARGETED to integration, with a comment saying why.
 
 The tick FETCHES (origin, and each PR head) through the retry wrapper; everything after is a read
-of the object store and the forge. Last, the repo's declared issue hygiene runs
-(:func:`lab_commons.dev.forgetidy.tidy`), so finished issues are closed on the integrator's cadence,
-and every undeclared origin branch idle past its grace is listed (:func:`lab_commons.dev.branchprune.listing`):
-``deletable`` when the repo has not opted into pruning. Deleting is the serve tick's, never this verb's.
+of the object store and the forge. Last, every undeclared origin branch idle past its grace is listed
+(:func:`lab_commons.dev.branchprune.listing`): ``deletable`` when the repo has not opted into pruning. Deleting
+is the serve tick's, never this verb's, and so is issue hygiene (:func:`lab_commons.dev.forgetidy.tidy`).
 """
 
 from __future__ import annotations
@@ -39,11 +38,10 @@ from lab_commons.compute.model import Schedule
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_origin, forge_from_remote
-from lab_commons.dev.forgepulls import ListingIncomplete, comment_upsert, pr_list, pr_retarget
+from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import Status, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
-from lab_commons.dev.forgetidy import load_hygiene, tidy
 from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, PullRequest, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
@@ -51,12 +49,10 @@ from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
 from lab_commons.dev.trialmerge import contains, merged_at, rev, trial
 from lab_commons.log import emit
 
-__all__ = ['CONTEXT', 'SUBJECT', 'Child', 'Feedback', 'feedback', 'main', 'retarget_note', 'tick']
+__all__ = ['CONTEXT', 'Child', 'Feedback', 'feedback', 'main', 'retarget_note', 'tick']
 
 #: The commit-status context a child branch without a PR carries its integration line in.
 CONTEXT: Final = 'integration'
-#: The hidden-marker subject of the one integration comment per PR.
-SUBJECT: Final = 'integration'
 
 _TRACKING: Final = 'refs/remotes/origin/'
 _PULLS: Final = 'refs/lab-commons/pulls/'
@@ -187,7 +183,7 @@ def _lanes(root: Path, policy: Policy, schedule: Schedule) -> list[tuple[str, st
 
 def _publish(child: Child, said: Feedback) -> str:
     if child.pr is not None:
-        action, _ = comment_upsert(child.client, child.pr, subject=SUBJECT, text=said.text)
+        action, _ = comment_upsert(child.client, child.pr, kind=Marker.INTEGRATION, text=said.text)
         return f'comment {action}'
     current = next((s for s in status_list(child.client, child.head) if s.context == CONTEXT), None)
     if current is not None and (current.state, current.description) == (said.state, said.summary[:140]):
@@ -260,7 +256,6 @@ def main(
         fetch(root)
         venues = _venues(root)
         lines = tick(root, venues, load_policy(root))
-        lines += [f'tidy: {line}' for line in tidy(dict(venues)['origin'], load_hygiene(root))]
         lines += [f'branch: {row.line()}' for row in listing(root, dict(venues)['origin'], now=datetime.now(UTC))]
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
