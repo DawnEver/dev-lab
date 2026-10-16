@@ -281,8 +281,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'missing, unsettled, failing or incremental, or the forge unreadable -- there is no local fallback.'
         ),
         (
-            'src/lab_commons/dev/admission.py',
-            'tests/test_dev_admission.py',
+            'src/lab_commons/dev/pushgate.py',
+            'tests/test_dev_pushgate.py',
             'tests/architecture/gate/test_the_message_check_judges_the_push_increment.py',
         ),
     ),

@@ -16,7 +16,7 @@ suite to learn whether a sha is green, and you never wait for one to push.
   (`platformparts.derived`). A new tool is a new marker and nothing else.
 - **A run** is one execution of one part's tests at one sha; its record is `run-<sha>-<part>-<req>.json.gz`
   (its `platform` key holds the part). An incremental part is its base part plus the re-run ids.
-- **Admission** is computed from parts and never stored (`lab_commons.dev.admission`): a lane and the
+- **Admission** is computed from parts and never stored (`lab_commons.dev.pushgate`): a lane and the
   integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
   at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.
 - **One reader.** The integrator, issue readiness and admission all read parts through

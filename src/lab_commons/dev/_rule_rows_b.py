@@ -164,7 +164,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'tests/test_dev_producer.py',
             'tests/test_dev_verify.py',
             'tests/test_dev_forgeserve.py',
-            'tests/test_dev_admission.py',
+            'tests/test_dev_pushgate.py',
             'tests/test_dev_inflight.py',
             'tests/test_dev_runcache.py',
         ),
@@ -206,7 +206,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             '`tests/<part>` part stands PASS at scope full, through `integrate promote`; it refuses with the '
             'missing parts named, and refuses a trunk that cannot fast-forward rather than merging into it.'
         ),
-        ('tests/test_dev_integrate.py', 'tests/test_dev_admission.py'),
+        ('tests/test_dev_integrate.py', 'tests/test_dev_pushgate.py'),
     ),
     (
         'PRS-TARGET-INTEGRATION',

@@ -40,7 +40,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
   is inventory, routed to its `area:*` issue, never your blocker.
 - No push hook runs a test. The merge audit runs at commit time on every destination
   ([the integrator](integrator.md#the-merge-audit)).
-- The one implementation of these bars is `lab_commons.dev.admission`; a consumer copy is refused
+- The one implementation of these bars is `lab_commons.dev.pushgate`; a consumer copy is refused
   (`famtests.localadmission`).
 
 ## A duplicate request never runs twice

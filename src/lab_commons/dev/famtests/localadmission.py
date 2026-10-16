@@ -1,4 +1,4 @@
-"""NO CONSUMER KEEPS ITS OWN PUSH-ADMISSION RULE -- it delegates to :mod:`lab_commons.dev.admission`.
+"""NO CONSUMER KEEPS ITS OWN PUSH-ADMISSION RULE -- it delegates to :mod:`lab_commons.dev.pushgate`.
 
 THE DEFECT THIS REFUSES, measured 2026-10-04. Each repo carried its own citation body, its own
 admitted-result table and its own reader of the verdict grammar, and they had drifted: one read the
@@ -11,7 +11,7 @@ WHAT IS READ, by AST so a comment or docstring naming the old functions does not
 * a FUNCTION DEFINITION under one of :data:`REIMPLEMENTED` -- the names the local copies carried;
 * a module- or class-level ASSIGNMENT of a literal tuple/set/frozenset holding both ``'PASS'`` and
   ``'FAIL'`` -- the shape of a local admission table;
-* a ``re.compile`` whose pattern literal contains :data:`lab_commons.dev.admission.VERDICT_STAMP`'s
+* a ``re.compile`` whose pattern literal contains :data:`lab_commons.dev.pushgate.VERDICT_STAMP`'s
   ``tier=`` grammar -- a local reader of the verdict line.
 
 WHAT THIS DOES NOT PROVE. A renamed function holding the same body, or a table built at runtime,
@@ -140,8 +140,8 @@ def assert_no_local_admission(scan: AdmissionScan, *, floor: int) -> None:
     floors.assert_floor(scan.files_read, floor=floor, what='local-admission')
     if scan.offenders:
         msg = (
-            'push admission has ONE implementation, lab_commons.dev.admission (library and CLI '
-            '`python -m lab_commons.dev.admission`). Delete the local copy and delegate:\n  '
+            'push admission has ONE implementation, lab_commons.dev.pushgate (library and CLI '
+            '`python -m lab_commons.dev.pushgate`). Delete the local copy and delegate:\n  '
             + '\n  '.join(scan.offenders)
         )
         raise LocalAdmission(msg)

@@ -292,7 +292,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.artefactstores` -- the run-id and key rules, the ``Ref``, and the forge and
   rclone backends.
 * :mod:`lab_commons.dev.forgealarm` -- silent failures of an unattended host as one routed line and alerts.
-* :mod:`lab_commons.dev.admission` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
+* :mod:`lab_commons.dev.pushgate` -- PUSH ADMISSION: lanes and integration free, the trunk every forge part green.
 * :mod:`lab_commons.dev.forgeissue` -- issue state DERIVED from origin refs and the lane parts; claims, comment reads.
 * :mod:`lab_commons.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
 * :mod:`lab_commons.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
