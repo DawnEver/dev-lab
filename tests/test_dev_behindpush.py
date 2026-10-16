@@ -22,7 +22,7 @@ _POLICY = Policy(behind_max=2)
 def _git(root: Path, *args: str) -> str:
     done = subprocess.run(
         [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', *args],
-        cwd=root, check=True, capture_output=True, text=True, timeout=60,
+        cwd=root, check=True, capture_output=True, text=True, encoding='utf-8', timeout=60,
     )  # fmt: skip
     return done.stdout.strip()
 
