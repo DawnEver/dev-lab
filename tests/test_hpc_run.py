@@ -21,7 +21,7 @@ from typing import ClassVar
 import pytest
 
 from lab_commons.compute import learned
-from lab_commons.compute.learned import OOM_GROWTH, Measured
+from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.platformparts import part_of, parts_of
@@ -333,22 +333,40 @@ def test_a_measured_peak_raises_the_memory_and_never_lowers_it_under_the_declare
     ), 'PLANTED CONTROL: over the floor the peak decides'
 
 
-def test_a_peak_read_at_a_kill_is_a_floor_grown_like_a_retry_and_never_lowers_a_known_peak() -> None:
+def test_a_peak_read_at_a_kill_is_its_one_files_floor_ungrown_and_never_lowers_a_known_peak() -> None:
     """Ada 2026-10-13: 24 children OOM-killed at 1 GB read peaks of ~1120 MB -- the limit, not the need.
 
-    Kept as measured, the next run asks 1.5x the limit and dies again; the retry after an OOM asks
-    OOM_GROWTH x, and so does the record.
+    The read is the file's floor as read: the run's own ``oom`` multiplier is the retry's growth, applied once.
     """
     killed = {'seconds': {}, 'done': {'done': -9, 'wall': 30.0, 'peak_mb': 1120.0}}
     measured = Measured()
     measured.learn(['a.py::t'], killed)
-    assert measured.peaks_mb == {'a.py': 1120.0 * OOM_GROWTH}
+    assert measured.peaks_mb == {'a.py': 1120.0}
     known = Measured(peaks_mb={'a.py': 3493.0})
     known.learn(['a.py::t'], killed)
     assert known.peaks_mb == {'a.py': 3493.0}, 'a kill at a lower limit says nothing new'
     finished = {'seconds': {'a.py::t': 1.0}, 'done': {'done': 0, 'wall': 30.0, 'peak_mb': 700.0}}
     known.learn(['a.py::t'], finished)
     assert known.peaks_mb == {'a.py': 700.0}, 'PLANTED CONTROL: a finished item is measured, newer wins'
+
+
+def test_a_killed_multi_file_item_teaches_no_file_a_peak() -> None:
+    """A killed item of several files says nothing about any one of them.
+
+    Ada 2026-10-16: one 56-file item killed at its 120362 MB ask read 120219.2 MB; grown x2, 240438.4 MB
+    was taught to all 56 files, and every later run of the part asked 352 GB a task.
+
+    Which file held the memory is unknown, so none is priced by it; the retry bisects the item instead.
+    PLANTED CONTROL: the same item FINISHING teaches its peak to every file, an upper bound for each.
+    """
+    ids = [f'tests/sweep/test_{n}.py::t' for n in range(56)]
+    measured = Measured(peaks_mb={'tests/sweep/test_0.py': 900.0})
+    measured.learn(ids, {'seconds': {}, 'done': {'done': -9, 'wall': 30.0, 'peak_mb': 120219.2}})
+    assert measured.peaks_mb == {'tests/sweep/test_0.py': 900.0}
+    assert measured.mem_gb([ids], Cost(), Policy()) == pytest.approx(900.0 * 1.5 / 1024, rel=1e-12, abs=0.0)
+    measured.learn(ids, {'seconds': {}, 'done': {'done': 0, 'wall': 30.0, 'peak_mb': 3000.0}})
+    assert set(measured.peaks_mb.values()) == {3000.0}
+    assert len(measured.peaks_mb) == 56
 
 
 # -- the run flow ------------------------------------------------------------------------------------
@@ -544,12 +562,12 @@ def test_an_out_of_memory_round_doubles_the_memory_of_the_next() -> None:
 
 def test_an_oom_item_is_bisected_at_the_grantable_ceiling_and_its_lone_hog_fails_by_id() -> None:
     """Ada 2026-10-14: an item OOM-killed at 62.7 GB was re-asked at 366.77 GB of a 360 GB quota and never ran again."""
-    fake = FakeRunCluster(hog='tests/b.py::t4', mem_ceiling='4G')
+    fake = FakeRunCluster(hog='tests/b.py::t4', mem_ceiling='3G')
     record = _run(fake)
-    assert [r['mem_mb'] for r in record['rounds']] == [1024, 4096], 'the grown ask is held to the quota'
+    assert [r['mem_mb'] for r in record['rounds']] == [1024, 3072], 'grown once (1024 x 1.5 x 2), held to the quota'
     assert [i['ids'] for i in fake.manifests[1]['items']] == [['tests/b.py::t4'], ['tests/b.py::t5']]
     assert record['outcomes']['tests/b.py::t4'] == 'failed', 'the hog alone at the ceiling is its own failure'
-    why = 'OUT_OF_MEMORY alone at 4096 MB, the most any grant gives (peak 1024 MB)'
+    why = 'OUT_OF_MEMORY alone at 3072 MB, the most any grant gives (peak 1024 MB)'
     assert record['reasons']['tests/b.py::t4'] == why
     assert [record['outcomes'][f'tests/b.py::t{n}'] for n in (3, 5)] == ['passed', 'passed'], 'its mates got results'
 
