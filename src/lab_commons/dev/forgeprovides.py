@@ -1,9 +1,10 @@
 """WHAT A HOST PROVIDES -- the resources beyond its OS, declared once per machine and read onto its card.
 
 A part is ``tests/<part>``, its need-set (:mod:`lab_commons.hpc.needsets`), and every resource is equal: an
-OS, a tool, a host fact. Which OS a host runs is measured; what else it has is declared in THIS MACHINE's
-file (:mod:`lab_commons.config`), one table per resource, and a tool with a probe is present only where the
-probe also finds it (:func:`lab_commons.compute.probe.tools`)::
+OS, a tool, a host fact. Which OS a host runs is measured, and so is every tool with a probe: it is present
+exactly where the probe finds it, declared or not (:func:`lab_commons.compute.probe.tools`). THIS MACHINE's
+file (:mod:`lab_commons.config`) declares only what no probe can read -- a tool's seat count, and a resource
+without a probe::
 
     [capabilities.jmag]
     seats = 4          # how many solver jobs this box runs at once -- the one number no probe can read
