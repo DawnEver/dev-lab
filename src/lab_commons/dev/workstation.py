@@ -13,7 +13,8 @@ dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.St
    answers; none is ever read or printed. A refusal names the one manual step.
 3. CHECKOUTS under ``--root`` (default ``~/src``): clone ``<forge>/<repo>.git`` at ``--ref``,
    or fast-forward an existing CLEAN checkout to its upstream; a dirty one is refused.
-4. VENVS: ``-m lab_commons.dev.dep --bootstrap <checkout>`` when the venv is missing or the checkout moved.
+4. VENVS: ``-m lab_commons.dev.dep --bootstrap <checkout>`` when the venv is missing or its ``pyproject.toml``
+   or ``uv.lock`` changed since its last sync (a stamp in the venv, written only after a sync succeeds).
 5. HOOKS: ``-m lab_commons.dev.hook_install --install`` in each checkout whose hooks are not live.
 6. MACHINE FILE (:mod:`lab_commons.config`): ``[capabilities.<name>]`` (``seats`` from ``name:N``) and
    ``[serve] repos, root`` merged in place; every other table, key and comment is kept, and
@@ -29,8 +30,12 @@ serves it; the deploy finishes for the others, raises one forge ``run`` alarm pe
 (:mod:`lab_commons.dev.forgealarm`), and exits 2 naming each.
 
 ``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
-``forge serve`` once per ``[serve] repos`` entry, in order, each in its own checkout and venv.
-Its exit is the worst child's; one repo's failure never skips the next. Each child starts with no
+lab-commons and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
+upstream and its venv synced when step 4 says so -- and only then runs ``forge serve`` in its own checkout
+and venv. The host owns the refresh because a repo's own kit cannot (incident 2026-10-13: a venv whose
+old ``forge serve`` exited 2 every tick could never run the code that would update it). A repo whose
+refresh fails is released with its reason in the serve log. Its exit is the worst child's; one repo's
+failure never skips the next. Each child starts with no
 console window; under ``pythonw`` (no streams at all) the serve and its children write to the capped
 serve log (:func:`lab_commons.dev.servetask.open_log`).
 """
@@ -52,8 +57,8 @@ from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
 from lab_commons.dev._machinefile import diff, merged
 from lab_commons.dev.forgealarm import RUN, Alarm, sound
+from lab_commons.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
 from lab_commons.dev.servelock import default_lock, held
-from lab_commons.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_spec import LAB_COMMONS
 from lab_commons.hpc.deploy_steps import Step, Tools
 from lab_commons.hpc.retired import refusal
@@ -96,12 +101,8 @@ def com_server(progid: str) -> Path | None:
     return exe if exe.is_file() else None
 
 
-def _venv_python(checkout: Path) -> Path:
-    return checkout / venv_interpreter(os_name=os.name)
-
-
 def _own_python(checkout: Path) -> tuple[str, ...]:
-    return (str(_venv_python(checkout)),)
+    return (str(venv_python(checkout)),)
 
 
 @dataclass(frozen=True)
@@ -117,14 +118,6 @@ class Programs:
     windows: bool = os.name == 'nt'
     home: Path = field(default_factory=servetask.home)
     alarm: Callable[[Alarm], object] = sound
-
-
-def _read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """A READ-ONLY call, also under ``--dry-run``; its output is never echoed."""
-    return subprocess.run(
-        argv, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False,
-        stdin=subprocess.DEVNULL, env={**os.environ, **(env or {})},
-    )  # fmt: skip
 
 
 def _capabilities(text: str) -> dict[str, dict[str, Any]]:
@@ -174,7 +167,7 @@ def _probe(programs: Programs, capabilities: Mapping[str, Any]) -> list[str]:
 
 def _url(programs: Programs, checkout: Path, name: str, forge: str) -> str:
     if (checkout / '.git').exists():
-        return _read([*programs.git, '-C', str(checkout), 'remote', 'get-url', 'origin']).stdout.strip()
+        return read([*programs.git, '-C', str(checkout), 'remote', 'get-url', 'origin']).stdout.strip()
     return f'{forge.rstrip("/")}/{name}.git' if forge else ''
 
 
@@ -183,61 +176,25 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
     denied = []
     for name, url in urls.items():
         argv = [*programs.git, '-c', 'credential.interactive=never', 'ls-remote', '-q', url, 'HEAD']
-        rc = _read(argv, _NO_PROMPT).returncode
+        rc = read(argv, _NO_PROMPT).returncode
         emit(f'  {name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
             denied.append(name)
     return denied
 
 
-@dataclass(frozen=True)
-class _Moved:
-    """A checkout step's outcome: its exit, whether HEAD moved, and why it was refused."""
-
-    rc: int
-    moved: bool = False
-    why: str = ''
-
-
-def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> _Moved:
+def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> Moved:
     if not (checkout / '.git').exists():
         clone = [*programs.git, 'clone', '-q', '-b', ref, url, str(checkout)]
-        return _Moved(step.change(f'{checkout.name}: git clone -b {ref} {url} {checkout}', clone), moved=True)
-    git = [*programs.git, '-C', str(checkout)]
-    if _read([*git, 'status', '--porcelain']).stdout.strip():
-        return _Moved(2, why=f'{checkout} has local changes; commit or clean them, then re-run')
-    if step.dry:
-        return _Moved(step.change(f'{checkout.name}: git fetch, then fast-forward to its upstream when behind', []))
-    return _fast_forward(step, git, checkout.name)
-
-
-def _fast_forward(step: Step, git: Sequence[str], name: str) -> _Moved:
-    if rc := step.change(f'{name}: git fetch', [*git, 'fetch', '-q']):
-        return _Moved(rc)
-    head, upstream = (_read([*git, 'rev-parse', rev]).stdout.strip() for rev in ('HEAD', '@{u}'))
-    if not upstream:
-        return _Moved(2, why=f'{name} tracks no upstream; `git branch -u origin/<ref>` in it, then re-run')
-    if head == upstream:
-        emit(f'  {name}: current at {head[:12]}')
-        return _Moved(0)
-    merge = [*git, 'merge', '--ff-only', '-q', '@{u}']
-    return _Moved(step.change(f'{name}: fast-forward {head[:12]} -> {upstream[:12]}', merge), moved=True)
-
-
-def _venv(step: Step, programs: Programs, checkout: Path, name: str, *, moved: bool) -> int:
-    if _venv_python(checkout).is_file() and not moved:
-        emit(f'  {name}: .venv current')
-        return 0
-    # The door's own rule: a primary checkout's environment moves only from that checkout.
-    bootstrap = [*programs.bootstrap, str(checkout)]
-    return step.change(f'{name}: -m lab_commons.dev.dep --bootstrap {checkout}', bootstrap, cwd=checkout)
+        return Moved(step.change(f'{checkout.name}: git clone -b {ref} {url} {checkout}', clone))
+    return follow(step, programs.git, checkout)
 
 
 def _hooks(step: Step, programs: Programs, checkout: Path, name: str) -> int:
-    if step.dry and not _venv_python(checkout).is_file():
+    if step.dry and not venv_python(checkout).is_file():
         return step.change(f'{name}: hook_install --install, when its hooks are not live', [])
     hook = [*programs.python_of(checkout), '-m', 'lab_commons.dev.hook_install', '--repo', str(checkout)]
-    rc = _read(hook).returncode
+    rc = read(hook).returncode
     if rc in {0, 2}:
         emit(f'  {name}: ' + ('hooks live' if rc == 0 else 'declares no hook'))
         return 0
@@ -271,7 +228,7 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
 def _task(step: Step, programs: Programs, lab: Path) -> int:
     emit(f'[task] {servetask.TASK}')
     want = servetask.definition_of(lab)
-    query = _read([*programs.schtasks, *servetask.query_argv()[1:]])
+    query = read([*programs.schtasks, *servetask.query_argv()[1:]])
     if query.returncode == 0 and servetask.installed(query.stdout) == want:
         emit(f'  in place: {want.command} {want.arguments}')
         rc = 0
@@ -315,7 +272,7 @@ def _checkouts(
     refused = {name: one.why or f'checkout exited {one.rc}' for name, one in done.items() if one.rc}
     emit('[venvs] -m lab_commons.dev.dep --bootstrap where missing or moved')
     for name, co in checkouts.items():
-        if name not in refused and (rc := _venv(step, tools, co, name, moved=done[name].moved)):
+        if name not in refused and (rc := sync_venv(step, tools.bootstrap, co)):
             refused[name] = f'its venv bootstrap exited {rc}'
     emit('[hooks] hook_install --install where not live')
     for name, co in checkouts.items():
@@ -348,9 +305,17 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     return rc or (2 if refused else 0)
 
 
-def serve(*, run: Callable[..., Any] = subprocess.run, lock: Path | None = None, out: IO[str] | None = None) -> int:
-    """``forge serve`` in each ``[serve] repos`` checkout, under one lock; the worst exit.
+def serve(
+    *,
+    run: Callable[..., Any] = subprocess.run,
+    lock: Path | None = None,
+    out: IO[str] | None = None,
+    programs: Programs | None = None,
+) -> int:
+    """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock; the worst exit.
 
+    lab-commons is refreshed first, then each repo in order (:func:`lab_commons.dev.hostrefresh.refresh`):
+    a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
     table = section('serve')
@@ -358,20 +323,21 @@ def serve(*, run: Callable[..., Any] = subprocess.run, lock: Path | None = None,
     if not (isinstance(repos, list) and repos and isinstance(root, str)):
         emit(f'[serve] refused: no [serve] repos and root in {config_path()}; run `workstation deploy`', err=True)
         return 2
+    tools = programs or Programs()
+    step = Step(Tools(git=tools.git), dry=False)
     with held(lock or default_lock()) as mine:
         if not mine:
             emit('[serve] another forge serve holds the lock; this one does nothing', err=True)
             return 0
         worst = 0
-        for name in repos:
+        for name in sorted(repos, key=lambda repo: repo != LAB_COMMONS):
             checkout = Path(root) / name
-            python = _venv_python(checkout)
-            if not python.is_file():
-                emit(f'[serve] {name}: no {python}; re-run `workstation deploy`', err=True)
+            emit(f'[serve] {name}', flush=True)
+            if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
+                emit(f'[serve] {name} released, not served this tick: {why}', err=True)
                 worst = max(worst, 2)
                 continue
-            emit(f'[serve] {name}', flush=True)
-            argv = [str(python), '-m', 'lab_commons.dev.forge', 'serve']
+            argv = [str(venv_python(checkout)), '-m', 'lab_commons.dev.forge', 'serve']
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
             rc = run(argv, cwd=checkout, check=False, **streams, **servetask.windowless()).returncode
             if rc:

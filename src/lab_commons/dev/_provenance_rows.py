@@ -138,7 +138,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'trialmerge': ('original',),
     'forgerun': ('original',),
     'shatree': ('original',),
-    'servekit': ('original',),
     'forgeclaim': ('original',),
     'forgeschedule': ('original',),
     'forgequeue': ('original',),
@@ -211,6 +210,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'servelock': ('original',),
     'servetask': ('original',),
     'workstation': ('original',),
+    'hostrefresh': ('original',),
     # ORIGINAL: the clean-only removal door is new; it encodes a consumer's incident, not its code.
     'worktrees': ('original',),
     # ORIGINAL: the scan was lab-commons' own test helper, which is in-kit and so not provenance; no

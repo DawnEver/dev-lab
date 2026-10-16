@@ -393,18 +393,6 @@ def test_a_long_progress_is_cut_to_what_every_forge_stores() -> None:
     assert Claim.parse(long.description()) is not None
 
 
-def test_a_superseded_run_is_cancelled_released_and_dropped(home: Path) -> None:
-    store, slurm = _Store(), _Slurm(home / 'r')
-    _start(home, store)
-    run = _tick(store, slurm)
-    assert run is not None
-    forgerun.supersede(run, 'd' * 40, client=_Client(store), cluster=slurm, say=lambda _line: None)
-    assert slurm.cancelled == ['4242']
-    assert store.posts[-1]['description'] == f'superseded by {"d" * 12}'
-    assert store.posts[-1]['status'] == 'error'
-    assert forgerun.live('https://f/o/r.git') == ()
-
-
 _FAKE_ZSTD = (
     'import shutil, sys\n'
     "with open(sys.argv[sys.argv.index('-o') + 1], 'wb') as f:\n"

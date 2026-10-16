@@ -98,12 +98,9 @@ class Rounds:
             self.repo, self.root, self.alarm, **self.ticking,
             supply=supply, running=running,
         )  # fmt: skip
-        client = self.ticking['client'](self.root)
         self.latest.update(ticked=ticked, supply=supply, held=held)
         for line in ticked.lines:
             self.say(line)
-        if self.slurm is not None:
-            self.runs = forgerun.supersede_moved(self.root, self.runs, client=client, cluster=self.slurm, say=self.say)
         local = [item for item in ticked.claimed if item.cluster is None or item.holder is None]
         self.runs += [forgerun.start(item, item.holder) for item in ticked.claimed if item not in local and item.holder]
         for item in local:

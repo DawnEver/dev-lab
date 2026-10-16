@@ -4,10 +4,10 @@ Extracted from :mod:`lab_commons.dev.forgeserve` (its module docstring states th
 streams prefixed ``[platform]``; the loop wakes every *beat_s* (the host's tick period) and calls
 *beat* with the time produced so far -- serve publishes its host card there, so a host busy for hours
 still ticks and ``forge queue``'s STALE keeps meaning down; the claim is renewed on the FORGE's clock
-every *renew_s* (counted in wakes) while the producer lives; a ref that moved on stops it
-(``superseded by <sha>``) unless the new tip is
-reach-equivalent (:mod:`lab_commons.dev.forgecarry`) -- then the run finishes and its part is also posted
-on that tip, naming the sha it was judged at; and a claim it left ``pending`` is released as ``error`` with
+every *renew_s* (counted in wakes) while the producer lives. A PART UNDER TEST IS NOT SUPERSEDED (user
+ruling 2026-10-13): a ref that moved on never stops it -- newer pushes queue behind it and are tested at the
+next tip -- and when the tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its part is also posted
+on that tip, naming the sha it was judged at; a claim it left ``pending`` is released as ``error`` with
 the reason the box's record names, else its exit code's
 (:func:`~lab_commons.dev.producer.box_release_reason`) -- or ``stopped`` when :mod:`lab_commons.dev.stoprun`
 stopped it on purpose.
@@ -19,8 +19,7 @@ a request's declared ``wall_h``). A box with no
 room releases the claim retryable; a kill is released naming it -- both read from the box's record
 beside the run's tree, never from the exit code, which is the producer's own. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
-is SETTLED here from the exit code (:func:`lab_commons.dev.forgerequest.settle`), and its ref ``issue/<n>``
-has no tip, so nothing supersedes it.
+is SETTLED here from the exit code (:func:`lab_commons.dev.forgerequest.settle`).
 
 THE PART IS JUDGED AT THE CLAIMED SHA, in a tree this producer owns (:mod:`lab_commons.dev.shatree`):
 the declared argv (read at the sha) runs with that tree's own interpreter, cwd = the tree, and the tree
@@ -32,7 +31,7 @@ that refused.
 WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The producer's process tree is
 sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
-a run that ended on its own (not superseded, not stopped) records its peak, wall and MEASURED cpu-seconds
+a run that ended on its own (not stopped) records its peak, wall and MEASURED cpu-seconds
 under ``(its producer, its need-set)`` -- ``local`` for a part, a request's declared name -- the box half
 of the one demand table a Slurm run also writes. A run the box killed records its peak as a
 floor (:func:`~lab_commons.compute.learned.record_run`).
@@ -59,18 +58,16 @@ from typing import Any, Final
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
 from lab_commons.compute.learned import Run, record_run
 from lab_commons.dev.forge import fetch_origin
-from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
+from lab_commons.dev.forgecarry import SETTLED, carry_target
 from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
-from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
 from lab_commons.dev.producer import ProducerExit, box_release_reason, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
-from lab_commons.dev.stoprun import declared_signatures, process_table, stop
 from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
@@ -155,7 +152,7 @@ def produce(
 
     The tree is built first and removed last (:mod:`lab_commons.dev.shatree`); the argv runs in the box
     (:func:`boxed`, sized against *capacity*, default this box's). At each heartbeat the ref is
-    re-read from ``origin``: a ref that moved on stops the producer, and its claim is released ``superseded by <sha>``.
+    renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
     """
     try:
         tree = open_tree(root, item.sha, item.context)
@@ -214,7 +211,6 @@ def _run(
     pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say, heard), daemon=True)
     pump.start()
     started = clock()
-    superseded = ''
     wake_s = min(renew_s, beat_s)
     renew_every = max(1, math.ceil(renew_s / wake_s - 1e-9))  # wakes per renewal
     wakes = 0
@@ -225,12 +221,6 @@ def _run(
             break
         except subprocess.TimeoutExpired:
             usage.wake(sample(proc.pid) if proc.pid is not None else None)
-            superseded = _superseded(root, item, fetch)
-            if superseded:
-                _halt(root, proc)
-                returncode = proc.wait()
-                say(f'[{item.platform}] stopped: {item.ref} moved on to {superseded[:12]}')
-                break
             wakes += 1
             beat(clock() - started)
             if wakes % renew_every == 0:
@@ -241,7 +231,7 @@ def _run(
     ended = read_ended(record)
     record.unlink(missing_ok=True)
     boxed_out = box_release_reason(ended)  # the box's decision, from its record: never from the exit code
-    if usage.peak is not None and usage.cpu_s > 0 and not superseded and not stopped:
+    if usage.peak is not None and usage.cpu_s > 0 and not stopped:
         wall_s = max(1.0, (clock() - started).total_seconds())
         learn(
             root,
@@ -258,11 +248,11 @@ def _run(
             (''.join(heard), record_manifest(root, item.sha, item.context)),
             say,
         )  # a request: its producer posts nothing
-    elif superseded or (posts and posts[-1].state == 'pending'):
+    elif posts and posts[-1].state == 'pending':
         reason = 'stopped' if stopped else boxed_out or release_reason(returncode)
-        reason = f'superseded by {superseded[:12]}' if superseded else reason
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
+        fetch(root)
         _carry(root, client(root), item, posts[-1], say)
     return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped)
 
@@ -279,20 +269,6 @@ class _Usage:
         """Read the tree once: keep its peak and cpu-seconds."""
         self.peak = self.peak if gb is None else max(self.peak or 0.0, gb)
         self.cpu_s = max(self.cpu_s, self._cpu() or 0.0)
-
-
-def _superseded(root: Path, item: Work, fetch: Callable[[Path], None]) -> str:
-    """The tip *item*'s ref moved on to, not reach-equivalent to its sha; ``''`` to keep running."""
-    fetch(root)
-    tip = tip_of(root, item.ref)
-    return tip if tip and tip != item.sha and not equivalent(root, item.sha, tip) else ''
-
-
-def _halt(root: Path, proc: subprocess.Popen[str]) -> None:
-    """Stop *proc*'s whole tree through :mod:`lab_commons.dev.stoprun`; a pid it refuses is killed alone."""
-    code, _ = stop(proc.pid, process_table(), dry_run=False, signatures=declared_signatures(root))
-    if code:
-        proc.kill()
 
 
 def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], None]) -> None:

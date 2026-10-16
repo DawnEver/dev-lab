@@ -17,11 +17,12 @@ On the login host you chose, store your own forge token once (`git config --glob
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
   file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
   runs read it, and flags that disagree with it are refused. `lab-commons` is always served: every tick runs it.
-- **Lab-commons updates itself; the rest needs the line.** Each serve tick fast-forwards `~/<root>/lab-commons`
-  to `origin/<its deployed ref>`, reinstalls it into that repo's venv when it moved, and re-executes the
-  serve (`lab_commons.dev.servekit`; [forge](forge.md#producing-parts-forge-serve)). A dirty, switched or
-  diverged checkout is refused with an alarm and the tick claims nothing. The served repos' own checkouts,
-  their venvs and the crontab still change only when you re-run the line.
+- **The host refreshes; a repo never updates itself.** Each cron line runs the HOST's kit,
+  `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout: it checks out `~/<root>/lab-commons`
+  and then the repo at their deployed refs, rebuilds the repo's venv where its inputs or the kit's HEAD moved
+  (the deploy's own keyed steps), and only then runs the repo's `forge serve`. A repo whose refresh fails is
+  released for that tick, its reason in its log; a kit that cannot move is reported and the repo serves with
+  the kit it has. Only the crontab itself changes when you re-run the line.
 - **What it does** (`lab_commons.hpc.deploy`): refuses off the declared host; checks the account before changing
   anything -- `credential.helper` set and `~/.git-credentials` mode 600, `git ls-remote` per repo, and
   `forge auth check` per repo (the API calls a tick makes: `GET /user`, push permission for commit statuses,

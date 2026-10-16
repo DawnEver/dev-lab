@@ -276,7 +276,6 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
 * :mod:`lab_commons.dev.forgerun` -- a cluster part as a resumable tick: on-disk run state advanced per serve call.
 * :mod:`lab_commons.dev.shatree` -- a local part judged in a tree AT the claimed sha, its own env, removed after.
-* :mod:`lab_commons.dev.servekit` -- a deployed host fast-forwards its own lab-commons each serve tick, then re-execs.
 * :mod:`lab_commons.dev.forgeslurm` -- the Slurm side of a cluster run, and the account's standing read locally.
 * :mod:`lab_commons.dev.forgeship` -- a cluster run's declared outputs stored on the serve path, and the
   store cleanup its host owns.
@@ -324,6 +323,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`lab_commons.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
 * :mod:`lab_commons.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.
+* :mod:`lab_commons.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
 * :mod:`lab_commons.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`lab_commons.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.
 * :mod:`lab_commons.dev.venvpath` -- the one place that spells a venv interpreter: concrete to run, globbed to track.

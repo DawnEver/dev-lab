@@ -29,7 +29,6 @@ from lab_commons.dev import (
     forgetick,
     forgetidy,
     forgework,
-    servekit,
     servelock,
 )
 from lab_commons.hpc.retired import refusal
@@ -46,7 +45,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'publish': forgeoutbox.main,
     'records': forgerecords.main,
     'route': forgeroute.main,
-    'serve': lambda argv: servelock.locked(argv, lambda rest: servekit.current(rest, forgeserve.main)),
+    'serve': lambda argv: servelock.locked(argv, forgeserve.main),
     'tick': forgetick.main,
     'queue': forgequeue.main,
     'sync': forgesync.main,

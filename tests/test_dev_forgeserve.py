@@ -360,7 +360,6 @@ def test_a_beat_shorter_than_the_renewal_renews_only_when_the_renewal_is_due(mon
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
-    monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     waits: list[float | None] = []
     proc = _Proc(0, beats=6)
@@ -695,8 +694,8 @@ def _moved_on(tmp_path: Path) -> str:
     return tip
 
 
-def test_a_superseded_cluster_run_is_cancelled_and_released(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED CONTROL: the ref still at the run's sha -- the run is kept and advanced."""
+def test_a_cluster_run_whose_ref_moved_on_is_kept_and_advanced(monkeypatch, tmp_path: Path) -> None:
+    """A PART UNDER TEST IS NOT SUPERSEDED (design item 9): a push to B never cancels A's cluster run."""
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     forge = _Forge()
     monkeypatch.setattr(forgerun, 'status_post', forge.post)
@@ -711,23 +710,25 @@ def test_a_superseded_cluster_run_is_cancelled_and_released(monkeypatch, tmp_pat
     report, said, _alarms = _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), forge, seat=SEAT, cluster=lambda: slurm
     )
-    assert report.in_flight == ()
-    assert slurm.cancelled == ['77']
-    assert forge.posts[-1] == ('tests/base', 'error', f'superseded by {tip[:12]}')
-    assert forgerun.live('https://f/o/r.git') == ()
-    assert any('superseded' in line for line in said)
+    assert report.in_flight == (SHA,), f'A runs on after the ref moved to {tip[:12]}'
+    assert slurm.cancelled == []
+    assert not [post for post in forge.posts if 'superseded' in post[2]]
+    assert [one.sha for one in forgerun.live('https://f/o/r.git')] == [SHA]
+    assert not any('superseded' in line for line in said)
 
 
-def test_a_superseded_local_producer_is_stopped_and_released(monkeypatch, tmp_path: Path) -> None:
-    """PLANTED CONTROL: a heartbeat on an unmoved ref only renews (the renewal test above)."""
-    tip = _moved_on(tmp_path)
+def test_a_local_producer_whose_ref_moved_on_runs_to_its_end(monkeypatch, tmp_path: Path) -> None:
+    """A PART UNDER TEST IS NOT SUPERSEDED (design item 9): every heartbeat after the push only renews."""
+    _moved_on(tmp_path)
     forge = _Forge()
     item = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     proc = _Proc(0, beats=5)
     report, _said, _alarms = _serve(monkeypatch, tmp_path, _claimed(item), {'verify': proc}, forge)
     assert report.produced[0].returncode == 0
-    assert proc.beats == 0, 'killed at the first heartbeat'
-    assert forge.posts[-1] == ('tests/windows', 'error', f'superseded by {tip[:12]}')
+    assert proc.beats == 0
+    renewed = [d for c, s, d in forge.posts if c == 'tests/windows' and s == 'pending']
+    assert len(renewed) == 5, 'renewed at every heartbeat, never stopped'
+    assert not [post for post in forge.posts if 'superseded' in post[2]]
 
 
 def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_alarms(
@@ -817,7 +818,6 @@ def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> 
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', _Trees(tmp_path).open)
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
-    monkeypatch.setattr(forgeproduce, 'tip_of', lambda _root, _ref: SHA)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
     return forgeproduce.produce(

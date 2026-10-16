@@ -159,13 +159,15 @@ def test_a_docs_only_descendant_keeps_the_local_run_and_gets_the_carried_status(
     assert carried.description == expected
 
 
-def test_a_code_touching_descendant_still_supersedes(monkeypatch, tmp_path: Path) -> None:
+def test_a_part_under_test_finishes_and_posts_while_a_code_push_queues(monkeypatch, tmp_path: Path) -> None:
+    """A PART UNDER TEST IS NOT SUPERSEDED (design item 9): A finishes and posts on A; nothing lands on B."""
     a = _repo(tmp_path)
     b = _commit(tmp_path, {'src/a.py': 'x = 2\n'}, 'code')
     forge, proc = _produce(monkeypatch, tmp_path, a, b)
-    assert proc.killed
-    assert forge.history(None, a)[-1].description == f'superseded by {b[:12]}'
-    assert forge.history(None, b) == ()
+    assert not proc.killed
+    posted = forge.history(None, a)[-1]
+    assert (posted.state, posted.url) == ('success', 'https://f/record')
+    assert forge.history(None, b) == (), 'B queues for its own run: a code change carries nothing from A'
 
 
 def test_a_tip_already_settled_is_never_overwritten_by_a_carry(monkeypatch, tmp_path: Path) -> None:
@@ -177,37 +179,6 @@ def test_a_tip_already_settled_is_never_overwritten_by_a_carry(monkeypatch, tmp_
     _push(tmp_path, b)
     assert forgecarry.carry_target(tmp_path, None, ref=REF, sha=a, platform='windows') == ''
     assert forgecarry.carry_target(tmp_path, None, ref=REF, sha=a, platform='base') == b
-
-
-class _Slurm:
-    def __init__(self) -> None:
-        self.cancelled: list[str] = []
-
-    def cancel(self, run: forgerun.Run) -> list[str]:
-        self.cancelled += run.job_ids
-        return list(run.job_ids)
-
-
-def test_a_cluster_run_survives_a_docs_only_tip_and_a_code_tip_cancels_it(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
-    root = tmp_path / 'repo'
-    root.mkdir()
-    a = _repo(root)
-    b = _commit(root, DOCS, 'docs')
-    forge = _Forge()
-    monkeypatch.setattr(forgerun, 'status_post', forge.post)
-    run = forgerun.Run('https://f/o/r.git', a, REF, 'tests', str(tmp_path), ME.description(),
-                       phase=forgerun.SUBMITTED, job_ids=('77',))  # fmt: skip
-    forgerun.save(run)
-    _push(root, b)
-    slurm = _Slurm()
-    kept = forgerun.supersede_moved(root, [run], client=None, cluster=slurm, say=lambda _l: None)
-    assert (kept, slurm.cancelled) == ([run], [])
-    c = _commit(root, {'src/a.py': 'x = 3\n'}, 'code')
-    _push(root, c)
-    assert forgerun.supersede_moved(root, [run], client=None, cluster=slurm, say=lambda _l: None) == []
-    assert slurm.cancelled == ['77']
-    assert forge.history(None, a)[-1].description == f'superseded by {c[:12]}'
 
 
 def test_a_published_cluster_part_is_also_posted_on_the_equivalent_tip(monkeypatch, tmp_path: Path) -> None:

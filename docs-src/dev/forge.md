@@ -68,8 +68,8 @@ Each tick it:
   whose run state, tree or `.lab-ci` stream directory was touched within `min_age_hours` (being built, or a round
   ended and not yet gathered). "No record yet" is NOT in flight: a superseded or released run is never gathered.
   A tree is kept only while its sha is
-  in flight (`tree-not-in-flight`); an unrecorded run's round streams move to `runs/<sha>/streams/<tag>` first,
-  where the carry reads them (`hpc.records.stream_dirs`), and a re-run re-adds the tree from the bare cache.
+  in flight (`tree-not-in-flight`); an unrecorded run's round streams are packed into ONE file
+  `runs/<sha>/streams/<tag>.txt` first, where the carry reads them (`hpc.records.stream_sources`), and a re-run re-adds the tree from the bare cache.
   An env, native build or cargo target is kept while an in-flight run or its repo's newest recorded run names it
   in `builds`; an unreadable reference keeps them all, an unreadable queue keeps every tree. A finished run's
   STATE goes when no origin branch tip can carry from it; finished `~/slurm-*.out` and oversized
@@ -87,14 +87,16 @@ Each tick it:
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The
   other way round, a RETIRED table (`lab_commons.hpc.retired`) is refused naming its replacement: the
   declaration is older than the kit ([migrating a repo](migrate.md#migrating-a-repo-to-need-set-parts)).
-- **A deployed host keeps its own lab-commons current** (`lab_commons.dev.servekit`). On a host whose machine
-  file declares `[deploy]`, every serve tick first fast-forwards the deployed lab-commons checkout to
-  `origin/<its deployed ref>`. If HEAD moved, the tick reinstalls lab-commons into its own venv (the deploy's
-  `overlay_argv`; skipped when the venv imports the checkout itself) and re-executes the serve, so this
-  tick's claim runs the new code. A checkout that is dirty, off its ref, or diverged is refused: an alarm is
-  raised, exit 1, nothing claimed. The ref is the integration branch, not the trunk: a kit following the
-  trunk would refuse the integration commit that adds a table, and that commit could then never reach the
-  trunk. A workstation declares no `[deploy]`, so its serving checkout (a human's) is never moved by a tick.
+- **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
+  a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
+  workstation's `workstation serve` fast-forwards lab-commons and then each `[serve]` repo to its upstream and
+  syncs its venv when `pyproject.toml` or `uv.lock` changed (`lab_commons.dev.workstation.refresh`); a cluster
+  account's cron line runs `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout, which checks
+  out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
+  (`lab_commons.hpc.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
+  -- is released for that tick with its reason in the serve log, and the other repos are still served. The
+  ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
+  that adds a table, and that commit could then never reach the trunk.
 - **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
@@ -139,7 +141,8 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
   that admits the part.
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
-- **Supersede.** When a ref moves on, its in-flight run is cancelled and released `superseded by <sha12>`.
+- **A part under test is never superseded** (user ruling 2026-10-13). When a ref moves on, its in-flight
+  run finishes and posts on its own sha; the newer pushes queue behind it and are tested at the next tip.
 - **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test
   file's FOOTPRINT is derived at the judged sha: itself, its conftest/`__init__` chain, its transitive in-repo
   imports (candidates, so an added shadow counts), `pyproject.toml`/`uv.lock`, the declared `everywhere`

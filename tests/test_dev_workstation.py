@@ -19,7 +19,7 @@ from typing import Final
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import servetask, workstation
+from lab_commons.dev import hostrefresh, servetask, workstation
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.servelock import held
 from lab_commons.dev.venvpath import venv_interpreter
@@ -208,7 +208,11 @@ def test_a_dirty_checkout_is_refused_and_a_behind_one_is_fast_forwarded(box: Box
     assert box.deploy() == 0
     moved = box.calls()[seen:]
     assert f'git -C {box.root / "alpha"} merge --ff-only -q @{{u}}' in moved
-    assert f'bootstrap {box.root / "alpha"}' in moved, 'a moved checkout re-syncs its venv'
+    assert f'bootstrap {box.root / "alpha"}' not in moved, 'a move that changes no env input syncs nothing'
+    (box.root / 'alpha' / 'uv.lock').write_text('changed')
+    seen = len(box.calls())
+    assert box.deploy() == 0
+    assert f'bootstrap {box.root / "alpha"}' in box.calls()[seen:], 'a changed lock re-syncs its venv'
     assert f'bootstrap {box.root / "beta"}' not in moved
     (alpha / 'DIRTY').touch()
     assert box.deploy() == 2
@@ -260,16 +264,9 @@ def test_off_windows_the_deploy_is_refused(box: Box) -> None:
     assert workstation.deploy([*DEPLOY], programs=replace(box.programs, windows=False)) == 2
 
 
-def _serving(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *ready: str) -> Path:
-    root = tmp_path / 'src'
-    for name in ready:
-        python = root / name / VENV
-        python.parent.mkdir(parents=True)
-        python.touch()
-    machine = tmp_path / 'config.toml'
-    machine.write_text(f'[serve]\nrepos = ["lab-commons", "alpha", "beta"]\nroot = {str(root)!r}\n', encoding='utf-8')
-    monkeypatch.setenv(CONFIG_ENV, str(machine))
-    return root
+def _serving(box: Box) -> None:
+    """A deployed box: every checkout cloned, its venv synced, and ``[serve]`` declared."""
+    assert box.deploy() == 0
 
 
 class _Done:
@@ -277,32 +274,86 @@ class _Done:
         self.returncode = returncode
 
 
-def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = _serving(tmp_path, monkeypatch, 'lab-commons', 'beta')
+def _serve(box: Box, tmp_path: Path, rc: dict[str, int] | None = None) -> tuple[int, list[tuple[list[str], Path]]]:
     ran: list[tuple[list[str], Path]] = []
-    spawned: list[dict[str, object]] = []
 
     def run(argv: list[str], *, cwd: Path, **kw: object) -> _Done:
+        assert all(kw[key] == value for key, value in servetask.windowless().items())
         ran.append((argv, cwd))
-        spawned.append(kw)
-        return _Done(1 if cwd.name == 'beta' else 0)
+        return _Done((rc or {}).get(cwd.name, 0))
 
-    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock') == 2, 'alpha has no venv'
-    assert [cwd.name for _, cwd in ran] == ['lab-commons', 'beta'], 'a missing venv never skips the next repo'
+    return workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs), ran
+
+
+def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst(box: Box, tmp_path: Path) -> None:
+    _serving(box)
+    worst, ran = _serve(box, tmp_path, {'beta': 1})
+    assert worst == 1
+    assert [cwd.name for _, cwd in ran] == ['lab-commons', 'alpha', 'beta']
     argv, cwd = ran[0]
-    assert all(kw[key] == value for kw in spawned for key, value in servetask.windowless().items())
-    assert argv == [str(root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve']
-    assert cwd == root / 'lab-commons'
+    assert argv == [str(box.root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve']
+    assert cwd == box.root / 'lab-commons'
 
 
-def test_serve_does_nothing_while_another_serve_holds_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _serving(tmp_path, monkeypatch, 'lab-commons', 'alpha', 'beta')
-    lock, ran = tmp_path / 'serve.lock', []
+def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: Path) -> None:
+    """THE PLANTED CONTROL (incident 2026-10-13): a venv whose old kit would exit 2 is synced FIRST, by the host."""
+    _serving(box)
+    alpha = box.root / 'alpha'
+    (alpha / '.git' / 'UP_SHA').write_text('b' * 40)
+    (alpha / 'pyproject.toml').write_text('[project]\nname = "alpha"  # pins a newer kit\n')
+    seen = len(box.calls())
+    served: dict[str, int] = {}  # repo -> how many calls had been logged when its forge started
+
+    def run(_argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
+        served[cwd.name] = len(box.calls())
+        stale = cwd == alpha and f'bootstrap {alpha}' not in box.calls()[seen:]
+        return _Done(2 if stale else 0)  # the old kit's `forge serve` exits 2
+
+    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
+    calls = box.calls()
+    moved = calls.index(f'git -C {alpha} merge --ff-only -q @{{u}}', seen)
+    synced = calls.index(f'bootstrap {alpha}', seen)
+    assert moved < synced < served['alpha'], 'moved, then synced, then served'
+    assert f'bootstrap {box.root / "beta"}' not in calls[seen:], 'an unchanged venv is not synced'
+    assert served['lab-commons'] <= calls.index(f'git -C {alpha} fetch -q', seen), 'lab-commons first'
+    again = len(box.calls())
+    assert _serve(box, tmp_path)[0] == 0
+    assert not [c for c in box.calls()[again:] if c.startswith('bootstrap')], 'the stamp makes a second tick quiet'
+
+
+def test_a_failed_sync_is_retried_by_the_next_tick(box: Box, tmp_path: Path) -> None:
+    _serving(box)
+    (box.root / 'alpha' / '.venv' / '.lab-host-env').unlink()
+    failing = replace(box.programs, bootstrap=(sys.executable, '-c', 'raise SystemExit(3)'))
+    assert workstation.serve(run=lambda *_a, **_k: _Done(0), lock=tmp_path / 'l', programs=failing) == 2
+    seen = len(box.calls())
+    assert _serve(box, tmp_path)[0] == 0
+    assert f'bootstrap {box.root / "alpha"}' in box.calls()[seen:]
+
+
+def test_a_repo_whose_refresh_fails_is_released_by_name_and_the_others_are_served(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _serving(box)
+    (box.root / 'alpha' / '.git' / 'DIRTY').touch()
+    shutil.rmtree(box.root / 'beta')
+    capsys.readouterr()
+    worst, ran = _serve(box, tmp_path)
+    assert worst == 2
+    assert [cwd.name for _, cwd in ran] == ['lab-commons']
+    err = capsys.readouterr().err
+    assert 'alpha released, not served this tick' in err
+    assert 'local changes' in err
+    assert 'beta released, not served this tick: no checkout' in err
+
+
+def test_serve_does_nothing_while_another_serve_holds_the_lock(box: Box, tmp_path: Path) -> None:
+    _serving(box)
+    lock, ran, seen = tmp_path / 'serve.lock', [], len(box.calls())
     with held(lock) as mine:
         assert mine
-        assert workstation.serve(run=lambda *a, **_k: ran.append(a), lock=lock) == 0
+        assert workstation.serve(run=lambda *a, **_k: ran.append(a), lock=lock, programs=box.programs) == 0
+    assert box.calls()[seen:] == [], 'nothing is refreshed either'
     assert ran == []
 
 
@@ -349,4 +400,4 @@ def test_the_bootstrap_passes_the_real_door_from_an_unrelated_cwd(
     monkeypatch.chdir(elsewhere)
     programs = workstation.Programs(bootstrap=(sys.executable, str(door)))
     step = workstation.Step(workstation.Tools(git=('git',)), dry=False)
-    assert workstation._venv(step, programs, checkout, checkout.name, moved=True) == 0
+    assert hostrefresh.sync_venv(step, programs.bootstrap, checkout) == 0
