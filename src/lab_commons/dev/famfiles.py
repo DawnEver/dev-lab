@@ -23,12 +23,12 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 from lab_commons.log import emit
 
@@ -102,7 +102,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
 
 
 def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
-    done = subprocess.run(
+    done = _door.run(
         [shutil.which('git') or 'git', '-C', str(root), *args],
         capture_output=True,
         text=True,

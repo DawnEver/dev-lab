@@ -368,11 +368,6 @@ ALLOWED: Final[dict[Site, str]] = {
         "PASS = 'pass'",
     ): 'a verdict name, not a credential: S105 matches the word PASS in an enum member',
     (
-        'src/lab_commons/dev/verify.py',
-        'S607',
-        "['git', 'rev-parse', '--show-toplevel'],",
-    ): 'git is resolved through PATH on purpose; an absolute path is wrong on every other box',
-    (
         'src/lab_commons/em.py',
         'N802',
         'def Q_list2array(',
@@ -523,25 +518,25 @@ ALLOWED: Final[dict[Site, str]] = {
         "['git', '-C', str(tmp_path), 'add', '-A'],",
     ): 'the same scratch checkout, staging the files the guard is then asked to read',
     (
-        'src/lab_commons/dev/collectscope.py',
-        'S607',
-        "['git', '-C', str(root), 'cat-file', '--batch'],",
-    ): 'git through PATH, reading 2632 blobs in ONE process where a per-file show is 2632',
-    (
-        'src/lab_commons/dev/collectscope.py',
-        'S607',
-        "['git', '-C', str(root), *args],",
-    ): 'the same resolution for the ls-tree that lists the blobs that batch then reads',
-    (
-        'src/lab_commons/dev/privatemarkers.py',
-        'S607',
-        "done = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)",
-    ): 'git through PATH listing exactly what a push publishes; an absolute path is wrong on every box',
-    (
         'tests/test_dev_collectscope.py',
         'S607',
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
+    (
+        'src/lab_commons/launch.py',
+        'ANN401',
+        'def run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:',
+    ): "the launch door forwards subprocess.run's own arguments unchanged; its one job is the window flag",
+    (
+        'src/lab_commons/launch.py',
+        'ANN401',
+        'def popen(*args: Any, **kwargs: Any) -> subprocess.Popen[Any]:',
+    ): "the launch door forwards Popen's own arguments unchanged; its one job is the window flag",
+    (
+        'src/lab_commons/launch.py',
+        'PLW1510',
+        'return subprocess.run(*args, **_windowless(kwargs))',
+    ): 'the door forwards check as each caller passes it; every caller already decides it',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

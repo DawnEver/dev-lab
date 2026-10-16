@@ -89,7 +89,6 @@ from __future__ import annotations
 import argparse
 import functools
 import json
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -97,6 +96,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import lab_commons.launch as _door
 from lab_commons.box import Holding, declared_seats, holdings
 from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
@@ -157,7 +157,7 @@ def serve(
     cluster: Callable[[], forgerun.Cluster],
     lease: timedelta = DEFAULT_LEASE,
     fetch: Callable[[Path], None] = fetch_origin,
-    spawn: Callable[..., Any] = subprocess.Popen,
+    spawn: Callable[..., Any] = _door.popen,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     say: Callable[[str], None] = emit,
     alarm: Callable[[Alarm], object] = sound,

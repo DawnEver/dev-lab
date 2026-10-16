@@ -50,7 +50,6 @@ from __future__ import annotations
 import dataclasses
 import fnmatch
 import re
-import subprocess
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -58,6 +57,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.compute.model import (
     INTEGRATION,
     PR,
@@ -203,7 +203,7 @@ def ref_usage(root: Path, ref: str, used: Mapping[str, float]) -> float:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), *args],
         capture_output=True,
         text=True,

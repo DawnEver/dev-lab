@@ -21,11 +21,12 @@ import os
 import re
 import shutil
 import stat
-import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
+
+import lab_commons.launch as _door
 
 __all__ = [
     'FORGE_OWNED',
@@ -115,7 +116,7 @@ def parse_quota(text: str) -> Usage | None:
     return _usage(_LINUX_ROW.search(text))
 
 
-def read_usage(home: Path, *, cluster: bool, run: Callable[..., Any] = subprocess.run) -> Usage | None:
+def read_usage(home: Path, *, cluster: bool, run: Callable[..., Any] = _door.run) -> Usage | None:
     """The account quota on a cluster (``mmlsquota``, else ``quota -w``; ``None`` unreadable), else *home*'s disk."""
     if not cluster:
         disk = shutil.disk_usage(home)

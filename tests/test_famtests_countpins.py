@@ -339,8 +339,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-12 AT 560 after the forge owners, issue routing and hygiene modules: 490 keeps 70.
 #: RE-MEASURED 2026-10-13 AT 581 after the workstation deploy and its tests: 511 keeps 70.
 #: RE-MEASURED 2026-10-13 AT 603 after the compute model, probe, learned and ledger modules: 533 keeps 70.
-#: RE-MEASURED 2026-10-14 AT 664 after the file-quota supply and its tests: 594 keeps 70.
-CONSTANT_FLOOR = 594
+#: RE-MEASURED 2026-10-16 AT 696 after the launch door and the merged lock/presence lanes: 630 keeps 66.
+CONSTANT_FLOOR = 630
 CONSTANT_HEADROOM = 90
 
 

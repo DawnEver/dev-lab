@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+import lab_commons.launch as _door
 
 __all__ = [
     'WORKTREES_REL',
@@ -81,7 +82,7 @@ def main_checkout(root: Path) -> Path:
         RuntimeError: when git cannot answer -- a guessed root would read the wrong siblings silently.
 
     """
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
         capture_output=True,
         text=True,
@@ -107,7 +108,7 @@ def listed_worktrees(root: Path) -> tuple[Path, ...]:
         RuntimeError: when git cannot answer -- an unread list must never read as a clean one.
 
     """
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'worktree', 'list', '--porcelain'],
         capture_output=True,
         text=True,

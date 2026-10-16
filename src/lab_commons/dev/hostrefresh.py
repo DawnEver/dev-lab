@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_steps import Step
 from lab_commons.log import emit
@@ -36,7 +37,7 @@ def venv_python(checkout: Path) -> Path:
 
 def read(argv: Sequence[str], env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """A READ-ONLY call, also under ``--dry-run``; its output is never echoed."""
-    return subprocess.run(
+    return _door.run(
         argv, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False,
         stdin=subprocess.DEVNULL, env={**os.environ, **(env or {})},
     )  # fmt: skip

@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -35,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev._forge_journal import Durable, Probe
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
@@ -144,7 +144,7 @@ def status_history(client: Client, sha: str) -> tuple[Status, ...]:
 
 
 def _git(root: Path, *args: str) -> str | None:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, *args],
         cwd=root,
         capture_output=True,

@@ -73,6 +73,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.syncscope import Selection, canon, survivors
 
 __all__ = [
@@ -215,8 +216,8 @@ def tree_texts(root: Path, prefix: str, *, at_head: bool) -> dict[str, str]:
     wanted = [(sha, path) for sha, path in entries if _is_test_path(path)]
     if not wanted:
         return {}
-    blob = subprocess.run(
-        ['git', '-C', str(root), 'cat-file', '--batch'],  # noqa: S607
+    blob = _door.run(
+        ['git', '-C', str(root), 'cat-file', '--batch'],
         input='\n'.join(sha for sha, _ in wanted).encode(),
         capture_output=True,
         check=True,
@@ -241,8 +242,8 @@ def _split_batch(blob: bytes) -> list[str]:
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ['git', '-C', str(root), *args],  # noqa: S607
+    return _door.run(
+        ['git', '-C', str(root), *args],
         capture_output=True,
         text=True,
         encoding='utf-8',

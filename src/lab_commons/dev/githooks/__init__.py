@@ -44,12 +44,12 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.githooks import runner
 from lab_commons.dev.githooks.table import STAGES
 from lab_commons.hpc.retired import refusal
@@ -258,7 +258,7 @@ def run_hook(name: str, args: Sequence[str] = (), *, cwd: Path | None = None) ->
             f'done nothing, which reads exactly like a hook that passed.'
         )
         raise NotRunnable(msg)
-    done = subprocess.run(
+    done = _door.run(
         [bash_executable(), str(hook_path(name)), *args],
         cwd=None if cwd is None else str(cwd),
         check=False,

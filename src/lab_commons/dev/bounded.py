@@ -40,6 +40,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import lab_commons.launch as _door
 from lab_commons.proc import kill_process_tree, process_tree, system_memory
 from lab_commons.resources import CPU, MEMORY
 from lab_commons.width import fits
@@ -224,7 +225,7 @@ def run_bounded(
             wall as INCONCLUSIVE must order that test BEFORE the exit code.
 
     """
-    proc = subprocess.Popen(
+    proc = _door.popen(
         argv,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

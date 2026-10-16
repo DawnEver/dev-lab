@@ -35,7 +35,6 @@ import dataclasses
 import hashlib
 import json
 import os
-import subprocess
 import time
 import urllib.parse
 from collections.abc import Callable, Mapping
@@ -44,6 +43,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev import forge as _forge
 from lab_commons.dev._forge_journal import LOOKBACK, Durable, Journal, Probe, Write, journal_for, since, write_key
 from lab_commons.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
@@ -171,7 +171,7 @@ def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
     machine, agent = env.get('HARNESS_MACHINE', ''), env.get('HARNESS_AGENT', '')
     if not machine or not agent:
         return None
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, 'symbolic-ref', '--short', '-q', 'HEAD'],
         cwd=cwd,
         capture_output=True,

@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import tomllib
 from collections.abc import Mapping, Sequence
@@ -55,6 +54,7 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgepulls import issues
 from lab_commons.dev.forgework import Client, ForgeCallFailed, Issue, client_for
@@ -257,7 +257,7 @@ def find_open(client: Client, title: str) -> Issue | None:
 
 def pyproject_at(root: Path, sha: str) -> str:
     """*root*'s pyproject as commit *sha* holds it; an unreadable commit is refused."""
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'show', f'{sha}:pyproject.toml'],
         capture_output=True,
         text=True,

@@ -17,13 +17,13 @@ import argparse
 import ast
 import json
 import shutil
-import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 __all__ = ['CHECKS', 'main']
@@ -134,7 +134,7 @@ def _trailing(path: Path, _args: argparse.Namespace) -> list[Finding]:
 
 
 def _case_conflicts(paths: Sequence[Path]) -> list[Finding]:
-    tracked = subprocess.run(
+    tracked = _door.run(
         [_GIT, 'ls-files', '-z'], capture_output=True, text=True, encoding='utf-8', check=True, timeout=120
     ).stdout.split('\0')
     seen: dict[str, set[str]] = {}

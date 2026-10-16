@@ -18,6 +18,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 
 if TYPE_CHECKING:
@@ -43,7 +44,7 @@ class Trial:
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return _door.run(
         [_GIT, *args],
         cwd=root,
         capture_output=True,

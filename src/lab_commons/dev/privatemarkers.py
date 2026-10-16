@@ -18,9 +18,10 @@ Two layers:
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import Final
+
+import lab_commons.launch as _door
 
 __all__ = [
     'AUTHORSHIP',
@@ -118,7 +119,7 @@ def scan_text(
 
 def tracked_files(root: Path) -> list[Path]:
     """The files git tracks under *root* -- exactly what a push publishes."""
-    done = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)  # noqa: S607 -- git on PATH
+    done = _door.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True, check=True)
     return [root / name for name in done.stdout.decode('utf-8').split('\0') if name]
 
 

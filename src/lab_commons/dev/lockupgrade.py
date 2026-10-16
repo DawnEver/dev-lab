@@ -33,6 +33,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.branchset import BranchSetNotDeclared, branchset_at, declared_branchset
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.forgepublish import publish
@@ -60,7 +61,7 @@ _REACH_S: Final = 60.0
 
 
 def _git(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
+    return _door.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
 
 
 def _rev(root: Path, ref: str) -> str:
@@ -86,7 +87,7 @@ def moved_sources(lock: str, *, tip: Callable[[str], str]) -> tuple[str, ...]:
 def _remote_tip(url: str) -> str:
     quiet = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
     try:
-        done = subprocess.run(
+        done = _door.run(
             [_GIT, 'ls-remote', '-q', url, 'HEAD'],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=_REACH_S, env=quiet,
             check=False,
@@ -181,7 +182,7 @@ def _continue(root: Path, branch: str, sha: str) -> None:
 
 def _uv_upgrade(root: Path) -> int:
     argv = [shutil.which('uv') or 'uv', 'lock', '--upgrade', '--project', str(root)]
-    return subprocess.run(argv, check=False).returncode
+    return _door.run(argv, check=False).returncode
 
 
 def main(

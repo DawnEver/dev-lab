@@ -21,13 +21,13 @@ Exit codes: ``0`` allowed, ``1`` refused. Only ``refs/heads/**`` lines are judge
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 import tomllib
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.installdoor import floating_in_manifest
 from lab_commons.dev.lanepolicy import policy_from
@@ -55,7 +55,7 @@ _REFSPEC_FIELDS: Final = 4
 
 
 def _show(root: Path, spec: str) -> str | None:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'show', spec], capture_output=True, text=True, encoding='utf-8', check=False
     )
     return done.stdout if done.returncode == 0 else None
@@ -78,7 +78,7 @@ def locked_git(lock: str) -> dict[str, str]:
 
 def upgraded_on(root: Path, rev: str) -> date | None:
     """The day of the newest commit reachable from *rev* carrying :data:`TRAILER`, ``None`` when none does."""
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'log', '-1', '--format=%cs', f'--grep=^{TRAILER}:', rev],
         capture_output=True,
         text=True,

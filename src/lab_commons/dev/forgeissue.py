@@ -28,7 +28,6 @@ import argparse
 import dataclasses
 import json
 import re
-import subprocess
 import sys
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
@@ -36,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgestatus import Status, status_list
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, client_for
@@ -122,7 +122,7 @@ def _mentions(number: int, *, closing: bool) -> re.Pattern[str]:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, *args],
         cwd=root,
         capture_output=True,
