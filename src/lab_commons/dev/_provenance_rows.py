@@ -161,6 +161,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'diskusage': ('original',),
     # ORIGINAL in the kit: it absorbs consumer-local push-admission bodies, which live in other trees.
     'pushgate': ('original',),
+    # ORIGINAL: shared demand derived from the forge's run records; no consumer read them (D4).
+    'forgedemand': ('original',),
     'forgeissue': ('original',),
     'forgeroute': ('original',),
     'issueref': ('original',),

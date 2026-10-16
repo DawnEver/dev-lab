@@ -137,7 +137,9 @@ MEASURED_ROWS: Final[tuple[MeasuredRow, ...]] = (
         public=frozenset(['available_gb', 'logical_cores', 'worker_width']),
         imports=frozenset(),
         hand=ALREADY_IN_THE_KIT,
-        expected=SUPERSEDED,
+        # PARTIAL since 2026-10-17: the kit deleted its worker width (D2) -- a box run is a claim on the one
+        # ledger now, so only `logical_cores` of this file still has a kit home.
+        expected=PARTIAL,
     ),
     MeasuredRow(
         path='scripts/gate/bounded.py',

@@ -1,4 +1,4 @@
-"""REFUSAL-NAMES-THE-REMEDY: a wall that TERMINATES, a width the box allows, and the sentence.
+"""REFUSAL-NAMES-THE-REMEDY: a wall that TERMINATES, the width a run was given, and the sentence.
 
 THE RULE HAS THREE HALVES AND A REPO NEEDS ALL THREE. "Bound every wait, because a budget is a
 ceiling on the WAIT -- split or parallelise, never raise it -- and kill a process TREE by its ROOT
@@ -40,9 +40,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from lab_commons.proc import kill_process_tree, process_tree, system_memory
-from lab_commons.resources import CPU, MEMORY
-from lab_commons.width import fits
+from lab_commons.proc import kill_process_tree, process_tree
 
 __all__ = [
     'BLAS_THREAD_VARS',
@@ -55,7 +53,6 @@ __all__ = [
     'run_bounded',
     'terminate_tree',
     'wall_reason',
-    'worker_width',
 ]
 
 #: How long the tree gets to die after the wall kills it, before the run answers anyway. A verdict
@@ -78,47 +75,10 @@ BLAS_THREAD_VARS: tuple[str, ...] = (
     'NUMEXPR_NUM_THREADS',
 )
 
-#: Bytes in one gibibyte, spelled once.
-_GB = 1024.0**3
-
 
 def logical_cores() -> int:
     """Logical processors, or a conservative guess. The seam the width tests substitute."""
     return os.cpu_count() or 4
-
-
-def _available_gb() -> float | None:
-    """Available PHYSICAL memory in GB, or ``None`` when this box cannot be read.
-
-    ``None`` IS NOT ZERO, and that distinction is why this returns an optional at all. A box that
-    cannot answer how much memory is free is not a box with no memory; conflating the two starves
-    every run to its floor on any machine whose instrumentation is damaged -- and that machine is
-    live rather than theoretical in this fleet.
-    """
-    reading = system_memory()
-    return None if reading is None else reading.available_bytes / _GB
-
-
-def worker_width(*, gb_per_worker: float, max_width: int, floor: int, reserve_cores: int, fallback: int) -> int:
-    """How many worker processes this box allows, MEMORY FIRST and cores second.
-
-    Taking the smaller of the two is the whole point: an overcommit of memory kills the run
-    outright, while an overcommit of processors only makes it slower. The floor is never 0 or 1 --
-    those mean SERIAL, which is a choice a human makes and not somewhere a starved box should
-    arrive by accident.
-
-    An unreadable box falls back to a width somebody MEASURED rather than to the floor, clipped by
-    what the processors allow, because "cannot measure" is not "cannot afford".
-
-    This is ONLY the arithmetic. *gb_per_worker* is a measurement with one home: the per-file peaks
-    of :func:`lab_commons.compute.learned.worker_gb`, the same table a Slurm task is sized from.
-    """
-    by_cores = logical_cores() - reserve_cores
-    available = _available_gb()
-    if available is None:
-        return min(fallback, max(floor, by_cores))
-    width = fits({CPU.name: by_cores, MEMORY.name: available * _GB}, {CPU.name: 1, MEMORY.name: gb_per_worker * _GB})
-    return max(floor, min(max_width, width))
 
 
 def blas_threads(workers: int) -> int:
