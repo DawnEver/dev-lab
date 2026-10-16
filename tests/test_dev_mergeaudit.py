@@ -263,3 +263,47 @@ def test_the_check_reads_its_declaration_from_the_tree_being_committed_never_the
     assert mergeaudit.main([str(message)]) == 0, 'the unstaged working-tree manifest was read'
     _git(repo, 'add', 'pyproject.toml')
     assert mergeaudit.main([str(message)]) == 1
+
+
+def _criss_cross(repo: Path) -> None:
+    """``main`` and ``lane`` each merge the other's tip once, then both move on: two merge bases."""
+    _git(repo, 'checkout', '-q', '-b', 'lane')
+    _commit(repo, {'tests/test_b.py': B}, 'lane adds b')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'src/m.py': 'X = 2\n'}, 'main moves on')
+    main_tip, lane_tip = _git(repo, 'rev-parse', 'main'), _git(repo, 'rev-parse', 'lane')
+    _git(repo, 'merge', '-q', '-m', 'lane into main', lane_tip)
+    _git(repo, 'checkout', '-q', 'lane')
+    _git(repo, 'merge', '-q', '-m', 'main into lane', main_tip)
+    _commit(repo, {'src/n.py': 'Y = 1\n'}, 'lane moves on')
+    _git(repo, 'checkout', '-q', 'main')
+    _commit(repo, {'tests/test_c.py': 'def test_c():\n    assert 2\n'}, 'main adds c')
+    assert len(_git(repo, 'merge-base', '--all', 'main', 'lane').split()) == 2
+
+
+def test_a_criss_cross_merge_is_audited_and_an_unnamed_lost_test_is_still_refused(repo: Path) -> None:
+    _criss_cross(repo)
+    parents = [_git(repo, 'rev-parse', 'main'), _git(repo, 'rev-parse', 'lane')]
+    _git(repo, 'merge', '-q', '--no-commit', 'lane')
+    (repo / 'tests/test_b.py').unlink()
+    _git(repo, 'add', '-A')
+    tree = _git(repo, 'write-tree')
+    assert mergeaudit.judge(repo, parents, tree, 'merge', roots=('tests',)) == (
+        'LOST test_b: not named -- add `Merge-Audit: LOST test_b -- <reason>`',
+    )
+    named = 'merge\n\nMerge-Audit: LOST test_b -- retired on purpose'
+    assert mergeaudit.judge(repo, parents, tree, named, roots=('tests',)) == ()
+
+
+def test_a_clean_criss_cross_merge_audits_clean(repo: Path) -> None:
+    _criss_cross(repo)
+    _git(repo, 'merge', '-q', '-m', 'lane into main again', 'lane')
+    assert mergeaudit.audit(repo, _git(repo, 'rev-parse', 'HEAD'), roots=('tests',)) == ()
+
+
+def test_bases_that_disagree_on_a_test_leave_it_no_base_so_only_equal_parents_expect_a_body() -> None:
+    assert mergeaudit.common_base([_fp(A), _fp(A)]) == _fp(A)
+    base = mergeaudit.common_base([_fp(A), _fp(A2)])
+    assert mergeaudit.classify(base, _fp(A), _fp(A), _fp(A)) == ()
+    assert mergeaudit.classify(base, _fp(A), _fp(A3), _fp(A)) == (Deviation(CONFLICTED, 'test_a'),)
+    assert mergeaudit.classify(base, _fp(A), _fp(A), _fp()) == (Deviation(LOST, 'test_a'),)

@@ -8,7 +8,11 @@ second source of truth that goes stale; this module reads the one that already e
 
 THE RULE. For a merge ``M`` of parents ``O`` and ``T`` over base ``B``, each test's EXPECTED body is
 what git's own three-way rule gives: ``O == B`` takes ``T``, ``T == B`` takes ``O``, equal changes
-take that change, and different changes have no expectation. A test whose body in ``M`` is not the
+take that change, and different changes have no expectation. The base only REFINES the parents: it is
+what tells a side's deliberate deletion or edit from a resolution that dropped or reverted it. A
+criss-cross (several merge bases, the normal shape of a downstream integration) is audited the same
+way, per test: bases that agree on a test give it that base, bases that disagree give it none, and a
+test with no base expects a body only where both parents hold the same one. A test whose body in ``M`` is not the
 expectation is a :class:`Deviation`:
 
 * :data:`LOST` -- expected present, absent in ``M``;
@@ -64,6 +68,7 @@ __all__ = [
     'MergeAuditError',
     'audit',
     'classify',
+    'common_base',
     'judge',
     'main',
     'pending',
@@ -81,6 +86,8 @@ _LINE: Final = re.compile(
     rf'^{TRAILER}:\s*(?P<kind>[A-Z]+)\s+(?P<test>\S+)(?:\s+--\s*(?P<reason>\S.*))?$', re.MULTILINE
 )
 _GIT_TIMEOUT_S: Final = 120
+#: The base of a test the merge bases disagree on: equal to no parent body, so only equal parents expect one.
+_NO_BASE: Final = '<merge bases disagree>'
 #: A two-parent merge is the one shape the rule is about; an octopus is refused, one lane at a time.
 _PARENTS: Final = 2
 
@@ -154,6 +161,19 @@ def read_tests(sources: Mapping[str, bytes], *, shared: set[str] | None = None) 
     if shared is None:
         shared = {name for name, n in Counter(name for _, name, _ in rows).items() if n > 1}
     return _keyed(rows, shared)
+
+
+def common_base(bases: Sequence[Mapping[str, str]]) -> dict[str, str]:
+    """One base from several: a test keeps the body every base agrees on, else :data:`_NO_BASE`.
+
+    A test some bases hold and others lack is a disagreement too; no base at all is the empty mapping.
+    """
+    merged: dict[str, str] = {}
+    for test in {t for b in bases for t in b}:
+        bodies = {b.get(test) for b in bases}
+        body = bodies.pop() if len(bodies) == 1 else None
+        merged[test] = body or _NO_BASE
+    return merged
 
 
 def classify(
@@ -243,19 +263,15 @@ def _audit(
         msg = f'{merge}: {len(parents)} parents -- the audit judges a two-parent merge; merge lanes one at a time'
         raise MergeAuditError(msg)
     bases = _git(root, 'merge-base', '--all', *parents).decode().split()
-    if len(bases) != 1:
-        msg = f'{merge}: {len(bases)} merge bases (a criss-cross) -- merge through one integration branch instead'
-        raise MergeAuditError(msg)
-    shas = (bases[0], *parents, merged)
-    trees = [_sources(root, sha, roots) for sha in shas]
-    rows = [_scan(t) for t in trees]
+    shas = (*parents, merged, *bases)
+    rows = [_scan(_sources(root, sha, roots)) for sha in shas]
     if not any(rows):
         msg = f'{merge}: no test under {list(roots)} in any of its trees -- a vacuous audit is refused'
         raise MergeAuditError(msg)
     counts = [Counter(name for _, name, _ in r) for r in rows]
     shared = {name for c in counts for name, n in c.items() if n > 1}
-    base, ours, theirs, merged = (_keyed(r, shared) for r in rows)
-    return classify(base, ours, theirs, merged)
+    ours, theirs, result, *based = (_keyed(r, shared) for r in rows)
+    return classify(common_base(based), ours, theirs, result)
 
 
 def pending(root: Path, message: str) -> tuple[str, ...]:

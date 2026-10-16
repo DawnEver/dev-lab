@@ -136,6 +136,10 @@ push admission row checks the same standing when the holder pushes it.
   `LOST`, `ALTERED` or `CONFLICTED`, and each is named in the merge commit message:
   `Merge-Audit: <KIND> <test> -- <reason>`. A clean merge needs no line; a line naming no real deviation is
   refused.
+- The base only refines the parents: it tells a side's deliberate deletion or edit from a resolution that
+  dropped or reverted it. A criss-cross merge (several merge bases -- every downstream integration after
+  the first) is audited like any other: per test, bases that agree give it that base, bases that disagree
+  give it none, and a test with no base expects a body only where both parents hold the same one.
 - It runs as the family base's `merge-audit` commit-msg hook, on both `git merge` and the commit that
   concludes a conflicted one, and refuses with the unnamed list and the remedy.
 - Integrate by merge only: a rebase leaves no merge commit to audit.
