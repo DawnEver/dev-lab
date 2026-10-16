@@ -190,7 +190,7 @@ def test_github_run_records_are_assets_of_one_release(server, tmp_path: Path) ->
     answer('POST', f'{HAPI}/releases', (201, {'id': 77}))
     asset = {'id': 5, 'name': record.name, 'browser_download_url': 'https://github.com/d/5'}
     answer('POST', f'{HAPI}/releases/77/assets', (201, asset))
-    answer('GET', f'{HAPI}/releases/77/assets', (200, [asset]))
+    answer('GET', f'{HAPI}/releases/77/assets', (200, []), (200, [asset]))  # none held yet, then the listing
     loop = Loopback(server)
     built = client(GITHUB, loop)
     assert attach(built, record).url == 'https://github.com/d/5'
