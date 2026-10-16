@@ -165,8 +165,14 @@ newest commit lacks, or a request issue.
   (`classes_by_ref`, ordered, first match: `feat/*` and `fix/*` are `feature`, `lane/*` is `branch` by
   default; a branch no pattern matches is not served), and every open issue labelled `forge:request`
   (`request`: a body naming `producer = "<name>"` and `sha = "<40-hex>"`; the producer is declared at that
-  sha under `[tool.lab_commons.requests.<name>]` with `argv` and its need-set `needs`, admitted like a part
-  and claimed on context `request/<n>` -- `lab_commons.dev.forgerequest`). A ref's tip is one candidate per
+  sha under `[tool.lab_commons.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
+  `mem_gb`, `wall_h` (an unsized row is refused), admitted like a part and claimed on context `request/<n>`
+  -- `lab_commons.dev.forgerequest`). Publish one with `forge request <producer> --sha <sha>`, which refuses
+  a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
+  branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
+  git source of its lock or submodules is unreachable here, and is told once on its issue after
+  `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and the
+  requester closes it. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names the integrator's
   children ([the integrator](integrator.md)).
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
