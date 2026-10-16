@@ -28,6 +28,7 @@ from lab_commons.box import Capacity, Demand, Refused, command, read_ended
 from lab_commons.box.run import INSIDE_ENV
 from lab_commons.compute import learned
 from lab_commons.dev.forgedemand import refresh_checkout
+from lab_commons.dev.platformparts import origin_url
 from lab_commons.hpc.config import Cost
 
 __all__ = [
@@ -145,11 +146,9 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
 
 
 def _repo(root: Path) -> str:
-    from lab_commons.dev.platformparts import origin_url  # noqa: PLC0415 -- git only when boxing
-
     try:
         return origin_url(root)
-    except Exception:  # noqa: BLE001 -- no origin is no learned table, never a crashed verify
+    except OSError:  # no origin is no learned table, never a crashed verify
         return ''
 
 

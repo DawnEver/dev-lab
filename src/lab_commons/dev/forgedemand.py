@@ -20,8 +20,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.compute import learned
+from lab_commons.dev.forgeoutbox import unprompted_client
 from lab_commons.dev.forgerecords import listing
 from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.dev.platformparts import origin_url
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
@@ -59,11 +61,8 @@ def refresh(repo: str, client: Client | None, *, limit: int = LIMIT) -> int:
 
 def refresh_checkout(root: Path, *, limit: int = LIMIT) -> int:
     """:func:`refresh` for the checkout at *root*: its origin URL and its unprompted forge client."""
-    from lab_commons.dev.forgeoutbox import unprompted_client  # noqa: PLC0415 -- the forge client only when asked
-    from lab_commons.dev.platformparts import origin_url  # noqa: PLC0415
-
     try:
         repo, client = origin_url(root), unprompted_client(root)
-    except Exception:  # noqa: BLE001 -- no origin or no credential is no forge, never a crashed run
+    except OSError:  # no origin, an unreadable remote or no credential: no forge, never a crashed run
         return 0
     return refresh(repo, client, limit=limit)

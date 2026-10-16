@@ -39,6 +39,7 @@ from _box_fake import ended
 
 from lab_commons.box import BOX_ENV, GB, Capacity, Refused, write_ended
 from lab_commons.box.run import INSIDE_ENV
+from lab_commons.compute import learned
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -1305,8 +1306,6 @@ def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure
 
     PLANTED CONTROL: a repository with nothing measured falls back to the per-task floor, never to 8 GB.
     """
-    from lab_commons.compute import learned  # noqa: PLC0415
-
     (tmp_path / 'tests' / 'u').mkdir(parents=True)
     for name in ('test_a.py', 'test_b.py', 'test_new.py'):
         (tmp_path / 'tests' / 'u' / name).write_text('', encoding='utf-8')
