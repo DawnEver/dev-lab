@@ -501,7 +501,7 @@ def test_an_orphan_array_is_named_by_its_own_job_id_never_its_pending_range(tmp_
     assert asked == [f'squeue -h --me -n run-{"a" * 12} -o %F']
 
 
-def test_a_run_held_by_an_account_limit_is_given_back_cancelled_and_its_ask_learned(
+def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learned(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Measured 2026-10-16: 52 tasks of 352 GB pended an hour on ``AssocGrpMemLimit``, 0 running, on one host.
