@@ -34,10 +34,12 @@ and the log's tail -- a failure is on record, never silent.
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box.machine import RESOURCE_NAME
+from lab_commons.dev.forge import _GIT
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
@@ -49,6 +51,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'CONTEXT_PREFIX',
+    'LOCK_FILE',
     'Declared',
     'UndeclaredRequest',
     'declared_request',
@@ -57,6 +60,7 @@ __all__ = [
     'request_context',
     'result',
     'settle',
+    'unreproducible',
 ]
 
 #: The status context prefix of a request job; a part's is ``tests/``.
@@ -144,6 +148,22 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
 
 def _positive(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+#: The lock a request's sha must commit: it pins every dependency revision the tree is built from.
+LOCK_FILE: Final = 'uv.lock'
+
+
+def unreproducible(root: Path, sha: str) -> str:
+    """Why a tree built at *sha* would not be the same on every host, ``''`` when it would.
+
+    A sha committing no :data:`LOCK_FILE` resolves its floating dependencies to whatever they are on the
+    day, on the host: two runs of one request build two environments, so it is refused, never degraded.
+    """
+    done = subprocess.run(
+        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{LOCK_FILE}'], capture_output=True, check=False
+    )
+    return '' if done.returncode == 0 else f'{sha[:12]} commits no {LOCK_FILE}: a request pins every dependency'
 
 
 def result(code: int, host: str) -> tuple[str, str]:

@@ -55,8 +55,16 @@ def _one_core(_wanted: object, needs: frozenset[str]) -> Demand:
     return Demand({'cpu': 1, **dict.fromkeys(needs, 1.0)})
 
 
-def _request(repo: Path, tips: dict[str, str], producer: str) -> str:
+def _locked(repo: Path) -> None:
+    """Stage a ``uv.lock``: the next declared commit pins every dependency revision (R1)."""
+    (repo / 'uv.lock').write_text('version = 1', encoding='utf-8')
+    run_git(repo, 'add', 'uv.lock')
+
+
+def _request(repo: Path, tips: dict[str, str], producer: str, *, locked: bool = True) -> str:
     """Pin a request (issue 9) to the commit declaring GOLDENS; the integration head moves past it, DONE."""
+    if locked:
+        _locked(repo)
     pinned = _declare(repo, tips, GOLDENS)
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'after')
     head = git_out(repo, 'rev-parse', 'HEAD')
@@ -248,3 +256,19 @@ def test_a_request_run_is_learned_under_its_producer_name(tmp_path: Path) -> Non
     url = origin_url(repo)
     assert run_of(url, 'femm_goldens', {'femm', 'windows'}) == Run(4.0, 7200.0, 3600.0)
     assert run_of(url, LOCAL, {'femm', 'windows'}) is None
+
+
+def test_a_request_at_a_sha_without_a_lock_is_refused_by_name(server, tmp_path: Path) -> None:
+    """R1: an unlocked sha builds whatever its floating dependencies resolve to that day -- not reproducible.
+
+    PLANTED CONTROL: the same request at a locked sha is claimed (the first test of this file).
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _request(repo, tips, 'femm_goldens', locked=False)
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
+    assert report.claimed == ()
+    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
+    assert (posted['body']['state'], posted['body']['context']) == ('error', request_context(9))
+    assert posted['body']['description'].startswith(f'{REFUSED_AT_COMMIT} {sha[:12]} commits no uv.lock')

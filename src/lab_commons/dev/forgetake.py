@@ -22,7 +22,13 @@ from pathlib import Path
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
-from lab_commons.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
+from lab_commons.dev.forgerequest import (
+    Declared,
+    UndeclaredRequest,
+    declared_request,
+    request_context,
+    unreproducible,
+)
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import Client
@@ -140,6 +146,8 @@ class ClaimPass:
         try:
             declared = self._declared(wanted)
         except UndeclaredRequest as why:
+            return one, f'{REFUSED_AT_COMMIT} {why}'
+        if why := unreproducible(self.root, one.sha):
             return one, f'{REFUSED_AT_COMMIT} {why}'
         if self.serve.hpc:
             self.unservable.add(wanted.key)

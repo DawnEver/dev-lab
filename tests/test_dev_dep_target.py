@@ -320,3 +320,27 @@ def test_a_lane_cannot_bootstrap_an_unrelated_repositories_main_environment(tmp_
 
     with pytest.raises(ValueError, match='main'):
         dep.main(['--bootstrap', str(foreign)], cwd=lane, run=run)
+
+
+def test_a_bootstrap_of_a_locked_commit_builds_exactly_its_lock(tmp_path) -> None:
+    """R1: a tree at a sha is THAT sha's environment -- `uv sync --frozen`, nothing re-resolved.
+
+    PLANTED CONTROL: the same project without a lock re-resolves its floating git requirement.
+    """
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n',
+        encoding='utf-8',
+    )
+    calls = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=0)
+
+    assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
+    assert '--upgrade-package' in calls[-1]
+    assert '--frozen' not in calls[-1]
+    (tmp_path / 'uv.lock').write_text('version = 1\n', encoding='utf-8')
+    assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
+    assert '--frozen' in calls[-1]
+    assert '--upgrade-package' not in calls[-1]
