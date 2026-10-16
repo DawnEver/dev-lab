@@ -136,6 +136,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
+* :mod:`lab_commons.dev.forgeintent` -- a local run's claim journaled before it runs; a restart re-attaches to it.
 * :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
 * :mod:`lab_commons.dev.forgecarry` -- REACH-CARRY: an outcome stands at a descendant whose diff misses its
   test's footprint; per outcome on a cluster run, per part when every test carries.

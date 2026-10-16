@@ -62,6 +62,7 @@ from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target
 from lab_commons.dev.forgeclaim import Work, forge_now
+from lab_commons.dev.forgeintent import Intent, forget, journal
 from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgestatus import Status, status_history, status_post
@@ -164,23 +165,32 @@ def produce(
     (:func:`boxed`, sized against *capacity*, default this box's). At each heartbeat the ref is
     renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
     """
+    journal(root, _intent(item))  # intent before action: a restarted host re-attaches (forgeintent)
     try:
         tree = open_tree(root, item.sha, item.context)
     except TreeFailed as failed:
         _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
         say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
+        forget(root, item.sha, item.context)
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
         argv = (str(tree.python), *item.argv)
         record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
         held = boxed(item, argv, (capacity or Capacity.read)(), record)
-        return _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
-                    say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
-                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
-                    meter=meter)  # fmt: skip
+        produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
+                        say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
+                        beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
+                        meter=meter)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
+    forget(root, item.sha, item.context)  # released: only a run that never got here is re-attached
+    return produced
+
+
+def _intent(item: Work, pid: int = 0) -> Intent:
+    holder = item.holder.description() if item.holder is not None else ''
+    return Intent(item.ref, item.sha, item.platform, item.context, holder, pid)
 
 
 def _run(
@@ -218,6 +228,7 @@ def _run(
         encoding='utf-8',
         errors='replace',
     )
+    journal(root, _intent(item, proc.pid or 0))  # the pid a restarted host re-attaches to
     pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say, heard), daemon=True)
     pump.start()
     started = clock()

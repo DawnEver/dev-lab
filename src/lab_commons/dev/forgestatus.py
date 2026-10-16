@@ -29,11 +29,13 @@ import dataclasses
 import json
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.dev._forge_journal import Durable, Probe
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 from lab_commons.dev.verdict import Outcome
@@ -109,7 +111,13 @@ def status_post(
     body = {'state': state, 'context': context, 'description': description[:DESCRIPTION_LIMIT]}
     if target_url:
         body['target_url'] = target_url
-    return _status(client.call('POST', f'{client.repo}/statuses/{sha}', body))
+    listed = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
+    durable = Durable(
+        key=f'status {sha} {context}',  # the newer status of one commit and context supersedes a queued older one
+        probe=Probe(listed, {name: value for name, value in body.items() if name != 'state'}),
+        until=time.time() if state == 'pending' else 0.0,  # a pending status is a lease: worth only its answer
+    )
+    return _status(client.call('POST', f'{client.repo}/statuses/{sha}', body, durable=durable))
 
 
 def status_list(client: Client, sha: str) -> tuple[Status, ...]:

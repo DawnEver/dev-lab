@@ -113,6 +113,7 @@ from lab_commons.dev.forgehosts import HostCard, card_host, card_owners, read_ca
 from lab_commons.dev.forgeintegration import alarms as sync_alarms
 from lab_commons.dev.forgeintegration import tick as integration_tick
 from lab_commons.dev.forgeintegration import venues
+from lab_commons.dev.forgeintent import reattach
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, demote_unreachable, produce
 from lab_commons.dev.forgepulls import ListingIncomplete
@@ -189,6 +190,8 @@ def serve(
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
     beat_s = float(table.get('tick_minutes', 5)) * 60
     fetched = locked_fetch(fetch)  # the tick and every producer fetch into one repository
+    for line in reattach(root, client(root), lease=lease, say=say):  # runs a dead serve left journaled
+        say(line)
     host_rounds = Rounds(
         root, repo, alarm, runs, slurm=slurm, say=say, sized=cluster_demand(repo),
         supplied=functools.partial(supplied, name=name, standing=standing),
