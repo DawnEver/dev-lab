@@ -22,7 +22,8 @@ The invariants refused here by name, with NO network call beyond the push itself
   (:func:`lab_commons.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
   Judged from ``[tool.lab_commons.integrator] merges_only_since`` forward: no retroactive check.
 
-Every ref is judged by the declaration its pushed tip carries, never the working tree's. There is no bypass:
+Every ref is judged by the declaration its pushed tip carries (a deletion by ``HEAD``'s), never the working
+tree's. There is no bypass:
 a guard that cannot judge (no branch set at that tip) refuses.
 """
 
@@ -146,14 +147,14 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
 def refusals(root: Path, lines: str) -> list[str]:
     """Every refusal for the push *lines* describe; local reads only.
 
-    Each ref is judged by the declaration its PUSHED tip carries (the old tip's, for a deletion) -- never the
-    working tree's, which may be any branch or none.
+    Each ref is judged by the declaration its PUSHED tip carries (``HEAD``'s for a deletion, which pushes no
+    content; never the deleted ref's old tip, which may predate the table) -- never the working tree's.
     """
     found: list[str] = []
     for fields in (line.split() for line in lines.splitlines()):
         if len(fields) != _FIELDS or not fields[2].startswith(_HEADS):
             continue
-        at = fields[3] if _zero(fields[1]) else fields[1]
+        at = 'HEAD' if _zero(fields[1]) else fields[1]
         try:
             declared = branchset_at(root, at)
             policy = policy_at(root, at)

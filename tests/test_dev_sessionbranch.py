@@ -136,6 +136,23 @@ def test_deleting_a_session_branch_is_refused(repo: Path) -> None:
     assert _remote(repo, 'feat/s')
 
 
+def test_a_deletion_reads_the_branch_set_from_head_never_the_deleted_tip(repo: Path) -> None:
+    """A deletion pushes no content: the deleted ref's old tip predating the table cannot refuse it.
+
+    PLANTED control: the same HEAD declaration still refuses deleting a declared session branch.
+    """
+    empty = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'  # git's empty tree: no pyproject.toml at all
+    _git(repo, 'branch', 'old/x', _git(repo, 'commit-tree', empty, '-m', 'chore: predates the table'))
+    _git(repo.parent / 'origin.git', 'fetch', str(repo), 'old/x:refs/heads/old/x')
+    assert _remote(repo, 'old/x')
+    done = _push(repo, '--delete', 'old/x')
+    assert done.returncode == 0, done.stderr
+    assert not _remote(repo, 'old/x')
+    refused = _push(repo, '--delete', 'feat/s')
+    assert P3 in refused.stderr
+    assert _remote(repo, 'feat/s')
+
+
 # --- P4 INTEGRATION-IS-MERGES-ONLY ------------------------------------------------------------------
 
 
