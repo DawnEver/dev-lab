@@ -107,6 +107,12 @@ class _Trees:
         return f'tree {sha[:12]}: removed'
 
 
+@pytest.fixture(autouse=True)
+def _a_checkout(tmp_path: Path) -> None:
+    """Serve runs in a checkout: its run journal and outbox live in the main checkout git names."""
+    run_git(tmp_path, 'init', '-q')
+
+
 def _client(_root: Path) -> SimpleNamespace:
     return SimpleNamespace(answered=format_datetime(FORGE_NOW, usegmt=True), whoami=lambda: 'alice')
 

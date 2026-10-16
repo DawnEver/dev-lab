@@ -210,6 +210,36 @@ def test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted(home: Path) -> N
     assert 'scancel' in alarms[0].body
 
 
+class _CrashAtSbatch(_Slurm):
+    """``sbatch`` queued the jobs, then the login node died before ``hpc`` wrote the run state."""
+
+    def submit(self, _run: forgerun.Run) -> list[str]:
+        self.queue = ['555']
+        msg = 'the login node went down mid-submit'
+        raise ConnectionResetError(msg)
+
+
+def test_the_submit_is_journaled_before_sbatch_so_a_crash_mid_submit_is_resumed_not_orphaned(home: Path) -> None:
+    """D19: the run file says ``submitting`` BEFORE sbatch; jobs found under it are ours, cancelled and resubmitted.
+
+    PLANTED CONTROL: :func:`test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted` -- the same jobs under a
+    run never journaled as submitting still alarm and wait for a human.
+    """
+    store, crashing, alarms = _Store(), _CrashAtSbatch(home / 'r'), []
+    _start(home, store)
+    with pytest.raises(ConnectionResetError):
+        _tick(store, crashing)
+    (journaled,) = forgerun.live('https://f/o/r.git')
+    assert journaled.phase == forgerun.SUBMITTING, 'the intent was on disk before sbatch was called'
+    slurm = _Slurm(home / 'r')
+    slurm.queue = list(crashing.queue)
+    after = _tick(store, slurm, alarms=alarms)
+    assert after is not None
+    assert (after.phase, after.job_ids, slurm.submits) == (forgerun.SUBMITTED, ('4242',), 1)
+    assert slurm.cancelled == ['555'], 'the interrupted submit is cancelled, never left running twice'
+    assert alarms == [], 'no human is needed: the journal says the jobs were ours'
+
+
 def test_another_login_host_of_this_account_holding_it_live_is_left_alone(home: Path) -> None:
     """ONE HOST PER ACCOUNT: flock on GPFS is not cross-host, so the idempotent state is the guard."""
     store, slurm = _Store(), _Slurm(home / 'r')

@@ -57,6 +57,12 @@ FEMM_HOST = Supply(
 PLAIN_HOST = Supply('G', Resources(cpu=4.0), frozenset({'cpu', 'windows'}))
 
 
+@pytest.fixture(autouse=True)
+def _a_checkout(tmp_path: Path) -> None:
+    """Serve runs in a checkout: its run journal and outbox live in the main checkout git names."""
+    run_git(tmp_path, 'init', '-q')
+
+
 def _one_core(_wanted: object, needs: frozenset[str]) -> Demand:
     """A request measured at one core, one seat of each need: it fits a four-core host."""
     return Demand({'cpu': 1, **dict.fromkeys(needs, 1.0)})
