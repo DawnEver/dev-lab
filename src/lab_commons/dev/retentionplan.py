@@ -33,6 +33,12 @@ queue (``None``) keeps every tree. NOT "no record yet": measured 2026-10-15 on t
 states in 10 had no record -- runs SUPERSEDED by a newer commit or released, which nobody will ever gather --
 and that clause kept 79 trees of 81 and every env.
 
+THE COLLECT CACHE (``collect/``, :mod:`lab_commons.hpc.collect`) is one ``<key>.json`` per collection key,
+and the key moves with every build key, so an old key is never read again. Its budget is ``collect_files``:
+the newest that many key files stay; anything else there -- an older key, a dead writer's ``.tmp``, a
+directory of the retired one-file-per-test layout (~0.75-1 M files per account, measured 2026-10-16) --
+goes as ``collect-over-budget`` once older than ``min_age_hours``.
+
 THE OTHER RULES. ``run-not-a-carry-source``: a recorded run of THIS serve's repo no origin branch tip
 carries from (:func:`carry_sources`, the carry's own selection) -- its state goes; the kept sources are
 the :attr:`Plan.harder` runs, removed oldest first only under quota pressure. ``run-abandoned``: no record,
@@ -93,6 +99,7 @@ class Policy:
     uv_prune: bool = True
     pressure: float = 0.85
     target: float = 0.70
+    collect_files: int = 16
 
 
 def load_policy(table: Mapping[str, Any]) -> Policy:
@@ -228,6 +235,7 @@ def cluster_plan(
             if tree.name not in flying
         ]
     doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
+    doomed += _collect_over_budget(ci / 'collect', policy, now)
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
     doomed += _home_rules(home, policy, now)
     hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
@@ -294,6 +302,14 @@ def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, policy: 
             if e.name.split('.')[0] not in named and _age(e, now) >= young
         ]
     return out
+
+
+def _collect_over_budget(store: Path, policy: Policy, now: datetime) -> list[Doomed]:
+    """Every entry of ``collect/`` but its newest ``collect_files`` key files, once past ``min_age_hours``."""
+    keys = sorted((e for e in _entries(store) if e.suffix == '.json' and e.is_file()), key=lambda e: e.stat().st_mtime)
+    kept = set(keys[-policy.collect_files :] if policy.collect_files > 0 else [])
+    young = timedelta(hours=policy.min_age_hours)
+    return [Doomed(e, 'collect-over-budget') for e in _entries(store) if e not in kept and _age(e, now) >= young]
 
 
 def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:

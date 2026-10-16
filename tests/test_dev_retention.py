@@ -412,3 +412,17 @@ def test_an_old_recorded_run_naming_no_builds_is_no_reference(home: Path) -> Non
     doomed = _doomed(_plan(home))
     assert doomed['e2'] == 'env-unreferenced', 'only the old run named it, by no key'
     assert 'e1' not in doomed, 'PLANTED CONTROL: the newest run naming builds still keeps its env'
+
+
+def test_collect_keeps_its_newest_key_files_within_budget_and_nothing_else(home: Path) -> None:
+    """``collect/`` is a cache: its newest ``collect_files`` key files stay, a young one always, the rest go."""
+    store = home / 'ci' / 'collect'
+    for i in range(4):
+        _touch(store / f'k{i}.json', OLD + timedelta(hours=i))
+    _dir(store / 'perfile', OLD)  # the retired one-file-per-test layout: a directory is never a key
+    _touch(store / 'k9.json.123.tmp', OLD)  # a writer that died before its replace
+    _touch(store / 'k8.json', YOUNG)  # being written: within min_age, kept beyond the budget
+    plan = cluster_plan(home, Policy(collect_files=2, uv_prune=False), now=NOW, live={'f1'}, repo='r', sources=SOURCES)
+    doomed = {d.path.name: d.rule for d in plan.doomed if d.path.parent == store}
+    over = 'collect-over-budget'
+    assert doomed == {'k0.json': over, 'k1.json': over, 'k2.json': over, 'perfile': over, 'k9.json.123.tmp': over}
