@@ -276,10 +276,23 @@ def _labels(raw: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
-    """Open issues carrying *label*, raw (pull requests excluded) -- one call shape on gitea and GitHub."""
-    query = client.backend.list_query.format(state='open', limit=50) + '&labels=' + urllib.parse.quote(label)
-    listed = client.call('GET', f'{client.repo}/issues?{query}')
-    return tuple(raw for raw in listed if not is_pull(raw) and label in _labels(raw))
+    """Open issues carrying *label*, raw (pull requests excluded) -- every page, one call shape on both forges.
+
+    A page shorter than :data:`ISSUE_PAGE` is the last: request #51 is as visible as request #1.
+    """
+    query = client.backend.list_query.format(state='open', limit=ISSUE_PAGE) + '&labels=' + urllib.parse.quote(label)
+    found: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        listed = client.call('GET', f'{client.repo}/issues?{query}&page={page}') or []
+        found += [raw for raw in listed if not is_pull(raw) and label in _labels(raw)]
+        if len(listed) < ISSUE_PAGE:
+            return tuple(found)
+        page += 1
+
+
+#: Issues read per page of :func:`labelled_issues`.
+ISSUE_PAGE: Final = 50
 
 
 _REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)

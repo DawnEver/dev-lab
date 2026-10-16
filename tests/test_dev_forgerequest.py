@@ -34,7 +34,7 @@ from lab_commons.dev.forgerequest import (
     unreachable_source,
     unserved,
 )
-from lab_commons.dev.forgeschedule import NOT_ADMITTED
+from lab_commons.dev.forgeschedule import NOT_ADMITTED, labelled_issues
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.hpc.declared import OutdatedKit
 
@@ -463,3 +463,17 @@ def test_a_request_is_published_only_when_a_host_could_reproduce_it(tmp_path: Pa
     assert forge.labels == {'forge:request': 1, DONE_LABEL: 2}, 'the labels it needs, created'
     assert ('CREATE', f'request femm_goldens at {sha[:12]}', request_body('femm_goldens', sha)) in forge.calls
     assert forge.calls[-1] == ('POST', '/r/issues/9/labels', {'labels': [1]})
+
+
+def test_every_page_of_labelled_issues_is_read() -> None:
+    """P1: only the first 50 open issues were read, so request #51 was invisible."""
+    pages = {
+        1: [{'number': n, 'labels': [{'name': 'forge:request'}]} for n in range(50)],
+        2: [{'number': 50, 'labels': [{'name': 'forge:request'}]}],
+    }
+
+    def call(_method: str, path: str) -> list:
+        return pages.get(int(path.rsplit('page=', 1)[1]), [])
+
+    client = SimpleNamespace(backend=GITEA, repo='/r', call=call)
+    assert [raw['number'] for raw in labelled_issues(client, 'forge:request')] == list(range(51))
