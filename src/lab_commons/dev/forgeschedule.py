@@ -256,14 +256,23 @@ def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -
 
     A trailer or a request body is text anyone can write; the forge records who authored the PR or the
     issue, and the hosts issue who authored each card
-    (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`).
+    (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`). A part's unvouched trailer
+    is dropped; a REQUEST's unvouched ``host`` pin is REFUSED by name (``refused``), never silently run unpinned.
     """
-    return tuple(
-        one
-        if not one.origin_host or one.origin in owners.get(one.origin_host, ())
-        else dataclasses.replace(one, origin_host='')
-        for one in found
+    return tuple(_vouched(one, owners) for one in found)
+
+
+def _vouched(one: Candidate, owners: Mapping[str, Collection[str]]) -> Candidate:
+    if not one.origin_host or one.origin in owners.get(one.origin_host, ()):
+        return one
+    if one.kind != REQUEST:
+        return dataclasses.replace(one, origin_host='')
+    publisher = ', '.join(sorted(owners.get(one.origin_host, ()))) or 'nobody'
+    why = (
+        f'host = "{one.origin_host}" pins a host card {one.origin or "its author"} does not publish '
+        f'(published by {publisher}): drop the pin, or ask its publisher'
     )
+    return dataclasses.replace(one, origin_host='', refused=why)
 
 
 def _tips(root: Path) -> dict[str, str]:

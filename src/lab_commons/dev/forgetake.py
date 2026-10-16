@@ -153,7 +153,7 @@ class ClaimPass:
         refused on its context. This host's -- a cluster seat, an author it does not run for off the
         trunks, a git source it cannot fetch -- leave it waiting, named, for a host that can.
         """
-        why, declared = unserved(self.root, one.sha), None
+        why, declared = wanted.refused or unserved(self.root, one.sha), None
         try:
             declared = self._declared(wanted)
         except UndeclaredRequest as undeclared:

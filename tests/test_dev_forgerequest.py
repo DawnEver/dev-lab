@@ -477,3 +477,19 @@ def test_every_page_of_labelled_issues_is_read() -> None:
 
     client = SimpleNamespace(backend=GITEA, repo='/r', call=call)
     assert [raw['number'] for raw in labelled_issues(client, 'forge:request')] == list(range(51))
+
+
+def test_a_host_pin_its_author_does_not_publish_is_refused_by_name(server, tmp_path: Path) -> None:
+    """S6: a ``host = "..."`` pin the forge cannot vouch for was dropped SILENTLY; it is now refused, named."""
+    repo, tips = _origin(tmp_path)
+    sha = _request(repo, tips, 'femm_goldens')
+    _ask('femm_goldens', sha, body='host = "H2"', author='bob')
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core, owners={'H2': {'carol'}})
+    assert report.claimed == ()
+    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
+    assert posted['body']['description'] == (
+        f'{REFUSED_AT_COMMIT} host = "H2" pins a host card bob does not publish (published by carol): '
+        'drop the pin, or ask its publisher'
+    )
