@@ -35,6 +35,8 @@ class Policy:
     #: INTEGRATION-IS-MERGES-ONLY holds for every first-parent commit of the integration branch after this sha
     #: (:mod:`lab_commons.dev.sessionbranch`); a push that CREATES the branch is refused while it is ``''``.
     merges_only_since: str = ''
+    #: Days a ``uv.lock`` may go without an upgrade before a push is refused (:mod:`lab_commons.dev.lockcheck`).
+    lock_max_age_days: int = 7
 
 
 def load_policy(root: Path) -> Policy:

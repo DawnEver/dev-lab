@@ -80,7 +80,7 @@ pruned_paths = ['.claude/worktrees']
 # How the cluster builds this repo's env, read at the commit being judged (lab_commons.hpc.builds).
 # It installs the project itself: the venv must import lab_commons.dev.envkey to report its env key.
 [tool.lab_commons.hpc]
-install = "uv sync --all-extras"
+install = "uv sync --frozen --all-extras"
 
 # The run record's root (lab_commons.dev.platformparts).
 [tool.lab_commons.parts]
@@ -125,9 +125,19 @@ always_run = true
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
+# The branch the scheduled lock upgrade commits on (lab_commons.dev.lockupgrade); the integrator merges it when green.
+update = 'update/lock'
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
 # merged undeclared origin branches idle >= grace_hours (lab_commons.dev.branchprune).
 prune_merged = true
+
+# The scheduled `uv lock --upgrade` (D20): any serve tick opens it daily at origin/integrate/main.
+[tool.lab_commons.requests.lock_upgrade]
+argv = ["-m", "lab_commons.dev.lockupgrade"]
+needs = []
+cpu = 1
+mem_gb = 2
+wall_h = 1
 
 [tool.lab_commons.doors]
 # This repo's exits, keyed by deny-rule ID. The agent guard runs from whichever project a session

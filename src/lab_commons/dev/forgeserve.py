@@ -15,7 +15,8 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
-on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`)
+on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`),
+open the scheduled lock upgrade when due (:func:`lab_commons.dev.lockupgrade.schedule`)
 and tidy the repo's issues (``forge tidy``, :func:`lab_commons.dev.forgetidy.tidy`) -- every served repo, every tick;
 run the storage retention pass, every tick (:mod:`lab_commons.dev.retention`; still over quota raises a
 ``storage`` alarm); flush the outbox again.
@@ -90,7 +91,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -100,7 +101,7 @@ from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.config import section
-from lab_commons.dev import forgerun, forgeship, retention
+from lab_commons.dev import forgerun, forgeship, lockupgrade, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm, sound
@@ -206,6 +207,7 @@ def serve(
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    _upgrade(root, client(root), today=clock().date(), say=say)
     _hygiene(root, client(root), say=say)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
@@ -291,6 +293,15 @@ def _tidy(
         forgeship.tidy(root, client(root), account=seat.account, say=say)
     except (OSError, ValueError) as why:
         alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
+
+
+def _upgrade(root: Path, built: Client, *, today: date, say: Callable[[str], None]) -> None:
+    """Open the lock upgrade request when due (:func:`lab_commons.dev.lockupgrade.schedule`); a failure is said."""
+    try:
+        if line := lockupgrade.schedule(root, built, label=load_schedule(root).request_label, today=today):
+            say(f'[serve] lock upgrade: {line}')
+    except (ForgeCallFailed, OSError, ValueError) as failed:
+        say(f'[serve] the lock upgrade was not scheduled: {failed}')
 
 
 def _hygiene(root: Path, built: Client, *, say: Callable[[str], None]) -> None:

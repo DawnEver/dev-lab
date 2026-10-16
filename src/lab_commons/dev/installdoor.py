@@ -2,9 +2,10 @@
 
 THE DECLARATION THIS DEFENDS. The family pins nothing first-party: ``lab-commons @
 git+https://<forge-host>/<owner>/lab-commons.git`` carries no ``rev=``, no
-``tag=``, and the lock file is deliberately NOT tracked (user ruling 2026-09-17). The requirement
-therefore SAYS "whatever that URL holds now", and a repo held at anything older stops being told
-when a shared rule moved. That is a declaration, and this module is the mechanism that makes it true.
+``tag=``. Since decision D8 (2026-10-16) the lock is COMMITTED and a scheduled ``uv lock --upgrade``
+moves it (:mod:`lab_commons.dev.lockupgrade`); an install door outside that schedule must still not
+serve a resolution older than the declaration says. That is a declaration, and this module is the
+mechanism that makes it true.
 
 THE DEFECT, MEASURED 2026-09-17 ACROSS FOUR CHECKOUTS. Three reverts in one session, twice misread
 as two agents fighting over one venv. ``consumer-b`` went dev35 -> dev26 -> dev40 -> dev26 while the
@@ -343,8 +344,7 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
         msg = (
             f'these install doors serve whatever uv.lock pins rather than the declared build of '
             f'{", ".join(names)}:\n  {listed}\n'
-            f'The lock is an untracked per-box artefact, so what they deliver is whatever the last '
-            f'resolution on THIS box left behind. Two remedies, and which one applies is decided by '
+            f'What they deliver is whatever the lock last resolved. Two remedies, and which one applies is decided by '
             f'whether the command is supposed to move the environment at all: a real install door '
             f'adds `--upgrade-package {names[0]}` (which implies --refresh-package), and a git hook '
             f'or a tool invocation adds `--no-sync`, because a hook that reinstalls the environment '

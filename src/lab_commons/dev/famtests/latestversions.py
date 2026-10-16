@@ -60,12 +60,9 @@ placement rule; what stays here is the verdict -- floors, declarations, refusals
 boundary is :mod:`lab_commons.dev.famtests.depdoor`'s against :mod:`lab_commons.dev.dep`, which has
 the same shape and no readings file either, and the import runs one way as it does there.
 
-WHAT THIS DOES NOT PROVE, and the first half of this is what a reader most needs. ``uv.lock`` is a
-**per-checkout, UNTRACKED cache** rather than a shared declaration -- gitignored family-wide by user
-ruling, with :func:`lab_commons.dev.doorcensus.assert_no_tracked_lock` refusing any repo that commits
-one -- so the whole of arm one and arm two is a guard on LOCAL resolved state. It cannot speak for
-another checkout: two clones of one repo can hold two different locks, and in a fresh checkout with
-no lock at all there is no resolved state to judge, which is why both populations are floored and an
+WHAT THIS DOES NOT PROVE, and the first half of this is what a reader most needs. ``uv.lock`` is
+COMMITTED by every family repo (decision D8), so arm one and arm two judge the checked-out commit's
+resolved state; a checkout with no lock has no resolved state to judge, which is why both populations are floored and an
 absent lock REFUSES rather than reporting clean. The only shared file here is the baseline, and that
 is what makes two boxes' answers comparable at all. Nor does a green run say the fetched answer is
 CORRECT -- ``info.version`` is whatever PyPI calls latest and ``ls-remote`` reports a revision with no

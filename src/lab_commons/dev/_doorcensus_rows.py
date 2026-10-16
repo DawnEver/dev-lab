@@ -80,8 +80,7 @@ SHARED: tuple[SharedDoor, ...] = (
             '`--no-sync`, which is also the correct fix on its own terms: `uv run` with no `--extra` '
             're-syncs WITHOUT the extras the preceding step just installed, and that is the prune '
             'shape measured taking one environment from 113 distributions to 30. The remaining '
-            '`uv sync` is survivable only because no `uv.lock` is ever checked out, which '
-            '`assert_no_tracked_lock` asserts rather than assumes.'
+            '`uv sync` serves the committed `uv.lock` (D8), which the scheduled upgrade keeps latest.'
         ),
     ),
 )
