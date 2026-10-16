@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
 
+from lab_commons.dev._forge_journal import Durable, Probe, since
 from lab_commons.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, is_pull, pull_of
 
 if TYPE_CHECKING:
@@ -139,7 +140,10 @@ def comment_upsert(
     body = f'{line}\n{text}'
     found = next((comment for comment in comment_list(client, number) if line in comment.body), None)
     if found is None:
-        return 'created', comment_of(client.call('POST', f'{client.repo}/issues/{number}/comments', {'body': body}))
+        path = f'{client.repo}/issues/{number}/comments'
+        listed = f'{path}?since={since(client.clock())}'
+        made = client.call('POST', path, {'body': body}, durable=Durable(probe=Probe(listed, {'body': body})))
+        return 'created', comment_of(made)
     if found.body.strip() == body.strip():
         return 'unchanged', found
     return 'updated', comment_of(client.call('PATCH', f'{client.repo}/issues/comments/{found.id}', {'body': body}))

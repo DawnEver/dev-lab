@@ -336,7 +336,7 @@ class _Forge:
 
     backend = GITEA
 
-    def call(self, method: str, path: str, body: object = None) -> object:
+    def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         self.calls.append(path)
         if '/pulls/' in path and self.refuse is not None:
             refused = Attempt(1, self.refuse, 'refused', Diagnosis.FORGE_REFUSED)
@@ -368,8 +368,8 @@ class _Forge:
             return None
         return list(self.assets)
 
-    def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: object = None) -> object:
-        del field, landed, path
+    def upload(self, path: str, *, field: str, filename: str, content: bytes, durable: object = None) -> object:
+        del field, durable, path
         raw = {'id': len(self.assets) + 1, 'name': filename, 'size': len(content), 'browser_download_url': filename}
         self.assets.append(raw)
         self.blobs[filename] = content

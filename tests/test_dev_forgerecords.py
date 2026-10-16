@@ -56,6 +56,7 @@ def test_attach_uploads_the_bytes_under_the_attachment_field(server, tmp_path: P
     record = tmp_path / f'run-{LIVE}-linux-r1.json.gz'
     record.write_bytes(b'gz-bytes')
     answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
+    answer('GET', f'{API}/issues/3/assets', (200, []))
     answer('POST', f'{API}/issues/3/assets', (201, _asset(7, record.name)))
     found = attach(client(FORGE, Loopback(server)), record)
     assert found.url.endswith('/7')
@@ -64,6 +65,16 @@ def test_attach_uploads_the_bytes_under_the_attachment_field(server, tmp_path: P
     assert sent['headers']['Content-Type'].startswith('multipart/form-data; boundary=')
     assert b'name="attachment"' in sent['raw']
     assert b'gz-bytes' in sent['raw']
+
+
+def test_attach_sends_nothing_the_forge_already_holds_under_the_name(server, tmp_path: Path) -> None:
+    """Idempotent by name -- and a result's name is its content hash: a replayed upload stores nothing twice."""
+    record = tmp_path / f'run-{LIVE}-linux-r1-0123456789abcdef.json.gz'
+    record.write_bytes(b'gz-bytes')
+    answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
+    answer('GET', f'{API}/issues/3/assets', (200, [_asset(7, record.name)]))
+    assert attach(client(FORGE, Loopback(server)), record).url.endswith('/7')
+    assert [r['method'] for r in Recorder.received] == ['GET', 'GET'], 'read, never uploaded'
 
 
 def test_prune_deletes_only_records_of_shas_nobody_keeps(server) -> None:

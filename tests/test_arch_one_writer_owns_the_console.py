@@ -74,7 +74,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-13 at 288 (admission, forgeorigin, forgetake, a lease module; retention, diskusage): 237 -> 247.
 #: Re-taken 2026-10-14 at 293 (box: __init__, demand, ledger): 247 -> 253.
 #: Re-taken 2026-10-14 at 299 (box: run, _win, _linux, __main__ and the two before): 253 -> 259.
-MODULE_FLOOR = 259
+#: Re-taken 2026-10-16 at 306 (the locks, presence and durable lanes): 259 -> 266, the same 40 under.
+MODULE_FLOOR = 266
 MODULE_HEADROOM = 45
 
 

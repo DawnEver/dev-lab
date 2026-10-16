@@ -30,6 +30,7 @@ from _forge_fake import run_git as _run
 
 from lab_commons.dev.forge import Forge, NoCredential
 from lab_commons.dev.forgeclaim import forge_now
+from lab_commons.dev.forgecli import issue_and_pr
 from lab_commons.dev.forgework import (
     GITEA,
     GITHUB,
@@ -39,7 +40,6 @@ from lab_commons.dev.forgework import (
     PullRequest,
     backend_for,
     client_for,
-    main,
     provenance,
 )
 from lab_commons.dev.netverb import Diagnosis, Disposition
@@ -304,7 +304,7 @@ def test_the_cli_prints_the_normalized_result_as_json(server, tmp_path: Path, ca
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     _answer('GET', '/api/v1/repos/o/r/issues/7', (200, _ISSUE))
     env = credential_env(tmp_path)
-    code = main(['issue', 'view', '7', '--json'], cwd=repo, env=env, transport=_Loopback(server))
+    code = issue_and_pr(['issue', 'view', '7', '--json'], cwd=repo, env=env, transport=_Loopback(server))
     assert code == 0
     assert json.loads(capsys.readouterr().out)['number'] == 7
 
@@ -313,7 +313,9 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
     repo = _repo(tmp_path, 'https://f.example/o/r.git', branch='lane')
     _answer('POST', '/api/v1/repos/o/r/issues/7/comments', (201, {'id': 1, 'body': 'b', 'html_url': 'u'}))
     env = credential_env(tmp_path) | {'HARNESS_MACHINE': 'g', 'HARNESS_AGENT': 'claude'}
-    assert main(['issue', 'comment', '7', '--body', 'hello'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert (
+        issue_and_pr(['issue', 'comment', '7', '--body', 'hello'], cwd=repo, env=env, transport=_Loopback(server)) == 0
+    )
     assert _Recorder.received[0]['body'] == {'body': '[g · claude · lane]\n\nhello'}
     assert 'u' in capsys.readouterr().out
 
@@ -321,7 +323,7 @@ def test_the_cli_stamps_from_the_environment(server, tmp_path: Path, capsys) -> 
 def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, capsys) -> None:
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
     _answer('GET', '/api/v1/repos/o/r/pulls/9', (404, {'message': 'nope'}))
-    assert main(['pr', 'view', '9'], cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 1
+    assert issue_and_pr(['pr', 'view', '9'], cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 1
     assert 'REFUSED' in capsys.readouterr().err
 
 

@@ -5,7 +5,7 @@ reboot does not let one process live that long. A blocking producer orphaned its
 aged out, and another account re-claimed the commit into a duplicate run (design 2026-10-11, gap 1).
 So each ``forge serve`` invocation ADVANCES ON-DISK STATE and returns:
 
-    claimed -> submitted (Slurm job ids) -> gathered (the run record) -> published -> released
+    claimed -> submitting -> submitted (Slurm job ids) -> gathered (the run record) -> published -> released
 
 DECLARED OUTPUTS SHIP WITH THE RECORD. The outputs a part declares (``[tool.lab_commons.hpc] outputs``,
 captured in the run when it is claimed -- declared at REQUEST time) are packed from the run's work
@@ -23,6 +23,12 @@ by the run state ``hpc`` keeps on the cluster (``~/ci/runs/<sha>/state.json``), 
 resubmits: a ``claimed`` run whose jobs exist (by ``squeue`` job name) but whose run state was never
 written is an ORPHAN -- it raises an alarm and waits for a human to ``scancel`` it, because submitting
 again would double the run.
+
+INTENT BEFORE ACTION (design D19). The run file says ``submitting`` -- fsynced -- BEFORE ``sbatch`` is
+called, so a crash between the submit and the run state ``hpc`` writes after it is never an orphan: jobs of
+the run's name found under a ``submitting`` run are THIS run's interrupted submit, by the journal's word.
+They are cancelled (no state on the cluster says how to gather them) and the run is submitted afresh, with
+no human in the loop. Jobs found under a ``claimed`` run were never journaled as ours and still alarm.
 
 ONLY THE OWNER RENEWS. Every tick re-claims the run's commit through the forge's race
 (:func:`lab_commons.dev.forgeclaim.claim`) before advancing it. A claim another owner now holds stands
@@ -58,6 +64,7 @@ from typing import Final, Protocol
 from lab_commons.compute.model import Supply
 from lab_commons.config import config_path
 from lab_commons.dev import forgeship
+from lab_commons.dev._forge_journal import durable_write
 from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgecarry import publish
@@ -78,6 +85,7 @@ __all__ = [
     'PUBLISHED',
     'SCHEMA',
     'SUBMITTED',
+    'SUBMITTING',
     'Cluster',
     'ForeignSchema',
     'Run',
@@ -91,10 +99,12 @@ __all__ = [
 ]
 
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
-SCHEMA: Final = 1
+#: 2: the ``submitting`` phase (intent before sbatch).
+SCHEMA: Final = 2
 
 #: The phases a run passes through, in order; released is the file's removal.
 CLAIMED_PHASE: Final = 'claimed'
+SUBMITTING: Final = 'submitting'
 SUBMITTED: Final = 'submitted'
 GATHERED: Final = 'gathered'
 PUBLISHED: Final = 'published'
@@ -194,10 +204,7 @@ def save(run: Run) -> Path:
     """Write *run* (atomically: a crash mid-write never leaves half a state)."""
     target = _path(run)
     target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_suffix('.tmp')
-    partial.write_text(json.dumps(asdict(run), indent=2), encoding='utf-8')
-    partial.replace(target)
-    return target
+    return durable_write(target, json.dumps(asdict(run), indent=2).encode('utf-8'))
 
 
 def drop(run: Run) -> None:
@@ -253,18 +260,11 @@ def advance(
     if held != _ADVANCE:
         return run if held == _WAIT else None
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
-        if run.phase == CLAIMED_PHASE:
-            ids = cluster.submitted(run)
-            if not ids:
-                orphans = cluster.orphans(run)
-                if orphans:
-                    alarm(_orphaned(run, orphans))
-                    say(f'{tag}: orphaned jobs {" ".join(orphans)} -- not resubmitted')
-                    return run
-                run = _report(client, run, 'building', lease, say)
-                ids = cluster.submit(run)
-                say(f'{tag}: submitted jobs {" ".join(ids)}')
-            run = _step(run, phase=SUBMITTED, job_ids=tuple(ids))
+        if run.phase in {CLAIMED_PHASE, SUBMITTING}:
+            submitted = _submit(run, client=client, lease=lease, cluster=cluster, say=say, alarm=alarm, tag=tag)
+            if submitted is None:
+                return run
+            run = submitted
         if run.phase == SUBMITTED:
             record = cluster.gather(run)
             if record is None:
@@ -291,6 +291,37 @@ def advance(
     drop(run)
     say(f'{tag}: published and released')
     return None
+
+
+def _submit(
+    run: Run,
+    *,
+    client: Client,
+    lease: timedelta,
+    cluster: Cluster,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], None],
+    tag: str,
+) -> Run | None:
+    """*run* submitted: Slurm's recorded jobs adopted, else ``submitting`` journaled then sbatch; ``None``: orphans.
+
+    Jobs of the run's name under a ``claimed`` run alarm and wait (never journaled as ours); under a
+    ``submitting`` run they are this run's interrupted submit: cancelled, and the run submitted afresh.
+    """
+    ids = cluster.submitted(run)
+    if not ids:
+        orphans = cluster.orphans(run)
+        if orphans and run.phase == CLAIMED_PHASE:
+            alarm(_orphaned(run, orphans))
+            say(f'{tag}: orphaned jobs {" ".join(orphans)} -- not resubmitted')
+            return None
+        if orphans:
+            cancelled = cluster.cancel(dataclasses.replace(run, job_ids=tuple(orphans)))
+            say(f'{tag}: an interrupted submit left jobs {" ".join(cancelled)} -- cancelled, resubmitting')
+        run = _report(client, _step(run, phase=SUBMITTING), 'building', lease, say)
+        ids = cluster.submit(run)
+        say(f'{tag}: submitted jobs {" ".join(ids)}')
+    return _step(run, phase=SUBMITTED, job_ids=tuple(ids))
 
 
 def _report(client: Client, run: Run, progress: str, lease: timedelta, say: Callable[[str], None]) -> Run:
