@@ -992,7 +992,7 @@ def _held(minutes: int, reason: str, *, running: int = 0) -> Progress:
     return Progress(SHA, '7', 52, pending, run, reasons, partitions, waited)
 
 
-def test_a_job_with_nothing_running_held_by_an_account_limit_past_the_bound_is_given_back() -> None:
+def test_a_job_with_nothing_running_held_by_an_account_limit_past_the_bound_is_returned() -> None:
     """PLANTED CONTROLS: under the bound, with a task running, or pending for priority, it is kept."""
     policy = Policy(stall_minutes=30)
     assert 'AssocGrpMemLimit' in held_by_a_limit(_held(59, 'AssocGrpMemLimit'), policy)
