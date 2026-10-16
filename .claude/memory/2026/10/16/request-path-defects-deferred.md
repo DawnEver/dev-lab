@@ -1,6 +1,9 @@
-# Request path: what landed on lane/request-path, and what was deferred
-
+---
+name: request-path-defects-deferred
+description: what the request-path lane fixed (S1 S5 R1 R4 R2 X1 S2 O1-O3 P3 P1 S4 S6) and what it deferred (R0 R5 S7 O4, vendor-bundle scope)
 created: 2026-10-16
+---
+# Request path: what landed on lane/request-path, and what was deferred
 
 Landed (one commit each): S1 per-row cpu/mem_gb and per-name learning, S5 per-row wall_h, R1 frozen
 bootstrap + lockless refusal, R4 unserved-sha refusal (claim and publish), R2 git-source probe before

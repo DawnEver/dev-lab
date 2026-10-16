@@ -243,7 +243,7 @@ def test_a_finished_request_says_where_its_record_is_and_waits_for_sign_off(monk
     (kind, number, body), labelled = comments
     assert (kind, number, labelled) == ('comment', 9, ('label', 9, DONE_LABEL))
     assert 'regenerated 45 goldens' in body, 'the log travels with the result'
-    assert f'record: `{KEPT}` on G' in body
+    assert f'record: `{KEPT}` on {ME.machine}' in body
     assert f'`{DIGEST}`  goldens.csv' in body
 
 

@@ -192,6 +192,7 @@ def unserved(root: Path, sha: str) -> str:
     """
     done = subprocess.run(
         [_GIT, '-C', str(root), 'for-each-ref', '--count=1', '--contains', sha, 'refs/remotes/origin/'],
+        encoding='utf-8',
         capture_output=True,
         text=True,
         check=False,
@@ -215,6 +216,7 @@ def git_sources(root: Path, sha: str) -> tuple[str, ...]:
         [_GIT, '-C', str(root), 'config', '--blob', f'{sha}:.gitmodules', '--get-regexp', r'^submodule\..*\.url$'],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
     )
     origin = _show(root, '', remote=True)

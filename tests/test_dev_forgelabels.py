@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
-from lab_commons.dev._forgebackends import GITEA, GITHUB
+from lab_commons.dev._forgebackends import GITEA, GITHUB, Backend
 from lab_commons.dev.forgelabels import LabelMissing, add_label, ensure_labels
 
 
 class _Client:
-    def __init__(self, backend: Any, labels: dict[str, int]) -> None:  # noqa: ANN401 -- a backend
+    def __init__(self, backend: Backend, labels: dict[str, int]) -> None:
         self.backend, self.repo, self.labels, self.calls = backend, '/r', dict(labels), []
 
-    def call(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:  # noqa: ANN401 -- JSON
+    def call(self, method: str, path: str, body: dict[str, object] | None = None) -> object:
         self.calls.append((method, path, body))
         if method == 'GET':
             return [{'name': n, 'id': i} for n, i in self.labels.items()] if 'page=1' in path else []

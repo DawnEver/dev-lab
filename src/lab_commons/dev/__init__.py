@@ -257,6 +257,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.symcov` -- public symbols of one tree found in another; the floor is REQUIRED.
 * :mod:`lab_commons.dev.forge` -- branch protection against a DECLARATION; INERT is its own standing.
 * :mod:`lab_commons.dev.forgework` -- issue/PR verbs over Gitea/GitHub REST, no ``gh``/``tea``; ``HARNESS_*`` stamp.
+* :mod:`lab_commons.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
+* :mod:`lab_commons.dev.forgepublish` -- ``forge request``: publish a request only when a host could reproduce it.
 * :mod:`lab_commons.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
 * :mod:`lab_commons.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`lab_commons.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
