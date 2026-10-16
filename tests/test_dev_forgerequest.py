@@ -26,6 +26,7 @@ from lab_commons.dev.forgerequest import (
     parse_body,
     request_body,
     request_context,
+    unserved,
 )
 from lab_commons.dev.forgeschedule import NOT_ADMITTED
 from lab_commons.dev.platformparts import origin_url
@@ -71,16 +72,21 @@ def _request(repo: Path, tips: dict[str, str], producer: str, *, locked: bool = 
     run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', head)
     done = {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=1'}
     answer('GET', f'{API}/statuses/{head}', (200, [done]))
-    issue = {
-        'number': 9,
-        'body': request_body(producer, pinned),
-        'created_at': '2026-10-10T00:00:00Z',
-        'labels': [{'name': 'forge:request'}],
-        'user': {'login': 'bob'},
-    }
-    answer('GET', f'{API}/issues', (200, [issue]))
+    _ask(producer, pinned)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     return pinned
+
+
+def _ask(producer: str, sha: str, *, body: str = '', author: str = 'bob') -> None:
+    """Issue 9 asks for *producer* at *sha* (*body* appended), authored by *author*."""
+    issue = {
+        'number': 9,
+        'body': request_body(producer, sha) + body,
+        'created_at': '2026-10-10T00:00:00Z',
+        'labels': [{'name': 'forge:request'}],
+        'user': {'login': author},
+    }
+    answer('GET', f'{API}/issues', (200, [issue]))
 
 
 def test_a_declared_request_is_admitted_and_claimed_where_its_needs_are_present(server, tmp_path: Path) -> None:
@@ -272,3 +278,26 @@ def test_a_request_at_a_sha_without_a_lock_is_refused_by_name(server, tmp_path: 
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
     assert (posted['body']['state'], posted['body']['context']) == ('error', request_context(9))
     assert posted['body']['description'].startswith(f'{REFUSED_AT_COMMIT} {sha[:12]} commits no uv.lock')
+
+
+def _orphan(repo: Path, sha: str) -> str:
+    """A commit of *sha*'s tree on no ref origin keeps: a requester's unpushed (or since deleted) work."""
+    return git_out(repo, 'commit-tree', f'{sha}^{{tree}}', '-m', 'unpushed')
+
+
+def test_a_request_at_a_sha_origin_does_not_serve_is_refused_by_name(server, tmp_path: Path) -> None:
+    """R4: a serve host fetches origin; a sha no origin ref contains is one it can never build.
+
+    PLANTED CONTROL: the same tree at a sha origin serves is claimed (the first test of this file).
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _orphan(repo, _request(repo, tips, 'femm_goldens'))
+    _ask('femm_goldens', sha)
+    assert unserved(repo, sha) == f'origin serves no ref containing {sha[:12]}: push it where origin keeps it'
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
+    assert report.claimed == ()
+    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
+    assert posted['body']['description'] == f'{REFUSED_AT_COMMIT} {unserved(repo, sha)}'
+    assert unserved(repo, tips['topic/a']) == ''

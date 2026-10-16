@@ -61,6 +61,7 @@ __all__ = [
     'result',
     'settle',
     'unreproducible',
+    'unserved',
 ]
 
 #: The status context prefix of a request job; a part's is ``tests/``.
@@ -164,6 +165,23 @@ def unreproducible(root: Path, sha: str) -> str:
         [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{LOCK_FILE}'], capture_output=True, check=False
     )
     return '' if done.returncode == 0 else f'{sha[:12]} commits no {LOCK_FILE}: a request pins every dependency'
+
+
+def unserved(root: Path, sha: str) -> str:
+    """Why origin cannot serve *sha* to a host that fetches it, ``''`` when one of its refs contains it.
+
+    A serve host's checkout sits on any branch; it builds a request's tree from what it fetched of origin, so a
+    sha only the requester holds (or only a deleted branch held) is one no host can build.
+    """
+    done = subprocess.run(
+        [_GIT, '-C', str(root), 'for-each-ref', '--count=1', '--contains', sha, 'refs/remotes/origin/'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode == 0 and done.stdout.strip():
+        return ''
+    return f'origin serves no ref containing {sha[:12]}: push it where origin keeps it'
 
 
 def result(code: int, host: str) -> tuple[str, str]:

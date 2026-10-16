@@ -28,6 +28,7 @@ from lab_commons.dev.forgerequest import (
     declared_request,
     request_context,
     unreproducible,
+    unserved,
 )
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
 from lab_commons.dev.forgestatus import Status
@@ -143,6 +144,8 @@ class ClaimPass:
 
     def _own_request(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
         """A request: refused at its commit when its sha declares no such producer; it runs in a local tree."""
+        if why := unserved(self.root, one.sha):
+            return one, f'{REFUSED_AT_COMMIT} {why}'
         try:
             declared = self._declared(wanted)
         except UndeclaredRequest as why:
