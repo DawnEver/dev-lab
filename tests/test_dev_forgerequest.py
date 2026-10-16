@@ -19,7 +19,9 @@ from lab_commons.box import Capacity
 from lab_commons.compute.learned import LOCAL, Run, run_of
 from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.dev import forgeproduce, forgerequest
+from lab_commons.dev._forgebackends import GITEA
 from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
+from lab_commons.dev.forgepublish import RequestRefused, publish
 from lab_commons.dev.forgerequest import (
     DONE_LABEL,
     UNADMITTED,
@@ -417,3 +419,47 @@ def test_a_request_no_host_admits_is_said_once_on_its_issue(server, tmp_path: Pa
     answer('GET', comments, (200, [{**said, 'body': posted['body']['body']}]))
     _tick(repo, server, supply=PLAIN_HOST, demand=_one_core)
     assert not [r for r in Recorder.received if r['method'] == 'POST'], 'said once'
+
+
+class _Publisher:
+    """A forge that records the request publishing makes."""
+
+    def __init__(self) -> None:
+        self.backend, self.repo, self.labels, self.calls = GITEA, '/r', {}, []
+
+    def call(self, method: str, path: str, body: dict | None = None) -> object:
+        self.calls.append((method, path, body))
+        if method == 'GET':
+            return [{'name': n, 'id': i} for n, i in self.labels.items()] if 'page=1' in path else []
+        if path == '/r/labels':
+            self.labels[body['name']] = len(self.labels) + 1
+            return {'id': self.labels[body['name']]}
+        return {}
+
+    def issue_create(self, title: str, body: str) -> SimpleNamespace:
+        self.calls.append(('CREATE', title, body))
+        return SimpleNamespace(number=9, url='u')
+
+
+def test_a_request_is_published_only_when_a_host_could_reproduce_it(tmp_path: Path) -> None:
+    """P3: the verb validates the producer at the sha, its lock and origin's reach, then creates its labels.
+
+    PLANTED CONTROL: each defect is refused by name and NOTHING is published.
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _request(repo, tips, 'femm_goldens')
+    run_git(repo, 'rm', '-q', 'uv.lock')
+    unlocked = _request(repo, tips, 'femm_goldens', locked=False)
+    forge = _Publisher()
+    for producer, at, why in (
+        ('rm_rf', sha, 'declares no'),
+        ('femm_goldens', _orphan(repo, sha), 'origin serves no ref'),
+        ('femm_goldens', unlocked, 'commits no uv.lock'),
+    ):
+        with pytest.raises(RequestRefused, match=why):
+            publish(repo, forge, producer, at, label='forge:request')
+    assert forge.calls == []
+    assert publish(repo, forge, 'femm_goldens', sha, label='forge:request').number == 9
+    assert forge.labels == {'forge:request': 1, DONE_LABEL: 2}, 'the labels it needs, created'
+    assert ('CREATE', f'request femm_goldens at {sha[:12]}', request_body('femm_goldens', sha)) in forge.calls
+    assert forge.calls[-1] == ('POST', '/r/issues/9/labels', {'labels': [1]})
