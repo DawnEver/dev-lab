@@ -40,11 +40,12 @@ from lab_commons.hpc.records import (
     files_made,
     fold,
     held_outcomes,
+    pack_streams,
     read_record,
     read_streams,
     record_name,
     run_shas,
-    stream_dirs,
+    stream_sources,
     write_record,
 )
 from lab_commons.hpc.run import RETRIES, NoRoom, build_run, gather_run, submit_run
@@ -129,15 +130,19 @@ def test_streams_are_read_back_per_item_in_one_command() -> None:
         calls.append((command, stdin))
         return '@@@ 0.jsonl\n{"a": 1}\n@@@ 12.jsonl\n{"b": 2}\n{"c": 3}\n'
 
-    assert read_streams(run, '"$HOME"/ci/x') == {0: '{"a": 1}', 12: '{"b": 2}\n{"c": 3}'}
+    assert read_streams(run, '"$HOME"/ci/x', '"$HOME"/ci/y') == {0: '{"a": 1}', 12: '{"b": 2}\n{"c": 3}'}
     assert len(calls) == 1
 
 
 def test_streams_are_read_where_retention_kept_them_once_the_tree_is_gone(tmp_path: Path) -> None:
-    """A superseded run's tree is garbage; its round's streams moved beside its state and are read from there."""
-    tree, kept = (d.replace('"$HOME"', tmp_path.as_posix()) for d in stream_dirs('s1', 'r0'))
-    Path(kept).mkdir(parents=True)
-    (Path(kept) / '0.jsonl').write_text('{"a": 1}\n', encoding='utf-8')
+    """A superseded run's tree is garbage; its round's streams were PACKED into one file beside its state."""
+    tree, kept = (d.replace('"$HOME"', tmp_path.as_posix()) for d in stream_sources('s1', 'r0'))
+    packed = tmp_path / 'packed'
+    packed.mkdir()
+    (packed / '0.jsonl').write_text('{"a": 1}', encoding='utf-8')  # no final newline: the pack adds one
+    (packed / '0.ids.json').write_text('["t::a"]', encoding='utf-8')  # the job's input: never read back
+    Path(kept).parent.mkdir(parents=True)
+    Path(kept).write_text(pack_streams(packed), encoding='utf-8')
     bash = shutil.which('bash')
     assert bash, 'the reader is a POSIX shell command'
 

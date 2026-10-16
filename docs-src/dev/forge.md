@@ -68,8 +68,8 @@ Each tick it:
   whose run state, tree or `.lab-ci` stream directory was touched within `min_age_hours` (being built, or a round
   ended and not yet gathered). "No record yet" is NOT in flight: a superseded or released run is never gathered.
   A tree is kept only while its sha is
-  in flight (`tree-not-in-flight`); an unrecorded run's round streams move to `runs/<sha>/streams/<tag>` first,
-  where the carry reads them (`hpc.records.stream_dirs`), and a re-run re-adds the tree from the bare cache.
+  in flight (`tree-not-in-flight`); an unrecorded run's round streams are packed into ONE file
+  `runs/<sha>/streams/<tag>.txt` first, where the carry reads them (`hpc.records.stream_sources`), and a re-run re-adds the tree from the bare cache.
   An env, native build or cargo target is kept while an in-flight run or its repo's newest recorded run names it
   in `builds`; an unreadable reference keeps them all, an unreadable queue keeps every tree. A finished run's
   STATE goes when no origin branch tip can carry from it; finished `~/slurm-*.out` and oversized

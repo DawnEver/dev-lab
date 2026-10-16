@@ -11,7 +11,8 @@ derived from what each is FOR, not from what happens to name it:
   round in flight (``.lab-ci/<tag>``, a few dozen) are read after its jobs end: the carry takes a SUPERSEDED
   run's finished shards from them (:func:`lab_commons.hpc.records.held_outcomes`). So a tree is kept exactly
   while its sha is IN FLIGHT, by any repo's run -- ``tree-not-in-flight`` otherwise -- and before an
-  unrecorded run's tree goes its streams MOVE beside its state (:func:`lab_commons.hpc.records.stream_dirs`).
+  unrecorded run's tree goes its streams are PACKED into one file beside its state
+  (:func:`lab_commons.hpc.records.stream_sources`).
   A re-run of the sha re-adds the tree from the bare cache (its env lives apart, keyed). Keeping the newest
   tree per branch would save one checkout at the price of ~22 k files; it does not.
 * An ENV (``envs/<key>``), a NATIVE build and its ``cargo-target/<key>`` are kept while an in-flight run
@@ -32,6 +33,12 @@ stream directory under ``.lab-ci`` touched (being built, or a round ended and no
 queue (``None``) keeps every tree. NOT "no record yet": measured 2026-10-15 on the served accounts, 9 run
 states in 10 had no record -- runs SUPERSEDED by a newer commit or released, which nobody will ever gather --
 and that clause kept 79 trees of 81 and every env.
+
+THE COLLECT CACHE (``collect/``, :mod:`lab_commons.hpc.collect`) is one ``<key>.json`` per collection key,
+and the key moves with every build key, so an old key is never read again. Its budget is ``collect_files``:
+the newest that many key files stay; anything else there -- an older key, a dead writer's ``.tmp``, a
+directory of the retired one-file-per-test layout (~0.75-1 M files per account, measured 2026-10-16) --
+goes as ``collect-over-budget`` once older than ``min_age_hours``.
 
 THE OTHER RULES. ``run-not-a-carry-source``: a recorded run of THIS serve's repo no origin branch tip
 carries from (:func:`carry_sources`, the carry's own selection) -- its state goes; the kept sources are
@@ -60,7 +67,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forgecarry import read_by
-from lab_commons.hpc.records import KEPT_STREAMS
+from lab_commons.hpc.records import stream_sources
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 
@@ -93,6 +100,7 @@ class Policy:
     uv_prune: bool = True
     pressure: float = 0.85
     target: float = 0.70
+    collect_files: int = 16
 
 
 def load_policy(table: Mapping[str, Any]) -> Policy:
@@ -112,7 +120,7 @@ class Doomed:
     path: Path
     rule: str
     rotate: bool = False
-    keep: tuple[tuple[Path, Path], ...] = ()  # (from, to): moved out before the path goes
+    keep: tuple[tuple[Path, Path], ...] = ()  # (streams dir, pack file): packed before the path goes
 
 
 @dataclass(frozen=True)
@@ -228,6 +236,7 @@ def cluster_plan(
             if tree.name not in flying
         ]
     doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
+    doomed += _collect_over_budget(ci / 'collect', policy, now)
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
     doomed += _home_rules(home, policy, now)
     hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
@@ -240,11 +249,12 @@ def cluster_plan(
 
 
 def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
-    """An unrecorded run's round streams, moved to where :func:`lab_commons.hpc.records.stream_dirs` reads them."""
+    """An unrecorded run's round streams and the one file :func:`lab_commons.hpc.records.stream_sources` reads."""
     tag = str(((state or {}).get('current') or {}).get('tag', ''))
     if not tag:
         return ()
-    return ((ci / 'trees' / sha / '.lab-ci' / tag, ci / 'runs' / sha / KEPT_STREAMS / tag),)
+    _, kept = stream_sources(sha, tag)
+    return ((ci / 'trees' / sha / '.lab-ci' / tag, ci / kept.split('/ci/', 1)[1]),)
 
 
 def _sourced_builds(tree: Path) -> object:
@@ -294,6 +304,14 @@ def _unreferenced_builds(ci: Path, builds: list[object], now: datetime, policy: 
             if e.name.split('.')[0] not in named and _age(e, now) >= young
         ]
     return out
+
+
+def _collect_over_budget(store: Path, policy: Policy, now: datetime) -> list[Doomed]:
+    """Every entry of ``collect/`` but its newest ``collect_files`` key files, once past ``min_age_hours``."""
+    keys = sorted((e for e in _entries(store) if e.suffix == '.json' and e.is_file()), key=lambda e: e.stat().st_mtime)
+    kept = set(keys[-policy.collect_files :] if policy.collect_files > 0 else [])
+    young = timedelta(hours=policy.min_age_hours)
+    return [Doomed(e, 'collect-over-budget') for e in _entries(store) if e not in kept and _age(e, now) >= young]
 
 
 def _home_rules(home: Path, policy: Policy, now: datetime) -> list[Doomed]:
