@@ -2,18 +2,18 @@
 
 import os
 import shutil
-import subprocess
 import sys
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
+import lab_commons.launch as _door
 from lab_commons.dev.installdoor import floating_requirements
 from lab_commons.dev.venvpath import venv_interpreter
 
 
 def _checkout(cwd: Path, git_binary: str) -> tuple[Path, Path] | None:
-    result = subprocess.run(
+    result = _door.run(
         [git_binary, '-C', str(cwd), 'rev-parse', '--show-toplevel', '--git-common-dir'],
         capture_output=True,
         text=True,

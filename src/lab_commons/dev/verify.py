@@ -45,6 +45,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
+import lab_commons.launch as _door
 from lab_commons.box import Refused
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
@@ -178,8 +179,8 @@ def project_root(start: Path | None = None) -> Path:
 
     """
     try:
-        found = subprocess.run(
-            ['git', 'rev-parse', '--show-toplevel'],  # noqa: S607 -- git is resolved through PATH on purpose
+        found = _door.run(
+            ['git', 'rev-parse', '--show-toplevel'],
             cwd=start or Path.cwd(),
             capture_output=True,
             text=True,
@@ -265,7 +266,7 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str], extra_env: dict[str,
     handle.write(f'$ {" ".join(command)}\n')
     handle.flush()
     env = os.environ | {'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'} | (extra_env or {})
-    with subprocess.Popen(
+    with _door.popen(
         command,
         cwd=cwd,
         stdout=subprocess.PIPE,

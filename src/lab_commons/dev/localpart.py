@@ -19,11 +19,11 @@ outcomes, kept beside its log: the cache already holds the evidence, so nothing 
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
@@ -148,7 +148,7 @@ def post_part(
     def collect(expression: str) -> list[str]:
         argv = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', '--color=no']
         command = [*argv, *(['-m', expression] if expression else []), *arguments]
-        done = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
+        done = _door.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', check=False)
         return parse_ids(done.stdout)
 
     judged = outcomes_dir(log)

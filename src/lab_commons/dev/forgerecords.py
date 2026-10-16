@@ -24,13 +24,13 @@ import argparse
 import dataclasses
 import json
 import re
-import subprocess
 import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
@@ -166,7 +166,7 @@ def attach(client: Client, path: Path) -> Attachment:
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), *args],
         capture_output=True,
         text=True,

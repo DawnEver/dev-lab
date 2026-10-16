@@ -66,6 +66,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forgecarry import read_by
 from lab_commons.hpc.records import stream_sources
 from lab_commons.hpc.retired import refuse_retired_keys
@@ -186,7 +187,7 @@ def occupied_trees(workdirs: Iterable[str]) -> set[str]:
     return shas
 
 
-def slurm_occupied(run: Callable[..., Any] = subprocess.run) -> set[str] | None:
+def slurm_occupied(run: Callable[..., Any] = _door.run) -> set[str] | None:
     """:func:`occupied_trees` of this account's queued and running jobs; ``None`` when the queue is unreadable."""
     try:
         done = run(list(WORKDIRS_COMMAND), capture_output=True, text=True, encoding='utf-8', errors='replace',

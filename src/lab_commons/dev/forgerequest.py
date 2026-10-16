@@ -41,6 +41,7 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.compute.model import REQUEST
 from lab_commons.config import section
@@ -178,9 +179,7 @@ def unreproducible(root: Path, sha: str) -> str:
     A sha committing no :data:`LOCK_FILE` resolves its floating dependencies to whatever they are on the
     day, on the host: two runs of one request build two environments, so it is refused, never degraded.
     """
-    done = subprocess.run(
-        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{LOCK_FILE}'], capture_output=True, check=False
-    )
+    done = _door.run([_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{LOCK_FILE}'], capture_output=True, check=False)
     return '' if done.returncode == 0 else f'{sha[:12]} commits no {LOCK_FILE}: a request pins every dependency'
 
 
@@ -190,7 +189,7 @@ def unserved(root: Path, sha: str) -> str:
     A serve host's checkout sits on any branch; it builds a request's tree from what it fetched of origin, so a
     sha only the requester holds (or only a deleted branch held) is one no host can build.
     """
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'for-each-ref', '--count=1', '--contains', sha, 'refs/remotes/origin/'],
         encoding='utf-8',
         capture_output=True,
@@ -212,7 +211,7 @@ def git_sources(root: Path, sha: str) -> tuple[str, ...]:
     """Every repository a tree at *sha* fetches by git: its lock's git sources, then its submodules' urls."""
     lock = _show(root, f'{sha}:{LOCK_FILE}')
     found = [match['url'] for match in _LOCKED_GIT.finditer(lock)]
-    modules = subprocess.run(
+    modules = _door.run(
         [_GIT, '-C', str(root), 'config', '--blob', f'{sha}:.gitmodules', '--get-regexp', r'^submodule\..*\.url$'],
         capture_output=True,
         text=True,
@@ -235,7 +234,7 @@ def unreachable_source(root: Path, sha: str) -> str:
     quiet = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
     for url in git_sources(root, sha):
         try:
-            done = subprocess.run(
+            done = _door.run(
                 [_GIT, 'ls-remote', '-q', url, 'HEAD'],
                 capture_output=True,
                 text=True,
@@ -261,7 +260,7 @@ def _public(url: str) -> str:
 
 def _show(root: Path, spec: str, *, remote: bool = False) -> str:
     argv = ['remote', 'get-url', 'origin'] if remote else ['show', spec]
-    done = subprocess.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
+    done = _door.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
@@ -289,7 +288,7 @@ def untrusted(root: Path, sha: str, author: str, *, trunks: Sequence[str], autho
     if author and author in authors:
         return ''
     for ref in trunks:
-        done = subprocess.run(
+        done = _door.run(
             [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, f'refs/remotes/origin/{ref}'],
             capture_output=True,
             check=False,

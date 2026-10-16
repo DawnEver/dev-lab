@@ -41,10 +41,10 @@ rewrite to be decided on its own evidence, not a substitution this module can cl
 from __future__ import annotations
 
 import shutil
-import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import lab_commons.launch as _door
 from lab_commons.dev.checkout import (
     authority_for,
     classify,
@@ -96,7 +96,7 @@ class Planted:
 
 
 def _run(cwd: Path, *args: str) -> None:
-    subprocess.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, timeout=_GIT_TIMEOUT_S)
+    _door.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, timeout=_GIT_TIMEOUT_S)
 
 
 def commit(repo: Path, name: str) -> None:

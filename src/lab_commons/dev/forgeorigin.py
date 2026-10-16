@@ -16,6 +16,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgehosts import this_host
 from lab_commons.dev.forgeschedule import ORIGIN_HOST
@@ -26,7 +27,7 @@ __all__ = ['main', 'stamp']
 
 def stamp(message_file: str, host: str) -> None:
     """Append ``Forge-Host: <host>`` to *message_file*, replacing a trailer already there."""
-    subprocess.run(
+    _door.run(
         [_GIT, 'interpret-trailers', '--in-place', '--if-exists', 'replace', '--trailer', f'{ORIGIN_HOST}: {host}',
          message_file],
         check=True, timeout=_GIT_TIMEOUT_S,

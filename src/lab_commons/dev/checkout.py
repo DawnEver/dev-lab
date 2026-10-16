@@ -47,6 +47,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import lab_commons.launch as _door
+
 __all__ = [
     'DEFAULT_PROTECTED',
     'DEFAULT_WORKTREE_HOME',
@@ -133,7 +135,7 @@ def git_out(root: Path, *args: str) -> str | None:
     an unreadable repository must never render as a clean one.
     """
     try:
-        done = subprocess.run(
+        done = _door.run(
             [_GIT, *args],
             cwd=root,
             capture_output=True,

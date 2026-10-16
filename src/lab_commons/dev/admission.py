@@ -38,12 +38,12 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, NoCredential, UnreadableRemote
 from lab_commons.dev.forgeoutbox import unprompted_client
 from lab_commons.dev.forgestatus import Status, status_list
@@ -173,7 +173,7 @@ def destination_of(remote_ref: str, policy: Policy) -> str:
 
 
 def _head(root: Path) -> str:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), 'rev-parse', 'HEAD'],
         capture_output=True,
         text=True,

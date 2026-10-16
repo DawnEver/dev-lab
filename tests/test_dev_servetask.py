@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import ast
-import subprocess
-import sys
+import inspect
 from pathlib import Path
 
 from _arch_corpus import assert_floor, parse, rel, source_modules
 
-from lab_commons.dev import servetask
+from lab_commons import launch
+from lab_commons.dev import servetask, workstation
 
 #: The creation flags that give a child a console of its OWN instead of the inherited windowless one.
 _DETACHING = frozenset({'DETACHED_PROCESS', 'CREATE_NEW_CONSOLE'})
@@ -48,9 +48,8 @@ def test_an_older_cmd_task_reads_back_as_a_different_definition(tmp_path: Path) 
     ]  # fmt: skip
 
 
-def test_a_serve_spawn_opens_no_console_window() -> None:
-    flags = servetask.windowless()
-    assert flags == ({'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {})
+def test_a_serve_spawn_starts_through_the_windowless_door() -> None:
+    assert inspect.signature(workstation.serve).parameters['run'].default is launch.run
 
 
 def test_the_serve_log_is_size_capped_by_one_rotation(tmp_path: Path) -> None:

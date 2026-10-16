@@ -39,6 +39,8 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+import lab_commons.launch as _door
+
 __all__ = ['ZERO_SHA', 'admitted', 'gate_base']
 
 #: Resolved once: a bare name is a PATH lookup at every call site, and a PATH that answers
@@ -57,7 +59,7 @@ ZERO_SHA = '0' * 40
 def _git_out(root: Path, *args: str) -> str:
     """One git read, or the empty string when git could not answer."""
     try:
-        probe = subprocess.run(
+        probe = _door.run(
             [_GIT, *args],
             cwd=root,
             capture_output=True,
@@ -77,7 +79,7 @@ def _is_ancestor(root: Path, ref: str) -> bool:
     if not ref or set(ref) == {'0'}:
         return False
     try:
-        probe = subprocess.run(
+        probe = _door.run(
             [_GIT, 'merge-base', '--is-ancestor', ref, 'HEAD'],
             cwd=root,
             capture_output=True,

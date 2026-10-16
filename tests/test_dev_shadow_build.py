@@ -135,7 +135,7 @@ class TestBuildRefusesAnEmptyBuild:
         it from a real 1.0.
         """
         monkeypatch.setattr(
-            'lab_commons.dev.shadow_build.subprocess.run',
+            'lab_commons.dev.shadow_build._door.run',
             lambda *a, **_k: subprocess.CompletedProcess(a[0] if a else [], 0),
         )
         with pytest.raises(RuntimeError, match='wrote no wheel'):
@@ -150,7 +150,7 @@ class TestBuildRefusesAnEmptyBuild:
             (out / 'probe-1.0-py3-none-any.whl').write_bytes(b'')
             return subprocess.CompletedProcess([], 0)
 
-        monkeypatch.setattr('lab_commons.dev.shadow_build.subprocess.run', _fake_run)
+        monkeypatch.setattr('lab_commons.dev.shadow_build._door.run', _fake_run)
         assert build_wheel(tmp_path / 'Cargo.toml', out).name == 'probe-1.0-py3-none-any.whl'
 
     def test_it_builds_and_never_installs(self, tmp_path: Path, monkeypatch) -> None:
@@ -168,7 +168,7 @@ class TestBuildRefusesAnEmptyBuild:
             (out / 'probe-1.0-py3-none-any.whl').write_bytes(b'')
             return subprocess.CompletedProcess(argv, 0)
 
-        monkeypatch.setattr('lab_commons.dev.shadow_build.subprocess.run', _fake_run)
+        monkeypatch.setattr('lab_commons.dev.shadow_build._door.run', _fake_run)
         build_wheel(tmp_path / 'Cargo.toml', out)
         argv = seen[0]
         assert 'build' in argv

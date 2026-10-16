@@ -28,7 +28,6 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -36,6 +35,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import (
     _GIT,
     _GIT_TIMEOUT_S,
@@ -104,7 +104,7 @@ class Post:
 
 
 def _common_root(root: Path) -> Path:
-    common = subprocess.run(
+    common = _door.run(
         [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
         capture_output=True,
         text=True,

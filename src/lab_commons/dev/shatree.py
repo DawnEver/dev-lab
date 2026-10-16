@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -35,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.platformparts import UndeclaredPart, record_directory
 from lab_commons.dev.venvpath import checkout_interpreter, current_os_name
@@ -85,7 +85,7 @@ def _step(run: Callable[..., Any], argv: list[str], what: str) -> None:
 
 
 def open_tree(
-    root: Path, sha: str, context: str, *, run: Callable[..., Any] = subprocess.run, python: str = sys.executable
+    root: Path, sha: str, context: str, *, run: Callable[..., Any] = _door.run, python: str = sys.executable
 ) -> Tree:
     """Add (or reuse) the detached tree of *sha*, its submodules, and its own environment.
 
@@ -141,7 +141,7 @@ def keep_record(root: Path, sha: str, context: str, *, log: str) -> str:
     return f'record kept in {kept.relative_to(root).as_posix()}'
 
 
-def close_tree(root: Path, sha: str, context: str, *, log: str = '', run: Callable[..., Any] = subprocess.run) -> str:
+def close_tree(root: Path, sha: str, context: str, *, log: str = '', run: Callable[..., Any] = _door.run) -> str:
     """Keep the run record of *sha* in *root*, then remove its tree (``--force``: it is the producer's own).
 
     *log* is the producer's streamed output; it is kept beside the record. One line says what happened.

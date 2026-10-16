@@ -34,7 +34,6 @@ import os
 import re
 import shutil
 import signal
-import subprocess
 import sys
 import time
 import tomllib
@@ -42,6 +41,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.checkout import git_out
 from lab_commons.dev.servelock import note_stopped
 from lab_commons.log import emit
@@ -93,7 +93,7 @@ def process_table() -> dict[int, Proc]:
             '| ConvertTo-Json -Compress'
         )
         shell = shutil.which('powershell') or 'powershell'
-        done = subprocess.run(
+        done = _door.run(
             [shell, '-NoProfile', '-Command', script],
             capture_output=True,
             text=True,
@@ -105,7 +105,7 @@ def process_table() -> dict[int, Proc]:
         rows = json.loads(done.stdout or '[]')
         rows = rows if isinstance(rows, list) else [rows]
         return {int(r['ProcessId']): (int(r['ParentProcessId'] or 0), r['CommandLine'] or '') for r in rows}
-    done = subprocess.run(
+    done = _door.run(
         [shutil.which('ps') or 'ps', '-ww', '-A', '-o', 'pid=,ppid=,args='],
         capture_output=True,
         text=True,
@@ -192,7 +192,7 @@ def _ancestors(table: Mapping[int, Proc], pid: int) -> set[int]:
 
 def _kill(pid: int) -> None:
     if os.name == 'nt':
-        subprocess.run(
+        _door.run(
             [shutil.which('taskkill') or 'taskkill', '/PID', str(pid), '/F'],
             capture_output=True,
             check=False,

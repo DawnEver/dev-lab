@@ -32,13 +32,13 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
@@ -150,7 +150,7 @@ def ready_lanes(refs: Sequence[LaneRef], statuses: Mapping[str, Sequence[Status]
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, *args],
         cwd=root,
         capture_output=True,

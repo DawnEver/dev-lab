@@ -19,7 +19,7 @@ THE TASK, as one ``schtasks /Create /XML`` definition (:func:`task_xml`):
 INVISIBLE ON A WORKSTATION, MEASURED 2026-10-13: the earlier action ``cmd /c cd /d <checkout> && python
 ...`` opened a console window every five minutes while the user worked. ``pythonw.exe`` is a
 GUI-subsystem interpreter and opens none; but a console child it started would open its OWN window, so
-the serve starts its one child per repo with :func:`windowless` (``CREATE_NO_WINDOW``). That child gets a
+the serve starts its one child per repo through :func:`lab_commons.launch.run` (``CREATE_NO_WINDOW``). That child gets a
 console with no window, and every descendant -- verify, pytest workers, git, uv -- INHERITS that console
 instead of allocating one. One flag at the root of the tree is therefore the whole fix, as long as
 nothing below detaches (``DETACHED_PROCESS``/``CREATE_NEW_CONSOLE``), which nothing in the kit does.
@@ -36,8 +36,6 @@ from __future__ import annotations
 import html
 import os
 import re
-import subprocess
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import IO, Final
@@ -47,7 +45,7 @@ from lab_commons.dev.venvpath import venv_interpreter
 
 __all__ = [
     'DISABLE', 'LOG_CAP', 'TASK', 'Definition', 'create_argv', 'definition_of', 'home', 'installed', 'log_path',
-    'open_log', 'query_argv', 'task_xml', 'this_user', 'windowless',
+    'open_log', 'query_argv', 'task_xml', 'this_user',
 ]  # fmt: skip
 
 #: The Scheduled Task's name.
@@ -156,11 +154,6 @@ def installed(xml: str) -> Definition | None:
         match = re.search(rf'<{tag}>(.*?)</{tag}>', xml, re.DOTALL)
         found[name] = html.unescape(match[1]).strip() if match else ''
     return Definition(**found) if found['command'] else None
-
-
-def windowless() -> dict[str, int]:
-    """The ``subprocess`` keywords that start a child with NO console window: ``CREATE_NO_WINDOW`` on Windows."""
-    return {'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {}
 
 
 def home() -> Path:

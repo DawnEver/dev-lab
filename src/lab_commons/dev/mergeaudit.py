@@ -45,13 +45,13 @@ from __future__ import annotations
 import ast
 import hashlib
 import re
-import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.lanepolicy import policy_at
 from lab_commons.log import emit
@@ -211,7 +211,7 @@ def unnamed(found: Sequence[Deviation], message: str) -> tuple[str, ...]:
 
 
 def _git(root: Path, *args: str, data: bytes | None = None) -> bytes:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), *args], input=data, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S
     )
     if done.returncode != 0:

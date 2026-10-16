@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.checkout import worktrees
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgestatus import status_list
@@ -67,7 +68,7 @@ class Promotion:
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=False, timeout=300
     )
 

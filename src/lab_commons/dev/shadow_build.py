@@ -41,13 +41,14 @@ from __future__ import annotations
 
 import os
 import statistics
-import subprocess
 import sys
 import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+import lab_commons.launch as _door
 
 __all__ = [
     'Comparison',
@@ -152,7 +153,7 @@ def build_wheel(
     argv = [python or sys.executable, '-m', 'maturin', 'build', '-m', str(manifest), '-o', str(out_dir)]
     if release:
         argv.insert(4, '--release')
-    subprocess.run(argv, check=True, timeout=wall_s)
+    _door.run(argv, check=True, timeout=wall_s)
     wheels = sorted(out_dir.glob('*.whl'))
     if not wheels:
         msg = (
@@ -211,7 +212,7 @@ def time_once(probe: Path, shadow: Path | None, *, wall_s: float = DEFAULT_CHILD
     """
     env = shadow_env(shadow)
     started = time.perf_counter()
-    subprocess.run([sys.executable, str(probe)], check=True, env=env, timeout=wall_s)
+    _door.run([sys.executable, str(probe)], check=True, env=env, timeout=wall_s)
     return time.perf_counter() - started
 
 

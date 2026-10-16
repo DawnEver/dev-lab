@@ -40,12 +40,12 @@ never enters this file.
 
 from __future__ import annotations
 
-import subprocess
 import tomllib
 from collections.abc import Callable, Collection, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+import lab_commons.launch as _door
 from lab_commons.dev.dep import CHILD_WALL_S, Mode, Port, Report, Version, mutate
 
 __all__ = [
@@ -155,7 +155,7 @@ def install_self_build(
     port: Port,
     workspace: str | None = None,
     dry_run: bool = False,
-    run: Callable[..., Any] = subprocess.run,
+    run: Callable[..., Any] = _door.run,
     timeout: float = CHILD_WALL_S,
 ) -> Report:
     """Refuse a foreign wheel, then install it through the dependency door in PINNED mode.
