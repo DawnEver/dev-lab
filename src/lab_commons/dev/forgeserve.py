@@ -40,8 +40,7 @@ it side by side. A second, multi-child producer loop would restate all of that; 
 advanced per tick (the cluster's shape) would need a state file per child and a tick that adopts them.
 Threads share two things, each behind a lock: the git fetch of the serving checkout (two fetches into
 one repository race on its refs, and the tick fetches too) and the host card, published with EVERY live
-part's progress. Each part is judged in its own sha's tree: a sha being produced here is passed to the
-tick as busy, so no round claims a second part of it.
+part's progress. Each job is judged in its own tree, keyed by sha and context, so two jobs of one sha run side by side.
 
 CLAIMING WHILE PRODUCING, and how it ends. A host busy with one part keeps claiming what still fits, a
 round per tick period or per producer that ended. A producer STOPPED on purpose

@@ -421,7 +421,12 @@ def main(
         msg = f'{python} does not execute in its own environment {prefix}'
         raise ValueError(msg)
     command = _dep_project.uv_command(
-        root, python, selected, syncing=args.bootstrap is not None or args.sync, upgrade_packages=args.upgrade_package
+        root,
+        python,
+        selected,
+        syncing=args.bootstrap is not None or args.sync,
+        upgrade_packages=args.upgrade_package,
+        frozen=args.bootstrap is not None and (root / 'uv.lock').is_file(),
     )
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)

@@ -95,13 +95,13 @@ class _Trees:
         self.closed: list[str] = []
         self.logs: list[str] = []
 
-    def open(self, _root: Path, sha: str) -> Tree:
+    def open(self, _root: Path, sha: str, _context: str) -> Tree:
         self.opened.append(sha)
         if self.refuse:
             raise TreeFailed(self.refuse)
         return Tree(self.base / sha[:12], self.base / sha[:12] / 'python')
 
-    def close(self, _root: Path, sha: str, *, log: str = '') -> str:
+    def close(self, _root: Path, sha: str, _context: str, *, log: str = '') -> str:
         self.closed.append(sha)
         self.logs.append(log)
         return f'tree {sha[:12]}: removed'
@@ -862,7 +862,7 @@ def test_a_run_with_no_cpu_reading_learns_nothing(monkeypatch, tmp_path: Path) -
 
 
 def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkeypatch, tmp_path: Path) -> None:
-    """Serve keeps ticking while a producer lives: the next round sees it RUNNING and its sha BUSY, and claims more.
+    """Serve keeps ticking while a producer lives: the next round sees it RUNNING, and claims more.
 
     The first producer lives until the second ends, so the second can only have been claimed while it ran.
     """
@@ -877,8 +877,6 @@ def test_a_host_producing_one_part_claims_another_that_fits_while_it_runs(monkey
         monkeypatch, tmp_path, _claimed(first), procs, ticks=ticks, later=(_claimed(second),), table=QUICK, cards=cards,
     )  # fmt: skip
     assert [(p.sha, p.returncode) for p in report.produced] == [(SHA, 0), (other, 1)], 'in start order'
-    assert ticks[0]['busy'] == frozenset()
-    assert ticks[1]['busy'] == frozenset({SHA}), 'the tree of a part being produced is taken'
     assert ticks[1]['running'] == ticks[0]['running'], (
         'a live producer is a box ledger claim: in the supply, never twice'
     )

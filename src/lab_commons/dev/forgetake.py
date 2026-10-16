@@ -6,7 +6,7 @@ declares (:mod:`lab_commons.dev.forgerequest`). A job whose OWN commit is defect
 refused, a request name it does not declare, or a producer NO host kind can build -- is refused on that
 commit's own context once (:func:`lab_commons.dev.forgeclaim.refuse`) and never queued; a table this kit
 does not know is the serving host's defect, so that sha waits. Any other job is blocked by this host's
-kind lacking its producer, its sha's tree being busy here, its ref's budget, or admission -- and otherwise
+kind lacking its producer, its ref's budget, or admission -- and otherwise
 claimed, its demand then counted as running for every later candidate
 (:func:`lab_commons.compute.admission.admit`).
 """
@@ -22,7 +22,16 @@ from pathlib import Path
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
-from lab_commons.dev.forgerequest import Declared, UndeclaredRequest, declared_request, request_context
+from lab_commons.dev.forgerequest import (
+    Declared,
+    UndeclaredRequest,
+    declared_request,
+    request_context,
+    unreachable_source,
+    unreproducible,
+    unserved,
+    untrusted,
+)
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import Client
@@ -49,7 +58,6 @@ class ClaimPass:
     supply: Supply
     size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
     taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
-    trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
     unservable: set[str] = dataclasses.field(default_factory=set)  # keys whose producer this host kind cannot build
@@ -61,6 +69,9 @@ class ClaimPass:
     pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
     admitted: dict[str, tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
     requests: dict[tuple[str, str], Declared] = dataclasses.field(default_factory=dict)  # (sha, name) -> it
+    trunks: tuple[str, ...] = ()  # origin refs whose code runs for any requester (X1)
+    authors: frozenset[str] = frozenset()  # whose requests run here at any served sha (X1)
+    reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
 
     def consider(self, item: Ranked) -> None:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
@@ -136,25 +147,41 @@ class ClaimPass:
             return one, f'this host cannot produce {one.context}: {here}'
 
     def _own_request(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
-        """A request: refused at its commit when its sha declares no such producer; it runs in a local tree."""
+        """A request: refused at its commit when no host could ever reproduce it, waiting while THIS host cannot.
+
+        The commit's own defects -- a sha origin does not serve, an undeclared producer, no lock -- are
+        refused on its context. This host's -- a cluster seat, an author it does not run for off the
+        trunks, a git source it cannot fetch -- leave it waiting, named, for a host that can.
+        """
+        why, declared = wanted.refused or unserved(self.root, one.sha), None
         try:
             declared = self._declared(wanted)
-        except UndeclaredRequest as why:
+        except UndeclaredRequest as undeclared:
+            why = why or str(undeclared)
+        why = why or unreproducible(self.root, one.sha)
+        if why or declared is None:
             return one, f'{REFUSED_AT_COMMIT} {why}'
-        if self.serve.hpc:
+        if why := self._not_here(one, wanted):
             self.unservable.add(wanted.key)
-            return one, f'{NO_HOST} on a cluster seat runs a request'
-        return dataclasses.replace(one, argv=declared.argv), ''
+            return one, why
+        return dataclasses.replace(
+            one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall_h * 3600)
+        ), ''
+
+    def _not_here(self, one: Work, wanted: Candidate) -> str:
+        """Why THIS host does not run the request *one*, ``''`` when it does (its sources probed once a tick)."""
+        if self.serve.hpc:
+            return f'{NO_HOST} on a cluster seat runs a request'
+        if why := untrusted(self.root, one.sha, wanted.origin, trunks=self.trunks, authors=self.authors):
+            return why
+        if one.sha not in self.reached:
+            self.reached[one.sha] = unreachable_source(self.root, one.sha)
+        return self.reached[one.sha]
 
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
-        busy = not self.serve.hpc and wanted.sha in self.trees
-        why = (
-            (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
-            or over_budget(self.root, wanted, self.schedule, self.usage)
-            or self._admission(wanted, needed)
-        )
+        why = over_budget(self.root, wanted, self.schedule, self.usage) or self._admission(wanted, needed)
         return why, needed
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
@@ -176,7 +203,6 @@ class ClaimPass:
         if one.state == MINE:
             self.claimed.append(one)
             self._took(wanted, needed)
-            self.trees.add(wanted.sha)
         return one, ''
 
 

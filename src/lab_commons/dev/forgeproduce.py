@@ -14,7 +14,8 @@ stopped it on purpose.
 
 THE PRODUCER RUNS IN THE BOX (:func:`boxed`, :func:`lab_commons.box.command`): admitted on this machine's
 box ledger at exactly the demand the tick admitted it at (:func:`lab_commons.compute.learned.box_demand`),
-and killed by the box past that memory or :data:`~lab_commons.compute.learned.BOX_WALL_S`. A box with no
+and killed by the box past that memory or its wall (a part's :data:`~lab_commons.compute.learned.BOX_WALL_S`,
+a request's declared ``wall_h``). A box with no
 room releases the claim retryable; a kill is released naming it -- both read from the box's record
 beside the run's tree, never from the exit code, which is the producer's own. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
@@ -31,8 +32,9 @@ WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The produ
 sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
 a run that ended on its own (not stopped) records its peak, wall and MEASURED cpu-seconds
-under ``(local, its need-set)`` -- the box half of the one demand table a Slurm run also writes. A run the
-box killed records its peak as a floor (:func:`~lab_commons.compute.learned.record_run`).
+under ``(its producer, its need-set)`` -- ``local`` for a part, a request's declared name -- the box half
+of the one demand table a Slurm run also writes. A run the box killed records its peak as a
+floor (:func:`~lab_commons.compute.learned.record_run`).
 
 A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): an interactive
 run admitted beside it on the box ledger keeps the scheduler's favour.
@@ -54,17 +56,18 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
-from lab_commons.compute.learned import BOX_WALL_S, LOCAL, Run, record_run
+from lab_commons.compute.learned import Run, record_run
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target
 from lab_commons.dev.forgeclaim import Work, forge_now
+from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
 from lab_commons.dev.producer import ProducerExit, box_release_reason, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
-from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
+from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
 from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
@@ -100,8 +103,11 @@ def tree_gb(pid: int) -> float | None:
 
 
 def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
-    """Record one finished box run of *root*'s repository under ``(local, the part's need-set)``."""
-    record_run(origin_url(root), LOCAL, needs_of(item.platform), run, killed=killed)
+    """Record one finished box run of *root*'s repository under ``(its producer, its need-set)``.
+
+    A part's producer is ``local``; a request's is its declared NAME, so it never shares a test part's record.
+    """
+    record_run(origin_url(root), item.producer, needs_of(item.platform), run, killed=killed)
 
 
 def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path) -> list[str]:
@@ -113,7 +119,7 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path) ->
     asked = item.demand or {'cpu': capacity.cpu, 'mem_gb': capacity.mem_bytes / GB}
     seats = {name: 1 for name in needs_of(item.platform) if name in capacity.seats}
     cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
-    demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=BOX_WALL_S, seats=seats)
+    demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
     what = f'{item.context}@{item.sha[:12]}'
     return command(argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha)
 
@@ -149,10 +155,10 @@ def produce(
     renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
     """
     try:
-        tree = open_tree(root, item.sha)
+        tree = open_tree(root, item.sha, item.context)
     except TreeFailed as failed:
         _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
-        say(f'[{item.platform}] {close_tree(root, item.sha)}')
+        say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
@@ -164,7 +170,7 @@ def produce(
                     beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
                     meter=meter)  # fmt: skip
     finally:
-        say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
+        say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
 
 
 def _run(
@@ -236,7 +242,11 @@ def _run(
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(
-            client(root), item, (returncode, boxed_out), ''.join(heard), say
+            client(root),
+            item,
+            (returncode, boxed_out),
+            (''.join(heard), record_manifest(root, item.sha, item.context)),
+            say,
         )  # a request: its producer posts nothing
     elif posts and posts[-1].state == 'pending':
         reason = 'stopped' if stopped else boxed_out or release_reason(returncode)
@@ -289,14 +299,22 @@ def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callabl
         say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
-def _settle(client: Client, item: Work, ended: tuple[int, str | None], log: str, say: Callable[[str], None]) -> None:
+def _settle(
+    client: Client,
+    item: Work,
+    ended: tuple[int, str | None],
+    made: tuple[str, tuple[str, tuple[tuple[str, str], ...]]],
+    say: Callable[[str], None],
+) -> None:
     """A request's result -- the box's release when it ended the run, else the exit code's -- commented, then posted."""
     returncode, boxed_out = ended
+    log, record = made  # the run's log, and its record (shatree.record_manifest)
     host = (item.holder.machine or item.holder.login) if item.holder else '-'
     state, description = ('error', boxed_out) if boxed_out else result(returncode, host)
     try:
-        settle(client, int(item.context.removeprefix(CONTEXT_PREFIX)), state, description, log=log)
-    except ForgeCallFailed as failed:
+        number = int(item.context.removeprefix(CONTEXT_PREFIX))
+        settle(client, number, state, description, log=log, host=host, record=record)
+    except (ForgeCallFailed, LabelMissing) as failed:
         say(f'[{item.platform}] could not comment the result: {failed}')
     _post(client, item, state, description, say)
 

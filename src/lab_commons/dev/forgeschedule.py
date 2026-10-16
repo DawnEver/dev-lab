@@ -256,14 +256,23 @@ def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -
 
     A trailer or a request body is text anyone can write; the forge records who authored the PR or the
     issue, and the hosts issue who authored each card
-    (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`).
+    (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`). A part's unvouched trailer
+    is dropped; a REQUEST's unvouched ``host`` pin is REFUSED by name (``refused``), never silently run unpinned.
     """
-    return tuple(
-        one
-        if not one.origin_host or one.origin in owners.get(one.origin_host, ())
-        else dataclasses.replace(one, origin_host='')
-        for one in found
+    return tuple(_vouched(one, owners) for one in found)
+
+
+def _vouched(one: Candidate, owners: Mapping[str, Collection[str]]) -> Candidate:
+    if not one.origin_host or one.origin in owners.get(one.origin_host, ()):
+        return one
+    if one.kind != REQUEST:
+        return dataclasses.replace(one, origin_host='')
+    publisher = ', '.join(sorted(owners.get(one.origin_host, ()))) or 'nobody'
+    why = (
+        f'host = "{one.origin_host}" pins a host card {one.origin or "its author"} does not publish '
+        f'(published by {publisher}): drop the pin, or ask its publisher'
     )
+    return dataclasses.replace(one, origin_host='', refused=why)
 
 
 def _tips(root: Path) -> dict[str, str]:
@@ -276,10 +285,23 @@ def _labels(raw: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
-    """Open issues carrying *label*, raw (pull requests excluded) -- one call shape on gitea and GitHub."""
-    query = client.backend.list_query.format(state='open', limit=50) + '&labels=' + urllib.parse.quote(label)
-    listed = client.call('GET', f'{client.repo}/issues?{query}')
-    return tuple(raw for raw in listed if not is_pull(raw) and label in _labels(raw))
+    """Open issues carrying *label*, raw (pull requests excluded) -- every page, one call shape on both forges.
+
+    A page shorter than :data:`ISSUE_PAGE` is the last: request #51 is as visible as request #1.
+    """
+    query = client.backend.list_query.format(state='open', limit=ISSUE_PAGE) + '&labels=' + urllib.parse.quote(label)
+    found: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        listed = client.call('GET', f'{client.repo}/issues?{query}&page={page}') or []
+        found += [raw for raw in listed if not is_pull(raw) and label in _labels(raw)]
+        if len(listed) < ISSUE_PAGE:
+            return tuple(found)
+        page += 1
+
+
+#: Issues read per page of :func:`labelled_issues`.
+ISSUE_PAGE: Final = 50
 
 
 _REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)

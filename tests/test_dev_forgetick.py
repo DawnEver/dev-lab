@@ -697,19 +697,18 @@ def test_a_part_base_hands_to_is_claimed_where_its_needs_are_present(server, tmp
     assert [(w.platform, w.state, w.argv) for w in able.claimed] == [('jmag', MINE, tuple(_argv('jmag')))]
 
 
-def test_two_parts_of_one_sha_never_share_a_tree_in_one_tick(server, tmp_path: Path) -> None:
-    """A box judges a part in its sha's tree; the second part of the sha waits for the next tick."""
+def test_two_parts_of_one_sha_each_own_a_tree_and_are_claimed_in_one_tick(server, tmp_path: Path) -> None:
+    """S4: a job's tree is keyed by sha AND context, so a second part of the sha no longer waits a tick."""
     repo, tips = _origin(tmp_path)
     sha = _declare(repo, tips, NEEDS)
     hands = 'dev_checkout:1,jmag:1'
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{sha}', (200, [_base(hands)]), (200, [_base(hands), _post(2, ME, 'dev_checkout')]))
-    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    claimed = [_base(hands), _post(2, ME, 'dev_checkout'), _post(3, ME, 'jmag')]
+    answer('GET', f'{API}/statuses/{sha}', (200, claimed[:1]), (200, claimed[:2]), (200, claimed))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}), (201, {}))
     roomy = Supply('G', Resources(cpu=8, jmag=4, dev_checkout=1), frozenset({'cpu', 'jmag', 'dev_checkout'}))
     report = _tick(repo, server, supply=roomy, demand=_one_core)
-    assert [w.platform for w in report.claimed] == ['dev_checkout']
-    assert [item.blocked for item in report.queue] == [f'the tree of {sha[:12]} is producing another part here']
-    assert [w.platform for w in report.pending] == ['jmag'], 'PLANTED CONTROL: servable here, only busy now'
+    assert sorted(w.platform for w in report.claimed) == ['dev_checkout', 'jmag']
 
 
 def test_a_cluster_claims_what_it_has_and_never_a_part_needing_dev_checkout(server, tmp_path: Path) -> None:
@@ -808,21 +807,6 @@ def test_a_box_job_is_admitted_at_the_cores_it_measured_never_capped_to_the_box(
     answer('POST', f'{API}/statuses/{head}', (201, {}))
     fits = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=4))
     assert [w.ref for w in fits.claimed] == ['integrate/main']
-
-
-def test_a_sha_a_producer_here_is_judging_is_busy_and_not_claimed(server, tmp_path: Path) -> None:
-    """Serve claims while it produces: the tree of a sha in production is taken. PLANTED CONTROL: not busy, claimed."""
-    repo, tips = _origin(tmp_path)
-    head = tips['integrate/main']
-    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    answer('GET', f'{API}/statuses/{head}', (200, []))
-    busy = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=1), busy={head})
-    assert busy.claimed == ()
-    assert busy.queue[0].blocked == f'the tree of {head[:12]} is producing another part here'
-    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
-    answer('POST', f'{API}/statuses/{head}', (201, {}))
-    free = _tick(repo, server, supply=BOX, demand=lambda _wanted, _needs: Demand(cpu=1))
-    assert [w.ref for w in free.claimed] == ['integrate/main']
 
 
 def _stamped_lane(repo: Path, tips: dict[str, str], host: str) -> str:

@@ -20,40 +20,65 @@ anything its repository did not commit (an undeclared name is refused, never run
     [tool.lab_commons.requests.femm_goldens]
     argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]   # after the tree's python
     needs = ["femm", "windows"]   # its NEED-SET: resource names, an OS among them, like a part's
+    cpu = 2                       # its SIZE: what the box admits it at until a run of it is measured
+    mem_gb = 6.0                  # (learned per producer NAME); an unsized row is refused, never the whole host
+    wall_h = 48                   # past it the box kills the run: a long solve declares its own
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
-serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and closes the
-issue, 1 posts ``failure`` and leaves it open, every other code is released as a part's would be
+serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and labels the
+issue ``request:done``, 1 posts ``failure``, every other code is released as a part's would be
 (:func:`lab_commons.dev.producer.release_reason`). The issue gets a comment naming the outcome, the host,
-and the log's tail -- a failure is on record, never silent.
+where the record is kept there, each file's sha256 and the log's tail -- a failure is on record, never
+silent. Nothing closes it: the REQUESTER closes it to sign off on what was made.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import urllib.parse
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box.machine import RESOURCE_NAME
+from lab_commons.compute.model import REQUEST
+from lab_commons.config import section
+from lab_commons.dev.forge import _GIT
+from lab_commons.dev.forgelabels import add_label
+from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
     from pathlib import Path
 
+    from lab_commons.compute.model import Ranked
     from lab_commons.dev.forgework import Client
 
 __all__ = [
     'CONTEXT_PREFIX',
+    'DONE_LABEL',
+    'LOCK_FILE',
+    'REQUESTS_TABLE',
+    'UNADMITTED',
     'Declared',
     'UndeclaredRequest',
     'declared_request',
+    'git_sources',
     'parse_body',
+    'remind',
+    'request_authors',
     'request_body',
     'request_context',
     'result',
     'settle',
+    'unreachable_source',
+    'unreproducible',
+    'unserved',
+    'untrusted',
 ]
 
 #: The status context prefix of a request job; a part's is ``tests/``.
@@ -75,7 +100,10 @@ class Declared:
 
     name: str
     argv: tuple[str, ...]
-    needs: frozenset[str] = frozenset()
+    needs: frozenset[str]
+    cpu: float
+    mem_gb: float
+    wall_h: float
 
     @property
     def part(self) -> str:
@@ -129,7 +157,178 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
     if not isinstance(needs, list) or not all(isinstance(one, str) and RESOURCE_NAME.match(one) for one in needs):
         msg = f'{table} needs must be an array of resource names'
         raise UndeclaredRequest(msg)
-    return Declared(name, tuple(argv), frozenset(needs))
+    unsized = [key for key in ('cpu', 'mem_gb', 'wall_h') if not _positive(row.get(key))]
+    if unsized:
+        msg = f'{table} is unsized: declare {" and ".join(unsized)} positive (never the whole host)'
+        raise UndeclaredRequest(msg)
+    return Declared(name, tuple(argv), frozenset(needs), float(row['cpu']), float(row['mem_gb']), float(row['wall_h']))
+
+
+def _positive(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+#: The lock a request's sha must commit: it pins every dependency revision the tree is built from.
+LOCK_FILE: Final = 'uv.lock'
+
+
+def unreproducible(root: Path, sha: str) -> str:
+    """Why a tree built at *sha* would not be the same on every host, ``''`` when it would.
+
+    A sha committing no :data:`LOCK_FILE` resolves its floating dependencies to whatever they are on the
+    day, on the host: two runs of one request build two environments, so it is refused, never degraded.
+    """
+    done = subprocess.run(
+        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{LOCK_FILE}'], capture_output=True, check=False
+    )
+    return '' if done.returncode == 0 else f'{sha[:12]} commits no {LOCK_FILE}: a request pins every dependency'
+
+
+def unserved(root: Path, sha: str) -> str:
+    """Why origin cannot serve *sha* to a host that fetches it, ``''`` when one of its refs contains it.
+
+    A serve host's checkout sits on any branch; it builds a request's tree from what it fetched of origin, so a
+    sha only the requester holds (or only a deleted branch held) is one no host can build.
+    """
+    done = subprocess.run(
+        [_GIT, '-C', str(root), 'for-each-ref', '--count=1', '--contains', sha, 'refs/remotes/origin/'],
+        encoding='utf-8',
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode == 0 and done.stdout.strip():
+        return ''
+    return f'origin serves no ref containing {sha[:12]}: push it where origin keeps it'
+
+
+#: A git source in a lock: ``source = { git = "<url>?rev=..#<commit>" }``.
+_LOCKED_GIT: Final = re.compile(r'git\s*=\s*"(?P<url>[^"?#]+)')
+#: How long one ``git ls-remote`` of a source may take before it counts as unreachable, in seconds.
+REACH_TIMEOUT_S: Final = 60.0
+
+
+def git_sources(root: Path, sha: str) -> tuple[str, ...]:
+    """Every repository a tree at *sha* fetches by git: its lock's git sources, then its submodules' urls."""
+    lock = _show(root, f'{sha}:{LOCK_FILE}')
+    found = [match['url'] for match in _LOCKED_GIT.finditer(lock)]
+    modules = subprocess.run(
+        [_GIT, '-C', str(root), 'config', '--blob', f'{sha}:.gitmodules', '--get-regexp', r'^submodule\..*\.url$'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+    )
+    origin = _show(root, '', remote=True)
+    for line in modules.stdout.splitlines():
+        url = line.split(maxsplit=1)[-1]
+        found.append(urllib.parse.urljoin(origin.rstrip('/') + '/', url) if url.startswith('.') else url)
+    return tuple(dict.fromkeys(found))
+
+
+def unreachable_source(root: Path, sha: str) -> str:
+    """Why THIS host cannot fetch every git source of *sha* (:func:`git_sources`), ``''`` when it can.
+
+    Each is asked once with ``git ls-remote`` and no prompt: a source behind a credential this host lacks
+    fails here, before a claim, rather than mid-bootstrap after one.
+    """
+    quiet = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
+    for url in git_sources(root, sha):
+        try:
+            done = subprocess.run(
+                [_GIT, 'ls-remote', '-q', url, 'HEAD'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=REACH_TIMEOUT_S,
+                env=quiet,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return f'this host cannot fetch {_public(url)}: no answer in {REACH_TIMEOUT_S:g} s'
+        if done.returncode:
+            said = (done.stderr or '').strip().splitlines()
+            return f'this host cannot fetch {_public(url)}: {said[-1] if said else f"exit {done.returncode}"}'
+    return ''
+
+
+def _public(url: str) -> str:
+    """*url* without any userinfo: a credential is never written to a status or a log."""
+    parts = urllib.parse.urlsplit(url)
+    return parts._replace(netloc=parts.hostname or '').geturl() if parts.username or parts.password else url
+
+
+def _show(root: Path, spec: str, *, remote: bool = False) -> str:
+    argv = ['remote', 'get-url', 'origin'] if remote else ['show', spec]
+    done = subprocess.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
+    return done.stdout.strip() if done.returncode == 0 else ''
+
+
+#: The machine-file table naming whose requests this host runs off the trunks: ``authors = ["<login>", ...]``.
+REQUESTS_TABLE: Final = 'requests'
+
+
+def request_authors() -> frozenset[str]:
+    """The logins this host runs a request for at ANY served sha (its machine file's ``[requests] authors``)."""
+    table = section(REQUESTS_TABLE)
+    authors = table.get('authors', [])
+    if set(table) - {'authors'} or not isinstance(authors, list) or not all(isinstance(a, str) for a in authors):
+        msg = f'[{REQUESTS_TABLE}] takes only authors = ["<forge login>", ...]'
+        raise ValueError(msg)
+    return frozenset(authors)
+
+
+def untrusted(root: Path, sha: str, author: str, *, trunks: Sequence[str], authors: Collection[str]) -> str:
+    """Why this host does not run *author*'s request at *sha*, ``''`` when it does.
+
+    A request runs its sha's code on another person's box: only code reviewed onto one of *trunks* (origin's
+    integration branch or trunk) runs for anyone; code anywhere else runs only for an author this host's
+    machine file allows (:func:`request_authors`).
+    """
+    if author and author in authors:
+        return ''
+    for ref in trunks:
+        done = subprocess.run(
+            [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, f'refs/remotes/origin/{ref}'],
+            capture_output=True,
+            check=False,
+        )
+        if done.returncode == 0:
+            return ''
+    who = author or 'its unresolved author'
+    on = ' nor '.join(trunks)
+    return f"{sha[:12]} is on neither {on}, and {who} is not in this host's [{REQUESTS_TABLE}] authors"
+
+
+#: The mark of the one comment a request waiting past ``request_unadmitted_hours`` gets.
+UNADMITTED: Final = '**unadmitted**'
+
+
+def remind(client: Client, queue: Sequence[Ranked], *, hours: float, host: str) -> list[str]:
+    """Comment ONCE on each request of *queue* blocked past *hours*, naming why *host* did not admit it.
+
+    The requester otherwise learns nothing but by polling ``forge queue``. The issue's comments are read
+    first: one carrying :data:`UNADMITTED` means it was told. A forge call that fails is said, never raised.
+    """
+    said = []
+    for item in queue:
+        one = item.candidate
+        if one.kind != REQUEST or not item.blocked or item.wait_h < hours:
+            continue
+        path = f'{client.repo}/issues/{one.number}/comments'
+        try:
+            if any(UNADMITTED in str(raw.get('body') or '') for raw in client.call('GET', path) or ()):
+                continue
+            client.issue_comment(
+                one.number,
+                f'{UNADMITTED} for {item.wait_h:.0f} h: no host has claimed this request. {host}: {item.blocked}',
+            )
+        except ForgeCallFailed as failed:
+            said.append(f'could not tell issue/{one.number} it waits: {failed}')
+        else:
+            said.append(f'told issue/{one.number} it waited {item.wait_h:.0f} h unadmitted')
+    return said
 
 
 def result(code: int, host: str) -> tuple[str, str]:
@@ -141,9 +340,30 @@ def result(code: int, host: str) -> tuple[str, str]:
     return 'error', release_reason(code)
 
 
-def settle(client: Client, number: int, state: str, description: str, *, log: str) -> None:
-    """Comment the outcome and the log's tail on issue *number*; close it when the request succeeded."""
+#: The label a request whose producer exited 0 gets: done, awaiting its requester's sign-off.
+DONE_LABEL: Final = 'request:done'
+
+
+def settle(
+    client: Client,
+    number: int,
+    state: str,
+    description: str,
+    *,
+    log: str,
+    host: str,
+    record: tuple[str, Sequence[tuple[str, str]]],
+) -> None:
+    """Comment the outcome, where its record is kept, each file's sha256 and the log's tail on issue *number*.
+
+    A success is labelled :data:`DONE_LABEL` and LEFT OPEN: exit 0 says the producer finished, not that the
+    requester accepts what it made -- the requester signs off by closing it.
+    """
     tail = '\n'.join(log.rstrip().splitlines()[-TAIL_LINES:])
-    client.issue_comment(number, f'**{state}** -- {description}\n\nlog tail:\n\n```\n{tail}\n```')
+    kept, files = record
+    sums = ''.join(f'- `{digest}`  {name}\n' for name, digest in files) or '- (no file)\n'
+    where = f'record: `{kept}` on {host}' if kept else f'record: none declared on {host}'
+    body = f'**{state}** -- {description}\n\n{where}\n\nsha256:\n\n{sums}\nlog tail:\n\n```\n{tail}\n```'
+    client.issue_comment(number, body)
     if state == 'success':
-        client.issue_close(number)
+        add_label(client, number, DONE_LABEL)
