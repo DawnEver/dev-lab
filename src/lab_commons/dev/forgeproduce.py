@@ -32,8 +32,9 @@ WHAT THE RUN MEASURED IS LEARNED (:mod:`lab_commons.compute.learned`). The produ
 sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_commons.proccpu.TreeCpu`:
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
 a run that ended on its own (not superseded, not stopped) records its peak, wall and MEASURED cpu-seconds
-under ``(local, its need-set)`` -- the box half of the one demand table a Slurm run also writes. A run the
-box killed records its peak as a floor (:func:`~lab_commons.compute.learned.record_run`).
+under ``(its producer, its need-set)`` -- ``local`` for a part, a request's declared name -- the box half
+of the one demand table a Slurm run also writes. A run the box killed records its peak as a
+floor (:func:`~lab_commons.compute.learned.record_run`).
 
 A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): an interactive
 run admitted beside it on the box ledger keeps the scheduler's favour.
@@ -55,7 +56,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
-from lab_commons.compute.learned import BOX_WALL_S, LOCAL, Run, record_run
+from lab_commons.compute.learned import BOX_WALL_S, Run, record_run
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
@@ -103,8 +104,11 @@ def tree_gb(pid: int) -> float | None:
 
 
 def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
-    """Record one finished box run of *root*'s repository under ``(local, the part's need-set)``."""
-    record_run(origin_url(root), LOCAL, needs_of(item.platform), run, killed=killed)
+    """Record one finished box run of *root*'s repository under ``(its producer, its need-set)``.
+
+    A part's producer is ``local``; a request's is its declared NAME, so it never shares a test part's record.
+    """
+    record_run(origin_url(root), item.producer, needs_of(item.platform), run, killed=killed)
 
 
 def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path) -> list[str]:

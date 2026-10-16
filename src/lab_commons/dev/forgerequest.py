@@ -20,6 +20,8 @@ anything its repository did not commit (an undeclared name is refused, never run
     [tool.lab_commons.requests.femm_goldens]
     argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]   # after the tree's python
     needs = ["femm", "windows"]   # its NEED-SET: resource names, an OS among them, like a part's
+    cpu = 2                       # its SIZE: what the box admits it at until a run of it is measured
+    mem_gb = 6.0                  # (learned per producer NAME); an unsized row is refused, never the whole host
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
 serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and closes the
@@ -75,7 +77,9 @@ class Declared:
 
     name: str
     argv: tuple[str, ...]
-    needs: frozenset[str] = frozenset()
+    needs: frozenset[str]
+    cpu: float
+    mem_gb: float
 
     @property
     def part(self) -> str:
@@ -129,7 +133,15 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
     if not isinstance(needs, list) or not all(isinstance(one, str) and RESOURCE_NAME.match(one) for one in needs):
         msg = f'{table} needs must be an array of resource names'
         raise UndeclaredRequest(msg)
-    return Declared(name, tuple(argv), frozenset(needs))
+    unsized = [key for key in ('cpu', 'mem_gb') if not _positive(row.get(key))]
+    if unsized:
+        msg = f'{table} is unsized: declare {" and ".join(unsized)} as positive numbers (never the whole host)'
+        raise UndeclaredRequest(msg)
+    return Declared(name, tuple(argv), frozenset(needs), float(row['cpu']), float(row['mem_gb']))
+
+
+def _positive(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
 def result(code: int, host: str) -> tuple[str, str]:

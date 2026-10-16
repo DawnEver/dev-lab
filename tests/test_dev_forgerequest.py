@@ -15,6 +15,7 @@ from _box_fake import ended, record
 from _forge_fake import Recorder, answer, git_out, run_git
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
+from lab_commons.compute.learned import LOCAL, Run, run_of
 from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.dev import forgeproduce
 from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
@@ -26,6 +27,7 @@ from lab_commons.dev.forgerequest import (
     request_context,
 )
 from lab_commons.dev.forgeschedule import NOT_ADMITTED
+from lab_commons.dev.platformparts import origin_url
 from lab_commons.hpc.declared import OutdatedKit
 
 server = test_dev_forgetick.server  # the loopback forge fixture, shared
@@ -37,8 +39,12 @@ GOLDENS = (
     + '[tool.lab_commons.requests.femm_goldens]\n'
     + 'argv = ["-m", "solver", "golden", "regenerate", "--reference", "femm"]\n'
     + 'needs = ["femm", "windows"]\n'
+    + 'cpu = 2\n'
+    + 'mem_gb = 3.5\n'
 )
-FEMM_HOST = Supply('G', Resources(cpu=4.0, femm=1.0, windows=1.0), frozenset({'cpu', 'femm', 'windows'}))
+FEMM_HOST = Supply(
+    'G', Resources(cpu=4.0, mem_gb=16.0, femm=1.0, windows=1.0), frozenset({'cpu', 'mem_gb', 'femm', 'windows'})
+)
 PLAIN_HOST = Supply('G', Resources(cpu=4.0), frozenset({'cpu', 'windows'}))
 
 
@@ -112,6 +118,31 @@ def test_an_undeclared_producer_name_is_refused_not_run(server, tmp_path: Path) 
     assert (posted['body']['state'], posted['body']['context']) == ('error', request_context(9))
     assert posted['body']['description'].startswith(REFUSED_AT_COMMIT)
     assert '[tool.lab_commons.requests.rm_rf]' in posted['body']['description']
+
+
+def test_a_request_is_admitted_at_the_size_its_row_declares_never_the_whole_host(server, tmp_path: Path) -> None:
+    """S1 (live 2026-10-16): three requests each asked a host's WHOLE card and admitted nowhere busy.
+
+    No demand is injected: the tick sizes the request from its own row (``cpu``, ``mem_gb``).
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _request(repo, tips, 'femm_goldens')
+    mine = {'id': 2, 'context': 'request/9', 'status': 'pending', 'description': ME.description()}
+    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    (claimed,) = _tick(repo, server, supply=FEMM_HOST).claimed
+    assert dict(claimed.demand) == {'cpu': 2, 'mem_gb': 3.5, 'femm': 1.0, 'windows': 1.0}
+
+
+def test_an_unsized_request_row_is_refused_by_name(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the row above without its size is refused, never sized as the whole host."""
+    repo, tips = _origin(tmp_path)
+    unsized = _declare(repo, tips, GOLDENS.replace('cpu = 2\n', ''))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*cpu'):
+        declared_request(repo, unsized, 'femm_goldens')
+    zero = _declare(repo, tips, GOLDENS.replace('mem_gb = 3.5', 'mem_gb = 0'))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*mem_gb'):
+        declared_request(repo, zero, 'femm_goldens')
 
 
 def test_a_declaration_is_read_at_the_sha_and_refuses_a_malformed_row(tmp_path: Path) -> None:
@@ -199,3 +230,13 @@ def test_a_table_this_kit_does_not_know_is_the_readers_defect_never_the_requests
     older = _declare(repo, tips, GOLDENS + f'{RETIRED_TABLE}\nrows = 1\n')
     with pytest.raises(UndeclaredRequest, match='retired'):
         declared_request(repo, older, 'femm_goldens')
+
+
+def test_a_request_run_is_learned_under_its_producer_name(tmp_path: Path) -> None:
+    """S1: what a request's run measured sizes ITS next run, never the test part of its need-set."""
+    item = Work('issue/9', 'a' * 40, 'femm+windows', MINE, ME, argv=ARGV, request='request/9', producer='femm_goldens')
+    repo, _tips = _origin(tmp_path)
+    forgeproduce.learn_box_run(repo, item, Run(peak_mem_gb=4.0, cpu_s=7200.0, wall_s=3600.0), killed=False)
+    url = origin_url(repo)
+    assert run_of(url, 'femm_goldens', {'femm', 'windows'}) == Run(4.0, 7200.0, 3600.0)
+    assert run_of(url, LOCAL, {'femm', 'windows'}) is None

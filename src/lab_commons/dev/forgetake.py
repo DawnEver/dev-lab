@@ -144,7 +144,7 @@ class ClaimPass:
         if self.serve.hpc:
             self.unservable.add(wanted.key)
             return one, f'{NO_HOST} on a cluster seat runs a request'
-        return dataclasses.replace(one, argv=declared.argv), ''
+        return dataclasses.replace(one, argv=declared.argv, producer=declared.name), ''
 
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
