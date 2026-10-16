@@ -25,10 +25,11 @@ anything its repository did not commit (an undeclared name is refused, never run
     wall_h = 48                   # past it the box kills the run: a long solve declares its own
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
-serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and closes the
-issue, 1 posts ``failure`` and leaves it open, every other code is released as a part's would be
+serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and labels the
+issue ``request:done``, 1 posts ``failure``, every other code is released as a part's would be
 (:func:`lab_commons.dev.producer.release_reason`). The issue gets a comment naming the outcome, the host,
-and the log's tail -- a failure is on record, never silent.
+where the record is kept there, each file's sha256 and the log's tail -- a failure is on record, never
+silent. Nothing closes it: the REQUESTER closes it to sign off on what was made.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.compute.model import REQUEST
 from lab_commons.config import section
 from lab_commons.dev.forge import _GIT
+from lab_commons.dev.forgelabels import add_label
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
@@ -58,6 +60,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'CONTEXT_PREFIX',
+    'DONE_LABEL',
     'LOCK_FILE',
     'REQUESTS_TABLE',
     'UNADMITTED',
@@ -335,9 +338,30 @@ def result(code: int, host: str) -> tuple[str, str]:
     return 'error', release_reason(code)
 
 
-def settle(client: Client, number: int, state: str, description: str, *, log: str) -> None:
-    """Comment the outcome and the log's tail on issue *number*; close it when the request succeeded."""
+#: The label a request whose producer exited 0 gets: done, awaiting its requester's sign-off.
+DONE_LABEL: Final = 'request:done'
+
+
+def settle(
+    client: Client,
+    number: int,
+    state: str,
+    description: str,
+    *,
+    log: str,
+    host: str,
+    record: tuple[str, Sequence[tuple[str, str]]],
+) -> None:
+    """Comment the outcome, where its record is kept, each file's sha256 and the log's tail on issue *number*.
+
+    A success is labelled :data:`DONE_LABEL` and LEFT OPEN: exit 0 says the producer finished, not that the
+    requester accepts what it made -- the requester signs off by closing it.
+    """
     tail = '\n'.join(log.rstrip().splitlines()[-TAIL_LINES:])
-    client.issue_comment(number, f'**{state}** -- {description}\n\nlog tail:\n\n```\n{tail}\n```')
+    kept, files = record
+    sums = ''.join(f'- `{digest}`  {name}\n' for name, digest in files) or '- (no file)\n'
+    where = f'record: `{kept}` on {host}' if kept else f'record: none declared on {host}'
+    body = f'**{state}** -- {description}\n\n{where}\n\nsha256:\n\n{sums}\nlog tail:\n\n```\n{tail}\n```'
+    client.issue_comment(number, body)
     if state == 'success':
-        client.issue_close(number)
+        add_label(client, number, DONE_LABEL)

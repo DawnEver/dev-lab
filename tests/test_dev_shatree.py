@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import pytest
 from _forge_fake import git_out, make_repo, run_git
 
 from lab_commons.dev.platformparts import record_directory
-from lab_commons.dev.shatree import TREE_PREFIX, TreeFailed, close_tree, open_tree, tree_path
+from lab_commons.dev.shatree import TREE_PREFIX, TreeFailed, close_tree, open_tree, record_manifest, tree_path
 from lab_commons.dev.venvpath import current_os_name, venv_interpreter
 
 
@@ -104,3 +105,19 @@ def test_a_tree_declaring_no_record_home_is_still_removed_and_says_so(tmp_path: 
     assert not tree.path.exists()
     assert 'record NOT kept' in said
     assert 'tool.lab_commons.parts' in said
+
+
+def test_a_record_manifest_names_where_it_is_kept_and_each_files_sha256(tmp_path: Path) -> None:
+    repo, claimed, _later = _two_commits(tmp_path)
+    (repo / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "output/logs"\n', encoding='utf-8')
+    run_git(repo, 'add', 'pyproject.toml')
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'declare')
+    claimed = git_out(repo, 'rev-parse', 'HEAD')
+    tree = open_tree(repo, claimed, run=_bootstrap_fakes)
+    judged = record_directory(tree.path, claimed)
+    judged.mkdir(parents=True)
+    (judged / 'r.json').write_bytes(b'{}')
+    kept, files = record_manifest(repo, claimed)
+    assert kept == judged.relative_to(tree.path).as_posix()
+    assert files == (('r.json', hashlib.sha256(b'{}').hexdigest()),)
+    close_tree(repo, claimed)

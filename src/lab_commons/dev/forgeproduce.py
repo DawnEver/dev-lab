@@ -61,6 +61,7 @@ from lab_commons.compute.learned import Run, record_run
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
+from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import Status, status_history, status_post
@@ -68,7 +69,7 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
 from lab_commons.dev.producer import ProducerExit, box_release_reason, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
-from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree
+from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
 from lab_commons.dev.stoprun import declared_signatures, process_table, stop
 from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
@@ -251,7 +252,7 @@ def _run(
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(
-            client(root), item, (returncode, boxed_out), ''.join(heard), say
+            client(root), item, (returncode, boxed_out), (''.join(heard), record_manifest(root, item.sha)), say
         )  # a request: its producer posts nothing
     elif superseded or (posts and posts[-1].state == 'pending'):
         reason = 'stopped' if stopped else boxed_out or release_reason(returncode)
@@ -318,14 +319,22 @@ def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callabl
         say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
-def _settle(client: Client, item: Work, ended: tuple[int, str | None], log: str, say: Callable[[str], None]) -> None:
+def _settle(
+    client: Client,
+    item: Work,
+    ended: tuple[int, str | None],
+    made: tuple[str, tuple[str, tuple[tuple[str, str], ...]]],
+    say: Callable[[str], None],
+) -> None:
     """A request's result -- the box's release when it ended the run, else the exit code's -- commented, then posted."""
     returncode, boxed_out = ended
+    log, record = made  # the run's log, and its record (shatree.record_manifest)
     host = (item.holder.machine or item.holder.login) if item.holder else '-'
     state, description = ('error', boxed_out) if boxed_out else result(returncode, host)
     try:
-        settle(client, int(item.context.removeprefix(CONTEXT_PREFIX)), state, description, log=log)
-    except ForgeCallFailed as failed:
+        number = int(item.context.removeprefix(CONTEXT_PREFIX))
+        settle(client, number, state, description, log=log, host=host, record=record)
+    except (ForgeCallFailed, LabelMissing) as failed:
         say(f'[{item.platform}] could not comment the result: {failed}')
     _post(client, item, state, description, say)
 

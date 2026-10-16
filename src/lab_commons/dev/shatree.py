@@ -25,6 +25,7 @@ tree it copies the tree's ``<output>/<yy>/<mm>/<dd>/parts/<sha>/`` and the produ
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -39,7 +40,16 @@ from lab_commons.dev.platformparts import UndeclaredPart, record_directory
 from lab_commons.dev.venvpath import checkout_interpreter, current_os_name
 from lab_commons.dev.worktreeplace import WORKTREES_REL, main_checkout
 
-__all__ = ['TREE_PREFIX', 'Tree', 'TreeFailed', 'close_tree', 'keep_record', 'open_tree', 'tree_path']
+__all__ = [
+    'TREE_PREFIX',
+    'Tree',
+    'TreeFailed',
+    'close_tree',
+    'keep_record',
+    'open_tree',
+    'record_manifest',
+    'tree_path',
+]
 
 #: A producer's tree is ``forge-<sha12>`` under the main checkout's worktrees.
 TREE_PREFIX: Final = 'forge-'
@@ -89,6 +99,22 @@ def open_tree(root: Path, sha: str, *, run: Callable[..., Any] = subprocess.run,
         return Tree(tree, checkout_interpreter(tree, os_name=current_os_name()))
     except FileNotFoundError as missing:
         raise TreeFailed(str(missing)) from None
+
+
+def record_manifest(root: Path, sha: str) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Where *sha*'s record is kept in *root* (posix, relative) and ``(name, sha256)`` of each file its tree made.
+
+    What a request's requester is told before the tree is removed: the record path on the serving host and a
+    checksum per file, so a copy fetched later is verified. ``('', ())`` when the tree declares no record.
+    """
+    tree = tree_path(root, sha)
+    try:
+        judged = record_directory(tree, sha)
+    except (UndeclaredPart, FileNotFoundError):
+        return '', ()
+    made = sorted(one for one in judged.parents[4].glob(f'*/*/*/parts/{sha}/*') if one.is_file())
+    sums = tuple((one.name, hashlib.sha256(one.read_bytes()).hexdigest()) for one in made)
+    return judged.relative_to(tree).as_posix(), sums
 
 
 def keep_record(root: Path, sha: str, *, log: str) -> str:

@@ -18,9 +18,10 @@ from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _or
 from lab_commons.box import Capacity
 from lab_commons.compute.learned import LOCAL, Run, run_of
 from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
-from lab_commons.dev import forgeproduce
+from lab_commons.dev import forgeproduce, forgerequest
 from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from lab_commons.dev.forgerequest import (
+    DONE_LABEL,
     UNADMITTED,
     UndeclaredRequest,
     declared_request,
@@ -215,6 +216,8 @@ def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s: SimpleNamespace(path=tmp_path, python='py'))
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, **_kw: 'removed')
+    monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s: (KEPT, (('goldens.csv', DIGEST),)))
+    monkeypatch.setattr(forgerequest, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
     item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(
         tmp_path, item, client=lambda _r: client, spawn=lambda argv, **_k: record(argv, ended(code)) or _Proc(code),
@@ -224,12 +227,22 @@ def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
     return forge, comments
 
 
-def test_a_finished_request_posts_its_result_and_closes(monkeypatch, tmp_path: Path) -> None:
+KEPT = 'output/26/10/16/parts/' + 'a' * 40
+DIGEST = 'ab' * 32
+
+
+def test_a_finished_request_says_where_its_record_is_and_waits_for_sign_off(monkeypatch, tmp_path: Path) -> None:
+    """O1-O3: the requester learns the host, the record path and each file's sha256; exit 0 is not acceptance.
+
+    A success is labelled done and LEFT OPEN -- the requester closes it to sign off.
+    """
     forge, comments = _produce(monkeypatch, tmp_path, 0)
     assert forge.posts[-1][:2] == ('request/9', 'success')
-    (kind, number, body), closed = comments
-    assert (kind, number, closed) == ('comment', 9, ('close', 9))
+    (kind, number, body), labelled = comments
+    assert (kind, number, labelled) == ('comment', 9, ('label', 9, DONE_LABEL))
     assert 'regenerated 45 goldens' in body, 'the log travels with the result'
+    assert f'record: `{KEPT}` on G' in body
+    assert f'`{DIGEST}`  goldens.csv' in body
 
 
 def test_a_failed_request_is_a_failure_on_record_never_silent(monkeypatch, tmp_path: Path) -> None:
