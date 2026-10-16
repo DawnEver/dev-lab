@@ -2,7 +2,7 @@
 
 Everything here runs ON the cluster login node (``lab_commons.hpc``'s own shell, never ``ssh``):
 submitting and gathering a run, where its jobs stand (:func:`progress_text`, the phrase its claim
-carries), cancelling a superseded run, the outcomes a run CARRIES from the nearest earlier runs of its env --
+carries), cancelling a run no limit lets start, the outcomes a run CARRIES from the nearest earlier runs of its env --
 finished records and the finished shards of superseded ones (:mod:`lab_commons.dev.forgecarry`) -- and the
 account's STANDING read locally each tick -- its supply
 (cpu, memory, the QOS's remaining submissions over every grant and the machine file's declared tools,

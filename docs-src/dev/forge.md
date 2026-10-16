@@ -141,7 +141,8 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
   that admits the part.
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
-- **Supersede.** When a ref moves on, its in-flight run is cancelled and released `superseded by <sha12>`.
+- **A part under test is never superseded** (user ruling 2026-10-13). When a ref moves on, its in-flight
+  run finishes and posts on its own sha; the newer pushes queue behind it and are tested at the next tip.
 - **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test
   file's FOOTPRINT is derived at the judged sha: itself, its conftest/`__init__` chain, its transitive in-repo
   imports (candidates, so an added shadow counts), `pyproject.toml`/`uv.lock`, the declared `everywhere`
