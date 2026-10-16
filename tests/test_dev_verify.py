@@ -37,8 +37,7 @@ from typing import Final
 import pytest
 from _box_fake import ended
 
-from lab_commons.box import BOX_ENV, GB, Capacity, Refused, write_ended
-from lab_commons.box.run import INSIDE_ENV
+from lab_commons.box import BOX_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
 from lab_commons.compute import learned
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path

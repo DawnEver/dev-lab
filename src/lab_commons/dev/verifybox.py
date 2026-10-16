@@ -24,8 +24,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import Capacity, Demand, Refused, command, read_ended
-from lab_commons.box.run import INSIDE_ENV
+from lab_commons.box import INSIDE_ENV, Capacity, Demand, Refused, command, read_ended
 from lab_commons.compute import learned
 from lab_commons.dev.forgedemand import refresh_checkout
 from lab_commons.dev.platformparts import origin_url
