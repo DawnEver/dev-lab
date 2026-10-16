@@ -21,6 +21,7 @@ from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.dev import forgeproduce
 from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from lab_commons.dev.forgerequest import (
+    UNADMITTED,
     UndeclaredRequest,
     declared_request,
     git_sources,
@@ -380,3 +381,26 @@ def test_a_request_off_the_trunks_runs_only_for_an_author_this_host_allows(serve
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     (claimed,) = _tick(repo, server, supply=FEMM_HOST, demand=_one_core, authors=('mallory',)).claimed
     assert claimed.sha == sha
+
+
+def test_a_request_no_host_admits_is_said_once_on_its_issue(server, tmp_path: Path) -> None:
+    """S2: a request waiting past the declared hours gets ONE comment naming why, never silence.
+
+    PLANTED CONTROL: once the issue carries that comment, the next tick posts nothing.
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _request(repo, tips, 'femm_goldens')
+    answer('GET', f'{API}/statuses/{sha}', (200, []))
+    comments = f'{API}/issues/9/comments'
+    said = {'id': 5, 'body': 'x', 'html_url': 'u', 'user': {'login': 'alice'}}
+    answer('GET', comments, (200, []))
+    answer('POST', comments, (201, said))
+    _tick(repo, server, supply=PLAIN_HOST, demand=_one_core)
+    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
+    assert posted['path'] == comments
+    assert UNADMITTED in posted['body']['body']
+    assert 'G: not admitted: lacking femm' in posted['body']['body']
+    Recorder.received.clear()
+    answer('GET', comments, (200, [{**said, 'body': posted['body']['body']}]))
+    _tick(repo, server, supply=PLAIN_HOST, demand=_one_core)
+    assert not [r for r in Recorder.received if r['method'] == 'POST'], 'said once'

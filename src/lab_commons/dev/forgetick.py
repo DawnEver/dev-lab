@@ -86,7 +86,7 @@ from lab_commons.dev.forgeclaim import (
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgerequest import declared_request, request_authors
+from lab_commons.dev.forgerequest import declared_request, remind, request_authors
 from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgetake import ClaimPass
@@ -208,6 +208,8 @@ def tick(
     )  # fmt: skip
     for item in ranked:
         taken.consider(item)
+    if not dry_run:
+        lines += remind(built, taken.queue, hours=schedule.request_unadmitted_hours, host=machine or login)
     work, claimed, refused, queue = taken.work, taken.claimed, taken.refused, taken.queue
     for item in work:
         who = f' by {item.holder.login}@{item.holder.machine or "-"}' if item.holder else ''

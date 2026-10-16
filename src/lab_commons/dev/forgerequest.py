@@ -41,8 +41,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box.machine import RESOURCE_NAME
+from lab_commons.compute.model import REQUEST
 from lab_commons.config import section
 from lab_commons.dev.forge import _GIT
+from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
@@ -51,17 +53,20 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
     from pathlib import Path
 
+    from lab_commons.compute.model import Ranked
     from lab_commons.dev.forgework import Client
 
 __all__ = [
     'CONTEXT_PREFIX',
     'LOCK_FILE',
     'REQUESTS_TABLE',
+    'UNADMITTED',
     'Declared',
     'UndeclaredRequest',
     'declared_request',
     'git_sources',
     'parse_body',
+    'remind',
     'request_authors',
     'request_body',
     'request_context',
@@ -289,6 +294,36 @@ def untrusted(root: Path, sha: str, author: str, *, trunks: Sequence[str], autho
     who = author or 'its unresolved author'
     on = ' nor '.join(trunks)
     return f"{sha[:12]} is on neither {on}, and {who} is not in this host's [{REQUESTS_TABLE}] authors"
+
+
+#: The mark of the one comment a request waiting past ``request_unadmitted_hours`` gets.
+UNADMITTED: Final = '**unadmitted**'
+
+
+def remind(client: Client, queue: Sequence[Ranked], *, hours: float, host: str) -> list[str]:
+    """Comment ONCE on each request of *queue* blocked past *hours*, naming why *host* did not admit it.
+
+    The requester otherwise learns nothing but by polling ``forge queue``. The issue's comments are read
+    first: one carrying :data:`UNADMITTED` means it was told. A forge call that fails is said, never raised.
+    """
+    said = []
+    for item in queue:
+        one = item.candidate
+        if one.kind != REQUEST or not item.blocked or item.wait_h < hours:
+            continue
+        path = f'{client.repo}/issues/{one.number}/comments'
+        try:
+            if any(UNADMITTED in str(raw.get('body') or '') for raw in client.call('GET', path) or ()):
+                continue
+            client.issue_comment(
+                one.number,
+                f'{UNADMITTED} for {item.wait_h:.0f} h: no host has claimed this request. {host}: {item.blocked}',
+            )
+        except ForgeCallFailed as failed:
+            said.append(f'could not tell issue/{one.number} it waits: {failed}')
+        else:
+            said.append(f'told issue/{one.number} it waited {item.wait_h:.0f} h unadmitted')
+    return said
 
 
 def result(code: int, host: str) -> tuple[str, str]:
