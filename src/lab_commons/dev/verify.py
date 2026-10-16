@@ -45,7 +45,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
-from lab_commons.box import Refused
+from lab_commons.box import POLL_S, Refused
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.content import content_address
@@ -76,7 +76,6 @@ from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
 from lab_commons.dev.verifybox import MEASURE_WAIT_S, WAIT_S, boxed, ended_in_the_box
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
-from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
 __all__ = [
     'EXIT_CODES',
@@ -359,7 +358,7 @@ def run_verify(
     pytest_args: tuple[str, ...] = (),
     *,
     wait_s: float = WAIT_S,
-    poll_s: float = DEFAULT_POLL_S,
+    poll_s: float = POLL_S,
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
@@ -386,7 +385,6 @@ def run_verify(
 
     Raises:
         MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
-        Exhausted: another run held this environment for the whole of *wait_s*.
         Refused: the box had no room for the selection within *wait_s*. Nothing was measured either
             way, so there is no verdict to return; :func:`main` renders both as INCONCLUSIVE.
         UnverifiableLog: the log came out empty or unreadable, so no verdict may rest on it.
@@ -452,11 +450,10 @@ def main(argv: list[str] | None = None) -> int:
     person who typed the declaration, and a stack trace tells them about this module instead. It
     exits INCONCLUSIVE, because nothing was measured.
 
-    :class:`~lab_commons.resources.Exhausted` (the environment held) and :class:`~lab_commons.box.Refused`
-    (no room in the box) take the same route, for the same reason and with the same exit code: nothing was
-    measured, and INCONCLUSIVE is what a run that cannot say is required to say. The line NAMES the holder
-    and the remedy, because "busy" sends its reader to the process table to guess and guessing wrong kills
-    somebody's evidence.
+    :class:`~lab_commons.box.Refused` -- the environment seat held, or no room in the box -- takes one
+    route, with one exit code: nothing was measured, and INCONCLUSIVE is what a run that cannot say is
+    required to say. The line NAMES the holder and the remedy, because "busy" sends its reader to the
+    process table to guess and guessing wrong kills somebody's evidence.
 
     A SETTLED RUN IS THEN POSTED AS PARTS, ``tests/<part>`` -- one per need-set
     (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become run records of the cluster's
@@ -523,7 +520,7 @@ def main(argv: list[str] | None = None) -> int:
         code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, post=post)
         return json.dumps({'code': code, 'lines': lines})
 
-    answer, attached = run_once(key, lead, directory=box_directory(), poll_s=DEFAULT_POLL_S)
+    answer, attached = run_once(key, lead, directory=box_directory(), poll_s=POLL_S)
     shared = json.loads(answer)
     if attached:
         emit('verify: ATTACHED to the run already in flight for this tree, env and selection; its answer:')
@@ -555,8 +552,8 @@ def _judge(
         line = f'verify refuses to run: {exc}'
         emit(line, err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
-    except (Exhausted, Refused) as exc:
-        held = '; '.join(one.describe() for one in exc.holders) if isinstance(exc, Exhausted) else str(exc)
+    except Refused as exc:
+        held = str(exc)
         line = (
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: {held}. '
             f'Wait for it, or stop that holder, then re-run; '

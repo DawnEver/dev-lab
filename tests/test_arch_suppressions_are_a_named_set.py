@@ -458,16 +458,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'def pid_alive(pid: int) -> bool:',
     ): 'one return per platform branch, each naming its own answer rather than falling through',
     (
-        'src/lab_commons/resources.py',
-        'SLF001',
-        'clock=self._broker._creation_clock,',
-    ): 'one module, one owner: the grant and its broker are written and changed together',
-    (
-        'src/lab_commons/resources.py',
-        'SLF001',
-        'grant._release()',
-    ): 'the same pair: release is private BECAUSE only this context manager may call it',
-    (
         'src/lab_commons/units.py',
         'N801',
         'class BaseModel_with_q(BaseModel):',

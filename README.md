@@ -86,90 +86,13 @@ The base installation is the standard library alone. Select capabilities explici
   `process_tree(pid)` and `kill_process_tree(pid)`. stdlib `ctypes` only, never `psutil` — an
   optional dependency makes a ceiling that silently stops being enforced on some machines, which
   is worse than no ceiling because it is believed. Unreadable is always distinct from zero.
-- `lab_commons.resources` (**tier 1**) — the box-resource broker built on it: resource
-  DIMENSIONS as data (`seats`/`box_seats`/`memory`/`cpu` enforced; `wallclock`/`disk`/`gpu` carrying
-  the shape
-  with nothing able to check them), each naming its SCOPE — a pool's own stock, or one the whole
-  BOX contends for, which is what makes "one at a time, everywhere" a property of the mechanism
-  rather than of a shared pool NAME. A `CapacityRegistry` that models a per-box MEASUREMENT and an
-  everywhere-identical
-  STRUCTURAL constant as different kinds, cross-process reservation by record file, and a CEILING
-  on the running job. A job DECLARES its cost rather than requesting a slot. A seat file is created
-  WITH its record (`os.link` on a staged one) so a peer never reads a taken seat as free. An
-  UNMEASURED box is
-  neither refused nor permissively guessed: it gets the conservative value (serialise, minimum
-  width, a floor that is a share of TOTAL) and the fact travels in the RETURN VALUE —
-  `Grant.basis` / `Grant.conservative` / `Grant.is_fully_declared` — never in a log warning.
-  A ceiling held at the conservative value and a ceiling nobody applied are DIFFERENT facts:
-  `Grant.unbounded` is the second, so a demand on `disk` is never mistaken for a bound this
-  package applied — and declaring a value for it does not change that, because a number nobody
-  can read is not a ceiling.
-  The reservation tracks the JOB, not the Python client, so a vendor process outliving its driver
-  still holds its seat. It never evicts another party's run: the only route to a ceiling is
-  through the grant that admitted the job.
-
-## Adopting the shared agent deny rules
-
-`lab_commons.dev.hooks` holds one row per UNIVERSAL denied command shape — a hand-written test
-line, a bare `git push`, a stash, a force push, a `--no-verify` push, a raw process kill, a
-worktree with no commit named, an issue/PR write through `gh`, `tea` or a raw API call instead of
-`python -m lab_commons.dev.forge` (the one client that stamps which machine and agent wrote). Each row states the hazard and **names its remedy**: a rule that
-seals a road with no exit gets routed around rather than obeyed, so a rule whose remedy does not
-exist in your repo is **not shipped to it at all**.
-
-The statement is shared; the remedy is yours. Supply one per rule ID, exactly as
-`lab_commons.dev.rules.Adoption` supplies a mechanism per rule ID:
-
-```python
-# <repo>/scripts/repo/write_deny_rules.py
-from pathlib import Path
-from lab_commons.dev.hooks import Remedy
-from lab_commons.dev.hook_adoption import HookAdoption, render
-
-VERIFY = Remedy(
-    kind='verdict-entry-point',
-    command='python -m lab_commons.dev.verify',
-    allow=r'\blab_commons\.dev\.verify\b',
-    path='src/lab_commons/dev/verify.py',  # resolved against YOUR tracked files
-)
-ADOPTION = HookAdoption(
-    app_name='consumer-b',
-    remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
-    declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),  # no wrapper, no killer
-)
-Path('.claude/hooks/deny-rules.json').write_text(render(ADOPTION), encoding='utf-8')
-```
-
-Then commit that JSON, point a `PreToolUse` Bash matcher in `.claude/settings.json` at the deny
-engine with the file as `argv[2]`, and have your suite call
-`assert_shippable(ADOPTION, tracked_files(root))` plus a comparison of the committed file against
-`render(ADOPTION)`, so the two halves cannot drift.
-
-The ENGINE — the JavaScript that decides what a shell line will actually execute — ships in
-`lab_commons.dev.agenthooks` (`deny-commands.js`, stamped). A hook is executed from the repo tree
-by the agent harness, not imported from a wheel, so `lab_commons.dev.agent_guard` INSTALLS a copy
-into `.claude/hooks/` and checks that engine, rules and wiring are all live; it reads exactly the
-field names `render` emits (`name`, `pattern`, `matches`, `allow`, `reason`).
-
-## The family's mechanism docs
-
-`docs-src/dev/` is the one copy of the development MECHANISM every repo in this family shares —
-how a verdict is produced, how lanes fan out, how a merge lands, what the box rations, how `main`
-is protected. `.claude/rules/**` in each repo stays HARD CONSTRAINTS ONLY; the mechanics are here.
-
-The test for what belongs here has the same shape as the noun test in `lab_commons.dev.rules`:
-**does the document's SUBJECT change when you change repos?** The box, git, the forge and the
-family's process are the family's; a repo's own domain stays home.
-
-A consuming repo POINTS at these pages and never copies one. `lab_commons.dev.devdocs` ships the
-table of contents as data, and `pointer_table(base)` renders the markdown table that repo puts in
-its own dev index, so a page added or renamed here does not leave four hand-typed tables that
-agree for a while. The tree is rendered as consumer-a's `family` docs sub-site
-(`scripts/repo/docs.py`), which requires this repo checked out beside that one; otherwise the pages
-are read as markdown from a checkout or from the forge.
-
-## Consumers
-
+- `lab_commons.resources` (**tier 1**) — resource DIMENSIONS as data (`seats`/`memory`/`cpu`
+  enforced; `wallclock`/`disk`/`gpu` carrying the shape with nothing able to check them), the vocabulary
+  a Slurm plan and `lab_commons.width.fits` read.
+- `lab_commons.box` (**tier 1**) — the ONE ledger per machine: a run DECLARES cores, memory, a wall and
+  tool seats, is admitted by the one rule (`compute.admission.admit`) on the MEASURED room
+  (`box.supply.room`: free now, less what held claims have not taken yet, less the `[reserve]` margin),
+  and runs inside a kernel limit sized to its claim. Seats (an environment, a licence) are claims too.
 - **consumer-a** — the origin of this code; re-points `core/utils/{config,logger}.py`
   at this package (see that repo's `plan-lab-commons-standalone.md` for the swap runbook).
 - **consumer-c** — consumes the runtime package and the `[dev]` kit (shared rules registry,

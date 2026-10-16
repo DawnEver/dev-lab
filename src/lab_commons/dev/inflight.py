@@ -32,8 +32,8 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.box import box_path
 from lab_commons.proc import pid_alive
-from lab_commons.resources import Broker
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -62,7 +62,7 @@ class RunKey:
 
 def box_directory() -> Path:
     """The box-wide claim directory: beside the broker's records, outside every repository."""
-    return Broker().resource_dir() / 'inflight'
+    return box_path().parent / 'inflight'
 
 
 def claim_path(directory: Path, key: RunKey) -> Path:

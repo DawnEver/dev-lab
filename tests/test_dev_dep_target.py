@@ -14,9 +14,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from lab_commons.box import Refused
 from lab_commons.dev import _dep_project, dep
 from lab_commons.dev.envseat import EnvironmentSeat
-from lab_commons.resources import Exhausted
 
 
 @contextmanager
@@ -120,7 +120,7 @@ def test_mutation_holds_the_same_environment_seat_until_the_child_finishes(tmp_p
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
-        with pytest.raises(Exhausted), EnvironmentSeat(sys.prefix, 'gate:starts-during-mutation').held():
+        with pytest.raises(Refused), EnvironmentSeat(sys.prefix, 'gate:starts-during-mutation').held():
             pytest.fail('a verdict entered an environment while its mutation was running')
         return SimpleNamespace(returncode=0)
 
