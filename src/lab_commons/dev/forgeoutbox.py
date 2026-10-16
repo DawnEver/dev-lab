@@ -57,13 +57,15 @@ from lab_commons.dev.forge import (
     https_transport,
     on_origin,
 )
+from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from lab_commons.dev.forgerecords import attach
-from lab_commons.dev.forgestatus import STATES, status_post
+from lab_commons.dev.forgestatus import STATES, Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.log import emit
 
 __all__ = [
     'OUTBOX_REL',
+    'RESULTS',
     'Post',
     'PostFailed',
     'content_name',
@@ -75,6 +77,9 @@ __all__ = [
     'replay',
     'unprompted_client',
 ]
+
+#: The states that are a RESULT -- a verdict; ``error`` releases a claim and ``pending`` is one.
+RESULTS: Final = frozenset({'success', 'failure'})
 
 #: The length of a full sha-1 commit id, the only commit name the forge's status endpoint takes.
 SHA_LENGTH: Final = 40
@@ -203,7 +208,51 @@ def _replayed(root: Path, client: Callable[[Path], Client]) -> list[str]:
     return replay(journal, built)
 
 
-def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -> list[str]:
+def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], object]) -> str:
+    """Post *post* with its record -- unless a RESULT for its commit and context is already on the forge.
+
+    THE FIRST RESULT WINS (design D18). A run is deterministic, so a second result for the same unit is a
+    duplicate run (a lost lease, a partition): an identical one is dropped; a DIFFERING one is never posted
+    and sounds :data:`~lab_commons.dev.forgealarm.NONDETERMINISM` -- the unit is not deterministic.
+    """
+    directory = outbox_dir(root)
+    first = _decided(built, post)
+    if first is None:
+        url = attach(built, directory / post.record).url if post.record else ''
+        status_post(
+            built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
+        )
+        line = f'status: {post.context}={post.state} on {post.sha[:12]}' + (f' -> {url}' if url else '')
+    elif first.state == post.state:
+        line = f'status: {post.context} on {post.sha[:12]} already holds {first.state} -- the identical result dropped'
+    else:
+        forge = built.forge
+        alarm(
+            Alarm(
+                NONDETERMINISM, f'https://{forge.host}/{forge.owner}/{forge.repo}.git',
+                f'{post.context} on {post.sha[:12]} gave {first.state} and then {post.state}',
+                f'the first result ({first.description}) stands; the later one ({post.description}) was not posted. '
+                'The same unit gave two results: find what made it non-deterministic.',
+            )
+        )  # fmt: skip
+        line = f'status: {post.context} on {post.sha[:12]} held {first.state}; a later {post.state} ALARMED, not posted'
+    (directory / f'{post.key}.json').unlink(missing_ok=True)
+    if post.record and all(other.record != post.record for other in queued(root)):
+        (directory / post.record).unlink(missing_ok=True)
+    return line
+
+
+def _decided(built: Client, post: Post) -> Status | None:
+    """The first RESULT (:data:`RESULTS`) already posted in *post*'s context on its commit, when *post* is one."""
+    if post.state not in RESULTS:
+        return None
+    history = status_history(built, post.sha)
+    return next((one for one in history if one.context == post.context and one.state in RESULTS), None)
+
+
+def flush(
+    root: Path, *, client: Callable[[Path], Client] = unprompted_client, alarm: Callable[[Alarm], object] = sound
+) -> list[str]:
     """Replay the write journal, then post every held entry whose commit is on ``origin``; one line per entry.
 
     Raises:
@@ -211,7 +260,6 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
             failed ones stay queued.
 
     """
-    directory = outbox_dir(root)
     lines: list[str] = _replayed(root, client)
     failures: list[str] = []
     built: Client | None = None
@@ -225,20 +273,13 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
             lines.append(f'status: kept {post.context} on {post.sha[:12]} -- no forge credential or remote ({exc})')
             continue
         try:
-            url = attach(built, directory / post.record).url if post.record else ''
-            status_post(
-                built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
-            )
+            lines.append(_deliver(root, built, post, alarm))
         except ForgeCallFailed as exc:
             failures.append(f'{post.context} on {post.sha[:12]} ({exc.report.diagnosis.value}): {exc}')
             continue
         except (OSError, ValueError, KeyError) as exc:
             failures.append(f'{post.context} on {post.sha[:12]}: {exc!r}')
             continue
-        (directory / f'{post.key}.json').unlink(missing_ok=True)
-        if post.record and all(other.record != post.record for other in queued(root)):
-            (directory / post.record).unlink(missing_ok=True)
-        lines.append(f'status: {post.context}={post.state} on {post.sha[:12]}' + (f' -> {url}' if url else ''))
     if failures:
         msg = '\n'.join([*lines, *(f'status: post FAILED {line}' for line in failures), f'remedy: {_REMEDY}'])
         raise PostFailed(msg)

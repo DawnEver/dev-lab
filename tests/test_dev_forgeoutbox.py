@@ -19,6 +19,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 
 from lab_commons.dev import forgeoutbox
 from lab_commons.dev.forge import Forge, NoCredential
+from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm
 from lab_commons.dev.forgeoutbox import Post, PostFailed, content_name, enqueue, flush, outbox_dir, queued
 from lab_commons.dev.forgework import Client
 
@@ -56,6 +57,7 @@ def test_a_status_on_an_unpushed_commit_is_held_then_posted_once_it_is_on_origin
     assert Recorder.received == [], 'nothing is sent for a commit the forge does not hold'
     assert len(queued(repo)) == 1, 'a held entry is kept'
     _pushed(repo, sha)
+    answer('GET', f'{API}/statuses/{sha}', (200, []))  # no result on the forge yet
     answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
     assert flush(repo, client=built) == [f'status: tests/linux=success on {sha[:12]}']
     assert Recorder.received[-1]['body'] == {
@@ -77,6 +79,7 @@ def test_a_record_is_attached_and_the_status_links_it(server, tmp_path: Path) ->
     url = 'https://forge.example.org/attachments/u1'
     answer('GET', f'{API}/issues/3/assets', (200, []))
     answer('POST', f'{API}/issues/3/assets', (201, {'id': 7, 'name': record.name, 'browser_download_url': url}))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))  # no result on the forge yet
     answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
     lines = flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
     assert lines == [f'status: tests/linux=success on {sha[:12]} -> {url}']
@@ -111,6 +114,7 @@ def test_a_refused_post_raises_after_trying_every_entry_and_keeps_the_failed_one
     _pushed(repo, sha)
     enqueue(repo, Post(sha, 'tests/linux', 'failure', 'VERDICT result=fail'))
     enqueue(repo, Post(sha, 'tests/windows', 'success', 'scope=full ran=2'))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))  # no result on the forge yet
     answer('POST', f'{API}/statuses/{sha}', (403, {'message': 'forbidden'}), (201, {'context': 'tests/windows'}))
     with pytest.raises(PostFailed, match=r'(?s)post FAILED tests/linux.*remedy: it stays queued'):
         flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
@@ -155,6 +159,7 @@ def test_publish_cli_flushes_with_the_stored_credential(server, tmp_path: Path, 
     repo, sha = _committed(tmp_path)
     _pushed(repo, sha)
     enqueue(repo, Post(sha, 'tests/linux', 'success', 'v'))
+    answer('GET', f'{API}/statuses/{sha}', (200, []))  # no result on the forge yet
     answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
     env = credential_env(tmp_path)
     assert forgeoutbox.main([], cwd=repo, env=env, transport=_RedirectedLoopback(server)) == 0
@@ -165,3 +170,32 @@ def test_publish_cli_flushes_with_the_stored_credential(server, tmp_path: Path, 
 
 class _RedirectedLoopback(Loopback):
     """The CLI builds its own client from origin; route its HTTPS host to the loopback server."""
+
+
+def _decided(server, tmp_path: Path, first: str, later: str) -> tuple[list[str], list[Alarm]]:
+    """*first* is already the forge's result for the commit and context; the outbox holds *later* for it."""
+    repo, sha = _committed(tmp_path)
+    _pushed(repo, sha)
+    enqueue(repo, Post(sha, 'tests/linux', later, 'scope=full ran=9'))
+    answer('GET', f'{API}/statuses/{sha}', (200, [{'id': 1, 'context': 'tests/linux', 'status': first}]))
+    alarms: list[Alarm] = []
+    lines = flush(repo, client=lambda _root: client(FORGE, Loopback(server)), alarm=alarms.append)
+    assert not [r for r in Recorder.received if r['method'] == 'POST'], 'the first result stands: nothing posted'
+    assert queued(repo) == (), 'decided: the entry leaves the outbox'
+    return lines, alarms
+
+
+def test_an_identical_later_result_is_dropped(server, tmp_path: Path) -> None:
+    """D18: a duplicate run (a lost lease, a partition) wastes time but never posts twice."""
+    lines, alarms = _decided(server, tmp_path, 'success', 'success')
+    assert 'the identical result dropped' in lines[0]
+    assert alarms == []
+
+
+def test_a_differing_later_result_alarms_and_the_first_stands(server, tmp_path: Path) -> None:
+    """PLANTED CONTROL for the one above: the same unit, a different verdict -- non-determinism found."""
+    lines, alarms = _decided(server, tmp_path, 'success', 'failure')
+    assert 'ALARMED' in lines[0]
+    [alarm] = alarms
+    assert alarm.kind == NONDETERMINISM
+    assert 'gave success and then failure' in alarm.subject

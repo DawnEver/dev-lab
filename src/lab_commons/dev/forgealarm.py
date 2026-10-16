@@ -13,7 +13,8 @@ went READY, the integration tip became promotable, or a red needs routing (``int
 origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by whichever host prunes: the merged
 branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
 (``stale-branch``), which are never deleted; and an account whose storage is still near its quota after
-the retention pass (``storage``).
+the retention pass (``storage``). And one is a fact about a UNIT, not a host: the same commit and context gave
+two different results (``nondeterminism``, :func:`lab_commons.dev.forgeoutbox.flush`) -- the first stands.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
 (:data:`EVENT`). That line is the contract with a consumer that routes it (cc-config's Telegram/system
@@ -49,9 +50,22 @@ from lab_commons.supervise.alert import Notice, Notifier
 from lab_commons.supervise.verdict import Severity
 
 __all__ = [
-    'AUTH', 'EVENT', 'IDLE', 'INTEGRATION', 'ISSUE_KINDS', 'LEASE', 'PRUNED', 'RUN', 'STALE_BRANCH', 'STARVED',
-    'STORAGE', 'Alarm',
-    'main', 'repeat_window', 'sound',
+    'AUTH',
+    'EVENT',
+    'IDLE',
+    'INTEGRATION',
+    'ISSUE_KINDS',
+    'LEASE',
+    'NONDETERMINISM',
+    'PRUNED',
+    'RUN',
+    'STALE_BRANCH',
+    'STARVED',
+    'STORAGE',
+    'Alarm',
+    'main',
+    'repeat_window',
+    'sound',
 ]  # fmt: skip
 
 #: The ``event`` field of every alarm line -- what a consumer routes on.
@@ -73,6 +87,8 @@ ISSUE_KINDS: Final = (INTEGRATION, STARVED)
 PRUNED: Final = 'pruned'
 #: An UNMERGED origin branch sat idle past the declared grace; never deleted (:mod:`lab_commons.dev.branchprune`).
 STALE_BRANCH: Final = 'stale-branch'
+#: One unit gave two different results; the first stands (:func:`lab_commons.dev.forgeoutbox.flush`).
+NONDETERMINISM: Final = 'nondeterminism'
 #: Usage still at the quota pressure line after the retention pass (:mod:`lab_commons.dev.retention`).
 STORAGE: Final = 'storage'
 
