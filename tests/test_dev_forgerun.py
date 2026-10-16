@@ -20,6 +20,7 @@ from typing import Any, cast
 
 import pytest
 
+from lab_commons.compute import learned
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import artefacts, forgecarry, forgerun, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, Alarm
@@ -29,6 +30,7 @@ from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc import records
+from lab_commons.hpc.config import Config
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NotSubmitted
 
@@ -469,3 +471,37 @@ def test_an_orphan_array_is_named_by_its_own_job_id_never_its_pending_range(tmp_
     run: Any = SimpleNamespace(sha='a' * 40)
     assert cluster.orphans(run) == ['7683032', '7683040']
     assert asked == [f'squeue -h --me -n run-{"a" * 12} -o %F']
+
+
+def test_a_run_held_by_an_account_limit_is_given_back_cancelled_and_its_ask_learned(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Measured 2026-10-16: 52 tasks of 352 GB pended an hour on ``AssocGrpMemLimit``, 0 running, on one host.
+
+    The gather cancels the array, learns the 352 GB ask so this host stops admitting the part at its old
+    size, and raises :class:`NotSubmitted` -- the release path -- so a host with headroom takes it.
+    PLANTED CONTROL: the same job pending for priority is kept and gathered on.
+    """
+    asked: list[str] = []
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return ''
+
+    held = Progress('a' * 40, '7', 52, pending=52, reasons=('AssocGrpMemLimit',), pending_minutes=59.0)
+    monkeypatch.setattr(forgeslurm, 'settle', lambda *_a, **_k: forgeslurm.PENDING)
+    monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: held)
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: ({'rounds': [{'job_id': '7', 'mem_mb': 360658}]}, runner))
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
+    cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
+    run: Any = SimpleNamespace(
+        sha='a' * 40, output=str(home), repo_url='https://f/o/r.git', platform='base', job_ids=()
+    )
+    with pytest.raises(NotSubmitted, match='AssocGrpMemLimit'):
+        cluster.gather(run)
+    assert any(command.startswith('scancel 7') for command in asked), asked
+    assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(
+        360658 / 1024, rel=1e-12, abs=0.0
+    )
+    monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: dataclasses.replace(held, reasons=('Priority',)))
+    assert cluster.gather(run) is None

@@ -484,7 +484,7 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert 'running=[]' in said
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
     (line,) = [one for one in said if one.startswith('running=')][-1:]
-    assert line == "running=[Demand({'cpu': 1.0, 'files': 50000.0})]", (
+    assert line == "running=[Demand({'cpu': 1.0, 'mem_gb': 1.0, 'files': 50000.0})]", (
         'the next tick reads the run back from disk as running demand'
     )
     assert len(advanced) == 2

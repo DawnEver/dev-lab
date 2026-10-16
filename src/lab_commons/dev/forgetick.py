@@ -92,6 +92,7 @@ from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import derived, origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.config import Cost
 from lab_commons.log import emit
 
 __all__ = ['TickReport', 'main', 'tick']
@@ -222,8 +223,14 @@ def tick(
 
 
 def _whole(scope: str, *, cluster: bool) -> Supply:
-    """A tick given no supply: one core of an account, else this box's whole :class:`~lab_commons.box.Capacity`."""
-    return Supply(scope, Resources(cpu=1)) if cluster else probe.box(scope, capacity=Capacity.read())
+    """A tick given no supply: one default task of an account, else this box's whole capacity.
+
+    The task is :class:`~lab_commons.hpc.config.Cost`'s defaults, the floor every cluster demand asks; the box's
+    is :class:`~lab_commons.box.Capacity`.
+    """
+    one = Cost()
+    task = Resources(cpu=one.cpus, mem_gb=one.mem_gb)
+    return Supply(scope, task) if cluster else probe.box(scope, capacity=Capacity.read())
 
 
 def _demand_of(repo_url: str, *, cluster: bool) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:

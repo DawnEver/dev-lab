@@ -34,7 +34,7 @@ from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
-from lab_commons.hpc.progress import parse_queue, where
+from lab_commons.hpc.progress import Progress, held_by_a_limit, parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import (
     files_made,
@@ -47,7 +47,7 @@ from lab_commons.hpc.records import (
     stream_dirs,
     write_record,
 )
-from lab_commons.hpc.run import RETRIES, build_run, gather_run, submit_run
+from lab_commons.hpc.run import RETRIES, NotSubmitted, build_run, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
@@ -374,6 +374,7 @@ class FakeRunCluster:
         collected: str | None = None,
         hog: str = '',
         mem_ceiling: str = '360G',
+        held: str = '',
     ) -> None:
         """*have*: the cache holds the commit; *oom*: round 0 is OUT_OF_MEMORY; *active*: sacct polls RUNNING.
 
@@ -382,6 +383,7 @@ class FakeRunCluster:
         """
         self.have, self.dies, self.kills, self.oom = have, dies, kills, oom
         self.hog, self.mem_ceiling, self.closed = hog, mem_ceiling, False
+        self.held = held  # the account's OTHER running jobs, ``squeue`` lines of the probe's ``running`` section
         self.build_fails, self.lacking, self.active = build_fails, lacking, active
         self.env, self.collected = env, collected
         self.state = ''
@@ -406,7 +408,7 @@ class FakeRunCluster:
         if command.startswith('echo "@@@ nodes"'):
             quota = 'cpu=0' if self.closed else 'cpu=96'
             probed = IDLE.replace('|free|cpu=96,', f'|free|{quota},').replace('mem=360G', f'mem={self.mem_ceiling}')
-            return probed + '@@@ shared\n8 lc:ws=other\n'
+            return probed + self.held + '@@@ shared\n8 lc:ws=other\n'
         if 'cat-file' in command:
             return 'have\n' if self.have else 'missing\n'
         if '@@@ facts' in command and self.build_fails:
@@ -572,6 +574,34 @@ def test_a_round_no_grant_can_take_settles_as_an_error_naming_why() -> None:
     assert record['reasons']['tests/b.py::t4'].startswith('could not be placed: no grant can take this work')
     assert record['outcomes']['tests/b.py::t3'] == 'passed', 'PLANTED CONTROL: what ran keeps its result'
     assert len(fake.manifests) == 1, 'nothing was submitted'
+
+
+#: The measured shape, 2026-10-16: 29 one-core 8 GB tasks of other campaigns held 232 GB of a 360 GB ceiling.
+OTHER_CAMPAIGNS = 'acct-free|1|1|8G|N/A\n' * 29
+
+
+def test_a_first_round_the_headroom_cannot_hold_is_not_submitted_and_its_ask_is_learned() -> None:
+    """A 352 GB task beside 232 GB held of 360 GB: no array is queued ``%1`` to pend on ``AssocGrpMemLimit``.
+
+    The ask is learned under the part's need-set, so this host's next claim demands what the plan asks.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 240438.4})
+    fake = FakeRunCluster(held=OTHER_CAMPAIGNS)
+    with pytest.raises(NotSubmitted, match=r'no headroom now for one task of 1 CPU and 352\.2 GB'):
+        _submit(fake, history=learned.learned('https://g/r.git'))
+    assert fake.manifests == [], 'nothing was submitted'
+    asked = learned.cluster_demand('https://g/r.git')(frozenset())
+    assert asked['mem_gb'] == pytest.approx(240438.4 * 1.5 / 1024, rel=1e-9, abs=0.0)
+
+
+def test_a_first_round_with_headroom_is_throttled_to_it_not_to_the_ceiling() -> None:
+    """PLANTED CONTROL: the same 232 GB held, an 8 GB task: 128 GB of headroom runs 16 at once, not 45."""
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 8 * 1024 / 1.5})
+    fake = FakeRunCluster(held=OTHER_CAMPAIGNS)
+    state = _submit(fake, history=learned.learned('https://g/r.git'))
+    plan = state['rounds'][0]
+    assert (plan['mem_mb'], plan['room']) == (8192, 16)
+    assert plan['throttle'] == min(16, len(plan['shards']))
 
 
 def test_every_folded_round_teaches_its_repo_not_only_the_record() -> None:
@@ -934,6 +964,25 @@ def _queue(minutes: int, partitions: str, *, pending: int = 3, running: int = 1)
 def test_the_queue_says_pending_running_why_and_for_how_long() -> None:
     assert parse_queue(_queue(45, 'shortq,defq')) == (3, 1, ('Priority',), ('shortq', 'defq'), 45.0)
     assert parse_queue('') == (0, 0, (), (), 0.0)
+
+
+def _held(minutes: int, reason: str, *, running: int = 0) -> Progress:
+    """The measured shape, 2026-10-16: 52 tasks pending on *reason*, *running* of them started."""
+    text = '2026-10-16T01:00:00\n' + 'RUNNING|None|shortq|2026-10-16T00:00:00\n' * running
+    text += f'PENDING|{reason}|shortq,defq|2026-10-16T{(60 - minutes) // 60:02d}:{(60 - minutes) % 60:02d}:00\n' * 52
+    pending, run, reasons, partitions, waited = parse_queue(text)
+    return Progress(SHA, '7', 52, pending, run, reasons, partitions, waited)
+
+
+def test_a_job_with_nothing_running_held_by_an_account_limit_past_the_bound_is_given_back() -> None:
+    """PLANTED CONTROLS: under the bound, with a task running, or pending for priority, it is kept."""
+    policy = Policy(stall_minutes=30)
+    assert 'AssocGrpMemLimit' in held_by_a_limit(_held(59, 'AssocGrpMemLimit'), policy)
+    assert held_by_a_limit(_held(59, 'QOSMaxCpuPerUserLimit'), policy)
+    assert held_by_a_limit(_held(10, 'AssocGrpMemLimit'), policy) == ''
+    assert held_by_a_limit(_held(59, 'AssocGrpMemLimit', running=1), policy) == ''
+    assert held_by_a_limit(_held(59, 'Priority'), policy) == ''
+    assert held_by_a_limit(_held(59, 'JobArrayTaskLimit'), policy) == ''
 
 
 def test_where_counts_queued_running_and_done_then_finished() -> None:
