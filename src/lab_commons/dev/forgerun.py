@@ -67,10 +67,10 @@ from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context
-from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.records import read_record, write_record
-from lab_commons.hpc.run import NotSubmitted
+from lab_commons.hpc.run import NoRoom, NotSubmitted
 from lab_commons.hpc.shell import FULL
 
 __all__ = [
@@ -340,6 +340,8 @@ def _release_reason(run: Run, why: Exception, alarm: Callable[[Alarm], None]) ->
     if isinstance(why, MissingOutput):  # a declared output is part of the request: its absence fails the run
         alarm(Alarm(RUN, run.repo_url, f'the run of {run.sha[:12]} lacks a declared output', str(why)))
         return f'declared outputs missing: {why}'[:_DESCRIPTION_MAX]
+    if isinstance(why, NoRoom):  # a fact about this HOST: the part stays open to every host (forgeclaim.assess)
+        return f'{RETRYABLE} -- this host had no room: {why}'[:_DESCRIPTION_MAX]
     log = next((word for word in str(why).split() if word.startswith('log=')), '')  # the build log, named
     return f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}'.strip()
 
