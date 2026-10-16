@@ -158,10 +158,10 @@ def produce(
     re-read from ``origin``: a ref that moved on stops the producer, and its claim is released ``superseded by <sha>``.
     """
     try:
-        tree = open_tree(root, item.sha)
+        tree = open_tree(root, item.sha, item.context)
     except TreeFailed as failed:
         _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
-        say(f'[{item.platform}] {close_tree(root, item.sha)}')
+        say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
@@ -173,7 +173,7 @@ def produce(
                     beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
                     meter=meter)  # fmt: skip
     finally:
-        say(f'[{item.platform}] {close_tree(root, item.sha, log="".join(heard))}')
+        say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
 
 
 def _run(
@@ -252,7 +252,11 @@ def _run(
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(
-            client(root), item, (returncode, boxed_out), (''.join(heard), record_manifest(root, item.sha)), say
+            client(root),
+            item,
+            (returncode, boxed_out),
+            (''.join(heard), record_manifest(root, item.sha, item.context)),
+            say,
         )  # a request: its producer posts nothing
     elif superseded or (posts and posts[-1].state == 'pending'):
         reason = 'stopped' if stopped else boxed_out or release_reason(returncode)

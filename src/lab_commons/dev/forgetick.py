@@ -27,8 +27,8 @@ supply less everything already RUNNING -- on a box, the supply IS what the box l
 this tick claimed before it. A job that
 does not fit is skipped and a smaller lower-ranked one is still claimed; the skipped one waits naming
 the resources it lacks (``not admitted: lacking cpu``). Several parts may therefore run on one host at
-once. Two parts of ONE sha are never claimed by one box in one tick: a local part is judged in its
-sha's tree (:mod:`lab_commons.dev.shatree`), and one tree serves one producer.
+once, several jobs of one sha among them: each local job is judged in its OWN tree, keyed by sha and
+context (:mod:`lab_commons.dev.shatree`).
 
 PRIORITY IS ORDERING (:mod:`lab_commons.compute.priority`): a job this host's ``[priority]`` names is
 considered before every other; it takes no supply and preempts nothing.
@@ -47,7 +47,7 @@ import json
 import os
 import shlex
 import sys
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -135,7 +135,6 @@ def tick(
     weights: Mapping[str, float] | None = None,
     measured: Mapping[str, Any] | None = None,
     probe: Callable[[Path], str] = remote_problem,
-    busy: Iterable[str] = (),
     owners: Mapping[str, Collection[str]] | None = None,
     priority: Priority | None = None,
     authors: Collection[str] | None = None,
@@ -150,8 +149,7 @@ def tick(
     (default: :func:`lab_commons.compute.learned.learned`). *probe* says why a cluster host cannot write the
     repo's large artefact store (default: :func:`lab_commons.dev.artefacts.remote_problem`). Which resources
     this host has is *supply*'s ``present`` (:mod:`lab_commons.compute.probe`): a part whose need-set is not
-    all present waits ``not admitted: lacking <resource>``. *busy* are the shas a producer
-    here is judging now: their trees are taken, so no part of them is claimed. *owners* is who may vouch
+    all present waits ``not admitted: lacking <resource>``. *owners* is who may vouch
     for each host card (host -> the login that publishes it): a job's ORIGIN host stands only where its
     forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`). *priority* is this
     host's declared ordering (default: its machine file's ``[priority]``, :mod:`lab_commons.compute.priority`):
@@ -199,7 +197,7 @@ def tick(
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
-        taken=list(running), trees=set(busy), trunks=(policy.integration, policy.trunk),
+        taken=list(running), trunks=(policy.integration, policy.trunk),
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip

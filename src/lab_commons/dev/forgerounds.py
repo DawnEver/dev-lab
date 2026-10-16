@@ -3,8 +3,8 @@
 Extracted from :mod:`lab_commons.dev.forgeserve` (its module docstring states the sequence). A round reads
 what this host admits against NOW (:func:`supply_now`: a cluster's standing, else what the box ledger can
 still admit -- every producer this serve started and every interactive run is a claim on it already), runs
-:func:`lab_commons.dev.forgetick.tick` with each cluster run in flight as running demand and every live
-producer's sha as busy, and starts a producer thread for each local part it claimed (:class:`Producing`,
+:func:`lab_commons.dev.forgetick.tick` with each cluster run in flight as running demand, and starts a producer
+thread for each local part it claimed (:class:`Producing`,
 each one :func:`lab_commons.dev.forgeproduce.produce`). The next round comes one tick period later or when a
 producer ends; none comes after a producer was STOPPED on purpose (:mod:`lab_commons.dev.stoprun`). Every
 producer thread is joined before the rounds return or raise.
@@ -96,7 +96,7 @@ class Rounds:
         running = [self.sized(needs_of(run.platform)) for run in self.runs]
         ticked = _tick(
             self.repo, self.root, self.alarm, **self.ticking,
-            supply=supply, running=running, busy=self.producing.shas(),
+            supply=supply, running=running,
         )  # fmt: skip
         client = self.ticking['client'](self.root)
         self.latest.update(ticked=ticked, supply=supply, held=held)
@@ -193,11 +193,6 @@ class Producing:
                 self._live.pop(key, None)
                 self._progress.pop(key, None)
                 self._lock.notify_all()
-
-    def shas(self) -> frozenset[str]:
-        """The shas a live producer is judging: their trees are taken."""
-        with self._lock:
-            return frozenset(sha for sha, _platform in self._live)
 
     def stopped(self) -> bool:
         """Whether a producer was stopped on purpose (:mod:`lab_commons.dev.stoprun`)."""

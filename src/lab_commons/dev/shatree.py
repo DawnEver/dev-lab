@@ -7,7 +7,7 @@ judges whatever its serving checkout holds judges the wrong commit whenever the 
 
 THE CLUSTER'S RULE, LOCALLY. A cluster run is judged in ``~/ci/trees/<sha>``, a detached worktree of
 that one commit with its submodules at their pinned commits (:mod:`lab_commons.hpc.run`). A local
-part is judged the same way: :func:`open_tree` adds ``<main checkout>/.claude/worktrees/forge-<sha12>``
+part is judged the same way: :func:`open_tree` adds ``<main checkout>/.claude/worktrees/forge-<sha12>-<context>``
 (:data:`~lab_commons.dev.worktreeplace.WORKTREES_REL` -- a tree stays inside its repository), detached
 at the claimed sha, and bootstraps its OWN environment through the dependency door
 (``python -m lab_commons.dev.dep --bootstrap <tree>``: the commit's own lock and declared extras).
@@ -51,7 +51,8 @@ __all__ = [
     'tree_path',
 ]
 
-#: A producer's tree is ``forge-<sha12>`` under the main checkout's worktrees.
+#: A producer's tree is ``forge-<sha12>-<context>`` under the main checkout's worktrees: ONE PER JOB, so two
+#: jobs of one sha (a part and a request, two requests) each own a tree and run side by side.
 TREE_PREFIX: Final = 'forge-'
 
 _SHA_SHOWN: Final = 12
@@ -69,9 +70,10 @@ class Tree:
     python: Path
 
 
-def tree_path(root: Path, sha: str) -> Path:
-    """Where the tree of *sha* lives: ``<main checkout of root>/.claude/worktrees/forge-<sha12>``."""
-    return main_checkout(root) / WORKTREES_REL / f'{TREE_PREFIX}{sha[:_SHA_SHOWN]}'
+def tree_path(root: Path, sha: str, context: str) -> Path:
+    """Where the tree of job *context* at *sha* lives: ``<main checkout>/.claude/worktrees/forge-<sha12>-<context>``."""
+    slug = context.replace('/', '-')
+    return main_checkout(root) / WORKTREES_REL / f'{TREE_PREFIX}{sha[:_SHA_SHOWN]}-{slug}'
 
 
 def _step(run: Callable[..., Any], argv: list[str], what: str) -> None:
@@ -82,14 +84,16 @@ def _step(run: Callable[..., Any], argv: list[str], what: str) -> None:
         raise TreeFailed(msg)
 
 
-def open_tree(root: Path, sha: str, *, run: Callable[..., Any] = subprocess.run, python: str = sys.executable) -> Tree:
+def open_tree(
+    root: Path, sha: str, context: str, *, run: Callable[..., Any] = subprocess.run, python: str = sys.executable
+) -> Tree:
     """Add (or reuse) the detached tree of *sha*, its submodules, and its own environment.
 
     Raises:
         TreeFailed: a step refused; the message names it and the tail of its output.
 
     """
-    tree = tree_path(root, sha)
+    tree = tree_path(root, sha, context)
     if not (tree / '.git').exists():
         _step(run, [_GIT, '-C', str(root), 'worktree', 'add', '--detach', str(tree), sha], 'git worktree add')
     if (tree / '.gitmodules').is_file():  # a commit's tree INCLUDES its submodules at their pinned commits
@@ -101,13 +105,13 @@ def open_tree(root: Path, sha: str, *, run: Callable[..., Any] = subprocess.run,
         raise TreeFailed(str(missing)) from None
 
 
-def record_manifest(root: Path, sha: str) -> tuple[str, tuple[tuple[str, str], ...]]:
+def record_manifest(root: Path, sha: str, context: str) -> tuple[str, tuple[tuple[str, str], ...]]:
     """Where *sha*'s record is kept in *root* (posix, relative) and ``(name, sha256)`` of each file its tree made.
 
     What a request's requester is told before the tree is removed: the record path on the serving host and a
     checksum per file, so a copy fetched later is verified. ``('', ())`` when the tree declares no record.
     """
-    tree = tree_path(root, sha)
+    tree = tree_path(root, sha, context)
     try:
         judged = record_directory(tree, sha)
     except (UndeclaredPart, FileNotFoundError):
@@ -117,9 +121,9 @@ def record_manifest(root: Path, sha: str) -> tuple[str, tuple[tuple[str, str], .
     return judged.relative_to(tree).as_posix(), sums
 
 
-def keep_record(root: Path, sha: str, *, log: str) -> str:
+def keep_record(root: Path, sha: str, context: str, *, log: str) -> str:
     """Copy the tree's ``parts/<sha>/`` and *log* to the same place in *root*; one line says what happened."""
-    tree = tree_path(root, sha)
+    tree = tree_path(root, sha, context)
     try:
         judged = record_directory(tree, sha)
     except UndeclaredPart as why:
@@ -137,15 +141,15 @@ def keep_record(root: Path, sha: str, *, log: str) -> str:
     return f'record kept in {kept.relative_to(root).as_posix()}'
 
 
-def close_tree(root: Path, sha: str, *, log: str = '', run: Callable[..., Any] = subprocess.run) -> str:
+def close_tree(root: Path, sha: str, context: str, *, log: str = '', run: Callable[..., Any] = subprocess.run) -> str:
     """Keep the run record of *sha* in *root*, then remove its tree (``--force``: it is the producer's own).
 
     *log* is the producer's streamed output; it is kept beside the record. One line says what happened.
     """
-    tree = tree_path(root, sha)
+    tree = tree_path(root, sha, context)
     if not tree.exists():
         return f'tree {tree.name}: none to remove'
-    kept = keep_record(root, sha, log=log)
+    kept = keep_record(root, sha, context, log=log)
     done = run(
         [_GIT, '-C', str(root), 'worktree', 'remove', '--force', str(tree)],
         capture_output=True,

@@ -216,9 +216,9 @@ def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
     forge.post(None, sha, context='request/9', state='pending', description=ME.description())
     monkeypatch.setattr(forgeproduce, 'status_post', forge.post)
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
-    monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s: SimpleNamespace(path=tmp_path, python='py'))
-    monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, **_kw: 'removed')
-    monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s: (KEPT, (('goldens.csv', DIGEST),)))
+    monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s, _c: SimpleNamespace(path=tmp_path, python='py'))
+    monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, _c, **_kw: 'removed')
+    monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: (KEPT, (('goldens.csv', DIGEST),)))
     monkeypatch.setattr(forgerequest, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
     item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(

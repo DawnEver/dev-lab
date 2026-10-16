@@ -6,7 +6,7 @@ declares (:mod:`lab_commons.dev.forgerequest`). A job whose OWN commit is defect
 refused, a request name it does not declare, or a producer NO host kind can build -- is refused on that
 commit's own context once (:func:`lab_commons.dev.forgeclaim.refuse`) and never queued; a table this kit
 does not know is the serving host's defect, so that sha waits. Any other job is blocked by this host's
-kind lacking its producer, its sha's tree being busy here, its ref's budget, or admission -- and otherwise
+kind lacking its producer, its ref's budget, or admission -- and otherwise
 claimed, its demand then counted as running for every later candidate
 (:func:`lab_commons.compute.admission.admit`).
 """
@@ -58,7 +58,6 @@ class ClaimPass:
     supply: Supply
     size: Callable[[Candidate, frozenset[str]], Mapping[str, float]]
     taken: list[Mapping[str, float]] = dataclasses.field(default_factory=list)  # what runs, then each claim
-    trees: set[str] = dataclasses.field(default_factory=set)  # the shas a local claim of this tick holds
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
     unservable: set[str] = dataclasses.field(default_factory=set)  # keys whose producer this host kind cannot build
@@ -182,12 +181,7 @@ class ClaimPass:
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
-        busy = not self.serve.hpc and wanted.sha in self.trees
-        why = (
-            (f'the tree of {wanted.sha[:12]} is producing another part here' if busy else '')
-            or over_budget(self.root, wanted, self.schedule, self.usage)
-            or self._admission(wanted, needed)
-        )
+        why = over_budget(self.root, wanted, self.schedule, self.usage) or self._admission(wanted, needed)
         return why, needed
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:
@@ -209,7 +203,6 @@ class ClaimPass:
         if one.state == MINE:
             self.claimed.append(one)
             self._took(wanted, needed)
-            self.trees.add(wanted.sha)
         return one, ''
 
 
