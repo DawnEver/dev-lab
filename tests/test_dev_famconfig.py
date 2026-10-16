@@ -79,7 +79,7 @@ from lab_commons.dev.famconfig import (
 
 #: The measured three-way intersection, 2026-09-17. Pinned as a COUNT beside the named lines below
 #: rather than instead of them: the count says the table was not quietly halved, the names say which.
-GITIGNORE_LINES = 14
+GITIGNORE_LINES = 13
 
 #: How many artefacts the family declares. A floor -- a `BASES` that read empty would make every
 #: parametrized arm below pass over nothing at all.
@@ -105,7 +105,7 @@ def test_the_gitignore_base_is_the_measured_core_plus_the_mandated_lines() -> No
     assert all(why.strip() for why in GITIGNORE_FAMILY_LINES.values()), 'a mandated line carries its reason'
     assert '**/.claude/**' in GITIGNORE_CLAUDE_SECTION, 'the Claude section ignores .claude/worktrees/ too'
     assert_base_floor(len(GITIGNORE_BASE), GITIGNORE_FLOOR, '.gitignore')
-    assert 'uv.lock' in GITIGNORE_BASE, 'the ruling of 2026-09-17 keeps the lockfile out of git'
+    assert 'uv.lock' not in GITIGNORE_BASE, 'D8: every repo commits its lock'
     assert '.venv*' in GITIGNORE_BASE
     assert sorted(_SORTED) == list(_SORTED), 'sorted, so the measurement is re-derivable'
 
@@ -189,11 +189,11 @@ def test_planted_a_deleted_base_line_reds(tmp_path: Path) -> None:
     """THE RATCHET'S FIRST SIDE: a base line cannot leave a rendered file without a declared drop."""
     base, delta = _base(), _delta()
     path = tmp_path / '.gitignore'
-    kept = [line for line in render(base, delta).splitlines() if line != 'uv.lock']
+    kept = [line for line in render(base, delta).splitlines() if line != '.venv*']
     path.write_text('\n'.join(kept) + '\n', encoding='utf-8')
     report = inspect_file(path, base, delta)
     assert report.status == DRIFTED, report.detail
-    assert 'missing: uv.lock' in report.offending
+    assert 'missing: .venv*' in report.offending
 
 
 def test_planted_an_unstamped_file_reds_as_foreign_rather_than_drifted(tmp_path: Path) -> None:
@@ -245,7 +245,7 @@ def test_a_drop_with_an_empty_reason_is_refused() -> None:
 
 def test_a_delta_that_restates_a_base_line_is_refused() -> None:
     """THE FORK SEED: the base copied into the delta, where re-rendering no longer guards it."""
-    delta = Delta(repo='planted-repo', added=('uv.lock',), dropped={}, ceiling=4)
+    delta = Delta(repo='planted-repo', added=('.mypy_cache/',), dropped={}, ceiling=4)
     with pytest.raises(ForkedDelta, match='the base already has it'):
         render(_base(), delta)
 

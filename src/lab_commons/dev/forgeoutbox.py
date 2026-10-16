@@ -1,4 +1,11 @@
-"""THE OUTBOX -- a status (and its record) is KEPT until the commit it is about is on the forge, then posted.
+"""THE OUTBOX -- every outward forge write is journaled before it is attempted and replayed until acknowledged.
+
+TWO HALVES, ONE DIRECTORY. The WRITE JOURNAL (:mod:`lab_commons.dev._forge_journal`, ``writes/``) holds every
+write the forge door attempted and the forge has not acknowledged -- a status, a comment, an attachment, a
+label, an issue -- fsynced before the attempt; :func:`replay` sends each again (after its probe found it not
+landed) until the forge answers, so a crash or a forge outage loses nothing and never double-posts. The HELD
+STATUSES (below) are the posts whose commit the forge does not hold yet: they wait here, then go through the
+same door, and so through the same journal.
 
 THE DEFECT IT FIXES. A run finishes on a commit that is usually not pushed yet -- a lane verifies
 before it pushes, an integration tree is judged before the integration push -- and the forge refuses
@@ -19,15 +26,23 @@ or no ``origin`` on this box -- is reported and kept, never raised: the box simp
 
 WHERE IT LIVES. ``output/forge/outbox/`` in the MAIN checkout (resolved through git's common
 directory, as the verdict ledger is), so every lane of one repository shares one queue. One JSON file
-per entry, the record copied beside it, so two runs never race on one document.
+per entry, so two runs never race on one document.
+
+A RESULT IS CONTENT-ADDRESSED HERE BEFORE IT IS UPLOADED (design D19). :func:`enqueue` writes the record
+beside its entry under :func:`content_name` -- its name with the sha-256 of its bytes -- through a durable
+write (temp, fsync, rename), so a crash leaves the whole record or none; the upload then names it by that
+hash and :func:`~lab_commons.dev.forgerecords.attach` sends nothing the forge already holds under it. The same
+bytes are one asset however often they are queued; different bytes are a different asset, never a rewrite.
+A record leaves the outbox once no queued entry still names it.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import json
 import os
-import shutil
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -35,38 +50,40 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final
 
-import lab_commons.launch as _door
+from lab_commons.dev._forge_journal import OUTBOX_REL, Journal, durable_write, journal_for, outbox_dir
 from lab_commons.dev.forge import (
-    _GIT,
-    _GIT_TIMEOUT_S,
     NoCredential,
     Transport,
     UnreadableRemote,
     https_transport,
     on_origin,
 )
+from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from lab_commons.dev.forgerecords import attach
-from lab_commons.dev.forgestatus import STATES, status_post
+from lab_commons.dev.forgestatus import STATES, Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.log import emit
 
 __all__ = [
     'OUTBOX_REL',
+    'RESULTS',
     'Post',
     'PostFailed',
+    'content_name',
     'enqueue',
     'flush',
     'main',
     'outbox_dir',
     'queued',
+    'replay',
     'unprompted_client',
 ]
 
-#: The outbox, relative to the MAIN checkout's root.
+#: The states that are a RESULT -- a verdict; ``error`` releases a claim and ``pending`` is one.
+RESULTS: Final = frozenset({'success', 'failure'})
+
 #: The length of a full sha-1 commit id, the only commit name the forge's status endpoint takes.
 SHA_LENGTH: Final = 40
-
-OUTBOX_REL: Final = 'output/forge/outbox'
 
 _REMEDY: Final = (
     'it stays queued; re-run `python -m lab_commons.dev.forge publish` once the forge answers '
@@ -103,38 +120,26 @@ class Post:
         return f'{self.sha}-{self.context.replace("/", "_")}'
 
 
-def _common_root(root: Path) -> Path:
-    common = _door.run(
-        [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=True,
-        timeout=_GIT_TIMEOUT_S,
-    ).stdout.strip()
-    return Path(common).parent
-
-
-def outbox_dir(root: Path) -> Path:
-    """The outbox of the repository *root* belongs to, in its MAIN checkout (shared by every lane)."""
-    return _common_root(root) / OUTBOX_REL
+def content_name(name: str, data: bytes) -> str:
+    """*name* with 16 hex of the sha-256 of *data* before its suffixes (``run-<sha>-linux-r1-<hash>.json.gz``)."""
+    stem, dot, suffixes = name.partition('.')
+    return f'{stem}-{hashlib.sha256(data).hexdigest()[:16]}{dot}{suffixes}'
 
 
 def enqueue(root: Path, post: Post, *, record: Path | None = None) -> Path:
-    """Queue *post*, copying *record* beside it; returns the entry's path.
+    """Queue *post*, its *record* stored beside it under its content name; returns the entry's path.
 
     A queued entry for the same commit and context is REPLACED -- the newer run speaks for the commit.
     """
     directory = outbox_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
     if record is not None:
-        shutil.copyfile(record, directory / record.name)
-        post = Post(post.sha, post.context, post.state, post.description, record=record.name)
-    entry = directory / f'{post.key}.json'
-    staged = entry.with_suffix('.json.tmp')
-    staged.write_text(json.dumps({**asdict(post), 'queued_at': time.time()}, indent=2), encoding='utf-8')
-    staged.replace(entry)
-    return entry
+        data = record.read_bytes()
+        kept = durable_write(directory / content_name(record.name, data), data)
+        post = Post(post.sha, post.context, post.state, post.description, record=kept.name)
+    return durable_write(
+        directory / f'{post.key}.json', json.dumps({**asdict(post), 'queued_at': time.time()}).encode()
+    )
 
 
 def queued(root: Path) -> tuple[Post, ...]:
@@ -163,16 +168,105 @@ def unprompted_client(root: Path) -> Client:
     return client_for(root)
 
 
-def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -> list[str]:
-    """Post every queued entry whose commit is on ``origin``; return one line per entry.
+def replay(journal: Journal, client: Client, *, now: float | None = None) -> list[str]:
+    """Send every journaled write again until the forge acknowledges it; one line per write.
+
+    A write past its ``until`` is dropped by name (a lease is worth only its first answer); a write whose
+    probe finds it already landed is acknowledged without sending; one the forge still refuses or cannot
+    take stays journaled for the next tick.
+    """
+    lines: list[str] = []
+    moment = time.time() if now is None else now
+    for write in journal.pending():
+        what = f'{write.method} {write.path.split("?")[0]}'
+        if write.until <= moment:
+            journal.ack(write.key)
+            lines.append(f'outbox: dropped {what} -- past its until, never replayed')
+            continue
+        try:
+            if client.landed(write) is not None:
+                journal.ack(write.key)
+                lines.append(f'outbox: {what} had landed -- acknowledged, not sent again')
+                continue
+            client.resend(write)
+        except ForgeCallFailed as exc:
+            lines.append(f'outbox: kept {what} -- {exc.report.diagnosis.value}')
+            continue
+        journal.ack(write.key)
+        lines.append(f'outbox: replayed {what}')
+    return lines
+
+
+def _replayed(root: Path, client: Callable[[Path], Client]) -> list[str]:
+    """Replay *root*'s write journal; a box with no credential keeps it and says so."""
+    journal = journal_for(root)
+    if not journal.pending():
+        return []
+    try:
+        built = client(root)
+    except (NoCredential, UnreadableRemote) as exc:
+        return [f'outbox: kept {len(journal.pending())} journaled write(s) -- no forge credential or remote ({exc})']
+    return replay(journal, built)
+
+
+def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], object]) -> str:
+    """Post *post* with its record -- unless a RESULT for its commit and context is already on the forge.
+
+    THE FIRST RESULT WINS (design D18). A run is deterministic, so a second result for the same unit is a
+    duplicate run (a lost lease, a partition): an identical one is dropped; a DIFFERING one is never posted
+    and sounds :data:`~lab_commons.dev.forgealarm.NONDETERMINISM` -- the unit is not deterministic.
+
+    ONE OWNER PER WRITE. A held entry is already durable and is retried every flush until delivered, so its
+    upload and status go through the door WITHOUT the write journal; journaling them too gave a failed post
+    two owners, and after an outage both delivered it (a duplicate ``error`` status).
+    """
+    directory = outbox_dir(root)
+    built = dataclasses.replace(built, journal=None)  # the held entry owns this write, not the journal
+    first = _decided(built, post)
+    if first is None:
+        url = attach(built, directory / post.record).url if post.record else ''
+        status_post(
+            built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
+        )
+        line = f'status: {post.context}={post.state} on {post.sha[:12]}' + (f' -> {url}' if url else '')
+    elif first.state == post.state:
+        line = f'status: {post.context} on {post.sha[:12]} already holds {first.state} -- the identical result dropped'
+    else:
+        forge = built.forge
+        alarm(
+            Alarm(
+                NONDETERMINISM, f'https://{forge.host}/{forge.owner}/{forge.repo}.git',
+                f'{post.context} on {post.sha[:12]} gave {first.state} and then {post.state}',
+                f'the first result ({first.description}) stands; the later one ({post.description}) was not posted. '
+                'The same unit gave two results: find what made it non-deterministic.',
+            )
+        )  # fmt: skip
+        line = f'status: {post.context} on {post.sha[:12]} held {first.state}; a later {post.state} ALARMED, not posted'
+    (directory / f'{post.key}.json').unlink(missing_ok=True)
+    if post.record and all(other.record != post.record for other in queued(root)):
+        (directory / post.record).unlink(missing_ok=True)
+    return line
+
+
+def _decided(built: Client, post: Post) -> Status | None:
+    """The first RESULT (:data:`RESULTS`) already posted in *post*'s context on its commit, when *post* is one."""
+    if post.state not in RESULTS:
+        return None
+    history = status_history(built, post.sha)
+    return next((one for one in history if one.context == post.context and one.state in RESULTS), None)
+
+
+def flush(
+    root: Path, *, client: Callable[[Path], Client] = unprompted_client, alarm: Callable[[Alarm], object] = sound
+) -> list[str]:
+    """Replay the write journal, then post every held entry whose commit is on ``origin``; one line per entry.
 
     Raises:
         PostFailed: at least one attempted post failed; every other entry was still tried, and the
             failed ones stay queued.
 
     """
-    directory = outbox_dir(root)
-    lines: list[str] = []
+    lines: list[str] = _replayed(root, client)
     failures: list[str] = []
     built: Client | None = None
     for post in queued(root):
@@ -185,20 +279,13 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
             lines.append(f'status: kept {post.context} on {post.sha[:12]} -- no forge credential or remote ({exc})')
             continue
         try:
-            url = attach(built, directory / post.record).url if post.record else ''
-            status_post(
-                built, post.sha, context=post.context, state=post.state, description=post.description, target_url=url
-            )
+            lines.append(_deliver(root, built, post, alarm))
         except ForgeCallFailed as exc:
             failures.append(f'{post.context} on {post.sha[:12]} ({exc.report.diagnosis.value}): {exc}')
             continue
         except (OSError, ValueError, KeyError) as exc:
             failures.append(f'{post.context} on {post.sha[:12]}: {exc!r}')
             continue
-        (directory / f'{post.key}.json').unlink(missing_ok=True)
-        if post.record:
-            (directory / post.record).unlink(missing_ok=True)
-        lines.append(f'status: {post.context}={post.state} on {post.sha[:12]}' + (f' -> {url}' if url else ''))
     if failures:
         msg = '\n'.join([*lines, *(f'status: post FAILED {line}' for line in failures), f'remedy: {_REMEDY}'])
         raise PostFailed(msg)

@@ -57,9 +57,12 @@ from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
 from lab_commons.compute.learned import Run, record_run
+from lab_commons.compute.presence import demote
+from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target
 from lab_commons.dev.forgeclaim import Work, forge_now
+from lab_commons.dev.forgeintent import Intent, forget, journal
 from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgestatus import Status, status_history, status_post
@@ -72,7 +75,7 @@ from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
-__all__ = ['BOX_QUEUE_S', 'Produced', 'boxed', 'produce']
+__all__ = ['BOX_QUEUE_S', 'Produced', 'boxed', 'demote_unreachable', 'produce']
 
 #: How long a producer waits for its box claim, in seconds: the tick admitted it against the box ledger, so
 #: only a run admitted in between can be in its way -- then the claim is released and retried next tick.
@@ -89,6 +92,14 @@ class Produced:
     argv: tuple[str, ...]
     returncode: int
     stopped: bool = False  # by :mod:`lab_commons.dev.stoprun`, on purpose
+
+
+def demote_unreachable(produced: Sequence[Produced]) -> None:
+    """A part whose infrastructure did not answer (exit 4) demotes every checked tool it needs on this host."""
+    for one in produced:
+        if one.returncode == ProducerExit.UNREACHABLE:
+            tools = sorted(needs_of(one.platform) & CHECKS.keys())
+            demote(tools, f'{one.platform} at {one.sha[:12]} exited {int(ProducerExit.UNREACHABLE)} (unreachable)')
 
 
 #: Bytes in one gibibyte.
@@ -154,23 +165,32 @@ def produce(
     (:func:`boxed`, sized against *capacity*, default this box's). At each heartbeat the ref is
     renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
     """
+    journal(root, _intent(item))  # intent before action: a restarted host re-attaches (forgeintent)
     try:
         tree = open_tree(root, item.sha, item.context)
     except TreeFailed as failed:
         _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
         say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
+        forget(root, item.sha, item.context)
         return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
         argv = (str(tree.python), *item.argv)
         record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
         held = boxed(item, argv, (capacity or Capacity.read)(), record)
-        return _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
-                    say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
-                    beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
-                    meter=meter)  # fmt: skip
+        produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
+                        say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
+                        beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
+                        meter=meter)  # fmt: skip
     finally:
         say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
+    forget(root, item.sha, item.context)  # released: only a run that never got here is re-attached
+    return produced
+
+
+def _intent(item: Work, pid: int = 0) -> Intent:
+    holder = item.holder.description() if item.holder is not None else ''
+    return Intent(item.ref, item.sha, item.platform, item.context, holder, pid)
 
 
 def _run(
@@ -208,6 +228,7 @@ def _run(
         encoding='utf-8',
         errors='replace',
     )
+    journal(root, _intent(item, proc.pid or 0))  # the pid a restarted host re-attaches to
     pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say, heard), daemon=True)
     pump.start()
     started = clock()

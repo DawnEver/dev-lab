@@ -20,7 +20,6 @@ from lab_commons.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHAR
 from lab_commons.dev.doorcensus import (
     DoorDriftError,
     assert_census,
-    assert_no_tracked_lock,
     door_text,
     reachable,
     read,
@@ -44,11 +43,6 @@ def test_every_declared_door_still_measures_what_the_table_records() -> None:
     """THE CENSUS. Equality per file, in both directions, over every repo reachable from this box."""
     seen = assert_census(_BASE, _PATHS, DOORS, repo_floor=REPO_FLOOR, door_floor=DOOR_FLOOR, here=_HERE)
     assert 'lab-commons' in seen, 'the census did not even read the tree it runs in'
-
-
-def test_this_repo_does_not_track_the_lock() -> None:
-    """The condition every surviving lock-consuming door rests on, asserted rather than assumed."""
-    assert_no_tracked_lock(_roots())
 
 
 def test_the_shared_ci_door_is_judged_against_what_its_callers_float() -> None:
@@ -80,7 +74,7 @@ def test_a_reverting_door_planted_into_a_live_repo_is_refused() -> None:
     home = _ROOT / 'pyproject.toml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
-    assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'REVERTS'}
+    assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'UNLOCKED'}
 
 
 def test_the_census_refuses_a_drift_planted_into_the_real_table() -> None:

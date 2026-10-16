@@ -87,6 +87,14 @@ Each tick it:
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The
   other way round, a RETIRED table (`lab_commons.hpc.retired`) is refused naming its replacement: the
   declaration is older than the kit ([migrating a repo](migrate.md#migrating-a-repo-to-need-set-parts)).
+- **The lock records, a schedule upgrades (D8/D20).** Every repo commits `uv.lock`; `dep --bootstrap` (a
+  host's venv, a producer's tree) is always `uv sync --frozen`. The `lock` pre-push row
+  (`lab_commons.dev.lockcheck`) refuses a pushed commit with no lock, with a git requirement the lock does
+  not pin to a commit, or whose newest `Lock-Upgraded:` commit is older than
+  `[tool.lab_commons.integrator] lock_max_age_days`. A repo declaring the request producer `lock_upgrade`
+  and `[tool.lab_commons.branchset] update` gets it opened by any serve tick at `origin/<integration>`
+  daily, or when a git source its lock pins moved (`lab_commons.dev.lockupgrade`); the producer runs
+  `uv lock --upgrade`, commits on the update branch with the trailer, and the forge tests it like any child.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards lab-commons and then each `[serve]` repo to its upstream and
@@ -229,8 +237,8 @@ lower-ranked one is still claimed, so several parts run on one host at once.
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
 `[capabilities.<name>]` declares a resource it has beyond its OS (`seats` = its concurrency, the one number
-no probe reads); a probed tool is present only where its probe finds it
-([HPC clusters](hpc.md#parts-by-need-set)).
+no probe reads); a checked tool is present only where its check passes, and the card shows each verdict with
+its evidence ([HPC clusters](hpc.md#parts-by-need-set)).
 
 ## The queue
 

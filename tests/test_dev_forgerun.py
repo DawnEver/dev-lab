@@ -71,7 +71,7 @@ class _Client:
     def answered(self) -> str:
         return format_datetime(self.store.now, usegmt=True)
 
-    def call(self, method: str, _path: str, body: dict[str, str] | None = None) -> object:
+    def call(self, method: str, _path: str, body: dict[str, str] | None = None, durable: object = None) -> object:
         if method == 'POST':
             if self.store.refuse:
                 attempt = Attempt(1, 403, 'forbidden', Diagnosis.FORGE_REFUSED)
@@ -208,6 +208,36 @@ def test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted(home: Path) -> N
     assert (after.phase, slurm.submits) == (forgerun.CLAIMED_PHASE, 0)
     assert [a.kind for a in alarms] == [LEASE]
     assert 'scancel' in alarms[0].body
+
+
+class _CrashAtSbatch(_Slurm):
+    """``sbatch`` queued the jobs, then the login node died before ``hpc`` wrote the run state."""
+
+    def submit(self, _run: forgerun.Run) -> list[str]:
+        self.queue = ['555']
+        msg = 'the login node went down mid-submit'
+        raise ConnectionResetError(msg)
+
+
+def test_the_submit_is_journaled_before_sbatch_so_a_crash_mid_submit_is_resumed_not_orphaned(home: Path) -> None:
+    """D19: the run file says ``submitting`` BEFORE sbatch; jobs found under it are ours, cancelled and resubmitted.
+
+    PLANTED CONTROL: :func:`test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted` -- the same jobs under a
+    run never journaled as submitting still alarm and wait for a human.
+    """
+    store, crashing, alarms = _Store(), _CrashAtSbatch(home / 'r'), []
+    _start(home, store)
+    with pytest.raises(ConnectionResetError):
+        _tick(store, crashing)
+    (journaled,) = forgerun.live('https://f/o/r.git')
+    assert journaled.phase == forgerun.SUBMITTING, 'the intent was on disk before sbatch was called'
+    slurm = _Slurm(home / 'r')
+    slurm.queue = list(crashing.queue)
+    after = _tick(store, slurm, alarms=alarms)
+    assert after is not None
+    assert (after.phase, after.job_ids, slurm.submits) == (forgerun.SUBMITTED, ('4242',), 1)
+    assert slurm.cancelled == ['555'], 'the interrupted submit is cancelled, never left running twice'
+    assert alarms == [], 'no human is needed: the journal says the jobs were ours'
 
 
 def test_another_login_host_of_this_account_holding_it_live_is_left_alone(home: Path) -> None:

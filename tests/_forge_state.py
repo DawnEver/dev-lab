@@ -106,9 +106,9 @@ class StateForge(Client):
         self.issues_by_number[number] |= body
         return self.issues_by_number[number]
 
-    def call(self, method: str, path: str, body: object = None, landed: object = None) -> object:
+    def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
-        del landed
+        del durable
         self.answered = NOW_HTTP
         route, _, raw_query = path.partition('?')
         query = dict(urllib.parse.parse_qsl(raw_query))

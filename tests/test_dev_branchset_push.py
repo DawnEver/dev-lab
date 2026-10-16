@@ -31,6 +31,7 @@ from lab_commons.dev.branchset_push import (
     undeclared,
 )
 from lab_commons.dev.githooks.table import base_rows
+from lab_commons.dev.lockcheck import TRAILER
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session', 'integrate/main'}))
@@ -53,10 +54,11 @@ def _planted(root: Path) -> Path:
     """A real checkout whose manifest declares the branch set, plus a real bare origin."""
     root.mkdir(parents=True, exist_ok=True)
     (root / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
+    (root / 'uv.lock').write_text('version = 1\n', encoding='utf-8')  # so the lock check (D8) passes this push
     subprocess.run([_GIT, 'init', '-q', '-b', 'main', str(root)], check=True, capture_output=True, timeout=60)
-    subprocess.run([_GIT, 'add', 'pyproject.toml'], cwd=root, check=True, capture_output=True, timeout=60)
+    subprocess.run([_GIT, 'add', 'pyproject.toml', 'uv.lock'], cwd=root, check=True, capture_output=True, timeout=60)
     subprocess.run(
-        [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'c1'],
+        [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'c1', '-m', f'{TRAILER}: 2026-10-16'],
         cwd=root,
         check=True,
         capture_output=True,
@@ -114,9 +116,9 @@ def test_stdin_carries_the_refspec_and_the_deletion_flag() -> None:
         'malformed line with three fields',  # skipped, not crashed on
     ]
     assert pushed_refs(lines) == (
-        _ref('refs/heads/feat/session'),
-        _ref('refs/heads/work/foo', deleted=True),
-        _ref('refs/tags/v1'),
+        PushedRef('refs/heads/feat/session', local_sha=_HEAD),
+        PushedRef('refs/heads/work/foo', deleted=True, local_sha=_ZERO),
+        PushedRef('refs/tags/v1', local_sha=_HEAD),
     )
 
 

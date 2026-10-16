@@ -107,3 +107,17 @@ always_run = true
 id = "branchset-push"
 run = ["python", "-m", "lab_commons.dev.branchset_push"]
 always_run = true
+
+# BEHIND-IS-BOUNDED: a push of a branch other than integration/trunk more than [tool.lab_commons.integrator]
+# behind_max commits behind origin/<integration> is refused, naming `forge sync` (lab_commons.dev.behindpush).
+[[pre-push]]
+id = "behind-push"
+run = ["python", "-m", "lab_commons.dev.behindpush"]
+always_run = true
+
+# LOCKS RECORD (D8/D20): a pushed commit commits uv.lock, pins every git requirement in it, and was upgraded within
+# [tool.lab_commons.integrator] lock_max_age_days (lab_commons.dev.lockcheck). The remedy is `uv lock --upgrade`.
+[[pre-push]]
+id = "lock"
+run = ["python", "-m", "lab_commons.dev.lockcheck"]
+always_run = true

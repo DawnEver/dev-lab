@@ -136,6 +136,7 @@ are too unqualified to survive being flattened into a namespace this wide.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
+* :mod:`lab_commons.dev.forgeintent` -- a local run's claim journaled before it runs; a restart re-attaches to it.
 * :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
 * :mod:`lab_commons.dev.forgecarry` -- REACH-CARRY: an outcome stands at a descendant whose diff misses its
   test's footprint; per outcome on a cluster run, per part when every test carries.
@@ -146,6 +147,10 @@ are too unqualified to survive being flattened into a namespace this wide.
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`lab_commons.dev.outcomes` -- the pytest plugin writing a run's per-test outcomes in the run
   record's vocabulary, so a local run posts the same kind of part a cluster run does.
+* :mod:`lab_commons.dev.lockcheck` -- the ``lock`` pre-push row: a pushed commit commits ``uv.lock``, pins its
+  git requirements in it, and was upgraded within ``lock_max_age_days`` (D8/D20).
+* :mod:`lab_commons.dev.lockupgrade` -- the scheduled ``uv lock --upgrade``: a serve tick opens it as a
+  request, and its producer commits on the declared update branch.
 * :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
@@ -313,6 +318,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.lab_commons]``.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
+* :mod:`lab_commons.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's
+  ``behind_max`` commits behind ``origin/<integration>`` is refused, naming ``forge sync``.
 * :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin

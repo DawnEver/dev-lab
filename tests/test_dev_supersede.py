@@ -483,7 +483,9 @@ SPELLING_HEADROOM = 3
 #: the floor rather than either factor alone: a parametrisation that lost one whole spelling still
 #: reports a full green over the other two, which is the shape that let this defect live twice.
 # RE-MEASURED 2026-09-19 at 207 (69 modules x 3 spellings), 7 past the old ceiling of 110 + 90.
-CASE_FLOOR = 400  # re-taken 2026-10-12 at 441: the producer's per-sha tree (dev.shatree) and hpc.declared
+CASE_FLOOR = (
+    440  # re-taken 2026-10-16 at 492: every spawn now routes through the launch door (one more spelling per module)
+)
 CASE_HEADROOM = 90
 
 #: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.
