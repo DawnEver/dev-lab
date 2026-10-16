@@ -57,7 +57,8 @@ from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
 from lab_commons.compute.learned import Run, record_run
-from lab_commons.compute.presence import CHECKS, demote
+from lab_commons.compute.presence import demote
+from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target
 from lab_commons.dev.forgeclaim import Work, forge_now
