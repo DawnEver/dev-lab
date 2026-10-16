@@ -56,6 +56,7 @@ from lab_commons.dev.retentionplan import (
 )
 from lab_commons.dev.servelock import held
 from lab_commons.dev.worktreeplace import main_checkout
+from lab_commons.hpc.records import pack_streams
 from lab_commons.log import emit
 
 __all__ = ['EVENT', 'Outcome', 'apply', 'main', 'serve_pass', 'summary']
@@ -82,8 +83,7 @@ def _remove(doomed: Doomed) -> None:
     for source, target in doomed.keep:
         if source.is_dir():
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.rmtree(target, ignore_errors=True)
-            source.replace(target)
+            target.write_text(pack_streams(source), encoding='utf-8')
     if doomed.rotate:
         doomed.path.replace(doomed.path.with_name(doomed.path.name + '.1'))
     elif doomed.path.is_dir() and not doomed.path.is_symlink():

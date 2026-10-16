@@ -379,8 +379,9 @@ def test_a_superseded_run_is_not_in_flight_and_its_streams_outlive_its_tree(home
     assert home / 'ci' / 'runs' / 's1' not in doomed, 'its state is a carry source, kept until abandon_days'
     apply(plan, POLICY, usage=None, dry_run=False, say=lambda _: None, run=_no_run)
     assert not tree.exists()
-    kept = home / 'ci' / 'runs' / 's1' / 'streams' / '20261015-055638-r0' / '0.jsonl'
-    assert kept.exists(), 'held_outcomes reads them here once the tree is gone'
+    kept = home / 'ci' / 'runs' / 's1' / 'streams'
+    assert [p.name for p in kept.iterdir()] == ['20261015-055638-r0.txt'], 'ONE file per kept round'
+    assert (kept / '20261015-055638-r0.txt').read_text(encoding='utf-8') == '@@@ 0.jsonl\nxxxxxxxxxx\n'
 
 
 def test_a_round_that_ended_within_min_age_is_still_in_flight(home: Path) -> None:

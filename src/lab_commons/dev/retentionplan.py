@@ -11,7 +11,8 @@ derived from what each is FOR, not from what happens to name it:
   round in flight (``.lab-ci/<tag>``, a few dozen) are read after its jobs end: the carry takes a SUPERSEDED
   run's finished shards from them (:func:`lab_commons.hpc.records.held_outcomes`). So a tree is kept exactly
   while its sha is IN FLIGHT, by any repo's run -- ``tree-not-in-flight`` otherwise -- and before an
-  unrecorded run's tree goes its streams MOVE beside its state (:func:`lab_commons.hpc.records.stream_dirs`).
+  unrecorded run's tree goes its streams are PACKED into one file beside its state
+  (:func:`lab_commons.hpc.records.stream_sources`).
   A re-run of the sha re-adds the tree from the bare cache (its env lives apart, keyed). Keeping the newest
   tree per branch would save one checkout at the price of ~22 k files; it does not.
 * An ENV (``envs/<key>``), a NATIVE build and its ``cargo-target/<key>`` are kept while an in-flight run
@@ -66,7 +67,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev.forgecarry import read_by
-from lab_commons.hpc.records import KEPT_STREAMS
+from lab_commons.hpc.records import stream_sources
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.hpc.slurm import WORKDIRS_COMMAND, parse_workdirs
 
@@ -119,7 +120,7 @@ class Doomed:
     path: Path
     rule: str
     rotate: bool = False
-    keep: tuple[tuple[Path, Path], ...] = ()  # (from, to): moved out before the path goes
+    keep: tuple[tuple[Path, Path], ...] = ()  # (streams dir, pack file): packed before the path goes
 
 
 @dataclass(frozen=True)
@@ -248,11 +249,12 @@ def cluster_plan(
 
 
 def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
-    """An unrecorded run's round streams, moved to where :func:`lab_commons.hpc.records.stream_dirs` reads them."""
+    """An unrecorded run's round streams and the one file :func:`lab_commons.hpc.records.stream_sources` reads."""
     tag = str(((state or {}).get('current') or {}).get('tag', ''))
     if not tag:
         return ()
-    return ((ci / 'trees' / sha / '.lab-ci' / tag, ci / 'runs' / sha / KEPT_STREAMS / tag),)
+    _, kept = stream_sources(sha, tag)
+    return ((ci / 'trees' / sha / '.lab-ci' / tag, ci / kept.split('/ci/', 1)[1]),)
 
 
 def _sourced_builds(tree: Path) -> object:
