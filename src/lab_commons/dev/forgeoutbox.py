@@ -1,4 +1,11 @@
-"""THE OUTBOX -- a status (and its record) is KEPT until the commit it is about is on the forge, then posted.
+"""THE OUTBOX -- every outward forge write is journaled before it is attempted and replayed until acknowledged.
+
+TWO HALVES, ONE DIRECTORY. The WRITE JOURNAL (:mod:`lab_commons.dev._forge_journal`, ``writes/``) holds every
+write the forge door attempted and the forge has not acknowledged -- a status, a comment, an attachment, a
+label, an issue -- fsynced before the attempt; :func:`replay` sends each again (after its probe found it not
+landed) until the forge answers, so a crash or a forge outage loses nothing and never double-posts. The HELD
+STATUSES (below) are the posts whose commit the forge does not hold yet: they wait here, then go through the
+same door, and so through the same journal.
 
 THE DEFECT IT FIXES. A run finishes on a commit that is usually not pushed yet -- a lane verifies
 before it pushes, an integration tree is judged before the integration push -- and the forge refuses
@@ -28,7 +35,6 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -36,9 +42,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final
 
+from lab_commons.dev._forge_journal import OUTBOX_REL, Journal, durable_write, journal_for, outbox_dir
 from lab_commons.dev.forge import (
-    _GIT,
-    _GIT_TIMEOUT_S,
     NoCredential,
     Transport,
     UnreadableRemote,
@@ -59,14 +64,12 @@ __all__ = [
     'main',
     'outbox_dir',
     'queued',
+    'replay',
     'unprompted_client',
 ]
 
-#: The outbox, relative to the MAIN checkout's root.
 #: The length of a full sha-1 commit id, the only commit name the forge's status endpoint takes.
 SHA_LENGTH: Final = 40
-
-OUTBOX_REL: Final = 'output/forge/outbox'
 
 _REMEDY: Final = (
     'it stays queued; re-run `python -m lab_commons.dev.forge publish` once the forge answers '
@@ -103,23 +106,6 @@ class Post:
         return f'{self.sha}-{self.context.replace("/", "_")}'
 
 
-def _common_root(root: Path) -> Path:
-    common = subprocess.run(
-        [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        check=True,
-        timeout=_GIT_TIMEOUT_S,
-    ).stdout.strip()
-    return Path(common).parent
-
-
-def outbox_dir(root: Path) -> Path:
-    """The outbox of the repository *root* belongs to, in its MAIN checkout (shared by every lane)."""
-    return _common_root(root) / OUTBOX_REL
-
-
 def enqueue(root: Path, post: Post, *, record: Path | None = None) -> Path:
     """Queue *post*, copying *record* beside it; returns the entry's path.
 
@@ -130,11 +116,9 @@ def enqueue(root: Path, post: Post, *, record: Path | None = None) -> Path:
     if record is not None:
         shutil.copyfile(record, directory / record.name)
         post = Post(post.sha, post.context, post.state, post.description, record=record.name)
-    entry = directory / f'{post.key}.json'
-    staged = entry.with_suffix('.json.tmp')
-    staged.write_text(json.dumps({**asdict(post), 'queued_at': time.time()}, indent=2), encoding='utf-8')
-    staged.replace(entry)
-    return entry
+    return durable_write(
+        directory / f'{post.key}.json', json.dumps({**asdict(post), 'queued_at': time.time()}).encode()
+    )
 
 
 def queued(root: Path) -> tuple[Post, ...]:
@@ -163,8 +147,49 @@ def unprompted_client(root: Path) -> Client:
     return client_for(root)
 
 
+def replay(journal: Journal, client: Client, *, now: float | None = None) -> list[str]:
+    """Send every journaled write again until the forge acknowledges it; one line per write.
+
+    A write past its ``until`` is dropped by name (a lease is worth only its first answer); a write whose
+    probe finds it already landed is acknowledged without sending; one the forge still refuses or cannot
+    take stays journaled for the next tick.
+    """
+    lines: list[str] = []
+    moment = time.time() if now is None else now
+    for write in journal.pending():
+        what = f'{write.method} {write.path.split("?")[0]}'
+        if write.until <= moment:
+            journal.ack(write.key)
+            lines.append(f'outbox: dropped {what} -- past its until, never replayed')
+            continue
+        try:
+            if client.landed(write) is not None:
+                journal.ack(write.key)
+                lines.append(f'outbox: {what} had landed -- acknowledged, not sent again')
+                continue
+            client.resend(write)
+        except ForgeCallFailed as exc:
+            lines.append(f'outbox: kept {what} -- {exc.report.diagnosis.value}')
+            continue
+        journal.ack(write.key)
+        lines.append(f'outbox: replayed {what}')
+    return lines
+
+
+def _replayed(root: Path, client: Callable[[Path], Client]) -> list[str]:
+    """Replay *root*'s write journal; a box with no credential keeps it and says so."""
+    journal = journal_for(root)
+    if not journal.pending():
+        return []
+    try:
+        built = client(root)
+    except (NoCredential, UnreadableRemote) as exc:
+        return [f'outbox: kept {len(journal.pending())} journaled write(s) -- no forge credential or remote ({exc})']
+    return replay(journal, built)
+
+
 def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -> list[str]:
-    """Post every queued entry whose commit is on ``origin``; return one line per entry.
+    """Replay the write journal, then post every held entry whose commit is on ``origin``; one line per entry.
 
     Raises:
         PostFailed: at least one attempted post failed; every other entry was still tried, and the
@@ -172,7 +197,7 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
 
     """
     directory = outbox_dir(root)
-    lines: list[str] = []
+    lines: list[str] = _replayed(root, client)
     failures: list[str] = []
     built: Client | None = None
     for post in queued(root):

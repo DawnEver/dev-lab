@@ -118,24 +118,36 @@ ALLOWED: Final[dict[Site, str]] = {
     (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
-        'def call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:',
-    ): 'the ONE door every REST verb goes through returns parsed JSON, whose shape is the endpoint; each '
-    'verb normalizes it into a typed Issue/Comment/PullRequest immediately',
+        'def resend(self, write: Write) -> Any:',
+    ): 'the outbox replay sends a journaled write through the same retry loop and returns its parsed JSON unchanged',
     (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
-        'def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: _Found = None) -> Any:',
+        'def _attempts(self, write: Write, data: bytes | None) -> Any:',
+    ): 'the retry loop under every verb returns the parsed JSON answer, whose shape is the endpoint',
+    (
+        'src/lab_commons/dev/forgework.py',
+        'ANN401',
+        'def landed(self, write: Write) -> Any:',
+    ): "a create's read-back returns the listed object as the forge answered it -- the shape the create would have",
+    (
+        'src/lab_commons/dev/forgework.py',
+        'ANN401',
+        (
+            'def upload(self, path: str, *, field: str, filename: str, content: bytes, '
+            'durable: Durable | None = None) -> Any:'
+        ),
     ): 'the attachment door returns the parsed JSON answer, normalized by its one caller (forgerecords.Attachment)',
     (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
         ') -> Any:',
-    ): 'the retry loop under call, upload and upload_raw (the end of its wrapped signature) returns their '
-    'parsed JSON unchanged',
+    ): 'call and the journaling door under it (the end of their wrapped signatures) return the parsed JSON '
+    'answer, whose shape is the endpoint; each verb normalizes it into a typed Issue/Comment/PullRequest',
     (
         'src/lab_commons/dev/forgework.py',
         'ANN401',
-        'def upload_raw(self, host: str, path: str, *, content: bytes, landed: _Found = None) -> Any:',
+        'def upload_raw(self, host: str, path: str, *, content: bytes, durable: Durable | None = None) -> Any:',
     ): "GitHub's release-asset upload returns the parsed JSON answer, normalized by its one caller "
     '(forgerecords.Attachment)',
     (

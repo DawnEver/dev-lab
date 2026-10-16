@@ -427,7 +427,7 @@ class _Publisher:
     def __init__(self) -> None:
         self.backend, self.repo, self.labels, self.calls = GITEA, '/r', {}, []
 
-    def call(self, method: str, path: str, body: dict | None = None) -> object:
+    def call(self, method: str, path: str, body: dict | None = None, durable: object = None) -> object:
         self.calls.append((method, path, body))
         if method == 'GET':
             return [{'name': n, 'id': i} for n, i in self.labels.items()] if 'page=1' in path else []

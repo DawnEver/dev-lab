@@ -21,7 +21,7 @@ RETRY, THEN REPORT, IN NETVERB'S VOCABULARY. Every call is bounded by
 push``. An ANSWERED 4xx is a refusal and is never repeated (a 401, 408 or 429 stays retryable, as the
 table says); a 5xx or a dropped connection is retried. A create whose response was lost may still
 have landed, so before a create is RETRIED the newest objects are read back and the token's own
-identical one from the last few minutes is returned instead (:mod:`lab_commons.dev._forge_landed`);
+identical one created since the attempt began is returned instead (:class:`~lab_commons.dev._forge_journal.Probe`);
 when that read itself fails the create is reported rather than sent blind a second time.
 
 PROVENANCE IS A GENERIC ENVIRONMENT CONTRACT. When ``HARNESS_MACHINE`` and ``HARNESS_AGENT`` are both
@@ -31,27 +31,24 @@ set, every created issue body, PR body and comment opens with ``[<machine> · <a
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
+import hashlib
 import json
 import os
 import subprocess
-import sys
 import time
 import urllib.parse
-import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.dev import forge as _forge
-from lab_commons.dev._forge_landed import LOOKBACK, find_landed, since
+from lab_commons.dev._forge_journal import LOOKBACK, Durable, Journal, Probe, Write, journal_for, since, write_key
 from lab_commons.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Forge, Transport, forge_from_remote, https_transport
 from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
-from lab_commons.log import emit
 
 __all__ = [
     'GITEA',
@@ -67,7 +64,6 @@ __all__ = [
     'client_for',
     'comment_of',
     'is_pull',
-    'main',
     'provenance',
     'pull_of',
 ]
@@ -80,9 +76,6 @@ _HTTP_SERVER_FLOOR: Final = 500
 
 #: 4xx statuses that are NOT a refusal of the request itself: timeout and rate limit clear by waiting.
 _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
-
-#: A create's read-back before a retry -- its own landed object, or ``None`` -- or no read-back at all.
-_Found = Callable[[], Any] | None
 
 
 def is_pull(raw: Mapping[str, Any]) -> bool:
@@ -220,6 +213,9 @@ class Client:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     #: The raw ``Date`` header of the forge's latest answer: its clock (:func:`lab_commons.dev.forgeclaim.forge_now`).
     answered: str = ''
+    #: The outbox journal each write is recorded in before it is attempted (:mod:`lab_commons.dev._forge_journal`);
+    #: :func:`client_for` always sets it -- ``None`` only where a test drives the bare door.
+    journal: Journal | None = None
 
     @property
     def backend(self) -> Backend:
@@ -246,27 +242,33 @@ class Client:
         """The repository's API collection path, which every verb's path starts with."""
         return self.backend.repo_path(self.forge)
 
-    def call(self, method: str, path: str, body: Mapping[str, Any] | None = None, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
-        """One REST call, retried then reported: the door every verb -- here and in the sibling modules -- uses.
+    def call(
+        self, method: str, path: str, body: Mapping[str, Any] | None = None, durable: Durable | None = None
+    ) -> Any:  # noqa: ANN401 -- JSON
+        """One REST call, journaled when it writes, retried then reported: the door every verb uses.
 
-        *landed* is a create's read-back, run before each retry (see :mod:`lab_commons.dev._forge_landed`).
+        *durable* says how a write is keyed, read back and replayed (:class:`~lab_commons.dev._forge_journal.Durable`).
         """
         data = json.dumps(dict(body)).encode() if body is not None else None
-        return self._request(method, path, data, 'application/json', landed)
+        return self._request(method, path, data, 'application/json', durable)
 
-    def upload(self, path: str, *, field: str, filename: str, content: bytes, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
-        """A ``multipart/form-data`` POST of one file under *field* -- the forge's attachment shape."""
-        boundary = f'lab-commons-{uuid.uuid4().hex}'
+    def upload(self, path: str, *, field: str, filename: str, content: bytes, durable: Durable | None = None) -> Any:  # noqa: ANN401 -- JSON
+        """A ``multipart/form-data`` POST of one file under *field*; its boundary is its content's hash (one key)."""
+        boundary = f'lab-commons-{hashlib.sha256(content).hexdigest()[:32]}'
         head = (
             f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'
             'Content-Type: application/octet-stream\r\n\r\n'
         ).encode()
         data = head + content + f'\r\n--{boundary}--\r\n'.encode()
-        return self._request('POST', path, data, f'multipart/form-data; boundary={boundary}', landed)
+        return self._request('POST', path, data, f'multipart/form-data; boundary={boundary}', durable)
 
-    def upload_raw(self, host: str, path: str, *, content: bytes, landed: _Found = None) -> Any:  # noqa: ANN401 -- JSON
+    def upload_raw(self, host: str, path: str, *, content: bytes, durable: Durable | None = None) -> Any:  # noqa: ANN401 -- JSON
         """A raw ``application/octet-stream`` POST to *host* -- GitHub's release-asset upload shape."""
-        return self._request('POST', path, content, 'application/octet-stream', landed, host=host)
+        return self._request('POST', path, content, 'application/octet-stream', durable, host=host)
+
+    def resend(self, write: Write) -> Any:  # noqa: ANN401 -- JSON
+        """Send a journaled *write* again exactly as first sent, not journaling it twice (the outbox replay)."""
+        return self._attempts(write, write.body)
 
     def download(self, url: str) -> bytes:
         """The raw bytes at an attachment's download *url*, fetched with this client's credential.
@@ -282,12 +284,25 @@ class Client:
         return payload
 
     def _request(
-        self, method: str, path: str, data: bytes | None, content_type: str, landed: _Found, *, host: str | None = None
+        self, method: str, path: str, data: bytes | None, content_type: str, durable: Durable | None, *, host: str = ''
     ) -> Any:  # noqa: ANN401 -- JSON
+        """A write (never a read) is journaled BEFORE it is attempted and acknowledged once the forge answered."""
+        intent = durable or Durable()
+        key = intent.key or write_key(method, host, path, data or b'')
+        write = Write(key, method, path, content_type, data or b'', host, intent.probe, time.time(), intent.until)
+        if method == 'GET' or self.journal is None:
+            return self._attempts(write, data)
+        write = self.journal.record(write)
+        answer = self._attempts(write, data)  # a failure stays journaled
+        self.journal.ack(key)
+        return answer
+
+    def _attempts(self, write: Write, data: bytes | None) -> Any:  # noqa: ANN401 -- JSON
+        """*data* sent as *write* until answered; before each retry a create's probe asks if the lost attempt landed."""
         made: list[Attempt] = []
         for index in range(1, DEFAULT_ATTEMPTS + 1):
             try:
-                status, payload = self._once(method, path, data, content_type, host)
+                status, payload = self._once(write.method, write.path, data, write.content_type, write.host or None)
             except OSError as exc:
                 status, payload = 0, str(exc).encode()
             if 0 < status < _HTTP_ERROR_FLOOR:
@@ -298,18 +313,21 @@ class Client:
                 break
             if index < DEFAULT_ATTEMPTS:
                 self.sleep(DEFAULT_BACKOFF_S)
-                if landed is not None:
+                if write.probe is not None:
                     try:
-                        found = landed()
+                        found = self.landed(write)
                     except ForgeCallFailed:
                         break  # whether it landed is unknowable, and a blind retry may duplicate it
                     if found is not None:
                         return found
-        raise ForgeCallFailed(Report((method, path), tuple(made), DEFAULT_ATTEMPTS))
+        raise ForgeCallFailed(Report((write.method, write.path), tuple(made), DEFAULT_ATTEMPTS))
 
-    def _landed(self, path: str, **fields: str) -> Callable[[], Any]:
-        """The read a create runs before each retry: its own object, if the lost attempt landed."""
-        return lambda: find_landed(self.call('GET', path), login=self.whoami(), fields=fields, now=self.clock())
+    def landed(self, write: Write) -> Any:  # noqa: ANN401 -- JSON
+        """The object *write* made under this login, if it landed though its answer was lost; else ``None``."""
+        if write.probe is None:
+            return None
+        listed = self.call('GET', write.probe.path)
+        return write.probe.landed(listed, after=write.queued_at, login=self.whoami())
 
     def _recent(self, collection: str) -> str:
         return f'{self.repo}/{collection}?state=all&{self.backend.page_param}={LOOKBACK}'
@@ -334,14 +352,14 @@ class Client:
     def issue_create(self, title: str, body: str) -> Issue:
         """A new issue; the body carries the provenance line."""
         payload = {'title': title, 'body': self._stamped(body)}
-        recent = self._landed(self._recent('issues'), **payload)
-        return _issue(self.call('POST', f'{self.repo}/issues', payload, recent))
+        probe = Probe(self._recent('issues'), payload)
+        return _issue(self.call('POST', f'{self.repo}/issues', payload, Durable(probe=probe)))
 
     def issue_comment(self, number: int, body: str) -> Comment:
         """A comment on an issue (or a PR, which both forges number as an issue)."""
         path, payload = f'{self.repo}/issues/{number}/comments', {'body': self._stamped(body)}
-        recent = self._landed(f'{path}?since={since(self.clock())}', **payload)
-        return comment_of(self.call('POST', path, payload, recent))
+        probe = Probe(f'{path}?since={since(self.clock())}', payload)
+        return comment_of(self.call('POST', path, payload, Durable(probe=probe)))
 
     def issue_edit(self, number: int, body: str) -> Issue:
         """Replace an issue's body; the body is state, so no provenance line is added."""
@@ -354,66 +372,12 @@ class Client:
     def pr_create(self, title: str, body: str, *, head: str, base: str) -> PullRequest:
         """A new pull request from *head* into *base*."""
         payload = {'title': title, 'body': self._stamped(body), 'head': head, 'base': base}
-        recent = self._landed(self._recent('pulls'), title=title, body=payload['body'])
-        return pull_of(self.call('POST', f'{self.repo}/pulls', payload, recent))
+        probe = Probe(self._recent('pulls'), {'title': title, 'body': payload['body']})
+        return pull_of(self.call('POST', f'{self.repo}/pulls', payload, Durable(probe=probe)))
 
     def pr_view(self, number: int) -> PullRequest:
         """One pull request."""
         return pull_of(self.call('GET', f'{self.repo}/pulls/{number}'))
-
-
-def _verb(group: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
-    sub = group.add_parser(name)
-    sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
-    return sub
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog='lab_commons.dev.forge',
-        description='issue and PR verbs on the forge',
-        epilog='also: issue claim|status N, status post|list SHA; token: auth login|status',
-    )
-    nouns = parser.add_subparsers(dest='noun', required=True)
-    issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)
-    listing = _verb(issue, 'list')
-    listing.add_argument('--state', choices=('open', 'closed', 'all'), default='open')
-    listing.add_argument('--limit', type=int, default=30)
-    for name in ('view', 'close'):
-        _verb(issue, name).add_argument('number', type=int)
-    create = _verb(issue, 'create')
-    create.add_argument('--title', required=True)
-    create.add_argument('--body', default='')
-    comment = _verb(issue, 'comment')
-    comment.add_argument('number', type=int)
-    comment.add_argument('--body', required=True)
-    pr = nouns.add_parser('pr').add_subparsers(dest='verb', required=True)
-    _verb(pr, 'view').add_argument('number', type=int)
-    opened = _verb(pr, 'create')
-    opened.add_argument('--title', required=True)
-    opened.add_argument('--body', default='')
-    opened.add_argument('--head', required=True)
-    opened.add_argument('--base', required=True)
-    return parser
-
-
-def _dispatch(client: Client, args: argparse.Namespace) -> Issue | PullRequest | Comment | tuple[Issue, ...]:
-    verbs: dict[tuple[str, str], Callable[[], Issue | PullRequest | Comment | tuple[Issue, ...]]] = {
-        ('issue', 'list'): lambda: client.issue_list(state=args.state, limit=args.limit),
-        ('issue', 'view'): lambda: client.issue_view(args.number),
-        ('issue', 'create'): lambda: client.issue_create(args.title, args.body),
-        ('issue', 'comment'): lambda: client.issue_comment(args.number, args.body),
-        ('issue', 'close'): lambda: client.issue_close(args.number),
-        ('pr', 'create'): lambda: client.pr_create(args.title, args.body, head=args.head, base=args.base),
-        ('pr', 'view'): lambda: client.pr_view(args.number),
-    }
-    return verbs[args.noun, args.verb]()
-
-
-def _render(item: Issue | PullRequest | Comment) -> str:
-    if isinstance(item, Comment):
-        return item.url
-    return f'#{item.number} [{item.state}] {item.title}  {item.url}'
 
 
 def client_for(
@@ -423,30 +387,4 @@ def client_for(
     forge = forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
     username, secret = _forge.credential_for(forge.host, cwd=root, env=env)
-    return Client(forge, secret, transport=transport, username=username, stamp=stamp)
-
-
-def main(
-    argv: Sequence[str] | None = None,
-    *,
-    cwd: Path | None = None,
-    env: Mapping[str, str] | None = None,
-    transport: Transport = https_transport,
-) -> int:
-    """``python -m lab_commons.dev.forge <noun> <verb> ...``; exit 1 with netverb's remedy on failure."""
-    args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    client = client_for(Path.cwd() if cwd is None else cwd, env=env, transport=transport)
-    try:
-        result = _dispatch(client, args)
-    except ForgeCallFailed as failed:
-        emit(f'[forge] {failed}', err=True)
-        emit(failed.report.attempts[-1].output, err=True)
-        return 1
-    items = result if isinstance(result, tuple) else (result,)
-    if args.json:
-        data = [dataclasses.asdict(item) for item in items]
-        emit(json.dumps(data if isinstance(result, tuple) else data[0], indent=2))
-    else:
-        for item in items:
-            emit(_render(item))
-    return 0
+    return Client(forge, secret, transport=transport, username=username, stamp=stamp, journal=journal_for(root))

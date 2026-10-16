@@ -71,7 +71,7 @@ class _Client:
     def answered(self) -> str:
         return format_datetime(self.store.now, usegmt=True)
 
-    def call(self, method: str, _path: str, body: dict[str, str] | None = None) -> object:
+    def call(self, method: str, _path: str, body: dict[str, str] | None = None, durable: object = None) -> object:
         if method == 'POST':
             if self.store.refuse:
                 attempt = Attempt(1, 403, 'forbidden', Diagnosis.FORGE_REFUSED)

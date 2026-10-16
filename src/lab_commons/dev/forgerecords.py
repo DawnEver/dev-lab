@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
+from lab_commons.dev._forge_journal import Durable, Probe
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
@@ -155,13 +156,11 @@ def attach(client: Client, path: Path) -> Attachment:
     """
     store = cast('_Store', _store(client, create=True))  # create=True always yields a home
 
-    def landed() -> Mapping[str, Any] | None:
-        return next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)
-
     target = f'{store.assets}?name={path.name}'
+    durable = Durable(probe=Probe(store.assets, {'name': path.name}))
     if store.upload_host is not None:
-        return _attachment(client.upload_raw(store.upload_host, target, content=path.read_bytes(), landed=landed))
-    raw = client.upload(target, field='attachment', filename=path.name, content=path.read_bytes(), landed=landed)
+        return _attachment(client.upload_raw(store.upload_host, target, content=path.read_bytes(), durable=durable))
+    raw = client.upload(target, field='attachment', filename=path.name, content=path.read_bytes(), durable=durable)
     return _attachment(raw)
 
 
