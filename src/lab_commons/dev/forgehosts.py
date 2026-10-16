@@ -14,13 +14,13 @@ repos, 2026-10-12). Two hosts racing to open the first one re-read after the cre
 the oldest; the loser is closed by ``forge tidy`` (:mod:`lab_commons.dev.forgetidy`).
 
 The card says who the host is (:func:`card_host`: ``<cluster>/<account>`` or the machine), the
-platform it serves, what else it PROVIDES (its machine file's ``[capabilities]``,
-:mod:`lab_commons.dev.forgeprovides`), its SUPPLY as the tick admitted against it and the cluster facts
-it read locally (partitions, quota), when it last ticked (the forge's clock), what it holds with live
-progress, what else RUNS on it (every claim on its box ledger, a cluster run in flight), why each
-candidate it saw waits, why it cannot write the
-large artefact store when it cannot, and EVERY ALARM the tick raised (:mod:`lab_commons.dev.forgealarm`): an
-alarm on an unattended host is read here, from any machine, not from a cron log nobody opens.
+platform it serves, its TOOLS as probed -- each present or not with the evidence it rests on
+(:func:`lab_commons.compute.probe.inventory`), never a declaration -- its SUPPLY as the tick admitted
+against it and the cluster facts it read locally (partitions, quota), when it last ticked (the forge's
+clock), what it holds with live progress, what else RUNS on it (every claim on its box ledger, a
+cluster run in flight), why each candidate it saw waits, why it cannot write the large artefact store
+when it cannot, and EVERY ALARM the tick raised (:mod:`lab_commons.dev.forgealarm`): an alarm on an
+unattended host is read here, from any machine, not from a cron log nobody opens.
 
 A CARD'S LOGIN IS ITS FORGE-RECORDED AUTHOR (:func:`card_of`): anyone with a credential can post a comment,
 so the login a body states is never trusted -- it is what vouches for a job's origin host.
@@ -113,12 +113,16 @@ class HostCard:
     waiting: Mapping[str, str] = field(default_factory=dict)
     alarms: tuple[Mapping[str, str], ...] = ()  # this tick's: {kind, subject, body}
     artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
-    provides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # machine-file [capabilities]
+    tools: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # tool -> {present, evidence}, as probed
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
         return Priority.of(self.priority).matches(candidate)
+
+    def tools_present(self) -> frozenset[str]:
+        """The tools this card's probe found present."""
+        return frozenset(name for name, row in self.tools.items() if row.get('present'))
 
     def stale(self, now: datetime) -> bool:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
@@ -127,11 +131,17 @@ class HostCard:
     def text(self) -> str:
         """The comment body: one line a human reads, then the card as JSON."""
         holds = ', '.join(self.holds) or 'nothing'
-        engines = ''.join(f' + `{name}`' for name in sorted(self.provides))
+        engines = ''.join(f' + `{name}`' for name in sorted(self.tools_present()))
         head = f'**{self.host}** serves `{self.platform}`{engines} as {self.login}; ticked {self.ticked}; holds {holds}'
         head += f'\n\nartefacts: {self.artefacts}' if self.artefacts else ''
         head += f'\n\nstorage: {self.facts["storage"]}' if 'storage' in self.facts else ''
         head += f'\n\nrunning: {", ".join(self.running)}' if self.running else ''
+        absent = [
+            f'`{name}` ({row["evidence"][-1]["source"]}: {row["evidence"][-1]["value"]})'
+            for name, row in sorted(self.tools.items())
+            if not row.get('present') and row.get('evidence')
+        ]
+        head += f'\n\ntools absent: {"; ".join(absent)}' if absent else ''
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
@@ -263,7 +273,7 @@ def publish_card(
     say: Callable[[str], None],
     alarms: Sequence[Alarm] = (),
     artefacts: str = '',
-    provides: Mapping[str, Mapping[str, Any]] | None = None,
+    tools: Mapping[str, Mapping[str, Any]] | None = None,
     progress: Mapping[tuple[str, str], str] | None = None,
     supply: Supply | None = None,
     running: Sequence[str] = (),
@@ -296,7 +306,7 @@ def publish_card(
             waiting={item.candidate.key: item.blocked for item in queue if item.blocked},
             alarms=tuple({'kind': a.kind, 'subject': a.subject, 'body': a.body} for a in alarms),
             artefacts=artefacts,
-            provides=dict(provides or {}),
+            tools=dict(tools or {}),
             priority=dict(priority or {}),
         )
         say(f'[serve] host card {publish(built, card)}')

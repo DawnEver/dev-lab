@@ -182,10 +182,10 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     except ValueError as why:
         return str(why)
     live = [card for card in cards if not card.stale(now)]
-    unclaimable = unserved(needed, [present(card.platform, card.provides) for card in live])
+    unclaimable = unserved(needed, [present(card.platform, card.tools_present()) for card in live])
     if unclaimable:
         return unclaimable
-    serving = [card for card in live if needed <= present(card.platform, card.provides)]
+    serving = [card for card in live if needed <= present(card.platform, card.tools_present())]
     reasons = [(card.host, card.waiting[candidate.key]) for card in serving if candidate.key in card.waiting]
     refused = [(host, why) for host, why in reasons if why.startswith(f'{NOT_ADMITTED}: ')]
     if refused and len(refused) == len(serving):

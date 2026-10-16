@@ -237,8 +237,8 @@ lower-ranked one is still claimed, so several parts run on one host at once.
 A host serving several repos weighs them in its machine file: `[schedule] weights = {"owner/name" = 2.0}`
 (absent = 1); `[schedule] tick_minutes` (default 5) is what its card is judged stale against.
 `[capabilities.<name>]` declares a resource it has beyond its OS (`seats` = its concurrency, the one number
-no probe reads); a probed tool is present only where its probe finds it
-([HPC clusters](hpc.md#parts-by-need-set)).
+no probe reads); a checked tool is present only where its check passes, and the card shows each verdict with
+its evidence ([HPC clusters](hpc.md#parts-by-need-set)).
 
 ## The queue
 

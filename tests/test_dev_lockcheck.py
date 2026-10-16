@@ -40,7 +40,7 @@ def _git(root: Path, *argv: str, when: str = '2026-10-15T12:00:00Z') -> str:
     env = {**os.environ, 'GIT_COMMITTER_DATE': when, 'GIT_AUTHOR_DATE': when}
     done = subprocess.run(
         [_GIT, '-c', 'user.name=t', '-c', 'user.email=t@t', *argv],
-        cwd=root, env=env, check=True, capture_output=True, text=True, timeout=60,
+        cwd=root, env=env, check=True, capture_output=True, text=True, encoding='utf-8', timeout=60,
     )  # fmt: skip
     return done.stdout.strip()
 

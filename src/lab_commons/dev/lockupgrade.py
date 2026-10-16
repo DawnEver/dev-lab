@@ -37,6 +37,8 @@ from lab_commons.dev.branchset import BranchSetNotDeclared, branchset_at, declar
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.forgepublish import publish
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request
+from lab_commons.dev.forgeschedule import load_schedule
+from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.lockcheck import LOCK, TRAILER, upgraded_on
 from lab_commons.dev.netverb import run_network_verb
@@ -47,7 +49,7 @@ if TYPE_CHECKING:
 
     from lab_commons.dev.forgework import Client
 
-__all__ = ['CADENCE_DAYS', 'PRODUCER', 'due', 'main', 'moved_sources', 'schedule']
+__all__ = ['CADENCE_DAYS', 'PRODUCER', 'due', 'main', 'moved_sources', 'schedule', 'serve_tick']
 
 #: The request producer name a repo declares to be upgraded.
 PRODUCER: Final = 'lock_upgrade'
@@ -137,6 +139,15 @@ def schedule(root: Path, client: Client, *, label: str, today: date, tip: Callab
         return ''
     issue = publish(root, client, PRODUCER, head, label=label)
     return f'#{issue.number} {title}: {why}'
+
+
+def serve_tick(root: Path, client: Client, *, today: date, say: Callable[[str], None]) -> None:
+    """A serve tick's call: :func:`schedule` under the repo's request label; a forge or git failure is said."""
+    try:
+        if line := schedule(root, client, label=load_schedule(root).request_label, today=today):
+            say(f'[serve] lock upgrade: {line}')
+    except (ForgeCallFailed, OSError, ValueError) as failed:
+        say(f'[serve] the lock upgrade was not scheduled: {failed}')
 
 
 def _must(root: Path, *argv: str) -> str:

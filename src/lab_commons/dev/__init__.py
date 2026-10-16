@@ -317,6 +317,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   ``[tool.lab_commons]``.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
+* :mod:`lab_commons.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's
+  ``behind_max`` commits behind ``origin/<integration>`` is refused, naming ``forge sync``.
 * :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin

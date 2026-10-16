@@ -69,6 +69,8 @@ class PushedRef:
 
     remote_ref: str
     deleted: bool = False
+    #: The commit the push would put on *remote_ref* (the all-zero name for a deletion).
+    local_sha: str = ''
 
     @property
     def branch(self) -> str | None:
@@ -83,7 +85,7 @@ def _from_stdin(lines: Iterable[str]) -> Iterator[PushedRef]:
         if len(fields) != _REFSPEC_FIELDS:
             continue
         _local_ref, local_sha, remote_ref, _remote_sha = fields
-        yield PushedRef(remote_ref, deleted=local_sha == _DELETED_SHA)
+        yield PushedRef(remote_ref, deleted=local_sha == _DELETED_SHA, local_sha=local_sha)
 
 
 def pushed_refs(lines: Iterable[str] = ()) -> tuple[PushedRef, ...]:
