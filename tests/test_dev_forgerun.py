@@ -24,15 +24,16 @@ from lab_commons.compute import learned
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import artefacts, forgecarry, forgerun, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, Alarm
-from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, Claim, Work
+from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
+from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
-from lab_commons.dev.platformparts import ClusterPart, PartRefusal
-from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
+from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.progress import Progress
-from lab_commons.hpc.run import NotSubmitted
+from lab_commons.hpc.run import NoRoom, NotSubmitted
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -312,6 +313,33 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     assert _tick(store, _Slurm(home / 'r')).phase == forgerun.SUBMITTED
 
 
+def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Path) -> None:
+    """A host with no room releases its part RETRYABLE: no room is a fact about the HOST, not the sha.
+
+    Live 2026-10-16 (a consumer's base part): the release read ``released: inconclusive``, the part was
+    never claimed again, and the sha got no verdict.
+
+    PLANTED CONTROL: :func:`test_a_failed_build_is_released_inconclusive_naming_its_log` -- a run that
+    built nothing for its own reasons is still released inconclusive.
+    """
+
+    class _Full(_Slurm):
+        def submit(self, _run: forgerun.Run) -> list[str]:
+            msg = 'h has no headroom now for one task of 1 CPU and 352.2 GB'
+            raise NoRoom(msg)
+
+    store = _Store()
+    _start(home, store)
+    assert _tick(store, _Full(home / 'r')) is None, 'released and dropped'
+    post = store.posts[-1]
+    assert post['status'] == 'error'
+    assert post['description'].startswith(RETRYABLE), post['description']
+    assert 'inconclusive' not in post['description']
+    assert forgerun.live('https://f/o/r.git') == ()
+    released = Status(context=part_context('tests'), state='error', description=post['description'], url='')
+    assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
+
+
 def test_a_live_run_of_another_schema_is_refused_with_the_remedy(home: Path) -> None:
     """PLANTED CONTROL: the same file at this schema is read."""
     store = _Store()
@@ -479,7 +507,7 @@ def test_a_run_held_by_an_account_limit_is_given_back_cancelled_and_its_ask_lear
     """Measured 2026-10-16: 52 tasks of 352 GB pended an hour on ``AssocGrpMemLimit``, 0 running, on one host.
 
     The gather cancels the array, learns the 352 GB ask so this host stops admitting the part at its old
-    size, and raises :class:`NotSubmitted` -- the release path -- so a host with headroom takes it.
+    size, and raises :class:`NoRoom` -- the retryable release path -- so a host with headroom takes it.
     PLANTED CONTROL: the same job pending for priority is kept and gathered on.
     """
     asked: list[str] = []
@@ -497,7 +525,7 @@ def test_a_run_held_by_an_account_limit_is_given_back_cancelled_and_its_ask_lear
     run: Any = SimpleNamespace(
         sha='a' * 40, output=str(home), repo_url='https://f/o/r.git', platform='base', job_ids=()
     )
-    with pytest.raises(NotSubmitted, match='AssocGrpMemLimit'):
+    with pytest.raises(NoRoom, match='AssocGrpMemLimit'):
         cluster.gather(run)
     assert any(command.startswith('scancel 7') for command in asked), asked
     assert learned.cluster_demand('https://f/o/r.git')(frozenset())['mem_gb'] == pytest.approx(

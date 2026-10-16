@@ -47,7 +47,7 @@ from lab_commons.hpc.records import (
     stream_dirs,
     write_record,
 )
-from lab_commons.hpc.run import RETRIES, NotSubmitted, build_run, gather_run, submit_run
+from lab_commons.hpc.run import RETRIES, NoRoom, build_run, gather_run, submit_run
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
@@ -605,7 +605,7 @@ def test_a_first_round_the_headroom_cannot_hold_is_not_submitted_and_its_ask_is_
     """
     learned.learn_peaks('https://g/r.git', {'tests/a.py': 240438.4})
     fake = FakeRunCluster(held=OTHER_CAMPAIGNS)
-    with pytest.raises(NotSubmitted, match=r'no headroom now for one task of 1 CPU and 352\.2 GB'):
+    with pytest.raises(NoRoom, match=r'no headroom now for one task of 1 CPU and 352\.2 GB'):
         _submit(fake, history=learned.learned('https://g/r.git'))
     assert fake.manifests == [], 'nothing was submitted'
     asked = learned.cluster_demand('https://g/r.git')(frozenset())

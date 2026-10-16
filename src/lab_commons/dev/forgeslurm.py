@@ -37,7 +37,7 @@ from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_outcomes, run_shas
-from lab_commons.hpc.run import NotSubmitted, load_state, submit_run
+from lab_commons.hpc.run import NoRoom, load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.watch import PENDING, settle
 
@@ -136,7 +136,7 @@ class SlurmCluster:
 
         A run whose job pends on an ACCOUNT limit with nothing running past the stall bound
         (:func:`lab_commons.hpc.progress.held_by_a_limit`) is given back: its ask is learned so this host stops
-        admitting the part at the old size, its jobs are cancelled, and :class:`NotSubmitted` releases the claim.
+        admitting the part at the old size, its jobs are cancelled, and :class:`NoRoom` releases the claim RETRYABLE.
         """
         output = Path(run.output)
         if settle([run.sha], self.machine, self.connect, self.config, output, sleep=None) == PENDING:
@@ -147,7 +147,7 @@ class SlurmCluster:
                 ask_gb = state['rounds'][-1]['mem_mb'] / 1024
                 learned.record_ask(run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=policy.safety)
                 self.cancel(run)
-                raise NotSubmitted(why)
+                raise NoRoom(why)
             return None
         records = sorted(output.glob(f'run-{run.sha}-{run.platform}-*.json.gz'), key=lambda path: path.stat().st_mtime)
         if not records:
