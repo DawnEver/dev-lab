@@ -11,7 +11,7 @@ take; it is admitted only when the MEASURED room holds it, and it runs inside a 
 2. **Supply is measured (D3).** A run fits when the one rule (`compute.admission.admit`) admits its demand on
    the box's room (`box.supply.room`): cores idle and memory available NOW, less what every held claim has not
    taken yet (declared minus in use), less the machine file's `[reserve]` margins (`cpu_margin`, default 1
-   core; `mem_margin`, default 0.25 of its memory) -- never more than the box's size less every declaration.
+   core; `mem_margin`, default 0.10 of its memory) -- never more than the box's size less every declaration.
    An editor, a vendor GUI or another user's session counts because the OS counts it. Tool seats are declared:
    `[capabilities.<name>] seats`, 1 when undeclared.
 3. **The claim is the limit.** `box.run` runs the process tree inside a Windows Job Object or a Linux
