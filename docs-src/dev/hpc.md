@@ -146,9 +146,11 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   records, per id it does not cover, the part it belongs to (`handed`); the posted description says
   `hands=<part>:<n>,...`. `base` is always wanted, and a part handed to is wanted next (`platformparts.derived`).
 - **A host claims a part when it HAS its need-set** (`lab_commons.compute.admission.admit`). What a host has is
-  measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every `[capabilities.<name>]`
-  its machine file declares that the tool's probe finds (`jmag`, `matlab`, `node` are probed; any other
-  declared name is present as declared). `seats` is its concurrency. A part no live host has the needs of waits
+  measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every checked tool
+  (`femm`, `jmag`, `matlab`, `node`, `simba`; `lab_commons.compute.presence`) that is FOUND, reads the version
+  the serving repo declares once in `[tool.lab_commons.tools]` (`femm = "<version>"`), passed its SMOKE (cached
+  6 h, re-run each serve tick when due) and has not failed a real unit (exit 4) here since; any other
+  `[capabilities.<name>]` is present as declared. `seats` is its concurrency, the only declaration. A part no live host has the needs of waits
   `no host provides <resource>` in `forge queue`: blocked, never red, never skipped.
 - **A part is strict**: PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is
   FAIL; any `lost`/`missing` id makes it INCONCLUSIVE and it is not posted.

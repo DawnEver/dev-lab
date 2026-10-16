@@ -57,6 +57,7 @@ from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
 from lab_commons.compute.learned import Run, record_run
+from lab_commons.compute.presence import CHECKS, demote
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target
 from lab_commons.dev.forgeclaim import Work, forge_now
@@ -73,7 +74,7 @@ from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
-__all__ = ['BOX_QUEUE_S', 'Produced', 'boxed', 'produce']
+__all__ = ['BOX_QUEUE_S', 'Produced', 'boxed', 'demote_unreachable', 'produce']
 
 #: How long a producer waits for its box claim, in seconds: the tick admitted it against the box ledger, so
 #: only a run admitted in between can be in its way -- then the claim is released and retried next tick.
@@ -90,6 +91,14 @@ class Produced:
     argv: tuple[str, ...]
     returncode: int
     stopped: bool = False  # by :mod:`lab_commons.dev.stoprun`, on purpose
+
+
+def demote_unreachable(produced: Sequence[Produced]) -> None:
+    """A part whose infrastructure did not answer (exit 4) demotes every checked tool it needs on this host."""
+    for one in produced:
+        if one.returncode == ProducerExit.UNREACHABLE:
+            tools = sorted(needs_of(one.platform) & CHECKS.keys())
+            demote(tools, f'{one.platform} at {one.sha[:12]} exited {int(ProducerExit.UNREACHABLE)} (unreachable)')
 
 
 #: Bytes in one gibibyte.

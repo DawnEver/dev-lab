@@ -39,6 +39,7 @@ A record leaves the outbox once no queued entry still names it.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -214,8 +215,13 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
     THE FIRST RESULT WINS (design D18). A run is deterministic, so a second result for the same unit is a
     duplicate run (a lost lease, a partition): an identical one is dropped; a DIFFERING one is never posted
     and sounds :data:`~lab_commons.dev.forgealarm.NONDETERMINISM` -- the unit is not deterministic.
+
+    ONE OWNER PER WRITE. A held entry is already durable and is retried every flush until delivered, so its
+    upload and status go through the door WITHOUT the write journal; journaling them too gave a failed post
+    two owners, and after an outage both delivered it (a duplicate ``error`` status).
     """
     directory = outbox_dir(root)
+    built = dataclasses.replace(built, journal=None)  # the held entry owns this write, not the journal
     first = _decided(built, post)
     if first is None:
         url = attach(built, directory / post.record).url if post.record else ''

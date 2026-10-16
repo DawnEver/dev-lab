@@ -160,24 +160,25 @@ def test_upload_an_upload_whose_answer_was_lost_is_stored_once_and_the_part_stil
 DEFAULT_ATTEMPTS_LOST = 3
 
 
-def test_status_post_a_refused_status_is_posted_once_when_the_forge_answers(server, tmp_path: Path) -> None:
-    """Crash at status post: the post failed; the journal and the held entry both keep it, and one lands."""
+def test_status_post_a_refused_status_has_one_owner_and_is_posted_once(server, tmp_path: Path) -> None:
+    """Crash at status post: the held entry alone owns it -- the journal does not -- so it lands exactly once.
+
+    An ``error`` release is not a result, so nothing on the forge would dedupe a second copy: this is the
+    case where two owners (journal + held entry) used to post it twice after an outage.
+    """
     repo, sha = _repo(tmp_path)
-    enqueue(repo, Post(sha, 'tests/linux', 'success', 'scope=full ran=1'))
+    enqueue(repo, Post(sha, 'tests/linux', 'error', 'released: unreachable -- no room'))
     door = _door(Loopback(server), journal_for(repo))
-    answer(*USER)
-    answer('GET', f'{API}/statuses/{sha}', (200, []))
     answer('POST', f'{API}/statuses/{sha}', (503, {'message': 'down'}))
     with pytest.raises(PostFailed):
         flush(repo, client=lambda _root: door)
+    assert len(queued(repo)) == 1, 'kept by its held entry'
+    assert journal_for(repo).pending() == (), 'and by nothing else: one owner'
     Recorder.received.clear()
-    landed = {'id': 9, 'context': 'tests/linux', 'status': 'success', 'description': 'scope=full ran=1'}
-    answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [landed]))  # the replay's probe, then the held check
-    answer('POST', f'{API}/statuses/{sha}', (201, landed))
+    answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'error'}))
     flush(repo, client=lambda _root: door)
-    assert len(_posts(f'{API}/statuses/{sha}')) == 1, 'replayed once; the held entry found it decided'
+    assert len(_posts(f'{API}/statuses/{sha}')) == 1
     assert queued(repo) == ()
-    assert journal_for(repo).pending() == ()
 
 
 def test_gitea_down_every_write_waits_on_disk_and_each_lands_once_it_is_back(server, tmp_path: Path) -> None:

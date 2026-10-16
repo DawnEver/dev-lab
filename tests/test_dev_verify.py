@@ -917,7 +917,7 @@ def _patched_main(
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
     monkeypatch.setattr(localpart, 'read_outcomes', lambda _judged: {'t::a': 'passed'})
     monkeypatch.setattr(localpart, 'owners', lambda _root, _sha, reported, _collect: dict.fromkeys(reported, BASE))
-    monkeypatch.setattr(localpart, 'present_here', lambda: frozenset({'windows'}))
+    monkeypatch.setattr(localpart, 'present_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
     assert verify.main([]) == EXIT_CODES[Outcome.PASS]

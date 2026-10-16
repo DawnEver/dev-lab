@@ -227,3 +227,18 @@ def test_a_cards_login_is_its_forge_recorded_author_never_what_its_body_says(ser
     cards = read_cards(built)
     assert [(c.host, c.login) for c in cards] == [('box-g', 'mallory'), ('box-h', 'alice')]
     assert card_owners(cards) == {'box-g': ('mallory',), 'box-h': ('alice',)}
+
+
+def test_a_card_shows_probed_presence_with_the_evidence_a_tool_is_absent_on() -> None:
+    """D21: the card is the probe's reading -- a tool is served only where its row says present.
+
+    PLANTED CONTROL: the same card with the row present serves it and names no absence.
+    """
+    evidence = [{'source': 'version', 'value': 'declared 5.0', 'time': NOW.isoformat()}]
+    absent = _card('ws-01', 'windows', NOW, tools={'femm': {'present': False, 'evidence': evidence}})
+    assert absent.tools_present() == frozenset()
+    assert 'tools absent: `femm` (version: declared 5.0)' in absent.text()
+    present = _card('ws-01', 'windows', NOW, tools={'femm': {'present': True, 'evidence': evidence}})
+    assert present.tools_present() == {'femm'}
+    assert 'tools absent' not in present.text()
+    assert '+ `femm`' in present.text()

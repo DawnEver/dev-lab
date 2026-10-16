@@ -18,10 +18,13 @@ from _forge_fake import git_out, run_git
 
 from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
+from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
+from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
+from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgeroute import Routed
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgetidy import Hygiene
@@ -160,6 +163,8 @@ def _serve(
     prune=lambda _root, _client, **_kw: (),
     starving: tuple = (),
     issue_tidy=lambda _client, _hygiene: [],
+    children: tuple = (),
+    present=lambda _root: {},
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -201,6 +206,8 @@ def _serve(
         return proc
 
     monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
+    monkeypatch.setattr(forgeserve, 'venues', lambda _root, origin: [('origin', origin)])
+    monkeypatch.setattr(forgeserve, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'issue_tidy', issue_tidy)
@@ -223,6 +230,7 @@ def _serve(
         supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX),
         holding=lambda: holding,
         retain=retain,
+        present=present,
     )
     said.append(f'running={seen.get("running")}')
     return report, said, alarms
@@ -336,6 +344,27 @@ def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_
     rows[:] = []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)
     assert forge.open == {}
+
+
+def test_every_tick_reports_behind_and_conflicts_and_alarms_past_the_bound(monkeypatch, tmp_path: Path) -> None:
+    """D12: the behind/conflict report runs each tick; a child past ``behind_max`` or conflicting is an issue.
+
+    PLANTED CONTROL: a child at the bound and clean raises nothing; the same set with a conflicting and a
+    far-behind child raises exactly those two, beside the integrator's prompts.
+    """
+    calm = (Child('lane/ok', 'a' * 40, None), Feedback('t', 'pending', 's', behind=20))
+    forge = _Issues()
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm,))
+    assert forge.open == {}
+    far = (Child('lane/far', 'b' * 40, None), Feedback('t', 'pending', 's', behind=21))
+    torn = (Child('lane/torn', 'c' * 40, None), Feedback('t', 'failure', 's', conflicts=('x.py',)))
+    raised = _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm, far, torn))[2]
+    assert sorted(forge.open) == [
+        'integration: lane/far needs a sync with integrate/main',
+        'integration: lane/torn needs a sync with integrate/main',
+    ]
+    assert {one.kind for one in raised} == {INTEGRATION}
+    assert 'forge sync' in forge.open['integration: lane/far needs a sync with integrate/main']
 
 
 def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch, tmp_path: Path) -> None:
@@ -610,6 +639,28 @@ def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None
     assert card.facts == {'partitions': {'defq': 2880}}
     assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
     assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'not admitted: lacking cpu'}
+
+
+def test_the_card_carries_the_probed_tools_never_the_declarations(monkeypatch, tmp_path: Path) -> None:
+    """D21: the tick re-probes its tools first, and its card shows each verdict with its evidence."""
+    cards: list = []
+    found = Presence('femm', present=False, evidence=(Evidence('find', 'not found', NOW.isoformat()),))
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), cards=cards, present=lambda _root: {'femm': found})
+    (card,) = cards
+    assert card.tools == {'femm': found.row()}
+    assert card.tools_present() == frozenset(), 'absent as probed, whatever a machine file declares'
+
+
+def test_a_part_whose_infrastructure_did_not_answer_demotes_its_tools(monkeypatch) -> None:
+    """D21 (4): exit 4 on a femm part demotes femm here; a red part (exit 1) is the code's, never the tool's."""
+    demoted: list = []
+    monkeypatch.setattr(forgeproduce, 'demote', lambda tools, why: demoted.append((tools, why)))
+    monkeypatch.setattr(forgeproduce, 'needs_of', lambda _platform: frozenset({'femm', 'windows'}))
+    red = Produced('r', 'a' * 40, 'femm', (), 1)
+    forgeproduce.demote_unreachable([red])
+    assert demoted == [], 'PLANTED CONTROL: a failed test is not a failed tool'
+    forgeproduce.demote_unreachable([dataclasses.replace(red, returncode=ProducerExit.UNREACHABLE)])
+    assert [tools for tools, _ in demoted] == [['femm']]
 
 
 def test_a_box_admits_against_its_capacity_less_every_box_ledger_claim(monkeypatch, tmp_path: Path) -> None:
