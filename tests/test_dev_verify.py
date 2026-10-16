@@ -1234,6 +1234,7 @@ def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool) -> No
     box = Capacity(cpu=cpu, mem_bytes=16 * GB, seats={})
     monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: box))
     monkeypatch.setattr(verifybox, 'xdist_installed', lambda: xdist)
+    monkeypatch.setattr(verifybox, 'refresh_checkout', lambda _root: 0)  # no forge in a unit test
 
 
 def _claimed(argv: list[str]) -> tuple[str, list[str]]:
@@ -1297,3 +1298,22 @@ def test_pytest_exiting_a_former_box_sentinel_is_judged_by_pytest(tmp_path: Path
     record = tmp_path / 'step.outcome.json'
     write_ended(record, ended(own))
     assert verifybox.ended_in_the_box(record) == ()
+
+
+def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure(tmp_path: Path) -> None:
+    """D4/D5: each worker at the worst selected file's peak x the box headroom; an unmeasured file at its siblings'.
+
+    PLANTED CONTROL: a repository with nothing measured falls back to the per-task floor, never to 8 GB.
+    """
+    from lab_commons.compute import learned  # noqa: PLC0415
+
+    (tmp_path / 'tests' / 'u').mkdir(parents=True)
+    for name in ('test_a.py', 'test_b.py', 'test_new.py'):
+        (tmp_path / 'tests' / 'u' / name).write_text('', encoding='utf-8')
+    files = verifybox.selection_files(tmp_path, ['py', '-m', 'pytest', 'tests/u', '-q'])
+    assert files == ('tests/u/test_a.py', 'tests/u/test_b.py', 'tests/u/test_new.py')
+    assert verifybox.selection_files(tmp_path, ['tests/u/test_a.py::t']) == ('tests/u/test_a.py',)
+    learned.learn_peaks('https://g/v.git', {'tests/u/test_a.py': 1024.0, 'tests/u/test_b.py': 2048.0})
+    assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_a.py'], 2) == 2 * 1.0 * learned.BOX_HEADROOM
+    assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_new.py'], 1) == 1.5 * learned.BOX_HEADROOM
+    assert verifybox.selection_mem_gb('https://g/none.git', ['tests/x.py'], 4) == 4.0, 'the 1 GB floor per worker'

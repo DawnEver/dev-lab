@@ -51,7 +51,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 - A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
 - A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: one core per
   worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, at most `SELECTION_CPU` unless
-  the caller names a width -- `SELECTION_MEM_GB`, `SELECTION_WALL_S`) beside whatever else fits; a producer runs
+  the caller names a width -- the memory its files measured, `verifybox.selection_mem_gb`, and `SELECTION_WALL_S`) beside whatever else fits; a producer runs
   at the demand serve admitted it at ([box resources](box-resources.md)).
 - A heavy part is offered only for the refs its `[tool.lab_commons.parts.refs.<part>] <scope>` admits
   (`platformparts.part_refs`), and every producer runs below normal OS priority (`forgeproduce.below_normal`).
