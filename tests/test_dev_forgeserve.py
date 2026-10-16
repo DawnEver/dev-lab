@@ -18,11 +18,13 @@ from _forge_fake import git_out, run_git
 
 from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
+from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
+from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgeroute import Routed
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgetidy import Hygiene
@@ -156,6 +158,7 @@ def _serve(
     starving: tuple = (),
     issue_tidy=lambda _client, _hygiene: [],
     children: tuple = (),
+    present=lambda _root: {},
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -221,6 +224,7 @@ def _serve(
         supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX),
         holding=lambda: holding,
         retain=retain,
+        present=present,
     )
     said.append(f'running={seen.get("running")}')
     return report, said, alarms
@@ -629,6 +633,28 @@ def test_every_tick_publishes_the_host_card(monkeypatch, tmp_path: Path) -> None
     assert card.facts == {'partitions': {'defq': 2880}}
     assert card.ticked == FORGE_NOW.isoformat(), "the forge's clock, never the host's"
     assert card.waiting == {f'feat/x@{SHA[:12]}:windows': 'not admitted: lacking cpu'}
+
+
+def test_the_card_carries_the_probed_tools_never_the_declarations(monkeypatch, tmp_path: Path) -> None:
+    """D21: the tick re-probes its tools first, and its card shows each verdict with its evidence."""
+    cards: list = []
+    found = Presence('femm', present=False, evidence=(Evidence('find', 'not found', NOW.isoformat()),))
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), cards=cards, present=lambda _root: {'femm': found})
+    (card,) = cards
+    assert card.tools == {'femm': found.row()}
+    assert card.tools_present() == frozenset(), 'absent as probed, whatever a machine file declares'
+
+
+def test_a_part_whose_infrastructure_did_not_answer_demotes_its_tools(monkeypatch) -> None:
+    """D21 (4): exit 4 on a femm part demotes femm here; a red part (exit 1) is the code's, never the tool's."""
+    demoted: list = []
+    monkeypatch.setattr(forgeproduce, 'demote', lambda tools, why: demoted.append((tools, why)))
+    monkeypatch.setattr(forgeproduce, 'needs_of', lambda _platform: frozenset({'femm', 'windows'}))
+    red = Produced('r', 'a' * 40, 'femm', (), 1)
+    forgeproduce.demote_unreachable([red])
+    assert demoted == [], 'PLANTED CONTROL: a failed test is not a failed tool'
+    forgeproduce.demote_unreachable([dataclasses.replace(red, returncode=ProducerExit.UNREACHABLE)])
+    assert [tools for tools, _ in demoted] == [['femm']]
 
 
 def test_a_box_admits_against_its_capacity_less_every_box_ledger_claim(monkeypatch, tmp_path: Path) -> None:

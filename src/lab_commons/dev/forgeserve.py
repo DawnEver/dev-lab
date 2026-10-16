@@ -96,11 +96,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import Holding, holdings
-from lab_commons.box.machine import provided
+from lab_commons.box import Holding, declared_seats, holdings
 from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
+from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
+from lab_commons.compute.probe import inventory
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
 from lab_commons.dev.branchprune import serve_prune
@@ -112,7 +113,7 @@ from lab_commons.dev.forgeintegration import alarms as sync_alarms
 from lab_commons.dev.forgeintegration import tick as integration_tick
 from lab_commons.dev.forgeintegration import venues
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeproduce import Produced, produce
+from lab_commons.dev.forgeproduce import Produced, demote_unreachable, produce
 from lab_commons.dev.forgepulls import ListingIncomplete
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
@@ -162,13 +163,16 @@ def serve(
     host: str | None = None,
     table: Mapping[str, Any] | None = None,
     supplied: Callable[..., Supply] = supply_now,
+    present: Callable[[Path], Mapping[str, Presence]] = lambda here: refresh(declared_versions(here)),
     holding: Callable[[], Sequence[Holding]] = holdings,
     retain: Callable[..., retention.Outcome | None] = retention.serve_pass,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
-    *supplied* is what a round admits against (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding*
-    the box ledger's claims now, *retain* the retention pass -- each a seam a test fakes.
+    *present* re-probes this host's tools where due (:func:`lab_commons.compute.presence.refresh`), before
+    anything reads them; *supplied* is what a round admits against
+    (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding* the box ledger's claims now, *retain* the
+    retention pass -- each a seam a test fakes.
     """
     repo = origin_url(root)
     table = section('schedule') if table is None else table
@@ -176,7 +180,7 @@ def serve(
     alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
-    provides = provided(section('capabilities'))
+    tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     name = card_host(machine, seat)
@@ -195,7 +199,7 @@ def serve(
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
-            'say': say, 'alarms': raised, 'provides': provides, 'priority': priority.row(),
+            'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
@@ -203,6 +207,7 @@ def serve(
         ),
     )  # fmt: skip
     rounds, produced = host_rounds.serve(beat_s)
+    demote_unreachable(produced)
     runs, card = host_rounds.runs, host_rounds.card
     ticked = rounds[-1]
     claimed = [item for one in rounds for item in one.claimed]

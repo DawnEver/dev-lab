@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from lab_commons.box.machine import provided
+from lab_commons.compute.presence import declared_versions, refresh
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
 from lab_commons.dev.forgeoutbox import PostFailed
@@ -48,9 +49,12 @@ if TYPE_CHECKING:
 __all__ = ['local_record', 'owners', 'part_selection', 'post_cited', 'post_local', 'post_part', 'present_here']
 
 
-def present_here() -> frozenset[str]:
-    """The resources THIS host has: its OS, and every machine-file tool the probes find installed."""
-    _, found = tools(provided(section('capabilities')))
+def present_here(root: Path) -> frozenset[str]:
+    """The resources THIS host has: its OS, and every tool present or declared without a check.
+
+    Presence is re-probed where due against *root*'s declared versions (:func:`lab_commons.compute.presence.refresh`).
+    """
+    _, found = tools(provided(section('capabilities')), presence=refresh(declared_versions(root)))
     return frozenset({this_platform(), *found})
 
 
@@ -157,7 +161,7 @@ def post_part(
     if part:
         chosen = [part]
     else:
-        here = (present or present_here)()
+        here = present() if present else present_here(root)
         chosen = sorted({owned[node] for node in outcomes if needs_of(owned[node]) <= here}) or [BASE]
     scope = INCREMENTAL if arguments else FULL
     return '\n'.join(
