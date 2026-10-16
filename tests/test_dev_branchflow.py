@@ -154,7 +154,7 @@ def test_the_tick_retargets_a_trunk_pr_and_reports_each_child_once(
     answer('GET', f'{api}/issues', (200, []))
     answer('POST', f'{api}/statuses/{lane}', (201, {'context': CONTEXT, 'state': 'pending', 'description': 'd'}))
     built = client(forge, Loopback(server))
-    lines = tick(work, [('origin', built)], POLICY, fetch_pull=lambda _r, _m, _n: pr_head)
+    lines = tick(work, [('origin', built)], POLICY, fetch_pull=lambda _r, _m, _n: pr_head).lines
     writes = [(r['method'], r['path']) for r in Recorder.received if r['method'] != 'GET']
     assert ('PATCH', f'{api}/pulls/4') in writes
     assert Recorder.received[[r['method'] for r in Recorder.received].index('PATCH')]['body'] == {

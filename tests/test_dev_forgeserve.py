@@ -22,6 +22,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
+from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
 from lab_commons.dev.forgeroute import Routed
 from lab_commons.dev.forgetick import TickReport
 from lab_commons.dev.forgetidy import Hygiene
@@ -154,6 +155,7 @@ def _serve(
     prune=lambda _root, _client, **_kw: (),
     starving: tuple = (),
     issue_tidy=lambda _client, _hygiene: [],
+    children: tuple = (),
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -195,6 +197,8 @@ def _serve(
         return proc
 
     monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
+    monkeypatch.setattr(forgeserve, 'venues', lambda _root, origin: [('origin', origin)])
+    monkeypatch.setattr(forgeserve, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'issue_tidy', issue_tidy)
@@ -330,6 +334,27 @@ def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_
     rows[:] = []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)
     assert forge.open == {}
+
+
+def test_every_tick_reports_behind_and_conflicts_and_alarms_past_the_bound(monkeypatch, tmp_path: Path) -> None:
+    """D12: the behind/conflict report runs each tick; a child past ``behind_max`` or conflicting is an issue.
+
+    PLANTED CONTROL: a child at the bound and clean raises nothing; the same set with a conflicting and a
+    far-behind child raises exactly those two, beside the integrator's prompts.
+    """
+    calm = (Child('lane/ok', 'a' * 40, None), Feedback('t', 'pending', 's', behind=20))
+    forge = _Issues()
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm,))
+    assert forge.open == {}
+    far = (Child('lane/far', 'b' * 40, None), Feedback('t', 'pending', 's', behind=21))
+    torn = (Child('lane/torn', 'c' * 40, None), Feedback('t', 'failure', 's', conflicts=('x.py',)))
+    raised = _serve(monkeypatch, tmp_path, TickReport((), (), ()), issues=forge, children=(calm, far, torn))[2]
+    assert sorted(forge.open) == [
+        'integration: lane/far needs a sync with integrate/main',
+        'integration: lane/torn needs a sync with integrate/main',
+    ]
+    assert {one.kind for one in raised} == {INTEGRATION}
+    assert 'forge sync' in forge.open['integration: lane/far needs a sync with integrate/main']
 
 
 def test_a_live_local_producer_renews_its_claim_on_the_forges_clock(monkeypatch, tmp_path: Path) -> None:

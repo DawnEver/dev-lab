@@ -21,6 +21,10 @@ The tick FETCHES (origin, and each PR head) through the retry wrapper; everythin
 of the object store and the forge. Last, every undeclared origin branch idle past its grace is listed
 (:func:`lab_commons.dev.branchprune.listing`): ``deletable`` when the repo has not opted into pruning. Deleting
 is the serve tick's, never this verb's, and so is issue hygiene (:func:`lab_commons.dev.forgetidy.tidy`).
+
+``forge serve`` runs this tick every tick, and a child that CONFLICTS with integration or is more than the
+lane policy's ``behind_max`` behind it is an ``integration`` alarm (:func:`alarms`), kept as one forge issue
+beside the integrator's prompts.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from lab_commons.compute.model import Schedule
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_origin, forge_from_remote
+from lab_commons.dev.forgealarm import INTEGRATION, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import Status, status_list, status_post
@@ -49,7 +54,7 @@ from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
 from lab_commons.dev.trialmerge import contains, merged_at, rev, trial
 from lab_commons.log import emit
 
-__all__ = ['CONTEXT', 'Child', 'Feedback', 'feedback', 'main', 'retarget_note', 'tick']
+__all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'tick', 'venues']
 
 #: The commit-status context a child branch without a PR carries its integration line in.
 CONTEXT: Final = 'integration'
@@ -75,6 +80,29 @@ class Feedback:
     text: str
     state: str
     summary: str
+    behind: int = 0
+    conflicts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Ticked:
+    """One tick: a line per child (and per retarget), and each child with what was said about it."""
+
+    lines: tuple[str, ...]
+    said: tuple[tuple[Child, Feedback], ...]
+
+
+def alarms(said: Sequence[tuple[Child, Feedback]], policy: Policy, repo: str) -> list[Alarm]:
+    """An ``integration`` alarm per child that conflicts with integration or is past ``behind_max``."""
+    found = []
+    for child, one in said:
+        why = [f'conflicts in {", ".join(one.conflicts)}'] if one.conflicts else []
+        why += [f'{one.behind} behind (bound {policy.behind_max})'] if one.behind > policy.behind_max else []
+        if why:
+            subject = f'{child.branch} needs a sync with {policy.integration}'
+            body = f'{child.branch} at {child.head[:12]}: {"; ".join(why)} (python -m lab_commons.dev.forge sync)'
+            found.append(Alarm(INTEGRATION, repo, subject, body, about=f'sync {child.branch}@{child.head[:12]}'))
+    return found
 
 
 def _line(statuses: Sequence[Status]) -> list[str]:
@@ -130,7 +158,7 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     summary = f'{verdict.replace("`", "")}; behind {tried.behind}' + (
         '' if tried.clean else f'; {len(tried.conflicts)} conflict(s)'
     )
-    return Feedback(text, state, summary)
+    return Feedback(text, state, summary, tried.behind, tuple(tried.conflicts))
 
 
 def retarget_note(policy: Policy) -> str:
@@ -198,9 +226,10 @@ def tick(
     policy: Policy,
     *,
     fetch_pull: Callable[[Path, str, int], str] = _fetch_pull,
-) -> list[str]:
-    """One pass over every child branch of every venue ``(remote, client)``; returns one line per child."""
+) -> Ticked:
+    """One pass over every child branch of every venue ``(remote, client)``."""
     lines: list[str] = []
+    said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []
     with_pr: set[str] = set()
     for remote, client in venues:
@@ -217,10 +246,11 @@ def tick(
     origin = dict(venues)['origin']
     children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
     for child in children:
-        said = feedback(root, child, policy)
+        one = feedback(root, child, policy)
+        said.append((child, one))
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
-        lines.append(f'{child.branch} {where}: {said.summary} -- {_publish(child, said)}')
-    return lines
+        lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
+    return Ticked(tuple(lines), tuple(said))
 
 
 def _retarget(client: Client, pr: PullRequest, policy: Policy) -> PullRequest:
@@ -229,9 +259,10 @@ def _retarget(client: Client, pr: PullRequest, policy: Policy) -> PullRequest:
     return moved
 
 
-def _venues(root: Path) -> list[tuple[str, Client]]:
+def venues(root: Path, origin: Client) -> list[tuple[str, Client]]:
+    """``origin`` with *origin*, plus each GitHub mirror remote of a non-GitHub origin."""
     names = _git(root, 'remote').split()
-    venues = [('origin', client_for(root))]
+    found = [('origin', origin)]
     for name in names:
         if name == 'origin':
             continue
@@ -239,9 +270,9 @@ def _venues(root: Path) -> list[tuple[str, Client]]:
             forge = forge_from_remote(root, remote=name)
         except UnreadableRemote:
             continue
-        if forge.host.lower() == GITHUB_HOST and venues[0][1].forge.host.lower() != GITHUB_HOST:
-            venues.append((name, client_for(root, remote=name)))
-    return venues
+        if forge.host.lower() == GITHUB_HOST and origin.forge.host.lower() != GITHUB_HOST:
+            found.append((name, client_for(root, remote=name)))
+    return found
 
 
 def main(
@@ -254,9 +285,9 @@ def main(
     root = Path.cwd() if cwd is None else cwd
     try:
         fetch(root)
-        venues = _venues(root)
-        lines = tick(root, venues, load_policy(root))
-        lines += [f'branch: {row.line()}' for row in listing(root, dict(venues)['origin'], now=datetime.now(UTC))]
+        found = venues(root, client_for(root))
+        lines = list(tick(root, found, load_policy(root)).lines)
+        lines += [f'branch: {row.line()}' for row in listing(root, dict(found)['origin'], now=datetime.now(UTC))]
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
         return 1
