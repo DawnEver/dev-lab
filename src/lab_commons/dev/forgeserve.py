@@ -74,7 +74,9 @@ who it is, what it serves, its supply, what it holds with progress, and the queu
 THE FORGE PROMPTS THE INTEGRATOR: every host derives the integration queue
 (:func:`lab_commons.dev.integrator.observe`) and keeps ONE ``integration`` forge issue per row that asks
 for action (:func:`raise_once`): N hosts write one issue, and only the host that creates or changes it
-pages. No host owns integration.
+pages. No host owns integration. The same tick runs the behind/conflict report on every child branch
+(:func:`lab_commons.dev.forgeintegration.tick`), and a child conflicting with integration or past the lane
+policy's ``behind_max`` joins those rows as one more ``integration`` issue.
 
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`lab_commons.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
@@ -94,11 +96,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import Holding, holdings
-from lab_commons.box.machine import provided
+from lab_commons.box import Holding, declared_seats, holdings
 from lab_commons.compute.learned import cluster_demand
 from lab_commons.compute.model import Supply
+from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
+from lab_commons.compute.probe import inventory
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, retention
 from lab_commons.dev.branchprune import serve_prune
@@ -106,8 +109,11 @@ from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_t
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm, sound
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import HostCard, card_host, card_owners, read_cards, recording
+from lab_commons.dev.forgeintegration import alarms as sync_alarms
+from lab_commons.dev.forgeintegration import tick as integration_tick
+from lab_commons.dev.forgeintegration import venues
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgeproduce import Produced, produce
+from lab_commons.dev.forgeproduce import Produced, demote_unreachable, produce
 from lab_commons.dev.forgepulls import ListingIncomplete
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
@@ -119,6 +125,7 @@ from lab_commons.dev.forgetidy import load_hygiene
 from lab_commons.dev.forgetidy import tidy as issue_tidy
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.integrator import observe
+from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
@@ -156,13 +163,16 @@ def serve(
     host: str | None = None,
     table: Mapping[str, Any] | None = None,
     supplied: Callable[..., Supply] = supply_now,
+    present: Callable[[Path], Mapping[str, Presence]] = lambda here: refresh(declared_versions(here)),
     holding: Callable[[], Sequence[Holding]] = holdings,
     retain: Callable[..., retention.Outcome | None] = retention.serve_pass,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
-    *supplied* is what a round admits against (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding*
-    the box ledger's claims now, *retain* the retention pass -- each a seam a test fakes.
+    *present* re-probes this host's tools where due (:func:`lab_commons.compute.presence.refresh`), before
+    anything reads them; *supplied* is what a round admits against
+    (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding* the box ledger's claims now, *retain* the
+    retention pass -- each a seam a test fakes.
     """
     repo = origin_url(root)
     table = section('schedule') if table is None else table
@@ -170,7 +180,7 @@ def serve(
     alarm = recording(alarm, raised)
     runs = list(forgerun.live(repo)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
-    provides = provided(section('capabilities'))
+    tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     name = card_host(machine, seat)
@@ -189,7 +199,7 @@ def serve(
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
-            'say': say, 'alarms': raised, 'provides': provides, 'priority': priority.row(),
+            'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
@@ -197,6 +207,7 @@ def serve(
         ),
     )  # fmt: skip
     rounds, produced = host_rounds.serve(beat_s)
+    demote_unreachable(produced)
     runs, card = host_rounds.runs, host_rounds.card
     ticked = rounds[-1]
     claimed = [item for one in rounds for item in one.claimed]
@@ -267,11 +278,19 @@ def _prompt(
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
 ) -> None:
-    """Keep the integrator's prompts as one issue per row; a forge failure is said, not raised."""
+    """The integrator's prompts and every child's behind/conflict report, one issue per row.
+
+    A forge or fetch failure is said, not raised -- and then NO row is reconciled, so a partial derivation
+    never closes an issue it merely failed to see.
+    """
     try:
         found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
-        raise_once(built, INTEGRATION, found, alarm=alarm)
-    except ForgeCallFailed as failed:
+        policy = load_policy(root)
+        ticked = integration_tick(root, venues(root, built), policy)
+        for line in ticked.lines:
+            say(f'[serve] integration: {line}')
+        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo)], alarm=alarm)
+    except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 
 

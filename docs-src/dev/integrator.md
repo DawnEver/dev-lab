@@ -86,6 +86,9 @@ python -m lab_commons.dev.forge sync --watch origin/<ref>  # opt in to one more 
   conflict, and merges (never rebases) only when every merge is clean: integration first, then each watched ref.
 - On a conflict it merges nothing and names the files; resolve with a plain `git merge`.
 - It never pushes. The owner measures what they touched and pushes.
+- A push of a child more than `[tool.lab_commons.integrator] behind_max` commits behind integration is refused
+  at pre-push (`behind-push`, naming this command); `forge serve` runs the behind/conflict report every tick and
+  raises an `integration` alarm for each child past the bound or conflicting.
 - The watched set is the checkout's git config `branch.<child>.labUpstream`, never a committed file.
 
 ## Pull requests target integration

@@ -107,3 +107,10 @@ always_run = true
 id = "branchset-push"
 run = ["python", "-m", "lab_commons.dev.branchset_push"]
 always_run = true
+
+# BEHIND-IS-BOUNDED: a push of a branch other than integration/trunk more than [tool.lab_commons.integrator]
+# behind_max commits behind origin/<integration> is refused, naming `forge sync` (lab_commons.dev.behindpush).
+[[pre-push]]
+id = "behind-push"
+run = ["python", "-m", "lab_commons.dev.behindpush"]
+always_run = true
