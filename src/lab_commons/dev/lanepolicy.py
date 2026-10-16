@@ -35,6 +35,10 @@ class Policy:
     #: INTEGRATION-IS-MERGES-ONLY holds for every first-parent commit of the integration branch after this sha
     #: (:mod:`lab_commons.dev.sessionbranch`); a push that CREATES the branch is refused while it is ``''``.
     merges_only_since: str = ''
+    #: A push of any other branch more than this many commits behind ``origin/<integration>`` is refused
+    #: (:mod:`lab_commons.dev.behindpush`); ``forge serve`` raises an ``integration`` alarm for a child branch
+    #: past it (:mod:`lab_commons.dev.forgeintegration`).
+    behind_max: int = 20
 
 
 def load_policy(root: Path) -> Policy:

@@ -114,9 +114,9 @@ def test_stdin_carries_the_refspec_and_the_deletion_flag() -> None:
         'malformed line with three fields',  # skipped, not crashed on
     ]
     assert pushed_refs(lines) == (
-        _ref('refs/heads/feat/session'),
-        _ref('refs/heads/work/foo', deleted=True),
-        _ref('refs/tags/v1'),
+        PushedRef('refs/heads/feat/session', local_sha=_HEAD),
+        PushedRef('refs/heads/work/foo', deleted=True, local_sha=_ZERO),
+        PushedRef('refs/tags/v1', local_sha=_HEAD),
     )
 
 
