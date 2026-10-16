@@ -45,11 +45,10 @@ across two ecosystems that spell it differently (a PEP 440 version, a forty-char
 plus tier 1.
 
 WHAT THIS DOES NOT PROVE, and the first half of this is the statement a reader most needs.
-``uv.lock`` is a **per-checkout, UNTRACKED cache**, not a shared declaration: it is gitignored
-FAMILY-WIDE by user ruling and :func:`lab_commons.dev.doorcensus.assert_no_tracked_lock` refuses any
-repo that commits one. So a reading taken here speaks for THIS checkout's resolution and cannot speak
-for another box's -- two clones of one repo can hold two different locks, and a fresh clone with no
-lock at all has no resolved state to judge, which is why every arm below is floored and a missing
+``uv.lock`` is COMMITTED by every family repo (decision D8) and upgraded on a schedule
+(:mod:`lab_commons.dev.lockupgrade`), so a reading taken here speaks for the checked-out commit's
+resolution; a checkout whose lock is missing has no resolved state to judge, which is why every arm
+below is floored and a missing
 lock REFUSES rather than reporting clean. What is shared is the OBSERVATION FILE, and that is what
 makes two boxes' answers comparable. It does not prove the resolved package is the one that was
 INSTALLED: that is the environment arm, which reads ``importlib.metadata`` and compares against the
@@ -94,8 +93,7 @@ __all__ = [
 #: transport asked for a kind nobody declared refuses instead of guessing.
 KINDS: Final[frozenset[str]] = frozenset({'index', 'remote'})
 
-#: The lockfile ``uv`` writes. Untracked family-wide -- see this module's closing paragraph -- so a
-#: reading of it is a reading of LOCAL state.
+#: The lockfile ``uv`` writes, committed by every family repo (D8) -- see this module's closing paragraph.
 LOCK_NAME: Final = 'uv.lock'
 
 #: How old a committed observation may be before it must be refreshed, in days. SEVEN, by user
@@ -254,7 +252,7 @@ def resolved_lock(path: Path) -> dict[str, Resolved]:
     """Every package a ``uv.lock`` RESOLVED, keyed by name. Missing is EMPTY, present is STRICT.
 
     Args:
-        path: the lock file. Untracked family-wide, so this reads LOCAL state and says so.
+        path: the lock file, as the checked-out commit holds it.
 
     Returns:
         ``{name: Resolved}``. A ``[[package]]`` whose source is neither a registry nor a git URL --

@@ -426,7 +426,7 @@ def main(
         selected,
         syncing=args.bootstrap is not None or args.sync,
         upgrade_packages=args.upgrade_package,
-        frozen=args.bootstrap is not None and (root / 'uv.lock').is_file(),
+        frozen=args.bootstrap is not None,
     )
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)

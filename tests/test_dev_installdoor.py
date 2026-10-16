@@ -27,6 +27,7 @@ import pytest
 
 from lab_commons.dev.installdoor import (
     Delivery,
+    Door,
     RevertingDoorsError,
     VacuousDoorScanError,
     assert_doors_deliver,
@@ -241,3 +242,16 @@ def test_a_door_carries_the_file_and_the_line_a_reader_opens(tmp_path: Path) -> 
         'Makefile:2 -- uv sync',
         'hook.sh:1 -- uv run python -m commitizen changelog',
     ]
+
+
+@pytest.mark.parametrize('flag', ['--frozen', '--locked'])
+def test_a_sync_that_replays_the_committed_lock_is_correct(flag: str) -> None:
+    """D8: the committed lock IS the declared environment; replaying it is the door, not a revert.
+
+    PLANTED CONTROL: the same command without the flag still reverts -- it may rewrite the lock unseen.
+    """
+    for verb in ('sync', 'run'):
+        assert classify(['uv', verb, flag], ('lab-commons',)) is Delivery.LOCKED
+        assert classify(['uv', verb], ('lab-commons',)) is Delivery.REVERTS
+    locked = Door('Makefile', 1, f'uv sync {flag}', Delivery.LOCKED)
+    assert reverting((locked,)) == (), 'a door replaying the committed lock is never reported stale'

@@ -15,7 +15,8 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
-on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`)
+on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`),
+open the scheduled lock upgrade when due (:func:`lab_commons.dev.lockupgrade.schedule`)
 and tidy the repo's issues (``forge tidy``, :func:`lab_commons.dev.forgetidy.tidy`) -- every served repo, every tick;
 run the storage retention pass, every tick (:mod:`lab_commons.dev.retention`; still over quota raises a
 ``storage`` alarm); flush the outbox again.
@@ -103,7 +104,7 @@ from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.probe import inventory
 from lab_commons.config import section
-from lab_commons.dev import forgerun, forgeship, retention
+from lab_commons.dev import forgerun, forgeship, lockupgrade, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm, sound
@@ -217,6 +218,7 @@ def serve(
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+    lockupgrade.serve_tick(root, client(root), today=clock().date(), say=say)
     _hygiene(root, client(root), say=say)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
