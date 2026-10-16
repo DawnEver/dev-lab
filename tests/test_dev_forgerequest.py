@@ -349,3 +349,34 @@ def test_a_submodule_is_a_git_source_and_a_relative_one_resolves_against_origin(
     run_git(repo, 'add', '.gitmodules')
     sha = _sourced(repo, tips)
     assert git_sources(repo, sha) == ('https://forge.example.org/o/dep.git', 'https://h/x/b.git')
+
+
+def _branch(repo: Path, sha: str, ref: str) -> str:
+    """A commit of *sha*'s tree on origin's *ref* alone: served, but on neither integrate/main nor main."""
+    off = git_out(repo, 'commit-tree', f'{sha}^{{tree}}', '-m', 'lane work')
+    run_git(repo, 'update-ref', f'refs/remotes/origin/{ref}', off)
+    return off
+
+
+def test_a_request_off_the_trunks_runs_only_for_an_author_this_host_allows(server, tmp_path: Path) -> None:
+    """X1: a request runs a sha's code on someone else's box; only reviewed code, or a trusted author, may.
+
+    PLANTED CONTROL: the same sha is claimed once its author is in this host's ``[requests] authors``.
+    """
+    repo, tips = _origin(tmp_path)
+    sha = _branch(repo, _request(repo, tips, 'femm_goldens'), 'feat/x')
+    _ask('femm_goldens', sha, author='mallory')
+    done = {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=1'}
+    answer('GET', f'{API}/statuses/{sha}', (200, [done]))  # its own part, as a served branch, is done
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core, authors=())
+    assert report.claimed == ()
+    assert not [r for r in Recorder.received if r['method'] == 'POST'], 'another host may allow the author'
+    (waiting,) = [item for item in report.queue if item.candidate.kind == REQUEST]
+    assert waiting.blocked == (
+        f"{sha[:12]} is on neither integrate/main nor main, and mallory is not in this host's [requests] authors"
+    )
+    mine = {'id': 2, 'context': 'request/9', 'status': 'pending', 'description': ME.description()}
+    answer('GET', f'{API}/statuses/{sha}', (200, [done]), (200, [done, mine]))
+    answer('POST', f'{API}/statuses/{sha}', (201, {}))
+    (claimed,) = _tick(repo, server, supply=FEMM_HOST, demand=_one_core, authors=('mallory',)).claimed
+    assert claimed.sha == sha

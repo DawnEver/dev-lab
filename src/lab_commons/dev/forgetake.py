@@ -30,6 +30,7 @@ from lab_commons.dev.forgerequest import (
     unreachable_source,
     unreproducible,
     unserved,
+    untrusted,
 )
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
 from lab_commons.dev.forgestatus import Status
@@ -69,6 +70,8 @@ class ClaimPass:
     pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
     admitted: dict[str, tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
     requests: dict[tuple[str, str], Declared] = dataclasses.field(default_factory=dict)  # (sha, name) -> it
+    trunks: tuple[str, ...] = ()  # origin refs whose code runs for any requester (X1)
+    authors: frozenset[str] = frozenset()  # whose requests run here at any served sha (X1)
     reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
 
     def consider(self, item: Ranked) -> None:
@@ -145,26 +148,36 @@ class ClaimPass:
             return one, f'this host cannot produce {one.context}: {here}'
 
     def _own_request(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
-        """A request: refused at its commit when its sha declares no such producer; it runs in a local tree."""
-        if why := unserved(self.root, one.sha):
-            return one, f'{REFUSED_AT_COMMIT} {why}'
+        """A request: refused at its commit when no host could ever reproduce it, waiting while THIS host cannot.
+
+        The commit's own defects -- a sha origin does not serve, an undeclared producer, no lock -- are
+        refused on its context. This host's -- a cluster seat, an author it does not run for off the
+        trunks, a git source it cannot fetch -- leave it waiting, named, for a host that can.
+        """
+        why, declared = unserved(self.root, one.sha), None
         try:
             declared = self._declared(wanted)
-        except UndeclaredRequest as why:
+        except UndeclaredRequest as undeclared:
+            why = why or str(undeclared)
+        why = why or unreproducible(self.root, one.sha)
+        if why or declared is None:
             return one, f'{REFUSED_AT_COMMIT} {why}'
-        if why := unreproducible(self.root, one.sha):
-            return one, f'{REFUSED_AT_COMMIT} {why}'
-        if self.serve.hpc:
+        if why := self._not_here(one, wanted):
             self.unservable.add(wanted.key)
-            return one, f'{NO_HOST} on a cluster seat runs a request'
-        if one.sha not in self.reached:
-            self.reached[one.sha] = unreachable_source(self.root, one.sha)
-        if self.reached[one.sha]:
-            self.unservable.add(wanted.key)
-            return one, self.reached[one.sha]
+            return one, why
         return dataclasses.replace(
             one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall_h * 3600)
         ), ''
+
+    def _not_here(self, one: Work, wanted: Candidate) -> str:
+        """Why THIS host does not run the request *one*, ``''`` when it does (its sources probed once a tick)."""
+        if self.serve.hpc:
+            return f'{NO_HOST} on a cluster seat runs a request'
+        if why := untrusted(self.root, one.sha, wanted.origin, trunks=self.trunks, authors=self.authors):
+            return why
+        if one.sha not in self.reached:
+            self.reached[one.sha] = unreachable_source(self.root, one.sha)
+        return self.reached[one.sha]
 
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""

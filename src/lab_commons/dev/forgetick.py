@@ -86,7 +86,7 @@ from lab_commons.dev.forgeclaim import (
     this_seat,
 )
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
-from lab_commons.dev.forgerequest import declared_request
+from lab_commons.dev.forgerequest import declared_request, request_authors
 from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgetake import ClaimPass
@@ -138,6 +138,7 @@ def tick(
     busy: Iterable[str] = (),
     owners: Mapping[str, Collection[str]] | None = None,
     priority: Priority | None = None,
+    authors: Collection[str] | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -154,7 +155,9 @@ def tick(
     for each host card (host -> the login that publishes it): a job's ORIGIN host stands only where its
     forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`). *priority* is this
     host's declared ordering (default: its machine file's ``[priority]``, :mod:`lab_commons.compute.priority`):
-    a matching candidate is considered before every other, and nothing is set aside for it.
+    a matching candidate is considered before every other, and nothing is set aside for it. *authors* are
+    the logins whose requests run here at any served sha (default: the machine file's ``[requests] authors``);
+    anyone else's runs only at a sha on the integration branch or the trunk.
     """
     lines: list[str] = []
     try:
@@ -174,7 +177,7 @@ def tick(
     now = forge_now(built)
     serve = serving(host or this_platform(), seat)
     me = Claim(machine, login, now + lease, serve.hpc)
-    schedule, repo = load_schedule(root), repo_name(built)
+    schedule, repo, policy = load_schedule(root), repo_name(built), load_policy(root)
     found = vouched(
         candidates(
             root,
@@ -182,7 +185,7 @@ def tick(
             repo=repo,
             parts=lambda sha: derived(history(sha)),
             schedule=schedule,
-            policy=load_policy(root),
+            policy=policy,
             now=now,
             say=lines.append,
         ),
@@ -196,7 +199,9 @@ def tick(
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
-        taken=list(running), trees=set(busy), store_why=probe(root) if serve.hpc else '', history=history,
+        taken=list(running), trees=set(busy), trunks=(policy.integration, policy.trunk),
+        authors=frozenset(request_authors() if authors is None else authors),
+        store_why=probe(root) if serve.hpc else '', history=history,
     )  # fmt: skip
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
         priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,

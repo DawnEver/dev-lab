@@ -41,12 +41,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box.machine import RESOURCE_NAME
+from lab_commons.config import section
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
     from pathlib import Path
 
     from lab_commons.dev.forgework import Client
@@ -54,11 +56,13 @@ if TYPE_CHECKING:
 __all__ = [
     'CONTEXT_PREFIX',
     'LOCK_FILE',
+    'REQUESTS_TABLE',
     'Declared',
     'UndeclaredRequest',
     'declared_request',
     'git_sources',
     'parse_body',
+    'request_authors',
     'request_body',
     'request_context',
     'result',
@@ -66,6 +70,7 @@ __all__ = [
     'unreachable_source',
     'unreproducible',
     'unserved',
+    'untrusted',
 ]
 
 #: The status context prefix of a request job; a part's is ``tests/``.
@@ -248,6 +253,42 @@ def _show(root: Path, spec: str, *, remote: bool = False) -> str:
     argv = ['remote', 'get-url', 'origin'] if remote else ['show', spec]
     done = subprocess.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
     return done.stdout.strip() if done.returncode == 0 else ''
+
+
+#: The machine-file table naming whose requests this host runs off the trunks: ``authors = ["<login>", ...]``.
+REQUESTS_TABLE: Final = 'requests'
+
+
+def request_authors() -> frozenset[str]:
+    """The logins this host runs a request for at ANY served sha (its machine file's ``[requests] authors``)."""
+    table = section(REQUESTS_TABLE)
+    authors = table.get('authors', [])
+    if set(table) - {'authors'} or not isinstance(authors, list) or not all(isinstance(a, str) for a in authors):
+        msg = f'[{REQUESTS_TABLE}] takes only authors = ["<forge login>", ...]'
+        raise ValueError(msg)
+    return frozenset(authors)
+
+
+def untrusted(root: Path, sha: str, author: str, *, trunks: Sequence[str], authors: Collection[str]) -> str:
+    """Why this host does not run *author*'s request at *sha*, ``''`` when it does.
+
+    A request runs its sha's code on another person's box: only code reviewed onto one of *trunks* (origin's
+    integration branch or trunk) runs for anyone; code anywhere else runs only for an author this host's
+    machine file allows (:func:`request_authors`).
+    """
+    if author and author in authors:
+        return ''
+    for ref in trunks:
+        done = subprocess.run(
+            [_GIT, '-C', str(root), 'merge-base', '--is-ancestor', sha, f'refs/remotes/origin/{ref}'],
+            capture_output=True,
+            check=False,
+        )
+        if done.returncode == 0:
+            return ''
+    who = author or 'its unresolved author'
+    on = ' nor '.join(trunks)
+    return f"{sha[:12]} is on neither {on}, and {who} is not in this host's [{REQUESTS_TABLE}] authors"
 
 
 def result(code: int, host: str) -> tuple[str, str]:
