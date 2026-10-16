@@ -17,9 +17,9 @@ APPLIED AT TWO GRAINS, both from that one rule:
   hold -- a finished record, the folded rounds of a superseded one, and the streams its last round left --
   that :func:`carried` keeps, and only runs the rest (:func:`lab_commons.hpc.run.submit_run`). The record
   names each carried outcome's origin sha, and the part counts them apart from ``ran``.
-* PER PART (:func:`equivalent`): EVERY test file at A carries and no test file is added -- then a producer
-  whose ref moved on is NOT superseded, it finishes (:mod:`lab_commons.dev.forgeproduce`,
-  :func:`lab_commons.dev.forgerun.supersede_moved`), and its part is ALSO posted on the tip
+* PER PART (:func:`equivalent`): EVERY test file at A carries and no test file is added -- then the part
+  a producer judged at A (it always finishes: a part under test is never superseded,
+  :mod:`lab_commons.dev.forgeproduce`, :mod:`lab_commons.dev.forgerun`) is ALSO posted on the tip
   (:func:`carry_target`), naming A (:class:`lab_commons.dev.platformparts.Part`).
 
 A tip whose part is already settled (``success``/``failure``) is never overwritten: a real verdict on B

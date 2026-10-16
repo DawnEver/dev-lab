@@ -33,10 +33,10 @@ guard, since ``flock`` on GPFS does not lock across hosts.
 PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``building``, ``queued 0/93``,
 ``running 40/93 done 12/93``, ``publishing`` -- the owner re-posts its pending claim with that progress
 (:class:`lab_commons.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
-status links the run record. A run whose REF MOVED ON is SUPERSEDED (:func:`supersede`): its Slurm jobs
-are cancelled and its claim released as ``superseded by <sha>``, so nothing finishes for nothing -- unless
-the new tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`): then the run finishes, and its
-record is posted on the tip too, as a part naming the sha it was judged at.
+status links the run record. A PART UNDER TEST IS NOT SUPERSEDED (user ruling 2026-10-13): a run whose
+ref moved on finishes and posts on its own sha, the newer pushes queue behind it, and when the tip is
+reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its record is posted on the tip too, as a part naming
+the sha it was judged at.
 
 THE FILE IS SCHEMA-VERSIONED (:data:`SCHEMA`). A tool upgraded under a live run never reads a run
 of another schema: :func:`live` refuses with the remedy (:class:`ForeignSchema`), so the run is
@@ -60,10 +60,9 @@ from lab_commons.config import config_path
 from lab_commons.dev import forgeship
 from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
-from lab_commons.dev.forgecarry import equivalent, publish
+from lab_commons.dev.forgecarry import publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgeroute import pyproject_at, route
-from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context
@@ -89,8 +88,6 @@ __all__ = [
     'live',
     'save',
     'start',
-    'supersede',
-    'supersede_moved',
 ]
 
 #: The state file's schema. Bump it whenever a field changes meaning; a live run of another is refused.
@@ -308,31 +305,6 @@ def _report(client: Client, run: Run, progress: str, lease: timedelta, say: Call
         say(f'[{run.platform}] {run.sha[:12]}: could not post progress: {failed}')
         return run
     return _step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
-
-
-def supersede(run: Run, tip: str, *, client: Client, cluster: Cluster, say: Callable[[str], None]) -> None:
-    """*run*'s ref moved on to *tip*: cancel its jobs, release its claim ``superseded by <tip>``, drop it.
-
-    The run cache is untouched, so a newer commit whose tree was already judged still cites it.
-    """
-    cancelled = cluster.cancel(run)
-    _release(client, run, f'superseded by {tip[:12]}', say)
-    drop(run)
-    say(f'[{run.platform}] {run.sha[:12]}: superseded by {tip[:12]}; cancelled {" ".join(cancelled) or "nothing"}')
-
-
-def supersede_moved(
-    root: Path, runs: list[Run], *, client: Client, cluster: Cluster, say: Callable[[str], None]
-) -> list[Run]:
-    """:func:`supersede` every run whose ref's origin tip moved on to a tip it is not equivalent to; the runs kept."""
-    kept = []
-    for run in runs:
-        tip = tip_of(root, run.ref)
-        if tip and tip != run.sha and not equivalent(root, run.sha, tip):
-            supersede(run, tip, client=client, cluster=cluster, say=say)
-        else:
-            kept.append(run)
-    return kept
 
 
 def _release_reason(run: Run, why: Exception, alarm: Callable[[Alarm], None]) -> str:
