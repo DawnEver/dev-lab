@@ -1183,9 +1183,14 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
 #: A child that claims EVERY core of its box ledger and holds them until killed.
 _HOLD_SEAT: Final = (
     'import math, time\n'
-    'from lab_commons.box import Capacity, Demand, admit\n'
-    'cores = math.floor(Capacity.read().cpu)\n'
-    "with admit(Demand(cpu=cores, mem_gb=0.5, wall_s=600, seats={}), 'planted-holder', 5, key='planted'):\n"
+    'from lab_commons.box import Capacity, Demand, hold\n'
+    'from lab_commons.box.supply import Reading\n'
+    'size = Capacity.read()\n'
+    'cores = math.floor(size.cpu)\n'
+    # a quiet reading, so the planted holder is ALWAYS admitted however loaded the machine running it is
+    'whole = Reading(size.cpu + size.kept_cpu, size.cpu + size.kept_cpu, 2**40, 2**40)\n'
+    "with hold(Demand(cpu=cores, mem_gb=0.5, wall_s=600, seats={}), 'planted-holder', 5, key='planted',\n"
+    '          read=lambda _pids: whole):\n'
     "    print('held', flush=True)\n"
     '    time.sleep(600)\n'
 )

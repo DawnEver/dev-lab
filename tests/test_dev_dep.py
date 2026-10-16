@@ -20,7 +20,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.box import BOX_ENV, Demand, admit
+from lab_commons.box import BOX_ENV, Demand, hold
 from lab_commons.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
@@ -106,7 +106,7 @@ def test_a_box_claim_is_not_an_environment_guard(tmp_path: Path, monkeypatch: py
     """A run's box claim is a machine resource: holding it alone never refuses a dependency change."""
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'box.sqlite'))
     run = _Run()
-    with admit(Demand(cpu=1, mem_gb=0.5, wall_s=60, seats={}), 'verify:a-run-on-this-machine', 0, key='k'):
+    with hold(Demand(cpu=1, mem_gb=0.5, wall_s=60, seats={}), 'verify:a-run-on-this-machine', 0, key='k'):
         mutate(_REQS, port=Port(name='repo-under-test'), run=run)
     assert len(run.calls) == 1
 

@@ -7,10 +7,11 @@ reads the box's decision from this record, never from the exit code.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
-from lab_commons.box import Outcome, Refused, write_ended
+from lab_commons.box import Capacity, Outcome, Refused, write_ended
+from lab_commons.box.supply import Reading
 from lab_commons.supervise.process.base import Ran
 
 
@@ -32,3 +33,18 @@ def boxed_as_run(argv: Sequence[str], ran: Ran) -> Ran:
     if '--outcome' in argv:
         record(argv, ended(ran.code))
     return ran
+
+
+def quiet(capacity: Capacity) -> Callable[[Iterable[int]], Reading]:
+    """An OS reader of a box nobody but its claims uses: idle and available are its whole size and margins.
+
+    On it the measured room equals the declared one (*capacity* less the claims), so a test that hands the
+    ledger a size by hand is not decided by how loaded the machine running it happens to be.
+    """
+    reading = Reading(
+        cores=capacity.cpu + capacity.kept_cpu,
+        idle_cores=capacity.cpu + capacity.kept_cpu,
+        total_bytes=capacity.mem_bytes + capacity.kept_bytes,
+        available_bytes=capacity.mem_bytes + capacity.kept_bytes,
+    )
+    return lambda _pids: reading

@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from lab_commons.box import Capacity, Holding
+from lab_commons.box.ledger import Read
+from lab_commons.box.supply import Reading
 from lab_commons.compute import probe
 from lab_commons.compute.model import Demand, Supply
 from lab_commons.dev import forge as _forge
@@ -124,11 +126,12 @@ def supply_now(
     name: str,
     standing: forgerun.Standing | None,
     capacity: Callable[[], Capacity] = Capacity.read,
+    read: Read = Reading.now,
 ) -> Supply:
-    """What this round admits against: the cluster standing, else the box's capacity less its ledger's claims *held*."""
+    """What this round admits against: the cluster standing, else the box's measured room beside its claims *held*."""
     if standing is not None:
         return dataclasses.replace(standing.supply, scope=name)
-    return probe.box(name, capacity=capacity(), holdings=held)
+    return probe.box(name, capacity=capacity(), holdings=held, read=read)
 
 
 def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
