@@ -47,7 +47,7 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Final
 
-from lab_commons.compute.learned import LOCAL
+from lab_commons.compute.learned import BOX_WALL_S, LOCAL
 from lab_commons.compute.probe import OS_NAMES
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client
@@ -171,6 +171,7 @@ class Work:
     request: str = ''
     demand: Mapping[str, float] = field(default_factory=dict)
     producer: str = LOCAL  # what its run is LEARNED under: a part's ``local``, a request's declared name
+    wall_s: int = BOX_WALL_S  # past it the box kills the run: a part's one day, a request's declared wall
 
     @property
     def context(self) -> str:

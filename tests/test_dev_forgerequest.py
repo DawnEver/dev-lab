@@ -15,6 +15,7 @@ from _box_fake import ended, record
 from _forge_fake import Recorder, answer, git_out, run_git
 from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
 
+from lab_commons.box import Capacity
 from lab_commons.compute.learned import LOCAL, Run, run_of
 from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
 from lab_commons.dev import forgeproduce
@@ -41,6 +42,7 @@ GOLDENS = (
     + 'needs = ["femm", "windows"]\n'
     + 'cpu = 2\n'
     + 'mem_gb = 3.5\n'
+    + 'wall_h = 72\n'
 )
 FEMM_HOST = Supply(
     'G', Resources(cpu=4.0, mem_gb=16.0, femm=1.0, windows=1.0), frozenset({'cpu', 'mem_gb', 'femm', 'windows'})
@@ -132,6 +134,9 @@ def test_a_request_is_admitted_at_the_size_its_row_declares_never_the_whole_host
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     (claimed,) = _tick(repo, server, supply=FEMM_HOST).claimed
     assert dict(claimed.demand) == {'cpu': 2, 'mem_gb': 3.5, 'femm': 1.0, 'windows': 1.0}
+    assert claimed.wall_s == 72 * 3600, 'S5: the wall its row declares, not the 24 h every box part gets'
+    held = forgeproduce.boxed(claimed, ['py'], Capacity(cpu=8, mem_bytes=32 * 1024**3, seats={}), tmp_path / 'o.json')
+    assert held[held.index('--wall') + 1] == str(72 * 3600)
 
 
 def test_an_unsized_request_row_is_refused_by_name(tmp_path: Path) -> None:
@@ -143,6 +148,9 @@ def test_an_unsized_request_row_is_refused_by_name(tmp_path: Path) -> None:
     zero = _declare(repo, tips, GOLDENS.replace('mem_gb = 3.5', 'mem_gb = 0'))
     with pytest.raises(UndeclaredRequest, match=r'unsized.*mem_gb'):
         declared_request(repo, zero, 'femm_goldens')
+    unbounded = _declare(repo, tips, GOLDENS.replace('wall_h = 72', ''))
+    with pytest.raises(UndeclaredRequest, match=r'unsized.*wall_h'):
+        declared_request(repo, unbounded, 'femm_goldens')
 
 
 def test_a_declaration_is_read_at_the_sha_and_refuses_a_malformed_row(tmp_path: Path) -> None:

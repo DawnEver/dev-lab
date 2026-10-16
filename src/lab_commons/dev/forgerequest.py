@@ -22,6 +22,7 @@ anything its repository did not commit (an undeclared name is refused, never run
     needs = ["femm", "windows"]   # its NEED-SET: resource names, an OS among them, like a part's
     cpu = 2                       # its SIZE: what the box admits it at until a run of it is measured
     mem_gb = 6.0                  # (learned per producer NAME); an unsized row is refused, never the whole host
+    wall_h = 48                   # past it the box kills the run: a long solve declares its own
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
 serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and closes the
@@ -80,6 +81,7 @@ class Declared:
     needs: frozenset[str]
     cpu: float
     mem_gb: float
+    wall_h: float
 
     @property
     def part(self) -> str:
@@ -133,11 +135,11 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
     if not isinstance(needs, list) or not all(isinstance(one, str) and RESOURCE_NAME.match(one) for one in needs):
         msg = f'{table} needs must be an array of resource names'
         raise UndeclaredRequest(msg)
-    unsized = [key for key in ('cpu', 'mem_gb') if not _positive(row.get(key))]
+    unsized = [key for key in ('cpu', 'mem_gb', 'wall_h') if not _positive(row.get(key))]
     if unsized:
-        msg = f'{table} is unsized: declare {" and ".join(unsized)} as positive numbers (never the whole host)'
+        msg = f'{table} is unsized: declare {" and ".join(unsized)} positive (never the whole host)'
         raise UndeclaredRequest(msg)
-    return Declared(name, tuple(argv), frozenset(needs), float(row['cpu']), float(row['mem_gb']))
+    return Declared(name, tuple(argv), frozenset(needs), float(row['cpu']), float(row['mem_gb']), float(row['wall_h']))
 
 
 def _positive(value: object) -> bool:

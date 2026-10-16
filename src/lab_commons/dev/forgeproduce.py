@@ -14,7 +14,8 @@ stopped it on purpose.
 
 THE PRODUCER RUNS IN THE BOX (:func:`boxed`, :func:`lab_commons.box.command`): admitted on this machine's
 box ledger at exactly the demand the tick admitted it at (:func:`lab_commons.compute.learned.box_demand`),
-and killed by the box past that memory or :data:`~lab_commons.compute.learned.BOX_WALL_S`. A box with no
+and killed by the box past that memory or its wall (a part's :data:`~lab_commons.compute.learned.BOX_WALL_S`,
+a request's declared ``wall_h``). A box with no
 room releases the claim retryable; a kill is released naming it -- both read from the box's record
 beside the run's tree, never from the exit code, which is the producer's own. A REQUEST (context
 ``request/<n>``) is the same job on the same path; its producer knows nothing of the forge, so its result
@@ -56,7 +57,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
-from lab_commons.compute.learned import BOX_WALL_S, Run, record_run
+from lab_commons.compute.learned import Run, record_run
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgecarry import SETTLED, carry_target, equivalent
 from lab_commons.dev.forgeclaim import Work, forge_now
@@ -120,7 +121,7 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path) ->
     asked = item.demand or {'cpu': capacity.cpu, 'mem_gb': capacity.mem_bytes / GB}
     seats = {name: 1 for name in needs_of(item.platform) if name in capacity.seats}
     cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
-    demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=BOX_WALL_S, seats=seats)
+    demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
     what = f'{item.context}@{item.sha[:12]}'
     return command(argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha)
 
