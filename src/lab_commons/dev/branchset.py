@@ -45,6 +45,7 @@ __all__ = [
     'BranchSetNotDeclared',
     'Candidate',
     'Census',
+    'KitOlderThanCheckout',
     'apply_local',
     'branchset_at',
     'branchset_from',
@@ -65,6 +66,15 @@ ARCHIVE_PREFIX = 'archive/'
 
 class BranchSetNotDeclared(ValueError):
     """The repo declares no branch set, or declares one that is not a trunk plus a list of names."""
+
+
+class KitOlderThanCheckout(BranchSetNotDeclared):
+    """The checkout declares a key this INSTALLED kit does not know: the kit is older than the checkout.
+
+    Not a malformed declaration -- a newer one. Measured 2026-10-16: a pre-push run by a venv built before
+    the pushed sha's schema refused as an unreadable branch set, sending its reader to fix a manifest
+    that was right; the remedy is to rebuild the venv.
+    """
 
 
 @dataclasses.dataclass(frozen=True)
@@ -148,8 +158,12 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         raise BranchSetNotDeclared(msg)
     unknown = sorted(set(table) - _KEYS)
     if unknown:
-        msg = f'{_TABLE} in {manifest} has unknown key(s) {unknown}; the keys are {sorted(_KEYS)}'
-        raise BranchSetNotDeclared(msg)
+        msg = (
+            f'your kit is older than this checkout: {_TABLE} in {manifest} has key(s) {unknown} this '
+            f'installed lab-commons does not know (it knows {sorted(_KEYS)}); rebuild the venv '
+            f'(python -m lab_commons.dev.dep --bootstrap <checkout>)'
+        )
+        raise KitOlderThanCheckout(msg)
     prune = table.get('prune_merged', False)
     grace = table.get('grace_hours', 24.0)
     if not isinstance(prune, bool):

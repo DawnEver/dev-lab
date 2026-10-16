@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
+from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, KitOlderThanCheckout, declared_branchset
 from lab_commons.log import emit
 
 __all__ = [
@@ -147,6 +147,12 @@ def refusal(
     """
     try:
         declared = declared_branchset(root) if branchset is None else branchset
+    except KitOlderThanCheckout as exc:
+        return COULD_NOT_JUDGE, (
+            f'[branchset-push] REFUSED -- {exc}.\n'
+            '[branchset-push]   REMEDY: rebuild this venv from the lock of the checkout, then push again; the '
+            'declaration is not the problem.\n'
+        )
     except BranchSetNotDeclared as exc:
         return COULD_NOT_JUDGE, (
             f'[branchset-push] REFUSED -- this checkout declares no readable branch set, so this '
