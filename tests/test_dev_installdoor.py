@@ -28,14 +28,14 @@ import pytest
 from lab_commons.dev.installdoor import (
     Delivery,
     Door,
-    RevertingDoorsError,
+    UnlockedDoorsError,
     VacuousDoorScanError,
     assert_doors_deliver,
     classify,
     commands,
     floating_requirements,
-    reverting,
     scan_doors,
+    unlocked,
 )
 
 #: The one floating requirement every repo in this family declares. A tuple, because the API takes a
@@ -47,26 +47,26 @@ _KIT: tuple[str, ...] = ('lab-commons',)
 #: against a venv holding dev40 with the remote at dev42, measured 2026-09-17 with uv 0.12.5.
 _MEASURED: tuple[tuple[str, Delivery], ...] = (
     # consumer-b's pre-push hook. Reverted the kit on every push.
-    ('uv run python -m lab_commons.dev.githooks script bump-version', Delivery.REVERTS),
+    ('uv run python -m lab_commons.dev.githooks script bump-version', Delivery.UNLOCKED),
     # consumer-b/scripts/githooks/generate-changelog.sh. Reverted it on every commit.
-    ('uv run python -m commitizen changelog', Delivery.REVERTS),
+    ('uv run python -m commitizen changelog', Delivery.UNLOCKED),
     # consumer-b/Makefile install-dev -- the door everyone suspected, and it was never the defect.
     ('uv pip install -e ".[dev,web,rust,cad3d,full]"', Delivery.RESOLVES),
 )
 
 #: Every other shape the classifier must decide, with the fact each one is decided by.
 _PLANTED: tuple[tuple[str, Delivery], ...] = (
-    ('uv sync', Delivery.REVERTS),
-    ('uv sync --extra dev --extra web', Delivery.REVERTS),
+    ('uv sync', Delivery.UNLOCKED),
+    ('uv sync --extra dev --extra web', Delivery.UNLOCKED),
     ('uv sync -P lab-commons', Delivery.RESOLVES),
     ('uv sync --upgrade-package lab-commons --extra dev', Delivery.RESOLVES),
     ('uv sync --upgrade-package=lab-commons', Delivery.RESOLVES),
     ('uv sync -U', Delivery.RESOLVES),
     ('uv run --no-sync python -m commitizen changelog', Delivery.INERT),
-    ('uv add ruff', Delivery.REVERTS),
+    ('uv add ruff', Delivery.UNLOCKED),
     ('uv lock', Delivery.INERT),
     ('uv lock --upgrade-package=lab-commons', Delivery.RESOLVES),
-    ('uv --native-tls sync', Delivery.REVERTS),
+    ('uv --native-tls sync', Delivery.UNLOCKED),
     ('uv pip install -U pip wheel', Delivery.RESOLVES),
     ('uv pip list', Delivery.INERT),
     ('uvx ruff check', Delivery.INERT),
@@ -103,7 +103,7 @@ def test_a_repo_with_no_floating_requirement_has_no_door_to_get_wrong() -> None:
 def test_naming_only_one_of_two_floating_requirements_still_reverts_the_other() -> None:
     """`-P` is per package, so a partial upgrade delivers the unnamed one stale."""
     two = ('lab-commons', 'consumer-c')
-    assert classify(_argv('uv sync -P lab-commons'), two) is Delivery.REVERTS
+    assert classify(_argv('uv sync -P lab-commons'), two) is Delivery.UNLOCKED
     assert classify(_argv('uv sync -P lab-commons -P consumer-c'), two) is Delivery.RESOLVES
 
 
@@ -127,7 +127,7 @@ def test_a_command_inside_a_shell_function_body_is_still_a_door() -> None:
     found = [argv for _line, argv in commands(text)]
     assert len(found) == 1, found
     assert found[0][:3] == ['uv', 'run', 'python'], found
-    assert classify(found[0], _KIT) is Delivery.REVERTS
+    assert classify(found[0], _KIT) is Delivery.UNLOCKED
 
 
 def test_a_wrapped_command_is_still_the_command() -> None:
@@ -135,7 +135,7 @@ def test_a_wrapped_command_is_still_the_command() -> None:
     text = 'timeout 900 uv sync\nif ! /root/.local/bin/uv pip install -e .; then\n    entry: uv run python -m x\n'
     found = {argv[0]: classify(argv, _KIT) for _line, argv in commands(text)}
     assert found == {
-        'uv': Delivery.REVERTS,
+        'uv': Delivery.UNLOCKED,
         '/root/.local/bin/uv': Delivery.RESOLVES,
     }, found
 
@@ -209,7 +209,7 @@ def _plant(root: Path, *, door: str) -> None:
 def test_the_guard_fires_on_a_planted_reverting_door(tmp_path: Path) -> None:
     """THE PLANTED CONTROL. A reverting door in a real tree, through the REAL guard, and it refuses."""
     _plant(tmp_path, door='uv sync --extra dev')
-    with pytest.raises(RevertingDoorsError) as refusal:
+    with pytest.raises(UnlockedDoorsError) as refusal:
         assert_doors_deliver(tmp_path, ['Makefile', 'hook.sh'], _KIT, floor=2)
     message = str(refusal.value)
     assert 'Makefile:2' in message
@@ -224,7 +224,7 @@ def test_the_guard_passes_once_both_remedies_are_applied(tmp_path: Path) -> None
     (tmp_path / 'hook.sh').write_text('uv run --no-sync python -m commitizen changelog\n', encoding='utf-8')
     doors = assert_doors_deliver(tmp_path, ['Makefile', 'hook.sh'], _KIT, floor=2)
     assert {door.delivery for door in doors} == {Delivery.RESOLVES, Delivery.INERT}
-    assert reverting(doors) == ()
+    assert unlocked(doors) == ()
 
 
 def test_the_scan_refuses_to_report_a_clean_tree_it_never_read(tmp_path: Path) -> None:
@@ -252,6 +252,6 @@ def test_a_sync_that_replays_the_committed_lock_is_correct(flag: str) -> None:
     """
     for verb in ('sync', 'run'):
         assert classify(['uv', verb, flag], ('lab-commons',)) is Delivery.LOCKED
-        assert classify(['uv', verb], ('lab-commons',)) is Delivery.REVERTS
+        assert classify(['uv', verb], ('lab-commons',)) is Delivery.UNLOCKED
     locked = Door('Makefile', 1, f'uv sync {flag}', Delivery.LOCKED)
-    assert reverting((locked,)) == (), 'a door replaying the committed lock is never reported stale'
+    assert unlocked((locked,)) == (), 'a door replaying the committed lock is never reported stale'
