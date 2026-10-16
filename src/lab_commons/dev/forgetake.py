@@ -27,6 +27,7 @@ from lab_commons.dev.forgerequest import (
     UndeclaredRequest,
     declared_request,
     request_context,
+    unreachable_source,
     unreproducible,
     unserved,
 )
@@ -68,6 +69,7 @@ class ClaimPass:
     pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
     admitted: dict[str, tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
     requests: dict[tuple[str, str], Declared] = dataclasses.field(default_factory=dict)  # (sha, name) -> it
+    reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
 
     def consider(self, item: Ranked) -> None:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
@@ -155,6 +157,11 @@ class ClaimPass:
         if self.serve.hpc:
             self.unservable.add(wanted.key)
             return one, f'{NO_HOST} on a cluster seat runs a request'
+        if one.sha not in self.reached:
+            self.reached[one.sha] = unreachable_source(self.root, one.sha)
+        if self.reached[one.sha]:
+            self.unservable.add(wanted.key)
+            return one, self.reached[one.sha]
         return dataclasses.replace(
             one, argv=declared.argv, producer=declared.name, wall_s=round(declared.wall_h * 3600)
         ), ''

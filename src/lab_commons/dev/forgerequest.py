@@ -33,8 +33,10 @@ and the log's tail -- a failure is on record, never silent.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import urllib.parse
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -55,11 +57,13 @@ __all__ = [
     'Declared',
     'UndeclaredRequest',
     'declared_request',
+    'git_sources',
     'parse_body',
     'request_body',
     'request_context',
     'result',
     'settle',
+    'unreachable_source',
     'unreproducible',
     'unserved',
 ]
@@ -182,6 +186,68 @@ def unserved(root: Path, sha: str) -> str:
     if done.returncode == 0 and done.stdout.strip():
         return ''
     return f'origin serves no ref containing {sha[:12]}: push it where origin keeps it'
+
+
+#: A git source in a lock: ``source = { git = "<url>?rev=..#<commit>" }``.
+_LOCKED_GIT: Final = re.compile(r'git\s*=\s*"(?P<url>[^"?#]+)')
+#: How long one ``git ls-remote`` of a source may take before it counts as unreachable, in seconds.
+REACH_TIMEOUT_S: Final = 60.0
+
+
+def git_sources(root: Path, sha: str) -> tuple[str, ...]:
+    """Every repository a tree at *sha* fetches by git: its lock's git sources, then its submodules' urls."""
+    lock = _show(root, f'{sha}:{LOCK_FILE}')
+    found = [match['url'] for match in _LOCKED_GIT.finditer(lock)]
+    modules = subprocess.run(
+        [_GIT, '-C', str(root), 'config', '--blob', f'{sha}:.gitmodules', '--get-regexp', r'^submodule\..*\.url$'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    origin = _show(root, '', remote=True)
+    for line in modules.stdout.splitlines():
+        url = line.split(maxsplit=1)[-1]
+        found.append(urllib.parse.urljoin(origin.rstrip('/') + '/', url) if url.startswith('.') else url)
+    return tuple(dict.fromkeys(found))
+
+
+def unreachable_source(root: Path, sha: str) -> str:
+    """Why THIS host cannot fetch every git source of *sha* (:func:`git_sources`), ``''`` when it can.
+
+    Each is asked once with ``git ls-remote`` and no prompt: a source behind a credential this host lacks
+    fails here, before a claim, rather than mid-bootstrap after one.
+    """
+    quiet = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
+    for url in git_sources(root, sha):
+        try:
+            done = subprocess.run(
+                [_GIT, 'ls-remote', '-q', url, 'HEAD'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=REACH_TIMEOUT_S,
+                env=quiet,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return f'this host cannot fetch {_public(url)}: no answer in {REACH_TIMEOUT_S:g} s'
+        if done.returncode:
+            said = (done.stderr or '').strip().splitlines()
+            return f'this host cannot fetch {_public(url)}: {said[-1] if said else f"exit {done.returncode}"}'
+    return ''
+
+
+def _public(url: str) -> str:
+    """*url* without any userinfo: a credential is never written to a status or a log."""
+    parts = urllib.parse.urlsplit(url)
+    return parts._replace(netloc=parts.hostname or '').geturl() if parts.username or parts.password else url
+
+
+def _show(root: Path, spec: str, *, remote: bool = False) -> str:
+    argv = ['remote', 'get-url', 'origin'] if remote else ['show', spec]
+    done = subprocess.run([_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False)
+    return done.stdout.strip() if done.returncode == 0 else ''
 
 
 def result(code: int, host: str) -> tuple[str, str]:

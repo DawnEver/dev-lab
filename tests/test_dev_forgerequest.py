@@ -23,9 +23,11 @@ from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
 from lab_commons.dev.forgerequest import (
     UndeclaredRequest,
     declared_request,
+    git_sources,
     parse_body,
     request_body,
     request_context,
+    unreachable_source,
     unserved,
 )
 from lab_commons.dev.forgeschedule import NOT_ADMITTED
@@ -301,3 +303,49 @@ def test_a_request_at_a_sha_origin_does_not_serve_is_refused_by_name(server, tmp
     (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
     assert posted['body']['description'] == f'{REFUSED_AT_COMMIT} {unserved(repo, sha)}'
     assert unserved(repo, tips['topic/a']) == ''
+
+
+def _sourced(repo: Path, tips: dict[str, str], *urls: str) -> str:
+    """A declared, locked commit whose lock fetches each of *urls* by git."""
+    pinned = '0' * 40
+    rows = ''.join(
+        f'[[package]]\nname = "p{n}"\nsource = {{ git = "{url}?rev=main#{pinned}" }}\n' for n, url in enumerate(urls)
+    )
+    (repo / 'uv.lock').write_text(rows, encoding='utf-8')
+    run_git(repo, 'add', 'uv.lock')
+    return _declare(repo, tips, GOLDENS)
+
+
+def test_every_git_source_a_locked_sha_fetches_is_probed_before_a_claim(server, tmp_path: Path) -> None:
+    """R2: a host without the credential a private source needs cannot build the tree; it says so, unclaimed.
+
+    The refusal is THIS host's, not the commit's: another host holding the credential serves it, so the
+    request waits naming the source. PLANTED CONTROL: a source this host reaches does not block it.
+    """
+    repo, tips = _origin(tmp_path)
+    missing = (tmp_path / 'no-such-repo.git').as_uri()
+    sha = _sourced(repo, tips, repo.as_uri(), missing)
+    assert git_sources(repo, sha) == (repo.as_uri(), missing)
+    why = unreachable_source(repo, sha)
+    assert why.startswith(f'this host cannot fetch {missing}: ')
+    _ask('femm_goldens', sha)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    done = {'id': 1, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=1'}
+    answer('GET', f'{API}/statuses/{sha}', (200, [done]))  # the head's own part is done
+    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
+    assert report.claimed == ()
+    assert not [r for r in Recorder.received if r['method'] == 'POST'], 'nothing refused on the commit'
+    (waiting,) = [item for item in report.queue if item.candidate.kind == REQUEST]
+    assert waiting.blocked == why
+    assert unreachable_source(repo, _sourced(repo, tips, repo.as_uri())) == ''
+
+
+def test_a_submodule_is_a_git_source_and_a_relative_one_resolves_against_origin(tmp_path: Path) -> None:
+    repo, tips = _origin(tmp_path)
+    modules = (
+        '[submodule "a"]\n\tpath = a\n\turl = ../dep.git\n[submodule "b"]\n\tpath = b\n\turl = https://h/x/b.git\n'
+    )
+    (repo / '.gitmodules').write_text(modules, encoding='utf-8')
+    run_git(repo, 'add', '.gitmodules')
+    sha = _sourced(repo, tips)
+    assert git_sources(repo, sha) == ('https://forge.example.org/o/dep.git', 'https://h/x/b.git')
