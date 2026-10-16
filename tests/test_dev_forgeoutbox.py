@@ -19,7 +19,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 
 from lab_commons.dev import forgeoutbox
 from lab_commons.dev.forge import Forge, NoCredential
-from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush, outbox_dir, queued
+from lab_commons.dev.forgeoutbox import Post, PostFailed, content_name, enqueue, flush, outbox_dir, queued
 from lab_commons.dev.forgework import Client
 
 FORGE = Forge('forge.example.org', 'o', 'r')
@@ -75,14 +75,35 @@ def test_a_record_is_attached_and_the_status_links_it(server, tmp_path: Path) ->
     enqueue(repo, Post(sha, 'tests/linux', 'success', 'scope=full ran=1'), record=record)
     answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': 'run records'}]))
     url = 'https://forge.example.org/attachments/u1'
+    answer('GET', f'{API}/issues/3/assets', (200, []))
     answer('POST', f'{API}/issues/3/assets', (201, {'id': 7, 'name': record.name, 'browser_download_url': url}))
     answer('POST', f'{API}/statuses/{sha}', (201, {'context': 'tests/linux', 'status': 'success'}))
     lines = flush(repo, client=lambda _root: client(FORGE, Loopback(server)))
     assert lines == [f'status: tests/linux=success on {sha[:12]} -> {url}']
-    upload = next(r for r in Recorder.received if r['path'].startswith(f'{API}/issues/3/assets'))
+    upload = next(r for r in Recorder.received if r['method'] == 'POST' and 'assets' in r['path'])
     assert payload in upload['raw'], 'the record bytes are what was uploaded'
+    assert upload['path'].endswith(f'?name={content_name(record.name, payload)}'), 'named by its content hash'
     assert Recorder.received[-1]['body']['target_url'] == url
     assert list(outbox_dir(repo).iterdir()) == [], 'the entry and its copied record are both gone'
+
+
+def test_a_result_is_stored_by_its_content_hash_before_it_is_uploaded(tmp_path: Path) -> None:
+    """D19: the record is on disk under its hash first; the same bytes are one file, other bytes another."""
+    repo, sha = _committed(tmp_path)
+    record = tmp_path / f'run-{sha}-linux-r1.json.gz'
+    record.write_bytes(b'first')
+    enqueue(repo, Post(sha, 'tests/linux', 'success', 'v'), record=record)
+    enqueue(repo, Post(sha, 'tests/windows', 'success', 'v'), record=record)
+    stored = sorted(path.name for path in outbox_dir(repo).glob('*.json.gz'))
+    assert stored == [content_name(record.name, b'first')], 'the same bytes are one stored result'
+    assert (outbox_dir(repo) / stored[0]).read_bytes() == b'first'
+    record.write_bytes(b'second')  # PLANTED CONTROL: different bytes are a different result, never a rewrite
+    enqueue(repo, Post(sha, 'tests/macos', 'success', 'v'), record=record)
+    assert len(list(outbox_dir(repo).glob('*.json.gz'))) == 2
+    assert {post.record for post in queued(repo)} == {
+        content_name(record.name, b'first'),
+        content_name(record.name, b'second'),
+    }
 
 
 def test_a_refused_post_raises_after_trying_every_entry_and_keeps_the_failed_one(server, tmp_path: Path) -> None:

@@ -26,15 +26,22 @@ or no ``origin`` on this box -- is reported and kept, never raised: the box simp
 
 WHERE IT LIVES. ``output/forge/outbox/`` in the MAIN checkout (resolved through git's common
 directory, as the verdict ledger is), so every lane of one repository shares one queue. One JSON file
-per entry, the record copied beside it, so two runs never race on one document.
+per entry, so two runs never race on one document.
+
+A RESULT IS CONTENT-ADDRESSED HERE BEFORE IT IS UPLOADED (design D19). :func:`enqueue` writes the record
+beside its entry under :func:`content_name` -- its name with the sha-256 of its bytes -- through a durable
+write (temp, fsync, rename), so a crash leaves the whole record or none; the upload then names it by that
+hash and :func:`~lab_commons.dev.forgerecords.attach` sends nothing the forge already holds under it. The same
+bytes are one asset however often they are queued; different bytes are a different asset, never a rewrite.
+A record leaves the outbox once no queued entry still names it.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import shutil
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -59,6 +66,7 @@ __all__ = [
     'OUTBOX_REL',
     'Post',
     'PostFailed',
+    'content_name',
     'enqueue',
     'flush',
     'main',
@@ -106,16 +114,23 @@ class Post:
         return f'{self.sha}-{self.context.replace("/", "_")}'
 
 
+def content_name(name: str, data: bytes) -> str:
+    """*name* with 16 hex of the sha-256 of *data* before its suffixes (``run-<sha>-linux-r1-<hash>.json.gz``)."""
+    stem, dot, suffixes = name.partition('.')
+    return f'{stem}-{hashlib.sha256(data).hexdigest()[:16]}{dot}{suffixes}'
+
+
 def enqueue(root: Path, post: Post, *, record: Path | None = None) -> Path:
-    """Queue *post*, copying *record* beside it; returns the entry's path.
+    """Queue *post*, its *record* stored beside it under its content name; returns the entry's path.
 
     A queued entry for the same commit and context is REPLACED -- the newer run speaks for the commit.
     """
     directory = outbox_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
     if record is not None:
-        shutil.copyfile(record, directory / record.name)
-        post = Post(post.sha, post.context, post.state, post.description, record=record.name)
+        data = record.read_bytes()
+        kept = durable_write(directory / content_name(record.name, data), data)
+        post = Post(post.sha, post.context, post.state, post.description, record=kept.name)
     return durable_write(
         directory / f'{post.key}.json', json.dumps({**asdict(post), 'queued_at': time.time()}).encode()
     )
@@ -221,7 +236,7 @@ def flush(root: Path, *, client: Callable[[Path], Client] = unprompted_client) -
             failures.append(f'{post.context} on {post.sha[:12]}: {exc!r}')
             continue
         (directory / f'{post.key}.json').unlink(missing_ok=True)
-        if post.record:
+        if post.record and all(other.record != post.record for other in queued(root)):
             (directory / post.record).unlink(missing_ok=True)
         lines.append(f'status: {post.context}={post.state} on {post.sha[:12]}' + (f' -> {url}' if url else ''))
     if failures:

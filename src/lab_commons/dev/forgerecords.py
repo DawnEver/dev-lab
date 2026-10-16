@@ -151,11 +151,14 @@ def listing(client: Client) -> tuple[Attachment, ...]:
 def attach(client: Client, path: Path) -> Attachment:
     """Upload *path* to the records home; returns the attachment (its ``url`` is the status target).
 
-    A retry after a lost response first looks for an asset of the same name, so one upload is never
-    stored twice.
+    IDEMPOTENT BY NAME, AND A RESULT'S NAME IS ITS HASH (:func:`lab_commons.dev.forgeoutbox.content_name`): an
+    asset already stored under *path*'s name is returned and nothing is sent, and the write's probe finds an
+    upload whose answer was lost, so one upload is never stored twice.
     """
     store = cast('_Store', _store(client, create=True))  # create=True always yields a home
-
+    held = next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)
+    if held is not None:
+        return _attachment(held)
     target = f'{store.assets}?name={path.name}'
     durable = Durable(probe=Probe(store.assets, {'name': path.name}))
     if store.upload_host is not None:
