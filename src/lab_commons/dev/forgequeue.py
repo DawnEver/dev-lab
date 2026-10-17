@@ -127,7 +127,7 @@ def forge_queue(
     def refused(one: Candidate) -> str:
         """Why *one* cannot be produced as its sha declares it: a request's producer, a part's vocabulary."""
         if one.kind == REQUEST:
-            return _refused(lambda: declared_request(root, one.sha, one.producer) and '')
+            return _refused(lambda: declared_request(root, one.sha, one.producer, one.paths) and '')
         if one.sha not in read:
             read[one.sha] = _refused(lambda: declared_at(root, one.sha)[1] if one.sha else '')
         return read[one.sha]

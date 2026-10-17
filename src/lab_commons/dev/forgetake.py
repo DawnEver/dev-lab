@@ -109,9 +109,9 @@ class ClaimPass:
 
     def _declared(self, wanted: Candidate) -> Declared:
         """A request's producer as its sha declares it, read once a tick; raises :class:`UndeclaredRequest`."""
-        key = (wanted.sha, wanted.producer)
+        key = (wanted.sha, wanted.producer, wanted.paths)
         if key not in self.requests:
-            self.requests[key] = declared_request(self.root, wanted.sha, wanted.producer)
+            self.requests[key] = declared_request(self.root, wanted.sha, wanted.producer, wanted.paths)
         return self.requests[key]
 
     def _needs(self, wanted: Candidate) -> frozenset[str]:
