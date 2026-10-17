@@ -28,6 +28,7 @@ from lab_commons.box.machine import provided
 from lab_commons.compute.presence import declared_versions, refresh
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
+from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
@@ -83,7 +84,8 @@ def local_record(
     """The run record of *part* from a LOCAL run, in the cluster record's shape.
 
     An id of *part* the run reported carries its outcome; every other id of *owned* (id -> part) is
-    handed off, ``not-covered``, to the part it belongs to.
+    handed off, ``not-covered``, to the part it belongs to. It states the environment it ran against
+    (:func:`lab_commons.dev.envkey.env_record`): nothing is pinned, so the record is the reproducibility.
     """
     mine = [node for node, owner in owned.items() if owner == part and node in outcomes]
     handed = {node: owner for node, owner in owned.items() if owner != part}
@@ -95,6 +97,7 @@ def local_record(
         'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, NOT_COVERED)},
         'handed': handed,
         'reasons': {node: why for node, why in reasons.items() if node in mine},
+        **env_record(),
     }
 
 
