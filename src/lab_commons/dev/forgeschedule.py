@@ -36,8 +36,13 @@ family default and a repository overrides key by key (a table key by table key):
     classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered; replaces whole
     prior_cost_h = 4.0
 
-WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
-part, over its ref's budget, or not admitted here -- naming the resources it lacks
+ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
+of a part in flight across the fleet; its current tip waits behind that run
+(:mod:`lab_commons.dev.forgecoalesce`), which is never cancelled, and is tested next as one batch. An
+earlier tip never claimed is never a candidate. A lane is tested at every pushed sha.
+
+WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's
+run in flight, no host serves its part, over its ref's budget, or not admitted here -- naming the resources it lacks
 (:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
 ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
+from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgerequest import (
     Declared,
     UndeclaredRequest,
@@ -181,7 +182,11 @@ class ClaimPass:
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
-        why = over_budget(self.root, wanted, self.schedule, self.usage) or self._admission(wanted, needed)
+        why = (
+            behind(self.root, wanted, self.schedule, self.history, self.now)
+            or over_budget(self.root, wanted, self.schedule, self.usage)
+            or self._admission(wanted, needed)
+        )
         return why, needed
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:

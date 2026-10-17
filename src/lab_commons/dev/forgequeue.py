@@ -34,10 +34,18 @@ from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
+from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgehosts import HostCard, read_cards
 from lab_commons.dev.forgeprovides import present, unserved
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, request_context
-from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, candidates, host_weights, load_schedule, repo_name
+from lab_commons.dev.forgeschedule import (
+    NO_HOST,
+    NOT_ADMITTED,
+    candidates,
+    host_weights,
+    load_schedule,
+    repo_name,
+)
 from lab_commons.dev.forgestatus import Status, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
@@ -134,7 +142,12 @@ def forge_queue(
 
     weights = host_weights(section('schedule'))
     ranked = [
-        dataclasses.replace(item, blocked=refused(item.candidate) or _why(item.candidate, cards, now))
+        dataclasses.replace(
+            item,
+            blocked=refused(item.candidate)
+            or behind(root, item.candidate, schedule, history, now)
+            or _why(item.candidate, cards, now),
+        )
         for item in rank(waiting, {repo: schedule}, now, cost_h={repo: cost}, weights=weights)
     ]
     return ranked, in_flight
