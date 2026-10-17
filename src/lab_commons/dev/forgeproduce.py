@@ -58,7 +58,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
+from lab_commons.box import GB, Capacity, Demand, Outcome, Refused, command, read_ended
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
@@ -307,9 +307,9 @@ def _measured(ended: Outcome | object, usage: _Usage, declared_gb: float, wall_s
         peak = ended.peak_mem_bytes / GB
         floor = max(peak, declared_gb) if ended.reason == 'memory' else peak
         return Run(floor, max(ended.cpu_s, usage.cpu_s), max(1.0, ended.wall_s, wall_s))
-    if usage.peak is not None and usage.cpu_s > 0:
+    if usage.peak is not None and usage.cpu_s > 0 and not isinstance(ended, Refused):
         return Run(usage.peak, usage.cpu_s, wall_s)
-    return None
+    return None  # nothing measured, or a refusal: the samples were the box CLI waiting, never the part
 
 
 class _Usage:

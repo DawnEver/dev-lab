@@ -955,6 +955,21 @@ def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Pat
     assert again == min(first * learned.OOM_GROWTH * learned.BOX_HEADROOM, BOX.mem_bytes / GB) > first
 
 
+def test_a_part_the_box_refused_learns_nothing(monkeypatch, tmp_path: Path) -> None:
+    """A refusal ran nothing: serve's samples are the box CLI waiting in the queue, never the part's need.
+
+    Measured on the real box: a refusal after a kill replaced the grown 6.03 GB floor with the waiting
+    wrapper's 0.03 GB, and the next claim shrank back to the figure the box had killed.
+    """
+    learnt: list = []
+    proc = _Proc(1, beats=2, pid=4242, box=Refused('no room'))
+    _produce_one(
+        monkeypatch, tmp_path, proc, clock=lambda: NOW, spawn=lambda argv, **_k: record(argv, proc.box) or proc,
+        sample=lambda _pid: 0.03, meter=lambda _pid: lambda: 0.4, learn=lambda *a, **_k: learnt.append(a),
+    )  # fmt: skip
+    assert learnt == []
+
+
 def test_a_box_record_with_no_peak_and_no_sample_learns_nothing(monkeypatch, tmp_path: Path) -> None:
     """PLANTED CONTROL: an exit the box measured nothing of, and serve never sampled, invents no peak."""
     learnt: list = []
