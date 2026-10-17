@@ -17,8 +17,7 @@ cluster run one step
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
 on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`),
 prune the records home -- dead shas' records, unit results over budget -- once per interval
-(:func:`lab_commons.dev.forgerecords.serve_prune`),
-open the scheduled lock upgrade when due (:func:`lab_commons.dev.lockupgrade.schedule`)
+(:func:`lab_commons.dev.forgerecords.serve_prune`)
 and tidy the repo's issues (``forge tidy``, :func:`lab_commons.dev.forgetidy.tidy`) -- every served repo, every tick;
 run the storage retention pass, every tick (:mod:`lab_commons.dev.retention`; still over quota raises a
 ``storage`` alarm); flush the outbox again.
@@ -106,7 +105,7 @@ from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.probe import inventory
 from lab_commons.config import section
-from lab_commons.dev import forgerun, lockupgrade, retention
+from lab_commons.dev import forgerun, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import (
@@ -227,7 +226,6 @@ def serve(
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-    lockupgrade.serve_tick(root, client(root), today=clock().date(), say=say)
     hygiene(root, client(root), say=say)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'

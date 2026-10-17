@@ -68,16 +68,8 @@ def _one_core(_wanted: object, needs: frozenset[str]) -> Demand:
     return Demand({'cpu': 1, **dict.fromkeys(needs, 1.0)})
 
 
-def _locked(repo: Path) -> None:
-    """Stage a ``uv.lock``: the next declared commit pins every dependency revision (R1)."""
-    (repo / 'uv.lock').write_text('version = 1', encoding='utf-8')
-    run_git(repo, 'add', 'uv.lock')
-
-
-def _request(repo: Path, tips: dict[str, str], producer: str, *, locked: bool = True) -> str:
+def _request(repo: Path, tips: dict[str, str], producer: str) -> str:
     """Pin a request (issue 9) to the commit declaring GOLDENS; the integration head moves past it, DONE."""
-    if locked:
-        _locked(repo)
     pinned = _declare(repo, tips, GOLDENS)
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'after')
     head = git_out(repo, 'rev-parse', 'HEAD')
@@ -288,22 +280,6 @@ def test_a_request_run_is_learned_under_its_producer_name(tmp_path: Path) -> Non
     assert run_of(url, LOCAL, {'femm', 'windows'}) is None
 
 
-def test_a_request_at_a_sha_without_a_lock_is_refused_by_name(server, tmp_path: Path) -> None:
-    """R1: an unlocked sha builds whatever its floating dependencies resolve to that day -- not reproducible.
-
-    PLANTED CONTROL: the same request at a locked sha is claimed (the first test of this file).
-    """
-    repo, tips = _origin(tmp_path)
-    sha = _request(repo, tips, 'femm_goldens', locked=False)
-    answer('GET', f'{API}/statuses/{sha}', (200, []))
-    answer('POST', f'{API}/statuses/{sha}', (201, {}))
-    report = _tick(repo, server, supply=FEMM_HOST, demand=_one_core)
-    assert report.claimed == ()
-    (posted,) = [r for r in Recorder.received if r['method'] == 'POST']
-    assert (posted['body']['state'], posted['body']['context']) == ('error', request_context(9))
-    assert posted['body']['description'].startswith(f'{REFUSED_AT_COMMIT} {sha[:12]} commits no uv.lock')
-
-
 def _orphan(repo: Path, sha: str) -> str:
     """A commit of *sha*'s tree on no ref origin keeps: a requester's unpushed (or since deleted) work."""
     return git_out(repo, 'commit-tree', f'{sha}^{{tree}}', '-m', 'unpushed')
@@ -328,17 +304,12 @@ def test_a_request_at_a_sha_origin_does_not_serve_is_refused_by_name(server, tmp
 
 
 def _sourced(repo: Path, tips: dict[str, str], *urls: str) -> str:
-    """A declared, locked commit whose lock fetches each of *urls* by git."""
-    pinned = '0' * 40
-    rows = ''.join(
-        f'[[package]]\nname = "p{n}"\nsource = {{ git = "{url}?rev=main#{pinned}" }}\n' for n, url in enumerate(urls)
-    )
-    (repo / 'uv.lock').write_text(rows, encoding='utf-8')
-    run_git(repo, 'add', 'uv.lock')
-    return _declare(repo, tips, GOLDENS)
+    """A declared commit whose pyproject fetches each of *urls* by git (no lock: dependencies float)."""
+    rows = ''.join(f'p{n} = {{ git = "{url}", branch = "main" }}\n' for n, url in enumerate(urls))
+    return _declare(repo, tips, GOLDENS + '[tool.uv.sources]\n' + rows)
 
 
-def test_every_git_source_a_locked_sha_fetches_is_probed_before_a_claim(server, tmp_path: Path) -> None:
+def test_every_git_source_a_sha_fetches_is_probed_before_a_claim(server, tmp_path: Path) -> None:
     """R2: a host without the credential a private source needs cannot build the tree; it says so, unclaimed.
 
     The refusal is THIS host's, not the commit's: another host holding the credential serves it, so the
@@ -448,19 +419,16 @@ class _Publisher:
 
 
 def test_a_request_is_published_only_when_a_host_could_reproduce_it(tmp_path: Path) -> None:
-    """P3: the verb validates the producer at the sha, its lock and origin's reach, then creates its labels.
+    """P3: the verb validates the producer at the sha and origin's reach, then creates its labels.
 
     PLANTED CONTROL: each defect is refused by name and NOTHING is published.
     """
     repo, tips = _origin(tmp_path)
     sha = _request(repo, tips, 'femm_goldens')
-    run_git(repo, 'rm', '-q', 'uv.lock')
-    unlocked = _request(repo, tips, 'femm_goldens', locked=False)
     forge = _Publisher()
     for producer, at, why in (
         ('rm_rf', sha, 'declares no'),
         ('femm_goldens', _orphan(repo, sha), 'origin serves no ref'),
-        ('femm_goldens', unlocked, 'commits no uv.lock'),
     ):
         with pytest.raises(RequestRefused, match=why):
             publish(repo, forge, producer, at, label='forge:request')

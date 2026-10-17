@@ -30,9 +30,11 @@ from lab_commons.dev.doorcensus import (
     DoorRow,
     Reading,
     SharedDoor,
+    TrackedLockError,
     UnreadableRepo,
     VacuousCensusError,
     assert_census,
+    assert_no_tracked_lock,
     committed,
     drift,
     floating_at_head,
@@ -203,6 +205,15 @@ def test_a_checkout_with_no_committed_manifest_is_inconclusive_rather_than_requi
     root = _repo(tmp_path / 'r', {'Makefile': 'go:\n\tuv sync\n'})
     with pytest.raises(UnreadableRepo, match='cannot be read'):
         floating_at_head(root)
+
+
+def test_a_repo_that_tracks_the_lock_is_refused_by_name(tmp_path: Path) -> None:
+    """THE CONDITION EVERY SURVIVING LOCK-CONSUMING DOOR RESTS ON, planted in both directions."""
+    clean = _repo(tmp_path / 'clean', {'pyproject.toml': _MANIFEST})
+    assert_no_tracked_lock({'clean': clean})
+    dirty = _repo(tmp_path / 'dirty', {'pyproject.toml': _MANIFEST, 'uv.lock': 'version = 1\n'})
+    with pytest.raises(TrackedLockError, match='dirty'):
+        assert_no_tracked_lock({'clean': clean, 'dirty': dirty})
 
 
 def test_a_census_that_reached_almost_nothing_refuses_to_report_a_clean_family(tmp_path: Path) -> None:

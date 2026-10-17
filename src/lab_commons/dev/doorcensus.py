@@ -23,8 +23,12 @@ WHAT THIS CENSUS CONVICTED THE DAY IT WAS WRITTEN, 2026-09-19, and both had been
    OWNED by a repo for which it is vacuous and USED by repos that could not see it.
    :class:`SharedDoor` is that row, judged against the names of the repos that RUN it.
 
-THE CI ROW'S ``uv sync`` serves the COMMITTED lock (decision D8, 2026-10-16): every family repo tracks
-``uv.lock``, and "the latest" is the scheduled ``uv lock --upgrade`` (:mod:`lab_commons.dev.lockupgrade`).
+THE ONE CONDITION THE CI ROW RESTS ON, asserted rather than assumed because it is the whole reason a
+lock-consuming command in CI is survivable: ``uv.lock`` is TRACKED BY NO REPO IN THIS FAMILY (user
+ruling 2026-09-17), and a checkout carries tracked files only, so no lock reaches the runner and the
+resolution there is fresh. Commit a lock and that step starts serving it, so
+:func:`assert_no_tracked_lock` reds on the commit rather than on the CI run three weeks later.
+``setup-uv``'s ``enable-cache`` caches uv's PACKAGE cache, not the lock, and does not weaken it.
 
 WHAT THIS CANNOT SEE, stated so the next reader does not over-read a green:
 
@@ -60,9 +64,11 @@ __all__ = [
     'DoorRow',
     'Reading',
     'SharedDoor',
+    'TrackedLockError',
     'UnreadableRepo',
     'VacuousCensusError',
     'assert_census',
+    'assert_no_tracked_lock',
     'committed',
     'door_text',
     'drift',
@@ -99,6 +105,10 @@ class DoorDriftError(AssertionError):
 
 class VacuousCensusError(AssertionError):
     """The census read fewer repos or fewer doors than its floor -- finding nothing proves nothing."""
+
+
+class TrackedLockError(AssertionError):
+    """A repo tracks ``uv.lock``, so every lock-consuming door in it serves a reviewed-by-nobody pin."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +357,29 @@ def drift(root: Path, rows: tuple[DoorRow, ...], names: tuple[str, ...], *, at_h
     return tuple(out)
 
 
+def assert_no_tracked_lock(roots: dict[str, Path]) -> None:
+    """Refuse if any repo TRACKS ``uv.lock``.
+
+    THE CONDITION EVERY SURVIVING LOCK-CONSUMING DOOR IN THIS FAMILY RESTS ON. A ``uv sync`` in CI is
+    safe only because a fresh checkout contains tracked files only and no lock is among them; commit
+    one and that step silently starts serving a pin nobody reviewed -- which is the user ruling of
+    2026-09-17 given a mechanism instead of a sentence.
+
+    Raises:
+        TrackedLockError: at least one repo tracks it, named.
+
+    """
+    tracked = sorted(repo for repo, root in roots.items() if git_out(root, 'ls-files', 'uv.lock'))
+    if tracked:
+        msg = (
+            f'{tracked} track uv.lock. It is untracked FAMILY-WIDE by user ruling, and every '
+            f'lock-consuming command that survives this census survives because a fresh checkout '
+            f'cannot contain one. Tracking it turns each of those into a door serving an unreviewed '
+            f'pin, starting with the `uv sync` in the shared CI workflow.'
+        )
+        raise TrackedLockError(msg)
+
+
 def assert_census(
     base: Path,
     paths: dict[str, str],
@@ -382,6 +415,7 @@ def assert_census(
             f'genuinely holds fewer of them and cannot produce this verdict.'
         )
         raise VacuousCensusError(msg)
+    assert_no_tracked_lock(roots)
     problems: list[str] = []
     for repo, root in roots.items():
         problems.extend(drift(root, rows_for(repo, rows), floating_at_head(root), at_head=repo != here))

@@ -87,14 +87,6 @@ Each tick it:
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The
   other way round, a RETIRED table (`lab_commons.hpc.retired`) is refused naming its replacement: the
   declaration is older than the kit ([migrating a repo](migrate.md#migrating-a-repo-to-need-set-parts)).
-- **The lock records, a schedule upgrades (D8/D20).** Every repo commits `uv.lock`; `dep --bootstrap` (a
-  host's venv, a producer's tree) is always `uv sync --frozen`. The `lock` pre-push row
-  (`lab_commons.dev.lockcheck`) refuses a pushed commit with no lock, with a git requirement the lock does
-  not pin to a commit, or whose newest `Lock-Upgraded:` commit is older than
-  `[tool.lab_commons.integrator] lock_max_age_days`. A repo declaring the request producer `lock_upgrade`
-  and `[tool.lab_commons.branchset] update` gets it opened by any serve tick at `origin/<integration>`
-  daily, or when a git source its lock pins moved (`lab_commons.dev.lockupgrade`); the producer runs
-  `uv lock --upgrade`, commits on the update branch with the trailer, and the forge tests it like any child.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards lab-commons and then each `[serve]` repo to its upstream and
@@ -179,9 +171,9 @@ newest commit lacks, or a request issue.
   sha under `[tool.lab_commons.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
   `mem_gb`, `wall_h` (an unsized row is refused), admitted like a part and claimed on context `request/<n>`
   -- `lab_commons.dev.forgerequest`). Publish one with `forge request <producer> --sha <sha>`, which refuses
-  a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
+  a sha origin does not serve. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
-  git source of its lock or submodules is unreachable here, and is told once on its issue after
+  git source of its pyproject or submodules is unreachable here, and is told once on its issue after
   `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and the
   requester closes it. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names the integrator's

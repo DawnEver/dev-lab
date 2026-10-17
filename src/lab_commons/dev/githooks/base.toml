@@ -114,10 +114,3 @@ always_run = true
 id = "behind-push"
 run = ["python", "-m", "lab_commons.dev.behindpush"]
 always_run = true
-
-# LOCKS RECORD (D8/D20): a pushed commit commits uv.lock, pins every git requirement in it, and was upgraded within
-# [tool.lab_commons.integrator] lock_max_age_days (lab_commons.dev.lockcheck). The remedy is `uv lock --upgrade`.
-[[pre-push]]
-id = "lock"
-run = ["python", "-m", "lab_commons.dev.lockcheck"]
-always_run = true

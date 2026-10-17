@@ -1,10 +1,10 @@
 """``forge request <producer> --sha <sha>`` -- PUBLISH a request only when a serve host could reproduce it.
 
 A request was a hand-written issue body plus a label; a producer the sha does not declare, a sha origin
-cannot serve, a sha without a lock, or a label the repository lacks (Gitea drops an unknown label name
+cannot serve, or a label the repository lacks (Gitea drops an unknown label name
 and answers 201) all published "successfully" and never ran. This verb refuses each by name BEFORE the
 issue exists: it fetches origin, reads the producer at the sha (:func:`~lab_commons.dev.forgerequest.
-declared_request`, its size included), checks origin serves the sha and the sha commits its lock, creates
+declared_request`, its size included), checks origin serves the sha, creates
 the request labels when missing, and only then opens the issue and labels it.
 """
 
@@ -23,7 +23,6 @@ from lab_commons.dev.forgerequest import (
     UndeclaredRequest,
     declared_request,
     request_body,
-    unreproducible,
     unserved,
 )
 from lab_commons.dev.forgeschedule import load_schedule
@@ -41,15 +40,14 @@ def publish(root: Path, client: Client, producer: str, sha: str, *, label: str, 
     """Open the request issue for *producer* at *sha*, labelled *label*, once every check passes.
 
     Raises:
-        RequestRefused: the producer is undeclared or unsized at the sha, origin serves no ref containing it,
-            or it commits no lock.
+        RequestRefused: the producer is undeclared or unsized at the sha, or origin serves no ref containing it.
 
     """
     try:
         declared_request(root, sha, producer, paths)
     except UndeclaredRequest as why:
         raise RequestRefused(str(why)) from None
-    if why := unserved(root, sha) or unreproducible(root, sha):
+    if why := unserved(root, sha):
         raise RequestRefused(why)
     ensure_labels(client, [label, DONE_LABEL])
     issue = client.issue_create(f'request {producer} at {sha[:12]}', request_body(producer, sha, paths))

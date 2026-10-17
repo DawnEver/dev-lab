@@ -31,7 +31,6 @@ from lab_commons.dev.branchset_push import (
     undeclared,
 )
 from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.lockcheck import TRAILER
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session', 'integrate/main'}))
@@ -54,11 +53,10 @@ def _planted(root: Path) -> Path:
     """A real checkout whose manifest declares the branch set, plus a real bare origin."""
     root.mkdir(parents=True, exist_ok=True)
     (root / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
-    (root / 'uv.lock').write_text('version = 1\n', encoding='utf-8')  # so the lock check (D8) passes this push
     subprocess.run([_GIT, 'init', '-q', '-b', 'main', str(root)], check=True, capture_output=True, timeout=60)
-    subprocess.run([_GIT, 'add', 'pyproject.toml', 'uv.lock'], cwd=root, check=True, capture_output=True, timeout=60)
+    subprocess.run([_GIT, 'add', 'pyproject.toml'], cwd=root, check=True, capture_output=True, timeout=60)
     subprocess.run(
-        [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'c1', '-m', f'{TRAILER}: 2026-10-16'],
+        [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'c1'],
         cwd=root,
         check=True,
         capture_output=True,

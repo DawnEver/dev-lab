@@ -39,8 +39,6 @@ class Policy:
     #: (:mod:`lab_commons.dev.behindpush`); ``forge serve`` raises an ``integration`` alarm for a child branch
     #: past it (:mod:`lab_commons.dev.forgeintegration`).
     behind_max: int = 20
-    #: Days a ``uv.lock`` may go without an upgrade before a push is refused (:mod:`lab_commons.dev.lockcheck`).
-    lock_max_age_days: int = 7
 
 
 def load_policy(root: Path) -> Policy:
