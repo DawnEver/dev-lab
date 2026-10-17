@@ -39,6 +39,7 @@ idle with work pending.
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
 import socket
 from collections.abc import Mapping, Sequence
@@ -55,7 +56,6 @@ from lab_commons.dev.platformparts import ClusterPart, part_context
 from lab_commons.dev.producer import RETRYABLE
 from lab_commons.hpc.account import ClusterAccount, cluster_account
 from lab_commons.hpc.cluster import local_runner
-from lab_commons.hpc.grants import workstation
 
 __all__ = [
     'CLAIMABLE',
@@ -191,7 +191,8 @@ def this_seat() -> ClusterAccount | None:
 
 def this_machine(seat: ClusterAccount | None) -> str:
     """``$HARNESS_MACHINE``; else on a cluster the login host (one account, two hosts: two owners); else ``''``."""
-    return workstation() or (socket.gethostname().split('.')[0] if seat is not None else '')
+    named = os.environ.get('HARNESS_MACHINE', '').strip()
+    return named or (socket.gethostname().split('.')[0] if seat is not None else '')
 
 
 def assess(history: Sequence[Status], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:

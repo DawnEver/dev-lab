@@ -1,7 +1,7 @@
 """``lab_commons.hpc`` grants, shared-account allocation and the remote run -- against the recorded cluster.
 
-Usage per workstation is never stored: it is read back from the ``--comment`` tag every job carries, so
-these tests feed the probe's ``@@@ shared`` section the way ``squeue -o "%C %k"`` prints it.
+Usage per session is never stored: it is read back from the ``--comment`` tag every job carries, so
+these tests feed the probe's ``@@@ shared`` section the way ``squeue -r -o "%C|%m|%D|%k"`` prints it.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc.builds import Builds
 from lab_commons.hpc.cluster import Unreachable, failover_runner, render_script
 from lab_commons.hpc.config import Config, Cost, JobSpec, Limits, Policy
-from lab_commons.hpc.grants import Grant, Machine, load_grants
+from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import Vocabulary
 from lab_commons.hpc.plan import allocate, headroom, make_plan
 from lab_commons.hpc.shell import (
@@ -30,16 +30,20 @@ from lab_commons.hpc.shell import (
     parse_collection_errors,
     parse_ids,
 )
-from lab_commons.hpc.slurm import PROBE_COMMAND, parse_snapshot, parse_usage, probe_command
+from lab_commons.hpc.slurm import PROBE_COMMAND, Held, parse_snapshot, parse_usage, probe_command
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
 GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', partitions=('shortq', 'defq'))
 SHA = 'a' * 40
+WIDE = Session(name='ws-a', tasks=1000, cpus=10000, mem_gb=100000)
 
 
-def _snap(shared: str = '') -> object:
-    return parse_snapshot(IDLE + '@@@ shared\n' + shared, 'acct-free')
+def _snap(shared: str = '', running: str = '') -> object:
+    """*shared* is ``<cpus> <comment>`` per task, each written as one 1 GB one-node ``squeue -r`` row."""
+    tasks = (line.partition(' ') for line in shared.splitlines())
+    rows = ''.join(f'{cpus}|1G|1|{comment}\n' for cpus, _, comment in tasks)
+    return parse_snapshot(IDLE + running + '@@@ shared\n' + rows, 'acct-free')
 
 
 # -- the grants table -------------------------------------------------------------------------------------
@@ -67,12 +71,22 @@ user = "me"
 hosts = ["other"]
 slurm_account = "x"
 priority = 2
+[hpc.session.ws-a]
+tasks = 2
+cpus = 64
+mem_gb = 300
+task_cpus = 64
+task_mem_gb = 300
+[hpc.session.other]
+tasks = 9
+cpus = 9
+mem_gb = 9
 """,
     )
-    monkeypatch.setenv('HARNESS_MACHINE', 'ws-a')
+    monkeypatch.setenv('LC_HPC_SESSION', 'ws-a')
     machine = load_grants()
-    assert machine.workstation == 'ws-a'
-    assert machine.comment == 'lc:ws=ws-a'
+    assert machine.session == Session(name='ws-a', tasks=2, cpus=64, mem_gb=300, task_cpus=64, task_mem_gb=300)
+    assert machine.comment == 'lc:session=ws-a'
     assert [g.account for g in machine.grants] == [('me', 'acct-free'), ('me', 'x')]
     assert machine.grants[0].targets == ('me@login2', 'me@login1'), 'hosts keep their order'
     assert machine.grants[0].name == 'me@login2 (acct-free)'
@@ -172,24 +186,32 @@ def test_runner_for_tries_the_grants_targets_in_order(monkeypatch: pytest.Monkey
 # -- live usage is read, never stored --------------------------------------------------------------------
 
 
-def test_usage_is_summed_per_workstation_tag() -> None:
-    usage = parse_usage('16 lc:ws=ws-a\n8 lc:ws=ws-b\n4 lc:ws=ws-a\n2 (null)\n1 \n')
-    assert usage == {'ws-a': 20, 'ws-b': 8, '': 3}
+def test_usage_is_tasks_cpus_and_memory_summed_per_session_tag() -> None:
+    usage = parse_usage(
+        '16|64G|1|lc:session=ws-a\n8|2G|1|lc:session=ws-b\n4|1G|2|lc:session=ws-a\n2|1G|1|(null)\n1|500M|1|\n'
+    )
+    assert usage == {
+        'ws-a': Held(tasks=2, cpus=20, mem_mb=66 * 1024),
+        'ws-b': Held(tasks=1, cpus=8, mem_mb=2048),
+        '': Held(tasks=2, cpus=3, mem_mb=1524),
+    }
+    # Planted control: the retired workstation tag is no session's, so it is counted untagged.
+    assert parse_usage('8|1G|1|lc:ws=ws-a\n') == {'': Held(tasks=1, cpus=8, mem_mb=1024)}
 
 
-def test_the_usage_question_rides_the_one_probe_and_stays_about_the_caller() -> None:
+def test_the_usage_question_rides_the_one_probe_counts_every_pending_task_and_stays_about_the_caller() -> None:
     assert probe_command() == PROBE_COMMAND
     command = probe_command('acct-free')
     assert command.startswith(PROBE_COMMAND)
-    assert 'squeue -h --me -A acct-free -o "%C %k"' in command
+    assert 'squeue -h --me -r -t PENDING,RUNNING -A acct-free -o "%C|%m|%D|%k"' in command
 
 
 def test_headroom_is_the_quota_less_every_job_held_with_no_share_carved_out() -> None:
     assert headroom(_snap()) == 96
-    assert headroom(_snap('16 lc:ws=ws-a\n')) == 80
-    assert headroom(_snap('48 lc:ws=ws-b\n24 lc:ws=ws-a\n')) == 24, 'every box holds against the quota alike'
+    assert headroom(_snap('16 lc:session=ws-a\n')) == 80
+    assert headroom(_snap('48 lc:session=ws-b\n24 lc:session=ws-a\n')) == 24, 'every box holds against the quota alike'
     assert headroom(_snap('90 (null)\n')) == 6, 'an untagged job counts too'
-    assert headroom(_snap('100 lc:ws=ws-a\n')) == 0
+    assert headroom(_snap('100 lc:session=ws-a\n')) == 0
 
 
 # -- allocation ------------------------------------------------------------------------------------------
@@ -197,11 +219,11 @@ def test_headroom_is_the_quota_less_every_job_held_with_no_share_carved_out() ->
 
 def test_the_plan_is_capped_by_headroom_and_tagged() -> None:
     grant, plan = allocate(
-        500, Cost(seconds=60), [(GRANT, _snap('16 lc:ws=ws-a\n'))], workstation='ws-a', policy=Policy()
+        500, Cost(seconds=60), [(GRANT, _snap('16 lc:session=ws-a\n'))], session=WIDE, policy=Policy()
     )
     assert grant is GRANT
     assert plan.throttle == len(plan.shards) <= 80, 'the headroom caps the wave; one wave, all running'
-    assert plan.comment == 'lc:ws=ws-a'
+    assert plan.comment == 'lc:session=ws-a'
     assert plan.account == 'acct-free'
     assert plan.partitions[0] == 'shortq'
 
@@ -209,15 +231,15 @@ def test_the_plan_is_capped_by_headroom_and_tagged() -> None:
 def test_the_grant_that_finishes_first_wins() -> None:
     small = Grant(user='me', hosts=('a',), slurm_account='acct-free')
     big = Grant(user='me', hosts=('b',), slurm_account='acct-free')
-    busy, idle = _snap('88 lc:ws=x\n'), _snap()
-    grant, _ = allocate(500, Cost(seconds=60), [(small, busy), (big, idle)], workstation='w', policy=Policy())
+    busy, idle = _snap('88 lc:session=x\n'), _snap()
+    grant, _ = allocate(500, Cost(seconds=60), [(small, busy), (big, idle)], session=None, policy=Policy())
     assert grant is big
 
 
 def test_a_tie_goes_to_priority() -> None:
     low = Grant(user='me', hosts=('a',), slurm_account='acct-free')
     high = Grant(user='me', hosts=('b',), slurm_account='acct-free', priority=1)
-    grant, _ = allocate(10, Cost(seconds=60), [(low, _snap()), (high, _snap())], workstation='w', policy=Policy())
+    grant, _ = allocate(10, Cost(seconds=60), [(low, _snap()), (high, _snap())], session=None, policy=Policy())
     assert grant is high
 
 
@@ -227,25 +249,25 @@ def test_no_headroom_anywhere_names_every_account() -> None:
         allocate(
             10,
             Cost(cpus=8),
-            [(GRANT, _snap('96 lc:ws=ws-b\n')), (other, _snap('90 (null)\n'))],
-            workstation='ws-a',
+            [(GRANT, _snap('96 lc:session=ws-b\n')), (other, _snap('90 (null)\n'))],
+            session=WIDE,
             policy=Policy(),
         )
     assert 'me@b' in str(refused.value)
     assert 'ws-b=96' in str(refused.value)
 
 
-def test_the_script_carries_the_workstation_comment(tmp_path: Path) -> None:
-    _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap())], workstation='ws-a', policy=Policy())
+def test_the_script_carries_the_session_comment(tmp_path: Path) -> None:
+    _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap())], session=WIDE, policy=Policy())
     script = render_script(plan, Config(job=JobSpec(name='j'), source=tmp_path / 'h.toml'), '~/r')
-    assert '#SBATCH --comment=lc:ws=ws-a\n' in script
+    assert '#SBATCH --comment=lc:session=ws-a\n' in script
     assert '#SBATCH --output=logs/%A_%a.out\n' in script, 'Slurm never expands ~; the run dir is the submit dir'
 
 
 def test_a_grants_setup_runs_first_in_every_task(tmp_path: Path) -> None:
     """A real cluster's compute nodes have no git until a module is loaded (2026-10-09: 126 tests errored on it)."""
     loaded = replace(GRANT, setup=('module load git/2.42.0',))
-    _, plan = allocate(10, Cost(seconds=60), [(loaded, _snap())], workstation='ws-a', policy=Policy())
+    _, plan = allocate(10, Cost(seconds=60), [(loaded, _snap())], session=WIDE, policy=Policy())
     config = Config(job=JobSpec(name='j', setup=('source .venv/bin/activate',)), source=tmp_path / 'h.toml')
     lines = render_script(plan, config, '~/r').splitlines()
     assert lines.index('module load git/2.42.0') < lines.index('source .venv/bin/activate')
@@ -317,32 +339,50 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
     assert parse_ids(text) == ['tests/a.py::t1'], 'an ERROR line is not a collected id'
 
 
-# -- the workstation is the harness's machine name ------------------------------------------------------
+# -- the session is the job's owner, and its cap is declared once ---------------------------------------
 
 
-def test_the_workstation_is_harness_machine_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv('HARNESS_MACHINE', 'G')
-    assert load_grants(tomllib.loads(_grant())).comment == 'lc:ws=G'
+def _sessions(**caps: str) -> str:
+    return _grant() + ''.join(f'[session.{name}]\n{body}\n' for name, body in caps.items())
 
 
-def test_without_harness_machine_the_workstation_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv('HARNESS_MACHINE', raising=False)
+def test_the_session_is_lc_hpc_session_and_tags_every_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('LC_HPC_SESSION', 'G')
+    machine = load_grants(tomllib.loads(_sessions(G='tasks = 2\ncpus = 64\nmem_gb = 300')))
+    assert machine.comment == 'lc:session=G'
+    assert machine.session == Session(name='G', tasks=2, cpus=64, mem_gb=300)
+
+
+def test_without_lc_hpc_session_no_job_is_tagged_or_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv('LC_HPC_SESSION', raising=False)
     machine = load_grants(tomllib.loads(_grant()))
-    assert machine.workstation is None
+    assert machine.session is None
     assert machine.comment == ''
-    _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap('40 lc:ws=G\n'))], workstation=None, policy=Policy())
+    _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap('40 lc:session=G\n'))], session=None, policy=Policy())
     assert plan.comment == ''
-    assert headroom(_snap('40 lc:ws=G\n')) == 56, 'every job on the account holds against its quota'
+    assert headroom(_snap('40 lc:session=G\n')) == 56, 'every job on the account holds against its quota'
 
 
-def test_a_spaced_harness_machine_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv('HARNESS_MACHINE', 'a b')
-    with pytest.raises(ValueError, match='HARNESS_MACHINE'):
-        load_grants(tomllib.loads(_grant()))
+@pytest.mark.parametrize(
+    ('name', 'caps', 'match'),
+    [
+        ('a b', {}, 'LC_HPC_SESSION'),
+        ('undeclared', {'G': 'tasks = 1\ncpus = 1\nmem_gb = 1'}, r'no \[hpc\.session\.undeclared\]'),
+        ('G', {'G': 'tasks = 1\ncpus = 1'}, 'mem_gb'),
+        ('G', {'G': 'tasks = 1\ncpus = 1\nmem_gb = 1\nfiles = 3'}, 'unknown keys'),
+        ('G', {'G': 'tasks = 0\ncpus = 1\nmem_gb = 1'}, 'positive'),
+    ],
+)
+def test_a_bad_session_is_refused_by_name(
+    name: str, caps: dict[str, str], match: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('LC_HPC_SESSION', name)
+    with pytest.raises(ValueError, match=match):
+        load_grants(tomllib.loads(_sessions(**caps)))
 
 
 def test_the_retired_workstation_key_is_refused_by_name() -> None:
-    with pytest.raises(ValueError, match=r'\[hpc\] workstation is retired.*HARNESS_MACHINE.*delete the line'):
+    with pytest.raises(ValueError, match=r'\[hpc\] workstation is retired.*LC_HPC_SESSION.*delete the line'):
         load_grants(tomllib.loads('workstation = "w"\n' + _grant()))
 
 
@@ -358,7 +398,7 @@ def test_the_tree_carries_its_submodules_at_their_pinned_commits() -> None:
 
 def test_sbatch_asks_for_every_declared_partition_that_admits_the_shard(tmp_path: Path) -> None:
     """Array 7660516 went to ``shortq`` alone and pended for hours while ``defq`` had idle nodes."""
-    _, plan = allocate(500, Cost(seconds=60), [(GRANT, _snap())], workstation='ws-a', policy=Policy())
+    _, plan = allocate(500, Cost(seconds=60), [(GRANT, _snap())], session=WIDE, policy=Policy())
     assert plan.partitions == ('shortq', 'defq')
     script = render_script(plan, Config(job=JobSpec(workdir=str(tmp_path))), '~/r')
     assert '#SBATCH --partition=shortq,defq\n' in script
@@ -366,14 +406,14 @@ def test_sbatch_asks_for_every_declared_partition_that_admits_the_shard(tmp_path
 
 def test_a_partition_whose_ceiling_breaks_the_shard_is_left_out() -> None:
     """Planted control: a 30 h shard exceeds ``shortq``'s ceiling, so the list must shrink to ``defq``."""
-    _, plan = allocate(1, Cost(seconds=20 * 3600), [(GRANT, _snap())], workstation='ws-a', policy=Policy())
+    _, plan = allocate(1, Cost(seconds=20 * 3600), [(GRANT, _snap())], session=WIDE, policy=Policy())
     assert plan.partitions == ('defq',)
 
 
 def test_a_partition_needing_another_qos_is_not_merged_into_one_submission() -> None:
     """One ``sbatch`` carries one ``--qos``; ``devq`` needs ``dev``, the others the default."""
     grant = replace(GRANT, partitions=('devq', 'shortq', 'defq'), qos={'devq': 'dev'})
-    _, plan = allocate(3, Cost(seconds=60), [(grant, _snap())], workstation='ws-a', policy=Policy())
+    _, plan = allocate(3, Cost(seconds=60), [(grant, _snap())], session=WIDE, policy=Policy())
     assert plan.partitions == ('devq',)
     assert plan.qos == 'dev'
 
@@ -381,11 +421,11 @@ def test_a_partition_needing_another_qos_is_not_merged_into_one_submission() -> 
 def test_on_an_even_makespan_the_grant_with_more_headroom_wins_wherever_it_is_listed() -> None:
     first = Grant(user='u1', hosts=('login.example',), slurm_account='acct-free')
     second = Grant(user='u2', hosts=('login.example',), slurm_account='acct-free')
-    busy, idle = _snap('60 lc:ws=ws-a\n'), _snap()
-    grant, _ = allocate(1, Cost(seconds=60), [(first, busy), (second, idle)], workstation='ws-a', policy=Policy())
+    busy, idle = _snap('60 lc:session=ws-a\n'), _snap()
+    grant, _ = allocate(1, Cost(seconds=60), [(first, busy), (second, idle)], session=WIDE, policy=Policy())
     assert grant is second
     # Planted control: equal room falls back to the file order.
-    grant, _ = allocate(1, Cost(seconds=60), [(first, idle), (second, idle)], workstation='ws-a', policy=Policy())
+    grant, _ = allocate(1, Cost(seconds=60), [(first, idle), (second, idle)], session=WIDE, policy=Policy())
     assert grant is first
 
 
@@ -395,7 +435,7 @@ def test_on_an_even_makespan_the_grant_with_more_headroom_wins_wherever_it_is_li
 def _cli_on_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
 
     monkeypatch.chdir(tmp_path)  # no hpc.toml here
-    monkeypatch.setattr(cli, 'load_grants', lambda: Machine(workstation='ws-a', grants=(GRANT,)))
+    monkeypatch.setattr(cli, 'load_grants', lambda: Machine(session=WIDE, grants=(GRANT,)))
     monkeypatch.setattr(cli, 'runner_for', lambda _g, *_a: None)
     return cli
 
@@ -438,3 +478,55 @@ def test_a_named_job_file_that_is_missing_is_refused_by_name(
     with pytest.raises(SystemExit):
         cli.main(['status', '-c', 'nope.toml'])
     assert 'nope.toml' in capsys.readouterr().err
+
+
+# -- the accounts are one pool; a session past its cap queues, never refused -----------------------------
+
+TWO = Session(name='G', tasks=2, cpus=128, mem_gb=600, task_cpus=64, task_mem_gb=300)
+OTHER = Grant(user='you', hosts=('login.example',), slurm_account='acct-free')
+
+
+def test_a_session_is_counted_across_every_account_and_past_its_cap_it_queues() -> None:
+    """One task on each account fills a two-task cap: the plan is not refused, it has no room and throttles to 1."""
+    one = _snap('8 lc:session=G\n')
+    _, plan = allocate(10, Cost(cpus=8, seconds=60), [(GRANT, one), (OTHER, one)], session=TWO, policy=Policy())
+    assert plan.room == 0
+    assert plan.throttle == 1
+    assert plan.comment == 'lc:session=G'
+    # Planted control: another session's tasks hold the account, never this session's cap.
+    theirs = _snap('8 lc:session=H\n')
+    _, plan = allocate(10, Cost(cpus=8, seconds=60), [(GRANT, theirs), (OTHER, theirs)], session=TWO, policy=Policy())
+    assert plan.room == 2
+    assert plan.throttle == 2
+
+
+def test_the_session_cap_bounds_cpus_and_memory_as_well_as_tasks() -> None:
+    by_cpu = replace(TWO, tasks=100, cpus=64)
+    _, plan = allocate(10, Cost(cpus=40, seconds=60), [(GRANT, _snap())], session=by_cpu, policy=Policy())
+    assert plan.room == 1, 'the account holds two 40-CPU tasks, a 64-CPU session one'
+    by_mem = replace(TWO, tasks=100, mem_gb=300)
+    cost = Cost(mem_gb=150, seconds=60)
+    _, plan = allocate(10, cost, [(GRANT, _snap()), (OTHER, _snap())], session=by_mem, policy=Policy())
+    assert plan.room == 2, 'planted control: nothing held, two 150 GB tasks fit 300 GB'
+    held = _snap('1 lc:session=G\n')  # one 1 GB task, on the OTHER account
+    _, plan = allocate(10, cost, [(GRANT, _snap()), (OTHER, held)], session=by_mem, policy=Policy())
+    assert plan.room == 1, 'the 1 GB held elsewhere leaves 299 GB: one more 150 GB task'
+
+
+def test_a_task_past_the_sessions_per_task_ceiling_is_refused() -> None:
+    with pytest.raises(ValueError, match='per-task ceiling'):
+        allocate(1, Cost(cpus=65, seconds=60), [(GRANT, _snap())], session=TWO, policy=Policy())
+    # Planted control: at the ceiling it plans.
+    allocate(1, Cost(cpus=64, seconds=60), [(GRANT, _snap())], session=TWO, policy=Policy())
+
+
+def test_the_account_with_group_memory_room_takes_the_job() -> None:
+    """AssocGrpMemLimit is the real contention: 352 of 360 GB held leaves no room for a 16 GB task."""
+    full = _snap(running='acct-free|8|1|352G|N/A\n')
+    pool = [(GRANT, full), (OTHER, _snap())]
+    grant, plan = allocate(1, Cost(mem_gb=16, seconds=60), pool, session=None, policy=Policy())
+    assert grant is OTHER
+    assert plan.room
+    # Planted control: with room on both, the file order holds.
+    grant, _ = allocate(1, Cost(mem_gb=4, seconds=60), pool, session=None, policy=Policy())
+    assert grant is GRANT

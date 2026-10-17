@@ -33,7 +33,7 @@ from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, probe, submitter
 from lab_commons.hpc.config import Config
-from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
+from lab_commons.hpc.grants import Grant, Machine, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_outcomes, run_shas
@@ -198,14 +198,15 @@ def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
     if seat is None:
         msg = 'this box is not on a cluster (no sbatch); a cluster run advances only on its login node'
         raise ValueError(msg)
-    grants = tuple(grant for grant in load_grants().grants if grant.user == seat.account)
+    machine = load_grants()
+    grants = tuple(grant for grant in machine.grants if grant.user == seat.account)
     if not grants:
         msg = (
             f'no [[hpc.grant]] in {config_path()} has user = "{seat.account}" (the Slurm user this runs as); '
             'add one naming its slurm_account and share so a cluster part can be planned'
         )
         raise ValueError(msg)
-    return SlurmCluster(root, Machine(workstation=workstation(), grants=grants), Config(), submitter())
+    return SlurmCluster(root, Machine(session=machine.session, grants=grants), Config(), submitter())
 
 
 def standing_of(build: Callable[[], Cluster]) -> tuple[Cluster | None, Standing | None, str]:
