@@ -102,8 +102,8 @@ def test_a_freshly_rendered_tree_installs_and_one_hand_edit_reds(tmp_path: Path)
         )
 
     path = tmp_path / '.gitignore'
-    path.write_text(path.read_text(encoding='utf-8').replace('.mypy_cache/', '.mypy_cache.bak/'), encoding='utf-8')
-    with pytest.raises(AssertionError, match=re.escape('.mypy_cache/')):
+    path.write_text(path.read_text(encoding='utf-8').replace('uv.lock', 'uv.lock.bak'), encoding='utf-8')
+    with pytest.raises(AssertionError, match=re.escape('uv.lock')):
         assert_artefact_is_rendered(
             root=tmp_path, artefact='.gitignore', deltas=deltas, repo=_REPO, rerender_hint='make render'
         )
@@ -248,9 +248,7 @@ def test_the_round_trip_control_passes_then_reds_on_one_edited_line(tmp_path: Pa
     deltas = _deltas(tmp_path)
     scratch = tmp_path / 'scratch'
     scratch.mkdir()
-    assert_render_round_trips(
-        artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('.mypy_cache/', 'x')
-    )
+    assert_render_round_trips(artefact='.gitignore', deltas=deltas, repo=_REPO, scratch=scratch, edit=('uv.lock', 'x'))
 
     with pytest.raises(AssertionError, match='no such line'):
         assert_render_round_trips(

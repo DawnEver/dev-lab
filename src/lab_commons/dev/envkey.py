@@ -19,6 +19,12 @@ with nothing to say which won. This is the one property that kept consumer-a' ow
 reimplementation of this module alive; it is written down here because a property nobody records
 is one the next reader adds a file to recover.
 
+REPRODUCIBILITY IS BY RECORD, NOT BY PIN (user ruling 2026-10-17, "dependencies are not pinned"): no
+lock fixes what a run resolves, so every run record states it -- :func:`env_record` is the key AND the
+full ``name==version`` list it was taken over, written into the local record
+(:func:`lab_commons.dev.localpart.local_record`) and the cluster record (the build's ``resolved`` fact,
+:func:`lab_commons.hpc.shell.build_script`). One manifest read feeds both fields, so they cannot disagree.
+
 THE UNREADABLE ROW IS KEPT, NEVER DROPPED. A distribution whose name or version cannot be read --
 a broken ``.dist-info``, an import hook that moved, a permission the reader did not have -- hashes
 identically to a package that is not installed if it is skipped, so a verdict earned WITHOUT it
@@ -36,7 +42,7 @@ from collections.abc import Iterable, Mapping
 from importlib import metadata
 from typing import Final, Protocol, runtime_checkable
 
-__all__ = ['UNREADABLE', 'env_key', 'env_manifest', 'interpreter_identity']
+__all__ = ['UNREADABLE', 'env_key', 'env_manifest', 'env_record', 'interpreter_identity']
 
 #: What a distribution contributes when its name or version cannot be read. A word rather than an
 #: empty string so the manifest line is legible and cannot collide with a real distribution name.
@@ -127,3 +133,13 @@ def env_key(manifest: Iterable[str], *, length: int = _KEY_CHARS) -> str:
         )
         raise ValueError(msg)
     return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()[:length]
+
+
+def env_record(manifest: Iterable[str] | None = None) -> dict[str, object]:
+    """``{'env': <key>, 'resolved': [<line>, ...]}`` -- what a run record states about its environment.
+
+    Passed nothing, it reads THIS interpreter's environment once (:func:`env_manifest`), so the key and the
+    list it was taken over are one reading.
+    """
+    lines = list(env_manifest() if manifest is None else manifest)
+    return {'env': env_key(lines), 'resolved': lines}

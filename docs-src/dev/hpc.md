@@ -32,9 +32,10 @@ On the login host you chose, store your own forge token once (`git config --glob
   installs `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo` (no PATH
   edit) and `cmake` through `uv tool` when the tick PATH lacks them, and refuses any other missing `needs` by
   name; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
-  uv-managed CPython (skipped while its inputs are unchanged); installs the served lab-commons checkout over
-  the sha each other repo pins (`uv pip install --no-config`, run outside the project so its sources cannot
-  put the pin back; keyed by the lab-commons HEAD, so the next deploy after a lab-commons update reinstalls
+  uv-managed CPython (skipped while its inputs and the tips of its floating git dependencies are unchanged --
+  nothing is pinned, user ruling 2026-10-17); installs the served lab-commons checkout, the newest of the served
+  ref, over what each other repo resolved (`uv pip install --no-config`, run outside the project so its sources
+  cannot resolve the repo's URL again; keyed by the lab-commons HEAD, so the next deploy after a lab-commons update reinstalls
   it); replaces its own marked crontab lines; runs one tick of each repo and prints it.
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
@@ -137,7 +138,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 - **Preparation is keyed by its inputs, never by commit** (`lab_commons.hpc.builds`), declared once:
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
   `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
-  with unchanged inputs builds nothing. The committed `uv.lock` is the one dependency input (D8); no remote is asked.
+  with unchanged inputs builds nothing. A floating git dependency adds its remote tip to the key.
 - Everything lives under `~/ci/` in the account's home: `cache.git`, `envs/<key>`, `native/<key>`,
   `trees/<sha>`, `runs/<sha>`, `collect/`, `uv-cache`, `cargo-target`. A day-to-day checkout is never touched.
 - **Collection is cached per test file** (`lab_commons.hpc.collect`); only files with no entry are collected.

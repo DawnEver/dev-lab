@@ -16,17 +16,19 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
-from typing import ClassVar
+from typing import ClassVar, Final
 
 import pytest
 
 from lab_commons.compute import learned
 from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
+from lab_commons.dev.envkey import env_key
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.platformparts import part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
+from lab_commons.hpc import shell
 from lab_commons.hpc.builds import Builds, cargo_target
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
@@ -379,6 +381,10 @@ def test_a_killed_multi_file_item_teaches_no_file_a_peak() -> None:
 # -- the run flow ------------------------------------------------------------------------------------
 
 
+#: The resolved environment the fake build reports, as the facts line prints it (envkey.env_record).
+RESOLVED: Final = json.dumps(['cpython-3.13.1-linux', 'lab-commons==0.3.0+g1234567', 'numpy==2.3.0'])
+
+
 class FakeRunCluster:
     """A cluster answering the run flow; an item of a file in *dies* is killed in its first *kills* rounds.
 
@@ -442,7 +448,10 @@ class FakeRunCluster:
         if '@@@ facts' in command and self.build_fails:
             return '@@@ build-failed exit 101\nerror: could not find `cargo`\n'
         if '@@@ facts' in command:
-            return f'@@@ time env=12s\n@@@ facts\nplatform=linux-x86_64/glibc2.28\npython=3.13.1\nenv={self.env}\n'
+            return (
+                f'@@@ time env=12s\n@@@ facts\nplatform=linux-x86_64/glibc2.28\npython=3.13.1\nenv={self.env}\n'
+                f'resolved={RESOLVED}\n'
+            )
         if '--collect-only' in command or 'lab_ci_collect.py --cache' in command:
             if '(win)' in command:
                 return 'tests/w.py::t\n'
@@ -534,6 +543,7 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
         '3.13.1',
     ), 'platform is the part it is (its need-set); system is the box it ran on'
     assert (record['scope'], record['req'], record['env']) == ('full', 't0', 'e0ffee0123456789')
+    assert record['resolved'] == json.loads(RESOLVED), 'the record says exactly what it ran against'
     assert (record['account'], record['job_ids']) == ('acct-free', ['4243'])
     assert record['plan']['comment'] == 'lc:session=ws-a'
     assert record['plan']['job_id'] == '4243'
@@ -1379,3 +1389,16 @@ def test_a_superseded_run_holds_its_folded_rounds_and_every_id_its_last_round_st
     }, 'the killed item kept what it streamed; the handed id is not an outcome'
     assert state['sha'] == SHA
     assert run_shas(MACHINE, {GRANT.account: lambda _c, _s: f'/h/ci/runs/{SHA}/{BASE}/state.json\n'}, BASE) == [SHA]
+
+
+def test_the_build_facts_report_the_key_and_the_resolved_list_of_one_reading() -> None:
+    """The facts line is run for real: both facts parse, and they describe ONE environment (envkey.env_record).
+
+    PLANTED CONTROL: the key recomputed over the reported list is the reported key.
+    """
+    assert '"' not in shell._ENV_FACTS, 'it runs inside python -c "..."'
+    out = subprocess.run([sys.executable, '-c', shell._ENV_FACTS], capture_output=True, text=True, check=True).stdout
+    told = shell.facts('@@@ facts\nenv=' + out)
+    resolved = json.loads(told['resolved'])
+    assert told['env'] == env_key(resolved)
+    assert any(line.startswith('lab-commons==') for line in resolved)

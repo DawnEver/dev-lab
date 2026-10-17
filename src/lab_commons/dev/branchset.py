@@ -10,7 +10,6 @@ and read by :func:`declared_branchset`::
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
     prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
-    update = 'update/lock'         # the branch the lock upgrade commits on (lab_commons.dev.lockupgrade)
 
 Three questions are asked of it, all through local refs (fetch first; the remote is the authority):
 
@@ -37,6 +36,7 @@ from pathlib import Path
 
 from lab_commons.dev.checkout import authority_for, git_out, origin_branches
 from lab_commons.hpc.declared import pyproject_at
+from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
 
 __all__ = [
@@ -56,7 +56,7 @@ __all__ = [
 ]
 
 _TABLE = '[tool.lab_commons.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'prune_merged', 'grace_hours', 'update'})
+_KEYS = frozenset({'trunk', 'sessions', 'prune_merged', 'grace_hours'})
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
@@ -87,13 +87,11 @@ class BranchSet:
     prune_merged: bool = False
     #: How long a branch tip sits idle before it is pruned (merged) or alarmed (unmerged).
     grace_hours: float = 24.0
-    #: The branch the scheduled ``uv lock --upgrade`` commits on (:mod:`lab_commons.dev.lockupgrade`); ``''`` none.
-    update: str = ''
 
     @property
     def declared(self) -> frozenset[str]:
         """Every branch name the repo may carry long-term."""
-        return self.sessions | {self.trunk} | ({self.update} if self.update else frozenset())
+        return self.sessions | {self.trunk}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -156,6 +154,11 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if not isinstance(sessions, list) or not all(isinstance(name, str) and name for name in sessions):
         msg = f'{_TABLE} sessions in {manifest} is {sessions!r}; it must be a list of branch names'
         raise BranchSetNotDeclared(msg)
+    if retired := [
+        f'{key} is retired: {RETIRED[f"branchset.{key}"]}' for key in table if f'branchset.{key}' in RETIRED
+    ]:
+        msg = f'{_TABLE} in {manifest}: ' + '; '.join(retired)
+        raise BranchSetNotDeclared(msg)
     unknown = sorted(set(table) - _KEYS)
     if unknown:
         msg = (
@@ -172,11 +175,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if isinstance(grace, bool) or not isinstance(grace, int | float) or grace < 0:
         msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
-    update = table.get('update', '')
-    if not isinstance(update, str):
-        msg = f'{_TABLE} update in {manifest} is {update!r}; it must be a branch name'
-        raise BranchSetNotDeclared(msg)
-    return BranchSet(trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), update=update)
+    return BranchSet(trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace))
 
 
 def _local_branches(root: Path) -> tuple[str, ...] | None:

@@ -2,10 +2,9 @@
 
 THE DECLARATION THIS DEFENDS. The family pins nothing first-party: ``lab-commons @
 git+https://<forge-host>/<owner>/lab-commons.git`` carries no ``rev=``, no
-``tag=``. Since decision D8 (2026-10-16) the lock is COMMITTED and a scheduled ``uv lock --upgrade``
-moves it (:mod:`lab_commons.dev.lockupgrade`); an install door outside that schedule must still not
-serve a resolution older than the declaration says. That is a declaration, and this module is the
-mechanism that makes it true.
+``tag=``, and the lock file is deliberately NOT tracked (user ruling 2026-09-17). The requirement
+therefore SAYS "whatever that URL holds now", and a repo held at anything older stops being told
+when a shared rule moved. That is a declaration, and this module is the mechanism that makes it true.
 
 THE DEFECT, MEASURED 2026-09-17 ACROSS FOUR CHECKOUTS. Three reverts in one session, twice misread
 as two agents fighting over one venv. ``consumer-b`` went dev35 -> dev26 -> dev40 -> dev26 while the
@@ -37,10 +36,9 @@ found was not a Makefile target: it was ``entry: uv run python -m ...`` in a pre
 mutated the environment on every push, and a changelog hook that did the same on every commit. A
 door is what MOVES the environment, not what is named ``install``.
 
-WHAT IS REFUSED, and it is one sentence: a command that consults the lock either REPLAYS the committed
-lock (``--frozen``/``--locked``, D8), NAMES the floating requirement for re-resolution
-(``-P``/``--upgrade-package``, or ``-U``), or does not touch the environment at all (``--no-sync``).
-Commands that re-resolve by construction -- ``uv pip install``,
+WHAT IS REFUSED, and it is one sentence: a command that consults a lock either NAMES the floating
+requirement for re-resolution (``-P``/``--upgrade-package``, or ``-U``) or does not touch the
+environment at all (``--no-sync``). Commands that re-resolve by construction -- ``uv pip install``,
 ``pip install`` -- are already correct and are deliberately NOT changed; a fix applied where there
 is no defect costs the next reader the reason.
 
@@ -120,9 +118,6 @@ PREFIX_TOKENS: Final = frozenset(
 #: one is pinned and is not this rule's subject.
 _DIRECT_GIT: Final = re.compile(r'^\s*(?P<name>[A-Za-z0-9._-]+)\s*(?:\[[^\]]*\])?\s*@\s*git\+(?P<url>\S+)\s*$')
 
-#: The flags that make a lock-consuming ``uv`` command replay the COMMITTED lock exactly (D8).
-_LOCKED_FLAGS: Final = frozenset({'--frozen', '--locked'})
-
 #: How ``-P``/``--upgrade-package`` is spelled, in both the split and the ``=`` form.
 _UPGRADE_FLAGS: Final = frozenset({'-P', '--upgrade-package'})
 
@@ -130,22 +125,19 @@ _UPGRADE_FLAGS: Final = frozenset({'-P', '--upgrade-package'})
 class Delivery(Enum):
     """What a command does to the DECLARED build of a floating requirement.
 
-    Four values, because "is not a correct door" splits into two different facts and conflating them
-    would make the remedy unnameable. :attr:`INERT` is a command that moves no
+    Three values rather than two, because "does not deliver it" splits into two different facts and
+    conflating them would make the remedy unnameable. :attr:`INERT` is a command that moves no
     environment -- there is nothing for it to deliver stale. :attr:`UNLOCKED` is a command that DOES
-    move the environment without saying it replays the committed lock -- it may re-lock it unseen.
-    :attr:`LOCKED` replays the COMMITTED lock exactly (``--frozen``/``--locked``, D8): correct, because the
-    lock is the declared environment and the scheduled ``uv lock --upgrade`` is what keeps it latest.
+    move the environment and serves whatever an earlier resolution left in a lock.
     """
 
     RESOLVES = 'resolves'
     UNLOCKED = 'unlocked'
     INERT = 'inert'
-    LOCKED = 'locked'
 
 
 class UnlockedDoorsError(AssertionError):
-    """At least one install door moves the environment without replaying the committed lock."""
+    """At least one install door moves the environment and serves whatever a local lock last resolved."""
 
 
 class VacuousDoorScanError(AssertionError):
@@ -238,8 +230,6 @@ def _uv_delivery(rest: list[str], names: tuple[str, ...]) -> Delivery:
         return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.INERT
     if verb not in LOCK_CONSUMING or '--no-sync' in rest:
         return Delivery.INERT
-    if _LOCKED_FLAGS & set(rest):
-        return Delivery.LOCKED
     return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.UNLOCKED
 
 
@@ -320,7 +310,7 @@ def scan_doors(root: Path, paths: list[str], names: tuple[str, ...]) -> tuple[Do
 
 
 def unlocked(doors: tuple[Door, ...]) -> tuple[Door, ...]:
-    """Return the doors that move an environment without replaying the committed lock."""
+    """Return the doors that move an environment and serve whatever a local lock last resolved."""
     return tuple(door for door in doors if door.delivery is Delivery.UNLOCKED)
 
 
@@ -353,7 +343,8 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
         msg = (
             f'these install doors serve whatever uv.lock pins rather than the declared build of '
             f'{", ".join(names)}:\n  {listed}\n'
-            f'What they deliver is whatever the lock last resolved. Two remedies, and which one applies is decided by '
+            f'The lock is an untracked per-box artefact, so what they deliver is whatever the last '
+            f'resolution on THIS box left behind. Two remedies, and which one applies is decided by '
             f'whether the command is supposed to move the environment at all: a real install door '
             f'adds `--upgrade-package {names[0]}` (which implies --refresh-package), and a git hook '
             f'or a tool invocation adds `--no-sync`, because a hook that reinstalls the environment '

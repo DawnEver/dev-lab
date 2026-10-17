@@ -9,6 +9,7 @@ import pytest
 from _forge_fake import git_out, make_repo, run_git
 
 from lab_commons.dev import localpart, platformparts
+from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.producer import ProducerExit
@@ -300,6 +301,7 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
 
     record = local(reported)
     assert record['outcomes'] == reported
+    assert {key: record[key] for key in ('env', 'resolved')} == env_record(), 'it names what it ran against'
     assert record['reasons'] == {'t::s': 'why'}
     assert platformparts.part_of(record).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
