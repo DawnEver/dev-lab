@@ -31,8 +31,9 @@ serves it; the deploy finishes for the others, raises one forge ``run`` alarm pe
 
 ``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`lab_commons.dev.servelock`),
 lab-commons and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
-upstream and its venv synced when step 4 says so -- and only then runs ``forge serve`` in its own checkout
-and venv. The host owns the refresh because a repo's own kit cannot (incident 2026-10-13: a venv whose
+upstream and its venv synced when step 4 says so -- and only then THE HOST KIT runs ``forge serve`` in its
+checkout (:func:`~lab_commons.hpc.deploy_spec.host_serve_argv`); the repo's venv only runs its producers.
+The host owns the refresh because a repo's own kit cannot (incident 2026-10-13: a venv whose
 old ``forge serve`` exited 2 every tick could never run the code that would update it). A repo whose
 refresh fails is released with its reason in the serve log. Its exit is the worst child's; one repo's
 failure never skips the next. Each child starts with no
@@ -60,7 +61,7 @@ from lab_commons.dev._machinefile import diff, merged
 from lab_commons.dev.forgealarm import RUN, Alarm, sound
 from lab_commons.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
 from lab_commons.dev.servelock import default_lock, held
-from lab_commons.hpc.deploy_spec import LAB_COMMONS
+from lab_commons.hpc.deploy_spec import LAB_COMMONS, host_serve_argv
 from lab_commons.hpc.deploy_steps import Step, Tools
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -338,9 +339,8 @@ def serve(
                 emit(f'[serve] {name} released, not served this tick: {why}', err=True)
                 worst = max(worst, 2)
                 continue
-            argv = [str(venv_python(checkout)), '-m', 'lab_commons.dev.forge', 'serve']
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
-            rc = run(argv, cwd=checkout, check=False, **streams).returncode
+            rc = run(host_serve_argv(), cwd=checkout, check=False, **streams).returncode
             if rc:
                 emit(f'[serve] {name} exited {rc}', err=True)
             worst = max(worst, rc)

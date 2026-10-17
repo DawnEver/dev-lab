@@ -20,7 +20,8 @@ On the login host you chose, store your own forge token once (`git config --glob
 - **The host refreshes; a repo never updates itself.** Each cron line runs the HOST's kit,
   `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout: it checks out `~/<root>/lab-commons`
   and then the repo at their deployed refs, rebuilds the repo's venv where its inputs or the kit's HEAD moved
-  (the deploy's own keyed steps), and only then runs the repo's `forge serve`. A repo whose refresh fails is
+  (the deploy's own keyed steps), and only then serves it: THE HOST KIT's `forge serve` with the repo checkout
+  as its cwd. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
   released for that tick, its reason in its log; a kit that cannot move is reported and the repo serves with
   the kit it has. Only the crontab itself changes when you re-run the line.
 - **What it does** (`lab_commons.hpc.deploy`): refuses off the declared host; checks the account before changing
@@ -39,7 +40,7 @@ On the login host you chose, store your own forge token once (`git config --glob
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
 - **The crontab line**, per repo, every 5 minutes:
-  `cd ~/src/<repo> && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.dev.forge serve >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+  `PATH=...; cd ~/src/lab-commons && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.hpc tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
