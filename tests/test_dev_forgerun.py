@@ -370,7 +370,39 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
 
 
-def test_a_live_run_of_another_schema_is_refused_with_the_remedy(home: Path) -> None:
+SCHEMA_1 = Path(__file__).parent / '_hpc_fixtures' / 'forge-run-schema1-2026-10-17.json'
+
+
+def _plant_schema_1() -> dict[str, Any]:
+    """A live schema-1 run as Ada held it (2026-10-17, account sanitised), planted in this home's forge-runs/."""
+    raw = json.loads(SCHEMA_1.read_text(encoding='utf-8'))
+    forgerun.directory().mkdir(parents=True, exist_ok=True)
+    name = f'0a8e97f67747-{raw["sha"]}-{raw["platform"]}-{raw["scope"]}.json'
+    (forgerun.directory() / name).write_text(json.dumps(raw, indent=2), encoding='utf-8')
+    return raw
+
+
+@pytest.mark.usefixtures('home')
+def test_a_live_schema_1_run_is_adopted_losslessly_and_written_back_at_this_schema() -> None:
+    """A tool redeployed under a live run adopts it: every field carried, the old job name kept as an alias."""
+    raw = _plant_schema_1()
+    (run,) = forgerun.live(raw['repo_url'])
+    carried = {key: value for key, value in dataclasses.asdict(run).items() if key in raw and key != 'schema'}
+    as_read = {k: tuple(v) if isinstance(v, list) else v for k, v in raw.items() if k != 'schema'}
+    assert carried == as_read
+    assert run.schema == forgerun.SCHEMA
+    assert run.job_aliases == (f'run-{raw["sha"][:12]}',), 'jobs sbatched under schema 1 bear the sha-only name'
+    (path,) = forgerun.directory().glob('*.json')
+    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerun.SCHEMA, 'written back'
+    assert forgerun.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
+
+
+def test_a_new_run_has_no_job_alias(home: Path) -> None:
+    """PLANTED CONTROL for the alias: only an upgraded run's jobs may bear the old name."""
+    assert _start(home, _Store()).job_aliases == ()
+
+
+def test_a_live_run_of_an_unknown_schema_is_refused_with_the_remedy(home: Path) -> None:
     """PLANTED CONTROL: the same file at this schema is read."""
     store = _Store()
     run = _start(home, store)
@@ -379,6 +411,18 @@ def test_a_live_run_of_another_schema_is_refused_with_the_remedy(home: Path) -> 
     path.write_text(json.dumps({**json.loads(path.read_text(encoding='utf-8')), 'schema': 0}), encoding='utf-8')
     with pytest.raises(forgerun.ForeignSchema, match=r'schema 0.*squeue --me'):
         forgerun.live(run.repo_url)
+
+
+def test_one_refused_run_is_skipped_and_named_the_rest_are_read(home: Path) -> None:
+    """A tick must not die on one bad file: with *refused* given, it hears the refusal and gets the other runs."""
+    store = _Store()
+    run = _start(home, store)
+    bad = forgerun.save(dataclasses.replace(run, sha='d' * 40))
+    bad.write_text(json.dumps({**json.loads(bad.read_text(encoding='utf-8')), 'schema': 99}), encoding='utf-8')
+    heard: list[str] = []
+    assert forgerun.live(run.repo_url, refused=heard.append) == (run,)
+    assert len(heard) == 1
+    assert 'schema 99' in heard[0]
 
 
 def test_the_state_is_keyed_by_repo_sha_platform_and_scope(home: Path) -> None:
@@ -504,9 +548,24 @@ def test_an_orphan_array_is_named_by_its_own_job_id_never_its_pending_range(tmp_
 
     machine: Any = SimpleNamespace(grants=[object()])
     cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: runner)
-    run: Any = SimpleNamespace(sha='a' * 40, platform='base')
+    run: Any = SimpleNamespace(sha='a' * 40, platform='base', job_aliases=())
     assert cluster.orphans(run) == ['7683032', '7683040']
     assert asked == [f'squeue -h --me -n run-{"a" * 12}-base -o %F']
+
+
+def test_an_upgraded_runs_jobs_are_found_under_their_old_name_too(tmp_path: Path) -> None:
+    """Jobs a schema-1 tool sbatched are named ``run-<sha12>``: squeue asks for both names."""
+    asked: list[str] = []
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return '7716448'
+
+    machine: Any = SimpleNamespace(grants=[object()])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: runner)
+    run: Any = SimpleNamespace(sha='a' * 40, platform='base', job_aliases=(f'run-{"a" * 12}',))
+    assert cluster.orphans(run) == ['7716448']
+    assert asked == [f'squeue -h --me -n run-{"a" * 12}-base,run-{"a" * 12} -o %F']
 
 
 def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learned(
@@ -531,7 +590,7 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(
-        sha='a' * 40, output=str(home), repo_url='https://f/o/r.git', platform='base', job_ids=()
+        job_aliases=(), sha='a' * 40, output=str(home), repo_url='https://f/o/r.git', platform='base', job_ids=()
     )
     with pytest.raises(NoRoom, match='AssocGrpMemLimit'):
         cluster.gather(run)

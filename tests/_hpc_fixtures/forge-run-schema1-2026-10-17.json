@@ -1,0 +1,20 @@
+{
+  "repo_url": "https://gitea.mingyangbao.site/Tianjie-Zou-Team/motronics-studio.git",
+  "sha": "c4b6bfd37f235761a21c79390ff1cf218c88cf98",
+  "ref": "feat/optimization",
+  "collect": "tests",
+  "output": "/gpfs01/home/alice/src/motronics-studio/output/logs/26/10/17/parts/c4b6bfd37f235761a21c79390ff1cf218c88cf98",
+  "owner": "claim machine=hpclogin01 login=alice until=2026-10-17T20:10:45Z hpc=nottingham-ada/alice",
+  "phase": "submitted",
+  "job_ids": [
+    "7715287",
+    "7716448"
+  ],
+  "record": "",
+  "platform": "base",
+  "scope": "full",
+  "outputs": [],
+  "artefact": "",
+  "schema": 1,
+  "progress": "running 3/17 done 8/17"
+}
