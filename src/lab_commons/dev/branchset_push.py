@@ -145,6 +145,9 @@ def refusal(
         ``(ALLOWED, '')``, ``(REFUSED, <the refusal>)``, or ``(COULD_NOT_JUDGE, <why>)``.
 
     """
+    refs = pushed_refs(lines)
+    if refs and all(ref.deleted or ref.branch is None for ref in refs):
+        return ALLOWED, ''  # a deletion carries no content, so the checkout's declaration has nothing to judge
     try:
         declared = declared_branchset(root) if branchset is None else branchset
     except KitOlderThanCheckout as exc:
@@ -163,7 +166,7 @@ def refusal(
             f'guard, and passing here would rebuild -- one layer down -- exactly the defect this hook '
             f'was written for.\n'
         )
-    rows = undeclared(pushed_refs(lines), declared)
+    rows = undeclared(refs, declared)
     return (REFUSED, _refusal(rows, declared)) if rows else (ALLOWED, '')
 
 

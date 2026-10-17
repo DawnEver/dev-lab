@@ -10,6 +10,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from lab_commons.dev.behindpush import ALLOWED, COULD_NOT_JUDGE, REFUSED, refusal
 from lab_commons.dev.githooks.table import base_rows
 from lab_commons.dev.lanepolicy import Policy
@@ -86,3 +88,15 @@ def test_a_commit_git_cannot_count_is_not_judged(tmp_path: Path) -> None:
 def test_the_family_hook_table_runs_it_at_pre_push() -> None:
     rows = [row for row in base_rows()['pre-push'] if row['id'] == 'behind-push']
     assert [row['run'] for row in rows] == [['python', '-m', 'lab_commons.dev.behindpush']]
+
+
+def test_a_deletion_never_reads_a_stale_checkouts_declaration(tmp_path: Path) -> None:
+    """A deletion carries no content: a manifest still declaring a RETIRED key cannot refuse it.
+
+    PLANTED CONTROL: the same checkout's content push still reads the declaration, and its retired key refuses.
+    """
+    stale = '[tool.lab_commons.integrator]\nlock_max_age_days = 7\n'
+    (tmp_path / 'pyproject.toml').write_text(stale, encoding='utf-8')
+    assert refusal(tmp_path, lines=[f'(delete) {_ZERO} refs/heads/lane/x {"a" * 40}']) == (ALLOWED, '')
+    with pytest.raises(ValueError, match='lock_max_age_days is retired'):
+        refusal(tmp_path, lines=[_line('lane/x', 'a' * 40)])

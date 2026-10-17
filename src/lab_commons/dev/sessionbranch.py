@@ -22,8 +22,9 @@ The invariants refused here by name, with NO network call beyond the push itself
   (:func:`lab_commons.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
   Judged from ``[tool.lab_commons.integrator] merges_only_since`` forward: no retroactive check.
 
-Every ref is judged by the declaration its pushed tip carries (a deletion by ``HEAD``'s), never the working
-tree's. There is no bypass:
+Every ref is judged by the declaration its pushed tip carries, never the working tree's; a deletion carries
+no content, so it is judged by the integration branch's declaration (``origin/<integration>``, else the
+trunk's, else ``HEAD``'s) -- never the deleted tip's, nor a stale checkout's. There is no bypass:
 a guard that cannot judge (no branch set at that tip) refuses.
 """
 
@@ -145,22 +146,41 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
     return found
 
 
+def _deletion_rev(root: Path) -> str:
+    """The rev a deletion is judged by: ``origin/<integration>``, else ``origin/<trunk>``, else ``HEAD``.
+
+    The names come from ``HEAD``'s ``[tool.lab_commons.integrator]``, defaults when it cannot be read: a stale
+    checkout must not decide what deleting a ref means, and a deletion carries nothing of its own to read.
+    """
+    try:
+        policy = policy_at(root, 'HEAD')
+    except (ValueError, OSError, subprocess.CalledProcessError):
+        policy = Policy()
+    for name in (policy.integration, policy.trunk):
+        rev = f'refs/remotes/origin/{name}'
+        if _git(root, 'rev-parse', '-q', '--verify', f'{rev}^{{commit}}').returncode == 0:
+            return rev
+    return 'HEAD'
+
+
 def refusals(root: Path, lines: str) -> list[str]:
     """Every refusal for the push *lines* describe; local reads only.
 
-    Each ref is judged by the declaration its PUSHED tip carries (``HEAD``'s for a deletion, which pushes no
-    content; never the deleted ref's old tip, which may predate the table) -- never the working tree's.
+    Each ref is judged by the declaration its PUSHED tip carries -- never the working tree's. A deletion
+    pushes no content, so it is judged by the integration branch's (:func:`_deletion_rev`), never the deleted
+    ref's old tip, which may predate or outlive the table.
     """
     found: list[str] = []
     for fields in (line.split() for line in lines.splitlines()):
         if len(fields) != _FIELDS or not fields[2].startswith(_HEADS):
             continue
-        at = 'HEAD' if _zero(fields[1]) else fields[1]
+        at = _deletion_rev(root) if _zero(fields[1]) else fields[1]
+        label = at if _zero(fields[1]) else at[:12]
         try:
             declared = branchset_at(root, at)
             policy = policy_at(root, at)
         except (BranchSetNotDeclared, ValueError, subprocess.CalledProcessError) as exc:
-            found.append(f'{P2}: {at[:12]} declares no readable branch set, so {fields[2]} cannot be judged: {exc}')
+            found.append(f'{P2}: {label} declares no readable branch set, so {fields[2]} cannot be judged: {exc}')
             continue
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             found += _judge_ref(root, policy, fields)

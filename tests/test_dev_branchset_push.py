@@ -274,3 +274,18 @@ def test_a_kit_older_than_the_checkout_says_rebuild_the_venv_not_unreadable(tmp_
     assert 'readable branch set' not in text
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.branchset]\nsessions = []\n', encoding='utf-8')
     assert 'no readable branch set' in refusal(tmp_path)[1]
+
+
+def test_a_deletion_from_a_stale_checkout_passes_and_a_content_push_is_still_judged(tmp_path: Path) -> None:
+    """The 2026-10-17 defect: a checkout still declaring the RETIRED ``update`` key refused a deletion.
+
+    A deletion carries no content, so the checkout's declaration has nothing to judge. PLANTED CONTROL: the
+    same checkout's content push is still refused, naming the key as retired rather than unknown.
+    """
+    stale = '[tool.lab_commons.branchset]\ntrunk = "main"\nsessions = []\nupdate = "u/l"\n'
+    (tmp_path / 'pyproject.toml').write_text(stale, encoding='utf-8')
+    code, text = refusal(tmp_path, lines=[f'(delete) {_ZERO} refs/heads/work/foo {_HEAD}'])
+    assert code == ALLOWED, text
+    code, text = refusal(tmp_path, lines=[f'HEAD {_HEAD} refs/heads/work/foo {_ZERO}'])
+    assert code == COULD_NOT_JUDGE
+    assert 'update is retired' in text
