@@ -16,7 +16,7 @@ archive at or under ``threshold_mb`` goes to the forge, a larger one to ``backen
 reader side maps the same store to a local path in the MACHINE config (``[artefacts] folder``,
 :func:`reader`) -- a synced mirror of the remote, read, never written.
 
-CLOUD-DRIVE-SHAPED LAYOUT. ``<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.zst`` plus ``<run-id>.manifest.json``,
+CLOUD-DRIVE-SHAPED LAYOUT. ``<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.gz`` plus ``<run-id>.manifest.json``,
 ``run-id = <sha12>-<platform>-<account>-<utcstamp>``: one archive per run (a synced drive pays per FILE),
 short ASCII names checked against OneDrive's forbidden characters, trailing dot/space and its path limit
 (:func:`check_key`). WRITE-ONCE: an object is never rewritten -- a different object under an existing
@@ -41,16 +41,14 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import tarfile
 import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import IO, Any, Final, cast
+from typing import Any, Final
 
-import lab_commons.launch as _door
 from lab_commons.config import config_path, section
 from lab_commons.dev.artefactstores import (
     ARCHIVE,
@@ -138,32 +136,20 @@ def collect(tree: Path, outputs: Sequence[str]) -> list[Path]:
     return sorted(found)
 
 
-def pack(tree: Path, files: Sequence[Path], dest: Path, *, zstd: Sequence[str] = ('zstd',)) -> Path:
-    """One tar of *files* (named relative to *tree*), compressed by the ``zstd`` binary into *dest*."""
+def pack(tree: Path, files: Sequence[Path], dest: Path) -> Path:
+    """One gzip tar of *files* (named relative to *tree*) at *dest* -- stdlib only, so no host needs a tool."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with _door.popen([*zstd, '-q', '-f', '-o', str(dest)], stdin=subprocess.PIPE) as proc:
-        stdin = cast('IO[bytes]', proc.stdin)  # PIPE was asked for
-        with tarfile.open(fileobj=stdin, mode='w|') as tar:
-            for path in files:
-                tar.add(path, arcname=path.relative_to(tree).as_posix(), recursive=False)
-        stdin.close()
-    if proc.returncode != 0:
-        msg = f'zstd exited {proc.returncode} packing {dest.name}'
-        raise OSError(msg)
+    with tarfile.open(dest, mode='w:gz') as tar:
+        for path in files:
+            tar.add(path, arcname=path.relative_to(tree).as_posix(), recursive=False)
     return dest
 
 
-def unpack(archive: Path, dest: Path, *, zstd: Sequence[str] = ('zstd',)) -> Path:
+def unpack(archive: Path, dest: Path) -> Path:
     """The inverse of :func:`pack`: every member of *archive* under *dest* (a member leaving it is refused)."""
     dest.mkdir(parents=True, exist_ok=True)
-    with (
-        _door.popen([*zstd, '-q', '-d', '-c', str(archive)], stdout=subprocess.PIPE) as proc,
-        tarfile.open(fileobj=cast('IO[bytes]', proc.stdout), mode='r|') as tar,
-    ):
+    with tarfile.open(archive, mode='r:gz') as tar:
         tar.extractall(dest, filter='data')
-    if proc.returncode != 0:
-        msg = f'zstd exited {proc.returncode} unpacking {archive.name}'
-        raise OSError(msg)
     return dest
 
 

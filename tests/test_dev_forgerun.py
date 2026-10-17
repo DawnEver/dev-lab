@@ -7,10 +7,9 @@ clock; Slurm is a fake that counts submissions. A "crash" is a new tick reading 
 from __future__ import annotations
 
 import dataclasses
-import functools
 import io
 import json
-import sys
+import random
 import tarfile
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -423,18 +422,8 @@ def test_a_long_progress_is_cut_to_what_every_forge_stores() -> None:
     assert Claim.parse(long.description()) is not None
 
 
-_FAKE_ZSTD = (
-    'import shutil, sys\n'
-    "with open(sys.argv[sys.argv.index('-o') + 1], 'wb') as f:\n"
-    '    shutil.copyfileobj(sys.stdin.buffer, f)\n'
-)
-
-
 def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, _Slurm]:
     """A real record and work tree, a ``folder`` large store, and the archive just over its 1 MB threshold."""
-    zstd = home / 'zstd.py'
-    zstd.write_text(_FAKE_ZSTD, encoding='utf-8')
-    monkeypatch.setattr(forgeship, 'pack', functools.partial(artefacts.pack, zstd=(sys.executable, str(zstd))))
     monkeypatch.setattr(forgerun, 'read_record', records.read_record)
     monkeypatch.setattr(forgeship, 'forge_from_remote', lambda _root: SimpleNamespace(repo='r'))
     big, root = home / 'big', home / 'repo'
@@ -444,7 +433,7 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
     record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1'}, home / 'gathered')
     tree = record.parent / 'tree'
     (tree / 'fields').mkdir(parents=True)
-    (tree / 'fields' / 'b.h5').write_bytes(bytes(range(256)) * 8192)  # 2 MB: over the threshold
+    (tree / 'fields' / 'b.h5').write_bytes(random.Random(0).randbytes(2 << 20))  # noqa: S311 -- 2 MB incompressible
     (tree / 'undeclared.log').write_bytes(b'never uploaded')
     slurm = _Slurm(record)
     slurm.done = True

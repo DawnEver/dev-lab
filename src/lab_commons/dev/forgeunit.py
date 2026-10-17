@@ -3,7 +3,7 @@
 SHARED RESULTS (:class:`ForgeResults`, the :class:`~lab_commons.compute.store.SharedTier` of a
 :class:`~lab_commons.compute.store.ResultStore`). A result is one archive attached to the records home
 (:func:`lab_commons.dev.forgerecords.attach`, so the upload goes through the durable outbox and is idempotent by
-name), named ``unit-<unit hash>-<result hash>.tar.zst``: the name alone says which unit and which outputs, so
+name), named ``unit-<unit hash>-<result hash>.tar.gz``: the name alone says which unit and which outputs, so
 the FIRST attachment for a unit hash is its result, an identical later post is a no-op, and a differing one
 sounds the ``nondeterminism`` alarm (:mod:`lab_commons.dev.forgealarm`) and raises -- the first stands.
 
@@ -45,7 +45,7 @@ from lab_commons.dev.artefacts import load_config, pack, resolve, store_for, unp
 from lab_commons.dev.artefactstores import ARCHIVE, Ref, run_id
 from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from lab_commons.dev.forgepublish import publish
-from lab_commons.dev.forgerecords import attach, listing
+from lab_commons.dev.forgerecords import UNIT_RESULT, attach, listing
 from lab_commons.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgework import Client, client_for
@@ -54,7 +54,6 @@ from lab_commons.log import emit
 __all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'result_name', 'unit_request']
 
 _HASH: Final = r'[0-9a-f]{64}'
-_RESULT: Final = re.compile(rf'^unit-(?P<unit>{_HASH})-(?P<result>{_HASH}){re.escape(ARCHIVE)}$')
 #: The bundle's manifest, beside ``files/``.
 MANIFEST: Final = 'unit.json'
 
@@ -69,13 +68,14 @@ class ForgeResults:
     """The shared tier on *client*'s forge (the module docstring)."""
 
     client: Client
-    zstd: Sequence[str] = ('zstd',)
     alarm: Callable[[Alarm], object] = sound
 
     def _posted(self, unit_hash: str) -> list[tuple[str, str]]:
         """``(download url, result hash)`` of each result posted for *unit_hash*, first posted first."""
-        found = ((item, _RESULT.match(item.name)) for item in listing(self.client))
-        return [(item.url, m['result']) for item, m in found if m and m['unit'] == unit_hash]
+        found = ((item, UNIT_RESULT.match(item.name)) for item in listing(self.client))
+        return [
+            (item.url, m['result']) for item, m in found if m and m['unit'] == unit_hash and item.name.endswith(ARCHIVE)
+        ]
 
     def fetch(self, unit_hash: str, dest: Path) -> Path | None:
         """The first posted result, unpacked into *dest*; ``None`` when none is posted."""
@@ -85,7 +85,7 @@ class ForgeResults:
         with tempfile.TemporaryDirectory() as scratch:
             archive = Path(scratch) / 'result'
             archive.write_bytes(self.client.download(posted[0][0]))
-            return unpack(archive, dest, zstd=self.zstd)
+            return unpack(archive, dest)
 
     def post(self, result: Result) -> None:
         """Attach *result* unless its unit has one; a differing one already there alarms and raises."""
@@ -112,7 +112,6 @@ class ForgeResults:
                     result.path,
                     files,
                     Path(scratch) / result_name(record.unit_hash, record.result_hash),
-                    zstd=self.zstd,
                 ),
             )
 
@@ -207,7 +206,6 @@ def offering(
     client: Client,
     sha: str,
     *,
-    zstd: Sequence[str] = ('zstd',),
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Offer:
     """The ``offer`` of a :class:`~lab_commons.compute.execute.LocalExecutor`: bundle up, publish the Job at *sha*."""
@@ -223,9 +221,7 @@ def offering(
             (tree / MANIFEST).write_text(json.dumps(_manifest(unit), sort_keys=True), encoding='utf-8')
             for name, path in files.items():
                 (shutil.copytree if path.is_dir() else shutil.copyfile)(path, tree / 'files' / name)
-            bundle = pack(
-                tree, sorted(p for p in tree.rglob('*') if p.is_file()), Path(scratch) / 'b.tar.zst', zstd=zstd
-            )
+            bundle = pack(tree, sorted(p for p in tree.rglob('*') if p.is_file()), Path(scratch) / f'b{ARCHIVE}')
             store = store_for(load_config(root), client, client.forge.repo, size=bundle.stat().st_size)
             ref = store.put(run_id(sha, UNIT, unit_hash[:16], now()), bundle)
         vendor = () if env is not None else (unit.engine.name,)
@@ -242,7 +238,6 @@ def main(
     cwd: Path | None = None,
     client: Client | None = None,
     store: Path | None = None,
-    zstd: Sequence[str] = ('zstd',),
 ) -> int:
     """Run one offered unit here; exit 0 it has a result, 1 it failed, 2 the Job is refused (nothing ran)."""
     parser = argparse.ArgumentParser(prog=f'python -m {__name__}', description=__doc__.splitlines()[0])
@@ -258,13 +253,13 @@ def main(
         return 2
     with tempfile.TemporaryDirectory() as scratch:
         archive = resolve(job.bundle.manifest(), Path(scratch), client=built, repo=built.forge.repo)
-        unit, files = _unit_of(unpack(archive, Path(scratch) / 'bundle', zstd=zstd))
+        unit, files = _unit_of(unpack(archive, Path(scratch) / 'bundle'))
         if unit.unit_hash(files) != job.unit_hash:
             emit(f'[unit] refused: the bundle is not unit {job.unit_hash[:12]}', err=True)
             return 2
         here = environment_here(root) if unit.engine.environment else None
         executor = LocalExecutor(
-            ResultStore(units, ForgeResults(built, zstd)),
+            ResultStore(units, ForgeResults(built)),
             units / 'journal',
             present=presence_check(here, cached()),
         )

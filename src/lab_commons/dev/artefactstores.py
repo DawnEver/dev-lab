@@ -56,7 +56,7 @@ FORGE: Final = 'forge'
 RCLONE: Final = 'rclone'
 FOLDER: Final = 'folder'
 
-ARCHIVE: Final = '.tar.zst'
+ARCHIVE: Final = '.tar.gz'
 MANIFEST: Final = '.manifest.json'
 
 #: The forge's attachment limit: nothing larger is ever attached.
@@ -366,7 +366,7 @@ class ForgeStore:
         try:
             manifest = scratch / (ident + MANIFEST)
             manifest.write_text(json.dumps(new.manifest()), encoding='utf-8')
-            if new.key not in assets:  # an attachment is named by its file: the archive goes up as <run-id>.tar.zst
+            if new.key not in assets:  # an attachment is named by its file: the archive goes up as <run-id>.tar.gz
                 attach(self.client, Path(shutil.copyfile(path, scratch / new.key)))
             attach(self.client, manifest)
         finally:
