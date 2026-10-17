@@ -151,6 +151,11 @@ def _join(directory: str, name: str) -> str:
     return f'{directory}/{name}' if directory else name
 
 
+def _seeds(test: str) -> set[str]:
+    """*test* and every ``conftest.py`` / ``__init__.py`` candidate in its directory chain (module docstring)."""
+    return {test} | {_join(d, n) for d in _ancestors(test) for n in ('conftest.py', '__init__.py')}
+
+
 def _dotted(dotted: str, roots: Iterable[str]) -> set[str]:
     """Every candidate file of *dotted* and its prefixes under each of *roots*."""
     parts = [part for part in dotted.split('.') if part]
@@ -229,6 +234,9 @@ class Footprints:
     reads: Mapping[str, tuple[str, ...]]
     pyproject: str
     _parsed: dict[str, _Parsed] = field(default_factory=dict)
+    _taint: dict[tuple[str, ...], frozenset[str]] = field(default_factory=dict)
+    _graph: frozenset[str] | None = None
+    _top: frozenset[str] | None = None
 
     @classmethod
     def at(cls, root: Path, sha: str) -> Footprints:
@@ -248,7 +256,7 @@ class Footprints:
         """The footprint of test file *test* (module docstring)."""
         if not test.endswith('.py'):
             return Footprint(frozenset(), (EVERYTHING,))
-        seeds = {test} | {_join(d, n) for d in _ancestors(test) for n in ('conftest.py', '__init__.py')}
+        seeds = _seeds(test)
         paths, globs, todo, seen = set(seeds) | ALWAYS, list(self.everywhere), sorted(seeds), set()
         while todo:
             module = todo.pop()
@@ -259,16 +267,79 @@ class Footprints:
             paths |= parsed.candidates
             todo += sorted(parsed.candidates - seen)
             if parsed.by_path:
-                declared_reads = [g for key, value in self.reads.items() if fnmatchcase(module, key) for g in value]
+                declared_reads = self._declared_reads(module)
                 if not declared_reads:
                     return Footprint(frozenset(paths), (EVERYTHING,))
                 globs += declared_reads
         return Footprint(frozenset(paths), tuple(dict.fromkeys(globs)))
 
+    def reaches(self, test: str, changed: Iterable[str]) -> bool:
+        """``self.of(test).reaches_any(changed)``, judged by ONE pass over the import graph per *changed* set.
+
+        The tests of a repo share most of their closure, so :meth:`of` per test file is quadratic in it: on
+        5k test files it held a cluster serve tick for 33 min of pure CPU (Ada, 2026-10-17). Here a module is
+        TAINTED when its closure reaches *changed* -- by a candidate path it names, or a read by path that
+        is undeclared or matches -- and so is every importer of a tainted module, walked backwards once. A
+        test reaches *changed* by a seed or :data:`ALWAYS` path, an ``everywhere`` glob, or a tainted seed.
+        """
+        hit = tuple(sorted(set(changed)))
+        if not hit:
+            return False
+        seeds = _seeds(test)
+        if not test.endswith('.py') or not (seeds | ALWAYS).isdisjoint(hit):
+            return True
+        if any(fnmatchcase(path, glob) for path in hit for glob in self.everywhere):
+            return True
+        graph = self._closures()
+        if not {seed for seed in seeds if seed in self.texts} <= graph:  # not a test file this commit names
+            return self.of(test).reaches_any(hit)
+        return not self._tainted(hit).isdisjoint(seeds)
+
+    def _tainted(self, hit: tuple[str, ...]) -> frozenset[str]:
+        """The modules of :meth:`_closures` whose own closure reaches *hit* (memoized per changed set)."""
+        if hit not in self._taint:
+            changed, importers, tainted = frozenset(hit), {}, set()
+            for module in self._closures():
+                parsed = self._parse(module)
+                for imported in parsed.candidates & self.texts.keys():
+                    importers.setdefault(imported, []).append(module)
+                if not changed.isdisjoint(parsed.candidates) or (parsed.by_path and self._reads_reach(module, hit)):
+                    tainted.add(module)
+            todo = list(tainted)
+            while todo:
+                for importer in importers.get(todo.pop(), ()):
+                    if importer not in tainted:
+                        tainted.add(importer)
+                        todo.append(importer)
+            self._taint[hit] = frozenset(tainted)
+        return self._taint[hit]
+
+    def _reads_reach(self, module: str, hit: tuple[str, ...]) -> bool:
+        """Whether by-path *module* reaches *hit*: always when it declares no reads, else when one matches."""
+        declared_reads = self._declared_reads(module)
+        return not declared_reads or any(fnmatchcase(path, glob) for path in hit for glob in declared_reads)
+
+    def _declared_reads(self, module: str) -> list[str]:
+        return [glob for key, value in self.reads.items() if fnmatchcase(module, key) for glob in value]
+
+    def _closures(self) -> frozenset[str]:
+        """Every module in some test file's closure, each walked once: the union of :meth:`of`'s walks."""
+        if self._graph is None:
+            seen: set[str] = set()
+            todo = [seed for test in self.tests() for seed in _seeds(test) if seed in self.texts]
+            while todo:
+                module = todo.pop()
+                if module not in seen:
+                    seen.add(module)
+                    todo += [m for m in self._parse(module).candidates if m in self.texts and m not in seen]
+            self._graph = frozenset(seen)
+        return self._graph
+
     def _parse(self, module: str) -> _Parsed:
         if module not in self._parsed:
-            top = frozenset(path.split('/', 1)[0] for path in self.tracked)
-            self._parsed[module] = _parse(module, self.texts[module], top)
+            if self._top is None:  # once: it is every tracked path's top level
+                self._top = frozenset(path.split('/', 1)[0] for path in self.tracked)
+            self._parsed[module] = _parse(module, self.texts[module], self._top)
         return self._parsed[module]
 
 
