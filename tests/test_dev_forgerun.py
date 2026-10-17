@@ -22,7 +22,7 @@ import pytest
 from lab_commons.compute import learned
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import artefacts, forgecarry, forgerun, forgeship, forgeslurm
-from lab_commons.dev.forgealarm import LEASE, Alarm
+from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
@@ -30,9 +30,13 @@ from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Config
+from lab_commons.hpc.grants import SESSION_ENV, Grant, Machine, Session
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NoRoom
+from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_usage
 from lab_commons.hpc.tree import NotSubmitted
 
 SHA = 'c' * 40
@@ -600,3 +604,137 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
     )
     monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: dataclasses.replace(held, reasons=('Priority',)))
     assert cluster.gather(run) is None
+
+
+class _Unrecorded(_Slurm):
+    """Its jobs ended without writing a record: every gather says so."""
+
+    def gather(self, run: forgerun.Run) -> Path | None:
+        msg = f'the run of {run.sha[:12]} ended without a record in /out'
+        raise forgerun.Unrecorded(msg)
+
+
+def _submitted_run(home: Path, store: _Store, slurm: _Slurm) -> None:
+    _start(home, store)
+    assert _tick(store, slurm).phase == forgerun.SUBMITTED
+
+
+def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home: Path) -> None:
+    """Ada 2026-10-17: femm of 59ad34a6657d alarmed "ended without a record" every tick, forever.
+
+    The run settles: released with the reason on record, its file dropped, ONE alarm. PLANTED CONTROL: a
+    run still running is kept and raises nothing.
+    """
+    store, alarms = _Store(), []
+    _submitted_run(home, store, _Slurm(home / 'r'))
+    running = _Slurm(home / 'r')
+    running.recorded = ['4242']
+    assert _tick(store, running, alarms=alarms) is not None
+    assert alarms == []
+    ended = _Unrecorded(home / 'r')
+    ended.recorded = ['4242']
+    assert _tick(store, ended, alarms=alarms) is None
+    assert forgerun.live('https://f/o/r.git') == (), 'settled: the next tick has nothing to re-alarm'
+    assert [a.kind for a in alarms] == [RUN]
+    post = store.posts[-1]
+    assert post['status'] == 'error'
+    assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
+
+
+def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sha_is_the_tip(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-fix femm run read base's state as its own: phase ``submitted``, no state and no job of its part.
+
+    Still the ref's tip, it is released RETRYABLE -- any host claims it afresh. PLANTED CONTROL: the same
+    run once the ref moved on is settled as superseded, which no host claims again.
+    """
+    for tip, open_again in ((SHA, True), ('d' * 40, False)):
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+        _submitted_run(home, store, slurm)
+        slurm.recorded = []  # the part's state.json never existed: the ids were another part's
+        assert _tick(store, slurm, alarms=alarms) is None
+        assert forgerun.live('https://f/o/r.git') == ()
+        assert [a.kind for a in alarms] == [RUN]
+        post = store.posts[-1]
+        assert post['status'] == 'error'
+        released = Status(context=part_context('tests'), state='error', description=post['description'], url='')
+        state = assess([released], part_context('tests'), me=HERE, now=NOW)[0]
+        assert (state == OPEN) is open_again, post['description']
+        assert ('superseded' in post['description']) is not open_again
+
+
+def test_a_submitted_run_with_jobs_of_its_name_still_queued_is_kept(home: Path) -> None:
+    """PLANTED CONTROL: no state yet but squeue holds jobs of the run's name -- not "never submitted"."""
+    store, slurm = _Store(), _Slurm(home / 'r')
+    _submitted_run(home, store, slurm)
+    slurm.recorded, slurm.queue = [], ['4242']
+    assert _tick(store, slurm) is not None
+
+
+def test_an_unreachable_cluster_is_never_read_as_nothing_submitted(tmp_path: Path) -> None:
+    """``load_state`` raises :class:`Unreachable` (a RuntimeError) when no login host answered; that is not ``[]``."""
+
+    def down(_command: str, _stdin: object) -> str:
+        msg = 'no host answered'
+        raise Unreachable(msg)
+
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: down)
+    run: Any = SimpleNamespace(sha='a' * 40, platform='base')
+    with pytest.raises(Unreachable):
+        cluster.submitted(run)
+    empty = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: lambda *_a: '')
+    assert empty.submitted(run) == [], 'PLANTED CONTROL: a host that answered with no state is nothing submitted'
+
+
+def _built(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> forgeslurm.SlurmCluster:
+    grant = Grant('alice', ('login1',), 'acct')
+    monkeypatch.setattr(forgeslurm, 'load_grants', lambda: Machine(session=_session_from_env(), grants=(grant,)))
+    monkeypatch.setattr(forgeslurm, 'with_allocation', lambda machine, _read: machine)
+    monkeypatch.setattr(forgeslurm, 'submitter', lambda: lambda _grant: None)
+    return forgeslurm.slurm_cluster(tmp_path, ClusterAccount('ada', 'alice'))
+
+
+def _session_from_env() -> Session | None:
+    name = os.environ.get(SESSION_ENV, '')
+    return Session(name) if name else None
+
+
+def test_the_forge_serve_tags_its_own_submissions_without_a_session_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-17: cron sets no ``$LC_HPC_SESSION``, so every forge array was untagged and alarmed on.
+
+    The forge is a known stream and names itself. PLANTED CONTROL: an explicit ``$LC_HPC_SESSION`` still wins.
+    """
+    monkeypatch.delenv(SESSION_ENV, raising=False)
+    assert _built(monkeypatch, tmp_path).machine.comment == f'lc:session={FORGE_SESSION}'
+    monkeypatch.setenv(SESSION_ENV, 'campaign')
+    assert _built(monkeypatch, tmp_path).machine.comment == 'lc:session=campaign'
+
+
+def test_untagged_counts_only_jobs_that_are_not_the_forges_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Arrays the forge sbatched before it tagged itself bear its job names (``run-<sha12>[-<part>]``): not alarmed.
+
+    PLANTED CONTROL: another session's untagged job (``wdg-design``) is still counted, and a tagged one never is.
+    """
+    squeue = (
+        '1|1G|1|(null)|run-89f11a39d6fe\n'
+        '1|1G|1|(null)|run-89f11a39d6fe\n'
+        '1|1G|1|(null)|run-4ad64054bba3-base\n'
+        '1|1G|1|(null)|wdg-design\n'
+        '1|1G|1|lc:session=campaign|campaign-7\n'
+        '1|1G|1|(null)|run-notasha12xyz\n'
+    )
+    snapshot = dataclasses.replace(_snapshot_untagged(), usage=parse_usage(squeue))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: snapshot)
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
+    assert cluster.standing().facts['untagged'] == 2
+
+
+def _snapshot_untagged() -> Snapshot:
+    quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
+    return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)

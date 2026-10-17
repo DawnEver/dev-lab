@@ -29,20 +29,21 @@ from lab_commons.config import config_path
 from lab_commons.dev.diskusage import Usage, read_usage, storage_text
 from lab_commons.dev.forgecarry import carry_from, read_by
 from lab_commons.dev.forgerecords import read_named
-from lab_commons.dev.forgerun import Cluster, Run, Standing
+from lab_commons.dev.forgerun import Cluster, Run, Standing, Unrecorded
 from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from lab_commons.dev.forgework import ForgeCallFailed, client_for
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.allocation import RECORD, session_for
 from lab_commons.hpc.builds import builds_at
-from lab_commons.hpc.cluster import Runner, probe, submitter
+from lab_commons.hpc.cluster import Runner, Unreachable, probe, submitter
 from lab_commons.hpc.config import Config
-from lab_commons.hpc.grants import Grant, Machine, load_grants
+from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_outcomes, run_shas
 from lab_commons.hpc.run import NoRoom, job_name, load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
+from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
 
 __all__ = ['SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
@@ -78,6 +79,8 @@ class SlurmCluster:
         """The job ids of every round ``hpc`` recorded for *run*'s sha; ``[]`` when it recorded none."""
         try:
             state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
+        except Unreachable:  # no host answered: nothing is known, which is never "nothing submitted"
+            raise
         except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
             return []
         return [one['job_id'] for one in state['rounds']]
@@ -159,7 +162,7 @@ class SlurmCluster:
         records = sorted(output.glob(f'run-{run.sha}-{run.platform}-*.json.gz'), key=lambda path: path.stat().st_mtime)
         if not records:
             msg = f'the run of {run.sha[:12]} ended without a record in {output}; its lines above say why'
-            raise RuntimeError(msg)
+            raise Unrecorded(msg)
         return records[-1]
 
     def progress(self, run: Run) -> str:
@@ -191,7 +194,7 @@ class SlurmCluster:
             'qos': qos,
             'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
             'storage': storage_text(usage),
-            'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),
+            'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),  # hpc.slurm.stream_of
         }
         return Standing(supply, parse_usage(shell(USAGE_COMMAND, None)), facts)
 
@@ -222,6 +225,8 @@ def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
         msg = 'this box is not on a cluster (no sbatch); a cluster run advances only on its login node'
         raise ValueError(msg)
     machine = load_grants()
+    if machine.session is None:  # an explicit $LC_HPC_SESSION wins; else the forge names its own stream
+        machine = replace(machine, session=Session(FORGE_SESSION))
     grants = tuple(grant for grant in machine.grants if grant.user == seat.account)
     if not grants:
         msg = (

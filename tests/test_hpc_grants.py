@@ -1,7 +1,7 @@
 """``lab_commons.hpc`` grants, shared-account allocation and the remote run -- against the recorded cluster.
 
 Usage per session is never stored: it is read back from the ``--comment`` tag every job carries, so
-these tests feed the probe's ``@@@ shared`` section the way ``squeue -r -o "%C|%m|%D|%k"`` prints it.
+these tests feed the probe's ``@@@ shared`` section the way ``squeue -r -o "%C|%m|%D|%k|%j"`` prints it.
 """
 
 from __future__ import annotations
@@ -193,7 +193,7 @@ def test_the_usage_question_rides_the_one_probe_counts_every_pending_task_and_st
     assert probe_command() == PROBE_COMMAND
     command = probe_command('acct-free')
     assert command.startswith(PROBE_COMMAND)
-    assert 'squeue -h --me -r -t PENDING,RUNNING -A acct-free -o "%C|%m|%D|%k"' in command
+    assert 'squeue -h --me -r -t PENDING,RUNNING -A acct-free -o "%C|%m|%D|%k|%j"' in command
 
 
 def test_headroom_is_the_quota_less_every_job_held_with_no_share_carved_out() -> None:
