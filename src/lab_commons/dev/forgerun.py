@@ -24,6 +24,12 @@ resubmits: a ``claimed`` run whose jobs exist (by ``squeue`` job name) but whose
 written is an ORPHAN -- it raises an alarm and waits for a human to ``scancel`` it, because submitting
 again would double the run.
 
+A RUN NOTHING MORE WILL COME OF SETTLES, ONCE (:func:`_settle`). A ``submitted`` run whose part has no
+state and no job of its name never ran; one whose jobs ended without a record never will have one. Each
+is released with its reason on record and its file dropped -- one alarm, never one per tick (Ada,
+2026-10-17: two femm runs re-alarmed "ended without a record" every tick). A run that never ran is
+released RETRYABLE while its sha is its ref's tip, else settled as superseded.
+
 INTENT BEFORE ACTION (design D19). The run file says ``submitting`` -- fsynced -- BEFORE ``sbatch`` is
 called, so a crash between the submit and the run state ``hpc`` writes after it is never an orphan: jobs of
 the run's name found under a ``submitting`` run are THIS run's interrupted submit, by the journal's word.
@@ -72,6 +78,7 @@ from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgecarry import publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgeroute import pyproject_at, route
+from lab_commons.dev.forgeschedule import tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context
@@ -93,6 +100,7 @@ __all__ = [
     'ForeignSchema',
     'Run',
     'Standing',
+    'Unrecorded',
     'advance',
     'directory',
     'drop',
@@ -123,6 +131,10 @@ _DESCRIPTION_MAX: Final = 140
 
 class ForeignSchema(RuntimeError):
     """A live run file of another schema; the message names it and the remedy."""
+
+
+class Unrecorded(RuntimeError):
+    """A run's jobs ended and wrote no record: no later tick gets one, so the run SETTLES (:func:`_settle`)."""
 
 
 @dataclass(frozen=True)
@@ -308,15 +320,10 @@ def advance(
                 return run
             run = submitted
         if run.phase == SUBMITTED:
-            record = cluster.gather(run)
-            if record is None:
-                # hpc submits retry rounds inside a gather: re-read every round's job id each tick (Ada,
-                # 2026-10-12: the submit's r0 id was still shown while r2 ran).
-                run = _step(run, job_ids=tuple(cluster.submitted(run)) or run.job_ids)
-                say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
-                return _report(client, run, cluster.progress(run), lease, say)
-            run = _step(run, phase=GATHERED, record=str(record))
-            run = _report(client, run, 'publishing', lease, say)
+            gathered = _gather(root, run, client=client, lease=lease, cluster=cluster, say=say, alarm=alarm, tag=tag)
+            if gathered is None or gathered.phase == SUBMITTED:  # settled, or still running
+                return gathered
+            run = gathered
         if run.phase == GATHERED:
             # routed BEFORE the part is posted: an INCONCLUSIVE record is refused a part, yet each red it
             # reported is real (lab_commons.dev.forgeroute); re-routing an unchanged record writes nothing.
@@ -333,6 +340,66 @@ def advance(
     drop(run)
     say(f'{tag}: published and released')
     return None
+
+
+def _gather(
+    root: Path,
+    run: Run,
+    *,
+    client: Client,
+    lease: timedelta,
+    cluster: Cluster,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], None],
+    tag: str,
+) -> Run | None:
+    """A submitted run gathered (phase ``gathered``), still running (``submitted``), or ``None`` once settled."""
+    ids = tuple(cluster.submitted(run))
+    if not ids and not cluster.orphans(run):  # no state and no job of this part: it never ran
+        _settle(root, run, client=client, why='no job of this part was ever submitted', say=say, alarm=alarm, ran=False)
+        return None
+    try:
+        record = cluster.gather(run)
+    except Unrecorded as why:
+        _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
+        return None
+    if record is None:
+        # hpc submits retry rounds inside a gather: re-read every round's job id each tick (Ada,
+        # 2026-10-12: the submit's r0 id was still shown while r2 ran).
+        run = _step(run, job_ids=tuple(cluster.submitted(run)) or ids or run.job_ids)
+        say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
+        return _report(client, run, cluster.progress(run), lease, say)
+    run = _step(run, phase=GATHERED, record=str(record))
+    return _report(client, run, 'publishing', lease, say)
+
+
+def _settle(
+    root: Path,
+    run: Run,
+    *,
+    client: Client,
+    why: str,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], None],
+    ran: bool,
+) -> None:
+    """Release a run nothing more will come of, with the reason on record, and drop it: ONE alarm, never one per tick.
+
+    A run that RAN and wrote no record is inconclusive (a human reads its lines). One that never submitted
+    ran no test: it is released RETRYABLE while its sha is still its ref's tip (the candidate any host claims
+    again), else settled as superseded -- the newer tip is the candidate now.
+    """
+    if ran:
+        reason = f'{release_reason(ProducerExit.INCONCLUSIVE)}: ended without a record'
+    elif tip_of(root, run.ref) == run.sha:
+        reason = f'{RETRYABLE} -- never submitted; claimable again'
+    else:
+        reason = f'released: superseded -- never submitted, and {run.ref} moved on'
+    reason = reason[:_DESCRIPTION_MAX]
+    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', f'{why}; {reason}'))
+    say(f'[{run.platform}] {run.sha[:12]}: {why} -- {reason}')
+    _release(client, run, reason, say)
+    drop(run)
 
 
 def _submit(
