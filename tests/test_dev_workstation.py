@@ -23,6 +23,7 @@ from lab_commons.dev import hostrefresh, servetask, workstation
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.servelock import held
 from lab_commons.dev.venvpath import venv_interpreter
+from lab_commons.hpc.deploy_spec import host_serve_argv
 
 FORGE: Final = 'https://forge.example/team'
 REPOS: Final = 'lab-commons,alpha,beta'
@@ -290,7 +291,7 @@ def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst
     assert worst == 1
     assert [cwd.name for _, cwd in ran] == ['lab-commons', 'alpha', 'beta']
     argv, cwd = ran[0]
-    assert argv == [str(box.root / 'lab-commons' / VENV), '-m', 'lab_commons.dev.forge', 'serve']
+    assert argv == host_serve_argv(), 'the HOST kit serves every repo; a repo venv only runs its producers'
     assert cwd == box.root / 'lab-commons'
 
 
@@ -400,3 +401,18 @@ def test_the_bootstrap_passes_the_real_door_from_an_unrelated_cwd(
     programs = workstation.Programs(bootstrap=(sys.executable, str(door)))
     step = workstation.Step(workstation.Tools(git=('git',)), dry=False)
     assert hostrefresh.sync_venv(step, programs.bootstrap, checkout) == 0
+
+
+def test_a_repo_venv_whose_kit_would_exit_2_no_longer_matters_to_serving(box: Box, tmp_path: Path) -> None:
+    """PLANTED CONTROL: every repo venv's kit exits 2, and serving is untouched -- the HOST kit is the scheduler.
+
+    Two repos on one host served by their own venvs ran two different schedulers, and a fix to the host's kit
+    never reached the parts it ran (a repo venv held an older non-editable kit).
+    """
+    _serving(box)
+
+    def run(argv: list[str], **_kw: object) -> _Done:
+        stale = Path(argv[0]).is_relative_to(box.root)  # any repo's own venv interpreter
+        return _Done(2 if stale else 0)
+
+    assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
