@@ -95,6 +95,11 @@ output = "output/logs"
 resources = ["dev_checkout", "node"]
 produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 
+# The tool versions this repo's parts run against (D21): a tool is present on a host only when it is found
+# at THIS version and its smoke passes. One line per tool the resources above name.
+[tool.lab_commons.tools]
+node = "24.4.1"
+
 # The family branch flow: integrate/main coordinates; main moves only by `integrate promote` (fast-forward)
 # once every derived tests/<part> of an integration commit stands PASS at scope full.
 [tool.lab_commons.integrator]
