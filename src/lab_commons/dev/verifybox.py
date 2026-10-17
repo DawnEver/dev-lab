@@ -8,7 +8,8 @@ worst selected file's peak from the forge-derived learned table, an unmeasured f
 and :data:`SELECTION_WALL_S`, and
 :func:`boxed` spells its pytest argv through :func:`lab_commons.box.command`, so the box admits it
 within the caller's queue ceiling and kills it past its claim. A tree the box already holds (its
-``INSIDE_ENV``, e.g. a producer serve spawned) is NOT boxed again: it is already held to its claim.
+``INSIDE_ENV``, e.g. a producer serve spawned) is NOT boxed again: it is already held to its claim, and runs
+the workers that claim declared (:func:`claimed_width` of the box's ``CPU_ENV``).
 
 :func:`ended_in_the_box` reads the box's RECORD back (``--outcome``, never the exit code, which is pytest's own):
 a refusal means nothing ran (raised, so the door reports INCONCLUSIVE naming the holder), a kill means the
@@ -25,7 +26,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import GB, INSIDE_ENV, Capacity, Demand, Outcome, Refused, command, read_ended
+from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Outcome, Refused, command, read_ended
 from lab_commons.compute import learned
 from lab_commons.dev.forgedemand import refresh_checkout
 from lab_commons.dev.platformparts import origin_url
@@ -37,6 +38,7 @@ __all__ = [
     'SELECTION_WALL_S',
     'WAIT_S',
     'boxed',
+    'claimed_width',
     'ended_in_the_box',
     'learn_ended',
     'selection_demand',
@@ -147,6 +149,17 @@ def learn_ended(root: Path, argv: Sequence[str], record: Path | None) -> None:
     learned.record_run(_repo(root), producer, (), run, killed=ended.reason == 'memory')
 
 
+def claimed_width(argv: Sequence[str], cpu: str | None, *, xdist: bool) -> list[str]:
+    """The ``-n`` a pytest INSIDE a claim appends so it runs the *cpu* cores the claim declared (declared == used).
+
+    Appended last, it wins over a configured width -- a repository's ``-n auto`` is the whole box, not the claim.
+    Nothing without xdist, for a serial ``-p no:xdist``, or for a claim that names no cores.
+    """
+    if not xdist or cpu is None or _explicit_width(argv) == '0':
+        return []
+    return ['-n', cpu]
+
+
 def selection_demand(workers: int, mem_gb: float) -> Demand:
     """A selection's box claim: one core per worker (one when serial), its measured memory, its wall."""
     return Demand(cpu=max(1, workers), mem_gb=mem_gb, wall_s=SELECTION_WALL_S, seats={})
@@ -159,7 +172,7 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     is *outcome* when the box runs it, ``None`` for a tree the box already holds (not reboxed).
     """
     if INSIDE_ENV in os.environ:
-        return argv, None
+        return [*argv, *claimed_width(argv, os.environ.get(CPU_ENV), xdist=xdist_installed())], None
     size = Capacity.read()
     workers, width = selection_workers(argv, size, xdist=xdist_installed())
     refresh_checkout(root)

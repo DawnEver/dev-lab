@@ -13,7 +13,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.box import BOX_ENV, INSIDE_ENV
+from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 
 
@@ -22,6 +22,7 @@ def _a_box_of_its_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(BOX_ENV, str(tmp_path / 'lab-commons-box' / 'box.sqlite'))
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'lab-commons-machine' / 'config.toml'))
     monkeypatch.delenv(INSIDE_ENV, raising=False)  # the verify running these tests is boxed; a test is not
+    monkeypatch.delenv(CPU_ENV, raising=False)
 
 
 #: Git and Git Credential Manager never ask a person: a fake forge host once popped a GCM dialog on a
