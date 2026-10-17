@@ -46,12 +46,15 @@ def behind(root: Path, sha: str, base: str) -> int | None:
 
 def refusal(root: Path, *, lines: Iterable[str] = (), policy: Policy | None = None) -> tuple[int, str]:
     """The verdict for one push: ``(ALLOWED, '')``, ``(REFUSED, why)`` or ``(COULD_NOT_JUDGE, why)``."""
+    refs = [r for r in pushed_refs(lines) if not r.deleted and r.branch is not None]
+    if not refs:
+        return ALLOWED, ''  # a deletion carries no content: nothing is behind, and no declaration need be read
     policy = load_policy(root) if policy is None else policy
     base = f'refs/remotes/origin/{policy.integration}'
     exempt = {policy.integration, policy.trunk}
     if behind(root, base, base) is None:  # no integration branch here: nothing to be behind
         return ALLOWED, ''
-    judged = [r for r in pushed_refs(lines) if not r.deleted and r.branch is not None and r.branch not in exempt]
+    judged = [r for r in refs if r.branch not in exempt]
     over: list[str] = []
     for ref in judged:
         count = behind(root, ref.local_sha, base)

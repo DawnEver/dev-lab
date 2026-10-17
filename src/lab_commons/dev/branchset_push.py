@@ -32,7 +32,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, KitOlderThanCheckout, declared_branchset
+from lab_commons.dev.branchset import (
+    BranchSet,
+    BranchSetKeyRetired,
+    BranchSetNotDeclared,
+    KitOlderThanCheckout,
+    declared_branchset,
+)
 from lab_commons.log import emit
 
 __all__ = [
@@ -145,6 +151,9 @@ def refusal(
         ``(ALLOWED, '')``, ``(REFUSED, <the refusal>)``, or ``(COULD_NOT_JUDGE, <why>)``.
 
     """
+    refs = pushed_refs(lines)
+    if refs and all(ref.deleted or ref.branch is None for ref in refs):
+        return ALLOWED, ''  # a deletion carries no content, so the checkout's declaration has nothing to judge
     try:
         declared = declared_branchset(root) if branchset is None else branchset
     except KitOlderThanCheckout as exc:
@@ -152,6 +161,12 @@ def refusal(
             f'[branchset-push] REFUSED -- {exc}.\n'
             '[branchset-push]   REMEDY: rebuild this venv from the lock of the checkout, then push again; the '
             'declaration is not the problem.\n'
+        )
+    except BranchSetKeyRetired as exc:
+        return COULD_NOT_JUDGE, (
+            f'[branchset-push] REFUSED -- {exc}.\n'
+            f'[branchset-push]   REMEDY: delete the retired key(s) from {root / "pyproject.toml"} (merge the '
+            'integration branch, which already has), then push again.\n'
         )
     except BranchSetNotDeclared as exc:
         return COULD_NOT_JUDGE, (
@@ -163,7 +178,7 @@ def refusal(
             f'guard, and passing here would rebuild -- one layer down -- exactly the defect this hook '
             f'was written for.\n'
         )
-    rows = undeclared(pushed_refs(lines), declared)
+    rows = undeclared(refs, declared)
     return (REFUSED, _refusal(rows, declared)) if rows else (ALLOWED, '')
 
 

@@ -42,6 +42,7 @@ from lab_commons.log import emit
 __all__ = [
     'ARCHIVE_PREFIX',
     'BranchSet',
+    'BranchSetKeyRetired',
     'BranchSetNotDeclared',
     'Candidate',
     'Census',
@@ -66,6 +67,10 @@ ARCHIVE_PREFIX = 'archive/'
 
 class BranchSetNotDeclared(ValueError):
     """The repo declares no branch set, or declares one that is not a trunk plus a list of names."""
+
+
+class BranchSetKeyRetired(BranchSetNotDeclared):
+    """The checkout declares a RETIRED key: named with its replacement (RETIRED-NAMES-REGISTERED), never "unknown"."""
 
 
 class KitOlderThanCheckout(BranchSetNotDeclared):
@@ -158,7 +163,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
         f'{key} is retired: {RETIRED[f"branchset.{key}"]}' for key in table if f'branchset.{key}' in RETIRED
     ]:
         msg = f'{_TABLE} in {manifest}: ' + '; '.join(retired)
-        raise BranchSetNotDeclared(msg)
+        raise BranchSetKeyRetired(msg)
     unknown = sorted(set(table) - _KEYS)
     if unknown:
         msg = (

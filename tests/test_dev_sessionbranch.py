@@ -153,6 +153,31 @@ def test_a_deletion_reads_the_branch_set_from_head_never_the_deleted_tip(repo: P
     assert _remote(repo, 'feat/s')
 
 
+def test_a_deletion_is_judged_by_the_integration_branch_never_a_stale_checkout(repo: Path) -> None:
+    """The 2026-10-17 defect: a checkout whose manifest still declares a RETIRED key cannot judge a deletion.
+
+    A deletion carries no content, so ``origin/<integration>``'s declaration judges it. PLANTED controls: the
+    same stale checkout still cannot delete a session branch, and a CONTENT push of the stale tip is judged by
+    that tip -- refused, naming the retired key.
+    """
+    _git(repo, 'checkout', '-b', 'old/x')
+    stale = _DECL.replace("sessions = ['int/line', 'feat/s']", "sessions = ['int/line', 'feat/s']\nupdate = 'u/l'")
+    (repo / 'pyproject.toml').write_text(stale, encoding='utf-8')
+    _git(repo, 'commit', '-am', 'chore: a manifest from before the retirement')
+    _git(repo.parent / 'origin.git', 'fetch', str(repo), 'old/x:refs/heads/old/x')
+    done = _push(repo, '--delete', 'old/x')
+    assert done.returncode == 0, done.stderr
+    assert not _remote(repo, 'old/x')
+    refused = _push(repo, '--delete', 'feat/s')
+    assert P3 in refused.stderr
+    assert _remote(repo, 'feat/s')
+    _git(repo, 'branch', '-f', 'feat/s', 'HEAD')
+    content = _push(repo, 'feat/s')
+    assert content.returncode != 0
+    assert 'update is retired' in content.stderr
+    assert _remote(repo, 'feat/s') != _git(repo, 'rev-parse', 'HEAD')
+
+
 # --- P4 INTEGRATION-IS-MERGES-ONLY ------------------------------------------------------------------
 
 
