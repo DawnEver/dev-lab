@@ -9,7 +9,7 @@ created: 2026-10-17
   integrate/main at once, ezxmb14 another -- filling account memory so the newest tip was never admitted.
 - Ruling (D6 of motronics-studio DECISION-distributed-compute-final-architecture): never cancel a running
   part; newer pushes queue and the next tip is tested as one batch (per-test carry makes it cheap).
-- Where: `forgeschedule.behind` is the one rule; `forgetake.ClaimPass._blocked` (claim) and
+- Where: `forgecoalesce.behind` is the one rule (moved out of `forgeschedule`, which crossed the 300-line module band); `forgetake.ClaimPass._blocked` (claim) and
   `forgequeue.forge_queue` (display) both call it. `Schedule.coalesce` (default `integration`, `feature`)
   is the declared data; `branch` (lane/*) and `pr` heads are tested at every pushed sha.
 - How in-flight is found with no new state: the claims already on the forge, read on the ref's EARLIER

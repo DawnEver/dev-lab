@@ -34,13 +34,13 @@ from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
+from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgehosts import HostCard, read_cards
 from lab_commons.dev.forgeprovides import present, unserved
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, request_context
 from lab_commons.dev.forgeschedule import (
     NO_HOST,
     NOT_ADMITTED,
-    behind,
     candidates,
     host_weights,
     load_schedule,

@@ -47,7 +47,8 @@ from lab_commons.dev.forgeclaim import (
     serving,
     this_machine,
 )
-from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, WAITING_BEHIND, behind, candidates, load_schedule
+from lab_commons.dev.forgecoalesce import WAITING_BEHIND, behind
+from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
