@@ -131,8 +131,8 @@ def test_a_blocked_candidate_past_its_class_bound_is_starved() -> None:
 
 
 def test_usage_is_core_hours_per_run_job() -> None:
-    sacct = 'run-abcdef123456|7200\nrun-abcdef123456|3600\nother|99999\nrun-ffffffffffff|\n'
-    assert parse_usage(sacct) == {'abcdef123456': 3.0}
+    sacct = 'run-abcdef123456-base|7200\nrun-abcdef123456-femm|3600\nother|99999\nrun-ffffffffffff-base|\n'
+    assert parse_usage(sacct) == {'abcdef123456': 3.0}, "every part of a sha is that sha's use"
 
 
 def test_a_priority_candidate_ranks_first_over_a_higher_score() -> None:

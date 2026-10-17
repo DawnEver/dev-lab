@@ -142,16 +142,26 @@ def _entries(directory: Path) -> list[Path]:
 
 
 def runs(ci: Path) -> list[tuple[Path, dict[str, Any], datetime]]:
-    """Every ``runs/<sha>`` with its state and the state's mtime; an unreadable state reads as ``{}``."""
+    """Every ``runs/<sha>`` with the state of its least finished part and its newest mtime.
+
+    Each part of a sha keeps its own ``runs/<sha>/<part>/state.json``; the sha is unrecorded while ANY part
+    is. An unreadable state reads as ``{}`` (unrecorded) at the directory's mtime.
+    """
     out = []
     for run in _entries(ci / 'runs'):
-        state = run / 'state.json'
-        try:
-            data = json.loads(state.read_text(encoding='utf-8'))
-            when = datetime.fromtimestamp(state.stat().st_mtime, UTC)
-        except (OSError, ValueError):
-            data, when = {}, datetime.fromtimestamp(run.lstat().st_mtime, UTC)
-        out.append((run, data if isinstance(data, dict) else {}, when))
+        read: list[tuple[dict[str, Any], datetime]] = []
+        for state in sorted(run.glob('*/state.json')):
+            try:
+                data = json.loads(state.read_text(encoding='utf-8'))
+                read.append(
+                    (data if isinstance(data, dict) else {}, datetime.fromtimestamp(state.stat().st_mtime, UTC))
+                )
+            except (OSError, ValueError):
+                read.append(({}, datetime.fromtimestamp(run.lstat().st_mtime, UTC)))
+        if not read:
+            read = [({}, datetime.fromtimestamp(run.lstat().st_mtime, UTC))]
+        data = min(read, key=lambda one: ('record' in one[0], -one[1].timestamp()))[0]
+        out.append((run, data, max(when for _, when in read)))
     return out
 
 

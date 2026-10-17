@@ -37,7 +37,7 @@ from lab_commons.hpc.grants import Grant, Machine, load_grants, workstation
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_outcomes, run_shas
-from lab_commons.hpc.run import NoRoom, load_state, submit_run
+from lab_commons.hpc.run import NoRoom, job_name, load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.watch import PENDING, settle
 
@@ -73,19 +73,19 @@ class SlurmCluster:
     def submitted(self, run: Run) -> list[str]:
         """The job ids of every round ``hpc`` recorded for *run*'s sha; ``[]`` when it recorded none."""
         try:
-            state, _ = load_state(run.sha, self.machine, self._runners())
+            state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
         except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
             return []
         return [one['job_id'] for one in state['rounds']]
 
     def orphans(self, run: Run) -> list[str]:
-        """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>``), one id per array.
+        """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>-<part>``), one id per array.
 
         ``%F`` is the array's own job id: ``%i`` spells a pending array as ``7683032_[12-68%1]``, which
         ``scancel`` refuses, and that refusal crashed every tick of a host holding one (Ada, 2026-10-14).
         """
         shell = self.connect(self.machine.grants[0])
-        return sorted(set(shell(f'squeue -h --me -n run-{run.sha[:12]} -o %F', None).split()))
+        return sorted(set(shell(f'squeue -h --me -n {job_name(run.sha, run.platform)} -o %F', None).split()))
 
     def submit(self, run: Run) -> list[str]:
         """Fetch, build, collect, plan and submit round 0 (:func:`lab_commons.hpc.run.submit_run`)."""
@@ -120,9 +120,9 @@ class SlurmCluster:
         """
         runners = self._runners()
         held = {}
-        shas = run_shas(self.machine, runners)
+        shas = run_shas(self.machine, runners, part)
         for ancestor in read_by(self.root, sha, shas):
-            state, shell = load_state(ancestor, self.machine, runners)
+            state, shell = load_state(ancestor, part, self.machine, runners)
             if state.get('env') == env and state.get('platform') == part:
                 held[ancestor] = held_outcomes(state, shell)
         return carry_from(self.root, sha, held)
@@ -139,11 +139,11 @@ class SlurmCluster:
         admitting the part at the old size, its jobs are cancelled, and :class:`NoRoom` releases the claim RETRYABLE.
         """
         output = Path(run.output)
-        if settle([run.sha], self.machine, self.connect, self.config, output, sleep=None) == PENDING:
+        if settle([run.sha], self.machine, self.connect, self.config, output, part=run.platform, sleep=None) == PENDING:
             policy = self.config.policy
-            why = held_by_a_limit(where(run.sha, self.machine, self.connect, policy=policy), policy)
+            why = held_by_a_limit(where(run.sha, run.platform, self.machine, self.connect, policy=policy), policy)
             if why:
-                state, _ = load_state(run.sha, self.machine, self._runners())
+                state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
                 ask_gb = state['rounds'][-1]['mem_mb'] / 1024
                 learned.record_ask(run.repo_url, learned.SLURM, needs_of(run.platform), ask_gb, safety=policy.safety)
                 self.cancel(run)
@@ -157,7 +157,7 @@ class SlurmCluster:
 
     def progress(self, run: Run) -> str:
         """Where the run's current job is, from the cluster's run state and one ``squeue``."""
-        return progress_text(where(run.sha, self.machine, self.connect, policy=self.config.policy))
+        return progress_text(where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy))
 
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""

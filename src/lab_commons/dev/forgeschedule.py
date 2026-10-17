@@ -181,12 +181,13 @@ def tip_of(root: Path, ref: str) -> str:
 
 
 def parse_usage(sacct: str) -> dict[str, float]:
-    """``sacct -n -P -o JobName,CPUTimeRAW`` lines into core-hours per run job name's sha12 (``run-<sha12>``)."""
+    """``sacct -n -P -o JobName,CPUTimeRAW`` lines into core-hours per run job name's sha12 (``run-<sha12>-<part>``)."""
     used: dict[str, float] = {}
     for line in sacct.splitlines():
         name, _, seconds = line.partition('|')
         if name.startswith('run-') and seconds.strip().isdigit():
-            used[name[4:]] = used.get(name[4:], 0.0) + int(seconds) / 3600
+            sha12 = name[4:16]
+            used[sha12] = used.get(sha12, 0.0) + int(seconds) / 3600
     return used
 
 

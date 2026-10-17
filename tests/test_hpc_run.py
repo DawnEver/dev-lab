@@ -48,7 +48,7 @@ from lab_commons.hpc.records import (
     stream_sources,
     write_record,
 )
-from lab_commons.hpc.run import RETRIES, NoRoom, build_run, gather_run, submit_run
+from lab_commons.hpc.run import RETRIES, NoRoom, build_run, gather_run, load_state, submit_run
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
@@ -411,7 +411,8 @@ class FakeRunCluster:
         self.held = held  # the account's OTHER running jobs, ``squeue`` lines of the probe's ``running`` section
         self.build_fails, self.lacking, self.active = build_fails, lacking, active
         self.env, self.collected = env, collected
-        self.state = ''
+        self.state = ''  # the state last written
+        self.states: dict[str, str] = {}  # every state written, by its path
         self.queue = ''
         self.calls: list[tuple[str, str | None]] = []
         self.manifests: list[dict] = []
@@ -420,14 +421,14 @@ class FakeRunCluster:
     def __call__(self, command: str, stdin: str | None = None) -> str:  # noqa: C901, PLR0911, PLR0912 -- one answer per verb
         self.calls.append((command, stdin))
         if command.endswith('state.json') and 'cat >' in command:
-            self.state = stdin or ''
+            self.state = self.states[command.rsplit('cat > ', maxsplit=1)[-1]] = stdin or ''
             return ''
         if 'squeue -h -r -j' in command:
             if isinstance(self.queue, Exception):
                 raise self.queue
             return self.queue
         if 'state.json' in command:
-            return self.state
+            return self.states.get(command.split()[1], '')
         if command.startswith('for c in'):
             return ''.join(f'@@@ missing {c}\n' for c in self.lacking)
         if command.startswith('echo "@@@ nodes"'):
@@ -504,7 +505,7 @@ def _submit(fake: FakeRunCluster, **kw: object) -> str:
 
 
 def _gather(fake: FakeRunCluster) -> dict | None:
-    return gather_run(SHA, MACHINE, lambda _g: fake, cost=COST, policy=POLICY)
+    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, cost=COST, policy=POLICY)
 
 
 def _run(fake: FakeRunCluster, **kw: object) -> dict:
@@ -685,7 +686,7 @@ def test_a_gather_through_an_outage_raises_unreachable_and_loses_nothing() -> No
         raise Unreachable(msg)
 
     with pytest.raises(Unreachable, match='keep running'):
-        gather_run(SHA, MACHINE, lambda _g: down, cost=COST, policy=POLICY)
+        gather_run(SHA, BASE, MACHINE, lambda _g: down, cost=COST, policy=POLICY)
     assert _gather(fake) is not None
 
 
@@ -727,7 +728,7 @@ def test_every_round_runs_as_the_user_whose_home_holds_the_built_tree() -> None:
     submit_run(spec, machine, lambda g: connect[g.account], cost=COST, policy=POLICY, stamp='t0')
     builder = mine if any('@@@ facts' in c for c, _ in mine.calls) else theirs
     for _ in range(2 + RETRIES):
-        if gather_run(SHA, machine, lambda g: connect[g.account], cost=COST, policy=POLICY) is not None:
+        if gather_run(SHA, BASE, machine, lambda g: connect[g.account], cost=COST, policy=POLICY) is not None:
             break
     bystander = theirs if builder is mine else mine
     assert builder.manifests, 'the rounds ran where the tree was built'
@@ -1026,17 +1027,17 @@ def test_where_counts_queued_running_and_done_then_finished() -> None:
     _submit(fake)
     fake.queue = _queue(5, 'shortq,defq', pending=0, running=0)
     shards = json.loads(fake.state)['current']['shards']
-    progress = where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
+    progress = where(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY)
     assert (progress.pending, progress.running, progress.done, progress.stall) == (0, 0, shards, '')
     assert _gather(fake) is not None
-    assert where(SHA, MACHINE, lambda _g: fake, policy=POLICY).finished
+    assert where(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY).finished
 
 
 def test_a_pend_past_the_threshold_beside_an_unnamed_idle_partition_names_the_requeue() -> None:
     fake = FakeRunCluster()
     _submit(fake)
     fake.queue = _queue(45, 'shortq')
-    progress = where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
+    progress = where(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY)
     assert progress.pending == 3
     assert f'scontrol update JobId={progress.job_id} Partition=shortq,defq' in progress.stall
     assert 'defq on' in progress.stall
@@ -1046,7 +1047,7 @@ def test_a_stall_on_every_declared_partition_quotes_slurms_reason_not_capacity()
     fake = FakeRunCluster()
     _submit(fake)
     fake.queue = _queue(45, 'shortq,defq')
-    stall = where(SHA, MACHINE, lambda _g: fake, policy=POLICY).stall
+    stall = where(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY).stall
     assert 'already names every declared partition' in stall
     assert 'Priority' in stall
     assert 'scontrol' not in stall
@@ -1057,7 +1058,7 @@ def test_a_pend_under_the_threshold_is_no_stall() -> None:
     fake = FakeRunCluster()
     _submit(fake)
     fake.queue = _queue(10, 'shortq')
-    assert where(SHA, MACHINE, lambda _g: fake, policy=POLICY).stall == ''
+    assert where(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY).stall == ''
 
 
 # -- gather and gather --wait share one path, on this login node's shell ---------------------------------
@@ -1116,7 +1117,7 @@ def test_any_other_squeue_failure_still_raises() -> None:
     _submit(fake)
     fake.queue = RuntimeError('ssh exited 1: slurm_load_jobs error: Unable to contact slurm controller')
     with pytest.raises(RuntimeError, match='Unable to contact'):
-        where(SHA, MACHINE, lambda _g: fake, policy=POLICY)
+        where(SHA, BASE, MACHINE, lambda _g: fake, policy=POLICY)
 
 
 def test_a_red_record_makes_gather_exit_nonzero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1348,6 +1349,23 @@ def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> No
     assert part_of(state['record']).ran == 0
 
 
+def test_two_parts_of_one_sha_are_two_runs_with_two_states_and_two_job_names() -> None:
+    """Two parts of one sha never share a run state or a job name.
+
+    Measured on Ada 2026-10-17: the femm part of a sha whose base part ran there found BASE's state at
+    ``~/ci/runs/<sha>``, took it as its own submission, settled it into a base record and never ran a job.
+    """
+    fake = FakeRunCluster()
+    _submit(fake)
+    with pytest.raises(RuntimeError, match='no run'):
+        load_state(SHA, 'femm', MACHINE, {GRANT.account: fake})
+    state, _ = load_state(SHA, BASE, MACHINE, {GRANT.account: fake})
+    assert state['platform'] == BASE
+    assert any(f'--job-name=run-{SHA[:12]}-{BASE}' in s for s in fake.scripts), (
+        'the job name names its part, so another part of the sha never reads it as an orphan'
+    )
+
+
 def test_a_superseded_run_holds_its_folded_rounds_and_every_id_its_last_round_streamed() -> None:
     fake = FakeRunCluster(dies=frozenset({'tests/b.py'}), kills=5)
     state = _submit(fake)
@@ -1358,4 +1376,4 @@ def test_a_superseded_run_holds_its_folded_rounds_and_every_id_its_last_round_st
         'tests/b.py::t3': ('passed', SHA),
     }, 'the killed item kept what it streamed; the handed id is not an outcome'
     assert state['sha'] == SHA
-    assert run_shas(MACHINE, {GRANT.account: lambda _c, _s: f'/h/ci/runs/{SHA}/state.json\n'}) == [SHA]
+    assert run_shas(MACHINE, {GRANT.account: lambda _c, _s: f'/h/ci/runs/{SHA}/{BASE}/state.json\n'}, BASE) == [SHA]

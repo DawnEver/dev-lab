@@ -81,7 +81,7 @@ without `sbatch`.
 
 1. `python -m lab_commons.hpc run submit --sha <40-hex> --scope full|incremental --repo-url <https> [--only ids.txt] [--collect "<paths>"] [--select "<marker expr>"] [--part <need-set>] [--python 3.13]`
    checks the login node's prerequisites, fetches, builds, collects, plans and submits round 0, writes
-   `~/ci/runs/<sha>/state.json` and returns in minutes. `--part` (default `base`) is the need-set it runs; every
+   `~/ci/runs/<sha>/<part>/state.json` and returns in minutes. `--part` (default `base`) is the need-set it runs; every
    other collected id is handed to its own part. `incremental` needs `--only`; `full` refuses it.
 2. `python -m lab_commons.hpc run gather --sha <40-hex> -o <dir> [--wait]`: still running, it prints where the
    run is and exits 3; a finished round is folded and its unfinished ids re-submitted as the next round; once
@@ -191,5 +191,5 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 
 ## Debugging by hand
 
-A human with VPN access may ssh to the login node and read `squeue --me`, `~/ci/runs/<sha>/state.json`, the
+A human with VPN access may ssh to the login node and read `squeue --me`, `~/ci/runs/<sha>/<part>/state.json`, the
 `forge-runs/` state files and `~/.cache/lab-forge-<repo>.log`. No tool path does this.

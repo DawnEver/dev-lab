@@ -23,6 +23,7 @@ from lab_commons.dev.retentionplan import (
     in_flight,
     load_policy,
     occupied_trees,
+    runs,
     workstation_plan,
 )
 from lab_commons.hpc.slurm import parse_workdirs
@@ -51,7 +52,7 @@ def _run(
 ) -> None:
     builds = {'env': env, 'native': native}
     state = {'sha': sha, 'repo': repo, 'env': 'hash', 'builds': builds, **({'record': {}} if done else {})}
-    path = home / 'ci' / 'runs' / sha / 'state.json'
+    path = home / 'ci' / 'runs' / sha / 'base' / 'state.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state), encoding='utf-8')
     _touch(path, when)
@@ -141,12 +142,26 @@ def test_harder_is_this_repos_carry_sources_oldest_first_never_in_flight(home: P
 
 def test_an_in_flight_run_naming_no_builds_blocks_the_env_and_native_rules(home: Path) -> None:
     """An older state names no build keys: IN FLIGHT, an unprovable reference is a reference."""
-    state = home / 'ci' / 'runs' / 'a5' / 'state.json'
+    state = home / 'ci' / 'runs' / 'a5' / 'base' / 'state.json'
     state.write_text(json.dumps({'sha': 'a5', 'repo': 'r'}), encoding='utf-8')
     _touch(state, OLD + timedelta(hours=4))
     rules = {d.rule for d in cluster_plan(home, POLICY, now=NOW, live={'f1', 'a5'}, repo='r', sources=SOURCES).doomed}
     assert not {'env-unreferenced', 'native-unreferenced'} & rules
     assert 'run-not-a-carry-source' in rules, 'PLANTED CONTROL: the run rules still decide'
+
+
+def test_a_sha_whose_other_part_is_unrecorded_is_an_unrecorded_run(tmp_path: Path) -> None:
+    """Every part of a sha has its own state (``runs/<sha>/<part>``); the sha's run ends with its LAST part.
+
+    PLANTED CONTROL: the recorded base part is the newer file, so a newest-wins read would call it done.
+    """
+    for part, state, when in (('femm', {'sha': 's', 'repo': 'r'}, OLD), ('base', {'sha': 's', 'record': {}}, YOUNG)):
+        path = tmp_path / 'runs' / 's' / part / 'state.json'
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(state), encoding='utf-8')
+        _touch(path, when)
+    [(path, state, when)] = runs(tmp_path)
+    assert (path.name, 'record' in state, state['repo'], when) == ('s', False, 'r', YOUNG)
 
 
 def test_in_flight_is_live_occupied_ungathered_or_being_built(home: Path) -> None:
@@ -158,7 +173,7 @@ def test_in_flight_is_live_occupied_ungathered_or_being_built(home: Path) -> Non
 def test_an_env_is_kept_for_an_in_flight_run_or_its_repos_newest_run_only(home: Path) -> None:
     """A kept carry source's env goes: the carry reads its state, never its env. The newest run's stays."""
     for sha, env in (('a3', 'e8'), ('a4', 'e9')):
-        state = home / 'ci' / 'runs' / sha / 'state.json'
+        state = home / 'ci' / 'runs' / sha / 'base' / 'state.json'
         data = json.loads(state.read_text(encoding='utf-8'))
         state.write_text(json.dumps({**data, 'builds': {'env': env, 'native': 'n4'}}), encoding='utf-8')
         _touch(state, OLD + timedelta(hours=int(sha[1])))
@@ -217,7 +232,7 @@ def test_the_cli_is_a_dry_run_reporting_paths_bytes_and_files_per_rule(home: Pat
     assert retention.main(['--cluster']) == 0
     assert (home / 'ci' / 'runs' / 'a1').exists(), 'without --apply nothing is touched'
     summary = [line for line in said if line.startswith('[retention]')]
-    assert '[retention] would delete run-not-a-carry-source: 2 paths, 0.0 MB, 4 files' in summary
+    assert '[retention] would delete run-not-a-carry-source: 2 paths, 0.0 MB, 6 files' in summary
     assert any(line.startswith('[retention] would delete 19 paths') for line in summary), summary
     assert any('files 960000/2000000 (48.0%) -> ' in line for line in summary), summary
     said.clear()
@@ -353,7 +368,7 @@ def _superseded(home: Path, sha: str, env: str, when: datetime, *, streams: date
     """The shape 9 run states in 10 had on the served accounts: no record, a round tag, nobody gathering it."""
     builds = {'env': env, 'native': 'n4'}
     state = {'sha': sha, 'repo': 'r', 'builds': builds, 'current': {'tag': '20261015-055638-r0', 'job_id': '7'}}
-    path = home / 'ci' / 'runs' / sha / 'state.json'
+    path = home / 'ci' / 'runs' / sha / 'base' / 'state.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state), encoding='utf-8')
     _touch(path, when)
@@ -407,7 +422,7 @@ def test_a_job_file_job_names_the_env_its_env_sh_sources(home: Path) -> None:
 
 def test_an_old_recorded_run_naming_no_builds_is_no_reference(home: Path) -> None:
     """Measured: a repo's newest recorded run predated ``builds`` -- not in flight, it references nothing."""
-    state = home / 'ci' / 'runs' / 'b1' / 'state.json'
+    state = home / 'ci' / 'runs' / 'b1' / 'base' / 'state.json'
     state.write_text(json.dumps({'sha': 'b1', 'repo': 'other', 'record': {}}), encoding='utf-8')
     _touch(state, OLD)
     doomed = _doomed(_plan(home))
