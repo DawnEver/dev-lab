@@ -25,10 +25,11 @@ from lab_commons.hpc.allocation import (
     parse_shares,
     render,
     session_for,
+    session_room,
 )
 from lab_commons.hpc.config import Cost, Policy
 from lab_commons.hpc.grants import Grant, Machine, Session
-from lab_commons.hpc.plan import allocate, session_room
+from lab_commons.hpc.plan import allocate
 
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 OTHER = Grant(user='you', hosts=('login.example',), slurm_account='acct-free')

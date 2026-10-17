@@ -101,10 +101,10 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
   - *Movable.* Rerun-safe (declared: `[job] rerun_safe`, forge test parts always) AND a wall within
     `movable_minutes`. Declared, never guessed.
   - *Region.* The emptiest account (most group memory free) is the large-job region; it belongs to no session
-    and rotates (`hpc.plan.region`). A pending large task (`@@@ pending` in the probe) pins it where it waits.
+    and rotates (`hpc.region.region`). A pending large task (`@@@ pending` in the probe) pins it where it waits.
   - *Placement.* A large job goes only to the region, and never spreads. Small and medium tasks best-fit onto
     the FULLEST account with room (the least group memory free). Only a small movable task may borrow the
-    region (`hpc.plan.may_place`).
+    region (`hpc.region.may_place`).
   - *Drain, not kill.* While a large task waits nothing new enters the region, so it empties within one
     movable wall. Running work is never cancelled. The session caps still apply on top.
 - Each tick the host publishes its supply, partitions and quota on its forge host card.

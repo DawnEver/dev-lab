@@ -16,7 +16,7 @@ from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
 from lab_commons.hpc.records import write_record
-from lab_commons.hpc.run import NotSubmitted
+from lab_commons.hpc.tree import NotSubmitted
 
 SHA = 'a' * 40
 
