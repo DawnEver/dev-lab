@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
 from lab_commons.dev import forgerecords
 from lab_commons.dev.forge import Forge
+from lab_commons.dev.forgealarm import STORAGE
 from lab_commons.dev.forgerecords import RECORDS_TITLE, attach, kept_shas, listing, prune, records_issue, sha_of
 from lab_commons.dev.retentionplan import Policy
 
@@ -145,3 +149,26 @@ def test_prune_keeps_only_the_newest_unit_results_the_retention_policy_allows(se
     built = client(FORGE, Loopback(server))
     assert [a.id for a in prune(built, {LIVE}, unit_results=2, dry_run=True)] == [2, 4]
     assert [a.id for a in prune(built, {LIVE}, unit_results=0, dry_run=True)] == [2, 4, 5, 6]
+
+
+def test_the_serve_prune_runs_at_most_once_per_interval_with_the_retention_budget(monkeypatch, tmp_path: Path) -> None:
+    """Rate-limited by a stamp: a tick inside PRUNE_EVERY of the last prune does nothing; a failure alarms."""
+    calls: list[tuple[frozenset[str], int]] = []
+    monkeypatch.setattr(forgerecords, 'kept_shas', lambda _root, **_k: frozenset({LIVE}))
+    monkeypatch.setattr(
+        forgerecords, 'prune', lambda _c, keep, *, unit_results: calls.append((keep, unit_results)) or ()
+    )
+    alarms: list = []
+    stamp, now = tmp_path / 'stamp', datetime(2026, 10, 17, tzinfo=UTC)
+    run = functools.partial(
+        forgerecords.serve_prune, tmp_path, SimpleNamespace(forge=FORGE), stamp=stamp, table={'unit_results': 3},
+        say=lambda _l: None, alarm=alarms.append, trunk='main',
+    )  # fmt: skip
+    run(now=now)
+    run(now=now + forgerecords.PRUNE_EVERY / 2)
+    assert calls == [(frozenset({LIVE}), 3)], 'once per interval, with the [retention] budget'
+    run(now=now + forgerecords.PRUNE_EVERY)
+    assert len(calls) == 2
+    monkeypatch.setattr(forgerecords, 'prune', lambda *_a, **_k: (_ for _ in ()).throw(OSError('down')))
+    run(now=now + 2 * forgerecords.PRUNE_EVERY)
+    assert [a.kind for a in alarms] == [STORAGE]

@@ -163,6 +163,7 @@ def _serve(
     observe=None,
     issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
+    records_prune=lambda _root, _client, **_kw: (),
     starving: tuple = (),
     issue_tidy=lambda _client, _hygiene: [],
     children: tuple = (),
@@ -212,6 +213,7 @@ def _serve(
     monkeypatch.setattr(forgeserve, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
     monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
+    monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeserve, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
@@ -832,6 +834,13 @@ def test_every_tick_runs_the_branch_prune_on_any_host(monkeypatch, tmp_path: Pat
         return ()
 
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), prune=prune)
+    assert offered == [tmp_path]
+
+
+def test_every_tick_offers_the_records_prune_its_rate_limit_decides(monkeypatch, tmp_path: Path) -> None:
+    """A retention rule nobody runs is not a rule: the tick offers the records/unit-result prune."""
+    offered: list[Path] = []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), records_prune=lambda root, _c, **_k: offered.append(root))
     assert offered == [tmp_path]
 
 

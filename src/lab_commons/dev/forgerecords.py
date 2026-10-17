@@ -13,6 +13,7 @@ one of the newest ``--keep-trunk`` first-parent commits of the trunk. Everything
 a sha nobody can push or cite any more needs no evidence on the server. A compute UNIT RESULT
 (:mod:`lab_commons.dev.forgeunit`) shares the home and is a cache, not evidence: only the newest
 ``[retention] unit_results`` of them stay (:class:`lab_commons.dev.retentionplan.Policy`, the one policy).
+``forge serve`` runs the prune on its tick, at most once per :data:`PRUNE_EVERY` (:func:`serve_prune`).
 
 ONE STORE, TWO FORGES. Gitea keeps the records as attachments of the closed :data:`RECORDS_TITLE`
 issue; GitHub, which has no issue attachments, keeps them as assets of ONE prerelease tagged
@@ -29,18 +30,22 @@ import re
 import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, cast
 
 import lab_commons.launch as _door
+from lab_commons.config import config_path, section
 from lab_commons.dev._forge_journal import Durable, Probe
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
+from lab_commons.dev.forgealarm import STORAGE, Alarm
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.log import emit
 
 __all__ = [
     'DEFAULT_KEEP_TRUNK',
+    'PRUNE_EVERY',
     'RECORDS_TAG',
     'RECORDS_TITLE',
     'UNIT_RESULT',
@@ -52,6 +57,7 @@ __all__ = [
     'prune',
     'records_issue',
     'records_release',
+    'serve_prune',
     'sha_of',
 ]
 
@@ -69,6 +75,9 @@ RECORDS_TAG: Final = 'run-records'
 
 #: GitHub serves release-asset uploads from its own host.
 _GITHUB_UPLOADS: Final = 'uploads.github.com'
+
+#: How often ``forge serve`` prunes the records home: the one statement of the interval.
+PRUNE_EVERY: Final = timedelta(hours=6)
 
 #: How many first-parent trunk commits keep their records by default.
 DEFAULT_KEEP_TRUNK: Final = 20
@@ -215,6 +224,48 @@ def prune(client: Client, keep: Collection[str], *, unit_results: int, dry_run: 
     return doomed
 
 
+def _budget(table: Mapping[str, Any]) -> int:
+    from lab_commons.dev.retentionplan import load_policy as retention  # noqa: PLC0415 -- it imports this module
+
+    return retention(table).unit_results
+
+
+def serve_prune(
+    root: Path,
+    client: Client,
+    *,
+    now: datetime,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], object],
+    stamp: Path | None = None,
+    table: Mapping[str, Any] | None = None,
+    trunk: str | None = None,
+) -> tuple[Attachment, ...]:
+    """The serve tick's step: :func:`prune` once per :data:`PRUNE_EVERY`, read from the already-fetched refs.
+
+    *stamp* holds the last prune's time (per repo beside the machine file); a failure alarms and is retried
+    next interval. The unit-result budget is ``[retention] unit_results``.
+    """
+    repo = client.forge.repo
+    stamp = config_path().parent / f'forge-records-prune-{repo.replace("/", "-")}' if stamp is None else stamp
+    try:
+        if now - datetime.fromisoformat(stamp.read_text(encoding='utf-8').strip()) < PRUNE_EVERY:
+            return ()
+    except (OSError, ValueError):
+        pass  # never pruned, or an unreadable stamp: prune now
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(now.isoformat(), encoding='utf-8')
+    try:
+        keep = kept_shas(root, trunk=trunk or load_policy(root).trunk, keep_trunk=DEFAULT_KEEP_TRUNK)
+        doomed = prune(client, keep, unit_results=_budget(section('retention') if table is None else table))
+    except (ForgeCallFailed, OSError, ValueError) as failed:
+        alarm(Alarm(STORAGE, repo, 'the records prune failed', str(failed)))
+        return ()
+    for item in doomed:
+        say(f'[records] deleted {item.name}')
+    return doomed
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='lab_commons.dev.forge records', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -250,11 +301,7 @@ def main(
             return 0
         fetch(root)
         keep = kept_shas(root, trunk=load_policy(root).trunk, keep_trunk=args.keep_trunk)
-        from lab_commons.config import section  # noqa: PLC0415 -- retentionplan imports this module
-        from lab_commons.dev.retentionplan import load_policy as retention  # noqa: PLC0415
-
-        budget = retention(section('retention')).unit_results
-        doomed = prune(client, keep, unit_results=budget, dry_run=args.dry_run)
+        doomed = prune(client, keep, unit_results=_budget(section('retention')), dry_run=args.dry_run)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)
