@@ -30,7 +30,9 @@ THE ONE PRODUCER THAT TAKES ARGUMENTS IS THE REPOSITORY'S OWN TEST PRODUCER (D5,
 sha under the repository's declared test roots (``[tool.pytest.ini_options] testpaths``) -- no glob, no
 option, nothing argv-looking -- and it runs as the declared ``[tool.lab_commons.tests] produce`` door over
 exactly those files, sized as a selection (:func:`lab_commons.dev.verifybox.selection_mem_gb`). Every
-other rule above (trusted sha and author, lock, reachability) applies unchanged.
+other rule above (trusted sha and author, lock, reachability) applies unchanged. The one other
+built-in is :data:`UNIT`: one compute unit, its bundle and size carried in ``paths``
+(:func:`lab_commons.dev.forgeunit.unit_request`).
 
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
 serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and labels the
@@ -78,6 +80,7 @@ __all__ = [
     'REQUESTS_TABLE',
     'TESTS',
     'UNADMITTED',
+    'UNIT',
     'Declared',
     'UndeclaredRequest',
     'declared_request',
@@ -107,6 +110,8 @@ _PATHS: Final = re.compile(r'^\s*paths\s*=\s*(?P<value>\[.*\])\s*$', re.MULTILIN
 
 #: The reserved producer name of the repository's own test producer over named test files (D5).
 TESTS: Final = 'tests'
+#: The producer that runs ONE compute unit a box offered because it could not run it (:mod:`lab_commons.dev.forgeunit`).
+UNIT: Final = 'unit'
 
 #: Characters a test path never carries: a glob, or a quote/space that would make it more than one path.
 _NOT_A_PATH: Final = frozenset('*?[]{}"\' \t')
@@ -215,6 +220,16 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
     return Declared(TESTS, (*door, '--', *paths), frozenset(), float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
 
 
+def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:
+    from lab_commons.dev.forgeunit import unit_request  # noqa: PLC0415 -- forgeunit publishes through this module
+
+    return unit_request(paths)
+
+
+#: The producers every repository has without declaring them: they take ``paths``.
+_BUILT_IN: Final = {TESTS: _tests_request, UNIT: _unit_request}
+
+
 def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ()) -> Declared:
     """The producer *name* as commit *sha* declares it under ``[tool.lab_commons.requests.<name>]``.
 
@@ -226,10 +241,10 @@ def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ())
 
     """
     table = f'[tool.lab_commons.requests.{name}]'
-    if name == TESTS and sha:
-        return _tests_request(root, sha, paths)
+    if sha and name in _BUILT_IN:
+        return _BUILT_IN[name](root, sha, paths)
     if paths:
-        msg = f'only producer {TESTS!r} takes paths; {name!r} runs exactly what its row declares'
+        msg = f'only producers {TESTS!r} and {UNIT!r} take paths; {name!r} runs exactly what its row declares'
         raise UndeclaredRequest(msg)
     if not name or not sha:
         msg = f'a request body names `producer = "<declared name>"` and `sha = "<40-hex>"`; got {name!r} at {sha!r}'

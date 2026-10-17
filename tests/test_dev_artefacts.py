@@ -38,9 +38,12 @@ RUN = artefacts.run_id(SHA, 'linux', 'alice', WHEN)
 
 _FAKE_ZSTD = """
 import shutil, sys
-out = sys.argv[sys.argv.index('-o') + 1]
-with open(out, 'wb') as f:
-    shutil.copyfileobj(sys.stdin.buffer, f)
+if '-d' in sys.argv:
+    with open(sys.argv[-1], 'rb') as f:
+        shutil.copyfileobj(f, sys.stdout.buffer)
+else:
+    with open(sys.argv[sys.argv.index('-o') + 1], 'wb') as f:
+        shutil.copyfileobj(sys.stdin.buffer, f)
 """
 
 _FAKE_RCLONE = """
@@ -170,6 +173,16 @@ def test_pack_writes_one_tar_of_exactly_the_declared_files(tmp_path: Path, zstd:
     dest = artefacts.pack(tree, artefacts.collect(tree, ['out/a.txt']), tmp_path / 'x.tar.zst', zstd=zstd)
     with tarfile.open(fileobj=io.BytesIO(dest.read_bytes())) as tar:  # the fake zstd stores the tar as is
         assert tar.getnames() == ['out/a.txt']
+
+
+def test_unpack_is_the_inverse_of_pack(tmp_path: Path, zstd: tuple[str, ...]) -> None:
+    tree = tmp_path / 'tree'
+    (tree / 'out').mkdir(parents=True)
+    (tree / 'out' / 'a.txt').write_bytes(b'A')
+    archive = artefacts.pack(tree, [tree / 'out' / 'a.txt'], tmp_path / 'x.tar.zst', zstd=zstd)
+    back = artefacts.unpack(archive, tmp_path / 'back', zstd=zstd)
+    assert (back / 'out' / 'a.txt').read_bytes() == b'A'
+    assert sorted(p.name for p in back.rglob('*')) == ['a.txt', 'out']
 
 
 # --- config is data ---------------------------------------------------------------------------
