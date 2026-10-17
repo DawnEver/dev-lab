@@ -179,6 +179,7 @@ def serve(
     (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding* the box ledger's claims now, *retain* the
     retention pass -- each a seam a test fakes.
     """
+    started = clock()
     repo = origin_url(root)
     table = section('schedule') if table is None else table
     raised: list[Alarm] = []  # every alarm this tick, for its host card
@@ -219,8 +220,9 @@ def serve(
     ticked = rounds[-1]
     claimed = [item for one in rounds for item in one.claimed]
     left = _advance(
-        root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm
-    )
+        root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm,
+        beat=lambda: card(claimed), spent=lambda: clock() >= started + timedelta(seconds=beat_s),
+    )  # fmt: skip
     _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
     _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
@@ -363,8 +365,16 @@ def _advance(
     why: str,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
+    beat: Callable[[], None] = lambda: None,
+    spent: Callable[[], bool] = lambda: False,
 ) -> list[str]:
-    """Advance every run one tick; the shas still in flight. A run that cannot advance waits and alarms."""
+    """Advance every run one tick; the shas still in flight. A run that cannot advance waits and alarms.
+
+    A run's step can be slow (a gather, the routing and the post of a 55k-test record, a submit's prep), so
+    the host card is published (*beat*) before each, and once the tick's period is *spent* the runs not yet
+    reached wait for the next tick -- after the first, so no run starves behind a long round. A tick is
+    bounded by its period plus one step, and ``forge queue``'s STALE keeps meaning down.
+    """
     if not runs:
         return []
     built = client(root)
@@ -375,7 +385,12 @@ def _advance(
         say(f'[serve] no cluster to advance {len(runs)} run(s) on: {why}')
         return [run.sha for run in runs]
     left: list[str] = []
-    for run in runs:
+    for at, run in enumerate(runs):
+        if at and spent():
+            waiting = [one.sha for one in runs[at:]]
+            say(f'[serve] the tick ran past its period: {" ".join(sha[:12] for sha in waiting)} wait for the next')
+            return left + waiting
+        beat()
         try:
             after = forgerun.advance(
                 root, run, client=built, me=me, lease=lease, cluster=slurm, say=say, alarm=alarm,
