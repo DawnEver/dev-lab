@@ -95,6 +95,20 @@ ALLOWED: Final[dict[Site, str]] = {
     "item's failure is recorded against that item and the shard carries on; propagating it would "
     'cost every neighbour in the shard its result for one bad design',
     (
+        'src/lab_commons/compute/execute.py',
+        'BLE001',
+        'except Exception as failed:',
+    ): "a unit's entry is the CALLER's code, so what it raises is not enumerable here. A failed unit "
+    'fails BY NAME with what it raised, and only its dependants stop; propagating it would cost every '
+    'independent unit of the graph its run for one bad one',
+    (
+        'src/lab_commons/dev/forgerequest.py',
+        'PLC0415',
+        'from lab_commons.dev.forgeunit import unit_request',
+    ): 'forgeunit publishes a Job THROUGH this module (forgepublish -> forgerequest), so a module-scope '
+    'import here is a cycle that fails at import time. The built-in unit producer is resolved where '
+    'it is called, once per request read',
+    (
         'src/lab_commons/hpc/config.py',
         'ANN401',
         'def _section(name: str, raw: dict[str, Any]) -> Any:',

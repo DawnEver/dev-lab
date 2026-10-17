@@ -111,6 +111,7 @@ __all__ = [
     'resolve',
     'run_id',
     'store_for',
+    'unpack',
 ]
 
 _BACKENDS: Final = (FORGE, RCLONE, FOLDER)
@@ -148,6 +149,20 @@ def pack(tree: Path, files: Sequence[Path], dest: Path, *, zstd: Sequence[str] =
         stdin.close()
     if proc.returncode != 0:
         msg = f'zstd exited {proc.returncode} packing {dest.name}'
+        raise OSError(msg)
+    return dest
+
+
+def unpack(archive: Path, dest: Path, *, zstd: Sequence[str] = ('zstd',)) -> Path:
+    """The inverse of :func:`pack`: every member of *archive* under *dest* (a member leaving it is refused)."""
+    dest.mkdir(parents=True, exist_ok=True)
+    with (
+        _door.popen([*zstd, '-q', '-d', '-c', str(archive)], stdout=subprocess.PIPE) as proc,
+        tarfile.open(fileobj=cast('IO[bytes]', proc.stdout), mode='r|') as tar,
+    ):
+        tar.extractall(dest, filter='data')
+    if proc.returncode != 0:
+        msg = f'zstd exited {proc.returncode} unpacking {archive.name}'
         raise OSError(msg)
     return dest
 
