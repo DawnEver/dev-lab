@@ -53,6 +53,7 @@ from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.familyheads import family_freshness
+from lab_commons.dev.forgerequest import TESTS
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
@@ -74,7 +75,14 @@ from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
-from lab_commons.dev.verifybox import MEASURE_WAIT_S, WAIT_S, boxed, ended_in_the_box, learn_ended
+from lab_commons.dev.verifybox import (
+    MEASURE_WAIT_S,
+    WAIT_S,
+    boxed,
+    ended_in_the_box,
+    learn_ended,
+    selection_files,
+)
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
@@ -540,6 +548,20 @@ def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
     )
 
 
+def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
+    """The OFFER of this selection to a host that can admit it (D5), or why it cannot be offered.
+
+    Only committed test files at a pushed sha can run elsewhere: a dirty tree is this box's alone.
+    """
+    files = selection_files(root, arguments)
+    if not files or status_paths(root):
+        return 'It cannot be offered elsewhere: commit and push the files it selects first.'
+    return (
+        'Or offer it to a host that admits it: '
+        f'python -m lab_commons.dev.forge request {TESTS} --sha {head} --paths {" ".join(files)}'
+    )
+
+
 def _judge(
     root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
 ) -> tuple[int, list[str]]:
@@ -559,7 +581,7 @@ def _judge(
         line = (
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: {held}. '
             f'Wait for it, or stop that holder, then re-run; '
-            f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait.'
+            f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait. {offer_line(root, head, arguments)}'
         )
         emit(line, err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
