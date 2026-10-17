@@ -168,6 +168,7 @@ def _serve(
     issue_tidy=lambda _client, _hygiene: [],
     children: tuple = (),
     present=lambda _root: {},
+    clock=lambda: NOW,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -224,7 +225,7 @@ def _serve(
         seat=seat,
         cluster=cluster,
         spawn=spawn,
-        clock=lambda: NOW,
+        clock=clock,
         say=said.append,
         alarm=alarms.append,
         renew_s=0.01,
@@ -1085,6 +1086,76 @@ def test_a_round_that_raises_joins_every_producer_first(monkeypatch, tmp_path: P
         _serve(monkeypatch, tmp_path, _claimed(first), procs, table=QUICK)
     assert ended.is_set(), 'the producer ended before serve raised'
     assert not [t for t in threading.enumerate() if t.name.startswith('produce-')]
+
+
+def _runs_on_disk(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, count: int) -> list[str]:
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    shas = [str(n) * 40 for n in range(1, count + 1)]
+    for sha in shas:
+        forgerun.start(Work('integrate/main', sha, 'base', 'mine', ME, cluster=part), ME)
+    return shas
+
+
+def test_a_cluster_host_publishes_its_card_before_each_run_it_advances(monkeypatch, tmp_path: Path) -> None:
+    """A run's gather, route, post or submit is slow; the card goes out before each, so a live host is never STALE.
+
+    Ada 2026-10-17: one tick spent 47 min advancing runs with the card published only at its end, and
+    ``forge queue`` called the live host down. PLANTED CONTROL: a tick with no run publishes one card.
+    """
+    cards: list = []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, cards=cards, host='base')
+    assert len(cards) == 1
+    shas = _runs_on_disk(monkeypatch, tmp_path, 2)
+    published_before: list[int] = []
+
+    def advance(_root: Path, run: forgerun.Run, **_kw: object) -> forgerun.Run:
+        published_before.append(len(cards))
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', advance)
+    cards.clear()
+    report, _said, _alarms = _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, cards=cards, host='base'
+    )
+    assert published_before == [1, 2], 'a fresh card before every run'
+    assert len(cards) == 3, 'and the tick card at its end'
+    assert sorted(report.in_flight) == shas
+
+
+def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(monkeypatch, tmp_path: Path) -> None:
+    """A tick is bounded: once its period is spent it advances no further run; the rest stay in flight.
+
+    PLANTED CONTROL: the same runs advanced in no time are all advanced; and a tick always advances one.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    now = [NOW]
+    advanced: list[str] = []
+
+    def slow(_root: Path, run: forgerun.Run, **_kw: object) -> forgerun.Run:
+        advanced.append(run.sha)
+        now[0] += timedelta(minutes=4)
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', slow)
+    report, said, _alarms = _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+        table={'tick_minutes': 5}, clock=lambda: now[0],
+    )  # fmt: skip
+    assert advanced == shas[:2], 'the third would start past the 5 min period'
+    assert sorted(report.in_flight) == shas, 'a run not reached is still in flight, untouched'
+    assert any(line == f'[serve] the tick ran past its period: {shas[2][:12]} wait for the next' for line in said), said
+    advanced.clear()
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, table={'tick_minutes': 5})
+    assert advanced == shas, 'PLANTED: a quick tick advances every run'
+    advanced.clear()
+    now[:] = [NOW, NOW + timedelta(hours=1)]  # the tick started at NOW; its rounds took an hour
+    monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
+    _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+        table={'tick_minutes': 5}, clock=lambda: now.pop(0) if len(now) > 1 else now[0],
+    )  # fmt: skip
+    assert advanced == shas[:1], 'a tick whose rounds ran long still advances one run: no run starves'
 
 
 class _Untagged(_Slurm):
