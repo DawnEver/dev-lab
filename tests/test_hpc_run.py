@@ -33,7 +33,7 @@ from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
-from lab_commons.hpc.plan import Plan, balance, make_plan
+from lab_commons.hpc.plan import Plan, make_plan
 from lab_commons.hpc.progress import Progress, held_by_a_limit, parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
 from lab_commons.hpc.records import (
@@ -48,7 +48,8 @@ from lab_commons.hpc.records import (
     stream_sources,
     write_record,
 )
-from lab_commons.hpc.run import RETRIES, NoRoom, build_run, gather_run, load_state, submit_run
+from lab_commons.hpc.run import RETRIES, NoRoom, gather_run, load_state, submit_run
+from lab_commons.hpc.shards import balance
 from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
@@ -62,6 +63,7 @@ from lab_commons.hpc.shell import (
     parse_times,
 )
 from lab_commons.hpc.slurm import parse_snapshot
+from lab_commons.hpc.tree import build_run
 from lab_commons.hpc.watch import PENDING
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')

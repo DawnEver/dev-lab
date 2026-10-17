@@ -106,38 +106,35 @@ from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.probe import inventory
 from lab_commons.config import section
-from lab_commons.dev import forgerun, forgeship, lockupgrade, retention
+from lab_commons.dev import forgerun, lockupgrade, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm, sound
+from lab_commons.dev.forgealarm import (
+    AUTH,
+    IDLE,
+    RUN,
+    UNTAGGED,
+    Alarm,
+    sound,
+)
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
-from lab_commons.dev.forgehosts import HostCard, card_host, card_owners, read_cards, recording
-from lab_commons.dev.forgeintegration import alarms as sync_alarms
-from lab_commons.dev.forgeintegration import tick as integration_tick
-from lab_commons.dev.forgeintegration import venues
+from lab_commons.dev.forgehosts import card_host, card_owners, read_cards, recording
 from lab_commons.dev.forgeintent import reattach
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, demote_unreachable, produce
-from lab_commons.dev.forgepulls import ListingIncomplete
-from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgerecords import serve_prune as serve_records_prune
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
-from lab_commons.dev.forgeroute import reconcile
-from lab_commons.dev.forgeschedule import host_weights, load_schedule, starved_alarms
+from lab_commons.dev.forgeschedule import host_weights
+from lab_commons.dev.forgeservesteps import hygiene, prompt, retain_storage, starved, tidy_runs
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
-from lab_commons.dev.forgestatus import status_list
-from lab_commons.dev.forgetidy import load_hygiene
-from lab_commons.dev.forgetidy import tidy as issue_tidy
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.integrator import observe
-from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
 from lab_commons.log import emit
 
-__all__ = ['ServeReport', 'main', 'raise_once', 'serve']
+__all__ = ['ServeReport', 'main', 'serve']
 
 
 @dataclass(frozen=True)
@@ -189,6 +186,9 @@ def serve(
     tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
+    if standing is not None and (untagged := standing.facts.get('untagged')):
+        body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
+        alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))
     name = card_host(machine, seat)
     cards = read_cards(client(root))
     every = lease.total_seconds() / 3 if renew_s is None else renew_s
@@ -223,19 +223,19 @@ def serve(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm,
         beat=lambda: card(claimed), spent=lambda: clock() >= started + timedelta(seconds=beat_s),
     )  # fmt: skip
-    _tidy(root, client, repo, seat=seat, say=say, alarm=alarm)
-    _retain(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
+    tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
+    retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     lockupgrade.serve_tick(root, client(root), today=clock().date(), say=say)
-    _hygiene(root, client(root), say=say)
+    hygiene(root, client(root), say=say)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
         alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
-    _starved(root, repo, client(root), cards, say=say, alarm=alarm)
+    starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
-    _prompt(root, repo, client(root), say=say, alarm=alarm)
+    prompt(root, repo, client(root), say=say, alarm=alarm)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -244,113 +244,6 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
-
-
-def raise_once(built: Client, kind: str, alarms: Sequence[Alarm], *, alarm: Callable[[Alarm], object]) -> None:
-    """Keep ONE forge issue per alarm of *kind* (``<kind>: <subject>``) and page only where it was written.
-
-    Any host may raise these; :func:`lab_commons.dev.forgeroute.reconcile` finds the issue by its title, so
-    N hosts deriving the same rows write one issue, the host that creates or changes it pages, and a row
-    no longer derived closes its issue. A kind outside :data:`~lab_commons.dev.forgealarm.ISSUE_KINDS` is refused.
-    """
-    if kind not in ISSUE_KINDS:
-        msg = f'{kind!r} is not an issue-kept alarm kind {ISSUE_KINDS} (lab_commons.dev.forgealarm.ISSUE_KINDS)'
-        raise ValueError(msg)
-    by_title = {f'{kind}: {one.subject}': one for one in alarms}
-    for done in reconcile(built, f'{kind}: ', {title: one.body for title, one in by_title.items()}):
-        if done.action in {'created', 'updated'} and done.area in by_title:
-            alarm(by_title[done.area])
-
-
-def _starved(
-    root: Path,
-    repo: str,
-    built: Client,
-    cards: Sequence[HostCard],
-    *,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], object],
-) -> None:
-    """A ``starved`` issue for each part NO host admits, read across every card; any host may raise it."""
-    schedule = load_schedule(root)
-    try:
-        queue, _ = forge_queue(root, built, cards, now=forge_now(built), schedule=schedule)
-        found = starved_alarms([item for item in queue if unadmitted(item.blocked)], schedule, repo)
-        raise_once(built, STARVED, found, alarm=alarm)
-    except ForgeCallFailed as failed:
-        say(f'[serve] the starved parts were not raised: {failed}')
-
-
-def _prompt(
-    root: Path,
-    repo: str,
-    built: Client,
-    *,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], object],
-) -> None:
-    """The integrator's prompts and every child's behind/conflict report, one issue per row.
-
-    A forge or fetch failure is said, not raised -- and then NO row is reconciled, so a partial derivation
-    never closes an issue it merely failed to see.
-    """
-    try:
-        found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
-        policy = load_policy(root)
-        ticked = integration_tick(root, venues(root, built), policy)
-        for line in ticked.lines:
-            say(f'[serve] integration: {line}')
-        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo)], alarm=alarm)
-    except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
-        say(f'[serve] the integration queue was not derived: {failed}')
-
-
-def _tidy(
-    root: Path,
-    client: Callable[[Path], Client],
-    repo: str,
-    *,
-    seat: ClusterAccount | None,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], object],
-) -> None:
-    """On a cluster -- one artefact writer -- clean its own account's runs each tick; a failure only alarms."""
-    if seat is None:
-        return
-    try:
-        forgeship.tidy(root, client(root), account=seat.account, say=say)
-    except (OSError, ValueError) as why:
-        alarm(Alarm(RUN, repo, 'the artefact cleanup failed', str(why)))
-
-
-def _hygiene(root: Path, built: Client, *, say: Callable[[str], None]) -> None:
-    """The repo's issue hygiene, on any host every tick (idempotent: a raced close is a no-op); a failure is said."""
-    try:
-        for line in issue_tidy(built, load_hygiene(root)):
-            say(f'[serve] tidy: {line}')
-    except (ForgeCallFailed, ListingIncomplete, ValueError) as failed:
-        say(f'[serve] the issue hygiene did not run: {failed}')
-
-
-def _retain(
-    root: Path,
-    repo: str,
-    retain: Callable[..., retention.Outcome | None],
-    *,
-    cluster: bool,
-    who: str,
-    say: Callable[[str], None],
-    alarm: Callable[[Alarm], object],
-) -> None:
-    """The retention pass; a failure, or usage still over the pressure line after it, alarms."""
-    try:
-        done = retain(root, cluster=cluster, say=say)
-    except (OSError, ValueError) as why:
-        alarm(Alarm(RUN, repo, f'the storage retention pass failed on {who}', str(why)))
-        return
-    if done is not None and done.over:
-        body = done.alarm or f'freed {done.freed_bytes} bytes and {done.freed_files} files; still over pressure'
-        alarm(Alarm(STORAGE, repo, f'{who} storage is still near its quota', body))
 
 
 def _advance(

@@ -15,7 +15,18 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from lab_commons.dev import forgerecords
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgealarm import STORAGE
-from lab_commons.dev.forgerecords import RECORDS_TITLE, attach, kept_shas, listing, prune, records_issue, sha_of
+from lab_commons.dev.forgerecords import (
+    RECORDS_TITLE,
+    attach,
+    kept_shas,
+    listing,
+    prune,
+    read_named,
+    records_issue,
+    remove_named,
+    replace_named,
+    sha_of,
+)
 from lab_commons.dev.retentionplan import Policy
 
 FORGE = Forge('forge.example.org', 'o', 'r')
@@ -172,3 +183,20 @@ def test_the_serve_prune_runs_at_most_once_per_interval_with_the_retention_budge
     monkeypatch.setattr(forgerecords, 'prune', lambda *_a, **_k: (_ for _ in ()).throw(OSError('down')))
     run(now=now + 2 * forgerecords.PRUNE_EVERY)
     assert [a.kind for a in alarms] == [STORAGE]
+
+
+def test_a_named_file_is_replaced_never_duplicated_and_read_back(server) -> None:
+    """The one mutable record (``hpc-allocation.json``): put deletes the old copy, get reads the newest."""
+    answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
+    held = [_asset(4, 'hpc-allocation.json'), _asset(5, f'run-{LIVE}-linux-r1.json.gz')]
+    answer('GET', f'{API}/issues/3/assets', (200, held))
+    answer('DELETE', f'{API}/issues/3/assets/4', (204, None))
+    answer('POST', f'{API}/issues/3/assets', (201, _asset(6, 'hpc-allocation.json')))
+    answer('GET', '/attachments/4', (200, {'expires': 'x'}))
+    built = client(FORGE, Loopback(server))
+    assert read_named(built, 'hpc-allocation.json') == b'{"expires": "x"}'
+    assert read_named(built, 'absent.json') is None
+    assert replace_named(built, 'hpc-allocation.json', b'{}').id == 6
+    deleted = [r['path'] for r in Recorder.received if r['method'] == 'DELETE']
+    assert deleted == [f'{API}/issues/3/assets/4'], 'only the named file goes; a run record stays'
+    assert remove_named(built, 'absent.json') == 0

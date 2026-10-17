@@ -32,7 +32,8 @@ from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
 from lab_commons.hpc.config import Config
 from lab_commons.hpc.progress import Progress
-from lab_commons.hpc.run import NoRoom, NotSubmitted
+from lab_commons.hpc.run import NoRoom
+from lab_commons.hpc.tree import NotSubmitted
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)

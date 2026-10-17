@@ -22,8 +22,8 @@ from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
+from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeservesteps, forgeship
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, UNTAGGED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
 from lab_commons.dev.forgeproduce import Produced
@@ -209,14 +209,14 @@ def _serve(
         record(argv, proc.box)
         return proc
 
-    monkeypatch.setattr(forgeserve, 'observe', observe or (lambda *_a, **_k: []))
-    monkeypatch.setattr(forgeserve, 'venues', lambda _root, origin: [('origin', origin)])
-    monkeypatch.setattr(forgeserve, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
-    monkeypatch.setattr(forgeserve, 'reconcile', (issues or _Issues()).reconcile)
+    monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
+    monkeypatch.setattr(forgeservesteps, 'venues', lambda _root, origin: [('origin', origin)])
+    monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
+    monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
-    monkeypatch.setattr(forgeserve, 'issue_tidy', issue_tidy)
-    monkeypatch.setattr(forgeserve, 'forge_queue', lambda *_a, **_k: (list(starving), []))
+    monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
+    monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
     report = forgeserve.serve(
         tmp_path,
@@ -880,7 +880,7 @@ def test_a_failed_tidy_is_said_and_the_tick_goes_on(monkeypatch, tmp_path: Path)
 def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:
     """``forge tidy`` exempts exactly ISSUE_KINDS as machine-kept, so raise_once may keep no other kind."""
     with pytest.raises(ValueError, match='ISSUE_KINDS'):
-        forgeserve.raise_once(SimpleNamespace(), RUN, [], alarm=lambda _a: None)
+        forgeservesteps.raise_once(SimpleNamespace(), RUN, [], alarm=lambda _a: None)
 
 
 def test_a_producer_stopped_on_purpose_releases_its_claim_as_stopped(monkeypatch, tmp_path: Path) -> None:
@@ -1156,3 +1156,23 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
         table={'tick_minutes': 5}, clock=lambda: now.pop(0) if len(now) > 1 else now[0],
     )  # fmt: skip
     assert advanced == shas[:1], 'a tick whose rounds ran long still advances one run: no run starves'
+
+
+class _Untagged(_Slurm):
+    """Slurm holding jobs that carry no session tag."""
+
+    def standing(self) -> forgerun.Standing:
+        held = super().standing()
+        return dataclasses.replace(held, facts={**held.facts, 'untagged': 3})
+
+
+def test_jobs_without_a_session_tag_alarm(monkeypatch, tmp_path: Path) -> None:
+    """Untagged jobs are one more stream in the max-min share (lab_commons.hpc.allocation); the forge says so."""
+    quiet = TickReport((), (), ('tick',))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Untagged, host='base')
+    (raised,) = [a for a in alarms if a.kind == UNTAGGED]
+    assert '3' in raised.subject
+    assert 'LC_HPC_SESSION' in raised.body
+    # Planted control: every job tagged, nothing is raised.
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
+    assert [a for a in alarms if a.kind == UNTAGGED] == []

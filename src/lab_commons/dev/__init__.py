@@ -135,6 +135,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   whether it may claim the skip census.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
   publish, route); a producer refusing its argv is a broken contract, never a skip.
+* :mod:`lab_commons.dev.forgeservesteps` -- the contained steps after a serve tick: issue alarms, hygiene, retention.
 * :mod:`lab_commons.dev.forgeproduce` -- one local part produced inline: streamed, claim held, released if left pending.
 * :mod:`lab_commons.dev.forgeintent` -- a local run's claim journaled before it runs; a restart re-attaches to it.
 * :mod:`lab_commons.dev.forgerounds` -- serve's rounds: claim while producing, each live producer running.
