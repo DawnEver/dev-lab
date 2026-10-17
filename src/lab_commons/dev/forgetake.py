@@ -32,7 +32,7 @@ from lab_commons.dev.forgerequest import (
     unserved,
     untrusted,
 )
-from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
+from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, behind, over_budget
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
@@ -181,7 +181,11 @@ class ClaimPass:
     def _blocked(self, wanted: Candidate) -> tuple[str, frozenset[str]]:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
-        why = over_budget(self.root, wanted, self.schedule, self.usage) or self._admission(wanted, needed)
+        why = (
+            behind(self.root, wanted, self.schedule, self.history, self.now)
+            or over_budget(self.root, wanted, self.schedule, self.usage)
+            or self._admission(wanted, needed)
+        )
         return why, needed
 
     def _admission(self, wanted: Candidate, needed: frozenset[str]) -> str:

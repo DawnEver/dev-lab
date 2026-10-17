@@ -36,8 +36,13 @@ family default and a repository overrides key by key (a table key by table key):
     classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered; replaces whole
     prior_cost_h = 4.0
 
-WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): no host serves its
-part, over its ref's budget, or not admitted here -- naming the resources it lacks
+ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
+of a part in flight across the fleet; its current tip waits behind that run (:func:`behind`), which is
+never cancelled, and is tested next as one batch. An earlier tip never claimed is never a candidate. A
+lane is tested at every pushed sha.
+
+WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's
+run in flight, no host serves its part, over its ref's budget, or not admitted here -- naming the resources it lacks
 (:func:`lab_commons.compute.admission.admit`). A candidate waiting longer than its class's
 ``starve_after_hours`` is STARVED and raises a ``forgealarm`` naming that reason.
 
@@ -70,11 +75,13 @@ from lab_commons.compute.model import (
 )
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
+from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
+from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.platformparts import part_refs
+from lab_commons.dev.platformparts import part_context, part_refs
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL
 
@@ -83,6 +90,8 @@ __all__ = [
     'NO_HOST',
     'ORIGIN_HOST',
     'OVER_BUDGET',
+    'WAITING_BEHIND',
+    'behind',
     'candidates',
     'head_login',
     'host_weights',
@@ -425,6 +434,41 @@ def candidates(
         ]
     found += optional('request issues', lambda: _requests(root, client, repo, schedule, now), say)
     return tuple(one for one in found if _ref_served(root, one, say))
+
+
+#: The prefix of :attr:`Ranked.blocked` for a coalesced tip waiting on its ref's run in flight.
+WAITING_BEHIND: Final = 'waiting behind'
+#: How many earlier tips of a ref :func:`behind` reads before it stops looking.
+EARLIER_TIPS: Final = 16
+
+
+def behind(
+    root: Path, wanted: Candidate, schedule: Schedule, history: Callable[[str], Sequence[Status]], now: datetime
+) -> str:
+    """Why *wanted* waits on its own ref's run in flight elsewhere; ``''`` when it does not (D6, ruling 2026-10-17).
+
+    A COALESCED class (:attr:`Schedule.coalesce`) holds at most one run per (ref, part) across the fleet: the
+    claims already live on the forge, on the ref's EARLIER tips -- the ones origin's tracking ref was fetched
+    at (its reflog), newest first, until one whose part is settled. A live claim there blocks the current
+    tip; it is never cancelled, its verdict stands, and its per-test results carry to the tip. An earlier tip
+    nobody claimed is never a candidate at all (:func:`candidates` names only the tip).
+    """
+    if wanted.kind not in schedule.coalesce:
+        return ''
+    context, nobody = part_context(wanted.platform), Claim('', '', now)
+    for sha in _earlier_tips(root, wanted.ref, wanted.sha):
+        state, holder = assess(history(sha), context, me=nobody, now=now)
+        if state == CLAIMED and holder is not None:
+            return f'{WAITING_BEHIND} {sha[:12]} (in flight on {holder.hpc or holder.machine or holder.login})'
+        if state == DONE:
+            return ''
+    return ''
+
+
+def _earlier_tips(root: Path, ref: str, tip: str) -> list[str]:
+    """The tips origin's *ref* was fetched at before *tip*, newest first (its tracking ref's reflog)."""
+    listed = _git(root, 'reflog', 'show', '--format=%H', '-n', str(EARLIER_TIPS), f'{_TRACKING}{ref}', '--')
+    return list(dict.fromkeys(sha for sha in listed.splitlines() if sha and sha != tip))
 
 
 def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:

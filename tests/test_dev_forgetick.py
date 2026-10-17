@@ -20,6 +20,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from lab_commons.box import GB, Capacity
 from lab_commons.compute import probe as compute_probe
 from lab_commons.compute.model import (
+    BRANCH,
     FEATURE,
     INTEGRATION,
     PR,
@@ -46,7 +47,7 @@ from lab_commons.dev.forgeclaim import (
     serving,
     this_machine,
 )
-from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
+from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, WAITING_BEHIND, behind, candidates, load_schedule
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
@@ -168,6 +169,7 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
 def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
     """A new integration head whose OWN commit carries *pyproject*; the working tree is not what is read."""
+    answer('GET', f'{API}/statuses/{tips["integrate/main"]}', (200, []))  # the head it replaces: never claimed
     (repo / 'pyproject.toml').write_text(pyproject, encoding='utf-8')
     run_git(repo, 'add', 'pyproject.toml')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'declare')
@@ -905,3 +907,80 @@ def test_a_producer_only_the_other_host_kind_can_build_is_never_refused_on_the_c
     (waiting,) = report.queue
     assert missing in waiting.blocked
     assert report.pending == ()
+
+
+def _push(repo: Path, tips: dict[str, str], ref: str) -> str:
+    """A new tip of *ref* fetched on top of its old one: the tracking ref's reflog holds both."""
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', f'{ref} again')
+    tips[ref] = git_out(repo, 'rev-parse', 'HEAD')
+    run_git(repo, 'update-ref', f'refs/remotes/origin/{ref}', tips[ref])
+    return tips[ref]
+
+
+def _candidate(ref: str, sha: str, kind: str) -> Candidate:
+    return Candidate('o/r', ref, sha, BASE, kind, NOW, 'full')
+
+
+def _history(**by_sha: list[Status]) -> object:
+    return lambda sha: tuple(by_sha.get(sha, ()))
+
+
+BOB = Claim('H', 'bob', LATER, 'ada/bob')
+
+
+def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_does(tmp_path: Path) -> None:
+    """D6 (user ruling 2026-10-17): one run per (ref, part) in flight across the fleet; a lane runs every sha.
+
+    PLANTED CONTROLS: the same earlier tip settled -- the tip is free; nothing claimed on it -- free; the
+    same claim on a lane ``branch`` -- free.
+    """
+    repo, tips = _origin(tmp_path)
+    old = tips['integrate/main']
+    new = _push(repo, tips, 'integrate/main')
+    schedule = load_schedule(repo)
+    tip = _candidate('integrate/main', new, INTEGRATION)
+    running = _history(**{old: [_pending(BOB, 1)]})
+    assert behind(repo, tip, schedule, running, NOW) == f'{WAITING_BEHIND} {old[:12]} (in flight on ada/bob)'
+    settled = _history(**{old: [_pending(BOB, 1), Status('tests/base', 'success', 'ok', '', 2, 'bob')]})
+    assert behind(repo, tip, schedule, settled, NOW) == ''
+    assert behind(repo, tip, schedule, _history(), NOW) == ''
+    lane_old = tips['other']
+    lane_new = _push(repo, tips, 'other')
+    lane = _candidate('other', lane_new, BRANCH)
+    assert behind(repo, lane, schedule, _history(**{lane_old: [_pending(BOB, 1)]}), NOW) == ''
+
+
+def test_two_shas_of_one_ref_only_the_newest_is_a_candidate(server, tmp_path: Path) -> None:
+    repo, tips = _origin(tmp_path)
+    old = tips['integrate/main']
+    new = _push(repo, tips, 'integrate/main')
+    built = client(Forge('forge.example.org', 'o', 'r'), Loopback(server))
+    found = candidates(
+        repo, built, repo='o/r', parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=Policy(), now=NOW
+    )
+    shas = {c.sha for c in found if c.ref == 'integrate/main'}
+    assert shas == {new}, f'the never-claimed {old[:12]} is skipped, not a candidate'
+
+
+def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_run_settles(
+    server, tmp_path: Path
+) -> None:
+    repo, tips = _origin(tmp_path)
+    old = tips['integrate/main']
+    new = _push(repo, tips, 'integrate/main')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{new}', (200, []))
+    answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
+    report = _tick(repo, server)
+    assert report.claimed == ()
+    assert [r for r in Recorder.received if r['method'] == 'POST'] == [], 'a running run is never cancelled'
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} (in flight on ada/bob)' in (
+        report.lines
+    )
+    Recorder.received.clear()
+    settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{new}', (200, []), (200, [_post(3, ME)]))
+    answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB), settled]))
+    answer('POST', f'{API}/statuses/{new}', (201, {}))
+    assert [(w.sha, w.state) for w in _tick(repo, server).claimed] == [(new, MINE)]
