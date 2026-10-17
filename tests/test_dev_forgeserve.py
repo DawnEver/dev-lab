@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import json
 import os
 import subprocess
 import threading
@@ -286,15 +287,20 @@ def test_the_producer_is_spawned_holding_its_claim_and_nothing_else_is(monkeypat
 
 
 def test_the_producer_runs_in_the_box_at_the_demand_it_was_admitted_at(monkeypatch, tmp_path: Path) -> None:
-    """Admission and enforcement are one number: unmeasured, a box part declares the whole box capacity."""
+    """Admission and enforcement are one number, held against the ONE capacity reading the producer sized it by.
+
+    Unmeasured (no demand, nothing learned), a box part declares its D5 prior -- here the per-task floor -- never
+    the whole box (:func:`~lab_commons.compute.learned.part_prior`).
+    """
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     spawned: list[dict] = []
     monkeypatch.setattr(forgeproduce.Capacity, 'read', staticmethod(lambda: BOX))
     _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, spawned=spawned)
     (argv,) = [one['argv'] for one in spawned]
     assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
-    assert argv[argv.index('--cpu') + 1] == '3'
-    assert argv[argv.index('--mem-gb') + 1] == '24'
+    assert argv[argv.index('--cpu') + 1] == '1'
+    assert argv[argv.index('--mem-gb') + 1] == '1.5'
+    assert json.loads(argv[argv.index('--capacity') + 1]) == dataclasses.asdict(BOX), 'the child holds this size'
     assert argv[argv.index('--fingerprint') + 1] == SHA
     assert argv[argv.index('--') + 2 :] == ['verify']
     admitted = dataclasses.replace(local, demand={'cpu': 2.0, 'mem_gb': 5.5})

@@ -546,6 +546,11 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     )
 
 
+def _whole_box(*_args: object) -> Demand:
+    """Every part asks the whole 4-core 8 GB box, so one claimed part leaves no room for the next."""
+    return Demand(cpu=4, mem_gb=8.0)
+
+
 def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp_path: Path, monkeypatch) -> None:
     """A user-boosted PR jumps the integration head. PLANTED CONTROL: the label removed, the head is claimed."""
     monkeypatch.setattr(forgetick.Capacity, 'read', staticmethod(lambda: Capacity(cpu=4.0, mem_bytes=8 * GB, seats={})))
@@ -556,18 +561,18 @@ def test_a_tick_claims_the_highest_score_and_names_why_the_rest_wait(server, tmp
     answer('GET', f'{API}/statuses/{head}', (200, []))
     answer('GET', f'{API}/statuses/{lane}', (200, []), (200, [_post(1, ME)]))
     answer('POST', f'{API}/statuses/{lane}', (201, {}))
-    report = _tick(repo, server)
+    report = _tick(repo, server, demand=_whole_box)
     assert [w.ref for w in report.claimed] == ['topic/a']
     (waiting,) = report.queue
     assert waiting.candidate.ref == 'integrate/main'
     assert waiting.blocked == f'{NOT_ADMITTED}: lacking cpu (4 asked, 0 free), mem_gb (8 asked, 0 free)', (
-        'a claimed box part, unmeasured, declares the whole box'
+        'the claimed part holds the box the head asks'
     )
     Recorder.received.clear()
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', lane)]))
     answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
     answer('POST', f'{API}/statuses/{head}', (201, {}))
-    assert [w.ref for w in _tick(repo, server).claimed] == ['integrate/main']
+    assert [w.ref for w in _tick(repo, server, demand=_whole_box).claimed] == ['integrate/main']
 
 
 def test_over_budget_or_not_admitted_is_not_claimed_and_says_so(server, tmp_path: Path) -> None:
