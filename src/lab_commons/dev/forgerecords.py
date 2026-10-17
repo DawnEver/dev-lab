@@ -10,7 +10,9 @@ closed so it never sits in anybody's queue; a status's ``target_url`` points at 
 CLEANUP IS DERIVED, NOT DECLARED PER RECORD (:func:`prune`). A record is kept while its sha is still
 someone's business: the tip of any ``origin`` branch (a lane, the integration branch, the trunk), or
 one of the newest ``--keep-trunk`` first-parent commits of the trunk. Everything else is deleted --
-a sha nobody can push or cite any more needs no evidence on the server.
+a sha nobody can push or cite any more needs no evidence on the server. A compute UNIT RESULT
+(:mod:`lab_commons.dev.forgeunit`) shares the home and is a cache, not evidence: only the newest
+``[retention] unit_results`` of them stay (:class:`lab_commons.dev.retentionplan.Policy`, the one policy).
 
 ONE STORE, TWO FORGES. Gitea keeps the records as attachments of the closed :data:`RECORDS_TITLE`
 issue; GitHub, which has no issue attachments, keeps them as assets of ONE prerelease tagged
@@ -41,6 +43,7 @@ __all__ = [
     'DEFAULT_KEEP_TRUNK',
     'RECORDS_TAG',
     'RECORDS_TITLE',
+    'UNIT_RESULT',
     'Attachment',
     'attach',
     'kept_shas',
@@ -71,6 +74,8 @@ _GITHUB_UPLOADS: Final = 'uploads.github.com'
 DEFAULT_KEEP_TRUNK: Final = 20
 
 _RECORD_NAME: Final = re.compile(r'^run-(?P<sha>[0-9a-f]{40})-[a-z]+-[^/]+\.json\.gz$')
+#: A compute unit result (:func:`lab_commons.dev.forgeunit.result_name`), whatever archive it was posted as.
+UNIT_RESULT: Final = re.compile(r'^unit-(?P<unit>[0-9a-f]{64})-(?P<result>[0-9a-f]{64})\.tar\.[a-z]+$')
 _TRACKING: Final = 'refs/remotes/origin/'
 
 
@@ -190,15 +195,20 @@ def kept_shas(root: Path, *, trunk: str, keep_trunk: int) -> frozenset[str]:
     return frozenset(tips) | frozenset(history)
 
 
-def prune(client: Client, keep: Collection[str], *, dry_run: bool = False) -> tuple[Attachment, ...]:
-    """Delete every run record whose sha is not in *keep*; returns what was (or, dry, would be) deleted.
+def prune(client: Client, keep: Collection[str], *, unit_results: int, dry_run: bool = False) -> tuple[Attachment, ...]:
+    """Delete every run record whose sha is not in *keep*, and every unit result but the newest *unit_results*.
 
-    A file on the records issue that is not a run record is never touched.
+    Returns what was (or, dry, would be) deleted, oldest first. Any other file on the home is never touched.
     """
     store = _store(client, create=False)
     if store is None:
         return ()
-    doomed = tuple(item for item in listing(client) if (sha := sha_of(item.name)) is not None and sha not in keep)
+    found = listing(client)
+    units = [item for item in found if UNIT_RESULT.match(item.name)]
+    stale = {item.id for item in units[: max(len(units) - unit_results, 0)]}
+    doomed = tuple(
+        item for item in found if item.id in stale or ((sha := sha_of(item.name)) is not None and sha not in keep)
+    )
     if not dry_run:
         for item in doomed:
             client.call('DELETE', f'{store.delete}{item.id}')
@@ -210,7 +220,9 @@ def _parser() -> argparse.ArgumentParser:
     verbs = parser.add_subparsers(dest='verb', required=True)
     listed = verbs.add_parser('list', help='every run record attached on the forge')
     listed.add_argument('--json', action='store_true', help='print the attachments as JSON')
-    pruned = verbs.add_parser('prune', help='delete records whose sha is no live tip and no recent trunk commit')
+    pruned = verbs.add_parser(
+        'prune', help='delete records whose sha is no live tip and no recent trunk commit, and unit results over budget'
+    )
     pruned.add_argument('--keep-trunk', type=int, default=DEFAULT_KEEP_TRUNK, help='first-parent trunk commits kept')
     pruned.add_argument('--dry-run', action='store_true', help='name what would be deleted; delete nothing')
     return parser
@@ -238,7 +250,11 @@ def main(
             return 0
         fetch(root)
         keep = kept_shas(root, trunk=load_policy(root).trunk, keep_trunk=args.keep_trunk)
-        doomed = prune(client, keep, dry_run=args.dry_run)
+        from lab_commons.config import section  # noqa: PLC0415 -- retentionplan imports this module
+        from lab_commons.dev.retentionplan import load_policy as retention  # noqa: PLC0415
+
+        budget = retention(section('retention')).unit_results
+        doomed = prune(client, keep, unit_results=budget, dry_run=args.dry_run)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
         emit(failed.report.attempts[-1].output, err=True)

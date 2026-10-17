@@ -45,7 +45,7 @@ from lab_commons.dev.artefacts import load_config, pack, resolve, store_for, unp
 from lab_commons.dev.artefactstores import ARCHIVE, Ref, run_id
 from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from lab_commons.dev.forgepublish import publish
-from lab_commons.dev.forgerecords import attach, listing
+from lab_commons.dev.forgerecords import UNIT_RESULT, attach, listing
 from lab_commons.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgework import Client, client_for
@@ -54,7 +54,6 @@ from lab_commons.log import emit
 __all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'result_name', 'unit_request']
 
 _HASH: Final = r'[0-9a-f]{64}'
-_RESULT: Final = re.compile(rf'^unit-(?P<unit>{_HASH})-(?P<result>{_HASH}){re.escape(ARCHIVE)}$')
 #: The bundle's manifest, beside ``files/``.
 MANIFEST: Final = 'unit.json'
 
@@ -74,8 +73,10 @@ class ForgeResults:
 
     def _posted(self, unit_hash: str) -> list[tuple[str, str]]:
         """``(download url, result hash)`` of each result posted for *unit_hash*, first posted first."""
-        found = ((item, _RESULT.match(item.name)) for item in listing(self.client))
-        return [(item.url, m['result']) for item, m in found if m and m['unit'] == unit_hash]
+        found = ((item, UNIT_RESULT.match(item.name)) for item in listing(self.client))
+        return [
+            (item.url, m['result']) for item, m in found if m and m['unit'] == unit_hash and item.name.endswith(ARCHIVE)
+        ]
 
     def fetch(self, unit_hash: str, dest: Path) -> Path | None:
         """The first posted result, unpacked into *dest*; ``None`` when none is posted."""

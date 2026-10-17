@@ -49,6 +49,11 @@ not in flight, untouched ``abandon_days`` (a state is a few files, and the carry
 its producer (:mod:`lab_commons.dev.shatree`) failed to remove -- the same rule, since a producer's tree is
 in flight exactly while its producer runs.
 
+UNIT RESULTS ON THE FORGE (``unit-<unit hash>-<result hash>.*`` beside the run records,
+:class:`lab_commons.dev.forgeunit.ForgeResults`) are a content-addressed cache, not evidence: no sha keeps
+one, and a pruned result is recomputed on the next miss. ``unit_results`` is their budget -- the newest that
+many attachments stay, older ones go (:func:`lab_commons.dev.forgerecords.prune`).
+
 THE POLICY IS DATA: :class:`Policy` holds the kit defaults, the machine file's ``[retention]`` table
 overrides any of them, and an unknown or retired key is refused.
 """
@@ -102,6 +107,7 @@ class Policy:
     pressure: float = 0.85
     target: float = 0.70
     collect_files: int = 16
+    unit_results: int = 256
 
 
 def load_policy(table: Mapping[str, Any]) -> Policy:

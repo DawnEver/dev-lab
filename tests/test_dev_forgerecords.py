@@ -12,6 +12,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_
 from lab_commons.dev import forgerecords
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgerecords import RECORDS_TITLE, attach, kept_shas, listing, prune, records_issue, sha_of
+from lab_commons.dev.retentionplan import Policy
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'
@@ -85,10 +86,10 @@ def test_prune_deletes_only_records_of_shas_nobody_keeps(server) -> None:
     answer('DELETE', f'{API}/issues/3/assets/2', (204, None))
     built = client(FORGE, Loopback(server))
     assert [a.id for a in listing(built)] == [1, 2, 3]
-    dry = prune(built, {LIVE}, dry_run=True)
+    dry = prune(built, {LIVE}, unit_results=1, dry_run=True)
     assert [a.id for a in dry] == [2]
     assert not [r for r in Recorder.received if r['method'] == 'DELETE'], 'a dry run deletes nothing'
-    assert [a.id for a in prune(built, {LIVE})] == [2]
+    assert [a.id for a in prune(built, {LIVE}, unit_results=1)] == [2]
     assert [r['path'] for r in Recorder.received if r['method'] == 'DELETE'] == [f'{API}/issues/3/assets/2']
 
 
@@ -132,3 +133,15 @@ def test_the_prune_cli_fetches_then_keeps_live_tips(server, tmp_path: Path, caps
     assert code == 0
     assert fetched == [repo]
     assert f'deleted run-{shas[1]}' in capsys.readouterr().out
+
+
+def test_prune_keeps_only_the_newest_unit_results_the_retention_policy_allows(server) -> None:
+    """PLANTED CONTROL: unit results (D16) beyond ``[retention] unit_results`` go oldest first; records unaffected."""
+    assert Policy().unit_results > 0, 'the one retention policy declares the budget'
+    unit = [_asset(i, f'unit-{c * 64}-{"f" * 64}.tar.gz') for i, c in ((4, 'a'), (5, 'b'), (6, 'c'))]
+    legacy = _asset(2, f'unit-{"d" * 64}-{"f" * 64}.tar.zst')
+    answer('GET', f'{API}/issues', (200, [{'number': 3, 'title': RECORDS_TITLE}]))
+    answer('GET', f'{API}/issues/3/assets', (200, [_asset(1, f'run-{LIVE}-linux-r1.json.gz'), legacy, *unit]))
+    built = client(FORGE, Loopback(server))
+    assert [a.id for a in prune(built, {LIVE}, unit_results=2, dry_run=True)] == [2, 4]
+    assert [a.id for a in prune(built, {LIVE}, unit_results=0, dry_run=True)] == [2, 4, 5, 6]
