@@ -18,6 +18,7 @@ from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
 
 from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
+from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
@@ -884,8 +885,9 @@ def _produce_one(monkeypatch, tmp_path: Path, proc: _Proc, **kwargs: object) -> 
     monkeypatch.setattr(forgeproduce, 'close_tree', _Trees(tmp_path).close)
     monkeypatch.setattr(forgeproduce, 'was_stopped', lambda _pid: False)
     monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    kwargs.setdefault('spawn', lambda *_a, **_k: proc)
     return forgeproduce.produce(
-        tmp_path, item, client=_client, spawn=lambda *_a, **_k: proc, say=lambda _l: None,
+        tmp_path, item, client=_client, say=lambda _l: None,
         lease=timedelta(hours=6), renew_s=30.0, fetch=lambda _root: None, **kwargs,
     )  # fmt: skip
 
@@ -911,6 +913,55 @@ def test_a_run_never_sampled_learns_nothing(monkeypatch, tmp_path: Path) -> None
     _produce_one(
         monkeypatch, tmp_path, _Proc(0, beats=0, pid=4242), clock=lambda: NOW,
         sample=lambda _pid: 1.0, meter=lambda _pid: lambda: 5.0, learn=lambda *a, **_k: learnt.append(a),
+    )  # fmt: skip
+    assert learnt == []
+
+
+#: Windows' STATUS_NO_MEMORY: what a Job Object's memory limit leaves as the killed tree's exit code.
+_NO_MEMORY = 0xC0000017
+
+
+def _killed_for_memory(monkeypatch, tmp_path: Path, **kwargs: object) -> None:
+    """One part the box killed for memory before serve's first sample: the box's record is all that measured it."""
+    proc = _Proc(_NO_MEMORY, beats=0, pid=4242, box=ended(_NO_MEMORY, 'memory'))
+    _produce_one(
+        monkeypatch, tmp_path, proc, clock=lambda: NOW, spawn=lambda argv, **_k: record(argv, proc.box) or proc,
+        sample=lambda _pid: None, meter=lambda _pid: lambda: None, capacity=lambda: BOX, **kwargs,
+    )  # fmt: skip
+
+
+def test_a_part_the_box_killed_for_memory_learns_the_limit_it_died_at(monkeypatch, tmp_path: Path) -> None:
+    """A memory kill is a floor at the DECLARED limit, read from the box's record, never nothing.
+
+    THE INCIDENT: a part killed past its declared memory before serve's first sample learned NOTHING, so the
+    next tick claimed it at the same figure and the box killed it again. ``record_run`` grows the floor.
+    """
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    learnt: list = []
+    _killed_for_memory(monkeypatch, tmp_path, learn=lambda *a, **k: learnt.append((a, k)))
+    declared = forgeproduce.box_claim(Work('integrate/main', SHA, 'windows', 'mine', ME), BOX, root=tmp_path)
+    ((_root, _item, run), how) = learnt[0]
+    assert (run.peak_mem_gb, how) == (declared.mem_gb, {'killed': True})
+
+
+def test_a_killed_part_is_reclaimed_at_a_grown_figure(monkeypatch, tmp_path: Path) -> None:
+    """End to end on the real learn path: claimed, killed for memory, re-claimed at OOM_GROWTH x the limit."""
+    monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
+    monkeypatch.setattr(forgeproduce, 'origin_url', lambda _root: 'https://f/o/r.git')
+    item = Work('integrate/main', SHA, 'windows', 'mine', ME)
+    first = forgeproduce.box_claim(item, BOX, root=tmp_path).mem_gb
+    _killed_for_memory(monkeypatch, tmp_path)
+    again = forgeproduce.box_claim(item, BOX, root=tmp_path).mem_gb
+    assert again == min(first * learned.OOM_GROWTH * learned.BOX_HEADROOM, BOX.mem_bytes / GB) > first
+
+
+def test_a_box_record_with_no_peak_and_no_sample_learns_nothing(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED CONTROL: an exit the box measured nothing of, and serve never sampled, invents no peak."""
+    learnt: list = []
+    proc = _Proc(0, beats=0, pid=4242)
+    _produce_one(
+        monkeypatch, tmp_path, proc, clock=lambda: NOW, spawn=lambda argv, **_k: record(argv, proc.box) or proc,
+        sample=lambda _pid: None, meter=lambda _pid: lambda: None, learn=lambda *a, **_k: learnt.append(a),
     )  # fmt: skip
     assert learnt == []
 
