@@ -37,10 +37,9 @@ found was not a Makefile target: it was ``entry: uv run python -m ...`` in a pre
 mutated the environment on every push, and a changelog hook that did the same on every commit. A
 door is what MOVES the environment, not what is named ``install``.
 
-WHAT IS REFUSED, and it is one sentence: a command that consults the lock either REPLAYS the committed
-lock (``--frozen``/``--locked``, D8), NAMES the floating requirement for re-resolution
-(``-P``/``--upgrade-package``, or ``-U``), or does not touch the environment at all (``--no-sync``).
-Commands that re-resolve by construction -- ``uv pip install``,
+WHAT IS REFUSED, and it is one sentence: a command that consults a lock either NAMES the floating
+requirement for re-resolution (``-P``/``--upgrade-package``, or ``-U``) or does not touch the
+environment at all (``--no-sync``). Commands that re-resolve by construction -- ``uv pip install``,
 ``pip install`` -- are already correct and are deliberately NOT changed; a fix applied where there
 is no defect costs the next reader the reason.
 
@@ -120,9 +119,6 @@ PREFIX_TOKENS: Final = frozenset(
 #: one is pinned and is not this rule's subject.
 _DIRECT_GIT: Final = re.compile(r'^\s*(?P<name>[A-Za-z0-9._-]+)\s*(?:\[[^\]]*\])?\s*@\s*git\+(?P<url>\S+)\s*$')
 
-#: The flags that make a lock-consuming ``uv`` command replay the COMMITTED lock exactly (D8).
-_LOCKED_FLAGS: Final = frozenset({'--frozen', '--locked'})
-
 #: How ``-P``/``--upgrade-package`` is spelled, in both the split and the ``=`` form.
 _UPGRADE_FLAGS: Final = frozenset({'-P', '--upgrade-package'})
 
@@ -130,22 +126,19 @@ _UPGRADE_FLAGS: Final = frozenset({'-P', '--upgrade-package'})
 class Delivery(Enum):
     """What a command does to the DECLARED build of a floating requirement.
 
-    Four values, because "is not a correct door" splits into two different facts and conflating them
-    would make the remedy unnameable. :attr:`INERT` is a command that moves no
+    Three values rather than two, because "does not deliver it" splits into two different facts and
+    conflating them would make the remedy unnameable. :attr:`INERT` is a command that moves no
     environment -- there is nothing for it to deliver stale. :attr:`UNLOCKED` is a command that DOES
-    move the environment without saying it replays the committed lock -- it may re-lock it unseen.
-    :attr:`LOCKED` replays the COMMITTED lock exactly (``--frozen``/``--locked``, D8): correct, because the
-    lock is the declared environment and the scheduled ``uv lock --upgrade`` is what keeps it latest.
+    move the environment and serves whatever an earlier resolution left in a lock.
     """
 
     RESOLVES = 'resolves'
     UNLOCKED = 'unlocked'
     INERT = 'inert'
-    LOCKED = 'locked'
 
 
 class UnlockedDoorsError(AssertionError):
-    """At least one install door moves the environment without replaying the committed lock."""
+    """At least one install door moves the environment and serves whatever a local lock last resolved."""
 
 
 class VacuousDoorScanError(AssertionError):
@@ -238,8 +231,6 @@ def _uv_delivery(rest: list[str], names: tuple[str, ...]) -> Delivery:
         return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.INERT
     if verb not in LOCK_CONSUMING or '--no-sync' in rest:
         return Delivery.INERT
-    if _LOCKED_FLAGS & set(rest):
-        return Delivery.LOCKED
     return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.UNLOCKED
 
 
@@ -320,7 +311,7 @@ def scan_doors(root: Path, paths: list[str], names: tuple[str, ...]) -> tuple[Do
 
 
 def unlocked(doors: tuple[Door, ...]) -> tuple[Door, ...]:
-    """Return the doors that move an environment without replaying the committed lock."""
+    """Return the doors that move an environment and serve whatever a local lock last resolved."""
     return tuple(door for door in doors if door.delivery is Delivery.UNLOCKED)
 
 
