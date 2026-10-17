@@ -17,7 +17,9 @@ created: 2026-10-17
   against the quota); it matters for the throttle and a spread, and an override can bind tighter.
 - OVERRIDE: one record `hpc-allocation.json` on the forge records home (`forge records get|put|rm <name>`;
   `forgerecords.read_named/replace_named/remove_named`). `allocate --until <iso, zoned> name=cpus/mem_gb ...`,
-  `--show`, `--clear`. Unexpired: decides every session, an unnamed one gets 0 (waits). Expired or absent:
+  `--show`, `--clear`. Unexpired: fixes the named shares; unnamed active streams (untagged included) share the remainder --
+  pool less what each named session uses of its share, floored at 0 -- by max-min, so named slack lends out
+  (coordinator correction, same day: an unnamed session never gets a flat 0). Expired or absent:
   derived. A forge that cannot be read on the cluster leaves the share derived (`forgeslurm.with_allocation`).
 - `session_room` is still the one seam the paging planner reads; a `Session` with `cpus`/`mem_gb` None is
   derived there. Throttle only: a session past its share plans room 0, throttle 1; nothing is cancelled.

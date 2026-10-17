@@ -86,7 +86,9 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
     source of truth (`hpc.allocation`).
   - *Override.* One expiring record, `hpc-allocation.json` on the forge's records home, read by every submitter:
     `python -m lab_commons.hpc allocate --until 2026-10-18T09:00Z alice=64/240 bob=32/120` (`name=cpus/mem_gb`),
-    `allocate --show`, `allocate --clear`. While unexpired it decides every session; one it does not name gets 0.
+    `allocate --show`, `allocate --clear`. While unexpired it fixes the named sessions' shares; the remainder (the pool less what each named session
+    uses of its share, floored at 0) is divided by the same max-min among the unnamed active streams, untagged
+    included -- a named session's slack lends out.
     Expired or absent, the derived default stands.
   - Past its share a session plans with room 0 and a throttle of 1 -- new submissions wait; nothing is ever
     cancelled. Only a task past a record's `task_cpus`/`task_mem_gb` is refused. Without `$LC_HPC_SESSION`

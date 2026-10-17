@@ -102,7 +102,7 @@ def test_the_record_round_trips_and_names_its_expiry() -> None:
 def test_an_unexpired_record_decides_and_an_expired_one_is_the_derived_default() -> None:
     record = render(Allocation(NOW + timedelta(hours=1), {'a': Session('a', cpus=64, mem_gb=240)}))
     assert session_for('a', record, now=NOW) == Session('a', cpus=64, mem_gb=240)
-    assert session_for('b', record, now=NOW) == Session('b', cpus=0, mem_gb=0), 'unnamed while it holds: waits'
+    assert session_for('b', record, now=NOW) == Session('b', fixed=(('a', 64, 240),)), 'unnamed: the remainder'
     # Planted control: past the expiry, or with no record, the share is derived.
     assert session_for('a', record, now=NOW + timedelta(hours=2)) == Session('a')
     assert session_for('a', None, now=NOW) == Session('a')
@@ -187,3 +187,19 @@ def test_a_cluster_serve_reads_the_same_record_and_a_forge_failure_leaves_the_sh
 
     # Planted control: the forge down, the share is derived -- never a guessed override.
     assert with_allocation(derived_machine, down).session == Session('a')
+
+
+def test_an_unnamed_session_shares_the_remainder_and_a_named_sessions_slack_lends_out() -> None:
+    """Pool 192 CPU. The record fixes a=128; b is unnamed, c (unnamed) holds 16."""
+    b = Session('b', fixed=(('a', 128, 10_000),))
+    # a holds its full 128: the remainder is 64, max-min with c's 16 leaves b 48.
+    full = [_snap('96 lc:session=a\n'), _snap('32 lc:session=a\n16 lc:session=c\n')]
+    assert session_room(b, full, Cost(cpus=8)) == 48 // 8
+    # a holds only 32 of its 128: its slack lends out, b gets 192 - 32 - 16.
+    slack = [_snap('32 lc:session=a\n'), _snap('16 lc:session=c\n')]
+    assert session_room(b, slack, Cost(cpus=8)) == (192 - 32 - 16) // 8
+    # Planted control: the named session itself is held to its fixed share, never the remainder.
+    assert session_room(Session('a', cpus=128, mem_gb=10_000), slack, Cost(cpus=8)) == (128 - 32) // 8
+    # A record naming more than the pool floors the remainder at 0: the unnamed session waits.
+    over = Session('b', fixed=(('a', 500, 10_000),))
+    assert session_room(over, [_snap('96 lc:session=a\n'), _snap('96 lc:session=a\n')], Cost(cpus=8)) == 0
