@@ -514,9 +514,9 @@ def test_an_orphan_array_is_named_by_its_own_job_id_never_its_pending_range(tmp_
 
     machine: Any = SimpleNamespace(grants=[object()])
     cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: runner)
-    run: Any = SimpleNamespace(sha='a' * 40)
+    run: Any = SimpleNamespace(sha='a' * 40, platform='base')
     assert cluster.orphans(run) == ['7683032', '7683040']
-    assert asked == [f'squeue -h --me -n run-{"a" * 12} -o %F']
+    assert asked == [f'squeue -h --me -n run-{"a" * 12}-base -o %F']
 
 
 def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learned(
