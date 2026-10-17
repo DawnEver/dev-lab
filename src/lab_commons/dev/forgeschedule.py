@@ -438,7 +438,7 @@ def candidates(
 
 #: The prefix of :attr:`Ranked.blocked` for a coalesced tip waiting on its ref's run in flight.
 WAITING_BEHIND: Final = 'waiting behind'
-#: How many earlier tips of a ref :func:`behind` reads before it stops looking.
+#: How many first-parent commits before a tip :func:`behind` reads before it stops looking.
 EARLIER_TIPS: Final = 16
 
 
@@ -448,15 +448,15 @@ def behind(
     """Why *wanted* waits on its own ref's run in flight elsewhere; ``''`` when it does not (D6, ruling 2026-10-17).
 
     A COALESCED class (:attr:`Schedule.coalesce`) holds at most one run per (ref, part) across the fleet: the
-    claims already live on the forge, on the ref's EARLIER tips -- the ones origin's tracking ref was fetched
-    at (its reflog), newest first, until one whose part is settled. A live claim there blocks the current
+    claims already live on the forge, on the tip's first-parent HISTORY -- the same on every host, unlike a
+    host's reflog -- newest first, until one whose part is settled. A live claim there blocks the current
     tip; it is never cancelled, its verdict stands, and its per-test results carry to the tip. An earlier tip
     nobody claimed is never a candidate at all (:func:`candidates` names only the tip).
     """
     if wanted.kind not in schedule.coalesce:
         return ''
     context, nobody = part_context(wanted.platform), Claim('', '', now)
-    for sha in _earlier_tips(root, wanted.ref, wanted.sha):
+    for sha in _earlier_tips(root, wanted.sha):
         state, holder = assess(history(sha), context, me=nobody, now=now)
         if state == CLAIMED and holder is not None:
             return f'{WAITING_BEHIND} {sha[:12]} (in flight on {holder.hpc or holder.machine or holder.login})'
@@ -465,10 +465,10 @@ def behind(
     return ''
 
 
-def _earlier_tips(root: Path, ref: str, tip: str) -> list[str]:
-    """The tips origin's *ref* was fetched at before *tip*, newest first (its tracking ref's reflog)."""
-    listed = _git(root, 'reflog', 'show', '--format=%H', '-n', str(EARLIER_TIPS), f'{_TRACKING}{ref}', '--')
-    return list(dict.fromkeys(sha for sha in listed.splitlines() if sha and sha != tip))
+def _earlier_tips(root: Path, tip: str) -> list[str]:
+    """*tip*'s first-parent history before it, newest first: the same on every host (module docstring)."""
+    listed = _git(root, 'rev-list', '--first-parent', '-n', str(EARLIER_TIPS), f'{tip}~1', '--')
+    return [sha for sha in listed.splitlines() if sha]
 
 
 def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:

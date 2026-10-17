@@ -164,6 +164,8 @@ def _origin(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', branch)
         tips[branch] = git_out(repo, 'rev-parse', 'HEAD')
         run_git(repo, 'update-ref', f'refs/remotes/origin/{branch}', tips[branch])
+    for sha in git_out(repo, 'rev-list', '--all').split():  # a real forge answers [] for a commit nobody posted on
+        answer('GET', f'{API}/statuses/{sha}', (200, []))
     return repo, tips
 
 
@@ -984,3 +986,18 @@ def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_r
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB), settled]))
     answer('POST', f'{API}/statuses/{new}', (201, {}))
     assert [(w.sha, w.state) for w in _tick(repo, server).claimed] == [(new, MINE)]
+
+
+def test_a_tip_another_host_claimed_that_this_host_never_fetched_still_blocks(tmp_path: Path) -> None:
+    """History, not this host's reflog: origin moved twice between two of this host's fetches."""
+    repo, tips = _origin(tmp_path)
+    run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'unseen')
+    unseen = git_out(repo, 'rev-parse', 'HEAD')
+    new = _push(repo, tips, 'integrate/main')
+    reflog = git_out(repo, 'reflog', 'show', '--format=%H', 'refs/remotes/origin/integrate/main')
+    assert unseen not in reflog, 'the claimed tip was never fetched here'
+    tip = _candidate('integrate/main', new, INTEGRATION)
+    running = _history(**{unseen: [_pending(BOB, 1)]})
+    assert (
+        behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} (in flight on ada/bob)'
+    )
