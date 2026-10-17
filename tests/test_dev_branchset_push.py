@@ -54,7 +54,15 @@ def _planted(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
     subprocess.run([_GIT, 'init', '-q', '-b', 'main', str(root)], check=True, capture_output=True, timeout=60)
-    subprocess.run([_GIT, 'add', 'pyproject.toml'], cwd=root, check=True, capture_output=True, timeout=60)
+    # A family repo commits its lock at the newest resolution, or the base `lock` row refuses the push.
+    subprocess.run(
+        [shutil.which('uv') or 'uv', 'lock', '--python', sys.executable],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=300,
+    )
+    subprocess.run([_GIT, 'add', 'pyproject.toml', 'uv.lock'], cwd=root, check=True, capture_output=True, timeout=60)
     subprocess.run(
         [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'c1'],
         cwd=root,
@@ -292,7 +300,7 @@ def test_a_deletion_from_a_stale_checkout_passes_and_a_content_push_is_still_jud
 
 
 def test_a_retired_key_is_named_retired_with_its_remedy_never_unknown(tmp_path: Path) -> None:
-    """RETIRED-NAMES-REGISTERED: ``branchset.update`` is refused as retired, its remedy the deletion of the key.
+    """RETIRED-NAMES-REGISTERED: the branchset ``update`` key is refused as retired; its remedy deletes the key.
 
     PLANTED CONTROL: a key nobody ever declared is still the kit-older refusal, not a retirement.
     """

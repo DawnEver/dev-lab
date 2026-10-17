@@ -136,6 +136,11 @@ def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync
         '[project]\nname="empty-local-control"\nversion="0"\nrequires-python=">=3.12"\n[tool.uv]\npackage=false\n',
         encoding='utf-8',
     )
+    (root / 'uv.lock').write_text(
+        'version = 1\nrequires-python = ">=3.12"\n\n[[package]]\nname = "empty-local-control"\nversion = "0"\n'
+        'source = { virtual = "." }\n',
+        encoding='utf-8',
+    )
     monkeypatch.setenv('UV_OFFLINE', 'true')
     with _live_verdict(tmp_path, monkeypatch):
         assert dep.main(['--bootstrap', str(root)], cwd=tmp_path) == 0
@@ -240,7 +245,7 @@ def test_bootstrap_refuses_an_own_venv_alias_to_another_environment(tmp_path) ->
         dep.main(['--bootstrap', str(lane)], cwd=tmp_path, run=run)
 
 
-def test_sync_defaults_to_cwd_full_extras_and_reresolves_floating_git(tmp_path) -> None:
+def test_sync_defaults_to_cwd_full_extras_and_upgrades_each_git_requirement(tmp_path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
         '[project.optional-dependencies]\ndev=[]\ngeometry=[]\n',
@@ -322,11 +327,10 @@ def test_a_lane_cannot_bootstrap_an_unrelated_repositories_main_environment(tmp_
         dep.main(['--bootstrap', str(foreign)], cwd=lane, run=run)
 
 
-def test_a_bootstrap_re_resolves_every_floating_requirement_even_beside_a_lock(tmp_path) -> None:
-    """Dependencies are not pinned (user rulings 2026-10-15/17): a bootstrap never replays a lock.
+def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_re_resolves(tmp_path) -> None:
+    """PIN + FRESHNESS (2026-10-17): a bootstrap is THAT commit's environment -- `uv sync --frozen`, lock or not.
 
-    PLANTED CONTROL: a ``uv.lock`` beside the project changes nothing -- no ``--frozen``, the git requirement
-    is still named for re-resolution.
+    PLANTED CONTROL: a `--sync` of the same project re-resolves its floating git requirement.
     """
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n',
@@ -338,9 +342,10 @@ def test_a_bootstrap_re_resolves_every_floating_requirement_even_beside_a_lock(t
         calls.append(tuple(argv))
         return SimpleNamespace(returncode=0)
 
-    for lock in (False, True):
-        if lock:
-            (tmp_path / 'uv.lock').write_text('version = 1\n', encoding='utf-8')
-        assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
-        assert '--frozen' not in calls[-1]
-        assert calls[-1][-2:] == ('--upgrade-package', 'peer')
+    assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
+    assert '--upgrade-package' in calls[-1]
+    assert '--frozen' not in calls[-1]
+    assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
+    assert '--frozen' in calls[-1]
+    assert '--upgrade-package' not in calls[-1]
+    assert '--upgrade-package' not in calls[-1]

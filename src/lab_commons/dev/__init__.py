@@ -148,6 +148,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`lab_commons.dev.outcomes` -- the pytest plugin writing a run's per-test outcomes in the run
   record's vocabulary, so a local run posts the same kind of part a cluster run does.
+* :mod:`lab_commons.dev.lockcheck` -- the ``lock`` pre-push row (PIN + FRESHNESS): a pushed commit commits
+  ``uv.lock`` at the NEWEST resolution, and every hold below the newest declares its reason.
 * :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`lab_commons.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives

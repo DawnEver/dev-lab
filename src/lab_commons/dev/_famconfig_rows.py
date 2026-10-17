@@ -34,14 +34,10 @@ it is owned by the stage that widens this repo's own select from 12 selectors to
 building a base for it here would put two renderers on one artefact while that stage is mid-sweep.
 The absence is NAMED rather than silent, which is the whole point of writing it down.
 
-WHY `uv.lock` STAYS IN THE GITIGNORE BASE, since the next reader will ask. It is in the measured
-three-way intersection, and the family ruling of 2026-09-17 is that the lockfile stays OUT of git --
-"the latest from that URL" is a deliberate declaration, not an oversight. What that ruling does NOT
-say is that no lockfile exists: `consumer-b/uv.lock` is present on disk, untracked, pinning
-`lab-commons 0.2.2.dev26`, and `uv run`'s implicit sync served that pin back three times in one day
-while every review saw nothing, because the file is invisible to git. The line stays; the defect it
-hid is closed elsewhere (`uv run --no-sync` in the hooks, and a refreshing install door), and it is
-recorded here so that deleting this line is never mistaken for the fix.
+WHY `uv.lock` IS BANNED FROM EVERY `.gitignore` (PIN + FRESHNESS, user ruling 2026-10-17): every family repo
+COMMITS its lock, so a host builds a commit's environment with `uv sync --frozen`; "the latest" is the `lock`
+pre-push row refusing a lock that is not at the newest resolution (lab_commons.dev.lockcheck), never an
+untracked file resolved on the day.
 """
 
 from __future__ import annotations
@@ -119,7 +115,6 @@ GITIGNORE_CONSUMER_CORE: Final[tuple[str, ...]] = (
     '.pytest_cache/',
     '.ruff_cache/',
     '.venv*',
-    'uv.lock',
 )
 
 #: THE LINES THE FAMILY MANDATES rather than measured, each with the mechanism that writes the path.
@@ -179,6 +174,7 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
 GITIGNORE_BANNED: Final[dict[str, str]] = {
     r'(?:^|/)(?:_scratch|\.scratch|scratchpad)(?:/|$)': '`scratch/` is the one temporary-script directory',
     r'^\*\.[\w-]+-cache$': 'a tool-specific cache pointer suffix is not ignored family-wide (ruling 2026-10-03)',
+    r'(?:^|/)uv\.lock$': 'every repo commits its uv.lock at the newest resolution (PIN + FRESHNESS, 2026-10-17)',
 }
 
 #: THE BASE: the sorted measured core plus the mandated lines, then the ordered Claude section.

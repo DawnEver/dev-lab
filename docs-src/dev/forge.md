@@ -87,6 +87,16 @@ Each tick it:
   with the remedy -- update the serving checkout -- instead of being read as an absent, empty table. The
   other way round, a RETIRED table (`lab_commons.hpc.retired`) is refused naming its replacement: the
   declaration is older than the kit ([migrating a repo](migrate.md#migrating-a-repo-to-need-set-parts)).
+- **PIN + FRESHNESS (user ruling 2026-10-17).** Every repo commits `uv.lock`, and every install -- `dep
+  --bootstrap`, a cluster's served venv, a workstation refresh -- is `uv sync --frozen` from the commit's lock:
+  a commit's code and its exact dependencies are tested together and identical on every host, and the lock's
+  hash keys the served venv. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
+  whose lock is not at the NEWEST resolution -- `uv lock --upgrade --dry-run`, run at the pushed sha, would
+  change something: an in-house git dependency behind the tip of its declared ref, a PyPI dependency below its
+  latest -- or that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
+  pin, a git rev) with no reason on its line or the comment line above. A reasoned range is the only way to
+  stay below latest. The developer who pushes upgrades: `uv lock --upgrade`, then fix, test and commit. A
+  resolution that cannot run (the network is down) refuses with its diagnosis; a deletion is never judged.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards lab-commons and then each `[serve]` repo to its upstream and
@@ -171,9 +181,9 @@ newest commit lacks, or a request issue.
   sha under `[tool.lab_commons.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
   `mem_gb`, `wall_h` (an unsized row is refused), admitted like a part and claimed on context `request/<n>`
   -- `lab_commons.dev.forgerequest`). Publish one with `forge request <producer> --sha <sha>`, which refuses
-  a sha origin does not serve. A host runs a request off origin's integration
+  a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
-  git source of its pyproject or submodules is unreachable here, and is told once on its issue after
+  git source of its lock or submodules is unreachable here, and is told once on its issue after
   `request_unadmitted_hours`. A success is labelled `request:done` with its record path and sha256s, and the
   requester closes it. A ref's tip is one candidate per
   part it needs (`base`, and every part its posted parts hand to). The same rule names the integrator's
