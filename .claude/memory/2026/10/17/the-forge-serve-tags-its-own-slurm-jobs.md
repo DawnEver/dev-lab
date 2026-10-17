@@ -18,3 +18,8 @@ created: 2026-10-17
   still alarm, correctly. Planted controls in `tests/test_dev_forgerun.py`.
 - Not changed: `hpc.allocation`'s share derivation still sees those pre-fix arrays as the `untagged`
   stream until they drain (hours); only the alarm count excludes them.
+- Follow-up (same day): ONE classifier, `hpc.slurm.stream_of(comment, name)` -- tag, else `forge`
+  (`FORGE_SESSION`, now in `hpc.slurm`) for `is_run_job(name)`, else `''` (untagged). The probe's shared
+  squeue now asks `%C|%m|%D|%k|%j`; `parse_usage` classifies through it, so the allocation's `active()`
+  counts pre-fix forge arrays as `forge` and the alarm (`usage['']`) reads the same snapshot -- the extra
+  `%j|%k` squeue is gone. The superseded bullet above about allocation is resolved.

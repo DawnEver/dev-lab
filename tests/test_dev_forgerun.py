@@ -36,7 +36,7 @@ from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import SESSION_ENV, Grant, Machine, Session
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NoRoom
-from lab_commons.hpc.slurm import Node, Quota, Snapshot
+from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_usage
 from lab_commons.hpc.tree import NotSubmitted
 
 SHA = 'c' * 40
@@ -710,7 +710,7 @@ def test_the_forge_serve_tags_its_own_submissions_without_a_session_env(
     The forge is a known stream and names itself. PLANTED CONTROL: an explicit ``$LC_HPC_SESSION`` still wins.
     """
     monkeypatch.delenv(SESSION_ENV, raising=False)
-    assert _built(monkeypatch, tmp_path).machine.comment == f'lc:session={forgeslurm.FORGE_SESSION}'
+    assert _built(monkeypatch, tmp_path).machine.comment == f'lc:session={FORGE_SESSION}'
     monkeypatch.setenv(SESSION_ENV, 'campaign')
     assert _built(monkeypatch, tmp_path).machine.comment == 'lc:session=campaign'
 
@@ -721,20 +721,17 @@ def test_untagged_counts_only_jobs_that_are_not_the_forges_own(tmp_path: Path, m
     PLANTED CONTROL: another session's untagged job (``wdg-design``) is still counted, and a tagged one never is.
     """
     squeue = (
-        'run-89f11a39d6fe|(null)\n'
-        'run-89f11a39d6fe|(null)\n'
-        'run-4ad64054bba3-base|(null)\n'
-        'wdg-design|(null)\n'
-        'campaign-7|lc:session=campaign\n'
-        'run-notasha12xyz|(null)\n'
+        '1|1G|1|(null)|run-89f11a39d6fe\n'
+        '1|1G|1|(null)|run-89f11a39d6fe\n'
+        '1|1G|1|(null)|run-4ad64054bba3-base\n'
+        '1|1G|1|(null)|wdg-design\n'
+        '1|1G|1|lc:session=campaign|campaign-7\n'
+        '1|1G|1|(null)|run-notasha12xyz\n'
     )
-    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    snapshot = dataclasses.replace(_snapshot_untagged(), usage=parse_usage(squeue))
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: snapshot)
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
-
-    def shell(command: str, _stdin: object) -> str:
-        return squeue if '%j' in command else ''
-
-    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: shell, lambda: None)
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: None)
     assert cluster.standing().facts['untagged'] == 2
 
 

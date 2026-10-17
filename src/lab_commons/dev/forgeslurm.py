@@ -20,7 +20,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
 
 from lab_commons.box import declared_seats
 from lab_commons.compute import learned
@@ -38,36 +37,16 @@ from lab_commons.hpc.allocation import RECORD, session_for
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, Unreachable, probe, submitter
 from lab_commons.hpc.config import Config
-from lab_commons.hpc.grants import COMMENT_PREFIX, Grant, Machine, Session, load_grants
+from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_outcomes, run_shas
-from lab_commons.hpc.run import NoRoom, is_run_job, job_name, load_state, submit_run
+from lab_commons.hpc.run import NoRoom, job_name, load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
+from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
 
-__all__ = ['FORGE_SESSION', 'SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of', 'untagged_tasks']
-
-#: The session the forge serve submits for when no ``$LC_HPC_SESSION`` names one -- it is a known stream,
-#: and cron sets no environment. ONE name, not one per repo: a host serves every repo as one stream, and a
-#: per-repo tag would split its share by how many repos it serves.
-FORGE_SESSION: Final = 'forge'
-
-#: Every job of this login's, pending or running, one line per array task: its name and its comment.
-_JOBS_COMMAND: Final = 'squeue -h --me -r -t PENDING,RUNNING -o "%j|%k"'
-
-
-def untagged_tasks(squeue: str) -> int:
-    """Tasks in *squeue* (:data:`_JOBS_COMMAND`) no session tagged and that are not the forge's own runs.
-
-    A forge array sbatched before the serve tagged itself bears a run's job name (:func:`is_run_job`): it is
-    the forge's, known, and never another submitter's missing ``$LC_HPC_SESSION``.
-    """
-    count = 0
-    for line in filter(None, (raw.strip() for raw in squeue.splitlines())):
-        name, _, comment = line.partition('|')
-        count += COMMENT_PREFIX not in comment and not is_run_job(name)
-    return count
+__all__ = ['SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
 
 
 def progress_text(where_: Progress) -> str:
@@ -215,7 +194,7 @@ class SlurmCluster:
             'qos': qos,
             'partitions': {name: part.max_minutes for name, part in snapshot.partitions.items() if part.up},
             'storage': storage_text(usage),
-            'untagged': untagged_tasks(shell(_JOBS_COMMAND, None)),
+            'untagged': sum(s.usage[''].tasks for s, _ in read if '' in s.usage),  # hpc.slurm.stream_of
         }
         return Standing(supply, parse_usage(shell(USAGE_COMMAND, None)), facts)
 

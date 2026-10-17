@@ -2,7 +2,7 @@
 
 Nothing about an allocation lives in a machine file: the pool is the accounts' measured ceilings, the
 sessions are whoever holds tagged tasks in ``squeue`` now, and the override is one record every submitter
-reads. These tests feed the probe's ``@@@ shared`` section the way ``squeue -r -o "%C|%m|%D|%k"`` prints it.
+reads. These tests feed the probe's ``@@@ shared`` section the way ``squeue -r -o "%C|%m|%D|%k|%j"`` prints it.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from lab_commons.hpc.allocation import (
 from lab_commons.hpc.config import Cost, Policy
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.plan import allocate
+from lab_commons.hpc.slurm import FORGE_SESSION, Snapshot, parse_usage, stream_of
 
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 OTHER = Grant(user='you', hosts=('login.example',), slurm_account='acct-free')
@@ -204,3 +205,22 @@ def test_an_unnamed_session_shares_the_remainder_and_a_named_sessions_slack_lend
     # A record naming more than the pool floors the remainder at 0: the unnamed session waits.
     over = Session('b', fixed=(('a', 500, 10_000),))
     assert session_room(over, [_snap('96 lc:session=a\n'), _snap('96 lc:session=a\n')], Cost(cpus=8)) == 0
+
+
+def test_a_tasks_stream_is_its_tag_else_forge_for_a_run_name_else_untagged() -> None:
+    """ONE classifier (:func:`stream_of`) feeds both the untagged alarm and the allocation's streams.
+
+    PLANTED CONTROL: a pre-fix forge array (untagged, named ``run-<sha12>``) is the ``forge`` stream in the
+    allocation, while a foreign untagged job stays untagged and a tag always wins over the name.
+    """
+    assert stream_of('lc:session=campaign', 'run-89f11a39d6fe') == 'campaign'
+    assert stream_of('(null)', 'run-89f11a39d6fe') == FORGE_SESSION
+    assert stream_of('(null)', 'run-4ad64054bba3-base') == FORGE_SESSION
+    assert stream_of('(null)', 'wdg-design') == ''
+    assert stream_of('(null)', 'run-notasha12xyz') == ''
+    usage = parse_usage('8|1G|1|(null)|run-89f11a39d6fe\n4|1G|1|(null)|wdg-design\n2|1G|1|lc:session=a|x\n')
+    snapshot = Snapshot(nodes=(), partitions={}, quota=_snap('').quota, usage=usage)
+    held = active([snapshot])
+    assert held[FORGE_SESSION].cpus == 8, 'the pre-fix forge array is the forge stream'
+    assert held[UNTAGGED].cpus == 4
+    assert held['a'].cpus == 2
