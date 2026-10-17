@@ -33,8 +33,11 @@ sampled at every wake for its resident memory and its cpu-seconds (:class:`lab_c
 user + system over every process of the tree, a child that exited keeping what it was last seen using);
 a run that ended on its own (not stopped) records its peak, wall and MEASURED cpu-seconds
 under ``(its producer, its need-set)`` -- ``local`` for a part, a request's declared name -- the box half
-of the one demand table a Slurm run also writes. A run the box killed records its peak as a
-floor (:func:`~lab_commons.compute.learned.record_run`).
+of the one demand table a Slurm run also writes. THE BOX'S RECORD IS THE MEASUREMENT when it has one
+(:func:`_measured`): its peak is the enforcer's own metric, the one the limit is held to, and a run killed
+for memory before serve's first wake is measured by nothing else. A memory kill records the DECLARED limit
+it died at as a floor that grows (:func:`~lab_commons.compute.learned.record_run`), so the next claim is
+larger -- a kill that learned nothing was re-claimed at the same figure and killed again, every tick.
 
 A PRODUCER RUNS BELOW NORMAL OS PRIORITY (:func:`below_normal`, user ruling 2026-10-13): an interactive
 run admitted beside it on the box ledger keeps the scheduler's favour.
@@ -55,7 +58,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
+from lab_commons.box import GB, Capacity, Demand, Outcome, Refused, command, read_ended
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
@@ -75,7 +78,7 @@ from lab_commons.hpc.needsets import needs_of
 from lab_commons.proc import process_tree, working_set_bytes
 from lab_commons.proccpu import TreeCpu
 
-__all__ = ['BOX_QUEUE_S', 'Produced', 'boxed', 'demote_unreachable', 'produce']
+__all__ = ['BOX_QUEUE_S', 'Produced', 'box_claim', 'boxed', 'demote_unreachable', 'produce']
 
 #: How long a producer waits for its box claim, in seconds: the tick admitted it against the box ledger, so
 #: only a run admitted in between can be in its way -- then the claim is released and retried next tick.
@@ -135,15 +138,20 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *,
     An item claimed with no demand is priced as the tick prices a box part (:func:`~lab_commons.compute.learned.
     box_demand` of *root*'s origin). The child holds against *capacity*, the one reading the demand was sized by.
     """
+    what = f'{item.context}@{item.sha[:12]}'
+    demand = box_claim(item, capacity, root=root)
+    return command(
+        argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha, capacity=capacity
+    )
+
+
+def box_claim(item: Work, capacity: Capacity, *, root: Path | None = None) -> Demand:
+    """The :class:`Demand` *item* runs in the box at: the tick's admitted demand, else priced as a box part."""
     needs = needs_of(item.platform)
     asked = item.demand or box_demand(_origin(root), needs, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
     seats = {name: 1 for name in needs if name in capacity.seats}
     cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
-    demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
-    what = f'{item.context}@{item.sha[:12]}'
-    return command(
-        argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha, capacity=capacity
-    )
+    return Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -188,9 +196,11 @@ def produce(
     try:
         argv = (str(tree.python), *item.argv)
         record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
-        held = boxed(item, argv, (capacity or Capacity.read)(), record, root=root)
+        size = (capacity or Capacity.read)()
+        held = boxed(item, argv, size, record, root=root)
+        declared = box_claim(item, size, root=root).mem_gb
         produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
-                        say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
+                        say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard, declared_gb=declared,
                         beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
                         meter=meter)  # fmt: skip
     finally:
@@ -218,6 +228,7 @@ def _run(
     renew_s: float,
     fetch: Callable[[Path], None],
     heard: list[str],
+    declared_gb: float,
     beat_s: float,
     beat: Callable[[timedelta], object],
     sample: Callable[[int], float | None],
@@ -263,14 +274,10 @@ def _run(
     ended = read_ended(record)
     record.unlink(missing_ok=True)
     boxed_out = box_release_reason(ended)  # the box's decision, from its record: never from the exit code
-    if usage.peak is not None and usage.cpu_s > 0 and not stopped:
-        wall_s = max(1.0, (clock() - started).total_seconds())
-        learn(
-            root,
-            item,
-            Run(usage.peak, usage.cpu_s, wall_s),
-            killed=(isinstance(ended, Outcome) and ended.killed) or returncode < 0,
-        )
+    measured = _measured(ended, usage, declared_gb, max(1.0, (clock() - started).total_seconds()))
+    if measured is not None and not stopped:
+        oom = isinstance(ended, Outcome) and ended.reason == 'memory'
+        learn(root, item, measured, killed=oom or returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
         _settle(
@@ -287,6 +294,22 @@ def _run(
         fetch(root)
         _carry(root, client(root), item, posts[-1], say)
     return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped)
+
+
+def _measured(ended: Outcome | object, usage: _Usage, declared_gb: float, wall_s: float) -> Run | None:
+    """What one box run measured: the box's record when it measured anything, else serve's samples, else ``None``.
+
+    The record's peak is the enforcer's (the metric the limit holds); a memory kill died AT *declared_gb*, so
+    that is its floor whatever peak the record reads. Serve's samples are resident memory read between wakes:
+    the fallback for a run the box left no measurement of.
+    """
+    if isinstance(ended, Outcome) and (ended.peak_mem_bytes > 0 or ended.reason == 'memory'):
+        peak = ended.peak_mem_bytes / GB
+        floor = max(peak, declared_gb) if ended.reason == 'memory' else peak
+        return Run(floor, max(ended.cpu_s, usage.cpu_s), max(1.0, ended.wall_s, wall_s))
+    if usage.peak is not None and usage.cpu_s > 0 and not isinstance(ended, Refused):
+        return Run(usage.peak, usage.cpu_s, wall_s)
+    return None  # nothing measured, or a refusal: the samples were the box CLI waiting, never the part
 
 
 class _Usage:
