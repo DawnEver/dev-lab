@@ -38,7 +38,7 @@ import pytest
 from _box_fake import ended
 
 from lab_commons import box
-from lab_commons.box import BOX_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
+from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
 from lab_commons.compute import learned
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
@@ -1278,6 +1278,28 @@ def test_a_selection_declares_the_workers_its_pytest_runs(monkeypatch, xdist, gi
     _boxed_on(monkeypatch, 16.0, xdist=xdist)
     argv, _record = verifybox.boxed(Path('r'), ['py', '-m', 'pytest', *given], queue_s=5, outcome=Path('o.json'))
     assert _claimed(argv) == (cores, ['py', '-m', 'pytest', *runs])
+
+
+@pytest.mark.parametrize(
+    ('xdist', 'given', 'runs'),
+    [
+        (True, ['-n', 'auto'], ['-n', 'auto', '-n', '3']),
+        (True, [], ['-n', '3']),
+        (False, [], []),
+        (True, ['-p', 'no:xdist'], ['-p', 'no:xdist']),
+    ],
+)
+def test_a_producer_inside_the_box_runs_the_width_it_was_admitted_at(monkeypatch, xdist, given, runs) -> None:
+    """Declared == used inside a claim: the part's pytest runs as many workers as its claim declared cores.
+
+    A configured ``-n auto`` (a repository's addopts) is the WHOLE box, not the claim, so the declared cores are
+    appended last and win. PLANTED CONTROLS: no xdist and ``-p no:xdist`` run one interpreter, nothing appended.
+    """
+    _boxed_on(monkeypatch, 16.0, xdist=xdist)
+    monkeypatch.setenv(INSIDE_ENV, 'forge:tests/base')
+    monkeypatch.setenv(CPU_ENV, '3')
+    argv, record = verifybox.boxed(Path('r'), ['py', *given], queue_s=5, outcome=Path('o.json'))
+    assert (argv, record) == (['py', *runs], None), 'not reboxed, and sized to the claim'
 
 
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:

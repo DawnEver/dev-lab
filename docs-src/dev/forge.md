@@ -225,7 +225,10 @@ lower-ranked one is still claimed, so several parts run on one host at once.
   exactly what it then DECLARES to the box (`compute.learned.box_demand`: the cores it kept busy and its peak
   memory with headroom; unmeasured, the D5 prior `compute.learned.part_prior` -- the median of this host's
   measured parts, else of every host's forge records for its need-set, else the per-task floor, never the whole
-  box; one seat of each tool it needs), and its producer runs in the box at that claim, holding against the
+  box -- the last two are ONE worker's peak, so the part declares `PART_WIDTH` workers' cores and that many
+  times the peak; past the box's memory the cores narrow in proportion; one seat of each tool it needs), and
+  its producer runs in the box at that claim -- its pytest `-n` IS the declared cores (the box's
+  `LAB_COMMONS_BOX_CPU`, `dev.verifybox.claimed_width`) -- holding against the
   capacity it was sized by (`box run --capacity`; [box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); on a box, what its
   ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` margins (`cpu_margin`,
