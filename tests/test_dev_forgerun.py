@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import io
 import json
-import random
+import os
 import tarfile
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -433,7 +433,7 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
     record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1'}, home / 'gathered')
     tree = record.parent / 'tree'
     (tree / 'fields').mkdir(parents=True)
-    (tree / 'fields' / 'b.h5').write_bytes(random.Random(0).randbytes(2 << 20))  # noqa: S311 -- 2 MB incompressible
+    (tree / 'fields' / 'b.h5').write_bytes(os.urandom(2 << 20))  # 2 MB incompressible
     (tree / 'undeclared.log').write_bytes(b'never uploaded')
     slurm = _Slurm(record)
     slurm.done = True

@@ -195,6 +195,11 @@ ALLOWED: Final[dict[Site, str]] = {
         'global _run_date',
     ): 'the per-run date is memoized the same way, so a run straddling midnight keeps one folder',
     (
+        'src/lab_commons/dev/forgerecords.py',
+        'PLC0415',
+        'from lab_commons.dev.retentionplan import load_policy as retention',
+    ): 'retentionplan reaches this module through the forge layer; the [retention] budget has one reader',
+    (
         'src/lab_commons/dev/servelock.py',
         'PLC0415',
         'import msvcrt',

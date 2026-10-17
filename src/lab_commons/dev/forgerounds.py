@@ -34,6 +34,7 @@ from lab_commons.dev.forgehosts import card_host, publish_card
 from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgetick import TickReport, tick
 from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.needsets import needs_of
 
 __all__ = ['Producing', 'Rounds', 'locked_fetch', 'supply_now']
@@ -140,7 +141,8 @@ def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: obj
         return tick(root, **kwargs)
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
-            host = card_host(str(kwargs.get('machine') or ''), kwargs.get('seat'))  # type: ignore[arg-type]
+            seat = kwargs.get('seat')
+            host = card_host(str(kwargs.get('machine') or ''), seat if isinstance(seat, ClusterAccount) else None)
             alarm(Alarm(AUTH, repo, f'the forge refused the stored credential on {host}', str(failed)))
         raise
 
