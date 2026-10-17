@@ -76,7 +76,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-14 at 299 (box: run, _win, _linux, __main__ and the two before): 253 -> 259.
 #: Re-taken 2026-10-16 at 306 (the locks, presence and durable lanes): 259 -> 266, the same 40 under.
 #: Re-taken 2026-10-17 at 313 (compute: unit, graph, store, execute; forgeunit): 266 -> 273, the same 40 under.
-MODULE_FLOOR = 273
+#: Re-taken 2026-10-17 at 320 (hpc allocate, forge records, serve prune/tick, session cap, paging): 273 -> 280.
+MODULE_FLOOR = 280
 MODULE_HEADROOM = 45
 
 
