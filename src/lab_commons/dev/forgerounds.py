@@ -27,7 +27,7 @@ from lab_commons.box.supply import Reading
 from lab_commons.compute import probe
 from lab_commons.compute.model import Demand, Supply
 from lab_commons.dev import forge as _forge
-from lab_commons.dev import forgerun
+from lab_commons.dev import forgerun, forgerunstate
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgeclaim import Work
 from lab_commons.dev.forgehosts import card_host, publish_card
@@ -63,8 +63,8 @@ class Rounds:
     root: Path
     repo: str
     alarm: Callable[[Alarm], object]
-    runs: list[forgerun.Run]
-    slurm: forgerun.Cluster | None
+    runs: list[forgerunstate.Run]
+    slurm: forgerunstate.Cluster | None
     say: Callable[[str], None]
     sized: Callable[[frozenset[str]], Demand]
     supplied: Callable[[Sequence[Holding]], Supply]
@@ -125,7 +125,7 @@ def supply_now(
     held: Sequence[Holding],
     *,
     name: str,
-    standing: forgerun.Standing | None,
+    standing: forgerunstate.Standing | None,
     capacity: Callable[[], Capacity] = Capacity.read,
     read: Read = Reading.now,
 ) -> Supply:

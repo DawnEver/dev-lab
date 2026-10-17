@@ -21,7 +21,7 @@ import pytest
 
 from lab_commons.compute import learned
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import artefacts, forgecarry, forgerun, forgeship, forgeslurm
+from lab_commons.dev import artefacts, forgecarry, forgerun, forgerunstate, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
 from lab_commons.dev.forgestatus import Status
@@ -98,28 +98,28 @@ class _Slurm:
         self.phrase = 'queued 4/4'
         self.cancelled: list[str] = []
 
-    def submitted(self, _run: forgerun.Run) -> list[str]:
+    def submitted(self, _run: forgerunstate.Run) -> list[str]:
         return list(self.recorded)
 
-    def orphans(self, _run: forgerun.Run) -> list[str]:
+    def orphans(self, _run: forgerunstate.Run) -> list[str]:
         return list(self.queue)
 
-    def submit(self, _run: forgerun.Run) -> list[str]:
+    def submit(self, _run: forgerunstate.Run) -> list[str]:
         self.submits += 1
         self.recorded = ['4242']
         return ['4242']
 
-    def gather(self, _run: forgerun.Run) -> Path | None:
+    def gather(self, _run: forgerunstate.Run) -> Path | None:
         return self.record if self.done else None
 
-    def progress(self, _run: forgerun.Run) -> str:
+    def progress(self, _run: forgerunstate.Run) -> str:
         return self.phrase
 
-    def cancel(self, run: forgerun.Run) -> list[str]:
+    def cancel(self, run: forgerunstate.Run) -> list[str]:
         self.cancelled += run.job_ids
         return list(run.job_ids)
 
-    def tree(self, _run: forgerun.Run) -> Path:
+    def tree(self, _run: forgerunstate.Run) -> Path:
         return self.record.parent / 'tree'
 
 
@@ -132,7 +132,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _start(tmp_path: Path, store: _Store, owner: Claim = HERE, outputs: tuple[str, ...] = ()) -> forgerun.Run:
+def _start(tmp_path: Path, store: _Store, owner: Claim = HERE, outputs: tuple[str, ...] = ()) -> forgerunstate.Run:
     store.add('pending', owner.description())
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts', outputs)
     return forgerun.start(Work('integrate/main', SHA, 'linux', 'mine', owner, cluster=part), owner)
@@ -140,9 +140,9 @@ def _start(tmp_path: Path, store: _Store, owner: Claim = HERE, outputs: tuple[st
 
 def _tick(
     store: _Store, slurm: _Slurm, *, me: Claim = HERE, alarms: list[Alarm] | None = None, root: Path | None = None
-) -> forgerun.Run | None:
+) -> forgerunstate.Run | None:
     """One serve call: read the run back from disk (a fresh process) and advance it."""
-    (run,) = forgerun.live('https://f/o/r.git')
+    (run,) = forgerunstate.live('https://f/o/r.git')
     return forgerun.advance(
         root or Path(),
         run,
@@ -162,13 +162,13 @@ def test_each_tick_advances_the_run_and_a_restart_resumes_without_resubmitting(h
     _start(home, store)
     after = _tick(store, slurm)
     assert after is not None
-    assert (after.phase, after.job_ids, slurm.submits) == (forgerun.SUBMITTED, ('4242',), 1)
+    assert (after.phase, after.job_ids, slurm.submits) == (forgerunstate.SUBMITTED, ('4242',), 1)
     assert _tick(store, slurm) is not None, 'still running: the tick returns, nothing waits'
     assert slurm.submits == 1, 'a restart (state re-read from disk) resumes; it never resubmits'
     slurm.done = True
     assert _tick(store, slurm) is None, 'gathered, published, released in one tick'
     assert posted == [home / 'run.json.gz']
-    assert forgerun.live('https://f/o/r.git') == (), 'released: the state file is gone'
+    assert forgerunstate.live('https://f/o/r.git') == (), 'released: the state file is gone'
 
 
 def test_a_retry_round_moves_the_runs_job_ids_to_the_round_in_flight(home: Path) -> None:
@@ -183,13 +183,13 @@ def test_a_retry_round_moves_the_runs_job_ids_to_the_round_in_flight(home: Path)
     _tick(store, slurm)
     slurm.recorded = ['7667160', '7667161', '7667163']
     said: list[str] = []
-    (run,) = forgerun.live('https://f/o/r.git')
+    (run,) = forgerunstate.live('https://f/o/r.git')
     after = forgerun.advance(
         Path(), run, client=_Client(store), me=HERE, lease=HOURS6, cluster=slurm, say=said.append, alarm=[].append
     )
     assert after is not None
     assert after.job_ids == ('7667160', '7667161', '7667163'), 'every round, so a cancel reaches them all'
-    assert forgerun.live('https://f/o/r.git')[0].job_ids == after.job_ids, 'and the file carries them'
+    assert forgerunstate.live('https://f/o/r.git')[0].job_ids == after.job_ids, 'and the file carries them'
     assert any('job 7667163' in line and 'round 3' in line for line in said), said
 
 
@@ -200,7 +200,7 @@ def test_a_crash_after_sbatch_adopts_the_jobs_slurm_recorded(home: Path) -> None
     slurm.recorded = ['777']
     after = _tick(store, slurm)
     assert after is not None
-    assert (after.phase, after.job_ids, slurm.submits) == (forgerun.SUBMITTED, ('777',), 0)
+    assert (after.phase, after.job_ids, slurm.submits) == (forgerunstate.SUBMITTED, ('777',), 0)
 
 
 def test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted(home: Path) -> None:
@@ -209,7 +209,7 @@ def test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted(home: Path) -> N
     slurm.queue = ['555']
     after = _tick(store, slurm, alarms=alarms)
     assert after is not None
-    assert (after.phase, slurm.submits) == (forgerun.CLAIMED_PHASE, 0)
+    assert (after.phase, slurm.submits) == (forgerunstate.CLAIMED_PHASE, 0)
     assert [a.kind for a in alarms] == [LEASE]
     assert 'scancel' in alarms[0].body
 
@@ -217,7 +217,7 @@ def test_orphaned_jobs_raise_an_alarm_and_are_never_resubmitted(home: Path) -> N
 class _CrashAtSbatch(_Slurm):
     """``sbatch`` queued the jobs, then the login node died before ``hpc`` wrote the run state."""
 
-    def submit(self, _run: forgerun.Run) -> list[str]:
+    def submit(self, _run: forgerunstate.Run) -> list[str]:
         self.queue = ['555']
         msg = 'the login node went down mid-submit'
         raise ConnectionResetError(msg)
@@ -233,13 +233,13 @@ def test_the_submit_is_journaled_before_sbatch_so_a_crash_mid_submit_is_resumed_
     _start(home, store)
     with pytest.raises(ConnectionResetError):
         _tick(store, crashing)
-    (journaled,) = forgerun.live('https://f/o/r.git')
-    assert journaled.phase == forgerun.SUBMITTING, 'the intent was on disk before sbatch was called'
+    (journaled,) = forgerunstate.live('https://f/o/r.git')
+    assert journaled.phase == forgerunstate.SUBMITTING, 'the intent was on disk before sbatch was called'
     slurm = _Slurm(home / 'r')
     slurm.queue = list(crashing.queue)
     after = _tick(store, slurm, alarms=alarms)
     assert after is not None
-    assert (after.phase, after.job_ids, slurm.submits) == (forgerun.SUBMITTED, ('4242',), 1)
+    assert (after.phase, after.job_ids, slurm.submits) == (forgerunstate.SUBMITTED, ('4242',), 1)
     assert slurm.cancelled == ['555'], 'the interrupted submit is cancelled, never left running twice'
     assert alarms == [], 'no human is needed: the journal says the jobs were ours'
 
@@ -273,7 +273,7 @@ def test_a_claim_another_owner_won_stands_the_run_down(home: Path) -> None:
     store.now = NOW + HOURS6 + timedelta(minutes=1)
     store.add('pending', dataclasses.replace(BOB, until=store.now + HOURS6).description())
     assert _tick(store, slurm, alarms=alarms) is None
-    assert forgerun.live('https://f/o/r.git') == ()
+    assert forgerunstate.live('https://f/o/r.git') == ()
     assert [a.kind for a in alarms] == [LEASE]
     assert slurm.submits == 0, 'a loser never produces'
 
@@ -298,7 +298,7 @@ def test_a_lease_that_cannot_be_renewed_alarms_and_keeps_the_run(home: Path) -> 
     store.now, store.refuse = NOW + timedelta(hours=3), True
     after = _tick(store, slurm, alarms=alarms)
     assert after is not None
-    assert after.phase == forgerun.CLAIMED_PHASE
+    assert after.phase == forgerunstate.CLAIMED_PHASE
     assert [a.kind for a in alarms] == [LEASE]
     assert slurm.submits == 0
 
@@ -331,7 +331,7 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
     log = 'log=/ci/native/k.log'
 
     class _Unbuilt(_Slurm):
-        def submit(self, _run: forgerun.Run) -> list[str]:
+        def submit(self, _run: forgerunstate.Run) -> list[str]:
             msg = f'the build for {SHA[:12]} failed on h, nothing was submitted; {log}\ncmake not found'
             raise NotSubmitted(msg)
 
@@ -342,9 +342,9 @@ def test_a_failed_build_is_released_inconclusive_naming_its_log(home: Path) -> N
         'error',
         f'{release_reason(ProducerExit.INCONCLUSIVE)} {log}',
     )
-    assert forgerun.live('https://f/o/r.git') == ()
+    assert forgerunstate.live('https://f/o/r.git') == ()
     _start(home, store)
-    assert _tick(store, _Slurm(home / 'r')).phase == forgerun.SUBMITTED
+    assert _tick(store, _Slurm(home / 'r')).phase == forgerunstate.SUBMITTED
 
 
 def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Path) -> None:
@@ -358,7 +358,7 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     """
 
     class _Full(_Slurm):
-        def submit(self, _run: forgerun.Run) -> list[str]:
+        def submit(self, _run: forgerunstate.Run) -> list[str]:
             msg = 'h has no headroom now for one task of 1 CPU and 352.2 GB'
             raise NoRoom(msg)
 
@@ -369,7 +369,7 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     assert post['status'] == 'error'
     assert post['description'].startswith(RETRYABLE), post['description']
     assert 'inconclusive' not in post['description']
-    assert forgerun.live('https://f/o/r.git') == ()
+    assert forgerunstate.live('https://f/o/r.git') == ()
     released = Status(context=part_context('tests'), state='error', description=post['description'], url='')
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
 
@@ -380,9 +380,9 @@ SCHEMA_1 = Path(__file__).parent / '_hpc_fixtures' / 'forge-run-schema1-2026-10-
 def _plant_schema_1() -> dict[str, Any]:
     """A live schema-1 run as Ada held it (2026-10-17, account sanitised), planted in this home's forge-runs/."""
     raw = json.loads(SCHEMA_1.read_text(encoding='utf-8'))
-    forgerun.directory().mkdir(parents=True, exist_ok=True)
+    forgerunstate.directory().mkdir(parents=True, exist_ok=True)
     name = f'0a8e97f67747-{raw["sha"]}-{raw["platform"]}-{raw["scope"]}.json'
-    (forgerun.directory() / name).write_text(json.dumps(raw, indent=2), encoding='utf-8')
+    (forgerunstate.directory() / name).write_text(json.dumps(raw, indent=2), encoding='utf-8')
     return raw
 
 
@@ -390,15 +390,15 @@ def _plant_schema_1() -> dict[str, Any]:
 def test_a_live_schema_1_run_is_adopted_losslessly_and_written_back_at_this_schema() -> None:
     """A tool redeployed under a live run adopts it: every field carried, the old job name kept as an alias."""
     raw = _plant_schema_1()
-    (run,) = forgerun.live(raw['repo_url'])
+    (run,) = forgerunstate.live(raw['repo_url'])
     carried = {key: value for key, value in dataclasses.asdict(run).items() if key in raw and key != 'schema'}
     as_read = {k: tuple(v) if isinstance(v, list) else v for k, v in raw.items() if k != 'schema'}
     assert carried == as_read
-    assert run.schema == forgerun.SCHEMA
+    assert run.schema == forgerunstate.SCHEMA
     assert run.job_aliases == (f'run-{raw["sha"][:12]}',), 'jobs sbatched under schema 1 bear the sha-only name'
-    (path,) = forgerun.directory().glob('*.json')
-    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerun.SCHEMA, 'written back'
-    assert forgerun.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
+    (path,) = forgerunstate.directory().glob('*.json')
+    assert json.loads(path.read_text(encoding='utf-8'))['schema'] == forgerunstate.SCHEMA, 'written back'
+    assert forgerunstate.live(raw['repo_url']) == (run,), 'deterministic: a second read of the upgraded file agrees'
 
 
 def test_a_new_run_has_no_job_alias(home: Path) -> None:
@@ -410,21 +410,21 @@ def test_a_live_run_of_an_unknown_schema_is_refused_with_the_remedy(home: Path) 
     """PLANTED CONTROL: the same file at this schema is read."""
     store = _Store()
     run = _start(home, store)
-    assert forgerun.live(run.repo_url) == (run,)
-    (path,) = forgerun.directory().glob('*.json')
+    assert forgerunstate.live(run.repo_url) == (run,)
+    (path,) = forgerunstate.directory().glob('*.json')
     path.write_text(json.dumps({**json.loads(path.read_text(encoding='utf-8')), 'schema': 0}), encoding='utf-8')
-    with pytest.raises(forgerun.ForeignSchema, match=r'schema 0.*squeue --me'):
-        forgerun.live(run.repo_url)
+    with pytest.raises(forgerunstate.ForeignSchema, match=r'schema 0.*squeue --me'):
+        forgerunstate.live(run.repo_url)
 
 
 def test_one_refused_run_is_skipped_and_named_the_rest_are_read(home: Path) -> None:
     """A tick must not die on one bad file: with *refused* given, it hears the refusal and gets the other runs."""
     store = _Store()
     run = _start(home, store)
-    bad = forgerun.save(dataclasses.replace(run, sha='d' * 40))
+    bad = forgerunstate.save(dataclasses.replace(run, sha='d' * 40))
     bad.write_text(json.dumps({**json.loads(bad.read_text(encoding='utf-8')), 'schema': 99}), encoding='utf-8')
     heard: list[str] = []
-    assert forgerun.live(run.repo_url, refused=heard.append) == (run,)
+    assert forgerunstate.live(run.repo_url, refused=heard.append) == (run,)
     assert len(heard) == 1
     assert 'schema 99' in heard[0]
 
@@ -433,10 +433,10 @@ def test_the_state_is_keyed_by_repo_sha_platform_and_scope(home: Path) -> None:
     store = _Store()
     run = _start(home, store)
     other = dataclasses.replace(run, repo_url='https://f/o/other.git')
-    forgerun.save(other)
-    assert forgerun.live(run.repo_url) == (run,)
-    assert forgerun.live(other.repo_url) == (other,)
-    assert len(list(forgerun.directory().glob('*.json'))) == 2
+    forgerunstate.save(other)
+    assert forgerunstate.live(run.repo_url) == (run,)
+    assert forgerunstate.live(other.repo_url) == (other,)
+    assert len(list(forgerunstate.directory().glob('*.json'))) == 2
 
 
 def _progress(store: _Store) -> list[str]:
@@ -528,7 +528,7 @@ def test_a_missing_declared_output_fails_the_run_loudly(home: Path, monkeypatch)
     assert store.posts[-1]['status'] == 'error'
     assert 'fields/*.vtu' in store.posts[-1]['description']
     assert [a.kind for a in alarms] == [forgerun.RUN]
-    assert forgerun.live('https://f/o/r.git') == ()
+    assert forgerunstate.live('https://f/o/r.git') == ()
 
 
 def test_a_started_run_produces_the_part_it_claimed(home: Path) -> None:
@@ -609,14 +609,14 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
 class _Unrecorded(_Slurm):
     """Its jobs ended without writing a record: every gather says so."""
 
-    def gather(self, run: forgerun.Run) -> Path | None:
+    def gather(self, run: forgerunstate.Run) -> Path | None:
         msg = f'the run of {run.sha[:12]} ended without a record in /out'
-        raise forgerun.Unrecorded(msg)
+        raise forgerunstate.Unrecorded(msg)
 
 
 def _submitted_run(home: Path, store: _Store, slurm: _Slurm) -> None:
     _start(home, store)
-    assert _tick(store, slurm).phase == forgerun.SUBMITTED
+    assert _tick(store, slurm).phase == forgerunstate.SUBMITTED
 
 
 def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home: Path) -> None:
@@ -634,7 +634,7 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     ended = _Unrecorded(home / 'r')
     ended.recorded = ['4242']
     assert _tick(store, ended, alarms=alarms) is None
-    assert forgerun.live('https://f/o/r.git') == (), 'settled: the next tick has nothing to re-alarm'
+    assert forgerunstate.live('https://f/o/r.git') == (), 'settled: the next tick has nothing to re-alarm'
     assert [a.kind for a in alarms] == [RUN]
     post = store.posts[-1]
     assert post['status'] == 'error'
@@ -655,7 +655,7 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
         _submitted_run(home, store, slurm)
         slurm.recorded = []  # the part's state.json never existed: the ids were another part's
         assert _tick(store, slurm, alarms=alarms) is None
-        assert forgerun.live('https://f/o/r.git') == ()
+        assert forgerunstate.live('https://f/o/r.git') == ()
         assert [a.kind for a in alarms] == [RUN]
         post = store.posts[-1]
         assert post['status'] == 'error'

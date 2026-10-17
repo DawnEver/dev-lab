@@ -1,4 +1,4 @@
-"""THE SLURM SIDE OF A CLUSTER RUN -- :class:`lab_commons.dev.forgerun.Cluster` through this login node's shell.
+"""THE SLURM SIDE OF A CLUSTER RUN -- :class:`lab_commons.dev.forgerunstate.Cluster` through this login node's shell.
 
 Everything here runs ON the cluster login node (``lab_commons.hpc``'s own shell, never ``ssh``):
 submitting and gathering a run, where its jobs stand (:func:`progress_text`, the phrase its claim
@@ -29,7 +29,7 @@ from lab_commons.config import config_path
 from lab_commons.dev.diskusage import Usage, read_usage, storage_text
 from lab_commons.dev.forgecarry import carry_from, read_by
 from lab_commons.dev.forgerecords import read_named
-from lab_commons.dev.forgerun import Cluster, Run, Standing, Unrecorded
+from lab_commons.dev.forgerunstate import Cluster, Run, Standing, Unrecorded
 from lab_commons.dev.forgeschedule import USAGE_COMMAND, parse_usage
 from lab_commons.dev.forgework import ForgeCallFailed, client_for
 from lab_commons.hpc.account import ClusterAccount

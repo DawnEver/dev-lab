@@ -7,7 +7,7 @@ sequence; a harness (a workstation's Scheduled Task, or a cluster account's cron
 keeps only scheduling, and calls this. ``forge serve --lock [PATH]`` first takes an exclusive lock
 (:func:`lab_commons.dev.servelock.locked`): a second serve on the same lock exits 0 having done nothing.
 
-THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons.dev.forgerun.live`,
+THE SEQUENCE, in order: read the cluster runs in flight here (:func:`lab_commons.dev.forgerunstate.live`,
 a run of another state schema refused); then ROUNDS while any local producer lives -- read what this
 host can admit against (below), :func:`lab_commons.dev.forgetick.tick` (flush the outbox, fetch, claim
 in rank order while jobs admit), start each claimed cluster part as a run and each claimed LOCAL part
@@ -105,7 +105,7 @@ from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.probe import inventory
 from lab_commons.config import section
-from lab_commons.dev import forgerun, retention
+from lab_commons.dev import forgerun, forgerunstate, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
 from lab_commons.dev.forgealarm import (
@@ -153,7 +153,7 @@ def serve(
     client: Callable[[Path], Client],
     machine: str,
     seat: ClusterAccount | None,
-    cluster: Callable[[], forgerun.Cluster],
+    cluster: Callable[[], forgerunstate.Cluster],
     lease: timedelta = DEFAULT_LEASE,
     fetch: Callable[[Path], None] = fetch_origin,
     spawn: Callable[..., Any] = _door.popen,
@@ -184,7 +184,7 @@ def serve(
     def refused(why: str) -> None:  # one unreadable run file is skipped and named; the other runs advance
         alarm(Alarm(RUN, repo, 'a live cluster run this tool cannot read', why, about=why.split(maxsplit=1)[0]))
 
-    runs = list(forgerun.live(repo, refused=refused)) if seat is not None else []
+    runs = list(forgerunstate.live(repo, refused=refused)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
     tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
@@ -250,13 +250,13 @@ def serve(
 
 def _advance(
     root: Path,
-    runs: Sequence[forgerun.Run],
+    runs: Sequence[forgerunstate.Run],
     *,
     client: Callable[[Path], Client],
     machine: str,
     seat: ClusterAccount | None,
     lease: timedelta,
-    slurm: forgerun.Cluster | None,
+    slurm: forgerunstate.Cluster | None,
     why: str,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
@@ -333,7 +333,7 @@ def main(
         sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))
         emit(f'[serve] {missing}', err=True)
         return 1
-    except (ForgeCallFailed, PostFailed, forgerun.ForeignSchema, OSError) as failed:
+    except (ForgeCallFailed, PostFailed, forgerunstate.ForeignSchema, OSError) as failed:
         emit(f'[serve] {failed}', err=True)
         return 1
     if args.json:
