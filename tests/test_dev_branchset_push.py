@@ -289,3 +289,20 @@ def test_a_deletion_from_a_stale_checkout_passes_and_a_content_push_is_still_jud
     code, text = refusal(tmp_path, lines=[f'HEAD {_HEAD} refs/heads/work/foo {_ZERO}'])
     assert code == COULD_NOT_JUDGE
     assert 'update is retired' in text
+
+
+def test_a_retired_key_is_named_retired_with_its_remedy_never_unknown(tmp_path: Path) -> None:
+    """RETIRED-NAMES-REGISTERED: ``branchset.update`` is refused as retired, its remedy the deletion of the key.
+
+    PLANTED CONTROL: a key nobody ever declared is still the kit-older refusal, not a retirement.
+    """
+    stale = '[tool.lab_commons.branchset]\ntrunk = "main"\nsessions = []\nupdate = "u/l"\n'
+    (tmp_path / 'pyproject.toml').write_text(stale, encoding='utf-8')
+    code, text = refusal(tmp_path)
+    assert code == COULD_NOT_JUDGE
+    assert 'update is retired' in text
+    assert 'delete the retired key' in text
+    assert 'unknown' not in text
+    assert 'kit is older' not in text
+    (tmp_path / 'pyproject.toml').write_text(stale.replace('update', 'future_key'), encoding='utf-8')
+    assert 'kit is older' in refusal(tmp_path)[1]
