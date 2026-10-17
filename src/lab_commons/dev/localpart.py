@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
-from lab_commons.compute.presence import declared_versions, refresh
+from lab_commons.compute.presence import cached, declared_versions, measured, refresh
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
 from lab_commons.dev.envkey import env_record
@@ -80,12 +80,15 @@ def local_record(
     outcomes: Mapping[str, str],
     reasons: Mapping[str, str],
     owned: Mapping[str, str],
+    tools: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """The run record of *part* from a LOCAL run, in the cluster record's shape.
 
     An id of *part* the run reported carries its outcome; every other id of *owned* (id -> part) is
     handed off, ``not-covered``, to the part it belongs to. It states the environment it ran against
-    (:func:`lab_commons.dev.envkey.env_record`): nothing is pinned, so the record is the reproducibility.
+    (:func:`lab_commons.dev.envkey.env_record`) and the vendor tool versions this host's presence probe READ
+    (*tools*, default :func:`lab_commons.compute.presence.measured` over the cached reading): nothing is
+    pinned, so the record is the reproducibility.
     """
     mine = [node for node, owner in owned.items() if owner == part and node in outcomes]
     handed = {node: owner for node, owner in owned.items() if owner != part}
@@ -98,6 +101,7 @@ def local_record(
         'handed': handed,
         'reasons': {node: why for node, why in reasons.items() if node in mine},
         **env_record(),
+        'tools': dict(measured(cached()) if tools is None else tools),
     }
 
 

@@ -302,6 +302,17 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
     record = local(reported)
     assert record['outcomes'] == reported
     assert {key: record[key] for key in ('env', 'resolved')} == env_record(), 'it names what it ran against'
+    probed = localpart.local_record(
+        part=BASE,
+        outcomes=reported,
+        owned=owned,
+        sha=SHA,
+        scope='full',
+        req='r',
+        reasons={},
+        tools={'jmag': '25.2.01zp'},
+    )
+    assert probed['tools'] == {'jmag': '25.2.01zp'}, 'and the vendor versions its presence probe read'
     assert record['reasons'] == {'t::s': 'why'}
     assert platformparts.part_of(record).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
