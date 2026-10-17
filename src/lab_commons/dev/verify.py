@@ -74,7 +74,7 @@ from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
-from lab_commons.dev.verifybox import MEASURE_WAIT_S, WAIT_S, boxed, ended_in_the_box
+from lab_commons.dev.verifybox import MEASURE_WAIT_S, WAIT_S, boxed, ended_in_the_box, learn_ended
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
 
@@ -416,6 +416,7 @@ def run_verify(
         argv, record = boxed(root, pytest, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
         code = _tee(argv, cwd=root, handle=handle, extra_env=stamp)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
+    learn_ended(root, pytest, record)
     cut = ended_in_the_box(record)
     complete_census, scope_refusal = census_scope(pytest_args)
     report = read_pytest(distillate.text, returncode=code, allowed_skips=allowed, complete_skip_census=complete_census)

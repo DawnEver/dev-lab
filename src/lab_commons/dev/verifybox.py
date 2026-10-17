@@ -17,6 +17,7 @@ run was cut short and no record means the box itself crashed (each a truncation)
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import math
 import os
@@ -24,7 +25,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import INSIDE_ENV, Capacity, Demand, Refused, command, read_ended
+from lab_commons.box import GB, INSIDE_ENV, Capacity, Demand, Outcome, Refused, command, read_ended
 from lab_commons.compute import learned
 from lab_commons.dev.forgedemand import refresh_checkout
 from lab_commons.dev.platformparts import origin_url
@@ -37,9 +38,11 @@ __all__ = [
     'WAIT_S',
     'boxed',
     'ended_in_the_box',
+    'learn_ended',
     'selection_demand',
     'selection_files',
     'selection_mem_gb',
+    'selection_producer',
     'selection_workers',
     'xdist_installed',
 ]
@@ -118,10 +121,30 @@ def selection_mem_gb(repo: str, files: Sequence[str], workers: int) -> float:
 
     The peaks are the forge's (:mod:`lab_commons.dev.forgedemand`); an unmeasured file is priced at its
     siblings' median (:meth:`~lab_commons.compute.learned.Measured.prior_mb`), and a repository nothing was
-    ever measured for at :class:`~lab_commons.hpc.config.Cost`'s per-task floor.
+    ever measured for at :class:`~lab_commons.hpc.config.Cost`'s per-task floor. A per-file peak is what one
+    SMALL item reached, and one process running many files holds more: a selection that ran before is also
+    priced at its own whole-tree peak (:func:`learn_ended`) times the headroom -- one the box killed for
+    memory at twice the limit it died at -- whichever is larger.
     """
     per = learned.worker_gb(repo, files, prior_gb=Cost().mem_gb, safety=learned.BOX_HEADROOM)
-    return round(max(1, workers) * per, 3)
+    ran = learned.run_of(repo, selection_producer(files), ())
+    whole = 0.0 if ran is None else ran.peak_mem_gb * learned.BOX_HEADROOM
+    return round(max(max(1, workers) * per, whole), 3)
+
+
+def selection_producer(files: Sequence[str]) -> str:
+    """The learned-table producer name of the selection *files*: one per distinct set of files."""
+    return 'verify:' + hashlib.sha256('|'.join(sorted(files)).encode()).hexdigest()[:16]
+
+
+def learn_ended(root: Path, argv: Sequence[str], record: Path | None) -> None:
+    """Keep what the box measured of this selection's whole tree; a memory kill is a floor that grows."""
+    ended = None if record is None else read_ended(record)
+    if not isinstance(ended, Outcome) or ended.peak_mem_bytes <= 0:
+        return
+    run = learned.Run(ended.peak_mem_bytes / GB, ended.cpu_s, max(ended.wall_s, 1e-3))
+    producer = selection_producer(selection_files(root, argv))
+    learned.record_run(_repo(root), producer, (), run, killed=ended.reason == 'memory')
 
 
 def selection_demand(workers: int, mem_gb: float) -> Demand:

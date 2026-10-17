@@ -37,6 +37,7 @@ from typing import Final
 import pytest
 from _box_fake import ended
 
+from lab_commons import box
 from lab_commons.box import BOX_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
 from lab_commons.compute import learned
 from lab_commons.dev import localpart, platformparts, verify, verifybox
@@ -1315,3 +1316,23 @@ def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure
     assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_a.py'], 2) == 2 * 1.0 * learned.BOX_HEADROOM
     assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_new.py'], 1) == 1.5 * learned.BOX_HEADROOM
     assert verifybox.selection_mem_gb('https://g/none.git', ['tests/x.py'], 4) == 4.0, 'the 1 GB floor per worker'
+
+
+def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_path: Path, monkeypatch) -> None:
+    """Per-file peaks under-price one process running many files: the box's own measurement of the tree wins.
+
+    PLANTED CONTROL: a run that exited on its own teaches its peak once; the kill teaches twice the limit.
+    """
+    monkeypatch.setattr(verifybox, '_repo', lambda _root: 'https://g/w.git')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    files = verifybox.selection_files(tmp_path, ['tests'])
+    record = tmp_path / 'o.json'
+    write_ended(record, box.Outcome(-9, 'memory', 2 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    killed = verifybox.selection_mem_gb('https://g/w.git', files, 1)
+    assert killed == pytest.approx(2 * 2 * learned.BOX_HEADROOM, abs=1e-6)  # GB: the 2 GB limit, doubled
+    write_ended(record, box.Outcome(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    assert verifybox.selection_mem_gb('https://g/w.git', files, 1) == pytest.approx(3 * learned.BOX_HEADROOM, abs=1e-6)
+    verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing
