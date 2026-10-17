@@ -14,9 +14,11 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
 from lab_commons.box import GB, Capacity
+from lab_commons.compute import probe as compute_probe
 from lab_commons.compute.model import (
     FEATURE,
     INTEGRATION,
@@ -185,7 +187,14 @@ def _argv(part: str = BASE) -> list[str]:
 
 
 def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetick.TickReport:
+    """One tick against the loopback forge; a box tick given no supply has its whole capacity, read QUIET.
+
+    The default box supply is MEASURED (D3): the live box's load would decide what a test claims.
+    """
     forge = Forge('forge.example.org', 'o', 'r')
+    if kwargs.get('seat') is None and 'supply' not in kwargs:
+        capacity = Capacity.read()
+        kwargs['supply'] = compute_probe.box('G', capacity=capacity, read=quiet(capacity))
     return tick(
         repo,
         client=lambda _root: client(forge, Loopback(server)),
@@ -301,7 +310,11 @@ def test_the_cli_prints_work_and_claims_as_json(server, tmp_path: Path, capsys) 
     assert printed['refused'] == []
 
 
-def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path, capsys) -> None:
+def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path, capsys, monkeypatch) -> None:
+    capacity = Capacity.read()  # the CLI's box supply is measured (D3): read it quiet, as `_tick` does
+    monkeypatch.setattr(
+        forgetick, '_whole', lambda scope, **_kw: compute_probe.box(scope, capacity=capacity, read=quiet(capacity))
+    )
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
     me = Claim(workstation() or '', 'alice', NOW + DEFAULT_LEASE)
