@@ -8,7 +8,8 @@ working in one can only type a bare ``pytest`` line -- which the family's hooks 
 deny it for the reason this module exists: a bare invocation returns an exit code, and an exit
 code cannot say whether the run COVERED what it selected. This module is the portable remainder:
 three steps, a log, and a verdict built out of the algebra in :mod:`lab_commons.dev.verdict` --
-plus :data:`HOOKS_STEP`, which fails the run when a hook the repo declares is not installed.
+plus :data:`~lab_commons.dev.hook_install.HOOKS_STEP`, which fails the run when a hook the repo
+declares is not installed.
 
 THE POLARITY IS INHERITED, NOT RE-DECIDED. A run starts INCONCLUSIVE and is PROMOTED only on
 proof. The measured case that motivates it is in that module's own docstring, and the parser that
@@ -55,7 +56,7 @@ from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgerequest import TESTS
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
-from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
+from lab_commons.dev.hook_install import read_hooks
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import part_selection, post_cited, post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
@@ -70,6 +71,7 @@ from lab_commons.dev.reports import (
     read_pytest,
     read_ruff,
     stale_declarations,
+    vanished_shortfall,
 )
 from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
@@ -88,7 +90,6 @@ from lab_commons.log import emit
 
 __all__ = [
     'EXIT_CODES',
-    'HOOKS_STEP',
     'LOG_DIRECTORY',
     'MEASURED_TARGETS',
     'OUTCOME_PLUGIN',
@@ -98,7 +99,6 @@ __all__ = [
     'is_targeted',
     'main',
     'project_root',
-    'read_hooks',
     'run_key',
     'run_verify',
 ]
@@ -292,30 +292,6 @@ def _tee(command: list[str], *, cwd: Path, handle: IO[str], extra_env: dict[str,
     return process.returncode
 
 
-#: The step name the hooks-installed check reports under (user directive 2026-09-23). A STEP rather
-#: than a test so that a verify narrowed to one path still runs it: the adoption test only runs when
-#: a suite selects it, and the only path that skips this is one where verify is not run at all.
-HOOKS_STEP: Final = 'hooks-installed'
-
-
-def read_hooks(root: Path, *, handle: IO[str]) -> StepReport:
-    """The hooks-installed step: a named failure when a declared hook is not live, with its remedy.
-
-    It reads and never installs -- the install act is :func:`lab_commons.dev.hook_install.install`,
-    called from each repo's bootstrap. ``nothing-declared`` passes: a repo with no configuration has
-    no hook for this step to find missing.
-    """
-    report = hook_installation(root)
-    handle.write(f'$ {HOOKS_STEP}: {report.verdict} ({report.hooks_dir})\n')
-    for stage in report.failing:
-        handle.write(f'  {stage.stage:<12} {stage.status:<28} {stage.detail}\n')
-    if report.verdict == UNPROTECTED:
-        handle.write(f'  remedy: {INSTALL_COMMAND}\n')
-    handle.flush()
-    failed = (HOOKS_STEP,) if report.verdict == UNPROTECTED else ()
-    return StepReport(name=HOOKS_STEP, reported=(HOOKS_STEP,), failures=failed)
-
-
 def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec: str, log: LogRef) -> Verdict:
     """Fold the step reports into ONE verdict over the whole verify run.
 
@@ -341,25 +317,6 @@ def build_verdict(reports: tuple[StepReport, ...], *, tree: str, env: str, spec:
     else:
         result = Result.inconclusive(proof.refusal, proof=proof)
     return Verdict(tree=tree, env=env, selector=selector, result=result, log=log)
-
-
-def _vanished_shortfall(stale: tuple[str, ...]) -> tuple[str, ...]:
-    """The refusal for a declaration whose SUBJECT left the checkout, read off the tree.
-
-    Its own function because it is the one shortfall no step produced: every other reason in
-    :func:`run_verify` is read out of what a process PRINTED, and this one is read out of the files a
-    declaration names -- so it binds before anything launches, and on a selected invocation too,
-    where the run cannot judge anybody else's allowance retired.
-    """
-    if not stale:
-        return ()
-    reason = (
-        f'declared in [tool.lab_commons.verify] allowed_skips and naming nothing in this checkout: '
-        f'{", ".join(stale)}. An entry is read as a pytest NODE ID -- a module path, optionally '
-        f'followed by ::test_name -- so one that resolves to no file names no test at all. Delete it '
-        f'in the same edit that removed its subject, or point it at the name that replaced it.'
-    )
-    return (reason,)
 
 
 def run_verify(
@@ -404,7 +361,7 @@ def run_verify(
 
     """
     allowed = declared_skips(root)
-    vanished = _vanished_shortfall(stale_declarations(root, allowed))
+    vanished = vanished_shortfall(stale_declarations(root, allowed))
     directory = root / LOG_DIRECTORY
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f'verify-{datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")}.log'

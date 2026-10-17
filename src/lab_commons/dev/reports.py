@@ -81,6 +81,7 @@ __all__ = [
     'read_pytest',
     'read_ruff',
     'stale_declarations',
+    'vanished_shortfall',
 ]
 
 #: The most of a run that may be skipped before nothing can settle, whatever was declared. A RATIO
@@ -315,6 +316,25 @@ def stale_declarations(root: Path, allowed: tuple[str, ...]) -> tuple[str, ...]:
         ):
             gone.append(entry)
     return tuple(gone)
+
+
+def vanished_shortfall(stale: tuple[str, ...]) -> tuple[str, ...]:
+    """The refusal for a declaration whose SUBJECT left the checkout, read off the tree.
+
+    Its own function because it is the one shortfall no step produced: every other reason in
+    :func:`lab_commons.dev.verify.run_verify` is read out of what a process PRINTED, and this one is
+    read out of the files a declaration names -- so it binds before anything launches, and on a selected invocation too,
+    where the run cannot judge anybody else's allowance retired.
+    """
+    if not stale:
+        return ()
+    reason = (
+        f'declared in [tool.lab_commons.verify] allowed_skips and naming nothing in this checkout: '
+        f'{", ".join(stale)}. An entry is read as a pytest NODE ID -- a module path, optionally '
+        f'followed by ::test_name -- so one that resolves to no file names no test at all. Delete it '
+        f'in the same edit that removed its subject, or point it at the name that replaced it.'
+    )
+    return (reason,)
 
 
 def _names(path: Path, node: str) -> bool:

@@ -27,16 +27,18 @@ import argparse
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import IO, Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.githooks.table import hook_table
+from lab_commons.dev.reports import StepReport
 from lab_commons.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 from lab_commons.log import emit
 
 __all__ = [
     'ABSENT',
     'FOREIGN',
+    'HOOKS_STEP',
     'INSTALLED',
     'INSTALL_COMMAND',
     'NOTHING_DECLARED',
@@ -267,3 +269,27 @@ def report_installation(argv: list[str] | None = None) -> int:
 
 if __name__ == '__main__':
     raise SystemExit(report_installation())
+
+
+#: The step name the hooks-installed check reports under (user directive 2026-09-23). A STEP rather
+#: than a test so that a verify narrowed to one path still runs it: the adoption test only runs when
+#: a suite selects it, and the only path that skips this is one where verify is not run at all.
+HOOKS_STEP: Final = 'hooks-installed'
+
+
+def read_hooks(root: Path, *, handle: IO[str]) -> StepReport:
+    """The hooks-installed step: a named failure when a declared hook is not live, with its remedy.
+
+    It reads and never installs -- the install act is :func:`lab_commons.dev.hook_install.install`,
+    called from each repo's bootstrap. ``nothing-declared`` passes: a repo with no configuration has
+    no hook for this step to find missing.
+    """
+    report = hook_installation(root)
+    handle.write(f'$ {HOOKS_STEP}: {report.verdict} ({report.hooks_dir})\n')
+    for stage in report.failing:
+        handle.write(f'  {stage.stage:<12} {stage.status:<28} {stage.detail}\n')
+    if report.verdict == UNPROTECTED:
+        handle.write(f'  remedy: {INSTALL_COMMAND}\n')
+    handle.flush()
+    failed = (HOOKS_STEP,) if report.verdict == UNPROTECTED else ()
+    return StepReport(name=HOOKS_STEP, reported=(HOOKS_STEP,), failures=failed)
