@@ -1,7 +1,7 @@
 """THE ARTEFACT STORE: declared outputs only, write-once, sha-verified, cleaned by age then by cap.
 
 Every backend is exercised against temp dirs: ``folder`` directly, ``rclone`` through a FAKE rclone (a
-Python script mapping ``remote:path`` onto a temp dir), ``zstd`` through a fake that copies stdin. No
+Python script mapping ``remote:path`` onto a temp dir); archives are stdlib gzip, so no binary is faked. No
 test touches a real remote, a real rclone config, or any synced folder.
 """
 
@@ -35,16 +35,6 @@ from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 SHA = 'a' * 40
 WHEN = datetime(2026, 10, 11, 9, 30, 5, tzinfo=UTC)
 RUN = artefacts.run_id(SHA, 'linux', 'alice', WHEN)
-
-_FAKE_ZSTD = """
-import shutil, sys
-if '-d' in sys.argv:
-    with open(sys.argv[-1], 'rb') as f:
-        shutil.copyfileobj(f, sys.stdout.buffer)
-else:
-    with open(sys.argv[sys.argv.index('-o') + 1], 'wb') as f:
-        shutil.copyfileobj(sys.stdin.buffer, f)
-"""
 
 _FAKE_RCLONE = """
 import json, os, shutil, sys
@@ -98,13 +88,6 @@ def _script(where: Path, name: str, body: str) -> tuple[str, ...]:
 
 
 @pytest.fixture
-def zstd(tmp_path: Path) -> tuple[str, ...]:
-    tools = tmp_path / 'tools'
-    tools.mkdir(exist_ok=True)
-    return _script(tools, 'zstd', _FAKE_ZSTD)
-
-
-@pytest.fixture
 def rclone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[tuple[str, ...], Path]:
     tools, cloud = tmp_path / 'tools', tmp_path / 'cloud'
     tools.mkdir(exist_ok=True)
@@ -114,7 +97,7 @@ def rclone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[tuple[str, 
 
 
 def _archive(tmp_path: Path, content: bytes = b'payload') -> Path:
-    path = tmp_path / 'in.tar.zst'
+    path = tmp_path / 'in.tar.gz'
     path.write_bytes(content)
     return path
 
@@ -137,7 +120,7 @@ def test_a_name_onedrive_cannot_hold_is_refused(bad: str) -> None:
 
 
 def test_planted_control_a_short_ascii_key_is_accepted() -> None:
-    artefacts.check_key('lab/2026/10/11/aaaaaaaaaaaa-linux-alice-20261011T093005Z.tar.zst')
+    artefacts.check_key('lab/2026/10/11/aaaaaaaaaaaa-linux-alice-20261011T093005Z.tar.gz')
 
 
 # --- declared outputs -------------------------------------------------------------------------
@@ -165,22 +148,27 @@ def test_nothing_declared_packs_nothing(tmp_path: Path) -> None:
     assert artefacts.collect(tmp_path, []) == []
 
 
-def test_pack_writes_one_tar_of_exactly_the_declared_files(tmp_path: Path, zstd: tuple[str, ...]) -> None:
+def test_pack_writes_one_gzip_tar_of_exactly_the_declared_files_with_no_binary_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D5 needs no host tool: the archive is stdlib gzip, so an empty PATH still packs."""
+    monkeypatch.setenv('PATH', '')
     tree = tmp_path / 'tree'
     (tree / 'out').mkdir(parents=True)
     (tree / 'out' / 'a.txt').write_bytes(b'A')
     (tree / 'skip.txt').write_bytes(b'S')
-    dest = artefacts.pack(tree, artefacts.collect(tree, ['out/a.txt']), tmp_path / 'x.tar.zst', zstd=zstd)
-    with tarfile.open(fileobj=io.BytesIO(dest.read_bytes())) as tar:  # the fake zstd stores the tar as is
+    dest = artefacts.pack(tree, artefacts.collect(tree, ['out/a.txt']), tmp_path / f'x{artefacts.ARCHIVE}')
+    assert dest.read_bytes()[:2] == bytes((0x1F, 0x8B)), 'gzip magic'
+    with tarfile.open(fileobj=io.BytesIO(dest.read_bytes())) as tar:
         assert tar.getnames() == ['out/a.txt']
 
 
-def test_unpack_is_the_inverse_of_pack(tmp_path: Path, zstd: tuple[str, ...]) -> None:
+def test_unpack_is_the_inverse_of_pack(tmp_path: Path) -> None:
     tree = tmp_path / 'tree'
     (tree / 'out').mkdir(parents=True)
     (tree / 'out' / 'a.txt').write_bytes(b'A')
-    archive = artefacts.pack(tree, [tree / 'out' / 'a.txt'], tmp_path / 'x.tar.zst', zstd=zstd)
-    back = artefacts.unpack(archive, tmp_path / 'back', zstd=zstd)
+    archive = artefacts.pack(tree, [tree / 'out' / 'a.txt'], tmp_path / f'x{artefacts.ARCHIVE}')
+    back = artefacts.unpack(archive, tmp_path / 'back')
     assert (back / 'out' / 'a.txt').read_bytes() == b'A'
     assert sorted(p.name for p in back.rglob('*')) == ['a.txt', 'out']
 
@@ -240,7 +228,7 @@ def _stores(tmp_path: Path, rclone: tuple[tuple[str, ...], Path]) -> list[artefa
 def test_each_backend_puts_gets_lists_and_deletes(tmp_path: Path, rclone) -> None:
     for store in _stores(tmp_path, rclone):
         ref = store.put(RUN, _archive(tmp_path))
-        assert ref == Ref(store.backend, f'lab/2026/10/11/{RUN}.tar.zst', 7, hashlib.sha256(b'payload').hexdigest())
+        assert ref == Ref(store.backend, f'lab/2026/10/11/{RUN}.tar.gz', 7, hashlib.sha256(b'payload').hexdigest())
         got = store.get(ref, tmp_path / 'back' / store.backend)
         assert got.read_bytes() == b'payload'
         assert store.list(None) == (ref,)
@@ -273,7 +261,7 @@ def test_rclone_is_driven_by_argv_lists_and_uploads_immutably(tmp_path: Path, rc
     uploads = [c for c in calls if c[0] == 'copyto']
     assert uploads, calls
     assert all('--immutable' in c for c in uploads)
-    assert (cloud / 'drive' / 'hpc' / 'lab' / '2026' / '10' / '11' / f'{RUN}.tar.zst').is_file()
+    assert (cloud / 'drive' / 'hpc' / 'lab' / '2026' / '10' / '11' / f'{RUN}.tar.gz').is_file()
 
 
 def test_list_older_than_reads_the_day_folder(tmp_path: Path) -> None:
@@ -396,7 +384,7 @@ def test_the_forge_backend_is_write_once_and_verified_too(tmp_path: Path) -> Non
     forge = _Forge()
     store = ForgeStore(cast('Client', forge))
     ref = store.put(RUN, _archive(tmp_path))
-    assert ref.key == f'{RUN}.tar.zst'
+    assert ref.key == f'{RUN}.tar.gz'
     assert store.get(ref, tmp_path / 'd').read_bytes() == b'payload'
     with pytest.raises(ArtefactRefused, match='write-once'):
         store.put(RUN, _archive(tmp_path, b'other'))

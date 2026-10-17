@@ -1,15 +1,13 @@
 """D16/D18: shared results on the forge (first wins, a differing one alarms) and a unit offered as a Job, served.
 
 The forge's attachment listing and upload are an in-memory fake (``forgerecords`` itself is tested against
-the HTTP fake in ``test_dev_forgerecords.py``); ``zstd`` is a script that copies, so archives are plain tars.
+the HTTP fake in ``test_dev_forgerecords.py``); archives are stdlib gzip tars.
 """
 
 from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
-import textwrap
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,15 +32,6 @@ from lab_commons.dev.forgeunit import ForgeResults, UnitJob, offering, result_na
 _GIT = shutil.which('git') or 'git'
 UNIT_HASH = 'ab' * 32
 SMALL = Demand(1, 0.5, 600, {})
-_ZSTD = """
-import shutil, sys
-if '-d' in sys.argv:
-    with open(sys.argv[-1], 'rb') as f:
-        shutil.copyfileobj(f, sys.stdout.buffer)
-else:
-    with open(sys.argv[sys.argv.index('-o') + 1], 'wb') as f:
-        shutil.copyfileobj(sys.stdin.buffer, f)
-"""
 RAN_HERE: list[str] = []
 
 
@@ -73,13 +62,6 @@ class Forge:
 
 
 @pytest.fixture
-def zstd(tmp_path: Path) -> tuple[str, ...]:
-    script = tmp_path / 'zstd.py'
-    script.write_text(textwrap.dedent(_ZSTD), encoding='utf-8')
-    return (sys.executable, str(script))
-
-
-@pytest.fixture
 def forge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Forge:
     (tmp_path / 'forge').mkdir()
     fake = Forge(tmp_path / 'forge')
@@ -96,7 +78,7 @@ def stored(store: ResultStore, text: str, host: str) -> tuple[Path, Record]:
 
 
 def test_a_job_spells_its_unit_bundle_size_and_needs_as_paths() -> None:
-    job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.zst', 10, 'f' * 64), Demand(2, 6.0, 7200, {}), ('femm', 'windows'))
+    job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(2, 6.0, 7200, {}), ('femm', 'windows'))
     assert UnitJob.of(job.paths()) == job
     declared = unit_request(job.paths())
     assert declared.argv == ('-m', 'lab_commons.dev.forgeunit', *job.paths())
@@ -110,11 +92,9 @@ def test_a_job_spells_its_unit_bundle_size_and_needs_as_paths() -> None:
         UnitJob.of((*job.paths()[:2], 'size=0|6.0|7200', job.paths()[3]))  # PLANTED: an unsized Job is refused
 
 
-def test_the_first_posted_result_wins_and_a_differing_one_alarms(
-    tmp_path: Path, forge: Forge, zstd: tuple[str, ...]
-) -> None:
+def test_the_first_posted_result_wins_and_a_differing_one_alarms(tmp_path: Path, forge: Forge) -> None:
     rang: list[Alarm] = []
-    tier = ForgeResults(forge.client(), zstd, alarm=rang.append)
+    tier = ForgeResults(forge.client(), alarm=rang.append)
     one = ResultStore(tmp_path / 'one', tier)
     first = one.put(*stored(one, '42', 'h1'))
     assert [a.name for a in forge.held] == [result_name(UNIT_HASH, first.record.result_hash)]
@@ -144,7 +124,7 @@ def _repo(tmp_path: Path) -> Path:
 
 
 def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_back(
-    tmp_path: Path, forge: Forge, zstd: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path)
     env = environment_here(repo)
@@ -163,13 +143,13 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
     (tmp_path / 'n.txt').write_text('5', encoding='utf-8')
     unit = Unit(Engine.ours('t.square', env), f'{__name__}:square', {'n': tmp_path / 'n.txt', 'k': 1}, ('out',), SMALL)
     client = forge.client()
-    tier = ForgeResults(client, zstd)
+    tier = ForgeResults(client)
     box = LocalExecutor(
         ResultStore(tmp_path / 'box', tier),
         tmp_path / 'box-journal',
         present=lambda _e: 'this box cannot',
         where=Where.ANYWHERE,
-        offer=offering(repo, client, env.sha, zstd=zstd),
+        offer=offering(repo, client, env.sha),
     )
     offered = box.run(Graph({'sq': unit}))['sq']
     assert (offered.state, offered.job) == (OFFERED, '#12')
@@ -178,7 +158,7 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
     assert (producer, sha) == (UNIT, env.sha)
     assert UnitJob.of(paths).unit_hash == offered.unit_hash
 
-    code = forgeunit.main(list(paths), cwd=repo, client=client, store=tmp_path / 'serve', zstd=zstd)
+    code = forgeunit.main(list(paths), cwd=repo, client=client, store=tmp_path / 'serve')
     assert code == 0
     assert RAN_HERE == ['square']  # the serve host ran it, in-process, with the same executor
     again = box.run(Graph({'sq': unit}))['sq']
@@ -188,7 +168,7 @@ def test_an_offered_unit_is_served_by_the_same_executor_and_its_result_comes_bac
 
 
 def test_a_bundle_that_is_not_its_jobs_unit_is_refused(
-    tmp_path: Path, forge: Forge, zstd: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, forge: Forge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path)
     env = environment_here(repo)
@@ -203,9 +183,9 @@ def test_a_bundle_that_is_not_its_jobs_unit_is_refused(
     )
     (tmp_path / 'n.txt').write_text('5', encoding='utf-8')
     unit = Unit(Engine.ours('t.square', env), f'{__name__}:square', {'n': tmp_path / 'n.txt', 'k': 1}, ('out',), SMALL)
-    offering(repo, forge.client(), env.sha, zstd=zstd)(unit, 'cd' * 32, {'n': tmp_path / 'n.txt'})
-    code = forgeunit.main(list(published[0]), cwd=repo, client=forge.client(), store=tmp_path / 's', zstd=zstd)
+    offering(repo, forge.client(), env.sha)(unit, 'cd' * 32, {'n': tmp_path / 'n.txt'})
+    code = forgeunit.main(list(published[0]), cwd=repo, client=forge.client(), store=tmp_path / 's')
     assert code == 2
     assert RAN_HERE == []
     with pytest.raises(ValueError, match='cannot run it'):
-        offering(repo, forge.client(), 'e' * 40, zstd=zstd)(unit, 'cd' * 32, {'n': tmp_path / 'n.txt'})
+        offering(repo, forge.client(), 'e' * 40)(unit, 'cd' * 32, {'n': tmp_path / 'n.txt'})

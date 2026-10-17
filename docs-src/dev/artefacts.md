@@ -66,7 +66,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 <summary>Layout and names</summary>
 
 ```
-<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.zst
+<repo>/<yyyy>/<mm>/<dd>/<run-id>.tar.gz
 <repo>/<yyyy>/<mm>/<dd>/<run-id>.manifest.json      run-id = <sha12>-<platform>-<account>-<utcstamp>
 ```
 
