@@ -398,14 +398,16 @@ class FakeRunCluster:
         hog: str = '',
         mem_ceiling: str = '360G',
         held: str = '',
+        peak_mb: float = 2048.0,
     ) -> None:
         """*have*: the cache holds the commit; *oom*: round 0 is OUT_OF_MEMORY; *active*: sacct polls RUNNING.
 
         *hog*: an id whose item is OOM-killed in every round it runs in; *mem_ceiling*: the account's quota
-        memory; *closed* (set later): every grant refuses the next round.
+        memory; *closed* (set later): every grant refuses the next round; *peak_mb*: what a finished item peaks at.
         """
         self.have, self.dies, self.kills, self.oom = have, dies, kills, oom
         self.hog, self.mem_ceiling, self.closed = hog, mem_ceiling, False
+        self.peak_mb = peak_mb
         self.held = held  # the account's OTHER running jobs, ``squeue`` lines of the probe's ``running`` section
         self.build_fails, self.lacking, self.active = build_fails, lacking, active
         self.env, self.collected = env, collected
@@ -483,7 +485,7 @@ class FakeRunCluster:
                 continue
             out += [json.dumps({'id': n, 'outcome': 'passed', 's': 1.0}) for n in ran]
             if not killed:
-                out.append(json.dumps({'done': 0, 'wall': 5.0 + len(ran), 'peak_mb': 2048.0}))
+                out.append(json.dumps({'done': 0, 'wall': 5.0 + len(ran), 'peak_mb': self.peak_mb}))
         return '\n'.join(out) + '\n'
 
 
@@ -560,7 +562,8 @@ def test_what_is_still_unfinished_after_the_retries_is_lost() -> None:
 
 
 def test_an_out_of_memory_round_doubles_the_memory_of_the_next() -> None:
-    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True))
+    """The finished sibling peaks under the cost floor (512 x 1.5 < 1024 MB), so only the OOM growth moves it."""
+    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), oom=True, peak_mb=512.0))
     first, second = record['rounds']
     assert second['mem_mb'] == 2 * first['mem_mb']
 
@@ -936,10 +939,20 @@ def test_a_file_whose_costly_id_dies_is_replanned_with_more_wall_than_it_died_at
 
 
 def test_a_timeout_round_asks_the_next_for_twice_the_minutes() -> None:
-    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'})))
+    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), peak_mb=512.0))
     first, second = record['rounds']
     assert second['minutes'] >= 2 * first['minutes']
     assert second['mem_mb'] == first['mem_mb'], 'a timeout is not a memory problem'
+
+
+def test_a_retry_prices_its_unmeasured_file_at_the_measured_siblings_median() -> None:
+    """D5: round 0 measured tests/a.py at 2048 MB and nothing of the killed tests/b.py, so b's retry is a's peak.
+
+    PLANTED CONTROL: the same run with the sibling under the floor keeps the floor (the timeout test above).
+    """
+    record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'})))
+    first, second = record['rounds']
+    assert (first['mem_mb'], second['mem_mb']) == (1024, 2048 * 1.5), 'a timeout adds nothing; the evidence does'
 
 
 def test_a_retry_wall_is_held_to_a_partition_that_allows_it() -> None:
@@ -1247,7 +1260,7 @@ def test_two_out_of_memory_rounds_then_a_completed_one_is_gathered_from_the_late
 
     sacct, never squeue, decides a round: a job squeue has forgotten is finished, not running.
     """
-    fake = _AdaRounds(dies=frozenset({'tests/b.py'}), kills=2)
+    fake = _AdaRounds(dies=frozenset({'tests/b.py'}), kills=2, peak_mb=512.0)
     record = _run(fake)
     assert record['job_ids'] == ['4243', '4244', '4245']
     first, second, third = record['rounds']
