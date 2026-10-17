@@ -72,6 +72,12 @@ cpus = 128
 mem_gb = 600
 task_cpus = 64                       # optional per-task ceilings
 task_mem_gb = 300
+
+[hpc.paging]                         # optional; every key required when declared
+page_cpus = 8                        # one page -- a SMALL task fits it
+page_mem_gb = 20
+large_pages = 4                      # more pages than this is LARGE; between is MEDIUM
+movable_minutes = 30                 # rerun-safe AND this short = movable
 ```
 
 - A missing table, a duplicate account or an empty `hosts` is refused with the key named; a `cpus` share is retired
@@ -84,6 +90,18 @@ task_mem_gb = 300
   `$LC_HPC_SESSION` jobs are untagged and uncapped; a name with no table is refused.
 - **Usage is read, never stored.** Account headroom is the quota minus what the account's jobs hold, read from
   `squeue --me`; a grant with room (group memory included, `AssocGrpMemLimit`) is chosen over one without.
+- **Paged placement** (user design 2026-10-17, OS memory management over the pool), only with `[hpc.paging]`:
+  - *Paging.* A task's size is its pages, the larger of `cpus/page_cpus` and `mem_gb/page_mem_gb`: small (one),
+    medium, large (more than `large_pages`). Page-sized tasks keep free memory from shattering into holes.
+  - *Movable.* Rerun-safe (declared: `[job] rerun_safe`, forge test parts always) AND a wall within
+    `movable_minutes`. Declared, never guessed.
+  - *Region.* The emptiest account (most group memory free) is the large-job region; it belongs to no session
+    and rotates (`hpc.plan.region`). A pending large task (`@@@ pending` in the probe) pins it where it waits.
+  - *Placement.* A large job goes only to the region, and never spreads. Small and medium tasks best-fit onto
+    the FULLEST account with room (the least group memory free). Only a small movable task may borrow the
+    region (`hpc.plan.may_place`).
+  - *Drain, not kill.* While a large task waits nothing new enters the region, so it empties within one
+    movable wall. Running work is never cancelled. The session caps still apply on top.
 - Each tick the host publishes its supply, partitions and quota on its forge host card.
 
 ## Runs on the cluster
