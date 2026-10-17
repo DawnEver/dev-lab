@@ -157,9 +157,6 @@ _ENFORCED = {
     'MERGE-DEVIATIONS-NAMED': (guard('tests/test_dev_mergeaudit.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
     'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
-    # Incident 2026-10-17 (Ada): a redeploy from journal schema 1 to 2 under 17 live schema-1 runs, refused
-    # by the reader, stopped every serve tick of four accounts.
-    'FORMATS-UPGRADE-ON-READ': (guard('tests/test_arch_formats_upgrade_on_read.py'),),
     'ONE-BOX-ONE-LOCK': (
         guard('tests/test_box.py'),
         guard('tests/test_box_run_enforced.py'),

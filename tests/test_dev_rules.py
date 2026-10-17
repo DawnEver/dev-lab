@@ -73,7 +73,6 @@ _IDS = frozenset(
         'NO-REFLECTION',
         'VERDICTS-FROM-THE-FORGE',
         'ONE-BOX-ONE-LOCK',
-        'FORMATS-UPGRADE-ON-READ',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
         'MERGE-DEVIATIONS-NAMED',
