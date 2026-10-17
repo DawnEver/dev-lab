@@ -71,21 +71,11 @@ user = "me"
 hosts = ["other"]
 slurm_account = "x"
 priority = 2
-[hpc.session.ws-a]
-tasks = 2
-cpus = 64
-mem_gb = 300
-task_cpus = 64
-task_mem_gb = 300
-[hpc.session.other]
-tasks = 9
-cpus = 9
-mem_gb = 9
 """,
     )
     monkeypatch.setenv('LC_HPC_SESSION', 'ws-a')
     machine = load_grants()
-    assert machine.session == Session(name='ws-a', tasks=2, cpus=64, mem_gb=300, task_cpus=64, task_mem_gb=300)
+    assert machine.session == Session(name='ws-a'), 'no machine file holds a share: it is derived'
     assert machine.comment == 'lc:session=ws-a'
     assert [g.account for g in machine.grants] == [('me', 'acct-free'), ('me', 'x')]
     assert machine.grants[0].targets == ('me@login2', 'me@login1'), 'hosts keep their order'
@@ -339,18 +329,14 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
     assert parse_ids(text) == ['tests/a.py::t1'], 'an ERROR line is not a collected id'
 
 
-# -- the session is the job's owner, and its cap is declared once ---------------------------------------
-
-
-def _sessions(**caps: str) -> str:
-    return _grant() + ''.join(f'[session.{name}]\n{body}\n' for name, body in caps.items())
+# -- the session is the job's owner; its share is never a machine-file fact ----------------------------------
 
 
 def test_the_session_is_lc_hpc_session_and_tags_every_job(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('LC_HPC_SESSION', 'G')
-    machine = load_grants(tomllib.loads(_sessions(G='tasks = 2\ncpus = 64\nmem_gb = 300')))
+    machine = load_grants(tomllib.loads(_grant()))
     assert machine.comment == 'lc:session=G'
-    assert machine.session == Session(name='G', tasks=2, cpus=64, mem_gb=300)
+    assert machine.session == Session(name='G')
 
 
 def test_without_lc_hpc_session_no_job_is_tagged_or_capped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -363,22 +349,20 @@ def test_without_lc_hpc_session_no_job_is_tagged_or_capped(monkeypatch: pytest.M
     assert headroom(_snap('40 lc:session=G\n')) == 56, 'every job on the account holds against its quota'
 
 
-@pytest.mark.parametrize(
-    ('name', 'caps', 'match'),
-    [
-        ('a b', {}, 'LC_HPC_SESSION'),
-        ('undeclared', {'G': 'tasks = 1\ncpus = 1\nmem_gb = 1'}, r'no \[hpc\.session\.undeclared\]'),
-        ('G', {'G': 'tasks = 1\ncpus = 1'}, 'mem_gb'),
-        ('G', {'G': 'tasks = 1\ncpus = 1\nmem_gb = 1\nfiles = 3'}, 'unknown keys'),
-        ('G', {'G': 'tasks = 0\ncpus = 1\nmem_gb = 1'}, 'positive'),
-    ],
-)
-def test_a_bad_session_is_refused_by_name(
-    name: str, caps: dict[str, str], match: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv('LC_HPC_SESSION', name)
-    with pytest.raises(ValueError, match=match):
-        load_grants(tomllib.loads(_sessions(**caps)))
+def test_a_bad_session_name_is_refused_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('LC_HPC_SESSION', 'a b')
+    with pytest.raises(ValueError, match='LC_HPC_SESSION'):
+        load_grants(tomllib.loads(_grant()))
+
+
+def test_a_leftover_session_table_is_refused_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """User ruling 2026-10-17: an allocation between sessions is temporary and never lives in a machine file."""
+    monkeypatch.setenv('LC_HPC_SESSION', 'G')
+    leftover = _grant() + '[session.G]\ntasks = 1\ncpus = 1\nmem_gb = 1\n'
+    with pytest.raises(ValueError, match=r'\[hpc\] session is retired.*lab_commons\.hpc allocate'):
+        load_grants(tomllib.loads(leftover))
+    # Planted control: the same file without the table loads.
+    load_grants(tomllib.loads(_grant()))
 
 
 def test_the_retired_workstation_key_is_refused_by_name() -> None:

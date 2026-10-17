@@ -76,8 +76,9 @@ from lab_commons.dev.platformparts import PartRefusal, part_context
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.records import read_record, write_record
-from lab_commons.hpc.run import NoRoom, NotSubmitted
+from lab_commons.hpc.run import NoRoom
 from lab_commons.hpc.shell import FULL
+from lab_commons.hpc.tree import NotSubmitted
 
 __all__ = [
     'CLAIMED_PHASE',
