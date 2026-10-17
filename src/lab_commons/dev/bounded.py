@@ -41,6 +41,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import lab_commons.launch as _door
+from lab_commons.box.run import BLAS_THREAD_VARS  # the one definition; set in every boxed child's environment
 from lab_commons.proc import kill_process_tree, process_tree
 
 __all__ = [
@@ -65,16 +66,6 @@ REAP_AFTER_KILL_S = 20
 #: :func:`is_narrowed` so a one-worker run on a two-core box is still reported as narrowed, where
 #: the half-of-capacity rule alone would call it healthy.
 NARROWED_FLOOR = 2
-
-#: The libraries that spawn a thread pool per PROCESS behind numpy/scipy. All four are read at
-#: IMPORT time by their runtime, so they must be in the environment the child is LAUNCHED with --
-#: setting them after the pool exists is too late.
-BLAS_THREAD_VARS: tuple[str, ...] = (
-    'OMP_NUM_THREADS',
-    'MKL_NUM_THREADS',
-    'OPENBLAS_NUM_THREADS',
-    'NUMEXPR_NUM_THREADS',
-)
 
 
 def logical_cores() -> int:
