@@ -23,7 +23,7 @@ from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeship
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, Alarm
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, UNTAGGED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
 from lab_commons.dev.forgeproduce import Produced
@@ -1085,3 +1085,23 @@ def test_a_round_that_raises_joins_every_producer_first(monkeypatch, tmp_path: P
         _serve(monkeypatch, tmp_path, _claimed(first), procs, table=QUICK)
     assert ended.is_set(), 'the producer ended before serve raised'
     assert not [t for t in threading.enumerate() if t.name.startswith('produce-')]
+
+
+class _Untagged(_Slurm):
+    """Slurm holding jobs that carry no session tag."""
+
+    def standing(self) -> forgerun.Standing:
+        held = super().standing()
+        return dataclasses.replace(held, facts={**held.facts, 'untagged': 3})
+
+
+def test_jobs_without_a_session_tag_alarm(monkeypatch, tmp_path: Path) -> None:
+    """Untagged jobs are one more stream in the max-min share (lab_commons.hpc.allocation); the forge says so."""
+    quiet = TickReport((), (), ('tick',))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Untagged, host='base')
+    (raised,) = [a for a in alarms if a.kind == UNTAGGED]
+    assert '3' in raised.subject
+    assert 'LC_HPC_SESSION' in raised.body
+    # Planted control: every job tagged, nothing is raised.
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, quiet, seat=SEAT, cluster=_Slurm, host='base')
+    assert [a for a in alarms if a.kind == UNTAGGED] == []

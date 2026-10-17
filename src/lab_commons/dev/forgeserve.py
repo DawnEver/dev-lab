@@ -109,7 +109,18 @@ from lab_commons.config import section
 from lab_commons.dev import forgerun, forgeship, lockupgrade, retention
 from lab_commons.dev.branchprune import serve_prune
 from lab_commons.dev.forge import NoCredential, Transport, fetch_origin, https_transport
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm, sound
+from lab_commons.dev.forgealarm import (
+    AUTH,
+    IDLE,
+    INTEGRATION,
+    ISSUE_KINDS,
+    RUN,
+    STARVED,
+    STORAGE,
+    UNTAGGED,
+    Alarm,
+    sound,
+)
 from lab_commons.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
 from lab_commons.dev.forgehosts import HostCard, card_host, card_owners, read_cards, recording
 from lab_commons.dev.forgeintegration import alarms as sync_alarms
@@ -188,6 +199,9 @@ def serve(
     tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
+    if standing is not None and (untagged := standing.facts.get('untagged')):
+        body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
+        alarm(Alarm(UNTAGGED, repo, f'{untagged} untagged job task(s) on {seat}', body, about=str(seat)))
     name = card_host(machine, seat)
     cards = read_cards(client(root))
     every = lease.total_seconds() / 3 if renew_s is None else renew_s

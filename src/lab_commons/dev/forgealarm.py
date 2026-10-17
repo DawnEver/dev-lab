@@ -13,7 +13,8 @@ went READY, the integration tip became promotable, or a red needs routing (``int
 origin's branch hygiene (:mod:`lab_commons.dev.branchprune`), raised by whichever host prunes: the merged
 branches it deleted, or a prune that failed (``pruned``), and unmerged branches idle past the grace
 (``stale-branch``), which are never deleted; and an account whose storage is still near its quota after
-the retention pass (``storage``). And one is a fact about a UNIT, not a host: the same commit and context gave
+the retention pass (``storage``), and jobs on a cluster account that carry no session tag
+(``untagged``). And one is a fact about a UNIT, not a host: the same commit and context gave
 two different results (``nondeterminism``, :func:`lab_commons.dev.forgeoutbox.flush`) -- the first stands.
 
 EVERY ALARM IS ONE STRUCTURED LINE ON STDERR, ALWAYS: ``{"event": "lab_commons.forge.alarm", ...}``
@@ -62,6 +63,7 @@ __all__ = [
     'STALE_BRANCH',
     'STARVED',
     'STORAGE',
+    'UNTAGGED',
     'Alarm',
     'main',
     'repeat_window',
@@ -91,6 +93,8 @@ STALE_BRANCH: Final = 'stale-branch'
 NONDETERMINISM: Final = 'nondeterminism'
 #: Usage still at the quota pressure line after the retention pass (:mod:`lab_commons.dev.retention`).
 STORAGE: Final = 'storage'
+#: Jobs on a cluster account carry no session tag: they hold an unthrottled share (:mod:`lab_commons.hpc.allocation`).
+UNTAGGED: Final = 'untagged'
 
 
 def repeat_window(alerts: Mapping[str, Any]) -> timedelta:
