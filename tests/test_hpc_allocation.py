@@ -13,6 +13,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from test_hpc_grants import GRANT, _snap
 
+from lab_commons.dev.forgeslurm import with_allocation
+from lab_commons.hpc import __main__ as cli
+from lab_commons.hpc import allocate as verb
 from lab_commons.hpc.allocation import (
     UNTAGGED,
     Allocation,
@@ -24,7 +27,7 @@ from lab_commons.hpc.allocation import (
     session_for,
 )
 from lab_commons.hpc.config import Cost, Policy
-from lab_commons.hpc.grants import Grant, Session
+from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.plan import allocate, session_room
 
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
@@ -110,3 +113,77 @@ def test_an_override_caps_the_room_as_a_record_says() -> None:
     capped = Session('a', cpus=16, mem_gb=1000)
     assert session_room(capped, [_snap(), _snap()], Cost(cpus=8)) == 2
     assert session_room(Session('b', cpus=0, mem_gb=0), [_snap()], Cost(cpus=8)) == 0
+
+
+# -- the CLI: one record every submitter reads ------------------------------------------------------------------
+
+
+class _Store:
+    """The forge records home, in memory: one mutable file."""
+
+    def __init__(self, text: str | None = None) -> None:
+        self.text = text
+
+    def read(self) -> str | None:
+        return self.text
+
+    def write(self, text: str) -> None:
+        self.text = text
+
+    def clear(self) -> None:
+        self.text = None
+
+
+def test_allocate_writes_shows_and_clears_the_one_record(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = _Store()
+    monkeypatch.setattr(verb, 'allocation_store', lambda: store)
+    assert cli.main(['allocate', '--until', '2026-10-18T09:00Z', 'a=64/240', 'b=32/120']) == 0
+    written = parse(store.text or '')
+    assert written.expires == datetime(2026, 10, 18, 9, tzinfo=UTC)
+    assert set(written.sessions) == {'a', 'b'}
+    capsys.readouterr()
+    assert cli.main(['allocate', '--show']) == 0
+    shown = capsys.readouterr().out
+    assert 'a' in shown
+    assert '2026-10-18T09:00:00+00:00' in shown
+    assert cli.main(['allocate', '--clear']) == 0
+    assert store.text is None
+    # Planted control: shown with nothing stored, it says the share is derived.
+    assert cli.main(['allocate', '--show']) == 0
+    assert 'derived' in capsys.readouterr().out
+
+
+def test_allocate_refuses_a_past_expiry_and_a_naive_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verb, 'allocation_store', _Store)
+    with pytest.raises(SystemExit):
+        cli.main(['allocate', '--until', '2000-01-01T00:00Z', 'a=1/1'])
+    with pytest.raises(SystemExit):
+        cli.main(['allocate', '--until', '2099-01-01T00:00', 'a=1/1'])
+    with pytest.raises(SystemExit):
+        cli.main(['allocate', '--until', '2099-01-01T00:00Z'])
+
+
+def test_the_planner_reads_the_record_for_a_derived_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = render(Allocation(datetime(2099, 1, 1, tzinfo=UTC), {'a': Session('a', cpus=8, mem_gb=16)}))
+    monkeypatch.setattr(verb, 'allocation_store', lambda: _Store(record))
+    machine = verb.resolve(Machine(session=Session('a'), grants=(GRANT,)))
+    assert machine.session == Session('a', cpus=8, mem_gb=16)
+    # Planted control: no record, the session stays derived; no session reads nothing.
+    monkeypatch.setattr(verb, 'allocation_store', _Store)
+    assert verb.resolve(Machine(session=Session('a'), grants=(GRANT,))).session == Session('a')
+    assert verb.resolve(Machine(session=None, grants=(GRANT,))).session is None
+
+
+def test_a_cluster_serve_reads_the_same_record_and_a_forge_failure_leaves_the_share_derived() -> None:
+
+    record = render(Allocation(datetime(2099, 1, 1, tzinfo=UTC), {'a': Session('a', cpus=8, mem_gb=16)}))
+    derived_machine = Machine(session=Session('a'), grants=(GRANT,))
+    assert with_allocation(derived_machine, record.encode).session == Session('a', cpus=8, mem_gb=16)
+
+    def down() -> bytes:
+        raise OSError
+
+    # Planted control: the forge down, the share is derived -- never a guessed override.
+    assert with_allocation(derived_machine, down).session == Session('a')

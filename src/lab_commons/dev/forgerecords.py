@@ -55,8 +55,11 @@ __all__ = [
     'listing',
     'main',
     'prune',
+    'read_named',
     'records_issue',
     'records_release',
+    'remove_named',
+    'replace_named',
     'serve_prune',
     'sha_of',
 ]
@@ -173,12 +176,38 @@ def attach(client: Client, path: Path) -> Attachment:
     held = next((raw for raw in client.call('GET', store.assets) if raw.get('name') == path.name), None)
     if held is not None:
         return _attachment(held)
-    target = f'{store.assets}?name={path.name}'
-    durable = Durable(probe=Probe(store.assets, {'name': path.name}))
+    return _upload(client, store, path.name, path.read_bytes())
+
+
+def _upload(client: Client, store: _Store, name: str, content: bytes) -> Attachment:
+    target = f'{store.assets}?name={name}'
+    durable = Durable(probe=Probe(store.assets, {'name': name}))
     if store.upload_host is not None:
-        return _attachment(client.upload_raw(store.upload_host, target, content=path.read_bytes(), durable=durable))
-    raw = client.upload(target, field='attachment', filename=path.name, content=path.read_bytes(), durable=durable)
-    return _attachment(raw)
+        return _attachment(client.upload_raw(store.upload_host, target, content=content, durable=durable))
+    return _attachment(client.upload(target, field='attachment', filename=name, content=content, durable=durable))
+
+
+def read_named(client: Client, name: str) -> bytes | None:
+    """The newest file stored under *name* on the records home; ``None`` when there is none."""
+    held = [item for item in listing(client) if item.name == name]
+    return client.download(held[-1].url) if held else None
+
+
+def remove_named(client: Client, name: str) -> int:
+    """Delete every file stored under *name*; how many went."""
+    store = _store(client, create=False)
+    if store is None:
+        return 0
+    held = [item for item in listing(client) if item.name == name]
+    for item in held:
+        client.call('DELETE', f'{store.delete}{item.id}')
+    return len(held)
+
+
+def replace_named(client: Client, name: str, content: bytes) -> Attachment:
+    """Store *content* as the ONE file named *name*: an earlier one is deleted first -- a mutable record."""
+    remove_named(client, name)
+    return _upload(client, cast('_Store', _store(client, create=True)), name, content)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -276,7 +305,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     pruned.add_argument('--keep-trunk', type=int, default=DEFAULT_KEEP_TRUNK, help='first-parent trunk commits kept')
     pruned.add_argument('--dry-run', action='store_true', help='name what would be deleted; delete nothing')
+    for verb, says in (('get', 'print it; nothing when absent'), ('put', 'replace it with stdin'), ('rm', 'delete it')):
+        named = verbs.add_parser(verb, help=f'one mutable named file on the records home: {says}')
+        named.add_argument('name', help='the file name, e.g. hpc-allocation.json')
     return parser
+
+
+def _named(client: Client, verb: str, name: str) -> None:
+    """``get|put|rm <name>``: one mutable named file -- e.g. :data:`lab_commons.hpc.allocation.RECORD`."""
+    if verb == 'get':
+        held = read_named(client, name)
+        if held is not None:
+            emit(held.decode('utf-8'))
+    elif verb == 'put':
+        replace_named(client, name, sys.stdin.read().encode('utf-8'))
+    else:
+        remove_named(client, name)
 
 
 def main(
@@ -287,7 +331,7 @@ def main(
     transport: Transport = https_transport,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
-    """``records list|prune``; exit 1 with the forge's remedy when a call fails."""
+    """``records list|prune|get|put|rm``; exit 1 with the forge's remedy when a call fails."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     client = client_for(root, env=env, transport=transport)
@@ -298,6 +342,9 @@ def main(
                 emit(json.dumps([dataclasses.asdict(item) for item in found], indent=2))
             for item in () if args.json else found:
                 emit(f'{item.id}  {item.name}  {item.url}')
+            return 0
+        if args.verb in {'get', 'put', 'rm'}:
+            _named(client, args.verb, args.name)
             return 0
         fetch(root)
         keep = kept_shas(root, trunk=load_policy(root).trunk, keep_trunk=args.keep_trunk)

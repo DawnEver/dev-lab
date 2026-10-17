@@ -66,13 +66,6 @@ partitions = ["shortq", "defq"]      # optional, in preference order
 qos = { devq = "dev" }               # optional
 setup = ["module load git/2.42.0"]   # optional, prepended to every array task
 
-[hpc.session.wdg-design]             # one per session; $LC_HPC_SESSION picks this process's
-tasks = 2                            # pending + running tasks, across EVERY account
-cpus = 128
-mem_gb = 600
-task_cpus = 64                       # optional per-task ceilings
-task_mem_gb = 300
-
 [hpc.paging]                         # optional; every key required when declared
 page_cpus = 8                        # one page -- a SMALL task fits it
 page_mem_gb = 20
@@ -83,11 +76,21 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
 - A missing table, a duplicate account or an empty `hosts` is refused with the key named; a `cpus` share is retired
   and refused by name: admission fits each job against what the account has free now ([admission](forge.md#admission)).
   No secrets in the file.
-- **The accounts are one pool; a session has the cap.** No session owns an account. Every job carries
-  `--comment=lc:session=<$LC_HPC_SESSION>`; the planner sums what that tag holds (tasks, CPUs, memory; pending
-  included, `squeue -r`) over every account and, past `[hpc.session.<name>]`, plans with room 0 and a throttle
-  of 1 -- the job waits, it is never refused. Only a task past `task_cpus`/`task_mem_gb` is refused. Without
-  `$LC_HPC_SESSION` jobs are untagged and uncapped; a name with no table is refused.
+- **The accounts are one pool; a session has a share, and no machine file holds it** (user ruling 2026-10-17:
+  an allocation between sessions is temporary). Every job carries `--comment=lc:session=<$LC_HPC_SESSION>`; the
+  planner sums what each tag holds (tasks, CPUs, memory; pending included, `squeue -r`) over every account.
+  - *Derived default.* The pool is measured: every account's `GrpTRES` ceiling summed (Ada: `cpu=96, mem=360G`
+    per account). It is divided by max-min fairness, work-conserving, among the ACTIVE streams -- the tags
+    holding tasks now, plus `untagged` for jobs without one (the forge alarms on those). An idle session gets 0
+    and its share lends out; two busy sessions meet at equal halves. No registry, no heartbeat: Slurm is the
+    source of truth (`hpc.allocation`).
+  - *Override.* One expiring record, `hpc-allocation.json` on the forge's records home, read by every submitter:
+    `python -m lab_commons.hpc allocate --until 2026-10-18T09:00Z alice=64/240 bob=32/120` (`name=cpus/mem_gb`),
+    `allocate --show`, `allocate --clear`. While unexpired it decides every session; one it does not name gets 0.
+    Expired or absent, the derived default stands.
+  - Past its share a session plans with room 0 and a throttle of 1 -- new submissions wait; nothing is ever
+    cancelled. Only a task past a record's `task_cpus`/`task_mem_gb` is refused. Without `$LC_HPC_SESSION`
+    jobs are untagged and uncapped. A leftover per-session machine table is refused by name.
 - **Usage is read, never stored.** Account headroom is the quota minus what the account's jobs hold, read from
   `squeue --me`; a grant with room (group memory included, `AssocGrpMemLimit`) is chosen over one without.
 - **Paged placement** (user design 2026-10-17, OS memory management over the pool), only with `[hpc.paging]`:

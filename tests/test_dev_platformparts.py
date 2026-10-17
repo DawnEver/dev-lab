@@ -13,6 +13,7 @@ from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
+from lab_commons.hpc.grants import Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.run import NotSubmitted
@@ -228,7 +229,7 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
         msg = f'the build for {SHA[:12]} failed on h, nothing was submitted; log={log}'
         raise NotSubmitted(msg)
 
-    monkeypatch.setattr(hpc_cli, 'load_grants', lambda: None)
+    monkeypatch.setattr(hpc_cli, 'load_grants', lambda: Machine(session=None, grants=()))
     monkeypatch.setattr(hpc_cli, 'builds_at', lambda *_a, **_k: ())
     monkeypatch.setattr(hpc_cli, 'vocabulary_at', lambda *_a: Vocabulary())
     monkeypatch.setattr(hpc_cli, 'submitter', lambda: None)
