@@ -230,7 +230,7 @@ def serve(
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
-        alarm(Alarm(IDLE, repo, f'{machine or "this host"} is idle with work pending', f'{named}: {refused}'))
+        alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
     _starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
     _prompt(root, repo, client(root), say=say, alarm=alarm)
@@ -420,7 +420,7 @@ def main(
             say=lambda line: emit(line, err=args.json, flush=True),
         )
     except NoCredential as missing:
-        sound(Alarm(AUTH, str(root), f'no stored forge credential on {machine or "this host"}', str(missing)))
+        sound(Alarm(AUTH, str(root), f'no stored forge credential on {card_host(machine, seat)}', str(missing)))
         emit(f'[serve] {missing}', err=True)
         return 1
     except (ForgeCallFailed, PostFailed, forgerun.ForeignSchema, OSError) as failed:
