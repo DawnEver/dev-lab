@@ -93,6 +93,9 @@ The base installation is the standard library alone. Select capabilities explici
   tool seats, is admitted by the one rule (`compute.admission.admit`) on the MEASURED room
   (`box.supply.room`: free now, less what held claims have not taken yet, less the `[reserve]` margin),
   and runs inside a kernel limit sized to its claim. Seats (an environment, a licence) are claims too.
+- `lab_commons.outcomes` (**tier 1**, standard library only, imports no other subpackage) -- the ONE
+  task-outcome vocabulary: `Status` in two families (DECIDED / RETRYABLE), `Evidence`, `Cell`, `Identity`,
+  `Expectation`, an append-only fsynced `Record` with DECIDED finality, and `Conclusion`.
 - **consumer-a** — the origin of this code; re-points `core/utils/{config,logger}.py`
   at this package (see that repo's `plan-lab-commons-standalone.md` for the swap runbook).
 - **consumer-c** — consumes the runtime package and the `[dev]` kit (shared rules registry,
