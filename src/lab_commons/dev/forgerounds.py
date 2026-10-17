@@ -30,7 +30,7 @@ from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgeclaim import Work
-from lab_commons.dev.forgehosts import publish_card
+from lab_commons.dev.forgehosts import card_host, publish_card
 from lab_commons.dev.forgeproduce import Produced
 from lab_commons.dev.forgetick import TickReport, tick
 from lab_commons.dev.forgework import ForgeCallFailed
@@ -140,8 +140,8 @@ def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: obj
         return tick(root, **kwargs)
     except ForgeCallFailed as failed:
         if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
-            machine = kwargs.get('machine') or 'this host'
-            alarm(Alarm(AUTH, repo, f'the forge refused the stored credential on {machine}', str(failed)))
+            host = card_host(str(kwargs.get('machine') or ''), kwargs.get('seat'))  # type: ignore[arg-type]
+            alarm(Alarm(AUTH, repo, f'the forge refused the stored credential on {host}', str(failed)))
         raise
 
 

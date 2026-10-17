@@ -582,6 +582,15 @@ def test_an_account_idle_with_work_pending_alarms(monkeypatch, tmp_path: Path) -
     assert alarms == []
 
 
+def test_an_idle_alarm_names_the_account_not_the_login_node(monkeypatch, tmp_path: Path) -> None:
+    """Accounts share a cluster's login nodes, so only the seat tells two idle hosts apart."""
+    pending = Work('integrate/main', SHA, 'base', OPEN)
+    idle = TickReport((pending,), (), ('tick',), (), pending=(pending,))
+    _report, _said, alarms = _serve(monkeypatch, tmp_path, idle, seat=SEAT, cluster=_Slurm, host='base')
+    (raised,) = [a for a in alarms if a.kind == IDLE]
+    assert raised.subject == f'{SEAT} is idle with work pending'
+
+
 def test_work_this_host_cannot_serve_never_makes_it_idle(monkeypatch, tmp_path: Path) -> None:
     """Another platform's open part is in every host's work; only the tick's servable *pending* alarms idle."""
     elsewhere = Work('integrate/main', SHA, 'linux', OPEN)
