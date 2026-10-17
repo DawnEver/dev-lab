@@ -14,12 +14,12 @@ THE REFSPEC ARRIVES ON STDIN, git's pre-push protocol, parsed once by
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.branchset_push import pushed_refs
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.lanepolicy import Policy, load_policy
@@ -37,7 +37,7 @@ REMEDY: Final = 'python -m lab_commons.dev.forge sync'
 
 def behind(root: Path, sha: str, base: str) -> int | None:
     """How many commits *base* has that *sha* lacks; ``None`` when git cannot say (a ref or object missing)."""
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, 'rev-list', '--count', f'{sha}..{base}'],
         cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False,
     )  # fmt: skip

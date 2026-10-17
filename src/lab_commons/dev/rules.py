@@ -50,12 +50,12 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev._rule_rows import ROWS
 from lab_commons.dev._rule_rows_b import ROWS as _ROWS_B
 from lab_commons.dev.profile import RepoProfile
@@ -308,7 +308,7 @@ def tracked_files(root: Path) -> frozenset[str]:
             'that passes here would be a green over a tree it never read.'
         )
         raise UnenforceableRule(msg)
-    done = subprocess.run(
+    done = _door.run(
         [git, '-C', str(root), 'ls-files'],
         capture_output=True,
         text=True,

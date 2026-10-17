@@ -22,10 +22,10 @@ origin lacks is the only copy of them, and a red would invite deleting it. Every
 from __future__ import annotations
 
 import shutil
-import subprocess
 import warnings
 from typing import TYPE_CHECKING
 
+import lab_commons.launch as _door
 from lab_commons.dev.branchset import BranchSet, Census, census, merge_candidates
 from lab_commons.dev.checkout import git_out
 from lab_commons.dev.famtests.visibility import commit, plant_checkout
@@ -127,7 +127,7 @@ def assert_local_branches_declared(*, root: Path, branchset: BranchSet) -> tuple
 
 
 def _run(cwd: Path, *args: str) -> None:
-    subprocess.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, timeout=60)
+    _door.run([_GIT, *args], cwd=cwd, check=True, capture_output=True, timeout=60)
 
 
 def assert_the_planted_branchset_is_policed(tmp_path: Path, *, trunk: str) -> None:

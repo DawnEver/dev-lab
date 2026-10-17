@@ -50,6 +50,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final, cast
 
+import lab_commons.launch as _door
 from lab_commons.config import config_path, section
 from lab_commons.dev.artefactstores import (
     ARCHIVE,
@@ -139,7 +140,7 @@ def collect(tree: Path, outputs: Sequence[str]) -> list[Path]:
 def pack(tree: Path, files: Sequence[Path], dest: Path, *, zstd: Sequence[str] = ('zstd',)) -> Path:
     """One tar of *files* (named relative to *tree*), compressed by the ``zstd`` binary into *dest*."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with subprocess.Popen([*zstd, '-q', '-f', '-o', str(dest)], stdin=subprocess.PIPE) as proc:
+    with _door.popen([*zstd, '-q', '-f', '-o', str(dest)], stdin=subprocess.PIPE) as proc:
         stdin = cast('IO[bytes]', proc.stdin)  # PIPE was asked for
         with tarfile.open(fileobj=stdin, mode='w|') as tar:
             for path in files:

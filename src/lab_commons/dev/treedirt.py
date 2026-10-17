@@ -52,6 +52,8 @@ import subprocess
 from enum import Enum
 from pathlib import Path
 
+import lab_commons.launch as _door
+
 __all__ = ['Dirt', 'Kind', 'path_of', 'status_paths', 'verdict_dirt']
 
 #: Resolved once; see :mod:`lab_commons.dev.checkout` for why a bare name on ``PATH`` is not enough.
@@ -113,7 +115,7 @@ def status_paths(root: Path) -> tuple[str, ...] | None:
     shape as :func:`lab_commons.dev.checkout.git_out`.
     """
     try:
-        status = subprocess.run(
+        status = _door.run(
             [_GIT, 'status', '--porcelain'],
             cwd=root,
             capture_output=True,

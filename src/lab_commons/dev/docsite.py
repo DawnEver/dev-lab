@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import importlib.util
 import shutil
-import subprocess
 import sys
 import webbrowser
 from collections.abc import Callable, Sequence
@@ -43,6 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev._docsite_portal import render_portal
 
 __all__ = [
@@ -224,7 +224,7 @@ def run(cmd: Sequence[str], *, cwd: Path, timeout: int = DEFAULT_TIMEOUT_S) -> N
     NOT add a ``check`` parameter -- the one implementation that had it set to ``False`` is the
     defect this module was extracted to end.
     """
-    subprocess.run(list(cmd), cwd=cwd, check=True, timeout=timeout)
+    _door.run(list(cmd), cwd=cwd, check=True, timeout=timeout)
 
 
 def pdoc_argv(

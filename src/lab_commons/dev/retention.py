@@ -31,7 +31,6 @@ import argparse
 import dataclasses
 import json
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -39,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.config import config_path, section
 from lab_commons.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, writable
 from lab_commons.dev.forgerun import directory as run_files
@@ -99,7 +99,7 @@ def apply(
     usage: Usage | None,
     dry_run: bool,
     say: Callable[[str], None],
-    run: Callable[..., Any] = subprocess.run,
+    run: Callable[..., Any] = _door.run,
 ) -> Outcome:
     """Delete *plan*'s paths -- then its harder ones while *usage* is over ``pressure`` -- one JSON line each."""
     freed = [0, 0]
@@ -159,7 +159,7 @@ def _live_shas() -> set[str]:
 
 def _origin_tips(root: Path) -> list[str]:
     """Every origin branch tip *root* fetched: the integration tip, PR heads and lane tips alike."""
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'for-each-ref', '--format=%(objectname)', 'refs/remotes/origin'],
         capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, timeout=60,
     )  # fmt: skip
@@ -186,7 +186,7 @@ def serve_pass(
     usage: Callable[[], Usage | None] | None = None,
     live: Callable[[], set[str]] = _live_shas,
     say: Callable[[str], None] = emit,
-    run: Callable[..., Any] = subprocess.run,
+    run: Callable[..., Any] = _door.run,
     now: datetime | None = None,
     planner: Callable[..., Plan] | None = None,
 ) -> Outcome | None:

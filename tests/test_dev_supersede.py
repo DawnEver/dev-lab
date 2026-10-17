@@ -483,7 +483,7 @@ SPELLING_HEADROOM = 3
 #: the floor rather than either factor alone: a parametrisation that lost one whole spelling still
 #: reports a full green over the other two, which is the shape that let this defect live twice.
 # RE-MEASURED 2026-09-19 at 207 (69 modules x 3 spellings), 7 past the old ceiling of 110 + 90.
-# Re-taken 2026-10-17 at 495 when dev.forgedemand (D4) landed; before, 2026-10-12 at 441 (dev.shatree, hpc.declared).
+# Re-taken 2026-10-17 at 497: the launch door (one more spelling per module, 2026-10-16) and dev.forgedemand (D4).
 CASE_FLOOR = 440
 CASE_HEADROOM = 90
 

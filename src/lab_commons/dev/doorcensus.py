@@ -19,7 +19,7 @@ WHAT THIS CENSUS CONVICTED THE DAY IT WAS WRITTEN, 2026-09-19, and both had been
    ``lab-commons/.github/workflows/python-verify.yml`` is a reusable workflow RUNNING in every
    caller's checkout, holding three lock-consuming commands. Scanned at home against this repo's
    floating names -- ``()``, because the kit IS the kit -- all three read INERT; against a CALLER's
-   all three are REVERTS, and no caller scans the file because it is not in its tree. The door was
+   all three are UNLOCKED, and no caller scans the file because it is not in its tree. The door was
    OWNED by a repo for which it is vacuous and USED by repos that could not see it.
    :class:`SharedDoor` is that row, judged against the names of the repos that RUN it.
 
@@ -390,7 +390,7 @@ def assert_census(
         msg = (
             f'the install-door census no longer matches the family:\n  {listed}\n'
             f'RE-MEASURE, then edit the row -- and read the new reading before you do. A count that '
-            f'went UP is a door that was added; a delivery that gained REVERTS is the defect this '
+            f'went UP is a door that was added; a delivery that gained UNLOCKED is the defect this '
             f'whole layer exists for; a row that lost its file is a door nobody is watching.'
         )
         raise DoorDriftError(msg)

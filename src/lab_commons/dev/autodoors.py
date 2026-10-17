@@ -55,10 +55,10 @@ import argparse
 import json
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS
 from lab_commons.dev.worktreeplace import WORKTREES_REL
 from lab_commons.log import emit
@@ -118,7 +118,7 @@ _MAIN_GUARD: Final = re.compile(r"""^if __name__ == ['"]__main__['"]:""", flags=
 
 
 def _tracked(root: Path) -> tuple[str, ...]:
-    done = subprocess.run(
+    done = _door.run(
         [shutil.which('git') or 'git', '-C', str(root), 'ls-files', '--', 'scripts'],
         capture_output=True,
         text=True,

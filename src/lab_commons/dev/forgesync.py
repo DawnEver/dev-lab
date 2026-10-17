@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.trialmerge import Trial, rev, trial
@@ -43,7 +44,7 @@ _ORIGIN: Final = 'origin/'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return _door.run(
         [_GIT, *args],
         cwd=root,
         capture_output=True,

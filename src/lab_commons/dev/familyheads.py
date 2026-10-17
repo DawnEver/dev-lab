@@ -28,6 +28,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.box import box_path
 
 if TYPE_CHECKING:
@@ -107,7 +108,7 @@ def installed_family(
 def _ls_remote(url: str, ref: str) -> str | None:
     """The forge's sha for *ref* at *url*, or ``None`` when the forge did not answer."""
     try:
-        done = subprocess.run(
+        done = _door.run(
             [shutil.which('git') or 'git', 'ls-remote', url, ref],
             capture_output=True,
             text=True,

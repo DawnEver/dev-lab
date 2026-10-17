@@ -31,7 +31,6 @@ so it names the reads of a module, never a hope.
 from __future__ import annotations
 
 import ast
-import subprocess
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -39,6 +38,7 @@ from fnmatch import fnmatchcase
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ _GIT_TIMEOUT_S: Final = 120
 
 
 def _git(root: Path, *args: str, stdin: str | None = None) -> str:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), *args],
         input=stdin,
         capture_output=True,
@@ -276,7 +276,7 @@ def _blobs(root: Path, sha: str, paths: list[str]) -> dict[str, str]:
     """The text of each of *paths* at *sha*, through ONE ``git cat-file --batch``."""
     if not paths:
         return {}
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'cat-file', '--batch'],
         input=''.join(f'{sha}:{path}\n' for path in paths).encode('utf-8'),
         capture_output=True,

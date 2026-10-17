@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
@@ -307,7 +308,7 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
 
 def serve(
     *,
-    run: Callable[..., Any] = subprocess.run,
+    run: Callable[..., Any] = _door.run,
     lock: Path | None = None,
     out: IO[str] | None = None,
     programs: Programs | None = None,
@@ -339,7 +340,7 @@ def serve(
                 continue
             argv = [str(venv_python(checkout)), '-m', 'lab_commons.dev.forge', 'serve']
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
-            rc = run(argv, cwd=checkout, check=False, **streams, **servetask.windowless()).returncode
+            rc = run(argv, cwd=checkout, check=False, **streams).returncode
             if rc:
                 emit(f'[serve] {name} exited {rc}', err=True)
             worst = max(worst, rc)

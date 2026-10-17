@@ -42,10 +42,10 @@ from __future__ import annotations
 import http.client
 import json
 import re
-import subprocess
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import lab_commons.launch as _door
 from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credential_for, store_credential
 from lab_commons.dev.forgecred import AUTH_REFUSED, AUTH_REMEDY, authorization, token_for
 from lab_commons.dev.netverb import run_network_verb
@@ -187,7 +187,7 @@ def forge_from_remote(root: Path, *, remote: str = 'origin') -> Forge:
 
     *remote* carries a default because ``origin`` is git's own convention rather than a repo's answer.
     """
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, 'remote', 'get-url', remote],
         cwd=root,
         capture_output=True,
@@ -236,7 +236,7 @@ def on_origin(root: Path, sha: str) -> bool:
 
     Offline: a push updates the remote-tracking ref the moment it lands, and a fetch for anyone else's.
     """
-    done = subprocess.run(
+    done = _door.run(
         [
             _GIT,
             '-C',

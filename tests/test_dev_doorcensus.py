@@ -84,7 +84,7 @@ def _row(**kwargs: object) -> DoorRow:
 def test_a_reading_carries_both_halves_because_either_alone_is_blind() -> None:
     """A count cannot say WHICH command changed; a named set cannot say two became one."""
     text = 'uv pip install -e .\nuv sync\npython -m pytest\n'
-    assert read(text, _KIT) == Reading(3, frozenset({'RESOLVES', 'REVERTS', 'INERT'}))
+    assert read(text, _KIT) == Reading(3, frozenset({'RESOLVES', 'UNLOCKED', 'INERT'}))
     assert read(text, ()) == Reading(3, frozenset({'INERT'}))
 
 
@@ -180,13 +180,13 @@ def test_a_count_that_drifted_DOWN_is_caught_too(tmp_path: Path) -> None:
     assert len(drift(root, stale, _KIT)) == 1
 
 
-def test_a_delivery_set_that_gained_REVERTS_is_caught_at_an_unchanged_count(tmp_path: Path) -> None:
+def test_a_delivery_set_that_gained_UNLOCKED_is_caught_at_an_unchanged_count(tmp_path: Path) -> None:
     """The defect this whole layer exists for, and a count alone is blind to it -- one in, one out."""
     root = _repo(tmp_path / 'r', {'pyproject.toml': _MANIFEST, 'Makefile': 'go:\n\tuv sync\n'})
     stale = (_row(repo='r', path='Makefile', commands=1, deliveries=frozenset({'RESOLVES'})),)
     found = drift(root, stale, _KIT)
     assert len(found) == 1
-    assert 'REVERTS' in found[0]
+    assert 'UNLOCKED' in found[0]
 
 
 def test_a_declared_door_that_is_no_longer_committed_reds_rather_than_reading_empty(tmp_path: Path) -> None:
@@ -245,7 +245,7 @@ def test_the_guard_passes_and_refuses_over_the_same_planted_family(tmp_path: Pat
     assert set(assert_census(tmp_path, paths, rows, repo_floor=2, door_floor=2)) == {'a', 'b'}
     (tmp_path / 'b' / 'hook.sh').write_text('uv run python -m x\n', encoding='utf-8')
     _commit(tmp_path / 'b', 'drop the flag')
-    with pytest.raises(DoorDriftError, match='REVERTS'):
+    with pytest.raises(DoorDriftError, match='UNLOCKED'):
         assert_census(tmp_path, paths, rows, repo_floor=2, door_floor=2)
 
 

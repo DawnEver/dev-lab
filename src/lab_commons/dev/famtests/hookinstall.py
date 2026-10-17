@@ -23,9 +23,9 @@ mutation another party learns about by accident; the remedy is reported
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 
+import lab_commons.launch as _door
 from lab_commons.dev.hook_install import (
     FOREIGN,
     INSTALL_COMMAND,
@@ -83,7 +83,7 @@ def assert_hooks_dir_is_the_one_git_consults(*, root: Path) -> None:
     if not resolved.is_dir():
         msg = f'{resolved} is not a directory, so nothing git consults for hooks exists in {root}'
         raise AssertionError(msg)
-    named = subprocess.run(
+    named = _door.run(
         [_GIT, '-C', str(root), 'rev-parse', '--git-path', 'hooks'],
         capture_output=True,
         text=True,
@@ -101,7 +101,7 @@ def _fixture_checkout(*, root: Path, scratch: Path) -> Path:
     """A REAL repository carrying THIS repository's own ``pyproject.toml``, with nothing installed."""
     checkout = scratch / 'checkout'
     checkout.mkdir(parents=True, exist_ok=True)
-    subprocess.run([_GIT, 'init', '-q', str(checkout)], check=True, capture_output=True, timeout=_GIT_TIMEOUT_S)
+    _door.run([_GIT, 'init', '-q', str(checkout)], check=True, capture_output=True, timeout=_GIT_TIMEOUT_S)
     pyproject = root / 'pyproject.toml'
     if pyproject.is_file():
         (checkout / 'pyproject.toml').write_text(pyproject.read_text(encoding='utf-8'), encoding='utf-8')

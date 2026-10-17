@@ -23,13 +23,13 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.githooks.table import STAGES, Hook, hook_table
 from lab_commons.log import emit
 
@@ -85,7 +85,7 @@ def parse_push_lines(text: str) -> tuple[PushLine, ...]:
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), *args],
         capture_output=True,
         text=True,
@@ -120,7 +120,7 @@ def pushed_paths(root: Path, lines: Sequence[PushLine], remote: str) -> tuple[st
 
 
 def _has_commit(root: Path, sha: str) -> bool:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}^{{commit}}'],
         capture_output=True,
         check=False,
@@ -159,7 +159,7 @@ Runner = Callable[[list[str], Path, str | None, Mapping[str, str]], int]
 
 
 def _subprocess_runner(argv: list[str], cwd: Path, stdin: str | None, env: Mapping[str, str]) -> int:
-    return subprocess.run(
+    return _door.run(
         argv, cwd=cwd, input=stdin, text=True, encoding='utf-8', check=False, env={**os.environ, **env}
     ).returncode
 

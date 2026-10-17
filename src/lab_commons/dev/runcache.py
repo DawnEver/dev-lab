@@ -16,12 +16,12 @@ directory, so every lane worktree shares one cache.
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.verdict import Outcome, Verdict
 
@@ -51,7 +51,7 @@ class CachedRun:
 
 def cache_path(root: Path) -> Path:
     """The cache for the repository *root* belongs to, in its MAIN checkout (shared by every lane)."""
-    common = subprocess.run(
+    common = _door.run(
         [_GIT, '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
         capture_output=True,
         text=True,

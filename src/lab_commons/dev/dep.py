@@ -71,6 +71,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.box import Refused
 from lab_commons.dev import _dep_project
 from lab_commons.dev.envkey import env_key, env_manifest
@@ -214,7 +215,7 @@ def has_pip(python: str) -> bool:
     if python == sys.executable:
         return importlib.util.find_spec('pip') is not None
     try:
-        done = subprocess.run([python, '-c', 'import pip'], capture_output=True, timeout=60, check=False)
+        done = _door.run([python, '-c', 'import pip'], capture_output=True, timeout=60, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0
@@ -297,7 +298,7 @@ def mutate(
     port: Port,
     mode: Mode = Mode.RESOLVE,
     version: Version = Version.IDENTIFIES,
-    run: Callable[..., Any] = subprocess.run,
+    run: Callable[..., Any] = _door.run,
     dry_run: bool = False,
     timeout: float = CHILD_WALL_S,
     python: str | None = None,
@@ -344,7 +345,7 @@ def _snapshot(python: str | None) -> tuple[str, str]:
         'm=runpy.run_path(sys.argv[1]); '
         'print(json.dumps([sys.prefix,m["env_key"](m["env_manifest"]())]))'
     )
-    completed = subprocess.run(
+    completed = _door.run(
         [python, '-I', '-c', script, str(Path(__file__).with_name('envkey.py'))],
         check=True,
         capture_output=True,
@@ -398,9 +399,7 @@ def _change(
         raise _held_refusal(port.name, exc) from exc
 
 
-def main(
-    argv: Sequence[str] | None = None, *, run: Callable[..., Any] = subprocess.run, cwd: Path | None = None
-) -> int:
+def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.run, cwd: Path | None = None) -> int:
     """Bootstrap or sync the named worktree's own environment, with declared full extras."""
     parser = argparse.ArgumentParser(description=__doc__)
     targets = parser.add_mutually_exclusive_group()

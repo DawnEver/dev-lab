@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, Protocol
 
+import lab_commons.launch as _door
 from lab_commons.dev.forgerecords import Attachment, attach, listing, records_issue
 from lab_commons.dev.forgework import GITHUB, Client
 
@@ -271,7 +272,7 @@ class RcloneStore:
         return f'{self.remote.rstrip("/")}/{key}'
 
     def _run(self, *args: str, ok: Sequence[int] = (0,)) -> subprocess.CompletedProcess[str]:
-        done = subprocess.run(
+        done = _door.run(
             [*self.rclone, *args], capture_output=True, text=True, encoding='utf-8', check=False,
             timeout=_RCLONE_TIMEOUT_S,
         )  # fmt: skip

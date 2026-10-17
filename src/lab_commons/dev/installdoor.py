@@ -68,15 +68,15 @@ __all__ = [
     'PREFIX_TOKENS',
     'Delivery',
     'Door',
-    'RevertingDoorsError',
+    'UnlockedDoorsError',
     'VacuousDoorScanError',
     'assert_doors_deliver',
     'classify',
     'commands',
     'floating_in_manifest',
     'floating_requirements',
-    'reverting',
     'scan_doors',
+    'unlocked',
 ]
 
 #: The ``uv`` verbs that read ``uv.lock`` and make the environment match it. ``run`` is in this set
@@ -130,22 +130,22 @@ _UPGRADE_FLAGS: Final = frozenset({'-P', '--upgrade-package'})
 class Delivery(Enum):
     """What a command does to the DECLARED build of a floating requirement.
 
-    Four values: "does not deliver it" splits in two, because "does not deliver it" splits into two different facts and
-    conflating them would make the remedy unnameable. :attr:`INERT` is a command that moves no
-    environment -- there is nothing for it to deliver stale. :attr:`REVERTS` is a command that DOES
+    Four values, because "is not a correct door" splits into two different facts and conflating them
+    would make the remedy unnameable. :attr:`INERT` is a command that moves no
+    environment -- there is nothing for it to deliver stale. :attr:`UNLOCKED` is a command that DOES
     move the environment without saying it replays the committed lock -- it may re-lock it unseen.
     :attr:`LOCKED` replays the COMMITTED lock exactly (``--frozen``/``--locked``, D8): correct, because the
     lock is the declared environment and the scheduled ``uv lock --upgrade`` is what keeps it latest.
     """
 
     RESOLVES = 'resolves'
-    REVERTS = 'reverts'
+    UNLOCKED = 'unlocked'
     INERT = 'inert'
     LOCKED = 'locked'
 
 
-class RevertingDoorsError(AssertionError):
-    """At least one install door serves a stale build of a floating requirement."""
+class UnlockedDoorsError(AssertionError):
+    """At least one install door moves the environment without replaying the committed lock."""
 
 
 class VacuousDoorScanError(AssertionError):
@@ -240,7 +240,7 @@ def _uv_delivery(rest: list[str], names: tuple[str, ...]) -> Delivery:
         return Delivery.INERT
     if _LOCKED_FLAGS & set(rest):
         return Delivery.LOCKED
-    return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.REVERTS
+    return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.UNLOCKED
 
 
 def classify(argv: list[str], names: tuple[str, ...]) -> Delivery:
@@ -319,9 +319,9 @@ def scan_doors(root: Path, paths: list[str], names: tuple[str, ...]) -> tuple[Do
     return tuple(doors)
 
 
-def reverting(doors: tuple[Door, ...]) -> tuple[Door, ...]:
-    """Return the doors that move an environment and serve a stale build."""
-    return tuple(door for door in doors if door.delivery is Delivery.REVERTS)
+def unlocked(doors: tuple[Door, ...]) -> tuple[Door, ...]:
+    """Return the doors that move an environment without replaying the committed lock."""
+    return tuple(door for door in doors if door.delivery is Delivery.UNLOCKED)
 
 
 def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], floor: int) -> tuple[Door, ...]:
@@ -334,7 +334,7 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
     Raises:
         VacuousDoorScanError: fewer than *floor* commands were read. A repo whose door files moved or
             were renamed would otherwise report a clean result having read nothing.
-        RevertingDoorsError: at least one door serves a stale build, named with its file, its line and
+        UnlockedDoorsError: at least one door serves a stale build, named with its file, its line and
             the remedy that applies to it.
 
     """
@@ -347,7 +347,7 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
             f'recognising a command, which is a defect in this scan and not a clean tree.'
         )
         raise VacuousDoorScanError(msg)
-    stale = reverting(doors)
+    stale = unlocked(doors)
     if stale:
         listed = '\n  '.join(door.describe() for door in stale)
         msg = (
@@ -359,5 +359,5 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
             f'or a tool invocation adds `--no-sync`, because a hook that reinstalls the environment '
             f'on every commit is an install door nobody declared.'
         )
-        raise RevertingDoorsError(msg)
+        raise UnlockedDoorsError(msg)
     return doors

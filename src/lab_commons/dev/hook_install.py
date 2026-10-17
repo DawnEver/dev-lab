@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.githooks.table import hook_table
 from lab_commons.dev.venvpath import CANDIDATE_RELATIVE_PATHS
 from lab_commons.log import emit
@@ -114,7 +114,7 @@ class HookInstallError(RuntimeError):
 
 def hooks_dir(repo: Path) -> Path:
     """The directory git will ACTUALLY consult for hooks in *repo* -- asked of git, never string-built."""
-    out = subprocess.run(
+    out = _door.run(
         [_GIT, '-C', str(repo), 'rev-parse', '--git-path', 'hooks'],
         capture_output=True,
         text=True,
@@ -127,7 +127,7 @@ def hooks_dir(repo: Path) -> Path:
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(repo), *args],
         capture_output=True,
         text=True,

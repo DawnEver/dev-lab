@@ -23,12 +23,12 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
 from lab_commons.log import emit
 
@@ -83,6 +83,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('.rgignore', 'famconfig RENDERED: what ripgrep and the agent Grep tool skip (attic/), plus the repo Delta'),
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
+        _m('uv.lock', 'lockcheck (D8): tracked in every repo and current against pyproject.toml at push'),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
         _m('.claude/settings.json', 'agent_guard.wire_settings (the PreToolUse hook) and allow_adoption'),
         _m('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
@@ -102,7 +103,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
 
 
 def _git_lines(root: Path, *args: str) -> tuple[str, ...]:
-    done = subprocess.run(
+    done = _door.run(
         [shutil.which('git') or 'git', '-C', str(root), *args],
         capture_output=True,
         text=True,

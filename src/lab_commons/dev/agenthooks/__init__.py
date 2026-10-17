@@ -45,11 +45,11 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.log import emit
 
 __all__ = [
@@ -196,7 +196,7 @@ def run_engine(
         'cwd': str(cwd) if cwd is not None else '',
         **({'agent_id': agent_id} if agent_id is not None else {}),
     }
-    done = subprocess.run(
+    done = _door.run(
         [node_executable(), str(engine), str(rules)],
         input=json.dumps(payload),
         capture_output=True,

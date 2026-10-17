@@ -277,8 +277,7 @@ class _Done:
 def _serve(box: Box, tmp_path: Path, rc: dict[str, int] | None = None) -> tuple[int, list[tuple[list[str], Path]]]:
     ran: list[tuple[list[str], Path]] = []
 
-    def run(argv: list[str], *, cwd: Path, **kw: object) -> _Done:
-        assert all(kw[key] == value for key, value in servetask.windowless().items())
+    def run(argv: list[str], *, cwd: Path, **_kw: object) -> _Done:
         ran.append((argv, cwd))
         return _Done((rc or {}).get(cwd.name, 0))
 

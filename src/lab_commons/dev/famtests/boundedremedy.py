@@ -73,6 +73,7 @@ import subprocess
 import time
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.dev import bounded
 from lab_commons.dev.famtests._boundedremedy_readings import (
     CHILD_LIFETIME_SECONDS,
@@ -250,7 +251,7 @@ def assert_the_reaper_kills_what_is_not_ours(*, interpreter: str, exit_ceiling_s
         AssertionError: the planted process did not start, was not reaped, or never exited.
 
     """
-    child = subprocess.Popen([interpreter, '-c', f'import time; time.sleep({CHILD_LIFETIME_SECONDS})'])
+    child = _door.popen([interpreter, '-c', f'import time; time.sleep({CHILD_LIFETIME_SECONDS})'])
     try:
         if child.poll() is not None:
             msg = f'the planted process exited immediately ({child.returncode}), so nothing was proved'

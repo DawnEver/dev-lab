@@ -30,7 +30,6 @@ beside the integrator's prompts.
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -38,6 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
@@ -186,7 +186,7 @@ def _fetch_pull(root: Path, remote: str, number: int) -> str:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(
+    done = _door.run(
         [_GIT, *args],
         cwd=root,
         capture_output=True,

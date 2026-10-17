@@ -33,6 +33,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import lab_commons.launch as _door
 from lab_commons.dev.footprint import Footprints, test_files
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.forgeschedule import tip_of
@@ -69,7 +70,7 @@ _GIT_TIMEOUT_S: Final = 60
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return _door.run(
         [_GIT, '-C', str(root), *args],
         capture_output=True,
         text=True,
