@@ -6,6 +6,7 @@ with one changed path INSIDE the footprint: that test must NOT carry.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from _forge_fake import git_out, run_git
@@ -137,3 +138,66 @@ def test_an_earlier_run_of_the_same_sha_gives_every_outcome_it_finished(tmp_path
     assert taken['tests/test_other.py::test_z'] == ('skipped', b, b)
     control = forgecarry.carry_from(tmp_path, b, {a: ancestor})
     assert 'tests/test_core.py::test_x' not in control
+
+
+def _synthetic(texts: dict[str, str], *, reads: dict[str, tuple[str, ...]] | None = None) -> footprint.Footprints:
+    tracked = frozenset({*texts, 'pyproject.toml', 'docs/guide.md', 'data/x.csv'})
+    return footprint.Footprints(tracked, texts, ('rust/**',), reads or {}, PYPROJECT)
+
+
+GRAPH = {
+    'src/a.py': 'import b\n',  # a <-> b is a cycle
+    'src/b.py': 'import a\nimport c\n',
+    'src/c.py': 'X = 1\n',
+    'src/d.py': 'import subprocess\n',  # by path, reads declared
+    'src/e.py': 'import importlib\n',  # by path, nothing declared: everything
+    'tests/test_ab.py': 'import a\n',
+    'tests/test_c.py': 'import c\n',
+    'tests/test_d.py': 'import d\n',
+    'tests/test_e.py': 'import e\n',
+    'tests/sub/test_plain.py': 'def test_p():\n    pass\n',
+    'tests/check_named_otherwise.py': 'import c\n',  # not a pytest test file: outside the graph
+}
+
+
+def test_reaches_is_the_footprint_judged_on_every_test_and_every_change() -> None:
+    """``reaches(test, changed)`` is EXACTLY ``of(test).reaches_any(changed)`` -- cycles, reads, seeds, globs.
+
+    PLANTED CONTROL: each change below lands inside SOME footprint and outside another, so a judge
+    answering always-yes or always-no fails it.
+    """
+    prints = _synthetic(GRAPH, reads={'src/d.py': ('data/**',)})
+    changes = [
+        (), ('src/c.py',), ('src/a.py',), ('src/b/__init__.py',), ('data/x.csv',), ('docs/guide.md',),
+        ('rust/lib.rs',), ('uv.lock',), ('tests/conftest.py',), ('tests/sub/conftest.py',), ('src/zz.py',),
+    ]  # fmt: skip
+    tests = [*(p for p in GRAPH if p.startswith('tests/')), 'tests/README.md']
+    verdicts = set()
+    for changed in changes:
+        for test in tests:
+            want = prints.of(test).reaches_any(changed)
+            assert prints.reaches(test, changed) == want, (test, changed)
+            verdicts.add(want)
+    assert verdicts == {True, False}
+
+
+def test_reaches_judges_a_repo_of_shared_closures_in_one_pass_not_one_per_test() -> None:
+    """Every test of a big repo shares most of its closure: one pass, not one walk per test (Ada 2026-10-17).
+
+    PLANTED CONTROL: :meth:`of` walks the whole shared closure per test, so a TENTH of the tests through
+    it costs more than all of them through :meth:`reaches`.
+    """
+    size = 800
+    texts = {f'src/m{i}.py': ''.join(f'import m{(i + k) % size}\n' for k in range(1, 12)) for i in range(size)}
+    texts |= {f'tests/test_{i}.py': f'import m{i}\n' for i in range(size)}
+    prints = _synthetic(texts)
+    tests = [f'tests/test_{i}.py' for i in range(size)]
+    prints.reaches(tests[0], ('docs/guide.md',))  # every module parsed once, which of() then reuses
+    start = time.perf_counter()
+    judged = [prints.reaches(test, ('src/m0.py',)) for test in tests]
+    fast = time.perf_counter() - start
+    start = time.perf_counter()
+    walked = [prints.of(test).reaches_any(('src/m0.py',)) for test in tests[: size // 10]]
+    slow = time.perf_counter() - start
+    assert judged[: size // 10] == walked
+    assert fast < slow, f'all {size} judged in {fast:.2f} s; a tenth walked in {slow:.2f} s'

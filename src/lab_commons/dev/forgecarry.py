@@ -113,7 +113,7 @@ def carried(root: Path, a: str, b: str, nodes: Iterable[str]) -> frozenset[str]:
     for node in nodes:
         test = node.split('::', 1)[0]
         if test not in files:
-            files[test] = '::' in node and not prints.of(test).reaches_any(changed)
+            files[test] = '::' in node and not prints.reaches(test, changed)
     return frozenset(node for node in nodes if files[node.split('::', 1)[0]])
 
 
@@ -126,7 +126,7 @@ def equivalent(root: Path, a: str, b: str) -> bool:
     tests = prints.tests()
     if not tests or test_files(prints.pyproject, sorted(set(changed) - prints.tracked)):
         return False
-    return not any(prints.of(test).reaches_any(changed) for test in tests)
+    return not any(prints.reaches(test, changed) for test in tests)
 
 
 def nearest(root: Path, b: str, shas: Iterable[str]) -> list[str]:
