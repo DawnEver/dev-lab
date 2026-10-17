@@ -30,10 +30,13 @@ from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
+from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Config
+from lab_commons.hpc.grants import SESSION_ENV, Grant, Machine, Session
 from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NoRoom
+from lab_commons.hpc.slurm import Node, Quota, Snapshot
 from lab_commons.hpc.tree import NotSubmitted
 
 SHA = 'c' * 40
@@ -684,3 +687,57 @@ def test_an_unreachable_cluster_is_never_read_as_nothing_submitted(tmp_path: Pat
         cluster.submitted(run)
     empty = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _grant: lambda *_a: '')
     assert empty.submitted(run) == [], 'PLANTED CONTROL: a host that answered with no state is nothing submitted'
+
+
+def _built(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> forgeslurm.SlurmCluster:
+    grant = Grant('alice', ('login1',), 'acct')
+    monkeypatch.setattr(forgeslurm, 'load_grants', lambda: Machine(session=_session_from_env(), grants=(grant,)))
+    monkeypatch.setattr(forgeslurm, 'with_allocation', lambda machine, _read: machine)
+    monkeypatch.setattr(forgeslurm, 'submitter', lambda: lambda _grant: None)
+    return forgeslurm.slurm_cluster(tmp_path, ClusterAccount('ada', 'alice'))
+
+
+def _session_from_env() -> Session | None:
+    name = os.environ.get(SESSION_ENV, '')
+    return Session(name) if name else None
+
+
+def test_the_forge_serve_tags_its_own_submissions_without_a_session_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-17: cron sets no ``$LC_HPC_SESSION``, so every forge array was untagged and alarmed on.
+
+    The forge is a known stream and names itself. PLANTED CONTROL: an explicit ``$LC_HPC_SESSION`` still wins.
+    """
+    monkeypatch.delenv(SESSION_ENV, raising=False)
+    assert _built(monkeypatch, tmp_path).machine.comment == f'lc:session={forgeslurm.FORGE_SESSION}'
+    monkeypatch.setenv(SESSION_ENV, 'campaign')
+    assert _built(monkeypatch, tmp_path).machine.comment == 'lc:session=campaign'
+
+
+def test_untagged_counts_only_jobs_that_are_not_the_forges_own(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Arrays the forge sbatched before it tagged itself bear its job names (``run-<sha12>[-<part>]``): not alarmed.
+
+    PLANTED CONTROL: another session's untagged job (``wdg-design``) is still counted, and a tagged one never is.
+    """
+    squeue = (
+        'run-89f11a39d6fe|(null)\n'
+        'run-89f11a39d6fe|(null)\n'
+        'run-4ad64054bba3-base|(null)\n'
+        'wdg-design|(null)\n'
+        'campaign-7|lc:session=campaign\n'
+        'run-notasha12xyz|(null)\n'
+    )
+    monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: _snapshot_untagged())
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alice', slurm_account='a')])
+
+    def shell(command: str, _stdin: object) -> str:
+        return squeue if '%j' in command else ''
+
+    cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: shell, lambda: None)
+    assert cluster.standing().facts['untagged'] == 2
+
+
+def _snapshot_untagged() -> Snapshot:
+    quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
+    return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)

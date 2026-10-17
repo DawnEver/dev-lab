@@ -1,0 +1,20 @@
+---
+name: the-forge-serve-tags-its-own-slurm-jobs
+description: cron sets no $LC_HPC_SESSION, so every forge array was untagged and every Ada account alarmed "N untagged job task(s)"; the forge serve now submits as session `forge` unless $LC_HPC_SESSION names one, and its pre-fix untagged arrays (job name run-<sha12>[-<part>]) are not counted as untagged
+created: 2026-10-17
+---
+# The forge serve tags its own Slurm jobs (2026-10-17)
+
+- Incident (forge queue 18:12Z): `ALARM untagged` on every Ada account (ezzls2 26, ezztz 76, alyyw103 18,
+  ezxmw9 8, ezxmb14 1). squeue on ezxmw9 showed only `run-89f11a39d6fe|(null)` x7 and
+  `run-4ad64054bba3-base|(null)`: the forge's own arrays.
+- User ruling: no allocation in machine files, so no host config. `forgeslurm.slurm_cluster` defaults the
+  machine's session to `FORGE_SESSION = 'forge'` when `$LC_HPC_SESSION` is unset; an explicit one wins.
+  Chosen over `forge:<repo>`: one serve per host is one stream across repos, and a per-repo tag would
+  split its derived share by the number of repos served.
+- `standing()['untagged']` now reads `squeue -h --me -r -t PENDING,RUNNING -o "%j|%k"` and counts tasks
+  with no `lc:session=` comment whose name is not a run's (`hpc.run.is_run_job`: `run-<sha12>` or
+  `run-<sha12>-<part>`) -- arrays sbatched before the fix stop alarming; campaign/wdg-design untagged jobs
+  still alarm, correctly. Planted controls in `tests/test_dev_forgerun.py`.
+- Not changed: `hpc.allocation`'s share derivation still sees those pre-fix arrays as the `untagged`
+  stream until they drain (hours); only the alarm count excludes them.
