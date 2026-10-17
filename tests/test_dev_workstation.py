@@ -416,3 +416,41 @@ def test_a_repo_venv_whose_kit_would_exit_2_no_longer_matters_to_serving(box: Bo
         return _Done(2 if stale else 0)
 
     assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
+
+
+def test_a_moved_floating_git_tip_rebootstraps_a_served_venv(tmp_path: Path) -> None:
+    """Dependencies float (user ruling 2026-10-17): a served venv follows the newest of each git requirement.
+
+    The stamp keys the content of the env inputs AND the current tip of every floating git dependency, so a new
+    lab-commons on the served ref reaches a repo whose pyproject did not change. PLANTED CONTROL: an
+    unchanged tip leaves the venv current and runs nothing.
+    """
+    checkout = tmp_path / 'repo'
+    checkout.mkdir()
+    (checkout / 'pyproject.toml').write_text(
+        '[project]\nname = "r"\ndependencies = ["lab-commons @ git+https://forge/o/lab-commons.git@integrate/main"]\n',
+        encoding='utf-8',
+    )
+    python = hostrefresh.venv_python(checkout)
+    python.parent.mkdir(parents=True)
+    python.write_text('', encoding='utf-8')
+    tips = {('https://forge/o/lab-commons.git', 'integrate/main'): 'a' * 40}
+    ran: list[str] = []
+
+    class _Step:
+        dry = False
+
+        def change(self, what: str, _argv: object, **_kw: object) -> int:
+            ran.append(what)
+            return 0
+
+    def tip(url: str, ref: str) -> str:
+        return tips[url, ref]
+
+    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout, tip=tip) == 0
+    assert len(ran) == 1, 'a venv with no stamp is bootstrapped'
+    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout, tip=tip) == 0
+    assert len(ran) == 1, 'an unchanged tip leaves it current'
+    tips['https://forge/o/lab-commons.git', 'integrate/main'] = 'b' * 40
+    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout, tip=tip) == 0
+    assert len(ran) == 2, 'a new tip on the served ref re-bootstraps it'
