@@ -1336,3 +1336,14 @@ def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_p
     verifybox.learn_ended(tmp_path, ['tests'], record)
     assert verifybox.selection_mem_gb('https://g/w.git', files, 1) == pytest.approx(3 * learned.BOX_HEADROOM, abs=1e-6)
     verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing
+
+
+def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, monkeypatch) -> None:
+    """D5: the refusal prints the exact `forge request tests` command; a dirty tree cannot be offered."""
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: ())
+    offer = verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',))
+    assert f'python -m lab_commons.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: ('tests/test_a.py',))
+    assert 'cannot be offered' in verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'
