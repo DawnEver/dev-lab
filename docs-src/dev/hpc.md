@@ -184,8 +184,10 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   `hands=<part>:<n>,...`. `base` is always wanted, and a part handed to is wanted next (`platformparts.derived`).
 - **A host claims a part when it HAS its need-set** (`lab_commons.compute.admission.admit`). What a host has is
   measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every checked tool
-  (`femm`, `jmag`, `matlab`, `node`, `simba`; `lab_commons.compute.presence`) that is FOUND, reads the version
-  the serving repo declares once in `[tool.lab_commons.tools]` (`femm = "<version>"`), passed its SMOKE (cached
+  (`femm`, `jmag`, `matlab`, `node`, `simba`; `lab_commons.compute.presence`) that is FOUND, reads a version at or above
+  the FLOOR the serving repo declares once in `[tool.lab_commons.tools]` (`femm = {floor = "5.0", reason =
+  "<why>"}`; no pin -- an undeclared tool is present at any version, and the version read is recorded in every
+  local run record's `tools`), passed its SMOKE (cached
   6 h, re-run each serve tick when due) and has not failed a real unit (exit 4) here since; any other
   `[capabilities.<name>]` is present as declared. `seats` is its concurrency, the only declaration. A part no live host has the needs of waits
   `no host provides <resource>` in `forge queue`: blocked, never red, never skipped.
