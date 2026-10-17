@@ -260,3 +260,19 @@ def test_the_module_refuses_an_undeclared_branch_read_from_stdin(tmp_path: Path)
         assert main([]) == REFUSED
     finally:
         monkeypatched.undo()
+
+
+def test_a_kit_older_than_the_checkout_says_rebuild_the_venv_not_unreadable(tmp_path: Path) -> None:
+    """A key the installed kit does not know is a NEWER schema: the remedy is the venv, never the manifest.
+
+    PLANTED CONTROL: a declaration missing its trunk is still the unreadable-branch-set refusal.
+    """
+    newer = '[tool.lab_commons.branchset]\ntrunk = "main"\nsessions = []\nfuture_key = 1\n'
+    (tmp_path / 'pyproject.toml').write_text(newer, encoding='utf-8')
+    code, text = refusal(tmp_path)
+    assert code == COULD_NOT_JUDGE
+    assert 'your kit is older than this checkout' in text
+    assert 'rebuild' in text
+    assert 'readable branch set' not in text
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.branchset]\nsessions = []\n', encoding='utf-8')
+    assert 'no readable branch set' in refusal(tmp_path)[1]

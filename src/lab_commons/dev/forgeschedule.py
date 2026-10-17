@@ -71,7 +71,7 @@ from lab_commons.compute.model import (
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgepulls import pr_list
-from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body
+from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import part_refs
@@ -350,10 +350,11 @@ def _requests(root: Path, client: Client, repo: str, schedule: Schedule, now: da
     found = []
     for raw in labelled_issues(client, schedule.request_label):
         producer, sha = parse_body(raw.get('body') or '')
+        paths = parse_paths(raw.get('body') or '')
         created = raw.get('created_at') or ''
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
         try:
-            platform = declared_request(root, sha, producer).part
+            platform = declared_request(root, sha, producer, paths).part
         except UndeclaredRequest:
             platform = ''
         number = int(raw['number'])
@@ -373,6 +374,7 @@ def _requests(root: Path, client: Client, repo: str, schedule: Schedule, now: da
                 origin=origin,
                 origin_host=host['host'] if host else '',
                 producer=producer,
+                paths=paths,
             )
         )
     return found

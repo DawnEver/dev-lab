@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.resources import Broker
+from lab_commons.box import box_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -206,5 +206,5 @@ def offline_line(freshness: Freshness) -> str | None:
 
 def family_freshness(root: Path) -> tuple[str | None, str | None]:
     """``(refusal, offline line)`` for THIS interpreter's floating packages, cached beside the machine's records."""
-    freshness = check(installed_family(), cache=Broker().resource_dir() / 'family-heads.json')
+    freshness = check(installed_family(), cache=box_path().parent / 'family-heads.json')
     return refusal(freshness, door=sync_door(root)), offline_line(freshness)

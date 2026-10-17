@@ -76,7 +76,6 @@ def code_lines(path: Path) -> int:
 DEBT: dict[str, int] = {
     'src/lab_commons/dev/_rule_rows.py': 422,  # 461 raw; every line it gained was ISC004 parenthesisation
     'src/lab_commons/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
-    'src/lab_commons/resources.py': 741,  # 1547 raw; the broker, the registry and the record in one file
 }
 
 #: The ceiling on the escape hatch: total pinned debt in CODE lines. It went UP exactly once, on

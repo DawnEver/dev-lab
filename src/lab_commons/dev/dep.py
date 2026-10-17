@@ -24,7 +24,7 @@ The cause of both is the same: the question is about STATE -- which environment 
 whether a verdict is in flight for THAT environment -- and no amount of pattern is a measurement. So
 the door identifies the TARGET interpreter (or the named bootstrap prefix), never the invoking
 interpreter's environment by accident. Verdicts and mutations hold the same environment-scoped
-broker seat for their whole operation; the box CPU seat is a separate resource. A mutation of B
+seat on the box ledger for their whole operation; a run's cores and memory are a separate claim. A mutation of B
 therefore remains permitted while a verdict runs in A, and neither direction of the start race
 can overlap a mutation and a verdict in one environment.
 
@@ -72,11 +72,11 @@ from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.box import Refused
 from lab_commons.dev import _dep_project
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.log import emit
-from lab_commons.resources import Exhausted
 
 __all__ = [
     'CHILD_WALL_S',
@@ -184,11 +184,10 @@ def current_env_key() -> str:
     return env_key(env_manifest())
 
 
-def _held_refusal(name: str, exhausted: Exhausted) -> HeldEnvironmentError:
+def _held_refusal(name: str, refused: Refused) -> HeldEnvironmentError:
     """H1, PREVENTED: the target environment's seat is held, and the refusal names who holds it."""
-    holders = ', '.join(holder.describe() for holder in exhausted.holders) or 'a holder the broker cannot name'
     return HeldEnvironmentError(
-        f'{name}: a verdict is running in this environment, held by {holders}. Its env_key is '
+        f'{name}: a verdict is running in this environment ({refused}). Its env_key is '
         f'computed when the run ENDS, so mutating this environment now would make that verdict name '
         f'an environment it never tested. Wait for that run to finish and re-issue; nothing else is '
         f'required.'
@@ -396,7 +395,7 @@ def _change(
                 after = key()
                 retired = retire_anchors(declared) if declared and after != before else ()
             return Report(port.name, prefix, tuple(argv), completed.returncode, before, after, retired, tuple(gaps))
-    except Exhausted as exc:
+    except Refused as exc:
         raise _held_refusal(port.name, exc) from exc
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import admission, forgecli, platformparts, workstation
+from lab_commons.dev import forgecli, platformparts, pushgate, workstation
 from lab_commons.hpc import __main__ as hpc_main
 from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys
 
@@ -39,7 +39,7 @@ def test_the_old_part_verb_is_refused_by_name_with_its_remedy(capsys: pytest.Cap
 def test_the_ledger_admission_flags_are_refused_by_name(tmp_path, flag: str, capsys) -> None:
     """Admission reads the forge: the ledger, its tiers and its gap record are retired as admission inputs."""
     with pytest.raises(SystemExit):
-        admission.main(['--root', str(tmp_path), '--trunk-ref', 'none', '--remote-ref', 'r', flag, 'x'])
+        pushgate.main(['--root', str(tmp_path), '--trunk-ref', 'none', '--remote-ref', 'r', flag, 'x'])
     assert 'is retired' in capsys.readouterr().err
 
 

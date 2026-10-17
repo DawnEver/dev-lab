@@ -98,7 +98,7 @@ _ENFORCED = {
     'ISSUE-IS-INTENT': (guard('tests/test_dev_forgeissue.py'),),
     # The branch flow is enforced by its doors (integrate / forge sync / forge integration), proved on real
     # repositories against both forge backends.
-    'TRUNK-MOVES-BY-FAST-FORWARD': (guard('tests/test_dev_integrate.py'), guard('tests/test_dev_admission.py')),
+    'TRUNK-MOVES-BY-FAST-FORWARD': (guard('tests/test_dev_integrate.py'), guard('tests/test_dev_pushgate.py')),
     'ONE-WRITER-PER-SESSION-BRANCH': (guard('tests/test_dev_sessionbranch.py'),),
     'SESSION-HISTORY-ONLY-GROWS': (guard('tests/test_dev_sessionbranch.py'),),
     'INTEGRATION-IS-MERGES-ONLY': (guard('tests/test_dev_sessionbranch.py'), guard('tests/test_dev_integrate.py')),
@@ -150,7 +150,7 @@ _ENFORCED = {
         guard('tests/test_dev_producer.py'),
         guard('tests/test_dev_verify.py'),
         guard('tests/test_dev_forgeserve.py'),
-        guard('tests/test_dev_admission.py'),
+        guard('tests/test_dev_pushgate.py'),
         guard('tests/test_dev_inflight.py'),
         guard('tests/test_dev_runcache.py'),
     ),

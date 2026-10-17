@@ -37,8 +37,9 @@ from typing import Final
 import pytest
 from _box_fake import ended
 
-from lab_commons.box import BOX_ENV, GB, Capacity, Refused, write_ended
-from lab_commons.box.run import INSIDE_ENV
+from lab_commons import box
+from lab_commons.box import BOX_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
+from lab_commons.compute import learned
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -1183,9 +1184,14 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
 #: A child that claims EVERY core of its box ledger and holds them until killed.
 _HOLD_SEAT: Final = (
     'import math, time\n'
-    'from lab_commons.box import Capacity, Demand, admit\n'
-    'cores = math.floor(Capacity.read().cpu)\n'
-    "with admit(Demand(cpu=cores, mem_gb=0.5, wall_s=600, seats={}), 'planted-holder', 5, key='planted'):\n"
+    'from lab_commons.box import Capacity, Demand, hold\n'
+    'from lab_commons.box.supply import Reading\n'
+    'size = Capacity.read()\n'
+    'cores = math.floor(size.cpu)\n'
+    # a quiet reading, so the planted holder is ALWAYS admitted however loaded the machine running it is
+    'whole = Reading(size.cpu + size.kept_cpu, size.cpu + size.kept_cpu, 2**40, 2**40)\n'
+    "with hold(Demand(cpu=cores, mem_gb=0.5, wall_s=600, seats={}), 'planted-holder', 5, key='planted',\n"
+    '          read=lambda _pids: whole):\n'
     "    print('held', flush=True)\n"
     '    time.sleep(600)\n'
 )
@@ -1229,6 +1235,7 @@ def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool) -> No
     box = Capacity(cpu=cpu, mem_bytes=16 * GB, seats={})
     monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: box))
     monkeypatch.setattr(verifybox, 'xdist_installed', lambda: xdist)
+    monkeypatch.setattr(verifybox, 'refresh_checkout', lambda _root: 0)  # no forge in a unit test
 
 
 def _claimed(argv: list[str]) -> tuple[str, list[str]]:
@@ -1292,3 +1299,51 @@ def test_pytest_exiting_a_former_box_sentinel_is_judged_by_pytest(tmp_path: Path
     record = tmp_path / 'step.outcome.json'
     write_ended(record, ended(own))
     assert verifybox.ended_in_the_box(record) == ()
+
+
+def test_a_selection_declares_the_memory_its_files_measured_never_a_fixed_figure(tmp_path: Path) -> None:
+    """D4/D5: each worker at the worst selected file's peak x the box headroom; an unmeasured file at its siblings'.
+
+    PLANTED CONTROL: a repository with nothing measured falls back to the per-task floor, never to 8 GB.
+    """
+    (tmp_path / 'tests' / 'u').mkdir(parents=True)
+    for name in ('test_a.py', 'test_b.py', 'test_new.py'):
+        (tmp_path / 'tests' / 'u' / name).write_text('', encoding='utf-8')
+    files = verifybox.selection_files(tmp_path, ['py', '-m', 'pytest', 'tests/u', '-q'])
+    assert files == ('tests/u/test_a.py', 'tests/u/test_b.py', 'tests/u/test_new.py')
+    assert verifybox.selection_files(tmp_path, ['tests/u/test_a.py::t']) == ('tests/u/test_a.py',)
+    learned.learn_peaks('https://g/v.git', {'tests/u/test_a.py': 1024.0, 'tests/u/test_b.py': 2048.0})
+    assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_a.py'], 2) == 2 * 1.0 * learned.BOX_HEADROOM
+    assert verifybox.selection_mem_gb('https://g/v.git', ['tests/u/test_new.py'], 1) == 1.5 * learned.BOX_HEADROOM
+    assert verifybox.selection_mem_gb('https://g/none.git', ['tests/x.py'], 4) == 4.0, 'the 1 GB floor per worker'
+
+
+def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_path: Path, monkeypatch) -> None:
+    """Per-file peaks under-price one process running many files: the box's own measurement of the tree wins.
+
+    PLANTED CONTROL: a run that exited on its own teaches its peak once; the kill teaches twice the limit.
+    """
+    monkeypatch.setattr(verifybox, '_repo', lambda _root: 'https://g/w.git')
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    files = verifybox.selection_files(tmp_path, ['tests'])
+    record = tmp_path / 'o.json'
+    write_ended(record, box.Outcome(-9, 'memory', 2 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    killed = verifybox.selection_mem_gb('https://g/w.git', files, 1)
+    assert killed == pytest.approx(2 * 2 * learned.BOX_HEADROOM, abs=1e-6)  # GB: the 2 GB limit, doubled
+    write_ended(record, box.Outcome(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
+    verifybox.learn_ended(tmp_path, ['tests'], record)
+    assert verifybox.selection_mem_gb('https://g/w.git', files, 1) == pytest.approx(3 * learned.BOX_HEADROOM, abs=1e-6)
+    verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing
+
+
+def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, monkeypatch) -> None:
+    """D5: the refusal prints the exact `forge request tests` command; a dirty tree cannot be offered."""
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: ())
+    offer = verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',))
+    assert f'python -m lab_commons.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: ('tests/test_a.py',))
+    assert 'cannot be offered' in verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'

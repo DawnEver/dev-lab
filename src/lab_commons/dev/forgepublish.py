@@ -37,7 +37,7 @@ class RequestRefused(ValueError):
     """A request no serve host could reproduce; the message names why. Nothing was published."""
 
 
-def publish(root: Path, client: Client, producer: str, sha: str, *, label: str) -> Issue:
+def publish(root: Path, client: Client, producer: str, sha: str, *, label: str, paths: Sequence[str] = ()) -> Issue:
     """Open the request issue for *producer* at *sha*, labelled *label*, once every check passes.
 
     Raises:
@@ -46,13 +46,13 @@ def publish(root: Path, client: Client, producer: str, sha: str, *, label: str) 
 
     """
     try:
-        declared_request(root, sha, producer)
+        declared_request(root, sha, producer, paths)
     except UndeclaredRequest as why:
         raise RequestRefused(str(why)) from None
     if why := unserved(root, sha) or unreproducible(root, sha):
         raise RequestRefused(why)
     ensure_labels(client, [label, DONE_LABEL])
-    issue = client.issue_create(f'request {producer} at {sha[:12]}', request_body(producer, sha))
+    issue = client.issue_create(f'request {producer} at {sha[:12]}', request_body(producer, sha, paths))
     add_label(client, issue.number, label)
     return issue
 
@@ -69,12 +69,20 @@ def main(
     parser = argparse.ArgumentParser(prog='lab_commons.dev.forge request', description=__doc__.splitlines()[0])
     parser.add_argument('producer', help='a name the sha declares under [tool.lab_commons.requests]')
     parser.add_argument('--sha', required=True, help='the 40-hex commit to run it at')
+    parser.add_argument('--paths', nargs='+', default=(), help='producer `tests` only: the test files to run')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     root = Path.cwd() if cwd is None else cwd
     try:
         fetch(root)
         built = client_for(root, env=dict(os.environ) if env is None else env, transport=transport)
-        issue = publish(root, built, args.producer, args.sha.lower(), label=load_schedule(root).request_label)
+        issue = publish(
+            root,
+            built,
+            args.producer,
+            args.sha.lower(),
+            label=load_schedule(root).request_label,
+            paths=tuple(args.paths),
+        )
     except RequestRefused as refused:
         emit(f'[request] refused, nothing published: {refused}', err=True)
         return 2

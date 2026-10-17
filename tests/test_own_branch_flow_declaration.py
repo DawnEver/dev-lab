@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import admission, platformparts
+from lab_commons.dev import platformparts, pushgate
 from lab_commons.dev.branchset import declared_branchset
 from lab_commons.dev.lanepolicy import load_policy
 
@@ -23,10 +23,10 @@ def test_the_integration_branch_is_declared_and_long_lived() -> None:
 def test_a_push_to_integrate_main_needs_no_part_and_main_does() -> None:
     """PLANTED CONTROL: the same empty forge admits integrate/main and refuses the trunk."""
     policy = load_policy(ROOT)
-    destination = admission.destination_of('refs/heads/integrate/main', policy)
-    assert destination == admission.INTEGRATION
-    assert admission.admit(destination, head=SHA, statuses=lambda: ()).allowed
-    assert not admission.admit(admission.TRUNK, head=SHA, statuses=lambda: ()).allowed
+    destination = pushgate.destination_of('refs/heads/integrate/main', policy)
+    assert destination == pushgate.INTEGRATION
+    assert pushgate.decide(destination, head=SHA, statuses=lambda: ()).allowed
+    assert not pushgate.decide(pushgate.TRUNK, head=SHA, statuses=lambda: ()).allowed
 
 
 def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from _box_fake import ended, record
+from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
 
 from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
@@ -227,7 +227,7 @@ def _serve(
         table=table or {},
         fetch=lambda _root: None,
         host=host,
-        supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX),
+        supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX, read=quiet(BOX)),
         holding=lambda: holding,
         retain=retain,
         present=present,
@@ -593,7 +593,7 @@ def test_a_refused_credential_alarms_and_still_fails(monkeypatch, tmp_path: Path
     with pytest.raises(ForgeCallFailed):
         forgeserve.serve(
             tmp_path, client=_client, machine='G', seat=None, cluster=lambda: None, alarm=alarms.append,
-            table={}, supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX),
+            table={}, supplied=functools.partial(forgerounds.supply_now, capacity=lambda: BOX, read=quiet(BOX)),
             holding=tuple, retain=lambda _root, **_kw: None,
         )  # fmt: skip
     assert [a.kind for a in alarms] == [AUTH]

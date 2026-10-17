@@ -1,4 +1,4 @@
-"""PUSH ADMISSION -- the family's ONE answer to "may this push go", read off the FORGE.
+"""THE PUSH GATE -- the family's ONE answer to "may this push go", read off the FORGE.
 
 THE RULE (user rulings 2026-10-04, 2026-10-08 and 2026-10-09, forge plan section 6):
 
@@ -64,9 +64,9 @@ __all__ = [
     'TRUNK',
     'TRUNK_SCOPE',
     'VERDICT_STAMP',
-    'Admission',
     'CitedVerdict',
-    'admit',
+    'Decision',
+    'decide',
     'destination_of',
     'main',
     'parse_verdict_line',
@@ -106,7 +106,7 @@ class CitedVerdict:
 
 
 @dataclass(frozen=True)
-class Admission:
+class Decision:
     """The decision and the text the hook prints."""
 
     allowed: bool
@@ -126,28 +126,28 @@ def parse_verdict_line(text: str) -> CitedVerdict | None:
     return CitedVerdict(tree=last['tree'], env=last['env'], tier=tier, result=last['result'].upper(), line=line)
 
 
-def admit(destination: str, *, head: str, statuses: Callable[[], Sequence[Status]]) -> Admission:
+def decide(destination: str, *, head: str, statuses: Callable[[], Sequence[Status]]) -> Decision:
     """Decide a push to *destination* by the table in this module's docstring.
 
     *statuses* reads HEAD's latest status per context from the forge; it is called only for the trunk,
     and any failure to read is a refusal (the trunk waits), never a pass.
     """
     if destination in {LANE, INTEGRATION}:
-        return Admission(
+        return Decision(
             allowed=True,
             message=(
-                f'[admission] {destination}: admitted with no part -- parts are produced from pushed shas; '
+                f'[pushgate] {destination}: admitted with no part -- parts are produced from pushed shas; '
                 'only the trunk needs every part green.'
             ),
         )
     try:
         found = tuple(statuses())
     except (ForgeCallFailed, NoCredential, UnreadableRemote, OSError) as exc:
-        return Admission(
+        return Decision(
             allowed=False,
             message=(
-                f'[admission] trunk: push REFUSED -- the forge could not be read for HEAD {head} ({exc}).\n'
-                '[admission] Remedy: the trunk WAITS for the forge; there is no local fallback. Retry once '
+                f'[pushgate] trunk: push REFUSED -- the forge could not be read for HEAD {head} ({exc}).\n'
+                '[pushgate] Remedy: the trunk WAITS for the forge; there is no local fallback. Retry once '
                 '`python -m lab_commons.dev.forge status list <sha>` answers.'
             ),
         )
@@ -155,16 +155,16 @@ def admit(destination: str, *, head: str, statuses: Callable[[], Sequence[Status
     cited = judged.cited()
     if judged.result != 'PASS':
         problems = judged.problems or tuple(f'{part.platform} is {part.result}' for part in judged.parts)
-        return Admission(
+        return Decision(
             allowed=False,
             message='\n'.join(
                 [
-                    f'[admission] trunk: push REFUSED -- the parts of HEAD {head} on the forge ({cited or "none"}):',
-                    *(f'[admission]   {problem}' for problem in problems),
+                    f'[pushgate] trunk: push REFUSED -- the parts of HEAD {head} on the forge ({cited or "none"}):',
+                    *(f'[pushgate]   {problem}' for problem in problems),
                 ]
             ),
         )
-    return Admission(allowed=True, message=f'[admission] trunk: every part of HEAD {head} is green ({cited}).')
+    return Decision(allowed=True, message=f'[pushgate] trunk: every part of HEAD {head} is green ({cited}).')
 
 
 def destination_of(remote_ref: str, policy: Policy) -> str:
@@ -185,7 +185,7 @@ def _head(root: Path) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``0`` admit, ``1`` refuse -- the CLI a consumer's pre-push hook delegates to."""
-    parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.admission', description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.pushgate', description=__doc__.splitlines()[0])
     parser.add_argument('--root', type=Path, default=Path.cwd(), help='the checkout being pushed')
     parser.add_argument(
         '--remote-ref',
@@ -194,7 +194,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument('--trunk-ref', required=True, help="the trunk ref (e.g. refs/heads/main), or 'none'")
     argv = sys.argv[1:] if argv is None else list(argv)
     for word in argv:
-        if refused := refusal('admission', word.split('=', 1)[0]):
+        if refused := refusal('pushgate', word.split('=', 1)[0]):
             parser.error(refused)
     args = parser.parse_args(argv)
     if args.remote_ref:
@@ -212,7 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for remote_ref, head in pushes:
         trunk = args.trunk_ref != 'none' and remote_ref == args.trunk_ref
         destination = TRUNK if trunk else destination_of(remote_ref, policy)
-        decided = admit(destination, head=head, statuses=lambda h=head: status_list(unprompted_client(args.root), h))
+        decided = decide(destination, head=head, statuses=lambda h=head: status_list(unprompted_client(args.root), h))
         emit(decided.message)
         allowed = allowed and decided.allowed
     return 0 if allowed else 1

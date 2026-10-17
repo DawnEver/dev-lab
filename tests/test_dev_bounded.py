@@ -29,7 +29,6 @@ from lab_commons.dev.bounded import (
     reap_tree,
     run_bounded,
     wall_reason,
-    worker_width,
 )
 from lab_commons.proc import process_tree
 
@@ -72,36 +71,6 @@ def test_a_run_that_finishes_inside_the_wall_is_not_disturbed() -> None:
     assert done.returncode == 0
     assert done.stdout.strip() == 'ok'
     assert done.args[0] == sys.executable
-
-
-def test_the_width_takes_the_SMALLER_of_memory_and_cores(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Memory first, cores second -- an overcommit of memory kills, an overcommit of cores slows."""
-    monkeypatch.setattr('lab_commons.dev.bounded.logical_cores', lambda: 16)
-    monkeypatch.setattr('lab_commons.dev.bounded._available_gb', lambda: 8.0)
-    # 8 GB / 4 GB per worker = 2, against 15 the cores allow: memory wins.
-    assert worker_width(gb_per_worker=4.0, max_width=12, floor=2, reserve_cores=1, fallback=8) == 2
-
-    monkeypatch.setattr('lab_commons.dev.bounded._available_gb', lambda: 256.0)
-    # cores - reserve = 15, clipped by the declared maximum.
-    assert worker_width(gb_per_worker=4.0, max_width=12, floor=2, reserve_cores=1, fallback=8) == 12
-
-
-def test_an_unreadable_box_falls_back_to_a_measurement_not_to_the_floor(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`None` IS NOT ZERO. "cannot measure" is not "cannot afford", and the two differ by 6 workers."""
-    monkeypatch.setattr('lab_commons.dev.bounded.logical_cores', lambda: 16)
-    monkeypatch.setattr('lab_commons.dev.bounded._available_gb', lambda: None)
-    assert worker_width(gb_per_worker=4.0, max_width=12, floor=2, reserve_cores=1, fallback=8) == 8
-
-    monkeypatch.setattr('lab_commons.dev.bounded.logical_cores', lambda: 3)
-    # A small box clips the fallback by what its processors allow, and never falls below the floor.
-    assert worker_width(gb_per_worker=4.0, max_width=12, floor=2, reserve_cores=1, fallback=8) == 2
-
-
-def test_the_width_never_falls_below_its_floor(monkeypatch: pytest.MonkeyPatch) -> None:
-    """0 and 1 mean SERIAL, which is a human's choice and not somewhere a starved box arrives."""
-    monkeypatch.setattr('lab_commons.dev.bounded.logical_cores', lambda: 2)
-    monkeypatch.setattr('lab_commons.dev.bounded._available_gb', lambda: 0.5)
-    assert worker_width(gb_per_worker=4.0, max_width=12, floor=2, reserve_cores=1, fallback=8) == 2
 
 
 def test_the_blas_pool_is_shared_out_rather_than_handed_to_every_worker(monkeypatch: pytest.MonkeyPatch) -> None:

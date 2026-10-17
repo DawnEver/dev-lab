@@ -46,13 +46,14 @@ from pathlib import Path
 from typing import IO, Final
 
 import lab_commons.launch as _door
-from lab_commons.box import Refused
+from lab_commons.box import POLL_S, Refused
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.familyheads import family_freshness
+from lab_commons.dev.forgerequest import TESTS
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import INSTALL_COMMAND, UNPROTECTED, hook_installation
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
@@ -74,10 +75,16 @@ from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
-from lab_commons.dev.verifybox import MEASURE_WAIT_S, WAIT_S, boxed, ended_in_the_box
+from lab_commons.dev.verifybox import (
+    MEASURE_WAIT_S,
+    WAIT_S,
+    boxed,
+    ended_in_the_box,
+    learn_ended,
+    selection_files,
+)
 from lab_commons.hpc.needsets import BASE
 from lab_commons.log import emit
-from lab_commons.resources import DEFAULT_POLL_S, Exhausted
 
 __all__ = [
     'EXIT_CODES',
@@ -360,7 +367,7 @@ def run_verify(
     pytest_args: tuple[str, ...] = (),
     *,
     wait_s: float = WAIT_S,
-    poll_s: float = DEFAULT_POLL_S,
+    poll_s: float = POLL_S,
 ) -> Verdict:
     """Run the three steps under *root*, tee them into a fresh log, and return the verdict.
 
@@ -387,7 +394,6 @@ def run_verify(
 
     Raises:
         MalformedAllowance: ``[tool.lab_commons.verify] allowed_skips`` is present and unreadable.
-        Exhausted: another run held this environment for the whole of *wait_s*.
         Refused: the box had no room for the selection within *wait_s*. Nothing was measured either
             way, so there is no verdict to return; :func:`main` renders both as INCONCLUSIVE.
         UnverifiableLog: the log came out empty or unreadable, so no verdict may rest on it.
@@ -418,6 +424,7 @@ def run_verify(
         argv, record = boxed(root, pytest, queue_s=wait_s, outcome=path.with_suffix('.outcome.json'))
         code = _tee(argv, cwd=root, handle=handle, extra_env=stamp)
     distillate = distil_log(path, banner=_PYTEST_BANNER)
+    learn_ended(root, pytest, record)
     cut = ended_in_the_box(record)
     complete_census, scope_refusal = census_scope(pytest_args)
     report = read_pytest(distillate.text, returncode=code, allowed_skips=allowed, complete_skip_census=complete_census)
@@ -453,11 +460,10 @@ def main(argv: list[str] | None = None) -> int:
     person who typed the declaration, and a stack trace tells them about this module instead. It
     exits INCONCLUSIVE, because nothing was measured.
 
-    :class:`~lab_commons.resources.Exhausted` (the environment held) and :class:`~lab_commons.box.Refused`
-    (no room in the box) take the same route, for the same reason and with the same exit code: nothing was
-    measured, and INCONCLUSIVE is what a run that cannot say is required to say. The line NAMES the holder
-    and the remedy, because "busy" sends its reader to the process table to guess and guessing wrong kills
-    somebody's evidence.
+    :class:`~lab_commons.box.Refused` -- the environment seat held, or no room in the box -- takes one
+    route, with one exit code: nothing was measured, and INCONCLUSIVE is what a run that cannot say is
+    required to say. The line NAMES the holder and the remedy, because "busy" sends its reader to the
+    process table to guess and guessing wrong kills somebody's evidence.
 
     A SETTLED RUN IS THEN POSTED AS PARTS, ``tests/<part>`` -- one per need-set
     (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become run records of the cluster's
@@ -524,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, post=post)
         return json.dumps({'code': code, 'lines': lines})
 
-    answer, attached = run_once(key, lead, directory=box_directory(), poll_s=DEFAULT_POLL_S)
+    answer, attached = run_once(key, lead, directory=box_directory(), poll_s=POLL_S)
     shared = json.loads(answer)
     if attached:
         emit('verify: ATTACHED to the run already in flight for this tree, env and selection; its answer:')
@@ -542,6 +548,20 @@ def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
     )
 
 
+def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
+    """The OFFER of this selection to a host that can admit it (D5), or why it cannot be offered.
+
+    Only committed test files at a pushed sha can run elsewhere: a dirty tree is this box's alone.
+    """
+    files = selection_files(root, arguments)
+    if not files or status_paths(root):
+        return 'It cannot be offered elsewhere: commit and push the files it selects first.'
+    return (
+        'Or offer it to a host that admits it: '
+        f'python -m lab_commons.dev.forge request {TESTS} --sha {head} --paths {" ".join(files)}'
+    )
+
+
 def _judge(
     root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
 ) -> tuple[int, list[str]]:
@@ -556,12 +576,12 @@ def _judge(
         line = f'verify refuses to run: {exc}'
         emit(line, err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
-    except (Exhausted, Refused) as exc:
-        held = '; '.join(one.describe() for one in exc.holders) if isinstance(exc, Exhausted) else str(exc)
+    except Refused as exc:
+        held = str(exc)
         line = (
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: {held}. '
             f'Wait for it, or stop that holder, then re-run; '
-            f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait.'
+            f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait. {offer_line(root, head, arguments)}'
         )
         emit(line, err=True)
         return EXIT_CODES[Outcome.INCONCLUSIVE], [line]

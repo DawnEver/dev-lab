@@ -24,6 +24,14 @@ anything its repository did not commit (an undeclared name is refused, never run
     mem_gb = 6.0                  # (learned per producer NAME); an unsized row is refused, never the whole host
     wall_h = 48                   # past it the box kills the run: a long solve declares its own
 
+THE ONE PRODUCER THAT TAKES ARGUMENTS IS THE REPOSITORY'S OWN TEST PRODUCER (D5, ruling 2026-10-17), named
+:data:`TESTS`: a box that cannot admit a selection offers it to a host that can. Its body adds
+``paths = ["tests/test_a.py", ...]`` and NOTHING else: each must be a test file (``.py``) that exists at the
+sha under the repository's declared test roots (``[tool.pytest.ini_options] testpaths``) -- no glob, no
+option, nothing argv-looking -- and it runs as the declared ``[tool.lab_commons.tests] produce`` door over
+exactly those files, sized as a selection (:func:`lab_commons.dev.verifybox.selection_mem_gb`). Every
+other rule above (trusted sha and author, lock, reachability) applies unchanged.
+
 A request is pinned to its sha, so nothing supersedes it. Its producer knows nothing of the forge, so
 serve SETTLES it from the exit code (:func:`result`, :func:`settle`): 0 posts ``success`` and labels the
 issue ``request:done``, 1 posts ``failure``, every other code is released as a part's would be
@@ -37,8 +45,10 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tomllib
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
@@ -48,7 +58,9 @@ from lab_commons.config import section
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.forgelabels import add_label
 from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit, release_reason
+from lab_commons.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_mem_gb
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
 
@@ -64,12 +76,14 @@ __all__ = [
     'DONE_LABEL',
     'LOCK_FILE',
     'REQUESTS_TABLE',
+    'TESTS',
     'UNADMITTED',
     'Declared',
     'UndeclaredRequest',
     'declared_request',
     'git_sources',
     'parse_body',
+    'parse_paths',
     'remind',
     'request_authors',
     'request_body',
@@ -89,6 +103,13 @@ TAIL_LINES: Final = 40
 
 _LINE: Final = re.compile(r'^\s*(?P<key>producer|sha)\s*=\s*["\'](?P<value>[^"\']*)["\']\s*$', re.MULTILINE)
 _SHA: Final = re.compile(r'^[0-9a-f]{40}$')
+_PATHS: Final = re.compile(r'^\s*paths\s*=\s*(?P<value>\[.*\])\s*$', re.MULTILINE)
+
+#: The reserved producer name of the repository's own test producer over named test files (D5).
+TESTS: Final = 'tests'
+
+#: Characters a test path never carries: a glob, or a quote/space that would make it more than one path.
+_NOT_A_PATH: Final = frozenset('*?[]{}"\' \t')
 
 
 class UndeclaredRequest(ValueError):
@@ -117,9 +138,10 @@ def request_context(number: int) -> str:
     return f'{CONTEXT_PREFIX}{number}'
 
 
-def request_body(producer: str, sha: str) -> str:
-    """The issue body that IS a request for *producer* at *sha*."""
-    return f'producer = "{producer}"\nsha = "{sha}"\n'
+def request_body(producer: str, sha: str, paths: Sequence[str] = ()) -> str:
+    """The issue body that IS a request for *producer* at *sha* (and, for :data:`TESTS`, its *paths*)."""
+    listed = f'paths = [{", ".join(f"{p!r}".replace(chr(39), chr(34)) for p in paths)}]\n' if paths else ''
+    return f'producer = "{producer}"\nsha = "{sha}"\n{listed}'
 
 
 def parse_body(body: str) -> tuple[str, str]:
@@ -129,8 +151,74 @@ def parse_body(body: str) -> tuple[str, str]:
     return (producer if RESOURCE_NAME.match(producer) else '', sha if _SHA.match(sha) else '')
 
 
-def declared_request(root: Path, sha: str, name: str) -> Declared:
+def parse_paths(body: str) -> tuple[str, ...]:
+    """The ``paths = [...]`` a request body names, as given; ``()`` when it names none or not as strings."""
+    found = _PATHS.search(body or '')
+    if found is None:
+        return ()
+    try:
+        value = tomllib.loads(f'paths = {found["value"]}')['paths']
+    except tomllib.TOMLDecodeError:
+        return ('<an unreadable paths list>',)
+    return tuple(str(one) for one in value) if isinstance(value, list) else ()
+
+
+def _test_roots(text: str) -> tuple[str, ...]:
+    roots = tomllib.loads(text).get('tool', {}).get('pytest', {}).get('ini_options', {}).get('testpaths')
+    return tuple(str(one).strip('/') for one in roots) if isinstance(roots, list) and roots else ()
+
+
+def _path_refusal(root: Path, sha: str, path: str, roots: Sequence[str]) -> str:
+    """Why *path* is not a test file at *sha* under *roots*; ``''`` when it is."""
+    pure = PurePosixPath(path)
+    if not path or path.startswith('-'):
+        return f'{path!r} looks like an option, not a test file'
+    if _NOT_A_PATH & set(path):
+        return f'{path!r} is a glob or more than one path: name each test file'
+    if pure.is_absolute() or '..' in pure.parts or '\\' in path:
+        return f'{path!r} leaves the repository'
+    if not any(pure.parts[: len(PurePosixPath(r).parts)] == PurePosixPath(r).parts for r in roots):
+        return f'{path!r} is outside the declared test roots {list(roots)}'
+    if pure.suffix != '.py':
+        return f'{path!r} is not a test file (.py)'
+    found = _door.run(
+        [_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{path}'], capture_output=True, check=False, timeout=60
+    )
+    return '' if found.returncode == 0 else f'{path!r} does not exist at {sha[:12]}'
+
+
+def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
+    """The repository's test producer over *paths*, each validated at *sha* (D5)."""
+    if not paths:
+        msg = f'producer {TESTS!r} runs named test files: the body names `paths = ["tests/test_x.py", ...]`'
+        raise UndeclaredRequest(msg)
+    try:
+        text = pyproject_at(root, sha)
+    except (ValueError, OSError) as why:
+        msg = f'pyproject.toml unreadable at {sha[:12]}: {why}'
+        raise UndeclaredRequest(msg) from why
+    produce = kit_tables(text).get('tests', {}).get('produce')
+    roots = _test_roots(text)
+    if not isinstance(produce, list) or '--part' not in produce or not roots:
+        msg = f'{sha[:12]} declares no [tool.lab_commons.tests] produce door with --part, or no pytest testpaths'
+        raise UndeclaredRequest(msg)
+    refused = [why for path in paths if (why := _path_refusal(root, sha, path, roots))]
+    if refused:
+        msg = f'producer {TESTS!r} refused: ' + '; '.join(refused)
+        raise UndeclaredRequest(msg)
+    door = [str(one) for one in produce[: produce.index('--part')]]
+    try:
+        repo = origin_url(root)
+    except OSError:  # no origin: no learned peaks, so the per-task floor prices it
+        repo = ''
+    mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
+    return Declared(TESTS, (*door, '--', *paths), frozenset(), float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
+
+
+def declared_request(root: Path, sha: str, name: str, paths: Sequence[str] = ()) -> Declared:
     """The producer *name* as commit *sha* declares it under ``[tool.lab_commons.requests.<name>]``.
+
+    :data:`TESTS` is the repository's test producer over *paths* (validated; the module docstring).
 
     Raises:
         UndeclaredRequest: absent, malformed, or the sha unreadable; the message names the key.
@@ -138,6 +226,11 @@ def declared_request(root: Path, sha: str, name: str) -> Declared:
 
     """
     table = f'[tool.lab_commons.requests.{name}]'
+    if name == TESTS and sha:
+        return _tests_request(root, sha, paths)
+    if paths:
+        msg = f'only producer {TESTS!r} takes paths; {name!r} runs exactly what its row declares'
+        raise UndeclaredRequest(msg)
     if not name or not sha:
         msg = f'a request body names `producer = "<declared name>"` and `sha = "<40-hex>"`; got {name!r} at {sha!r}'
         raise UndeclaredRequest(msg)

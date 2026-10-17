@@ -104,11 +104,11 @@ def test_a_stage_git_runs_and_the_family_does_not_raises(tmp_path: Path) -> None
 
 def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
     (tmp_path / 'pyproject.toml').write_text(
-        '[[tool.lab_commons.hooks.pre-push]]\nid = "admission"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
+        '[[tool.lab_commons.hooks.pre-push]]\nid = "pushgate"\nrun = ["python", "-m", "x"]\nalways_run = true\n',
         encoding='utf-8',
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
-    assert pre_push == ['session-branch', 'branchset-push', 'behind-push', 'lock', 'admission']
+    assert pre_push == ['session-branch', 'branchset-push', 'behind-push', 'lock', 'pushgate']
 
 
 def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:
@@ -188,7 +188,7 @@ def test_a_push_that_publishes_nothing_runs_no_pre_push_hook(repo: Path) -> None
     empty input "no ref to judge". PLANTED CONTROL: the same always-run hook runs on a pushed ref.
     """
     seen = _Recorder(code=2)
-    admission = Hook(stage='pre-push', id='admission', run=('tool',), always_run=True)
+    admission = Hook(stage='pre-push', id='pushgate', run=('tool',), always_run=True)
     assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin='', hooks=(admission,), runner=seen) == 0
     assert seen.calls == [], 'nothing pushed, nothing judged'
     stdin = _push_line(repo, 'refs/heads/main')

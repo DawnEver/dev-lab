@@ -281,8 +281,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'missing, unsettled, failing or incremental, or the forge unreadable -- there is no local fallback.'
         ),
         (
-            'src/lab_commons/dev/admission.py',
-            'tests/test_dev_admission.py',
+            'src/lab_commons/dev/pushgate.py',
+            'tests/test_dev_pushgate.py',
             'tests/architecture/gate/test_the_message_check_judges_the_push_increment.py',
         ),
     ),
@@ -443,7 +443,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Every run on a machine DECLARES its demand -- cores, memory, a wall and tool seats -- on the ONE box '
             'ledger every repo and session on it reaches (lab_commons.box, a machine-wide path, never a lock named '
-            'in one tree), is admitted only when the declared sum fits the box after its [reserve] margins, and '
+            'in one tree), is admitted by the one rule on the MEASURED room -- free now, less what held claims have '
+            'not taken yet, less its [reserve] margins -- and '
             'runs INSIDE a kernel limit sized to that claim: killed past its memory or wall, so a claim is never '
             'idle-but-held and never exceeded. A waiter holds nothing and gives up at its own queue ceiling, '
             'refused naming the dimension short and every holder with its deadline -- starting anyway is the harm, '

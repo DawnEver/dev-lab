@@ -254,7 +254,7 @@ def _demand_of(root: Path, *, cluster: bool) -> Callable[[Candidate, frozenset[s
 
     def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
         if wanted.kind == REQUEST:
-            row = declared_request(root, wanted.sha, wanted.producer)
+            row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
             return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem_gb)
         return box_demand(repo_url, needed, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
 
