@@ -44,6 +44,7 @@ from lab_commons.dev.forgeclaim import (
     Serving,
     assess,
     serving,
+    this_machine,
 )
 from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
 from lab_commons.dev.forgestatus import Status
@@ -52,7 +53,6 @@ from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.grants import workstation
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
 
@@ -317,7 +317,7 @@ def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path,
     )
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
-    me = Claim(workstation() or '', 'alice', NOW + DEFAULT_LEASE)
+    me = Claim(this_machine(None), 'alice', NOW + DEFAULT_LEASE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     mine = {'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': me.description()}
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))

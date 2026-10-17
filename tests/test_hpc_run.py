@@ -30,7 +30,7 @@ from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc.builds import Builds, cargo_target
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
-from lab_commons.hpc.grants import Grant, Machine
+from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, balance, make_plan
@@ -434,7 +434,7 @@ class FakeRunCluster:
         if command.startswith('echo "@@@ nodes"'):
             quota = 'cpu=0' if self.closed else 'cpu=96'
             probed = IDLE.replace('|free|cpu=96,', f'|free|{quota},').replace('mem=360G', f'mem={self.mem_ceiling}')
-            return probed + self.held + '@@@ shared\n8 lc:ws=other\n'
+            return probed + self.held + '@@@ shared\n8|1G|1|lc:session=other\n'
         if 'cat-file' in command:
             return 'have\n' if self.have else 'missing\n'
         if '@@@ facts' in command and self.build_fails:
@@ -490,7 +490,7 @@ class FakeRunCluster:
         return '\n'.join(out) + '\n'
 
 
-MACHINE = Machine(workstation='ws-a', grants=(GRANT,))
+MACHINE = Machine(session=Session(name='ws-a', tasks=1000, cpus=100_000, mem_gb=1_000_000), grants=(GRANT,))
 COST, POLICY = Cost(seconds=600), Policy(shard_minutes_min=1, shard_minutes_max=15)
 
 
@@ -533,7 +533,7 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     ), 'platform is the part it is (its need-set); system is the box it ran on'
     assert (record['scope'], record['req'], record['env']) == ('full', 't0', 'e0ffee0123456789')
     assert (record['account'], record['job_ids']) == ('acct-free', ['4243'])
-    assert record['plan']['comment'] == 'lc:ws=ws-a'
+    assert record['plan']['comment'] == 'lc:session=ws-a'
     assert record['plan']['job_id'] == '4243'
     assert record['plan']['unmeasured'] == ['tests/a.py', 'tests/b.py']
     assert record['outcomes']['tests/w.py::t'] == 'not-covered'
@@ -541,7 +541,7 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     assert record['reasons'] == {}, 'a green run carries no reasons'
     assert record['overheads'] == {'tests/a.py': 5.0, 'tests/b.py': 5.0}
     assert record['peaks_mb'] == {'tests/a.py': 2048.0, 'tests/b.py': 2048.0}
-    assert '#SBATCH --comment=lc:ws=ws-a' in fake.scripts[0]
+    assert '#SBATCH --comment=lc:session=ws-a' in fake.scripts[0]
     assert 'cd "$HOME"/ci/trees/' + SHA in fake.scripts[0]
     assert 'lab_ci_pytest_item' in json.dumps(fake.manifests[0])
 
@@ -721,7 +721,7 @@ def test_every_round_runs_as_the_user_whose_home_holds_the_built_tree() -> None:
     """Measured 2026-10-09: built as one user, submitted as another on the same cluster -- no venv there."""
     other = Grant(user='you', hosts=GRANT.hosts, slurm_account='acct-free', partitions=GRANT.partitions)
     mine, theirs = FakeRunCluster(dies=frozenset({'tests/b.py'})), FakeRunCluster()
-    machine = Machine(workstation='ws-a', grants=(GRANT, other))
+    machine = Machine(session=None, grants=(GRANT, other))
     connect = {GRANT.account: mine, other.account: theirs}
 
     spec = RunSpec(sha=SHA, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1'))
@@ -795,7 +795,7 @@ def test_a_commit_off_the_remote_without_a_pack_source_is_refused() -> None:
     with pytest.raises(RuntimeError, match=r'not on https://g/r\.git'):
         submit_run(
             RunSpec(sha=SHA, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1')),
-            Machine(workstation='w', grants=(GRANT,)),
+            Machine(session=None, grants=(GRANT,)),
             lambda _g: FakeRunCluster(have=False),
             cost=Cost(),
             policy=Policy(),

@@ -65,13 +65,25 @@ slurm_account = "acct-free"
 partitions = ["shortq", "defq"]      # optional, in preference order
 qos = { devq = "dev" }               # optional
 setup = ["module load git/2.42.0"]   # optional, prepended to every array task
+
+[hpc.session.wdg-design]             # one per session; $LC_HPC_SESSION picks this process's
+tasks = 2                            # pending + running tasks, across EVERY account
+cpus = 128
+mem_gb = 600
+task_cpus = 64                       # optional per-task ceilings
+task_mem_gb = 300
 ```
 
 - A missing table, a duplicate account or an empty `hosts` is refused with the key named; a `cpus` share is retired
   and refused by name: admission fits each job against what the account has free now ([admission](forge.md#admission)).
   No secrets in the file.
-- **Usage is read, never stored.** Every job carries `--comment=lc:ws=<host>`; headroom is the quota minus what
-  the account's jobs hold, read from `squeue --me`.
+- **The accounts are one pool; a session has the cap.** No session owns an account. Every job carries
+  `--comment=lc:session=<$LC_HPC_SESSION>`; the planner sums what that tag holds (tasks, CPUs, memory; pending
+  included, `squeue -r`) over every account and, past `[hpc.session.<name>]`, plans with room 0 and a throttle
+  of 1 -- the job waits, it is never refused. Only a task past `task_cpus`/`task_mem_gb` is refused. Without
+  `$LC_HPC_SESSION` jobs are untagged and uncapped; a name with no table is refused.
+- **Usage is read, never stored.** Account headroom is the quota minus what the account's jobs hold, read from
+  `squeue --me`; a grant with room (group memory included, `AssocGrpMemLimit`) is chosen over one without.
 - Each tick the host publishes its supply, partitions and quota on its forge host card.
 
 ## Runs on the cluster
