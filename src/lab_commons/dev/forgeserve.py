@@ -180,7 +180,11 @@ def serve(
     table = section('schedule') if table is None else table
     raised: list[Alarm] = []  # every alarm this tick, for its host card
     alarm = recording(alarm, raised)
-    runs = list(forgerun.live(repo)) if seat is not None else []
+
+    def refused(why: str) -> None:  # one unreadable run file is skipped and named; the other runs advance
+        alarm(Alarm(RUN, repo, 'a live cluster run this tool cannot read', why, about=why.split(maxsplit=1)[0]))
+
+    runs = list(forgerun.live(repo, refused=refused)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
     tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
