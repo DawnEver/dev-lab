@@ -160,11 +160,14 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     """
     if INSIDE_ENV in os.environ:
         return argv, None
-    workers, width = selection_workers(argv, Capacity.read(), xdist=xdist_installed())
+    size = Capacity.read()
+    workers, width = selection_workers(argv, size, xdist=xdist_installed())
     refresh_checkout(root)
     demand = selection_demand(workers, selection_mem_gb(_repo(root), selection_files(root, argv), workers))
     run = [*argv, *width]
-    return command(run, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}', outcome=outcome), outcome
+    return command(
+        run, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}', outcome=outcome, capacity=size
+    ), outcome
 
 
 def _repo(root: Path) -> str:

@@ -35,7 +35,8 @@ considered before every other; it takes no supply and preempts nothing.
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A BOX part is admitted at exactly what it will declare to the box
 (:func:`~lab_commons.compute.learned.box_demand`: the cores it kept busy and its peak with headroom, else
-the whole box), so the admission and the box's enforced claim are one number. A CLUSTER part asks what its
+its prior, :func:`~lab_commons.compute.learned.part_prior`), so the admission and the box's enforced claim
+are one number. A CLUSTER part asks what its
 last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """

@@ -223,8 +223,10 @@ lower-ranked one is still claimed, so several parts run on one host at once.
 
 - **Demand** is what the part's last run measured (`compute.learned`, keyed by part). A box part is admitted at
   exactly what it then DECLARES to the box (`compute.learned.box_demand`: the cores it kept busy and its peak
-  memory with headroom, else the whole box; one seat of each tool it needs), and its producer runs in the box
-  at that claim ([box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
+  memory with headroom; unmeasured, the D5 prior `compute.learned.part_prior` -- the median of this host's
+  measured parts, else of every host's forge records for its need-set, else the per-task floor, never the whole
+  box; one seat of each tool it needs), and its producer runs in the box at that claim, holding against the
+  capacity it was sized by (`box run --capacity`; [box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
 - **Supply**: a cluster account's standing (every grant, cpu and memory, QOS submissions); on a box, what its
   ONE ledger can still admit (`compute.probe.box`): its capacity after the `[reserve]` margins (`cpu_margin`,
   default 1 core; `mem_margin`, default 0.25 of its memory) less every claim on it -- each producer serve runs

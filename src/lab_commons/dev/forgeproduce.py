@@ -56,7 +56,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.box import GB, Capacity, Demand, Outcome, command, read_ended
-from lab_commons.compute.learned import Run, record_run
+from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.dev.forge import fetch_origin
@@ -121,18 +121,29 @@ def learn_box_run(root: Path, item: Work, run: Run, *, killed: bool) -> None:
     record_run(origin_url(root), item.producer, needs_of(item.platform), run, killed=killed)
 
 
-def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path) -> list[str]:
+def _origin(root: Path | None) -> str:
+    """*root*'s origin URL, ``''`` (nothing learned) for none or an unreadable one."""
+    try:
+        return '' if root is None else origin_url(root)
+    except OSError:
+        return ''
+
+
+def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *, root: Path | None = None) -> list[str]:
     """*argv* run through the box at the demand the tick admitted *item* at, recording how it ended at *outcome*.
 
-    An item claimed with no demand declares the whole *capacity*, as an unmeasured box part does
-    (:func:`~lab_commons.compute.learned.box_demand`).
+    An item claimed with no demand is priced as the tick prices a box part (:func:`~lab_commons.compute.learned.
+    box_demand` of *root*'s origin). The child holds against *capacity*, the one reading the demand was sized by.
     """
-    asked = item.demand or {'cpu': capacity.cpu, 'mem_gb': capacity.mem_bytes / GB}
-    seats = {name: 1 for name in needs_of(item.platform) if name in capacity.seats}
+    needs = needs_of(item.platform)
+    asked = item.demand or box_demand(_origin(root), needs, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
+    seats = {name: 1 for name in needs if name in capacity.seats}
     cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
     demand = Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
     what = f'{item.context}@{item.sha[:12]}'
-    return command(argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha)
+    return command(
+        argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha, capacity=capacity
+    )
 
 
 def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -177,7 +188,7 @@ def produce(
     try:
         argv = (str(tree.python), *item.argv)
         record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
-        held = boxed(item, argv, (capacity or Capacity.read)(), record)
+        held = boxed(item, argv, (capacity or Capacity.read)(), record, root=root)
         produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
                         say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard,
                         beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
