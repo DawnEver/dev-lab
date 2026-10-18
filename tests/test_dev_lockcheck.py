@@ -7,6 +7,7 @@ refusal has a planted control that passes.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.lockcheck import REMEDY, lock_problems, main, pushed_shas, unreasoned_holds
+from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_shas, unreasoned_holds
 
 _GIT = shutil.which('git') or 'git'
 _UV = shutil.which('uv') or 'uv'
@@ -152,6 +153,18 @@ def test_no_lock_is_refused_and_a_deletion_only_push_is_never_judged(tmp_path: P
     assert main([str(root)], lines=[f'refs/heads/x {bare} refs/heads/x {"0" * 40}'], resolve=never) == 1
     assert REMEDY in capsys.readouterr().err
     assert REMEDY.count('uv lock --upgrade') == 1
+
+
+def test_the_remedy_names_a_door_an_agent_guard_admits() -> None:
+    """A refusal's remedy must be runnable: it names the dep door, which no env-mutation row matches.
+
+    PLANTED CONTROL: the bare spelling the remedy used to name is what a guard row refuses.
+    """
+    assert DOOR in REMEDY
+    assert DOOR.split()[2:5] == ['-m', 'lab_commons.dev.dep', '--lock-upgrade']
+    bare_uv_mutation = re.compile(r'(?:^|\s)uv\s+(?:add|remove|sync|lock)\b')
+    assert not bare_uv_mutation.search(DOOR)
+    assert bare_uv_mutation.search('uv lock --upgrade')
 
 
 def test_a_hold_names_its_reason_on_its_line_or_the_line_above() -> None:

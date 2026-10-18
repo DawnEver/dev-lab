@@ -82,6 +82,16 @@ def uv_command(
     return command
 
 
+def lock_upgrade_command(root: Path, python: str) -> list[str]:
+    """``uv lock --upgrade`` for *root*: every requirement re-resolved to the newest its declaration admits."""
+    uv = shutil.which('uv')
+    if uv is None:
+        msg = 'a lock upgrade requires uv on PATH'
+        raise FileNotFoundError(msg)
+    interpreter = python if Path(python).is_file() else sys.executable
+    return [uv, 'lock', '--upgrade', '--project', str(root), '--python', interpreter]
+
+
 def anchor_paths(root: Path, anchors: object) -> tuple[Path, ...]:
     """Resolve only project-owned anchors, including symlink and drive-path refusals."""
     if not isinstance(anchors, (list, tuple)) or any(not isinstance(path, str) for path in anchors):

@@ -349,3 +349,59 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_re_resolves(tmp_path) ->
     assert '--frozen' in calls[-1]
     assert '--upgrade-package' not in calls[-1]
     assert '--upgrade-package' not in calls[-1]
+
+
+def _recording() -> tuple[list[tuple[str, ...]], object]:
+    calls: list[tuple[str, ...]] = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=0)
+
+    return calls, run
+
+
+def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp_path) -> None:
+    """The door lockcheck's refusal names: `uv lock --upgrade`, then a FROZEN sync of the declared extras."""
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\ndependencies=["peer @ git+https://example.invalid/peer.git"]\n'
+        '[project.optional-dependencies]\ndev=[]\n',
+        encoding='utf-8',
+    )
+    calls, run = _recording()
+    assert dep.main(['--lock-upgrade', str(tmp_path)], cwd=tmp_path, run=run) == 0
+    lock, sync = calls
+    assert lock[1:3] == ('lock', '--upgrade')
+    assert str(tmp_path) in lock
+    assert sync[1] == 'sync'
+    assert '--frozen' in sync
+    assert '--upgrade-package' not in sync
+    assert sync[sync.index('--extra') + 1] == 'dev'
+
+
+def test_lock_upgrade_refuses_an_unreasoned_hold_before_resolving_anything(tmp_path, capsys) -> None:
+    """PLANTED CONTROL: the same hold lockcheck refuses at push is refused here, and nothing runs."""
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\ndependencies=["peer==1"]\n', encoding='utf-8'
+    )
+    calls, run = _recording()
+    assert dep.main(['--lock-upgrade', str(tmp_path)], cwd=tmp_path, run=run) == 1
+    assert calls == []
+    assert '"peer==1"' in capsys.readouterr().out
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="empty"\nversion="0"\ndependencies=["peer==1"]  # held: peer 2 drops Windows\n',
+        encoding='utf-8',
+    )
+    assert dep.main(['--lock-upgrade', str(tmp_path)], cwd=tmp_path, run=run) == 0, 'a reasoned hold is admitted'
+
+
+def test_a_failed_lock_upgrade_syncs_nothing(tmp_path) -> None:
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
+    calls: list[tuple[str, ...]] = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        calls.append(tuple(argv))
+        return SimpleNamespace(returncode=2)
+
+    assert dep.main(['--lock-upgrade'], cwd=tmp_path, run=run) == 2
+    assert [call[1] for call in calls] == ['lock']
