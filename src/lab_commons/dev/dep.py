@@ -184,8 +184,13 @@ def current_env_key() -> str:
     return env_key(env_manifest())
 
 
-def _held_refusal(name: str, refused: Refused) -> HeldEnvironmentError:
-    """H1, PREVENTED: the target environment's seat is held, and the refusal names who holds it."""
+def _held_refusal(name: str, refused: Refused, prefix: str) -> HeldEnvironmentError:
+    """H1, PREVENTED: the seat was not granted; the refusal names who holds it, or the queue ahead when nobody does."""
+    if not EnvironmentSeat.holders(prefix):
+        return HeldEnvironmentError(
+            f'{name}: {refused}. Nothing holds this environment: the box queue is ahead of it. Re-issue when it '
+            f'drains; nothing else is required.'
+        )
     return HeldEnvironmentError(
         f'{name}: a verdict is running in this environment ({refused}). Its env_key is '
         f'computed when the run ENDS, so mutating this environment now would make that verdict name '
@@ -396,7 +401,7 @@ def _change(
                 retired = retire_anchors(declared) if declared and after != before else ()
             return Report(port.name, prefix, tuple(argv), completed.returncode, before, after, retired, tuple(gaps))
     except Refused as exc:
-        raise _held_refusal(port.name, exc) from exc
+        raise _held_refusal(port.name, exc, prefix) from exc
 
 
 def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.run, cwd: Path | None = None) -> int:

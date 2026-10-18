@@ -14,14 +14,15 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
 
 import pytest
 from _box_fake import quiet
 
-from lab_commons.box import BOX_ENV, GB, Capacity, Demand, hold
+from lab_commons.box import BOX_ENV, GB, Capacity, Demand, NotAdmitted, hold, not_admitted
 from lab_commons.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
@@ -276,3 +277,23 @@ def test_the_shared_key_is_available_to_every_repo_without_an_adapter() -> None:
     first, second = current_env_key(), current_env_key()
     assert first == second
     assert len(first) >= 8
+
+
+def test_a_queue_ahead_is_named_as_the_cause_not_a_verdict_in_this_environment(monkeypatch) -> None:
+    """PLANTED (live 2026-10-17, 1d698d494d31): a brand-new tree, nothing in it, refused as 'a verdict is running'."""
+
+    @contextmanager
+    def queued(_self: EnvironmentSeat) -> Iterator[None]:
+        msg = "dep:x: not admitted -- queued behind 'verify:p8', which came first (strict FIFO)"
+        raise NotAdmitted(msg)
+        yield
+
+    monkeypatch.setattr(EnvironmentSeat, 'held', queued)
+    run = _Run()
+    with pytest.raises(HeldEnvironmentError) as caught:
+        mutate(_REQS, port=Port(name='x'), run=run)
+    message = str(caught.value)
+    assert 'a verdict is running' not in message
+    assert "queued behind 'verify:p8'" in message
+    assert not_admitted(message), 'the cause still classifies as capacity across the process boundary'
+    assert run.calls == []
