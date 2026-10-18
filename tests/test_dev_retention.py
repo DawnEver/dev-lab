@@ -22,7 +22,7 @@ from lab_commons.dev.retentionplan import (
     cluster_plan,
     in_flight,
     load_policy,
-    occupied_trees,
+    occupied_shas,
     runs,
     workstation_plan,
 )
@@ -323,11 +323,11 @@ def test_slurm_workdirs_name_the_trees_jobs_occupy() -> None:
         '/gpfs01/home/u/ci/trees/a3',
         '/gpfs01/home/u/scratch',
     ]
-    assert occupied_trees(parse_workdirs(SQUEUE)) == {'orphan', 'a3'}
+    assert occupied_shas(parse_workdirs(SQUEUE)) == {'orphan', 'a3'}
 
 
 def test_a_tree_a_slurm_job_runs_in_is_kept_under_every_rule(home: Path) -> None:
-    occupied = occupied_trees(parse_workdirs(SQUEUE))
+    occupied = occupied_shas(parse_workdirs(SQUEUE))
     plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=occupied)
     doomed = {d.path for d in plan.doomed}
     assert home / 'ci' / 'trees' / 'orphan' not in doomed, 'a job-file job runs in it'
@@ -442,3 +442,25 @@ def test_collect_keeps_its_newest_key_files_within_budget_and_nothing_else(home:
     doomed = {d.path.name: d.rule for d in plan.doomed if d.path.parent == store}
     over = 'collect-over-budget'
     assert doomed == {'k0.json': over, 'k1.json': over, 'k2.json': over, 'perfile': over, 'k9.json.123.tmp': over}
+
+
+def test_an_artifact_goes_once_no_job_runs_it_and_it_is_not_the_newest(home: Path) -> None:
+    """Phase 5: retention by liveness. A job submits from ``ci/jobs/<sha>/<run>``; its artifact stays."""
+    store = home / 'ci' / 'artifacts'
+    for n, sha in enumerate(['c1', 'c2', 'c3', 'c4']):
+        _touch(store / f'{sha}.tar.gz', OLD + timedelta(hours=n))
+    _touch(store / 'c5.tar.gz.part', YOUNG)  # being built
+    occupied = occupied_shas(['/gpfs01/home/u/ci/jobs/c2/sweep-20261018-0'])
+    assert occupied == {'c2'}
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=occupied)
+    gone = {d.path.name for d in plan.doomed if d.rule == 'artifact-not-live'}
+    assert gone == {'c1.tar.gz', 'c3.tar.gz'}, 'c2 is run by a job, c4 is the newest done, c5 is being built'
+
+
+def test_an_unreadable_queue_deletes_no_artifact(home: Path) -> None:
+    for n, sha in enumerate(['c1', 'c2']):
+        _touch(home / 'ci' / 'artifacts' / f'{sha}.tar.gz', OLD + timedelta(hours=n))
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=None)
+    assert not any(d.rule == 'artifact-not-live' for d in plan.doomed)
+    plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=set())
+    assert {d.path.name for d in plan.doomed if d.rule == 'artifact-not-live'} == {'c1.tar.gz'}, 'PLANTED CONTROL'

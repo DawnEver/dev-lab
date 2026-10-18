@@ -122,10 +122,10 @@ without `sbatch`.
    nothing is left it writes `<dir>/run-<sha>-<part>-<req>.json.gz` and exits 1 if any id is red, lost or
    missing.
 
-To run ANY entry (not pytest) at a commit, `python -m lab_commons.hpc run build --sha <40-hex> --repo-url <https>`
-on each grant's login node does step 1's fetch and build alone -- no collection, no submission, no state -- and
-prints the job-file lines that reuse that tree and env: `workdir = "~/ci/trees/<sha>"`, `setup = [". .lab-ci/env.sh"]`.
-A job file with them and `entry = "<module>:<function>"` is then submitted with `submit -c <job.toml>`.
+To run ANY entry (not pytest) at a commit, `python -m lab_commons.hpc run build --sha <40-hex> --repo-url <https>
+[--artifact tarball]` on a grant's login node builds that commit's ONE artifact file and prints the `[job]` lines
+(`sha`, `repo_url`, `artifact`) a job file names; with `entry = "<module>:<function>"` it is submitted with
+`submit -c <job.toml>`. A job never checks out the repository (see [Artifacts](#artifacts-one-file-per-sha)).
 
 The cluster run state is a resumable tick (`forgerun`): `claimed -> submitted -> gathered -> published`, kept
 per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is the truth: jobs named
@@ -209,9 +209,17 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
   makespan. The items are cut into consecutive slices in proportion, so the slices end about together. The spread
   is kept only when every slice holds at least one `shard_minutes_min` shard and its slowest slice beats the best
   single grant (`plan.allocate`); otherwise one grant takes it all. Nothing is reserved anywhere.
-- **The tree is ensured per grant.** `[job] sha` + `repo_url` run the batch in `~/ci/trees/<sha>` with `.lab-ci/env.sh`
-  sourced (no `workdir` beside them): before submitting, each chosen grant gets `run build`'s fetch and build in its
-  own home, the env reused by its key. A grant whose build fails is dropped and the batch re-spanned without it.
+- **The artifact is ensured per grant.** `[job] sha` + `repo_url` run the batch from that commit's artifact (no
+  `workdir` beside them): before submitting, each chosen grant gets `run build`'s artifact in its own home, reused
+  when it exists. A grant whose build fails is dropped and the batch re-spanned without it. A `workdir` under
+  `~/ci/trees/` is refused by name: that tree is a test run's.
+- **One results file per run.** A run directory (`~/ci/jobs/<sha>/<name>-<stamp>`, else `<workdir>/.lab-hpc/...`)
+  holds the manifest, `job.sh` and `results.jsonl`. Each task appends one line per item and, after the worker
+  exits, one `shard` line with its exit code and the tail of its output; the output itself stays in node-local
+  `$TMPDIR` (`--output=/dev/null`). A shard is returned by a `shard` line with exit 0; `gather` and `retry` read
+  only this file. A run an earlier worker wrote (`results/<shard>.json`) is read through a one-way upgrade.
+- **A file budget.** `[policy] file_budget` (default 10) is checked at `gather`: a run directory holding more
+  files fails the gather (exit 1, `OVER FILE BUDGET`). An upgraded earlier-layout run is named, not judged.
 - **One record.** `<job>.submission.json` holds `placements` -- per grant its targets, item range, run directory,
   job ids, shards and plan -- and `moved`. `status` prints a line per grant, `gather` merges every slice back into
   batch order and names any grant that did not answer. A record without `placements` is refused: submit again.
@@ -224,6 +232,24 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
 - **The forge's test runs do not span yet.** `run submit` still builds on one login node and plans each round on
   the grants sharing that home (`run.shares_home`); spreading a round over them is the named follow-up in
   `.claude/memory/2026/10/15/one-job-spans-every-grant.md`.
+
+## Artifacts: one file per sha
+
+A job ships one file, `~/ci/artifacts/<sha>.<suffix>` (`lab_commons.hpc.artifact`), never a checkout; a test run
+keeps its tree. The format is declared (`[job] artifact`, `run build --artifact`):
+
+- `tarball` -- a gzip tar of `env/` (the venv), `tree/<path>` for each `source_roots` and `artifact_paths` entry
+  (`[tool.lab_commons.hpc] artifact_paths = ["cases"]`), `native/` when declared, and `activate.sh`. Built in a
+  scratch directory under the login node's `$TMPDIR` (`git archive`, a fresh venv with `UV_CACHE_DIR` there,
+  removed on exit); only a native build stays keyed in `~/ci/native/<key>`. A task unpacks it into node-local
+  `$TMPDIR`, sources `activate.sh` and runs in `$ART/tree`. Needs only `tar` on the node.
+- `image` -- an Apptainer `.sif` or squashfs, REFUSED by name until the compute nodes are probed:
+  `which apptainer singularity squashfuse` and `df -h $TMPDIR` inside `srun`.
+
+Not carried: git submodules (`git archive` omits them) -- declare their data in `artifact_paths` from a
+checkout that has them, or keep that job on a test layout. Retention keeps an artifact while a queued or
+running job submits from `~/ci/jobs/<sha>`, plus the newest; `artifact-not-live` otherwise. Every forge env build
+ends with `uv cache prune --ci`.
 
 ## Debugging by hand
 

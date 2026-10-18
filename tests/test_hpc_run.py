@@ -1301,15 +1301,21 @@ def _build_cli(monkeypatch: pytest.MonkeyPatch, fake: FakeRunCluster) -> None:
     monkeypatch.setattr(cli, 'builds_at', lambda *_a, **_k: Builds(install='true', env_key='k1'))
 
 
-def test_run_build_names_the_workdir_and_setup_a_job_file_reuses(
+def test_run_build_builds_the_artifact_and_names_the_job_lines(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake = FakeRunCluster()
     _build_cli(monkeypatch, fake)
+    built = []
+    monkeypatch.setattr(
+        cli, 'build_artifact', lambda spec, *_a: built.append(spec.sha) or f'/h/ci/artifacts/{SHA}.tar.gz'
+    )
     assert cli.main(['run', 'build', '--sha', SHA, '--repo-url', 'u']) == 0
     out = capsys.readouterr().out
-    assert f'workdir = "~/ci/trees/{SHA}"' in out
-    assert 'setup = [". .lab-ci/env.sh"]' in out
+    assert built == [SHA]
+    assert f'sha = "{SHA}"' in out
+    assert 'artifact = "tarball"' in out
+    assert 'ci/trees' not in out, 'a job never runs in a test run tree'
     assert not fake.manifests
 
 

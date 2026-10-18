@@ -25,11 +25,16 @@ derived from what each is FOR, not from what happens to name it:
   :mod:`lab_commons.hpc.shell`), so an env's own inodes are its directories and the files uv writes; the
   rest go only once ``uv cache prune`` drops the cache entry too.
 
+* An ARTIFACT (``artifacts/<sha>.<suffix>``, :mod:`lab_commons.hpc.artifact`) is the one file a job at a
+  commit runs from. It is kept while its sha is in flight -- a queued or running job submits from
+  ``jobs/<sha>/<run>`` -- and the newest artifact is kept besides, as the next job most likely runs the same
+  commit; ``artifact-not-live`` otherwise. An unreadable queue keeps every artifact.
+
 IN FLIGHT IS ONE FUNCTION, :func:`in_flight`, and every rule that keeps something for being in flight
-reads it: a sha a live run file names (``forge-runs/``), a tree a queued or running Slurm job of this
-account works in (``squeue --me -o %Z`` at or under ``trees/<sha>`` -- a job file submits from
-``trees/<sha>/.lab-hpc/<run>``), or a sha ACTIVE within ``min_age_hours`` -- its run state, its tree, or a
-stream directory under ``.lab-ci`` touched (being built, or a round ended and not yet gathered). An unreadable
+reads it: a sha a live run file names (``forge-runs/``), a sha a queued or running Slurm job of this
+account works under (``squeue --me -o %Z`` at or under ``trees/<sha>`` or ``jobs/<sha>``,
+:func:`occupied_shas`), or a sha ACTIVE within ``min_age_hours`` -- its run state, its tree, its artifact,
+or a stream directory under ``.lab-ci`` touched (being built, or a round ended and not yet gathered). An unreadable
 queue (``None``) keeps every tree. NOT "no record yet": measured 2026-10-15 on the served accounts, 9 run
 states in 10 had no record -- runs SUPERSEDED by a newer commit or released, which nobody will ever gather --
 and that clause kept 79 trees of 81 and every env.
@@ -85,7 +90,7 @@ __all__ = [
     'cluster_plan',
     'in_flight',
     'load_policy',
-    'occupied_trees',
+    'occupied_shas',
     'runs',
     'slurm_occupied',
     'workstation_plan',
@@ -181,6 +186,7 @@ def in_flight(ci: Path, policy: Policy, *, now: datetime, live: Iterable[str], o
     """THE shas in flight (module docstring): live, occupied, or active within ``min_age_hours``."""
     young = timedelta(hours=policy.min_age_hours)
     shas = set(live) | set(occupied) | {path.name for path, _, when in runs(ci) if now - when < young}
+    shas |= {art.name.split('.')[0] for art in _entries(ci / 'artifacts') if _age(art, now) < young}
     return shas | {tree.name for tree in _entries(ci / 'trees') if _active(tree, now) < young}
 
 
@@ -194,23 +200,31 @@ def carry_sources(root: Path, shas: Iterable[str], tips: Iterable[str]) -> set[s
     return {sha for tip in set(tips) for sha in read_by(root, tip, shas)}
 
 
-def occupied_trees(workdirs: Iterable[str]) -> set[str]:
-    """The ``<sha>`` of every ``ci/trees/<sha>`` a Slurm job's workdir is or lies under."""
+#: The ``~/ci`` directories whose ``<sha>`` entries a Slurm job works under: a test run's tree, a job's runs.
+_WORKED_UNDER: Final = ('trees', 'jobs')
+
+
+def occupied_shas(workdirs: Iterable[str]) -> set[str]:
+    """The ``<sha>`` of every ``ci/trees/<sha>`` or ``ci/jobs/<sha>`` a Slurm job's workdir is or lies under."""
     shas = set()
     for workdir in workdirs:
         parts = workdir.split('/')  # Slurm's paths are POSIX
-        shas |= {parts[i + 2] for i in range(len(parts) - 2) if parts[i : i + 2] == ['ci', 'trees'] and parts[i + 2]}
+        shas |= {
+            parts[i + 2]
+            for i in range(len(parts) - 2)
+            if parts[i] == 'ci' and parts[i + 1] in _WORKED_UNDER and parts[i + 2]
+        }
     return shas
 
 
 def slurm_occupied(run: Callable[..., Any] = _door.run) -> set[str] | None:
-    """:func:`occupied_trees` of this account's queued and running jobs; ``None`` when the queue is unreadable."""
+    """:func:`occupied_shas` of this account's queued and running jobs; ``None`` when the queue is unreadable."""
     try:
         done = run(list(WORKDIRS_COMMAND), capture_output=True, text=True, encoding='utf-8', errors='replace',
                    check=False, timeout=60)  # fmt: skip
     except (OSError, subprocess.SubprocessError):
         return None
-    return occupied_trees(parse_workdirs(done.stdout)) if done.returncode == 0 else None
+    return occupied_shas(parse_workdirs(done.stdout)) if done.returncode == 0 else None
 
 
 def cluster_plan(
@@ -252,6 +266,8 @@ def cluster_plan(
             for tree in _entries(ci / 'trees')
             if tree.name not in flying
         ]
+    if occupied is not None:
+        doomed += _dead_artifacts(ci / 'artifacts', flying)
     doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
     doomed += _collect_over_budget(ci / 'collect', policy, now)
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
@@ -263,6 +279,16 @@ def cluster_plan(
     commands += _uv(policy, ci / 'uv-cache')
     doomed = [d for d in doomed if d.path.exists() or d.path.is_symlink()]
     return Plan(tuple(doomed), hard, tuple(commands))
+
+
+def _dead_artifacts(store: Path, flying: set[str]) -> list[Doomed]:
+    """Every artifact whose sha is not in flight, except the newest built one (module docstring).
+
+    A half-written ``.part`` is never the newest built; a live builder's is young, so in flight.
+    """
+    files = sorted((e for e in _entries(store) if e.is_file()), key=lambda e: e.stat().st_mtime)
+    newest = [e for e in files if not e.name.endswith('.part')][-1:]
+    return [Doomed(e, 'artifact-not-live') for e in files if e not in newest and e.name.split('.')[0] not in flying]
 
 
 def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
