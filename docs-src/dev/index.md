@@ -25,6 +25,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [Box resources](./box-resources.md) | What one workstation rations, and the broker every run declares its cost to |
 | [The forge](./forge.md) | Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict |
 | [The integrator](./integrator.md) | The integration tick, PRs into integration, `forge sync`, `integrate`, the merge audit, session-branch leases |
+| [Components](./components.md) | A product mounts its engines as submodules: the table, the derived-file check, the bump loop |
 | [Issues](./issues.md) | An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments |
 | [HPC clusters](./hpc.md) | A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records |
 | [Artefacts](./artefacts.md) | A run's declared outputs: the store, its layout and its retention |

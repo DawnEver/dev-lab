@@ -22,7 +22,16 @@ from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgehosts, forgeproduce, forgerounds, forgerun, forgeserve, forgeservesteps, forgeship
+from lab_commons.dev import (
+    forgehosts,
+    forgeproduce,
+    forgerounds,
+    forgerun,
+    forgerunstate,
+    forgeserve,
+    forgeservesteps,
+    forgeship,
+)
 from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, UNTAGGED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
@@ -247,12 +256,12 @@ class _Slurm:
     def __init__(self) -> None:
         self.cancelled: list[str] = []
 
-    def standing(self) -> forgerun.Standing:
-        return forgerun.Standing(
+    def standing(self) -> forgerunstate.Standing:
+        return forgerunstate.Standing(
             Supply('slurm:alice', Resources(cpu=64, mem_gb=128, submits=10)), {}, {'partitions': {'defq': 2880}}
         )
 
-    def cancel(self, run: forgerun.Run) -> list[str]:
+    def cancel(self, run: forgerunstate.Run) -> list[str]:
         self.cancelled += run.job_ids
         return list(run.job_ids)
 
@@ -515,7 +524,7 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     work = Work('integrate/main', SHA, 'base', 'mine', cluster_claim, cluster=part)
     advanced: list[tuple[str, str]] = []
 
-    def advance(_root: Path, run: forgerun.Run, **kwargs: object) -> forgerun.Run:
+    def advance(_root: Path, run: forgerunstate.Run, **kwargs: object) -> forgerunstate.Run:
         me = kwargs['me']
         assert isinstance(me, Claim)
         advanced.append((run.phase, me.hpc))
@@ -524,7 +533,7 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     monkeypatch.setattr(forgerun, 'advance', advance)
     report, said, _alarms = _serve(monkeypatch, tmp_path, _claimed(work), seat=SEAT, cluster=_Slurm)
     assert report.produced == (), 'a cluster part is never a blocking process'
-    assert advanced == [(forgerun.CLAIMED_PHASE, 'ada/alice')]
+    assert advanced == [(forgerunstate.CLAIMED_PHASE, 'ada/alice')]
     assert report.in_flight == (SHA,)
     assert 'running=[]' in said
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
@@ -547,7 +556,7 @@ def test_a_run_with_no_cluster_to_advance_on_alarms_and_waits(monkeypatch, tmp_p
     report, _said, alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=no_grant)
     assert [a.kind for a in alarms] == [RUN]
     assert report.in_flight == (SHA,)
-    assert len(forgerun.live('https://f/o/r.git')) == 1, 'the run is kept for the next tick'
+    assert len(forgerunstate.live('https://f/o/r.git')) == 1, 'the run is kept for the next tick'
 
 
 def test_the_alarms_a_tick_raises_ride_on_its_host_card(monkeypatch, tmp_path: Path) -> None:
@@ -777,9 +786,9 @@ def test_a_cluster_run_whose_ref_moved_on_is_kept_and_advanced(monkeypatch, tmp_
     forge = _Forge()
     monkeypatch.setattr(forgerun, 'status_post', forge.post)
     monkeypatch.setattr(forgerun, 'advance', lambda _root, run, **_k: run)
-    run = forgerun.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), ME.description(),
-                       phase=forgerun.SUBMITTED, job_ids=('77',))  # fmt: skip
-    forgerun.save(run)
+    run = forgerunstate.Run('https://f/o/r.git', SHA, 'integrate/main', 'tests', str(tmp_path), ME.description(),
+                       phase=forgerunstate.SUBMITTED, job_ids=('77',))  # fmt: skip
+    forgerunstate.save(run)
     kept, _said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
     assert kept.in_flight == (SHA,)
     tip = _moved_on(tmp_path)
@@ -790,7 +799,7 @@ def test_a_cluster_run_whose_ref_moved_on_is_kept_and_advanced(monkeypatch, tmp_
     assert report.in_flight == (SHA,), f'A runs on after the ref moved to {tip[:12]}'
     assert slurm.cancelled == []
     assert not [post for post in forge.posts if 'superseded' in post[2]]
-    assert [one.sha for one in forgerun.live('https://f/o/r.git')] == [SHA]
+    assert [one.sha for one in forgerunstate.live('https://f/o/r.git')] == [SHA]
     assert not any('superseded' in line for line in said)
 
 
@@ -1109,7 +1118,7 @@ def test_a_cluster_host_publishes_its_card_before_each_run_it_advances(monkeypat
     shas = _runs_on_disk(monkeypatch, tmp_path, 2)
     published_before: list[int] = []
 
-    def advance(_root: Path, run: forgerun.Run, **_kw: object) -> forgerun.Run:
+    def advance(_root: Path, run: forgerunstate.Run, **_kw: object) -> forgerunstate.Run:
         published_before.append(len(cards))
         return run
 
@@ -1132,7 +1141,7 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
     now = [NOW]
     advanced: list[str] = []
 
-    def slow(_root: Path, run: forgerun.Run, **_kw: object) -> forgerun.Run:
+    def slow(_root: Path, run: forgerunstate.Run, **_kw: object) -> forgerunstate.Run:
         advanced.append(run.sha)
         now[0] += timedelta(minutes=4)
         return run
@@ -1161,7 +1170,7 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
 class _Untagged(_Slurm):
     """Slurm holding jobs that carry no session tag."""
 
-    def standing(self) -> forgerun.Standing:
+    def standing(self) -> forgerunstate.Standing:
         held = super().standing()
         return dataclasses.replace(held, facts={**held.facts, 'untagged': 3})
 

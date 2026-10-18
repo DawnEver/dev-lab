@@ -458,16 +458,4 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'tests/test_liveness.py',
         ),
     ),
-    (
-        'FORMATS-UPGRADE-ON-READ',
-        (
-            'A persisted format a tool writes -- a run journal, a record, a state file, a ledger -- READS every '
-            'older schema of itself by upgrading it, one declared step per schema, and writes it back at the '
-            'current one. Refusal is only for a schema the reader does not know: newer, or never issued. A tool '
-            'is redeployed under its own live data as a matter of course, so refusing an older file refuses the '
-            'ordinary case and stalls whatever reads it. The steps are declared as DATA beside the version, so '
-            'a missing step is visible without running anything.'
-        ),
-        ('tests/test_arch_formats_upgrade_on_read.py',),
-    ),
 )

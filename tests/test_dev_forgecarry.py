@@ -17,7 +17,7 @@ from _box_fake import ended, record
 from _forge_fake import git_out, run_git
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgecarry, forgeproduce, forgerun
+from lab_commons.dev import forgecarry, forgeproduce, forgerun, forgerunstate
 from lab_commons.dev.forgeclaim import Claim, Work
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.platformparts import Part, parts_of, standing
@@ -193,9 +193,9 @@ def test_a_published_cluster_part_is_also_posted_on_the_equivalent_tip(monkeypat
     for target, expected in (('b' * 40, [('r.json', ''), ('r.json', 'b' * 40)]), ('', [('r.json', '')])):
         posted.clear()
         monkeypatch.setattr(forgecarry, 'carry_target', lambda *_a, _t=target, **_k: _t)
-        run = forgerun.Run('https://f/o/r.git', 'a' * 40, REF, 'tests', str(tmp_path), ME.description(),
-                           phase=forgerun.GATHERED, record=str(tmp_path / 'r.json'))  # fmt: skip
-        forgerun.save(run)
+        run = forgerunstate.Run('https://f/o/r.git', 'a' * 40, REF, 'tests', str(tmp_path), ME.description(),
+                           phase=forgerunstate.GATHERED, record=str(tmp_path / 'r.json'))  # fmt: skip
+        forgerunstate.save(run)
         forgerun.advance(tmp_path, run, client=None, me=ME, lease=timedelta(hours=6), cluster=None,
                          say=lambda _l: None, alarm=lambda _a: None)  # fmt: skip
         assert posted == expected

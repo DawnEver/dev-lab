@@ -24,7 +24,7 @@ from test_dev_forgeintent import _Forge, _reattach
 from test_dev_forgerun import _CrashAtSbatch, _Slurm, _start, _Store, _tick
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgeintent, forgerun
+from lab_commons.dev import forgeintent, forgerun, forgerunstate
 from lab_commons.dev._forge_journal import Journal, journal_for
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import OPEN, Claim, assess
@@ -220,4 +220,4 @@ def test_login_node_restart_resumes_the_cluster_run_without_a_human(tmp_path: Pa
     slurm.queue = list(crashing.queue)
     resumed = _tick(store, slurm)
     assert resumed is not None
-    assert (resumed.phase, slurm.submits, slurm.cancelled) == (forgerun.SUBMITTED, 1, ['555'])
+    assert (resumed.phase, slurm.submits, slurm.cancelled) == (forgerunstate.SUBMITTED, 1, ['555'])

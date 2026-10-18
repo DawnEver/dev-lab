@@ -46,7 +46,7 @@ from typing import Any, Final
 
 from lab_commons.compute.model import Candidate, Ranked, Supply
 from lab_commons.compute.priority import Priority
-from lab_commons.dev import forgerun
+from lab_commons.dev import forgerunstate
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
 from lab_commons.dev.forgepulls import (
@@ -268,7 +268,7 @@ def publish_card(
     machine: str,
     seat: ClusterAccount | None,
     host: str | None,
-    standing: forgerun.Standing | None,
+    standing: forgerunstate.Standing | None,
     table: Mapping[str, Any],
     say: Callable[[str], None],
     alarms: Sequence[Alarm] = (),
@@ -288,7 +288,7 @@ def publish_card(
     progress = progress or {}
     built = client(root)
     try:
-        runs = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerun.live(origin_url(root)))
+        runs = tuple(f'{run.sha[:12]} {run.progress or run.phase}' for run in forgerunstate.live(origin_url(root)))
         card = HostCard(
             host=card_host(machine, seat),
             login=built.whoami(),
