@@ -47,7 +47,15 @@ import lab_commons.launch as _door
 from lab_commons.dev import forge as _forge
 from lab_commons.dev._forge_journal import LOOKBACK, Durable, Journal, Probe, Write, journal_for, since, write_key
 from lab_commons.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
-from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Forge, Transport, forge_from_remote, https_transport
+from lab_commons.dev.forge import (
+    _GIT,
+    _GIT_TIMEOUT_S,
+    Forge,
+    Transport,
+    forge_from_remote,
+    forge_of_url,
+    https_transport,
+)
 from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_S, Attempt, Diagnosis, Report, classify
 
 __all__ = [
@@ -381,10 +389,15 @@ class Client:
 
 
 def client_for(
-    root: Path, *, env: Mapping[str, str] | None = None, transport: Transport = https_transport, remote: str = 'origin'
+    root: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    transport: Transport = https_transport,
+    remote: str = 'origin',
+    url: str = '',
 ) -> Client:
-    """The client for *root*'s *remote*, its token and its provenance stamp -- what every CLI verb builds."""
-    forge = forge_from_remote(root, remote=remote)
+    """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp."""
+    forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
     username, secret = _forge.credential_for(forge.host, cwd=root, env=env)
     return Client(forge, secret, transport=transport, username=username, stamp=stamp, journal=journal_for(root))

@@ -143,6 +143,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgerun': ('original',),
     'forgerunstate': ('original',),
     'components': ('original',),
+    'componentbump': ('original',),
     'shatree': ('original',),
     'forgeclaim': ('original',),
     'forgeschedule': ('original',),
