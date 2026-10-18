@@ -214,7 +214,10 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
   when it exists. A grant whose build fails is dropped and the batch re-spanned without it. A `workdir` under
   `~/ci/trees/` is refused by name: that tree is a test run's.
 - **One results file per run.** A run directory (`~/ci/jobs/<sha>/<name>-<stamp>`, else `<workdir>/.lab-hpc/...`)
-  holds the manifest, `job.sh` and `results.jsonl`. Each task appends one line per item and, after the worker
+  holds the manifest, `job.sh` and `results.jsonl`. Each task appends one `outcome` line per item, carrying a
+  `lab_commons.outcomes.Cell`: returned -> `OK` (the value rides in the line's data), raised the declared
+  `lab_commons.hpc.worker.Rejected` -> `REJECTED` with its reason, any other exception -> `ERROR`; a
+  pre-Cell worker's `item` lines are still read. After the worker
   exits, one `shard` line with its exit code and the tail of its output; the output itself stays in node-local
   `$TMPDIR` (`--output=/dev/null`). A shard is returned by a `shard` line with exit 0; `gather` and `retry` read
   only this file. A run an earlier worker wrote (`results/<shard>.json`) is read through a one-way upgrade.
