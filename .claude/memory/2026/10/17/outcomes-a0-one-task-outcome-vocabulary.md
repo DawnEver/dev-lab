@@ -1,11 +1,11 @@
 ---
 name: outcomes-a0-one-task-outcome-vocabulary
-description: Track A item A0 of motronics PLAN-engines-and-one-outcome-vocabulary landed on lane/outcomes-a0 -- `lab_commons.outcomes` (stdlib only): Family/Status/Evidence, Reason/Cost/Cell, Identity, Expectation, JSONL reader, Record, Conclusion; A1 (producers, forge format) deliberately not started
+description: Track A item A0 of <consumer> PLAN-engines-and-one-outcome-vocabulary landed on lane/outcomes-a0 -- `lab_commons.outcomes` (stdlib only): Family/Status/Evidence, Reason/Cost/Cell, Identity, Expectation, JSONL reader, Record, Conclusion; A1 (producers, forge format) deliberately not started
 created: 2026-10-17
 ---
 # `lab_commons.outcomes` -- A0 (2026-10-17)
 
-Spec: motronics-studio `.claude/memory/2026/10/17/PLAN-engines-and-one-outcome-vocabulary.md`, II.3 and Part IV A0.1-A0.8.
+Spec: <consumer> `.claude/memory/2026/10/17/PLAN-engines-and-one-outcome-vocabulary.md`, II.3 and Part IV A0.1-A0.8.
 
 ## Decisions taken where the spec was silent
 - `Cell.evidence` defaults to OBSERVED; `Cost` fields `None` = unknown, never zero; a value is int/float (not bool), NaN refused, inf allowed.

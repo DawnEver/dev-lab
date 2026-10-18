@@ -6,7 +6,7 @@ created: 2026-10-17
 # A redeploy adopts a live run of an older schema (2026-10-17)
 
 - Incident (~14:28Z): host kits redeployed 1747163 -> 12dd0ff/8ea6f6e under 17 live runs (ezxmw9 5,
-  ezxmb14 4, ezzls2 3, alyyw103 5). `forgerun.live` raised `ForeignSchema` on the first schema-1 file and
+  <user-b> 4, ezzls2 3, alyyw103 5). `forgerun.live` raised `ForeignSchema` on the first schema-1 file and
   `forgeserve` caught it at the top, exit 1: ONE file stopped the WHOLE tick, every run, every tick.
 - Schema 1 -> 2 changed no field: 2 added the `submitting` phase (D19, cc749ce), a value schema 1 never
   wrote. What did change under the same file is the Slurm JOB NAME (669f7be): `run-<sha12>` ->

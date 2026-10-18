@@ -6,8 +6,8 @@ created: 2026-10-17
 # One run per (ref, part) in flight (2026-10-17)
 
 - Incident: every pushed integrate/main tip was claimed separately -- Ada ezxmw9 held 7 shas of
-  integrate/main at once, ezxmb14 another -- filling account memory so the newest tip was never admitted.
-- Ruling (D6 of motronics-studio DECISION-distributed-compute-final-architecture): never cancel a running
+  integrate/main at once, <user-b> another -- filling account memory so the newest tip was never admitted.
+- Ruling (D6 of <consumer> DECISION-distributed-compute-final-architecture): never cancel a running
   part; newer pushes queue and the next tip is tested as one batch (per-test carry makes it cheap).
 - Where: `forgecoalesce.behind` is the one rule (moved out of `forgeschedule`, which crossed the 300-line module band); `forgetake.ClaimPass._blocked` (claim) and
   `forgequeue.forge_queue` (display) both call it. `Schedule.coalesce` (default `integration`, `feature`)

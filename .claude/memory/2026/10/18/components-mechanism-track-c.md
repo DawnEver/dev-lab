@@ -1,12 +1,12 @@
 ---
 name: components-mechanism-track-c
-description: Track C of the motronics PLAN-engines-and-one-outcome-vocabulary landed on lane/track-c -- [tool.lab_commons.components] schema (path derived as components/<name>), drift() over .gitmodules/uv sources/Cargo/gitlinks, a stateless bump loop on one lane name lane/components-bump, served checkouts init submodules; plus the two integrate/main reds (module-size split of forgerun/deploy/rule rows, box Claim cycle)
+description: Track C of the <consumer> PLAN-engines-and-one-outcome-vocabulary landed on lane/track-c -- [tool.lab_commons.components] schema (path derived as components/<name>), drift() over .gitmodules/uv sources/Cargo/gitlinks, a stateless bump loop on one lane name lane/components-bump, served checkouts init submodules; plus the two integrate/main reds (module-size split of forgerun/deploy/rule rows, box Claim cycle)
 created: 2026-10-18
 ---
 # Components mechanism (Track C), 2026-10-18
 
-- Plan: motronics `.claude/memory/2026/10/17/PLAN-engines-and-one-outcome-vocabulary.md`, II.5 and C1-C6.
-  Docs: `docs-src/dev/components.md`. Consumer side is Track E (motronics E1).
+- Plan: <consumer> `.claude/memory/2026/10/17/PLAN-engines-and-one-outcome-vocabulary.md`, II.5 and C1-C6.
+  Docs: `docs-src/dev/components.md`. Consumer side is Track E (<consumer> E1).
 - C1 `lab_commons.dev.components.components_of`: one table per engine; required `url branch parts`,
   optional `package crates`. DECIDED HERE: the mount path is DERIVED (`components/<name>`) and a
   declared `path` is refused (the plan listed path as a key; one source of truth wins). Names must be
