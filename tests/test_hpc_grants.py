@@ -251,7 +251,7 @@ def test_the_script_carries_the_session_comment(tmp_path: Path) -> None:
     _, plan = allocate(10, Cost(seconds=60), [(GRANT, _snap())], session=WIDE, policy=Policy())
     script = render_script(plan, Config(job=JobSpec(name='j'), source=tmp_path / 'h.toml'), '~/r')
     assert '#SBATCH --comment=lc:session=ws-a\n' in script
-    assert '#SBATCH --output=logs/%A_%a.out\n' in script, 'Slurm never expands ~; the run dir is the submit dir'
+    assert '#SBATCH --output=/dev/null\n' in script, 'a task writes no per-task file on the shared home'
 
 
 def test_a_grants_setup_runs_first_in_every_task(tmp_path: Path) -> None:
