@@ -7,6 +7,7 @@ clock; Slurm is a fake that counts submissions. A "crash" is a new tick reading 
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import io
 import json
 import os
@@ -381,7 +382,8 @@ def _plant_schema_1() -> dict[str, Any]:
     """A live schema-1 run as Ada held it (2026-10-17, account sanitised), planted in this home's forge-runs/."""
     raw = json.loads(SCHEMA_1.read_text(encoding='utf-8'))
     forgerunstate.directory().mkdir(parents=True, exist_ok=True)
-    name = f'0a8e97f67747-{raw["sha"]}-{raw["platform"]}-{raw["scope"]}.json'
+    repo = hashlib.sha256(raw['repo_url'].encode('utf-8')).hexdigest()[:12]
+    name = f'{repo}-{raw["sha"]}-{raw["platform"]}-{raw["scope"]}.json'
     (forgerunstate.directory() / name).write_text(json.dumps(raw, indent=2), encoding='utf-8')
     return raw
 

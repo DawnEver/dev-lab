@@ -58,7 +58,7 @@ def test_no_table_is_no_components_and_the_table_is_one_the_kit_knows() -> None:
 
 def test_the_optional_keys_default_to_nothing() -> None:
     (row,) = components_of(
-        '[tool.lab_commons.components.wdg-lab]\nurl = "https://f/o/wdg-lab.git"\nbranch = "main"\nparts = ["base"]\n'
+        '[tool.lab_commons.components.geo-lab]\nurl = "https://f/o/geo-lab.git"\nbranch = "main"\nparts = ["base"]\n'
     )
     assert (row.package, dict(row.crates)) == ('', {})
 
