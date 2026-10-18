@@ -76,6 +76,7 @@ from lab_commons.box import Refused
 from lab_commons.dev import _dep_project
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
+from lab_commons.dev.lockcheck import unreasoned_holds
 from lab_commons.log import emit
 
 __all__ = [
@@ -404,36 +405,62 @@ def _change(
         raise _held_refusal(port.name, exc, prefix) from exc
 
 
+def _lock_upgrade(
+    root: Path, python: str, *, run: Callable[..., Any], dry_run: bool, environment: dict[str, str]
+) -> int:
+    """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`lab_commons.dev.lockcheck` names.
+
+    The holds lockcheck refuses at push are refused HERE first, before anything resolves: a lock written
+    under an unreasoned hold would only be refused again at the push. Only the lock moves in this step; the
+    environment then follows it through the seated frozen sync in :func:`main`.
+    """
+    holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    if holds:
+        emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
+        return 1
+    command = _dep_project.lock_upgrade_command(root, python)
+    if dry_run:
+        emit('would run: ' + ' '.join(command))
+        return 0
+    return run(command, check=False, timeout=CHILD_WALL_S, cwd=root, env=environment).returncode
+
+
 def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.run, cwd: Path | None = None) -> int:
-    """Bootstrap or sync the named worktree's own environment, with declared full extras."""
+    """Bootstrap, sync or lock-upgrade the named worktree's own environment, with declared full extras."""
     parser = argparse.ArgumentParser(description=__doc__)
     targets = parser.add_mutually_exclusive_group()
     targets.add_argument('--bootstrap', type=Path)
     targets.add_argument('--root', type=Path)
+    targets.add_argument('--lock-upgrade', nargs='?', const=Path(), type=Path, metavar='ROOT')
     parser.add_argument('--sync', action='store_true')
     parser.add_argument('--extra', action='append')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--upgrade-package', action='append', default=[])
     args = parser.parse_args(argv)
-    if args.bootstrap is None and not args.sync and not args.upgrade_package:
-        parser.error('use --bootstrap PATH, --sync, or --upgrade-package NAME')
-    root = _dep_project.target_root(args.bootstrap or args.root, cwd or Path.cwd())
+    locking = args.lock_upgrade is not None
+    if args.bootstrap is None and not locking and not args.sync and not args.upgrade_package:
+        parser.error('use --bootstrap PATH, --lock-upgrade [ROOT], --sync, or --upgrade-package NAME')
+    root = _dep_project.target_root(args.bootstrap or args.lock_upgrade or args.root, cwd or Path.cwd())
     python, selected, paths = _dep_project.read_project(root, args.extra)
     prefix = root / '.venv'
     if Path(python).is_file() and Path(_snapshot(python)[0]).resolve() != prefix:
         msg = f'{python} does not execute in its own environment {prefix}'
         raise ValueError(msg)
+    environment = dict(os.environ)
+    environment.pop('VIRTUAL_ENV', None)
+    environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
+    if locking:
+        code = _lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
+        if code:
+            return code
     command = _dep_project.uv_command(
         root,
         python,
         selected,
-        syncing=args.bootstrap is not None or args.sync,
+        syncing=args.bootstrap is not None or args.sync or locking,
         upgrade_packages=args.upgrade_package,
-        frozen=args.bootstrap is not None,
+        frozen=args.bootstrap is not None or locking,
     )
-    environment = dict(os.environ)
-    environment.pop('VIRTUAL_ENV', None)
-    environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
         result = _change(

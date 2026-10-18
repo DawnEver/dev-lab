@@ -95,7 +95,9 @@ Each tick it:
   change something: an in-house git dependency behind the tip of its declared ref, a PyPI dependency below its
   latest -- or that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
   pin, a git rev) with no reason on its line or the comment line above. A reasoned range is the only way to
-  stay below latest. The developer who pushes upgrades: `uv lock --upgrade`, then fix, test and commit. A
+  stay below latest. The developer who pushes upgrades through the door `<venv python> -m lab_commons.dev.dep --lock-upgrade
+  [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
+  fixes, tests and commits. A
   resolution that cannot run (the network is down) refuses with its diagnosis; a deletion is never judged.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A

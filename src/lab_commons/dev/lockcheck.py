@@ -18,7 +18,8 @@ What keeps a pin from rotting is THIS row, the shape of the behind-push refusal:
 * that resolution cannot run -- the network is down, a source is unreachable: refused with its diagnosis
   (:func:`lab_commons.dev.netverb.run_network_verb`, retried, then reported), never admitted unjudged.
 
-The developer who pushes upgrades (:data:`REMEDY`); no scheduled job does it for them. Exit codes: ``0``
+The developer who pushes upgrades through :data:`DOOR` (:data:`REMEDY`); no scheduled job does it for them.
+Exit codes: ``0``
 allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carries no content and is allowed.
 """
 
@@ -39,12 +40,18 @@ from lab_commons.log import emit
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
-__all__ = ['LOCK', 'REMEDY', 'lock_problems', 'main', 'pushed_shas', 'stale', 'unreasoned_holds']
+__all__ = ['DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'pushed_shas', 'stale', 'unreasoned_holds']
 
 #: The lockfile every family repo commits.
 LOCK: Final = 'uv.lock'
 #: The one remedy for a missing or stale lock.
-REMEDY: Final = f'run `uv lock --upgrade`, then fix, test and commit {LOCK} (a hold below the newest names its reason)'
+#: The door, never a bare ``uv lock --upgrade``: an agent guard refuses a bare dependency mutation, so a
+#: remedy naming one would be a refusal pointing at another refusal.
+DOOR: Final = '<venv python> -m lab_commons.dev.dep --lock-upgrade [ROOT]'
+REMEDY: Final = (
+    f'run `{DOOR}` (`uv lock --upgrade`, then a frozen sync of that checkout), then fix, test and commit {LOCK}'
+    ' (a hold below the newest names its reason)'
+)
 #: How long one resolution may take, in seconds: a cold cache resolving every source is the slow case.
 RESOLVE_TIMEOUT_S: Final = 600.0
 
