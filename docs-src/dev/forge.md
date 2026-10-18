@@ -8,7 +8,9 @@ suite to learn whether a sha is green, and you never wait for one to push.
 ## Parts
 
 - **A part** is one NEED-SET's result for one sha, posted as the commit status `tests/<part>`:
-  `success` is PASS, `failure` is FAIL, `pending` is a claim. The description is
+  its state is `forgestatus.state_for` of the part's `lab_commons.outcomes.Conclusion` -- `success` is
+  PASS, `failure` is FAIL, `error` (INCONCLUSIVE) is never a settled part -- and `pending` is a claim. The
+  record each status is read into is `forgestatus.CommitStatus`. The description is
   `scope=<full|incremental> ran=<n> hands=<part>:<n>,...`; `target_url` links the run record.
 - **Parts are derived, never declared** ([parts by need-set](hpc.md#parts-by-need-set)). A test marks the
   resources it needs; its part is that set, named sorted and `+`-joined (`tests/femm+windows`), or
@@ -20,7 +22,7 @@ suite to learn whether a sha is green, and you never wait for one to push.
   integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
   at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.
 - **One reader.** The integrator, issue readiness and admission all read parts through
-  `lab_commons.dev.platformparts.standing`.
+  `lab_commons.dev.platformparts.standing`, which concludes PASS, FAIL or INCONCLUSIVE (unsettled).
 - An INCONCLUSIVE run is no part and posts nothing. Which ids a part runs is its need-set over the repo's
   `[tool.lab_commons.tests] resources` ([HPC clusters](hpc.md#parts-by-need-set)).
 

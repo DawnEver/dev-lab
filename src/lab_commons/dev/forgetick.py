@@ -90,7 +90,7 @@ from lab_commons.dev.forgeclaim import (
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgerequest import declared_request, remind, request_authors
 from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
-from lab_commons.dev.forgestatus import Status, status_history
+from lab_commons.dev.forgestatus import CommitStatus, status_history
 from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
@@ -169,9 +169,9 @@ def tick(
         lines += str(failed).splitlines()
     fetch(root)
     built = client(root)
-    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
+    histories: dict[str, tuple[CommitStatus, ...]] = {}  # one read per sha: it derives the parts and assesses each
 
-    def history(sha: str) -> tuple[Status, ...]:
+    def history(sha: str) -> tuple[CommitStatus, ...]:
         if sha not in histories:
             histories[sha] = status_history(built, sha)
         return histories[sha]

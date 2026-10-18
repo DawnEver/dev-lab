@@ -50,7 +50,7 @@ from lab_commons.dev.forgeclaim import (
 )
 from lab_commons.dev.forgecoalesce import WAITING_BEHIND, behind
 from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy
@@ -78,11 +78,11 @@ def server() -> Iterator[ThreadingHTTPServer]:
         yield httpd
 
 
-def _pending(claim: Claim, status_id: int, platform: str = BASE) -> Status:
-    return Status(f'tests/{platform}', 'pending', claim.description(), '', status_id, claim.login)
+def _pending(claim: Claim, status_id: int, platform: str = BASE) -> CommitStatus:
+    return CommitStatus(f'tests/{platform}', 'pending', claim.description(), '', status_id, claim.login)
 
 
-def _assess(history: list[Status], platform: str = BASE) -> tuple[str, Claim | None]:
+def _assess(history: list[CommitStatus], platform: str = BASE) -> tuple[str, Claim | None]:
     return assess(history, f'tests/{platform}', me=ME, now=NOW)
 
 
@@ -96,8 +96,8 @@ def test_a_claim_round_trips_through_its_description() -> None:
 
 def test_no_post_is_open_a_settled_part_is_done_and_my_live_claim_is_mine() -> None:
     assert _assess([]) == (OPEN, None)
-    assert _assess([Status('tests/jmag', 'success', 'x', '', 1)]) == (OPEN, None), 'another part is not mine'
-    assert _assess([_pending(ME, 1), Status('tests/base', 'failure', 'scope=full', '', 2)]) == (DONE, None)
+    assert _assess([CommitStatus('tests/jmag', 'success', 'x', '', 1)]) == (OPEN, None), 'another part is not mine'
+    assert _assess([_pending(ME, 1), CommitStatus('tests/base', 'failure', 'scope=full', '', 2)]) == (DONE, None)
     assert _assess([_pending(ME, 1)]) == (MINE, ME)
 
 
@@ -118,8 +118,8 @@ def test_a_stale_local_claim_is_retaken_by_anyone_serving_the_platform() -> None
 
 def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None:
     """PLANTED CONTROL: the same ``error`` state released for any other reason stays done."""
-    outage = Status('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
-    inconclusive = Status('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
+    outage = CommitStatus('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
+    inconclusive = CommitStatus('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
     assert _assess([_pending(ME, 1), outage]) == (OPEN, None)
     assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 
@@ -146,7 +146,7 @@ def test_my_holding_claim_is_my_latest_renewal() -> None:
 
 
 def test_a_foreign_pending_status_is_not_a_claim() -> None:
-    assert _assess([Status('tests/base', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
+    assert _assess([CommitStatus('tests/base', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
 
 
 def test_a_box_serves_only_its_own_platform_and_never_a_cluster_over_ssh() -> None:
@@ -925,7 +925,7 @@ def _candidate(ref: str, sha: str, kind: str) -> Candidate:
     return Candidate('o/r', ref, sha, BASE, kind, NOW, 'full')
 
 
-def _history(**by_sha: list[Status]) -> object:
+def _history(**by_sha: list[CommitStatus]) -> object:
     return lambda sha: tuple(by_sha.get(sha, ()))
 
 
@@ -945,7 +945,7 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     tip = _candidate('integrate/main', new, INTEGRATION)
     running = _history(**{old: [_pending(BOB, 1)]})
     assert behind(repo, tip, schedule, running, NOW) == f'{WAITING_BEHIND} {old[:12]} (in flight on ada/bob)'
-    settled = _history(**{old: [_pending(BOB, 1), Status('tests/base', 'success', 'ok', '', 2, 'bob')]})
+    settled = _history(**{old: [_pending(BOB, 1), CommitStatus('tests/base', 'success', 'ok', '', 2, 'bob')]})
     assert behind(repo, tip, schedule, settled, NOW) == ''
     assert behind(repo, tip, schedule, _history(), NOW) == ''
     lane_old = tips['other']

@@ -20,14 +20,14 @@ import pytest
 
 from lab_commons.dev.shards import Composed, compose, member_costs, pack, partition, population
 from lab_commons.dev.testfacts import VacuousScanError
-from lab_commons.dev.verdict import Outcome
+from lab_commons.outcomes import Conclusion
 
 #: A healthy set: three pieces, one tree, one env, all passing.
 _TREE = 'sha256:c0ffee'
 _ENV = 'env0'
 
 
-def _rows(*outcomes: Outcome, tree: str = _TREE, env: str = _ENV) -> tuple[tuple[str, str, Outcome], ...]:
+def _rows(*outcomes: Conclusion, tree: str = _TREE, env: str = _ENV) -> tuple[tuple[str, str, Conclusion], ...]:
     """Rows that agree on everything except the outcomes given."""
     return tuple((tree, env, outcome) for outcome in outcomes)
 
@@ -100,15 +100,15 @@ def test_an_index_outside_the_set_REFUSES_rather_than_returning_nothing(index: i
 
 def test_a_complete_agreeing_passing_set_composes_to_PASS() -> None:
     """THE FLOOR FOR EVERY REFUSAL BELOW: the composer can say PASS at all."""
-    got = compose(_rows(Outcome.PASS, Outcome.PASS, Outcome.PASS), 3)
-    assert got == Composed(Outcome.PASS, got.reason, 3, 3)
+    got = compose(_rows(Conclusion.PASS, Conclusion.PASS, Conclusion.PASS), 3)
+    assert got == Composed(Conclusion.PASS, got.reason, 3, 3)
     assert 'all 3 shards PASSED' in got.reason
 
 
 def test_a_MISSING_row_is_INCONCLUSIVE_and_names_which_piece() -> None:
     """Never "the ones that arrived all passed" -- and the reason must be actionable, so it counts."""
-    got = compose((_rows(Outcome.PASS)[0], None, _rows(Outcome.PASS)[0]), 3)
-    assert got.result is Outcome.INCONCLUSIVE
+    got = compose((_rows(Conclusion.PASS)[0], None, _rows(Conclusion.PASS)[0]), 3)
+    assert got.result is Conclusion.INCONCLUSIVE
     assert got.present == 2
     assert 'indices [1]' in got.reason
 
@@ -119,54 +119,57 @@ def test_a_set_SHORTER_than_its_count_is_INCONCLUSIVE_even_with_no_None() -> Non
     This is the arm a ``None``-only check cannot see, and it is the likelier real failure: a reader
     that globbed for shard logs finds two files and returns two rows.
     """
-    got = compose(_rows(Outcome.PASS, Outcome.PASS), 3)
-    assert got.result is Outcome.INCONCLUSIVE
+    got = compose(_rows(Conclusion.PASS, Conclusion.PASS), 3)
+    assert got.result is Conclusion.INCONCLUSIVE
     assert got.present == 2
 
 
 @pytest.mark.parametrize(
     ('rows', 'fragment'),
     [
-        (((_TREE, _ENV, Outcome.PASS), ('sha256:other', _ENV, Outcome.PASS)), 'disagree'),
-        (((_TREE, _ENV, Outcome.PASS), (_TREE, 'env1', Outcome.PASS)), 'disagree'),
-        ((('unknown', _ENV, Outcome.PASS), ('unknown', _ENV, Outcome.PASS)), 'names no committed state'),
-        ((('abc123-dirty', _ENV, Outcome.PASS), ('abc123-dirty', _ENV, Outcome.PASS)), 'names no committed state'),
+        (((_TREE, _ENV, Conclusion.PASS), ('sha256:other', _ENV, Conclusion.PASS)), 'disagree'),
+        (((_TREE, _ENV, Conclusion.PASS), (_TREE, 'env1', Conclusion.PASS)), 'disagree'),
+        ((('unknown', _ENV, Conclusion.PASS), ('unknown', _ENV, Conclusion.PASS)), 'names no committed state'),
+        (
+            (('abc123-dirty', _ENV, Conclusion.PASS), ('abc123-dirty', _ENV, Conclusion.PASS)),
+            'names no committed state',
+        ),
     ],
 )
 def test_an_unattributable_or_disagreeing_set_is_INCONCLUSIVE(rows: tuple, fragment: str) -> None:
     """Two shards that agree on a tree NOBODY CAN NAME pass the agreement check and must still refuse."""
     got = compose(rows, 2)
-    assert got.result is Outcome.INCONCLUSIVE
+    assert got.result is Conclusion.INCONCLUSIVE
     assert fragment in got.reason
 
 
 def test_two_shards_on_one_NAMED_tree_still_compose_so_the_attribution_arm_is_not_blanket() -> None:
     """THE PLANTED CONTROL for the attribution refusal: a real sha passes where ``unknown`` refused."""
-    assert compose(_rows(Outcome.PASS, Outcome.PASS), 2).result is Outcome.PASS
+    assert compose(_rows(Conclusion.PASS, Conclusion.PASS), 2).result is Conclusion.PASS
 
 
 def test_any_FAIL_makes_the_whole_FAIL_and_the_count_is_named() -> None:
     """The question is about the whole, so one failing piece settles it."""
-    got = compose(_rows(Outcome.PASS, Outcome.FAIL, Outcome.FAIL), 3)
-    assert got.result is Outcome.FAIL
+    got = compose(_rows(Conclusion.PASS, Conclusion.FAIL, Conclusion.FAIL), 3)
+    assert got.result is Conclusion.FAIL
     assert '2 of 3 shards FAILED' in got.reason
 
 
 def test_a_FAIL_beats_an_INCONCLUSIVE_because_a_named_failure_is_more_information() -> None:
     """Mixed settled and unsettled pieces: the FAIL is a fact and the INCONCLUSIVE is an absence."""
-    assert compose(_rows(Outcome.INCONCLUSIVE, Outcome.FAIL), 2).result is Outcome.FAIL
+    assert compose(_rows(Conclusion.INCONCLUSIVE, Conclusion.FAIL), 2).result is Conclusion.FAIL
 
 
 def test_a_set_holding_an_INCONCLUSIVE_and_no_FAIL_cannot_be_greener_than_it() -> None:
     """The last refusal, and the one that keeps ``PASS`` meaning every piece proved something."""
-    got = compose(_rows(Outcome.PASS, Outcome.INCONCLUSIVE), 2)
-    assert got.result is Outcome.INCONCLUSIVE
+    got = compose(_rows(Conclusion.PASS, Conclusion.INCONCLUSIVE), 2)
+    assert got.result is Conclusion.INCONCLUSIVE
     assert 'greener' in got.reason
 
 
 def test_the_composed_outcome_is_the_familys_enum_and_not_a_string() -> None:
     """One three-state vocabulary in this family; a second spelling is a fourth state nobody declared."""
-    assert isinstance(compose(_rows(Outcome.PASS), 1).result, Outcome)
+    assert isinstance(compose(_rows(Conclusion.PASS), 1).result, Conclusion)
 
 
 # --- the cost-aware packer, moved from consumer-a's scripts/gate/_shards.py (2026-09-29) ---

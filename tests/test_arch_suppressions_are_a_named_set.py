@@ -89,6 +89,21 @@ ALLOWED: Final[dict[Site, str]] = {
     'read returns None and the caller skips that process',
     (
         'src/lab_commons/hpc/worker.py',
+        'PLC0415',
+        'import msvcrt',
+    ): 'the platform lock module exists on one OS only; importing it at module scope breaks the other',
+    (
+        'src/lab_commons/hpc/worker.py',
+        'PLC0415',
+        'import fcntl',
+    ): 'the platform lock module exists on one OS only; importing it at module scope breaks the other',
+    (
+        'tests/test_dev_forgetick.py',
+        'FBT001',
+        'claimed: bool,',
+    ): 'a parametrized case argument: pytest passes it by name, so the positional-bool hazard cannot occur',
+    (
+        'src/lab_commons/hpc/worker.py',
         'BLE001',
         'except Exception:',
     ): "the entry point is the PROJECT's own code, so what it raises is not enumerable here. One "
@@ -401,10 +416,10 @@ ALLOWED: Final[dict[Site, str]] = {
         'def _python_signatures(text: str) -> Iterator[_Signature]:',
     ): 'one branch per AST node kind read; splitting it hides that the set is exhaustive',
     (
-        'src/lab_commons/dev/verdict.py',
+        'src/lab_commons/outcomes/conclusion.py',
         'S105',
         "PASS = 'pass'",
-    ): 'a verdict name, not a credential: S105 matches the word PASS in an enum member',
+    ): 'a conclusion name, not a credential: S105 matches the word PASS in an enum member',
     (
         'src/lab_commons/em.py',
         'N802',
@@ -465,11 +480,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'DTZ005',
         'now = dt.datetime.now()',
     ): 'the date half of the same stamp, for the same reason',
-    (
-        'src/lab_commons/hpc/pytest_item.py',
-        'PTH123',
-        "with open(target, 'a', encoding='utf-8') as stream:",
-    ): 'a test may fake os.name, and Path() would then spell a Windows path on the cluster (two files were written so)',
     (
         'src/lab_commons/proc.py',
         'FBT003',

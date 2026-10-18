@@ -17,19 +17,22 @@ import pytest
 
 from lab_commons.dev import mergeaudit, pushgate
 from lab_commons.dev.forge import NoCredential
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import Part, part_context
+from lab_commons.outcomes import Conclusion
 
 _GIT = shutil.which('git') or 'git'
 HEAD = 'abc1234' + 'd' * 33
 
 
-def _status(platform: str, result: str = 'PASS', *, scope: str = 'full', hands: dict[str, int] | None = None) -> Status:
+def _status(
+    platform: str, result: Conclusion = Conclusion.PASS, *, scope: str = 'full', hands: dict[str, int] | None = None
+) -> CommitStatus:
     part = Part(platform, scope, result, ran=10, hands=hands or {})
-    return Status(part_context(platform), part.state, part.description(), 'https://forge/attachments/1')
+    return CommitStatus(part_context(platform), part.state, part.description(), 'https://forge/attachments/1')
 
 
-def _trunk(statuses: list[Status]) -> pushgate.Decision:
+def _trunk(statuses: list[CommitStatus]) -> pushgate.Decision:
     return pushgate.decide(pushgate.TRUNK, head=HEAD, statuses=lambda: statuses)
 
 
@@ -37,7 +40,7 @@ def _trunk(statuses: list[Status]) -> pushgate.Decision:
 def test_a_lane_and_an_integration_push_need_no_part(destination: str) -> None:
     """Parts are produced from pushed shas; asking for one before the push would deadlock."""
 
-    def never() -> list[Status]:
+    def never() -> list[CommitStatus]:
         pytest.fail('a lane or integration push read the forge')
 
     decided = pushgate.decide(destination, head=HEAD, statuses=never)
@@ -67,13 +70,13 @@ def test_a_missing_part_is_refused_naming_the_part_and_its_producer() -> None:
     [
         ([], 'no tests/base part is posted'),
         ([_status('jmag')], 'no tests/base part is posted'),
-        ([_status('base', 'FAIL')], 'base is FAIL of scope full'),
+        ([_status('base', Conclusion.FAIL)], 'base is FAIL of scope full'),
         ([_status('base', scope='incremental')], 'base is PASS of scope incremental'),
-        ([Status('tests/base', 'pending', 'claim machine=G login=a until=x', '')], 'not a settled part'),
-        ([Status('tests/base', 'success', 'free text', '')], 'not a settled part'),
+        ([CommitStatus('tests/base', 'pending', 'claim machine=G login=a until=x', '')], 'not a settled part'),
+        ([CommitStatus('tests/base', 'success', 'free text', '')], 'not a settled part'),
     ],
 )
-def test_the_trunk_refuses_anything_but_every_part_a_full_pass(statuses: list[Status], why: str) -> None:
+def test_the_trunk_refuses_anything_but_every_part_a_full_pass(statuses: list[CommitStatus], why: str) -> None:
     """PLANTED CONTROLS: nothing, a FAIL, an incremental part, a claim, a foreign description, no base."""
     decided = _trunk(statuses)
     assert not decided.allowed
@@ -81,14 +84,14 @@ def test_the_trunk_refuses_anything_but_every_part_a_full_pass(statuses: list[St
 
 
 def test_other_contexts_are_not_parts() -> None:
-    assert _trunk([_status('base'), Status('ci/foreign', 'failure', 'not a part', '')]).allowed
+    assert _trunk([_status('base'), CommitStatus('ci/foreign', 'failure', 'not a part', '')]).allowed
 
 
 @pytest.mark.parametrize('error', [NoCredential('no stored credential'), OSError('connection refused')])
 def test_the_trunk_waits_when_the_forge_cannot_be_read(error: Exception) -> None:
     """Gitea down => main waits: no local fallback stands in for the forge."""
 
-    def down() -> list[Status]:
+    def down() -> list[CommitStatus]:
         raise error
 
     decided = pushgate.decide(pushgate.TRUNK, head=HEAD, statuses=down)
@@ -110,14 +113,14 @@ def test_the_parser_reads_the_last_verdict_in_either_grammar() -> None:
     assert pushgate.parse_verdict_line('no verdict here') is None
 
 
-def _forge(monkeypatch: pytest.MonkeyPatch, statuses: list[Status]) -> None:
+def _forge(monkeypatch: pytest.MonkeyPatch, statuses: list[CommitStatus]) -> None:
     monkeypatch.setattr(pushgate, '_head', lambda _root: HEAD)
     monkeypatch.setattr(pushgate, 'unprompted_client', lambda _root: None)
     monkeypatch.setattr(pushgate, 'status_list', lambda _client, _sha: statuses)
 
 
 def test_the_cli_reads_the_forge_and_routes_each_destination(tmp_path: Path, monkeypatch) -> None:
-    _forge(monkeypatch, [_status('base', 'FAIL')])
+    _forge(monkeypatch, [_status('base', Conclusion.FAIL)])
     base = ['--root', str(tmp_path), '--trunk-ref', 'refs/heads/main']
     assert pushgate.main([*base, '--remote-ref', 'refs/heads/feat/x']) == 0
     assert pushgate.main([*base, '--remote-ref', 'refs/heads/integrate/main']) == 0

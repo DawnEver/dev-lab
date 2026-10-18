@@ -47,7 +47,7 @@ from lab_commons.dev.forgeschedule import (
     load_schedule,
     repo_name,
 )
-from lab_commons.dev.forgestatus import Status, status_history
+from lab_commons.dev.forgestatus import CommitStatus, status_history
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import derived, origin_url, part_context
@@ -118,9 +118,9 @@ def forge_queue(
     Fetches nothing: the caller holds origin as fresh as it needs.
     """
     repo = repo_name(client)
-    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
+    histories: dict[str, tuple[CommitStatus, ...]] = {}  # one read per sha: it derives the parts and assesses each
 
-    def history(sha: str) -> tuple[Status, ...]:
+    def history(sha: str) -> tuple[CommitStatus, ...]:
         if sha not in histories:
             histories[sha] = status_history(client, sha) if sha else ()
         return histories[sha]
@@ -168,7 +168,7 @@ def _refused(read: Callable[[], str]) -> str:
 
 
 def _standing(
-    found: Sequence[Candidate], history: Callable[[str], Sequence[Status]], now: datetime
+    found: Sequence[Candidate], history: Callable[[str], Sequence[CommitStatus]], now: datetime
 ) -> tuple[list[Candidate], list[dict[str, Any]]]:
     """``(waiting, in flight)``: a part and a request are one job, each assessed in its own context."""
     nobody = Claim('', '', now)

@@ -24,6 +24,8 @@ from lab_commons.dev.forgeroute import (
     still_red,
 )
 from lab_commons.hpc.records import write_record
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Reason, Status
 
 _FORGE = Forge('forge.example.org', 'o', 'r')
 _ROOT = '/api/v1/repos/o/r'
@@ -43,9 +45,15 @@ def server() -> Iterator[ThreadingHTTPServer]:
     yield from serve()
 
 
-def _record(outcomes: dict[str, str], reasons: dict[str, str] | None = None, handed: dict | None = None) -> dict:
+def _record(statuses: dict[str, str], reasons: dict[str, str] | None = None, handed: dict | None = None) -> dict:
+    """A run record whose cells read *statuses* (status tokens), each non-OK cell carrying its reason."""
     meta = {'sha': 'a' * 40, 'platform': 'base', 'req': 'r1'}
-    return meta | {'outcomes': outcomes, 'reasons': reasons or {}, 'handed': handed or {}}
+    why = reasons or {}
+    cells = {
+        node: Cell(Status(token), reason=None if token in ('ok', 'pending') else Reason('x', why.get(node, '')))
+        for node, token in statuses.items()
+    }
+    return meta | {'cells': {node: TestCell(cell).to_plain() for node, cell in cells.items()}, 'handed': handed or {}}
 
 
 def _issue(number: int, title: str, body: str) -> dict:
@@ -82,13 +90,13 @@ def _body(record: dict, area: str = 'jmag', previous: str = '') -> str:
 
 def test_group_rows_reported_reds_per_id_and_folds_the_never_reported_into_one_row_per_area() -> None:
     areas, default = read_areas(_AREAS)
-    unrun = {f'tests/jmag/test_{n}.py::t': 'lost' for n in range(7)}
-    record = _record({_JMAG: 'failed', _STRAY: 'error', _GREEN: 'passed', **unrun}, {_JMAG: 'boom\nmore'})
+    unrun = {f'tests/jmag/test_{n}.py::t': 'infra' for n in range(7)}
+    record = _record({_JMAG: 'rejected', _STRAY: 'rejected', _GREEN: 'ok', **unrun}, {_JMAG: 'boom\nmore'})
     grouped = group(record, areas, default)
-    assert grouped['triage'] == {_STRAY: ' (base) error'}
-    assert grouped['jmag'][_JMAG] == ' (base) failed -- boom'
-    assert grouped['jmag']['base: never reported'].startswith(' (base) 7 test(s) -- tests/jmag/test_0.py::t, ')
-    assert grouped['jmag']['base: never reported'].endswith(', ...')
+    assert grouped['triage'] == {_STRAY: ' (base) rejected'}
+    assert grouped['jmag'][_JMAG] == ' (base) rejected -- boom'
+    assert grouped['jmag']['base: no answer'].startswith(' (base) 7 test(s) -- tests/jmag/test_0.py::t, ')
+    assert grouped['jmag']['base: no answer'].endswith(', ...')
     assert 'coupling' not in grouped, 'a green id has no row'
 
 
@@ -102,58 +110,65 @@ def test_a_record_replaces_its_own_parts_rows_and_drops_rows_no_current_part_sel
     """
     previous = (
         'head\n\n'
-        f'- [ ] `{_JMAG}` (base) failed\n'
-        '- [ ] `tests/jmag/test_old.py::t` (linux) failed\n'
-        f'- [ ] `{_NODE_ONLY}` (base) failed\n'
-        f'- [ ] `{_NODE_ONLY}x` (node) failed\n'
+        f'- [ ] `{_JMAG}` (base) rejected\n'
+        '- [ ] `tests/jmag/test_old.py::t` (linux) rejected\n'
+        f'- [ ] `{_NODE_ONLY}` (base) rejected\n'
+        f'- [ ] `{_NODE_ONLY}x` (node) rejected\n'
         '- [ ] `tests/jmag/test_gone.py::t` (node) error\n'
-        '- [x] `tests/jmag/test_ticked.py::t` (node) failed\n'
-        '- [ ] `node: never reported` (node) 2 test(s) -- a, b\n'
-        '- [ ] `linux: never reported` (linux) 2 test(s) -- a, b\n'
+        '- [x] `tests/jmag/test_ticked.py::t` (node) rejected\n'
+        '- [ ] `node: no answer` (node) 2 test(s) -- a, b\n'
+        '- [ ] `linux: no answer` (linux) 2 test(s) -- a, b\n'
     )
     other = 'tests/jmag/test_new.py::t'
     record = _record(
-        {_JMAG: 'passed', other: 'failed', _NODE_ONLY: 'not-covered', f'{_NODE_ONLY}x': 'not-covered'},
+        {_JMAG: 'ok', other: 'rejected'},
         handed={_NODE_ONLY: 'node', f'{_NODE_ONLY}x': 'node'},
     )
     body = _body(record, previous=previous)
     rows = [line for line in body.splitlines() if line.startswith('- [')]
     assert rows == [
-        '- [ ] `node: never reported` (node) 2 test(s) -- a, b',
-        f'- [ ] `{other}` (base) failed',
-        f'- [ ] `{_NODE_ONLY}x` (node) failed',
+        '- [ ] `node: no answer` (node) 2 test(s) -- a, b',
+        f'- [ ] `{other}` (base) rejected',
+        f'- [ ] `{_NODE_ONLY}x` (node) rejected',
     ]
     assert body.startswith('Last routed: part `base` at [aaaaaaaaaaaa](u) (req `r1`), FAIL.')
 
 
 def test_a_green_record_leaves_no_row_of_its_part_and_the_body_reads_green_to_tidy() -> None:
-    body = _body(_record({_JMAG: 'passed'}), previous=f'h\n\n- [ ] `{_JMAG}` (base) failed\n')
+    body = _body(_record({_JMAG: 'ok'}), previous=f'h\n\n- [ ] `{_JMAG}` (base) rejected\n')
     assert not still_red(body)
     assert 'PASS.' in body
 
 
-def test_an_inconclusive_record_keeps_its_reported_reds_and_says_so() -> None:
-    body = _body(_record({_JMAG: 'failed', 'tests/jmag/test_l.py::t': 'missing'}))
-    assert f'- [ ] `{_JMAG}` (base) failed' in body
-    assert '- [ ] `base: never reported` (base) 1 test(s) -- tests/jmag/test_l.py::t' in body
+def test_a_red_beside_unanswered_ids_keeps_both_rows_and_reads_fail() -> None:
+    """A wrong answer is wrong whatever else is missing (outcomes.Conclusion): the record reads FAIL."""
+    body = _body(_record({_JMAG: 'rejected', 'tests/jmag/test_l.py::t': 'pending'}))
+    assert f'- [ ] `{_JMAG}` (base) rejected' in body
+    assert '- [ ] `base: no answer` (base) 1 test(s) -- tests/jmag/test_l.py::t' in body
+    assert 'FAIL.' in body
+
+
+def test_an_inconclusive_record_says_so_and_rows_its_unanswered_ids() -> None:
+    body = _body(_record({_JMAG: 'ok', 'tests/jmag/test_l.py::t': 'infra'}))
+    assert '- [ ] `base: no answer` (base) 1 test(s) -- tests/jmag/test_l.py::t' in body
     assert 'INCONCLUSIVE.' in body
 
 
 def test_a_planted_jmag_red_and_an_unmapped_red_each_open_their_area_issue(server) -> None:
     answer('GET', f'{_ROOT}/issues', (200, []))
     answer('POST', f'{_ROOT}/issues', (201, _issue(11, 'area:jmag', '')), (201, _issue(12, 'area:triage', '')))
-    record = _record({_JMAG: 'failed', _STRAY: 'error', _GREEN: 'passed'}, {_JMAG: 'AssertionError: off\nmore'})
+    record = _record({_JMAG: 'rejected', _STRAY: 'rejected', _GREEN: 'ok'}, {_JMAG: 'AssertionError: off\nmore'})
     routed = route(client(_FORGE, Loopback(server)), record, _AREAS)
     assert [(r.area, r.action) for r in routed] == [('jmag', 'created'), ('triage', 'created')]
     created = [body for method, _path, body in _writes() if method == 'POST']
     assert [c['title'] for c in created] == ['area:jmag', 'area:triage'], 'the green-only area opens nothing'
-    assert f'- [ ] `{_JMAG}` (base) failed -- AssertionError: off' in created[0]['body']
+    assert f'- [ ] `{_JMAG}` (base) rejected -- AssertionError: off' in created[0]['body']
     assert '/o/r/commit/' + 'a' * 40 in created[0]['body']
     assert _STRAY in created[1]['body'], 'an unmapped red is reported in the default area, never dropped'
 
 
 def test_routing_the_same_record_twice_writes_nothing(server) -> None:
-    record = _record({_JMAG: 'failed'})
+    record = _record({_JMAG: 'rejected'})
     body = _body(record)
     answer('GET', f'{_ROOT}/issues', (200, [_issue(11, 'area:jmag', '')]))
     answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', '[G · claude · b]\n\n' + body)))
@@ -163,13 +178,13 @@ def test_routing_the_same_record_twice_writes_nothing(server) -> None:
 
 
 def test_a_new_red_updates_the_existing_issue_found_by_exact_title(server) -> None:
-    body = _body(_record({_JMAG: 'failed'}))
+    body = _body(_record({_JMAG: 'rejected'}))
     listed = [_issue(3, 'area:jmag follow-up', ''), _issue(11, 'area:jmag', '')]
     answer('GET', f'{_ROOT}/issues', (200, listed))
     answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', body)))
     answer('PATCH', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', '')))
     other = 'tests/unit/hamilton/adapters/jmag/test_x.py::test_z'
-    routed = route(client(_FORGE, Loopback(server)), _record({_JMAG: 'failed', other: 'failed'}), _AREAS)
+    routed = route(client(_FORGE, Loopback(server)), _record({_JMAG: 'rejected', other: 'rejected'}), _AREAS)
     assert [(r.action, r.number) for r in routed] == [('updated', 11)]
     [(method, path, sent)] = _writes()
     assert (method, path) == ('PATCH', f'{_ROOT}/issues/11')
@@ -180,9 +195,9 @@ def test_a_new_red_updates_the_existing_issue_found_by_exact_title(server) -> No
 def test_an_area_gone_green_is_rewritten_and_left_for_tidy_to_close(server) -> None:
     """Routing never closes: ``forge tidy`` (``green_areas``) closes by the same :func:`still_red`."""
     answer('GET', f'{_ROOT}/issues', (200, [_issue(11, 'area:jmag', '')]))
-    answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', _body(_record({_JMAG: 'failed'})))))
+    answer('GET', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', _body(_record({_JMAG: 'rejected'})))))
     answer('PATCH', f'{_ROOT}/issues/11', (200, _issue(11, 'area:jmag', '')))
-    routed = route(client(_FORGE, Loopback(server)), _record({_JMAG: 'passed'}), _AREAS)
+    routed = route(client(_FORGE, Loopback(server)), _record({_JMAG: 'ok'}), _AREAS)
     assert [r.action for r in routed] == ['updated']
     [(method, _path, sent)] = _writes()
     assert method == 'PATCH'
@@ -190,17 +205,19 @@ def test_an_area_gone_green_is_rewritten_and_left_for_tidy_to_close(server) -> N
 
 
 def test_an_open_area_the_record_has_no_row_in_still_loses_a_retired_parts_rows(server) -> None:
-    stale = 'Last routed: run `linux` at x.\n\n- [ ] `tests/unit/hamilton/coupling/test_c.py::test_c` (linux) failed\n'
+    stale = (
+        'Last routed: run `linux` at x.\n\n- [ ] `tests/unit/hamilton/coupling/test_c.py::test_c` (linux) rejected\n'
+    )
     answer('GET', f'{_ROOT}/issues', (200, [_issue(5, 'area:coupling', stale)]))
     answer('GET', f'{_ROOT}/issues/5', (200, _issue(5, 'area:coupling', stale)))
     answer('PATCH', f'{_ROOT}/issues/5', (200, _issue(5, 'area:coupling', '')))
-    routed = route(client(_FORGE, Loopback(server)), _record({_GREEN: 'passed'}), _AREAS)
+    routed = route(client(_FORGE, Loopback(server)), _record({_GREEN: 'ok'}), _AREAS)
     assert [(r.area, r.action) for r in routed] == [('coupling', 'updated')]
     assert not still_red(_writes()[0][2]['body'])
 
 
 def test_a_record_covering_no_test_routes_nothing(server) -> None:
-    record = _record({_JMAG: 'not-covered'}, handed={_JMAG: 'node'})
+    record = _record({}, handed={_JMAG: 'node'})
     assert route(client(_FORGE, Loopback(server)), record, _AREAS) == ()
     assert Recorder.received == []
 
@@ -211,7 +228,7 @@ def test_the_cli_reads_the_areas_at_the_records_commit(server, tmp_path: Path, m
     run_git(repo, 'add', 'pyproject.toml')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'areas')
     (repo / 'pyproject.toml').write_text('', encoding='utf-8')  # the working tree is NOT the declaration
-    record = _record({_JMAG: 'failed'}) | {'sha': git_out(repo, 'rev-parse', 'HEAD')}
+    record = _record({_JMAG: 'rejected'}) | {'sha': git_out(repo, 'rev-parse', 'HEAD')}
     path = write_record(record, tmp_path / 'records')
     answer('GET', f'{_ROOT}/issues', (200, []))
     answer('POST', f'{_ROOT}/issues', (201, _issue(11, 'area:jmag', '')))
@@ -222,7 +239,7 @@ def test_the_cli_reads_the_areas_at_the_records_commit(server, tmp_path: Path, m
 
 def test_the_cli_refuses_a_record_whose_commit_is_absent(tmp_path: Path) -> None:
     repo = make_repo(tmp_path, 'https://forge.example.org/o/r.git', branch='main')
-    path = write_record(_record({_JMAG: 'failed'}), tmp_path / 'records')
+    path = write_record(_record({_JMAG: 'rejected'}), tmp_path / 'records')
     assert main([str(path)], cwd=repo, env={'LAB_FORGE_TOKEN': 't'}) == 2
 
 
@@ -234,7 +251,7 @@ def test_the_open_issue_is_found_on_page_two_among_pulls_without_the_search_inde
     the same title is skipped, the issue sits on page 2 beside a newer duplicate and the OLDEST is kept.
     Every query but the plain listing answers ``[]`` -- a lagging search index must not matter.
     """
-    record = _record({_JMAG: 'failed'})
+    record = _record({_JMAG: 'rejected'})
     body = _body(record)
     answer('GET', f'{_ROOT}/issues', (200, []))
     pull = _issue(90, 'area:jmag', '') | {'pull_request': {'merged': False}}
@@ -273,7 +290,7 @@ def test_a_malformed_owner_is_refused_with_the_fix(bad: str) -> None:
 def test_a_created_area_issue_mentions_its_owners(server) -> None:
     answer('GET', f'{_ROOT}/issues', (200, []))
     answer('POST', f'{_ROOT}/issues', (201, _issue(11, 'area:jmag', '')))
-    route(client(_FORGE, Loopback(server)), _record({_JMAG: 'failed'}) | {'branch': 'lane/x'}, _AREAS + _OWNERS)
+    route(client(_FORGE, Loopback(server)), _record({_JMAG: 'rejected'}) | {'branch': 'lane/x'}, _AREAS + _OWNERS)
     created = [body for method, _path, body in _writes() if method == 'POST']
     assert created[0]['body'].rstrip().endswith('cc @alice @bob.k @carol')
 

@@ -45,7 +45,7 @@ from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgeschedule import load_schedule
-from lab_commons.dev.forgestatus import Status, status_list, status_post
+from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
 from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, PullRequest, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
@@ -53,6 +53,7 @@ from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
 from lab_commons.dev.trialmerge import contains, merged_at, rev, trial
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'tick', 'venues']
 
@@ -105,7 +106,7 @@ def alarms(said: Sequence[tuple[Child, Feedback]], policy: Policy, repo: str) ->
     return found
 
 
-def _line(statuses: Sequence[Status]) -> list[str]:
+def _line(statuses: Sequence[CommitStatus]) -> list[str]:
     return [
         f'  - `{s.context}` {s.state}: {s.description}' + (f' ([record]({s.url}))' if s.url else '')
         for s in statuses
@@ -129,9 +130,9 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
         state, verdict = 'success', f'merged into `{policy.integration}` at {merge}'
     elif not tried.clean:
         state, verdict = 'failure', f'deferred: conflicts with `{policy.integration}`'
-    elif result == 'FAIL':
+    elif result is Conclusion.FAIL:
         state, verdict = 'failure', 'deferred: a `tests/<part>` part FAILED'
-    elif result == 'PASS':
+    elif result is Conclusion.PASS:
         state, verdict = 'pending', 'ready: clean and every part PASS; waiting for the integrator to merge'
     else:
         state, verdict = 'pending', 'deferred: the `tests/<part>` parts are not settled yet'
@@ -149,7 +150,7 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
             f'- {verdict}',
             f'- behind `{policy.integration}` by {tried.behind}; {position}',
             f'- syncs from: {watched}',
-            f'- parts (standing {result or "unsettled"}):',
+            f'- parts (standing {result.name}):',
             *_line(statuses),
             f'- area issues: {", ".join(areas) if areas else "none cite this head"}',
             f'- {promoted}',

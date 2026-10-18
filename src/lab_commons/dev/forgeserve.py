@@ -167,7 +167,7 @@ def serve(
     supplied: Callable[..., Supply] = supply_now,
     present: Callable[[Path], Mapping[str, Presence]] = lambda here: refresh(declared_versions(here)),
     holding: Callable[[], Sequence[Holding]] = holdings,
-    retain: Callable[..., retention.Outcome | None] = retention.serve_pass,
+    retain: Callable[..., retention.Freed | None] = retention.serve_pass,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 

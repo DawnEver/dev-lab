@@ -15,7 +15,7 @@ from _forge_fake import git_out, make_repo, run_git
 
 from lab_commons.compute.model import Schedule
 from lab_commons.dev.forgealarm import INTEGRATION
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.integrator import (
     BLOCKED,
     MERGE,
@@ -40,9 +40,9 @@ def _ref(branch: str, tip: str, at: int = 0, *, absorbed: bool = False) -> LaneR
     return LaneRef(branch, tip, at, absorbed=absorbed)
 
 
-def _part(state: str = 'success', *, platform: str = 'base', scope: str = 'full', hands: str = '-') -> Status:
+def _part(state: str = 'success', *, platform: str = 'base', scope: str = 'full', hands: str = '-') -> CommitStatus:
     """A ``tests/<platform>`` part as the forge holds it -- the one name for a platform result."""
-    return Status(f'tests/{platform}', state, f'scope={scope} ran=3 hands={hands}', '')
+    return CommitStatus(f'tests/{platform}', state, f'scope={scope} ran=3 hands={hands}', '')
 
 
 _GREEN = (_part(),)
@@ -60,7 +60,7 @@ def test_a_lane_is_ready_only_when_its_parts_stand_pass() -> None:
 
 def test_a_retired_lab_namespace_status_is_not_a_platform_result() -> None:
     """PLANTED: a green ``lab``-namespace status carries no part, so the lane still waits."""
-    assert not lane_ready((Status('lab' + '/gate', 'success', 'PASS', ''),), head='a')
+    assert not lane_ready((CommitStatus('lab' + '/gate', 'success', 'PASS', ''),), head='a')
 
 
 def test_a_lane_is_ready_only_on_a_green_gate_at_its_exact_tip() -> None:
@@ -105,7 +105,9 @@ def test_ties_order_by_branch_name_so_two_modes_print_the_same_queue() -> None:
         ((_part(scope='incremental'),), PARTS_NEEDED),
     ],
 )
-def test_the_integration_tip_not_on_main_is_judged_by_its_full_parts(parts: tuple[Status, ...], state: str) -> None:
+def test_the_integration_tip_not_on_main_is_judged_by_its_full_parts(
+    parts: tuple[CommitStatus, ...], state: str
+) -> None:
     """The same reading push admission makes for the trunk: every part a PASS of scope full."""
     statuses = {'i': parts}
     queue = ready_lanes((_ref('integrate/main', 'i'),), statuses, _POLICY)
@@ -174,7 +176,7 @@ def test_the_poll_entry_prints_the_ordered_queue(tmp_path: Path, capsys: pytest.
     repo, tips = _repo(tmp_path)
     green = {tips['feat/out']: _GREEN}
 
-    def statuses(sha: str) -> tuple[Status, ...]:
+    def statuses(sha: str) -> tuple[CommitStatus, ...]:
         return green.get(sha, ())
 
     assert main(['queue', '--json'], cwd=repo, statuses=statuses) == 0

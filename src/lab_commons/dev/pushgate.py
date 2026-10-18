@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, NoCredential, UnreadableRemote
 from lab_commons.dev.forgeoutbox import unprompted_client
-from lab_commons.dev.forgestatus import Status, status_list
+from lab_commons.dev.forgestatus import CommitStatus, status_list
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.githooks.runner import parse_push_lines
 from lab_commons.dev.lanepolicy import Policy, load_policy
@@ -54,6 +54,7 @@ from lab_commons.dev.logref import MARKER
 from lab_commons.dev.platformparts import standing
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -126,7 +127,7 @@ def parse_verdict_line(text: str) -> CitedVerdict | None:
     return CitedVerdict(tree=last['tree'], env=last['env'], tier=tier, result=last['result'].upper(), line=line)
 
 
-def decide(destination: str, *, head: str, statuses: Callable[[], Sequence[Status]]) -> Decision:
+def decide(destination: str, *, head: str, statuses: Callable[[], Sequence[CommitStatus]]) -> Decision:
     """Decide a push to *destination* by the table in this module's docstring.
 
     *statuses* reads HEAD's latest status per context from the forge; it is called only for the trunk,
@@ -153,8 +154,8 @@ def decide(destination: str, *, head: str, statuses: Callable[[], Sequence[Statu
         )
     judged = standing(found, head=head, scope=TRUNK_SCOPE)
     cited = judged.cited()
-    if judged.result != 'PASS':
-        problems = judged.problems or tuple(f'{part.platform} is {part.result}' for part in judged.parts)
+    if judged.result is not Conclusion.PASS:
+        problems = judged.problems or tuple(f'{part.platform} is {part.result.name}' for part in judged.parts)
         return Decision(
             allowed=False,
             message='\n'.join(

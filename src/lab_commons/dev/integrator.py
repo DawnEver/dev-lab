@@ -43,12 +43,13 @@ from lab_commons.compute.model import Schedule
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
 from lab_commons.dev.forgeschedule import load_schedule
-from lab_commons.dev.forgestatus import Status, status_list
+from lab_commons.dev.forgestatus import CommitStatus, status_list
 from lab_commons.dev.forgework import client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import standing
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'BLOCKED',
@@ -108,26 +109,26 @@ class Queue:
     promotion: Queued | None
 
 
-def lane_ready(statuses: Sequence[Status], *, head: str) -> bool:
+def lane_ready(statuses: Sequence[CommitStatus], *, head: str) -> bool:
     """THE ready predicate on a lane tip -- ``forgeissue`` derives ``ready`` from this same call."""
-    return standing(statuses, head=head).result == 'PASS'
+    return standing(statuses, head=head).result is Conclusion.PASS
 
 
-def _lane_state(statuses: Sequence[Status], head: str) -> str:
+def _lane_state(statuses: Sequence[CommitStatus], head: str) -> str:
     result = standing(statuses, head=head).result
-    if result == 'PASS':
+    if result is Conclusion.PASS:
         return MERGE
-    return BLOCKED if result == 'FAIL' else WAITING
+    return BLOCKED if result is Conclusion.FAIL else WAITING
 
 
-def _promotion_state(statuses: Sequence[Status], head: str) -> str:
+def _promotion_state(statuses: Sequence[CommitStatus], head: str) -> str:
     result = standing(statuses, head=head, scope=FULL).result
-    if result == 'PASS':
+    if result is Conclusion.PASS:
         return PROMOTE
-    return BLOCKED if result == 'FAIL' else PARTS_NEEDED
+    return BLOCKED if result is Conclusion.FAIL else PARTS_NEEDED
 
 
-def ready_lanes(refs: Sequence[LaneRef], statuses: Mapping[str, Sequence[Status]], policy: Policy) -> Queue:
+def ready_lanes(refs: Sequence[LaneRef], statuses: Mapping[str, Sequence[CommitStatus]], policy: Policy) -> Queue:
     """The queue, as a pure function of the refs and the latest statuses per tip sha."""
     lanes = sorted(
         (ref for ref in refs if ref.branch not in {policy.integration, policy.trunk} and not ref.absorbed),
@@ -186,7 +187,7 @@ def read_refs(root: Path, policy: Policy, schedule: Schedule) -> tuple[LaneRef, 
     return tuple(found)
 
 
-def derive(root: Path, policy: Policy, schedule: Schedule, statuses: Callable[[str], Sequence[Status]]) -> Queue:
+def derive(root: Path, policy: Policy, schedule: Schedule, statuses: Callable[[str], Sequence[CommitStatus]]) -> Queue:
     """The queue of *root* as last fetched: :func:`read_refs`, each live tip's *statuses*, :func:`ready_lanes`."""
     refs = read_refs(root, policy, schedule)
     return ready_lanes(refs, {ref.tip: tuple(statuses(ref.tip)) for ref in refs if not ref.absorbed}, policy)
@@ -215,7 +216,7 @@ def prompts(queue: Queue, repo: str) -> list[Alarm]:
     ]
 
 
-def observe(root: Path, repo: str, *, statuses: Callable[[str], Sequence[Status]]) -> list[Alarm]:
+def observe(root: Path, repo: str, *, statuses: Callable[[str], Sequence[CommitStatus]]) -> list[Alarm]:
     """The prompts for *root*'s queue, derived by any host; the forge keeps one issue per row."""
     return prompts(derive(root, load_policy(root), load_schedule(root), statuses), repo)
 
@@ -229,7 +230,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     cwd: Path | None = None,
-    statuses: Callable[[str], Sequence[Status]] | None = None,
+    statuses: Callable[[str], Sequence[CommitStatus]] | None = None,
 ) -> int:
     """``python -m lab_commons.dev.integrator queue [--json]``: the ordered queue, after the caller's fetch."""
     parser = argparse.ArgumentParser(prog='lab_commons.dev.integrator', description='the derived merge queue')
@@ -241,7 +242,7 @@ def main(
     if statuses is None:
         client = client_for(root)
 
-        def statuses(sha: str) -> Sequence[Status]:
+        def statuses(sha: str) -> Sequence[CommitStatus]:
             return status_list(client, sha)
 
     queue = derive(root, policy, load_schedule(root), statuses)

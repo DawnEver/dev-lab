@@ -58,7 +58,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, Capacity, Demand, Outcome, Refused, command, not_admitted, read_ended
+from lab_commons.box import GB, Capacity, Demand, ProcessEnd, Refused, command, not_admitted, read_ended
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
@@ -68,7 +68,7 @@ from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgeintent import Intent, forget, journal
 from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
-from lab_commons.dev.forgestatus import Status, status_history, status_post
+from lab_commons.dev.forgestatus import CommitStatus, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
@@ -279,7 +279,7 @@ def _run(
     boxed_out = box_release_reason(ended)  # the box's decision, from its record: never from the exit code
     measured = _measured(ended, usage, declared_gb, max(1.0, (clock() - started).total_seconds()))
     if measured is not None and not stopped:
-        oom = isinstance(ended, Outcome) and ended.reason == 'memory'
+        oom = isinstance(ended, ProcessEnd) and ended.reason == 'memory'
         learn(root, item, measured, killed=oom or returncode < 0)
     posts = [status for status in status_history(client(root), item.sha) if status.context == context]
     if context.startswith(CONTEXT_PREFIX) and posts and posts[-1].state == 'pending':
@@ -299,14 +299,14 @@ def _run(
     return Produced(item.ref, item.sha, item.platform, argv, returncode, stopped=stopped)
 
 
-def _measured(ended: Outcome | object, usage: _Usage, declared_gb: float, wall_s: float) -> Run | None:
+def _measured(ended: ProcessEnd | object, usage: _Usage, declared_gb: float, wall_s: float) -> Run | None:
     """What one box run measured: the box's record when it measured anything, else serve's samples, else ``None``.
 
     The record's peak is the enforcer's (the metric the limit holds); a memory kill died AT *declared_gb*, so
     that is its floor whatever peak the record reads. Serve's samples are resident memory read between wakes:
     the fallback for a run the box left no measurement of.
     """
-    if isinstance(ended, Outcome) and (ended.peak_mem_bytes > 0 or ended.reason == 'memory'):
+    if isinstance(ended, ProcessEnd) and (ended.peak_mem_bytes > 0 or ended.reason == 'memory'):
         peak = ended.peak_mem_bytes / GB
         floor = max(peak, declared_gb) if ended.reason == 'memory' else peak
         return Run(floor, max(ended.cpu_s, usage.cpu_s), max(1.0, ended.wall_s, wall_s))
@@ -341,7 +341,7 @@ def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], No
     _post(client, item, 'pending', renewed.description(), say)
 
 
-def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callable[[str], None]) -> None:
+def _carry(root: Path, client: Client, item: Work, verdict: CommitStatus, say: Callable[[str], None]) -> None:
     """Post *verdict* -- the part judged at the item's sha -- also on the ref's tip when it is reach-equivalent."""
     target = carry_target(root, client, ref=item.ref, sha=item.sha, platform=item.platform)
     part = parts_of([verdict])[0].get(item.platform)
