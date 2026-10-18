@@ -21,3 +21,5 @@ created: 2026-10-17
   serve itself, owed by every repo, so it is the deploy's own phase, like `uv`.
 - Not yet redeployed on Ada: re-run the deploy there; the marked cron lines should start
   `PATH=<module git dir>:...`.
+- SUPERSEDED same day (the PATH lead only): a module's git does not run outside its module (`libiconv.so.2`);
+  the tick now runs inside the grant setup -- `the-serve-tick-runs-inside-the-grant-setup.md`.
