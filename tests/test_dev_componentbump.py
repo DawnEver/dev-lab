@@ -34,7 +34,7 @@ from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import Part
 
 NUM = Component('numerics-lab', 'https://f/o/numerics-lab.git', 'main', ('base', 'linux'))
-OPT = Component('optimi-lab', 'https://f/o/optimi-lab.git', 'main', ('base',))
+OPT = Component('solver-lab', 'https://f/o/solver-lab.git', 'main', ('base',))
 OLD, NEW = 'a' * 40, 'b' * 40
 
 
@@ -198,7 +198,7 @@ def test_the_git_product_opens_reads_and_deletes_the_one_lane(tmp_path: Path) ->
     assert git_out(clone, 'rev-parse', f'{lane.tip}^1') == base, 'one commit on the integration tip'
     assert product.pointer(NUM.path) == OLD, 'the integration branch is untouched until the integrator merges'
 
-    assert not product.open_lane(OPT.path, NEW, 'chore(deps): bump optimi-lab'), 'the lane exists: RACED'
+    assert not product.open_lane(OPT.path, NEW, 'chore(deps): bump solver-lab'), 'the lane exists: RACED'
     product.close_lane(lane.tip)
     run_git(clone, 'fetch', '-q', '--prune', 'origin')
     assert product.lane() is None
@@ -209,7 +209,7 @@ def test_a_raced_open_is_reported_as_raced(tmp_path: Path) -> None:
     product = GitProduct(clone, client=CLIENT, integration='integrate/main')
     other = GitProduct(clone, client=CLIENT, integration='integrate/main')
     assert other.open_lane(NUM.path, NEW, 'chore(deps): bump numerics-lab')
-    engines = FakeEngines({'numerics-lab': NEW, 'optimi-lab': NEW}, {'numerics-lab': GREEN, 'optimi-lab': GREEN})
+    engines = FakeEngines({'numerics-lab': NEW, 'solver-lab': NEW}, {'numerics-lab': GREEN, 'solver-lab': GREEN})
 
     class Stale(GitProduct):
         reads = 0
@@ -250,7 +250,7 @@ def test_a_red_bump_keeps_the_last_green_pointer_and_opens_exactly_one_issue() -
 def test_concurrent_bumps_are_serialised_through_the_one_lane() -> None:
     """Two engines green at once: one lane; the second opens only after the first has landed."""
     product = FakeProduct({NUM.path: OLD, OPT.path: OLD})
-    engines = FakeEngines({'numerics-lab': NEW, 'optimi-lab': NEW}, {'numerics-lab': GREEN, 'optimi-lab': GREEN})
+    engines = FakeEngines({'numerics-lab': NEW, 'solver-lab': NEW}, {'numerics-lab': GREEN, 'solver-lab': GREEN})
     first = tick((NUM, OPT), product, engines)
     assert (first.action, first.component) == (OPENED, 'numerics-lab')
     product.lane_statuses = (part('base', 'PASS'), part('linux', 'PASS'))
@@ -262,14 +262,14 @@ def test_concurrent_bumps_are_serialised_through_the_one_lane() -> None:
     product.pointers[NUM.path] = NEW
     assert tick((NUM, OPT), product, engines).action == LANDED
     second = tick((NUM, OPT), product, engines)
-    assert (second.action, second.component) == (OPENED, 'optimi-lab')
+    assert (second.action, second.component) == (OPENED, 'solver-lab')
     assert product.opened == [(NUM.path, NEW), (OPT.path, NEW)]
 
 
 def test_the_planted_second_host_loses_the_race_for_the_lane() -> None:
     """THE CONTROL for the serialisation: a second host whose read missed the lane is refused by its creation."""
     product = FakeProduct({NUM.path: OLD, OPT.path: OLD})
-    engines = FakeEngines({'numerics-lab': NEW, 'optimi-lab': NEW}, {'numerics-lab': GREEN, 'optimi-lab': GREEN})
+    engines = FakeEngines({'numerics-lab': NEW, 'solver-lab': NEW}, {'numerics-lab': GREEN, 'solver-lab': GREEN})
     assert tick((NUM,), product, engines).action == OPENED
 
     class Blind(FakeProduct):

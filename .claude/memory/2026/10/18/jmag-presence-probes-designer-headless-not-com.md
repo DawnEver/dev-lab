@@ -1,4 +1,6 @@
 ---
+name: jmag-presence-probes-designer-headless-not-com
+description: the jmag presence smoke imported win32com in the lab-commons venv (no pywin32), so jmag was always absent; it now runs a generated script inside designer.exe -w (headless) and reads back the version it writes
 created: 2026-10-18
 accessed: 2026-10-18
 ---
