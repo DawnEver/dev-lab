@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import shutil
 import subprocess
 import sys
 from dataclasses import replace
@@ -25,6 +24,7 @@ from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev.envkey import env_key
 from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.githooks import bash_executable
 from lab_commons.dev.platformparts import part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
@@ -147,8 +147,7 @@ def test_streams_are_read_where_retention_kept_them_once_the_tree_is_gone(tmp_pa
     (packed / '0.ids.json').write_text('["t::a"]', encoding='utf-8')  # the job's input: never read back
     Path(kept).parent.mkdir(parents=True)
     Path(kept).write_text(pack_streams(packed), encoding='utf-8')
-    bash = shutil.which('bash')
-    assert bash, 'the reader is a POSIX shell command'
+    bash = bash_executable()  # PATH first, then git's own: a forge producer's PATH carries no bash
 
     def run(command: str, _stdin: str | None) -> str:
         done = subprocess.run([bash, '-c', command], capture_output=True, text=True, encoding='utf-8', check=True)

@@ -47,10 +47,23 @@ def _read(start: Callable[..., Any]) -> int:
 
 
 def test_a_producer_child_reads_below_normal_priority_from_the_os() -> None:
-    """THE CHECK, with its planted control: the plain child is normal, the producer child is below it."""
+    """THE CHECK, with its planted control: the plain child reads its parent's class, the producer child below.
+
+    The forge producer that runs this very test is itself below normal, and a child inherits that -- so on
+    Windows the test first raises ITSELF to normal (allowed unprivileged) and restores it after; otherwise
+    the control and the check would read the same class and the check could not fail.
+    """
     if sys.platform == 'win32':
-        assert _read(subprocess.Popen) == _NORMAL_PRIORITY_CLASS
-        assert _read(lambda argv, **kw: below_normal(subprocess.Popen, argv, **kw)) == _BELOW_NORMAL_PRIORITY_CLASS
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        me = ctypes.c_void_p(kernel32.GetCurrentProcess())
+        was = kernel32.GetPriorityClass(me)
+        assert kernel32.SetPriorityClass(me, _NORMAL_PRIORITY_CLASS), ctypes.get_last_error()
+        try:
+            assert _read(subprocess.Popen) == _NORMAL_PRIORITY_CLASS
+            assert _read(lambda argv, **kw: below_normal(subprocess.Popen, argv, **kw)) == _BELOW_NORMAL_PRIORITY_CLASS
+        finally:
+            kernel32.SetPriorityClass(me, was)
     else:
         own = os.getpriority(os.PRIO_PROCESS, 0)
         assert _read(subprocess.Popen) == own
