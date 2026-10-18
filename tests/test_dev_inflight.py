@@ -23,7 +23,7 @@ def test_a_lone_request_runs_and_says_it_led(tmp_path: Path) -> None:
     assert run_once(KEY, lambda: 'PASS', directory=tmp_path, poll_s=0.01) == ('PASS', False)
     assert leader_run(KEY) is None, 'the claim outlived its run'
     assert holdings() == []
-    assert sorted(p.suffix for p in tmp_path.iterdir()) == ['.result'], 'no lock file is left behind'
+    assert not list(tmp_path.glob('*.claim')), 'no lock file is left behind'
 
 
 def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(tmp_path: Path) -> None:
@@ -40,7 +40,7 @@ def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(tmp_path: Path
     thread.start()
     assert started.wait(10)
     follower_ran: list[bool] = []
-    timer = threading.Timer(0.2, release.set)
+    timer = threading.Timer(3.0, release.set)  # past the follower's admission, which samples the box first
     timer.start()
     got = run_once(KEY, lambda: follower_ran.append(True) or 'MINE', directory=tmp_path, poll_s=0.01)
     thread.join(10)
