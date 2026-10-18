@@ -38,10 +38,10 @@ import pytest
 from _box_fake import ended
 
 from lab_commons import box
-from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
+from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.dev import localpart, platformparts, verify, verifybox
-from lab_commons.dev.inflight import claim_path
+from lab_commons.dev.inflight import seat
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.platformparts import part_context, part_of
 from lab_commons.dev.producer import PRODUCING_VAR, ProducerExit, producing
@@ -950,10 +950,10 @@ def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeyp
     monkeypatch.setattr(verify, 'cache_path', lambda _root: tmp_path / 'runs.jsonl')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('the duplicate ran the suite'))
     key = verify.run_key(root, ('tests/a.py',))
-    claim_path(box, key).write_text(json.dumps({'pid': os.getpid(), 'run': 'r1'}), encoding='utf-8')
     answer = {'code': EXIT_CODES[Outcome.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
     (box / f'{key.digest()}.r1.result').write_text(json.dumps(answer), encoding='utf-8')
-    assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+    with hold(Demand(0, 0, 60, {seat(key): 1}), 'leader', 1, key=f'{seat(key)}:r1'):
+        assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
 
 
 def test_the_run_key_is_the_tree_the_env_and_the_selection(tmp_path: Path) -> None:

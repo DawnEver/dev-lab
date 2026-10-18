@@ -7,15 +7,13 @@ real directory, with a real thread as the leader, because the property is about 
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 import threading
 from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.inflight import RunKey, claim_path, run_once
+from lab_commons.box import Demand, hold, holdings
+from lab_commons.dev.inflight import RunKey, leader_run, run_once, seat
 
 KEY = RunKey(tree='t1', env='e1', selector='verify tests/a.py')
 
@@ -23,7 +21,9 @@ KEY = RunKey(tree='t1', env='e1', selector='verify tests/a.py')
 def test_a_lone_request_runs_and_says_it_led(tmp_path: Path) -> None:
     """No one in flight: the caller runs, and the answer says it was not attached."""
     assert run_once(KEY, lambda: 'PASS', directory=tmp_path, poll_s=0.01) == ('PASS', False)
-    assert not claim_path(tmp_path, KEY).exists(), 'the claim outlived its run'
+    assert leader_run(KEY) is None, 'the claim outlived its run'
+    assert holdings() == []
+    assert sorted(p.suffix for p in tmp_path.iterdir()) == ['.result'], 'no lock file is left behind'
 
 
 def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(tmp_path: Path) -> None:
@@ -52,15 +52,14 @@ def test_a_duplicate_attaches_to_the_run_in_flight_and_never_runs(tmp_path: Path
 def test_a_different_key_does_not_attach(tmp_path: Path) -> None:
     """PLANTED CONTROL: a live claim on ANOTHER key leaves this request to run on its own."""
     other = RunKey(tree='t2', env='e1', selector=KEY.selector)
-    claim_path(tmp_path, other).write_text(json.dumps({'pid': 0, 'run': 'x'}), encoding='utf-8')
-    assert run_once(KEY, lambda: 'PASS', directory=tmp_path, poll_s=0.01) == ('PASS', False)
+    with hold(Demand(0, 0, 60, {seat(other): 1}), 'other', 1, key=f'{seat(other)}:x'):
+        assert run_once(KEY, lambda: 'PASS', directory=tmp_path, poll_s=0.01) == ('PASS', False)
 
 
-def test_a_claim_whose_leader_died_is_taken_over(tmp_path: Path) -> None:
-    """A crashed leader leaves a claim; a dead pid is not a run anyone can attach to."""
-    dead = subprocess.Popen([sys.executable, '-c', 'pass'])
-    dead.wait()
-    claim_path(tmp_path, KEY).write_text(json.dumps({'pid': dead.pid, 'run': 'gone'}), encoding='utf-8')
+def test_a_leader_that_left_without_an_answer_is_taken_over(tmp_path: Path) -> None:
+    """A leader gone with no result (a crash the ledger reaped, or a raise) is not a run anyone attaches to."""
+    with hold(Demand(0, 0, 60, {seat(KEY): 1}), 'leader', 1, key=f'{seat(KEY)}:gone'):
+        assert leader_run(KEY) == 'gone'
     assert run_once(KEY, lambda: 'PASS', directory=tmp_path, poll_s=0.01) == ('PASS', False)
 
 
@@ -73,7 +72,7 @@ def test_a_leader_that_raises_releases_its_claim(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match='boom'):
         run_once(KEY, boom, directory=tmp_path, poll_s=0.01)
-    assert not claim_path(tmp_path, KEY).exists()
+    assert leader_run(KEY) is None
 
 
 def test_the_key_digest_separates_every_field() -> None:

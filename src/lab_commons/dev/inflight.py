@@ -5,17 +5,17 @@ SAME key, re-launched about twice a minute by agents polling a box held by one g
 paid a process start and a tree hash and learned nothing. A queue alone turns those 95 into 95
 queued runs of the same suite; this module turns them into one run and 94 readers of its answer.
 
-THE MECHANISM, and why it is a file and not a lock. The first caller CLAIMS the key by creating
-``<digest>.claim`` exclusively (``O_CREAT|O_EXCL``, atomic on every platform this family runs on),
-naming its pid and a run id. A later caller with the same key finds the claim and WAITS for the
-leader's ``<digest>.<run>.result``; it never runs. The leader writes the result atomically and then
-releases the claim. A claim whose pid is dead is a crashed leader: it is removed and the key is
-claimed afresh, so a crash never leaves a queue waiting forever. A leader that RAISES releases its
-claim and writes no result, and its followers take the key over in turn -- nothing was measured,
-so there is nothing to share.
+THE CLAIM IS A SEAT ON THE ONE BOX LEDGER (:mod:`lab_commons.box`; one concurrency mechanism, user ruling
+2026-10-18). The first caller holds the seat :func:`seat` of the key -- declared nowhere, so the ledger
+counts it 1 -- under the ledger key ``<seat>:<run>``. A later caller is refused that seat at once, reads
+the leader's run id off its :class:`~lab_commons.box.Holding`, and WAITS for the leader's
+``<digest>.<run>.result``; it never runs. The leader writes the result atomically and then releases the
+seat. A crashed leader is reaped by the ledger (pid and creation stamp), so a crash never leaves a queue
+waiting forever and no lock file is ever left behind. A leader that RAISES releases its seat and writes
+no result, and its followers take the key over in turn -- nothing was measured, so nothing is shared.
 
-THE DIRECTORY IS BOX-WIDE, NOT PER REPO: the caller passes the broker's resource directory,
-outside every repository, because two worktrees whose trees hash alike ARE the same request.
+THE RESULT DIRECTORY IS BOX-WIDE, NOT PER REPO: beside the ledger, outside every repository, because two
+worktrees whose trees hash alike ARE the same request.
 
 WHAT THE RESULT IS, is the caller's: an opaque string (a verify run serialises its verdict line, its
 rendering and its exit code). This module only moves it from one leader to many readers.
@@ -26,24 +26,25 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import os
 import time
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.box import box_path
-from lab_commons.proc import pid_alive
+from lab_commons.box import Demand, Refused, box_path, hold, holdings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-__all__ = ['RESULT_TTL_S', 'RunKey', 'box_directory', 'claim_path', 'run_once']
+__all__ = ['RESULT_TTL_S', 'RUN_WALL_S', 'RunKey', 'box_directory', 'leader_run', 'run_once', 'seat']
 
 #: How long a published result is kept for a late reader before it is pruned, in seconds. A reader
-#: only ever waits for the run id it saw in a live claim, so this bounds disk, not correctness.
+#: only ever waits for the run id it saw on a live claim, so this bounds disk, not correctness.
 RESULT_TTL_S: Final = 24 * 3600.0
+
+#: The wall a leader's seat declares: the run is bounded by its own budget, this only ends the seat.
+RUN_WALL_S: Final = 24 * 3600
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,35 +62,23 @@ class RunKey:
 
 
 def box_directory() -> Path:
-    """The box-wide claim directory: beside the broker's records, outside every repository."""
+    """The box-wide result directory: beside the ledger, outside every repository."""
     return box_path().parent / 'inflight'
 
 
-def claim_path(directory: Path, key: RunKey) -> Path:
-    """Where the claim on *key* lives inside *directory*."""
-    return directory / f'{key.digest()}.claim'
+def seat(key: RunKey) -> str:
+    """The ledger seat one run of *key* holds."""
+    return f'inflight:{key.digest()}'
+
+
+def leader_run(key: RunKey) -> str | None:
+    """The run id of the LIVE leader of *key* on the ledger, else ``None``."""
+    name = seat(key)
+    return next((one.key.rsplit(':', 1)[1] for one in holdings() if one.seats.get(name)), None)
 
 
 def _result_path(directory: Path, key: RunKey, run: str) -> Path:
     return directory / f'{key.digest()}.{run}.result'
-
-
-def _read_claim(path: Path) -> dict[str, object] | None:
-    try:
-        payload = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _try_claim(path: Path, run: str) -> bool:
-    try:
-        handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        return False
-    with os.fdopen(handle, 'w', encoding='utf-8') as out:
-        out.write(json.dumps({'pid': os.getpid(), 'run': run}))
-    return True
 
 
 def _prune(directory: Path, now: float) -> None:
@@ -99,18 +88,11 @@ def _prune(directory: Path, now: float) -> None:
                 stale.unlink()
 
 
-def _lead(directory: Path, key: RunKey, run: str, work: Callable[[], str]) -> str:
-    claim = claim_path(directory, key)
-    try:
-        answer = work()
-        target = _result_path(directory, key, run)
-        temporary = target.with_suffix('.tmp')
-        temporary.write_text(answer, encoding='utf-8')
-        temporary.replace(target)
-    finally:
-        with contextlib.suppress(OSError):
-            claim.unlink()
-    return answer
+def _publish(directory: Path, key: RunKey, run: str, answer: str) -> None:
+    target = _result_path(directory, key, run)
+    temporary = target.with_suffix('.tmp')
+    temporary.write_text(answer, encoding='utf-8')
+    temporary.replace(target)
 
 
 def run_once(key: RunKey, work: Callable[[], str], *, directory: Path, poll_s: float) -> tuple[str, bool]:
@@ -123,34 +105,34 @@ def run_once(key: RunKey, work: Callable[[], str], *, directory: Path, poll_s: f
     """
     directory.mkdir(parents=True, exist_ok=True)
     _prune(directory, time.time())
-    claim = claim_path(directory, key)
+    name = seat(key)
     while True:
         mine = uuid.uuid4().hex[:12]
-        if _try_claim(claim, mine):
-            return _lead(directory, key, mine, work), False
-        held = _read_claim(claim)
-        if held is None:
-            time.sleep(poll_s)  # the claim is being written, or was just released
+        held = hold(Demand(cpu=0, mem_gb=0, wall_s=RUN_WALL_S, seats={name: 1}), name, 0.0, key=f'{name}:{mine}')
+        try:
+            held.__enter__()
+        except Refused:
+            theirs = leader_run(key)
+            answer = None if theirs is None else _wait_for(directory, key, theirs, poll_s=poll_s)
+            if answer is not None:
+                return answer, True
+            time.sleep(poll_s)  # the leader left without an answer: take the key over
             continue
-        leader, theirs = held.get('pid'), str(held.get('run', ''))
-        if not isinstance(leader, int) or not pid_alive(leader):
-            with contextlib.suppress(OSError):
-                if _read_claim(claim) == held:
-                    claim.unlink()
-            continue
-        answer = _wait_for(directory, key, theirs, leader, poll_s=poll_s)
-        if answer is not None:
-            return answer, True
+        try:
+            answer = work()
+            _publish(directory, key, mine, answer)
+        finally:
+            held.__exit__(None, None, None)
+        return answer, False
 
 
-def _wait_for(directory: Path, key: RunKey, run: str, leader: int, *, poll_s: float) -> str | None:
-    """The leader's answer, or ``None`` when it released the claim (or died) without one."""
-    result, claim = _result_path(directory, key, run), claim_path(directory, key)
+def _wait_for(directory: Path, key: RunKey, run: str, *, poll_s: float) -> str | None:
+    """The leader's answer, or ``None`` when it released its seat (or died) without one."""
+    result = _result_path(directory, key, run)
     while True:
         with contextlib.suppress(OSError):
             return result.read_text(encoding='utf-8')
-        held = _read_claim(claim)
-        if held is None or str(held.get('run', '')) != run or not pid_alive(leader):
+        if leader_run(key) != run:
             with contextlib.suppress(OSError):
                 return result.read_text(encoding='utf-8')
             return None
