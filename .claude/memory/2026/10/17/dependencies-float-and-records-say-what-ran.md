@@ -7,7 +7,7 @@ created: 2026-10-17
 
 ## Ruling
 User, 2026-10-17, repeating 2026-10-15: "lab-commons should not lock versions either! Dependencies should
-not be locked unless necessary." This supersedes D8/D20 (motronics-studio
+not be locked unless necessary." This supersedes D8/D20 (<consumer>
 `.claude/memory/2026/10/16/DECISION-distributed-compute-final-architecture.md`, merged here as `c97ddf8`).
 
 ## What changed (lane/unpin)

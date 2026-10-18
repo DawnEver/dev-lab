@@ -1,11 +1,11 @@
 ---
 name: box-claim-identity-and-measured-seats
-description: the two ledger primitives motronics needed to delete its slot store -- a holding's identity (id/key/probe, offline release, exclusive external key) and seats measured by a supply probe
+description: the two ledger primitives <consumer> needed to delete its slot store -- a holding's identity (id/key/probe, offline release, exclusive external key) and seats measured by a supply probe
 created: 2026-10-17
 ---
 # Box: claim identity and measured seats (2026-10-17)
 
-Asked by motronics (PLAN-motronics-onto-the-one-box-ledger, BLOCKED on external-claim lookup).
+Asked by <consumer> (PLAN-<consumer>-onto-the-one-box-ledger, BLOCKED on external-claim lookup).
 
 ## What landed (lane/ledger-identity)
 

@@ -6,11 +6,11 @@ accessed: 2026-10-18
 
 ## Defect
 
-motronics Lane 11, host G (this Windows box, JMAG 25.2.01zp): the jmag smoke ran
+<consumer> Lane 11, host G (this Windows box, JMAG 25.2.01zp): the jmag smoke ran
 `import win32com.client; Dispatch('scheduler.JobApplication')` in `sys.executable` -- the lab-commons
 venv, which declares no `pywin32`. `ModuleNotFoundError: win32com` -> smoke FAILED -> `Engine.vendor('jmag',
 cached())` raised EngineAbsent, so `--where` could never choose jmag. The probe tested OUR interpreter,
-not the tool, and a route (COM Scheduler) the work no longer uses (motronics runs JMAG as a file bundle).
+not the tool, and a route (COM Scheduler) the work no longer uses (<consumer> runs JMAG as a file bundle).
 
 ## Fix (`compute/toolchecks.py`)
 

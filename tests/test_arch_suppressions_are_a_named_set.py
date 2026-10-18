@@ -102,6 +102,15 @@ ALLOWED: Final[dict[Site, str]] = {
     'fails BY NAME with what it raised, and only its dependants stop; propagating it would cost every '
     'independent unit of the graph its run for one bad one',
     (
+        'src/lab_commons/compute/execute.py',
+        'BLE001',
+        'except BaseException as stopped:',
+    ): 'a TRANSPORT, not a swallow: a unit runs on a daemon worker thread, and whatever escapes it -- '
+    'an executor defect, an interrupt delivered there -- must reach run(), which re-raises it in the '
+    'caller. A narrower catch would let the thread die silently and leave run() waiting forever on a '
+    'unit that never reports. A pool future would carry it without a catch, but pool threads are '
+    'joined at interpreter exit, so one hung foreign entry would block exit; a daemon thread does not',
+    (
         'src/lab_commons/dev/forgerequest.py',
         'PLC0415',
         'from lab_commons.dev.forgeunit import unit_request',

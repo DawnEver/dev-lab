@@ -5,7 +5,7 @@ created: 2026-10-17
 ---
 # A serve tick is bounded; the hour was the carry (2026-10-17)
 
-- Symptom (Ada, ezxmw9@hpclogin01 and ezxmb14@hpclogin02, motronics-studio): `flock -n ... forge serve`
+- Symptom (Ada, ezxmw9@hpclogin01 and <user-b>@hpclogin02, <consumer>): `flock -n ... forge serve`
   alive, one tick running more than 1 h, `forge queue` showing the host STALE, and every later cron start skipped.
 - Measured. Log lines have no timestamps, so the times come from forge status `created_at`, file mtimes and `/proc`:
   - gather, route and post were NOT the bulk. On 38258ea7583b, 'publishing' was posted at 11:40:31Z and the
