@@ -137,7 +137,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
   `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
   with unchanged inputs builds nothing. The committed `uv.lock` is an input, so its hash keys the venv.
-- Everything lives under `~/ci/` in the account's home: `cache.git`, `envs/<key>`, `native/<key>`,
+- Everything lives under `~/ci/` in the account's home: `cache/<owner>-<name>-<hash8>.git` (one bare cache per repository, `origin` its URL, heads fetched with `--prune`), `envs/<key>`, `native/<key>`,
   `trees/<sha>`, `runs/<sha>`, `collect/`, `uv-cache`, `cargo-target`. A day-to-day checkout is never touched.
 - **Collection is cached per test file** (`lab_commons.hpc.collect`); only files with no entry are collected.
 - **A failed build stops the run** with the tail of `~/ci/trees/<sha>/.lab-ci/build.log`; prerequisites
