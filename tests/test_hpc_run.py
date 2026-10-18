@@ -1397,7 +1397,9 @@ def test_the_build_facts_report_the_key_and_the_resolved_list_of_one_reading() -
     PLANTED CONTROL: the key recomputed over the reported list is the reported key.
     """
     assert '"' not in shell._ENV_FACTS, 'it runs inside python -c "..."'
-    out = subprocess.run([sys.executable, '-c', shell._ENV_FACTS], capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        [sys.executable, '-c', shell._ENV_FACTS], capture_output=True, text=True, encoding='utf-8', check=True
+    ).stdout
     told = shell.facts('@@@ facts\nenv=' + out)
     resolved = json.loads(told['resolved'])
     assert told['env'] == env_key(resolved)
