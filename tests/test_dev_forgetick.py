@@ -31,6 +31,7 @@ from lab_commons.compute.model import (
     Supply,
 )
 from lab_commons.compute.priority import Priority
+from lab_commons.compute.serves import SKIPPED_HERE, Serves
 from lab_commons.dev import forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
@@ -1021,3 +1022,27 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB), settled]))
     assert new in {w.sha for w in _tick(repo, server, dry_run=True).pending}, 'planted control: claimable is pending'
+
+
+@pytest.mark.parametrize(
+    ('declared', 'claimed'),
+    [({'parts': 'needs-a-resource'}, False), ({}, True)],  # PLANTED CONTROL: undeclared claims base as today
+    ids=['restricted-skips-base', 'unrestricted-claims-base'],
+)
+def test_a_host_serving_only_resource_parts_leaves_base_to_the_others(
+    server,
+    tmp_path: Path,
+    declared: dict,
+    claimed: bool,  # noqa: FBT001 -- a parametrized case
+) -> None:
+    """User ruling 2026-10-18: G produces only what needs it; ``base`` any host produces waits for one, named."""
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server, serves=Serves.of(declared), demand=lambda *_: Demand(cpu=1))
+    assert bool(report.claimed) is claimed
+    if not claimed:
+        assert report.queue[0].blocked.startswith(SKIPPED_HERE)
+        assert 'needs-a-resource' in report.queue[0].blocked

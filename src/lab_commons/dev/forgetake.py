@@ -21,6 +21,7 @@ from pathlib import Path
 
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
+from lab_commons.compute.serves import Serves
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
 from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgerequest import (
@@ -73,6 +74,7 @@ class ClaimPass:
     trunks: tuple[str, ...] = ()  # origin refs whose code runs for any requester (X1)
     authors: frozenset[str] = frozenset()  # whose requests run here at any served sha (X1)
     reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
+    serves: Serves = dataclasses.field(default_factory=Serves)  # [serve] parts: a skipped part waits for another host
 
     def consider(self, item: Ranked) -> None:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
@@ -98,7 +100,8 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
-            if not held(blocked) and wanted.key not in self.unservable and self._servable(wanted):
+            skipped = wanted.kind != REQUEST and self.serves.skips(needs_of(wanted.platform))
+            if not held(blocked) and not skipped and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
 
     def _servable(self, wanted: Candidate) -> bool:
@@ -183,7 +186,8 @@ class ClaimPass:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
         why = (
-            behind(self.root, wanted, self.schedule, self.history, self.now)
+            (self.serves.skips(needed) if wanted.kind != REQUEST else '')
+            or behind(self.root, wanted, self.schedule, self.history, self.now)
             or over_budget(self.root, wanted, self.schedule, self.usage)
             or self._admission(wanted, needed)
         )
