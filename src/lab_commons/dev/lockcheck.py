@@ -125,6 +125,13 @@ def _tree_at(root: Path, sha: str) -> Iterator[Path]:
     if code != 0:
         msg = f'cannot check out {sha[:12]} to resolve it'
         raise OSError(msg)
+    # A path dependency may point into a submodule (a product's engine crate, plan C5): the tree resolved
+    # must hold it, or the build backend fails on a path that a checkout would have.
+    code, _ = _git(tree, 'submodule', 'update', '--init', '--recursive')
+    if code != 0:
+        _git(root, 'worktree', 'remove', '--force', str(tree))
+        msg = f'cannot initialise the submodules of {sha[:12]} to resolve it'
+        raise OSError(msg)
     try:
         yield tree
     finally:
