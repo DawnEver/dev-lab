@@ -287,6 +287,16 @@ ALLOWED: Final[dict[Site, str]] = {
         'assert_no_undeclared_upper_bound(scan, **(kwargs | over))',
     ): 'the same overridable dict[str, object] keyword set as injectedwidth, for the same reason',
     (
+        'tests/test_outcomes_cell.py',
+        'arg-type',
+        "Cell('ok', values={})",
+    ): 'the planted wrong type IS the input under test: a status that is not a Status must raise TypeError',
+    (
+        'tests/test_outcomes_cell.py',
+        'index',
+        "cell.values['a'] = 2.0",
+    ): 'the refused write IS the assertion: a cell is immutable, so assigning into its values must raise',
+    (
         'tests/test_structured.py',
         'TRY301',
         'raise ValueError(boom)',
