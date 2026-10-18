@@ -1002,3 +1002,22 @@ def test_a_tip_another_host_claimed_that_this_host_never_fetched_still_blocks(tm
     assert (
         behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} (in flight on ada/bob)'
     )
+
+
+def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(server, tmp_path: Path) -> None:
+    """The idle alarm reads ``pending``: a tip held by one-run-per-ref is no work any host could claim."""
+    repo, tips = _origin(tmp_path)
+    old = tips['integrate/main']
+    new = _push(repo, tips, 'integrate/main')
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{new}', (200, []))
+    answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
+    held = _tick(repo, server, dry_run=True)
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} (in flight on ada/bob)' in held.lines
+    assert new not in {w.sha for w in held.pending}, 'waiting behind is a fleet hold, not this host idle'
+    Recorder.received.clear()
+    settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{new}', (200, []))
+    answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB), settled]))
+    assert new in {w.sha for w in _tick(repo, server, dry_run=True).pending}, 'planted control: claimable is pending'

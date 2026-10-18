@@ -32,7 +32,7 @@ from lab_commons.dev.forgerequest import (
     unserved,
     untrusted,
 )
-from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, over_budget
+from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
 from lab_commons.dev.forgestatus import Status
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
@@ -66,7 +66,7 @@ class ClaimPass:
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
     queue: list[Ranked] = dataclasses.field(default_factory=list)
-    pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could serve
+    pending: list[Work] = dataclasses.field(default_factory=list)  # left open here that this host could claim
     admitted: dict[str, tuple[Job, Admission]] = dataclasses.field(default_factory=dict)
     requests: dict[tuple[str, str], Declared] = dataclasses.field(default_factory=dict)  # (sha, name) -> it
     trunks: tuple[str, ...] = ()  # origin refs whose code runs for any requester (X1)
@@ -97,7 +97,7 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
-            if wanted.key not in self.unservable and self._servable(wanted):
+            if not held(blocked) and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
 
     def _servable(self, wanted: Candidate) -> bool:
