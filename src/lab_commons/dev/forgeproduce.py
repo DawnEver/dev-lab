@@ -68,7 +68,7 @@ from lab_commons.dev.forgeclaim import Work, forge_now
 from lab_commons.dev.forgeintent import Intent, forget, journal
 from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
-from lab_commons.dev.forgestatus import Status, status_history, status_post
+from lab_commons.dev.forgestatus import CommitStatus, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
@@ -341,7 +341,7 @@ def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], No
     _post(client, item, 'pending', renewed.description(), say)
 
 
-def _carry(root: Path, client: Client, item: Work, verdict: Status, say: Callable[[str], None]) -> None:
+def _carry(root: Path, client: Client, item: Work, verdict: CommitStatus, say: Callable[[str], None]) -> None:
     """Post *verdict* -- the part judged at the item's sha -- also on the ref's tip when it is reach-equivalent."""
     target = carry_target(root, client, ref=item.ref, sha=item.sha, platform=item.platform)
     part = parts_of([verdict])[0].get(item.platform)

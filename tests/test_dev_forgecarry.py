@@ -19,7 +19,7 @@ from _forge_fake import git_out, run_git
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgecarry, forgeproduce, forgerun, forgerunstate
 from lab_commons.dev.forgeclaim import Claim, Work
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import Part, parts_of, standing
 from lab_commons.dev.shatree import Tree
 
@@ -85,24 +85,24 @@ def test_a_carried_part_names_its_source_and_still_admits() -> None:
     part = Part('base', 'full', 'PASS', 12, carried='a' * 12)
     text = part.description()
     assert text.endswith(f'carried from {"a" * 12}: every outcome carried by footprint')
-    parts, problems = parts_of([Status('tests/base', 'success', text, '')])
+    parts, problems = parts_of([CommitStatus('tests/base', 'success', text, '')])
     assert problems == ()
     assert parts['base'] == part
-    assert standing([Status('tests/base', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
+    assert standing([CommitStatus('tests/base', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
 
 
 class _Forge:
     """Every status post, PER SHA, ids ascending -- what a carry reads on A and writes on B."""
 
     def __init__(self) -> None:
-        self.posts: dict[str, list[Status]] = {}
+        self.posts: dict[str, list[CommitStatus]] = {}
 
-    def post(self, _client, sha, *, context, state, description, target_url='') -> Status:
-        made = Status(context, state, description, target_url, id=len(self.posts.get(sha, ())) + 1)
+    def post(self, _client, sha, *, context, state, description, target_url='') -> CommitStatus:
+        made = CommitStatus(context, state, description, target_url, id=len(self.posts.get(sha, ())) + 1)
         self.posts.setdefault(sha, []).append(made)
         return made
 
-    def history(self, _client, sha) -> tuple[Status, ...]:
+    def history(self, _client, sha) -> tuple[CommitStatus, ...]:
         return tuple(self.posts.get(sha, ()))
 
 

@@ -1,7 +1,7 @@
 """VERDICT-AS-STATUS: ``lab_commons.dev.forgestatus`` against a REAL loopback server and REAL git repos.
 
 The evidence is what the server RECORDED. Both forges are one table of cases, because the claim is
-one normalized ``Status`` whichever forge answered; only the request shape differs.
+one normalized ``CommitStatus`` whichever forge answered; only the request shape differs.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, make
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgestatus import (
     DESCRIPTION_LIMIT,
-    Status,
+    CommitStatus,
     head_sha,
     main,
     state_for,
@@ -73,7 +73,7 @@ def test_status_post_sends_state_context_and_a_truncated_description(server, for
     sent = Recorder.received[-1]
     assert (sent['method'], sent['path']) == ('POST', f'{root}/statuses/{_SHA}')
     assert sent['body'] == {'state': 'success', 'context': 'tests/linux', 'description': 'x' * DESCRIPTION_LIMIT}
-    assert posted == Status('tests/linux', 'success', 'd', '')
+    assert posted == CommitStatus('tests/linux', 'success', 'd', '')
 
 
 def test_a_state_outside_the_four_is_refused_before_anything_is_sent(server) -> None:
@@ -97,14 +97,17 @@ def test_gitea_list_keeps_the_newest_status_per_context_and_reads_status_as_stat
         ),
     )
     listed = status_list(client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (Status('tests/linux', 'success', 'new', ''), Status('tests/windows', 'pending', 'h', ''))
+    assert listed == (
+        CommitStatus('tests/linux', 'success', 'new', ''),
+        CommitStatus('tests/windows', 'pending', 'h', ''),
+    )
 
 
 def test_github_list_reads_the_combined_status(server) -> None:
     combined = {'state': 'success', 'statuses': [{'context': 'tests/linux', 'state': 'success', 'description': 'd'}]}
     answer('GET', f'/repos/o/r/commits/{_SHA}/status', (200, combined))
     listed = status_list(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (Status('tests/linux', 'success', 'd', ''),)
+    assert listed == (CommitStatus('tests/linux', 'success', 'd', ''),)
 
 
 # --------------------------------------------------------------------------------------------

@@ -19,7 +19,7 @@ import lab_commons.launch as _door
 from lab_commons.compute.model import Candidate, Schedule
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import part_context
 
 __all__ = ['EARLIER_TIPS', 'WAITING_BEHIND', 'behind']
@@ -31,7 +31,7 @@ EARLIER_TIPS: Final = 16
 
 
 def behind(
-    root: Path, wanted: Candidate, schedule: Schedule, history: Callable[[str], Sequence[Status]], now: datetime
+    root: Path, wanted: Candidate, schedule: Schedule, history: Callable[[str], Sequence[CommitStatus]], now: datetime
 ) -> str:
     """Why *wanted* waits on its own ref's run in flight elsewhere; ``''`` when it does not (D6, ruling 2026-10-17).
 

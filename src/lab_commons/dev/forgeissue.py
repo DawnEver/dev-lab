@@ -37,7 +37,7 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
-from lab_commons.dev.forgestatus import Status, status_list
+from lab_commons.dev.forgestatus import CommitStatus, status_list
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, client_for
 from lab_commons.dev.integrator import lane_ready
 from lab_commons.dev.issueref import CLOSING_VERBS, REF_VERBS
@@ -233,7 +233,7 @@ def issue_status(
     root: Path,
     number: int,
     *,
-    statuses: Callable[[Client, str], Sequence[Status]] = status_list,
+    statuses: Callable[[Client, str], Sequence[CommitStatus]] = status_list,
 ) -> IssueState:
     """Derive issue *number*'s state from *root*'s remote-tracking refs and the forge. Fetches nothing."""
     issue = client.issue_view(number)

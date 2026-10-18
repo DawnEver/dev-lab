@@ -11,7 +11,7 @@ from _forge_fake import git_out, make_repo, run_git
 from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
@@ -78,11 +78,11 @@ def test_a_record_handing_off_its_own_ids_or_to_no_part_is_refused() -> None:
 
 def test_the_description_round_trips_through_a_status() -> None:
     part = platformparts.Part('femm+windows', 'full', 'FAIL', ran=7, hands={BASE: 1})
-    status = Status(platformparts.part_context('femm+windows'), part.state, part.description(), 'u')
-    parts, problems = platformparts.parts_of([status, Status('ci/foreign', 'success', 'not a part', '')])
+    status = CommitStatus(platformparts.part_context('femm+windows'), part.state, part.description(), 'u')
+    parts, problems = platformparts.parts_of([status, CommitStatus('ci/foreign', 'success', 'not a part', '')])
     assert parts == {'femm+windows': part}
     assert problems == ()
-    _, claimed = platformparts.parts_of([Status('tests/base', 'pending', 'claim machine=G', '')])
+    _, claimed = platformparts.parts_of([CommitStatus('tests/base', 'pending', 'claim machine=G', '')])
     assert 'not a settled part' in claimed[0]
 
 
@@ -90,7 +90,7 @@ def test_a_commits_parts_are_derived_from_what_its_parts_hand_to() -> None:
     """Nothing posted: base alone is known. A posted part names every part it handed ids to."""
     assert platformparts.derived([]) == (BASE,)
     base = platformparts.Part(BASE, 'full', 'PASS', ran=2, hands={'femm': 3, 'jmag': 1})
-    posted = [Status('tests/base', base.state, base.description(), '')]
+    posted = [CommitStatus('tests/base', base.state, base.description(), '')]
     assert platformparts.derived(posted) == (BASE, 'femm', 'jmag')
 
 
@@ -240,8 +240,8 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
     assert log in capsys.readouterr().err
 
 
-def _status(part: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
-    return Status(f'tests/{part}', state, f'scope={scope} ran=2 hands={hands}', '')
+def _status(part: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> CommitStatus:
+    return CommitStatus(f'tests/{part}', state, f'scope={scope} ran=2 hands={hands}', '')
 
 
 def test_the_standing_requires_base_and_every_part_handed_to() -> None:

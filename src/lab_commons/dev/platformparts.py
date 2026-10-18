@@ -93,7 +93,7 @@ from lab_commons.log import emit
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from lab_commons.dev.forgestatus import Status
+    from lab_commons.dev.forgestatus import CommitStatus
 
 __all__ = [
     'BASE',
@@ -362,7 +362,7 @@ def part_of(record: Mapping[str, Any]) -> Part:
     )
 
 
-def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ...]]:
+def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[str, ...]]:
     """``(parts by name, problems)`` from a commit's LATEST status per context.
 
     A ``tests/<part>`` status that is not a settled part -- a claim still ``pending``, an
@@ -393,7 +393,7 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
     return parts, tuple(problems)
 
 
-def derived(statuses: Sequence[Status]) -> tuple[str, ...]:
+def derived(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
     """The parts a commit is known to need, sorted: :data:`BASE`, every posted part, and every part one hands to."""
     parts, _ = parts_of(statuses)
     return tuple(sorted({BASE, *parts, *(name for part in parts.values() for name in part.hands)}))
@@ -463,7 +463,7 @@ class Standing:
         return ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in self.parts)
 
 
-def standing(statuses: Sequence[Status], *, head: str, scope: str | None = None) -> Standing:
+def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None = None) -> Standing:
     """The :class:`Standing` of commit *head* from its latest statuses; *scope* requires every part at it."""
     parts, unsettled = parts_of(statuses)
     composed = compose(parts, head=head)

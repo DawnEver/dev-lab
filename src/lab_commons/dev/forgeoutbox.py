@@ -60,7 +60,7 @@ from lab_commons.dev.forge import (
 )
 from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from lab_commons.dev.forgerecords import attach
-from lab_commons.dev.forgestatus import STATES, Status, status_history, status_post
+from lab_commons.dev.forgestatus import STATES, CommitStatus, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.log import emit
 
@@ -248,7 +248,7 @@ def _deliver(root: Path, built: Client, post: Post, alarm: Callable[[Alarm], obj
     return line
 
 
-def _decided(built: Client, post: Post) -> Status | None:
+def _decided(built: Client, post: Post) -> CommitStatus | None:
     """The first RESULT (:data:`RESULTS`) already posted in *post*'s context on its commit, when *post* is one."""
     if post.state not in RESULTS:
         return None

@@ -25,7 +25,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import artefacts, forgecarry, forgerun, forgerunstate, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
@@ -371,7 +371,7 @@ def test_a_host_with_no_room_releases_the_part_open_never_inconclusive(home: Pat
     assert post['description'].startswith(RETRYABLE), post['description']
     assert 'inconclusive' not in post['description']
     assert forgerunstate.live('https://f/o/r.git') == ()
-    released = Status(context=part_context('tests'), state='error', description=post['description'], url='')
+    released = CommitStatus(context=part_context('tests'), state='error', description=post['description'], url='')
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] == OPEN, 'claimable by any host again'
 
 
@@ -661,7 +661,7 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
         assert [a.kind for a in alarms] == [RUN]
         post = store.posts[-1]
         assert post['status'] == 'error'
-        released = Status(context=part_context('tests'), state='error', description=post['description'], url='')
+        released = CommitStatus(context=part_context('tests'), state='error', description=post['description'], url='')
         state = assess([released], part_context('tests'), me=HERE, now=NOW)[0]
         assert (state == OPEN) is open_again, post['description']
         assert ('superseded' in post['description']) is not open_again

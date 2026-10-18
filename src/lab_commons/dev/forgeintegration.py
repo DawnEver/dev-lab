@@ -45,7 +45,7 @@ from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgeschedule import load_schedule
-from lab_commons.dev.forgestatus import Status, status_list, status_post
+from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
 from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, PullRequest, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
@@ -105,7 +105,7 @@ def alarms(said: Sequence[tuple[Child, Feedback]], policy: Policy, repo: str) ->
     return found
 
 
-def _line(statuses: Sequence[Status]) -> list[str]:
+def _line(statuses: Sequence[CommitStatus]) -> list[str]:
     return [
         f'  - `{s.context}` {s.state}: {s.description}' + (f' ([record]({s.url}))' if s.url else '')
         for s in statuses

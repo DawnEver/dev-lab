@@ -38,7 +38,7 @@ import lab_commons.launch as _door
 from lab_commons.dev.components import Component, components_of
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgepulls import issues
-from lab_commons.dev.forgestatus import Status, status_list
+from lab_commons.dev.forgestatus import CommitStatus, status_list
 from lab_commons.dev.forgework import Client, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.netverb import run_network_verb
@@ -115,7 +115,7 @@ class Product(Protocol):
     def close_lane(self, tip: str) -> None:
         """Delete :data:`LANE`, only while it is still at *tip*."""
 
-    def statuses(self, sha: str) -> Sequence[Status]:
+    def statuses(self, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha*."""
 
     def issue_titles(self) -> frozenset[str]:
@@ -131,7 +131,7 @@ class Engines(Protocol):
     def tip(self, row: Component) -> str:
         """The sha *row*'s branch points at on its repository."""
 
-    def statuses(self, row: Component, sha: str) -> Sequence[Status]:
+    def statuses(self, row: Component, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha* in *row*'s repository."""
 
 
@@ -245,7 +245,7 @@ class GitProduct:
         if not report.ok:
             raise OSError(report.remedy)
 
-    def statuses(self, sha: str) -> Sequence[Status]:
+    def statuses(self, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha*."""
         return status_list(self.client, sha)
 
@@ -272,7 +272,7 @@ class GitEngines:
             raise OSError(report.remedy)
         return report.attempts[-1].output.split('\t', 1)[0].strip()
 
-    def statuses(self, row: Component, sha: str) -> Sequence[Status]:
+    def statuses(self, row: Component, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha* in *row*'s repository."""
         return status_list(self.client(row.url), sha)
 

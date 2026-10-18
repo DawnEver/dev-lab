@@ -23,7 +23,7 @@ from lab_commons.compute import learned
 from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
 from lab_commons.dev.envkey import env_key
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.githooks import bash_executable
 from lab_commons.dev.platformparts import part_of, parts_of
 from lab_commons.hpc import __main__ as cli
@@ -1353,7 +1353,9 @@ def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> 
     part = part_of(record)
     assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, 'FAIL'), 'carried is never counted as run'
     assert part.description().endswith(f'kept={A_SHA[:12]}:2')
-    assert parts_of([Status(f'tests/{part.platform}', 'failure', part.description(), '')])[0][part.platform] == part
+    assert (
+        parts_of([CommitStatus(f'tests/{part.platform}', 'failure', part.description(), '')])[0][part.platform] == part
+    )
 
 
 def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> None:

@@ -33,7 +33,7 @@ from lab_commons.dev.forgeissue import (
     lanes_for,
     main,
 )
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import Comment
 
 
@@ -118,9 +118,9 @@ def test_issue_status_derives_ready_from_a_green_gate_and_reports_conflicting_cl
     )
     asked: list[str] = []
 
-    def gate(_client: object, sha: str) -> tuple[Status, ...]:
+    def gate(_client: object, sha: str) -> tuple[CommitStatus, ...]:
         asked.append(sha)
-        return (Status('tests/base', 'success', 'scope=full ran=3 hands=-', ''),)
+        return (CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=-', ''),)
 
     state = issue_status(client(_FORGE, Loopback(server)), repo, 7, statuses=gate)
     assert state.state == READY

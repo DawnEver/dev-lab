@@ -29,7 +29,7 @@ from lab_commons.dev.componentbump import (
 )
 from lab_commons.dev.components import Component
 from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import Part
 
@@ -38,14 +38,16 @@ OPT = Component('solver-lab', 'https://f/o/solver-lab.git', 'main', ('base',))
 OLD, NEW = 'a' * 40, 'b' * 40
 
 
-def part(platform: str, result: str) -> Status:
+def part(platform: str, result: str) -> CommitStatus:
     """The status a forge holds for *platform* at *result*, in the producer's own description."""
     state = {'PASS': 'success', 'FAIL': 'failure'}[result]
-    return Status(f'tests/{platform}', state, Part(platform, 'full', result, 3).description(), f'https://r/{platform}')
+    return CommitStatus(
+        f'tests/{platform}', state, Part(platform, 'full', result, 3).description(), f'https://r/{platform}'
+    )
 
 
 CLIENT = Client(Forge('forge.example', 'o', 'product'), 'token')
-GREEN: tuple[Status, ...] = (part('base', 'PASS'),)
+GREEN: tuple[CommitStatus, ...] = (part('base', 'PASS'),)
 
 
 @dataclass
@@ -54,7 +56,7 @@ class FakeProduct:
 
     pointers: dict[str, str] = field(default_factory=dict)
     current: Lane | None = None
-    lane_statuses: tuple[Status, ...] = ()
+    lane_statuses: tuple[CommitStatus, ...] = ()
     titles: list[str] = field(default_factory=list)
     opened: list[tuple[str, str]] = field(default_factory=list)
     closed: list[str] = field(default_factory=list)
@@ -79,7 +81,7 @@ class FakeProduct:
         self.closed.append(tip)
         self.current = None
 
-    def statuses(self, _sha: str) -> Sequence[Status]:
+    def statuses(self, _sha: str) -> Sequence[CommitStatus]:
         return self.lane_statuses
 
     def issue_titles(self) -> frozenset[str]:
@@ -95,12 +97,12 @@ class FakeEngines:
     """Each engine's tip and the statuses on it."""
 
     tips: dict[str, str]
-    green: dict[str, tuple[Status, ...]]
+    green: dict[str, tuple[CommitStatus, ...]]
 
     def tip(self, row: Component) -> str:
         return self.tips[row.name]
 
-    def statuses(self, row: Component, _sha: str) -> Sequence[Status]:
+    def statuses(self, row: Component, _sha: str) -> Sequence[CommitStatus]:
         return self.green.get(row.name, ())
 
 
@@ -121,14 +123,14 @@ def test_a_forge_green_engine_tip_opens_one_lane_moving_its_pointer() -> None:
     ],
 )
 def test_nothing_is_bumped_that_is_current_unverified_or_held(
-    tips: dict[str, str], green: dict[str, tuple[Status, ...]], titles: list[str]
+    tips: dict[str, str], green: dict[str, tuple[CommitStatus, ...]], titles: list[str]
 ) -> None:
     product = FakeProduct({NUM.path: OLD}, titles=titles)
     assert tick((NUM,), product, FakeEngines(tips, green)).action == IDLE
     assert product.opened == []
 
 
-def _in_flight(statuses: tuple[Status, ...], *, absorbed: bool = False) -> FakeProduct:
+def _in_flight(statuses: tuple[CommitStatus, ...], *, absorbed: bool = False) -> FakeProduct:
     return FakeProduct({NUM.path: OLD}, Lane('c' * 40, NUM.path, NEW, absorbed=absorbed), statuses)
 
 

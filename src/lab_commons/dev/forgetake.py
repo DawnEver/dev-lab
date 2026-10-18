@@ -34,7 +34,7 @@ from lab_commons.dev.forgerequest import (
     untrusted,
 )
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
 from lab_commons.hpc.declared import OutdatedKit
@@ -62,7 +62,7 @@ class ClaimPass:
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
     unservable: set[str] = dataclasses.field(default_factory=set)  # keys whose producer this host kind cannot build
-    history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
+    history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: ()  # every status of a sha, read once a tick
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)

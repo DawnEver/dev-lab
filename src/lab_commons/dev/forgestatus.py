@@ -18,7 +18,7 @@ A STATUS CAN ONLY BE POSTED ON A COMMIT THE FORGE HOLDS, so a run's status is ne
 run directly: it is QUEUED and posted once the commit is on ``origin`` (:mod:`lab_commons.dev.forgeoutbox`,
 which also raises when an attempted post fails).
 
-PROVENANCE-FREE ON PURPOSE. Status descriptions are machine lines, length-limited by the forge, so no
+PROVENANCE-FREE ON PURPOSE. CommitStatus descriptions are machine lines, length-limited by the forge, so no
 ``[machine · agent · branch]`` stamp is prepended; the forge records the token's login as ``creator``.
 """
 
@@ -44,7 +44,7 @@ from lab_commons.outcomes import Conclusion
 __all__ = [
     'DESCRIPTION_LIMIT',
     'STATES',
-    'Status',
+    'CommitStatus',
     'head_sha',
     'main',
     'state_for',
@@ -68,7 +68,7 @@ _STATE_FOR: Final[dict[Conclusion, str]] = {
 
 
 @dataclass(frozen=True)
-class Status:
+class CommitStatus:
     """One commit status, identical in shape whichever forge answered.
 
     ``id`` orders the posts on one commit (the forge assigns it ascending) and ``creator`` is the login
@@ -83,10 +83,10 @@ class Status:
     creator: str = field(default='', compare=False)
 
 
-def _status(raw: Mapping[str, Any]) -> Status:
+def _status(raw: Mapping[str, Any]) -> CommitStatus:
     # Gitea answers the state as ``status``; GitHub as ``state``.
     state = raw.get('state') or raw.get('status') or ''
-    return Status(
+    return CommitStatus(
         raw.get('context') or '',
         state,
         raw.get('description') or '',
@@ -103,7 +103,7 @@ def state_for(outcome: Conclusion) -> str:
 
 def status_post(
     client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
-) -> Status:
+) -> CommitStatus:
     """Post one status on *sha*. The description is cut to :data:`DESCRIPTION_LIMIT`, never sent long."""
     if state not in STATES:
         msg = f'a status state is one of {STATES}, not {state!r}'
@@ -120,7 +120,7 @@ def status_post(
     return _status(client.call('POST', f'{client.repo}/statuses/{sha}', body, durable=durable))
 
 
-def status_list(client: Client, sha: str) -> tuple[Status, ...]:
+def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """The LATEST status per context on *sha*, sorted by context.
 
     GitHub's combined endpoint already answers latest-per-context; Gitea's list carries every post,
@@ -137,7 +137,7 @@ def status_list(client: Client, sha: str) -> tuple[Status, ...]:
     return tuple(sorted((_status(item) for item in raw), key=lambda status: status.context))
 
 
-def status_history(client: Client, sha: str) -> tuple[Status, ...]:
+def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
     return tuple(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id))
@@ -206,7 +206,7 @@ def main(
     client = client_for(Path.cwd() if cwd is None else cwd, env=env, transport=transport)
     try:
         if args.verb == 'post':
-            found: tuple[Status, ...] = (
+            found: tuple[CommitStatus, ...] = (
                 status_post(client, args.sha, context=args.context, state=args.state, description=args.description),
             )
         else:
