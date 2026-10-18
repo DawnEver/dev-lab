@@ -29,6 +29,7 @@ from lab_commons.dev.forgerequest import (
     declared_request,
     request_context,
     unreachable_source,
+    unreproducible,
     unserved,
     untrusted,
 )
@@ -149,7 +150,7 @@ class ClaimPass:
     def _own_request(self, one: Work, wanted: Candidate) -> tuple[Work, str]:
         """A request: refused at its commit when no host could ever reproduce it, waiting while THIS host cannot.
 
-        The commit's own defects -- a sha origin does not serve, an undeclared producer -- are
+        The commit's own defects -- a sha origin does not serve, an undeclared producer, no lock -- are
         refused on its context. This host's -- a cluster seat, an author it does not run for off the
         trunks, a git source it cannot fetch -- leave it waiting, named, for a host that can.
         """
@@ -158,6 +159,7 @@ class ClaimPass:
             declared = self._declared(wanted)
         except UndeclaredRequest as undeclared:
             why = why or str(undeclared)
+        why = why or unreproducible(self.root, one.sha)
         if why or declared is None:
             return one, f'{REFUSED_AT_COMMIT} {why}'
         if why := self._not_here(one, wanted):

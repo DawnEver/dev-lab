@@ -418,23 +418,22 @@ def test_a_repo_venv_whose_kit_would_exit_2_no_longer_matters_to_serving(box: Bo
     assert workstation.serve(run=run, lock=tmp_path / 'serve.lock', programs=box.programs) == 0
 
 
-def test_a_moved_floating_git_tip_rebootstraps_a_served_venv(tmp_path: Path) -> None:
-    """Dependencies float (user ruling 2026-10-17): a served venv follows the newest of each git requirement.
+def test_a_new_committed_lock_rebootstraps_a_served_venv_and_no_remote_is_asked(tmp_path: Path) -> None:
+    """PIN + FRESHNESS (user ruling 2026-10-17): a served venv is its committed lock, keyed by the lock's content.
 
-    The stamp keys the content of the env inputs AND the current tip of every floating git dependency, so a new
-    lab-commons on the served ref reaches a repo whose pyproject did not change. PLANTED CONTROL: an
-    unchanged tip leaves the venv current and runs nothing.
+    The git source is unresolvable (``.invalid``): a key that asked it would fail. PLANTED CONTROL: an unchanged
+    lock leaves the venv current and runs nothing.
     """
     checkout = tmp_path / 'repo'
     checkout.mkdir()
     (checkout / 'pyproject.toml').write_text(
-        '[project]\nname = "r"\ndependencies = ["lab-commons @ git+https://forge/o/lab-commons.git@integrate/main"]\n',
+        '[project]\nname = "r"\ndependencies = ["lab-commons @ git+https://forge.invalid/o/lab-commons.git"]\n',
         encoding='utf-8',
     )
+    (checkout / 'uv.lock').write_text('rev = "1"\n', encoding='utf-8')
     python = hostrefresh.venv_python(checkout)
     python.parent.mkdir(parents=True)
     python.write_text('', encoding='utf-8')
-    tips = {('https://forge/o/lab-commons.git', 'integrate/main'): 'a' * 40}
     ran: list[str] = []
 
     class _Step:
@@ -444,13 +443,10 @@ def test_a_moved_floating_git_tip_rebootstraps_a_served_venv(tmp_path: Path) -> 
             ran.append(what)
             return 0
 
-    def tip(url: str, ref: str) -> str:
-        return tips[url, ref]
-
-    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout, tip=tip) == 0
+    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout) == 0
     assert len(ran) == 1, 'a venv with no stamp is bootstrapped'
-    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout, tip=tip) == 0
-    assert len(ran) == 1, 'an unchanged tip leaves it current'
-    tips['https://forge/o/lab-commons.git', 'integrate/main'] = 'b' * 40
-    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout, tip=tip) == 0
-    assert len(ran) == 2, 'a new tip on the served ref re-bootstraps it'
+    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout) == 0
+    assert len(ran) == 1, 'an unchanged lock leaves it current'
+    (checkout / 'uv.lock').write_text('rev = "2"\n', encoding='utf-8')
+    assert hostrefresh.sync_venv(_Step(), ('boot',), checkout) == 0
+    assert len(ran) == 2, 'a new lock re-bootstraps it'

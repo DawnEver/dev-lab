@@ -114,3 +114,11 @@ always_run = true
 id = "behind-push"
 run = ["python", "-m", "lab_commons.dev.behindpush"]
 always_run = true
+
+# PIN + FRESHNESS (user ruling 2026-10-17): a pushed commit commits uv.lock at the NEWEST resolution -- `uv lock
+# --upgrade` would change nothing -- and every hold below the newest declares its reason (lab_commons.dev.lockcheck).
+# The remedy is `uv lock --upgrade`, then fix, test and commit.
+[[pre-push]]
+id = "lock"
+run = ["python", "-m", "lab_commons.dev.lockcheck"]
+always_run = true

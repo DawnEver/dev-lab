@@ -80,7 +80,7 @@ pruned_paths = ['.claude/worktrees']
 # How the cluster builds this repo's env, read at the commit being judged (lab_commons.hpc.builds).
 # It installs the project itself: the venv must import lab_commons.dev.envkey to report its env key.
 [tool.lab_commons.hpc]
-install = "uv sync --all-extras"
+install = "uv sync --frozen --all-extras"
 
 # The run record's root (lab_commons.dev.platformparts).
 [tool.lab_commons.parts]

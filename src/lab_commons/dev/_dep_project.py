@@ -50,11 +50,12 @@ def uv_command(
     *,
     syncing: bool,
     upgrade_packages: Sequence[str],
+    frozen: bool = False,
 ) -> list[str]:
     """One target-addressed command; a sync re-resolves every declared floating Git requirement.
 
-    Nothing is frozen (user rulings 2026-10-15/17, "dependencies are not pinned"): a bootstrap resolves the
-    newest of every floating requirement.
+    A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
+    commit's own environment is materialised, so two hosts on two days build the same revisions.
     """
     uv = shutil.which('uv')
     if uv is None:
@@ -71,6 +72,8 @@ def uv_command(
     if syncing:
         for extra in selected:
             command.extend(('--extra', extra))
+    if frozen:
+        return [*command, '--frozen']
     upgrades = set(upgrade_packages)
     if syncing:
         upgrades.update(floating_requirements(root / 'pyproject.toml'))

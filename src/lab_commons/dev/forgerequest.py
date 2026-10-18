@@ -63,7 +63,6 @@ from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit, release_reason
 from lab_commons.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_mem_gb
-from lab_commons.hpc.builds import git_dependencies
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
 
@@ -77,6 +76,7 @@ if TYPE_CHECKING:
 __all__ = [
     'CONTEXT_PREFIX',
     'DONE_LABEL',
+    'LOCK_FILE',
     'REQUESTS_TABLE',
     'TESTS',
     'UNADMITTED',
@@ -94,6 +94,7 @@ __all__ = [
     'result',
     'settle',
     'unreachable_source',
+    'unreproducible',
     'unserved',
     'untrusted',
 ]
@@ -276,6 +277,20 @@ def _positive(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
+#: The lock a request's sha must commit: it pins every dependency revision the tree is built from.
+LOCK_FILE: Final = 'uv.lock'
+
+
+def unreproducible(root: Path, sha: str) -> str:
+    """Why a tree built at *sha* would not be the same on every host, ``''`` when it would.
+
+    A sha committing no :data:`LOCK_FILE` resolves its floating dependencies to whatever they are on the
+    day, on the host: two runs of one request build two environments, so it is refused, never degraded.
+    """
+    done = _door.run([_GIT, '-C', str(root), 'cat-file', '-e', f'{sha}:{LOCK_FILE}'], capture_output=True, check=False)
+    return '' if done.returncode == 0 else f'{sha[:12]} commits no {LOCK_FILE}: a request pins every dependency'
+
+
 def unserved(root: Path, sha: str) -> str:
     """Why origin cannot serve *sha* to a host that fetches it, ``''`` when one of its refs contains it.
 
@@ -294,13 +309,16 @@ def unserved(root: Path, sha: str) -> str:
     return f'origin serves no ref containing {sha[:12]}: push it where origin keeps it'
 
 
+#: A git source in a lock: ``source = { git = "<url>?rev=..#<commit>" }``.
+_LOCKED_GIT: Final = re.compile(r'git\s*=\s*"(?P<url>[^"?#]+)')
 #: How long one ``git ls-remote`` of a source may take before it counts as unreachable, in seconds.
 REACH_TIMEOUT_S: Final = 60.0
 
 
 def git_sources(root: Path, sha: str) -> tuple[str, ...]:
-    """Every repository a tree at *sha* fetches by git: its pyproject's git dependencies, then its submodules' urls."""
-    found = [url for url, _ in git_dependencies(pyproject_at(root, sha))]
+    """Every repository a tree at *sha* fetches by git: its lock's git sources, then its submodules' urls."""
+    lock = _show(root, f'{sha}:{LOCK_FILE}')
+    found = [match['url'] for match in _LOCKED_GIT.finditer(lock)]
     modules = _door.run(
         [_GIT, '-C', str(root), 'config', '--blob', f'{sha}:.gitmodules', '--get-regexp', r'^submodule\..*\.url$'],
         capture_output=True,

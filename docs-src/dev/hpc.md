@@ -19,7 +19,7 @@ On the login host you chose, store your own forge token once (`git config --glob
   runs read it, and flags that disagree with it are refused. `lab-commons` is always served: every tick runs it.
 - **The host refreshes; a repo never updates itself.** Each cron line runs the HOST's kit,
   `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout: it checks out `~/<root>/lab-commons`
-  and then the repo at their deployed refs, rebuilds the repo's venv where its inputs or the kit's HEAD moved
+  and then the repo at their deployed refs, rebuilds the repo's venv where its inputs (its committed `uv.lock` among them) moved
   (the deploy's own keyed steps), and only then serves it: THE HOST KIT's `forge serve` with the repo checkout
   as its cwd. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
   released for that tick, its reason in its log; a kit that cannot move is reported and the repo serves with
@@ -32,11 +32,9 @@ On the login host you chose, store your own forge token once (`git config --glob
   installs `uv` and the Rust toolchain from their official installers into `~/.local` and `~/.cargo` (no PATH
   edit) and `cmake` through `uv tool` when the tick PATH lacks them, and refuses any other missing `needs` by
   name; builds each `.venv` with the repo's own `[tool.lab_commons.hpc] install` and `native` build on a
-  uv-managed CPython (skipped while its inputs and the tips of its floating git dependencies are unchanged --
-  nothing is pinned, user ruling 2026-10-17); installs the served lab-commons checkout, the newest of the served
-  ref, over what each other repo resolved (`uv pip install --no-config`, run outside the project so its sources
-  cannot resolve the repo's URL again; keyed by the lab-commons HEAD, so the next deploy after a lab-commons update reinstalls
-  it); replaces its own marked crontab lines; runs one tick of each repo and prints it.
+  uv-managed CPython (skipped while its inputs are unchanged) -- exactly what the repo's committed `uv.lock`
+  pins, with nothing installed over it, so a repo's producers import the lab-commons its commit was tested
+  with (PIN + FRESHNESS, user ruling 2026-10-17); replaces its own marked crontab lines; runs one tick of each repo and prints it.
 - A grant's compute-node `setup` (e.g. `module load git`) is a cluster fact the deploy cannot read: add it to
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
@@ -138,7 +136,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
 - **Preparation is keyed by its inputs, never by commit** (`lab_commons.hpc.builds`), declared once:
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
   `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
-  with unchanged inputs builds nothing. A floating git dependency adds its remote tip to the key.
+  with unchanged inputs builds nothing. The committed `uv.lock` is an input, so its hash keys the venv.
 - Everything lives under `~/ci/` in the account's home: `cache.git`, `envs/<key>`, `native/<key>`,
   `trees/<sha>`, `runs/<sha>`, `collect/`, `uv-cache`, `cargo-target`. A day-to-day checkout is never touched.
 - **Collection is cached per test file** (`lab_commons.hpc.collect`); only files with no entry are collected.

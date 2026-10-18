@@ -27,7 +27,6 @@
 htmlcov/
 output/
 scratch/
-uv.lock
 **/.claude/**
 !**/.claude/settings.json
 !**/.claude/hooks/

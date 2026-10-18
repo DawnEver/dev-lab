@@ -5,10 +5,8 @@ lab-commons whose ``forge serve`` required a retired flag, so it exited 2 every 
 would have updated it was the code that could not run. A repo's own stale kit cannot own its own update;
 the host's kit does, from outside it (:func:`refresh`): fast-forward the clean checkout to its upstream
 (:func:`follow`), then sync its venv through ``dep --bootstrap`` when it is missing or the content of
-:data:`ENV_INPUTS` or the current tip of a floating git dependency (:func:`lab_commons.hpc.builds.floating_tips`
--- dependencies float, so a new lab-commons on the served ref must reach it) differs from the stamp the last
-successful sync wrote (:func:`sync_venv`) -- so a failed sync is retried by the next tick, and an unchanged
-checkout costs one hash and one ``git ls-remote`` per floating source.
+:data:`ENV_INPUTS` differs from the stamp the last successful sync wrote (:func:`sync_venv`) -- so a failed
+sync is retried by the next tick, and an unchanged checkout costs one hash.
 
 Shared by ``workstation deploy`` (its checkout and venv steps) and ``workstation serve`` (every tick).
 A cluster account's tick is the same rule through its own keyed build (:func:`lab_commons.hpc.tick.tick`).
@@ -19,14 +17,13 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.venvpath import venv_interpreter
-from lab_commons.hpc.builds import floating_tips, remote_tip
 from lab_commons.hpc.deploy_steps import Step
 from lab_commons.log import emit
 
@@ -84,34 +81,21 @@ ENV_INPUTS: Final = ('pyproject.toml', 'uv.lock')
 ENV_STAMP: Final = '.lab-host-env'
 
 
-def env_key(checkout: Path, tip: Callable[[str, str], str] = remote_tip) -> str:
-    """The key of *checkout*'s :data:`ENV_INPUTS` as they are on disk plus its floating git tips.
-
-    An absent file keys as empty; a source no ``ls-remote`` answers keys as ``unreachable``, so the bootstrap runs
-    and says why rather than the venv being called current.
-    """
+def env_key(checkout: Path) -> str:
+    """The key of *checkout*'s :data:`ENV_INPUTS` as they are on disk; an absent file keys as empty."""
     digest = hashlib.sha256()
     for name in ENV_INPUTS:
         path = checkout / name
         digest.update(hashlib.sha256(path.read_bytes() if path.is_file() else b'').digest() + name.encode())
-    pyproject = checkout / 'pyproject.toml'
-    try:
-        tips = floating_tips(pyproject.read_text(encoding='utf-8'), tip) if pyproject.is_file() else {}
-    except (RuntimeError, OSError, ValueError):
-        tips = {'floating': 'unreachable'}
-    for source, sha in sorted(tips.items()):
-        digest.update(f'{source} {sha}'.encode())
     return digest.hexdigest()
 
 
-def sync_venv(
-    step: Step, bootstrap: Sequence[str], checkout: Path, *, tip: Callable[[str, str], str] = remote_tip
-) -> int:
-    """Sync *checkout*'s venv when it is missing or its stamp names other :data:`ENV_INPUTS` or floating tips.
+def sync_venv(step: Step, bootstrap: Sequence[str], checkout: Path) -> int:
+    """Sync *checkout*'s venv when it is missing or its stamp names other :data:`ENV_INPUTS`.
 
     The stamp is written only after the sync succeeded, so a failed sync is retried by the next tick.
     """
-    key, stamp = env_key(checkout, tip), checkout / '.venv' / ENV_STAMP
+    key, stamp = env_key(checkout), checkout / '.venv' / ENV_STAMP
     if venv_python(checkout).is_file() and stamp.is_file() and stamp.read_text(encoding='utf-8') == key:
         emit(f'  {checkout.name}: .venv current')
         return 0
