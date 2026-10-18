@@ -86,6 +86,7 @@ from lab_commons.dev.verifybox import (
     selection_files,
 )
 from lab_commons.hpc.needsets import BASE
+from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
 __all__ = [
@@ -422,14 +423,20 @@ def main(argv: list[str] | None = None) -> int:
     required to say. The line NAMES the holder and the remedy, because "busy" sends its reader to the
     process table to guess and guessing wrong kills somebody's evidence.
 
-    A SETTLED RUN IS THEN POSTED AS PARTS, ``tests/<part>`` -- one per need-set
+    ONLY THE PRODUCER POSTS (VERDICTS-FROM-THE-FORGE): a run inside the process ``forge serve`` spawned for
+    this part (:func:`~lab_commons.dev.producer.full_suite_refusal` answers ``None``) posts its settled run;
+    any other run -- a developer's or an agent's targeted measure -- is never a verdict and posts NOTHING.
+    Measured 2026-10-17/18: local measures posted ``tests/base`` on integrate/main shas 911a9f8, 1299048
+    and 6b34c738b156, a partial selection claiming a whole part.
+
+    A PRODUCER'S SETTLED RUN IS POSTED AS PARTS, ``tests/<part>`` -- one per need-set
     (:mod:`lab_commons.dev.platformparts`): its per-test outcomes become run records of the cluster's
     shape (scope ``full`` for a bare run, ``incremental`` for a selection), posted on HEAD only when the
     tree was clean before and after the run and HEAD did not move. ``--part <part>`` is the declared
     producer's form: it runs EXACTLY that part's need-set (:func:`lab_commons.hpc.needsets.selecting`) and
     posts that part alone; a bare run posts every part it judged whose needs this host has
     (:func:`lab_commons.dev.localpart.post_part`). An INCONCLUSIVE run is no part and posts nothing.
-    ``--no-status`` opts out. A refused or failed post is one line; it changes neither the verdict nor
+    A refused or failed post is one line; it changes neither the verdict nor
     the exit code.
     """
     parser = argparse.ArgumentParser(
@@ -447,15 +454,18 @@ def main(argv: list[str] | None = None) -> int:
             f'{WAIT_S:.0f}s for the producer); 0 checks once and refuses'
         ),
     )
-    parser.add_argument('--no-status', action='store_true', help='do not post the run as parts')
     parser.add_argument('--part', default='', help='produce this part (tests/<part>): exactly its need-set')
     parser.add_argument('--rerun', action='store_true', help='run even when the run cache already judged this key')
     parser.add_argument('pytest_args', nargs='*', help='extra arguments forwarded to pytest, after a bare --')
+    if retired := _retired(sys.argv[1:] if argv is None else argv):
+        emit(retired, err=True)
+        return ProducerExit.USAGE
     parsed = parser.parse_args(argv)
     root = project_root()
     arguments = tuple(parsed.pytest_args)
     targeted = is_targeted(root, arguments)
-    refused = None if targeted else full_suite_refusal('verify', os.environ, part_context(parsed.part or BASE))
+    outside = full_suite_refusal('verify', os.environ, part_context(parsed.part or BASE))
+    refused = None if targeted else outside
     try:
         posted, arguments = arguments, (*part_selection(root, parsed.part), *arguments)
     except ValueError as why:
@@ -478,12 +488,11 @@ def main(argv: list[str] | None = None) -> int:
             f'verify: CITED {cited.result} -- the run cache ({cache}) already judged this tree, env and selection; '
             f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
         )
-        if not parsed.no_status:  # the cited run's outcomes are the evidence: its record posts, nothing re-runs
-            emit(post_cited(root, cited.log, posted, head=head_sha(root), dirt=status_paths(root), part=parsed.part))
+        _post_cited(root, cited.log, posted, part=parsed.part, producer=outside is None)
         return EXIT_CODES[Outcome(cited.result.lower())]
 
     def lead() -> str:
-        post = None if parsed.no_status else functools.partial(post_part, root, arguments=posted, part=parsed.part)
+        post = None if outside is not None else functools.partial(post_part, root, arguments=posted, part=parsed.part)
         code, lines = _judge(root, arguments, key, cache, wait_s=wait_s, post=post)
         return json.dumps({'code': code, 'lines': lines})
 
@@ -494,6 +503,17 @@ def main(argv: list[str] | None = None) -> int:
         for line in shared['lines']:
             emit(line)
     return int(shared['code'])
+
+
+def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, producer: bool) -> None:
+    """The PRODUCER's cited run posts from its own outcomes, beside *log*; nothing re-runs, and nobody else posts."""
+    if producer:
+        emit(post_cited(root, log, posted, head=head_sha(root), dirt=status_paths(root), part=part))
+
+
+def _retired(argv: list[str]) -> str | None:
+    """The refusal of the first retired word in *argv* (:mod:`lab_commons.hpc.retired`), else ``None``."""
+    return next(filter(None, (refusal('verify', word) for word in argv)), None)
 
 
 def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
@@ -524,7 +544,7 @@ def _judge(
 ) -> tuple[int, list[str]]:
     """The leader's run: judge, stamp, cache, post the parts, and return the exit code with the lines it printed.
 
-    *arguments* is what pytest ran; *post* posts the parts (``None``: ``--no-status``).
+    *arguments* is what pytest ran; *post* posts the parts (``None``: not the producer).
     """
     head, start = head_sha(root), status_paths(root)
     try:

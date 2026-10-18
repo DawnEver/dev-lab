@@ -871,7 +871,7 @@ def test_a_full_run_outside_a_producer_is_refused_with_the_remedy(monkeypatch, t
     _cached(monkeypatch, tmp_path)
     monkeypatch.delenv(PRODUCING_VAR)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a full suite ran outside a producer'))
-    assert verify.main(['--no-status', '--', '-q']) == ProducerExit.USAGE
+    assert verify.main(['--', '-q']) == ProducerExit.USAGE
     assert 'push; the forge produces the part' in capsys.readouterr().err
 
 
@@ -883,7 +883,7 @@ def test_a_selection_is_a_measure_needs_no_claim_and_waits_briefly(monkeypatch, 
     (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
     waits: list[float] = []
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, wait_s, **_k: waits.append(wait_s) or _judged(tmp_path))
-    assert verify.main(['--no-status', '--rerun', 'tests/a.py::test_x']) == ProducerExit.PASS
+    assert verify.main(['--rerun', 'tests/a.py::test_x']) == ProducerExit.PASS
     assert waits == [verifybox.MEASURE_WAIT_S]
 
 
@@ -953,7 +953,7 @@ def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeyp
     claim_path(box, key).write_text(json.dumps({'pid': os.getpid(), 'run': 'r1'}), encoding='utf-8')
     answer = {'code': EXIT_CODES[Outcome.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
     (box / f'{key.digest()}.r1.result').write_text(json.dumps(answer), encoding='utf-8')
-    assert verify.main(['--no-status', 'tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+    assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
 
 
 def test_the_run_key_is_the_tree_the_env_and_the_selection(tmp_path: Path) -> None:
@@ -973,6 +973,12 @@ def _cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return cache
 
 
+def _unposted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A producer's run whose posting is not the subject: both doors to the forge answer without a call."""
+    monkeypatch.setattr(verify, 'post_part', lambda *_a, **_k: 'posted')
+    monkeypatch.setattr(verify, 'post_cited', lambda *_a, **_k: 'posted')
+
+
 def _plant(cache: Path, key: verify.RunKey, result: str) -> None:
     cache.write_text(
         json.dumps(asdict(CachedRun(key.tree, key.env, key.selector, result, '', 'x.log'))) + '\n', encoding='utf-8'
@@ -981,24 +987,27 @@ def _plant(cache: Path, key: verify.RunKey, result: str) -> None:
 
 def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, tmp_path: Path) -> None:
     """THE LOOKUP BEFORE THE RUN: a cached FAIL on this key is the answer, and nothing runs."""
+    _unposted(monkeypatch)
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a judged selection ran again'))
     _plant(cache, verify.run_key(tmp_path, ('tests/a.py',)), 'FAIL')
-    assert verify.main(['--no-status', 'tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+    assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
 
 
 def test_rerun_ignores_the_cache(monkeypatch, tmp_path: Path) -> None:
+    _unposted(monkeypatch)
     cache = _cached(monkeypatch, tmp_path)
     _plant(cache, verify.run_key(tmp_path, ()), 'FAIL')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
-    assert verify.main(['--no-status', '--rerun']) == EXIT_CODES[Outcome.PASS]
+    assert verify.main(['--rerun']) == EXIT_CODES[Outcome.PASS]
 
 
 def test_a_promoted_run_is_cached_with_its_commit(monkeypatch, tmp_path: Path) -> None:
     """The one writer: after promotion, the run's key, result and commit enter the cache."""
+    _unposted(monkeypatch)
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
-    assert verify.main(['--no-status']) == EXIT_CODES[Outcome.PASS]
+    assert verify.main([]) == EXIT_CODES[Outcome.PASS]
     key = verify.run_key(tmp_path, ())
     assert [(run.tree, run.selector, run.result, run.commit) for run in runs(cache)] == [
         (key.tree, key.selector, 'PASS', 'a' * 40)
@@ -1013,7 +1022,7 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
     cut = StepReport(name='pytest', reported=(), failures=(), truncated=('the wall fired',))
     verdict = build_verdict((cut,), tree='sha256:' + 'b' * 64, env='env:1', spec='verify', log=LogRef.of(log))
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
-    assert verify.main(['--no-status']) == EXIT_CODES[Outcome.INCONCLUSIVE]
+    assert verify.main([]) == EXIT_CODES[Outcome.INCONCLUSIVE]
     assert runs(cache) == ()
     unsettled = localpart.post_part(tmp_path, log, 'a' * 40, (), settled=verdict.result.outcome.settled)
     assert unsettled == 'part: not posted -- an INCONCLUSIVE run is no part'
@@ -1122,13 +1131,14 @@ def test_every_inconclusive_path_exits_3_through_the_producer_contract(
     _planted_steps(monkeypatch, tmp_path, pytest_text=pytest_text, pytest_code=pytest_code)
     if plant is not None:
         monkeypatch.setattr(verify, *plant)
-    assert verify.main(['--no-status', '--rerun']) == ProducerExit.INCONCLUSIVE, path
+    assert verify.main(['--rerun']) == ProducerExit.INCONCLUSIVE, path
 
 
 def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_path: Path) -> None:
     """THE CONTROL for the paths above: the harness can say PASS, so their 3 is each path's own."""
+    _unposted(monkeypatch)
     _planted_steps(monkeypatch, tmp_path, pytest_text='1 passed in 0.1s\n', pytest_code=0)
-    assert verify.main(['--no-status', '--rerun']) == ProducerExit.PASS
+    assert verify.main(['--rerun']) == ProducerExit.PASS
 
 
 def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
@@ -1155,7 +1165,6 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
                 sys.executable,
                 '-m',
                 'lab_commons.dev.verify',
-                '--no-status',
                 '--rerun',
                 '--lock-wait-s',
                 '0',
@@ -1369,3 +1378,38 @@ def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, mon
     assert f'python -m lab_commons.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
     monkeypatch.setattr(verify, 'status_paths', lambda _root: ('tests/test_a.py',))
     assert 'cannot be offered' in verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'
+
+
+def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, tmp_path: Path) -> None:
+    """VERDICTS-FROM-THE-FORGE. Live 2026-10-17/18: a local measure posted tests/base on integrate/main shas.
+
+    A selection outside the producer serve spawned reaches no status call, on a clean unmoved HEAD; the
+    PLANTED CONTROL is the same clean run inside the producer, which posts.
+    """
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    _cached(monkeypatch, tmp_path)
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
+    monkeypatch.delenv(PRODUCING_VAR)
+    assert verify.main(['--rerun', 'tests/a.py']) == ProducerExit.PASS
+    assert posted == [], 'a local measure is never a verdict'
+    for name, value in producing(part_context(BASE), 'a' * 40).items():
+        monkeypatch.setenv(name, value)
+    assert verify.main(['--rerun']) == ProducerExit.PASS
+    assert _posted_part(posted) == ('PASS', 1)
+
+
+def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_path: Path) -> None:
+    """The cited path is the other door to the forge, and is shut the same way."""
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    cache = _cached(monkeypatch, tmp_path)
+    (tmp_path / 'tests').mkdir()
+    (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
+    monkeypatch.delenv(PRODUCING_VAR)
+    monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
+    key = verify.run_key(tmp_path, ('tests/a.py',))
+    run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
+    cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
+    assert verify.main(['tests/a.py']) == ProducerExit.PASS
+    assert posted == []
