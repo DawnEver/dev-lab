@@ -32,10 +32,11 @@ from lab_commons.hpc.plan import make_plan
 from lab_commons.hpc.shell import BUILD_FAILED, UV_PRUNE, RunSpec, build_script
 from lab_commons.hpc.slurm import parse_snapshot
 from lab_commons.hpc.tree import NotSubmitted
-from lab_commons.hpc.worker import RESULTS, TAIL_LINES, append_event, close_shard
+from lab_commons.hpc.worker import RESULTS, TAIL_LINES, Rejected, append_event, close_shard, run_shard
 from lab_commons.hpc.worker import main as worker_main
+from lab_commons.outcomes import Reason, Status
 from lab_commons.outcomes.jsonl import read_jsonl
-from lab_commons.outcomes.record import Event
+from lab_commons.outcomes.record import OUTCOME, Event
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
@@ -85,14 +86,41 @@ def test_every_shard_appends_to_the_one_results_file_and_an_item_failure_is_data
         assert worker_main([str(manifest), shard]) == 0
     rows = read_jsonl(manifest.parent / RESULTS).rows
     events = [Event.from_plain(row) for row in rows]
-    assert [(e.kind, e.key, e.data['ok']) for e in events] == [
-        ('item', '0', True),
-        ('item', '1', True),
-        ('item', '2', False),
-        ('item', '3', True),
+    assert [(e.kind, e.key, e.cell.status) for e in events] == [
+        (OUTCOME, '0', Status.OK),
+        (OUTCOME, '1', Status.OK),
+        (OUTCOME, '2', Status.ERROR),
+        (OUTCOME, '3', Status.OK),
     ]
-    assert 'ValueError' in events[2].data['error']
+    assert events[0].data == {'shard': 0, 'value': 2.0}
+    assert 'ValueError' in events[2].cell.reason.text
     assert sorted(p.name for p in manifest.parent.iterdir()) == ['manifest.json', RESULTS], 'no file per shard'
+
+
+def _judge(item: int) -> int:
+    if item < 0:
+        raise Rejected(Reason('invalid', f'{item} is negative'))
+    if item == 0:
+        raise ZeroDivisionError(item)
+    return item
+
+
+def test_a_declared_rejection_is_rejected_and_any_other_exception_an_error(tmp_path: Path) -> None:
+    """Control: only the declared :class:`Rejected` is a DECIDED no; a crash is RETRYABLE."""
+    results = tmp_path / RESULTS
+    run_shard({'items': [3, -1, 0], 'shards': [[0, 3]]}, 0, results, entry=_judge)
+    cells = [Event.from_plain(row).cell for row in read_jsonl(results).rows]
+    assert [c.status for c in cells] == [Status.OK, Status.REJECTED, Status.ERROR]
+    assert cells[1].reason == Reason('invalid', '-1 is negative')
+    assert cells[2].reason.kind == 'exception'
+    assert 'ZeroDivisionError' in cells[2].reason.text
+    gathered = gather(Login({RESULTS: results.read_text(encoding='utf-8') + _lines(_close(0)) + EARLIER}), '~/r')
+    assert [(r['index'], r['ok'], r['status']) for r in gathered[0]] == [
+        (0, True, 'ok'),
+        (1, False, 'rejected'),
+        (2, False, 'error'),
+    ]
+    assert gathered[0][1]['error'] == '-1 is negative'
 
 
 def test_a_wide_run_still_writes_one_file(tmp_path: Path) -> None:
@@ -143,7 +171,12 @@ def _close(shard: int, code: int = 0) -> tuple[str, str, dict]:
     return ('shard', str(shard), {'code': code, 'tail': []})
 
 
+def _ok(index: int, value: object) -> dict:
+    return {'index': index, 'ok': True, 'status': 'ok', 'value': value}
+
+
 def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
+    """FORMATS-UPGRADE-ON-READ: these are a pre-Cell worker's ``item`` lines, still read as OK items."""
     text = _lines(
         _item(0, 0, 'a'),
         _item(1, 0, 'b'),
@@ -158,8 +191,8 @@ def test_gather_derives_every_returned_shard_from_the_one_file() -> None:
     login = Login({RESULTS: text + EARLIER})
     got = gather(login, '~/ci/jobs/s/sweep-t0')
     assert got == {
-        0: [{'index': 0, 'ok': True, 'value': 'a'}, {'index': 1, 'ok': True, 'value': 'b'}],
-        1: [{'index': 2, 'ok': True, 'value': 'c'}, {'index': 3, 'ok': True, 'value': 'd'}],
+        0: [_ok(0, 'a'), _ok(1, 'b')],
+        1: [_ok(2, 'c'), _ok(3, 'd')],
     }, 'shard 2 closed non-zero: not returned, so a retry re-runs it'
     assert gather(Login({RESULTS: text + '{"schema":2,"ki' + EARLIER}), '~/r') == got, 'a torn last line is cut'
     with pytest.raises(ValueError, match=r'Expecting|Unterminated'):
@@ -173,8 +206,8 @@ def test_a_run_an_earlier_worker_wrote_still_gathers() -> None:
     )
     login = Login({RESULTS: EARLIER + old + NL, 'find ': '57\n', '-d ': ''})
     assert gather(login, '~/p/.lab-hpc/sweep-t0') == {
-        0: [{'index': 0, 'ok': True, 'value': 0}],
-        1: [{'index': 1, 'ok': True, 'value': 10}],
+        0: [_ok(0, 0)],
+        1: [_ok(1, 10)],
     }
     assert files_of(Login({'find ': '57\nearlier\n'}), '~/r') == (57, True)
     assert files_of(Login({'find ': '3\n'}), '~/r') == (3, False)
