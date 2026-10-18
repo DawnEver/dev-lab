@@ -75,6 +75,7 @@ from lab_commons.compute.model import (
 )
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
 from lab_commons.dev.forgealarm import STARVED, Alarm
+from lab_commons.dev.forgecoalesce import WAITING_BEHIND
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
@@ -90,6 +91,7 @@ __all__ = [
     'OVER_BUDGET',
     'candidates',
     'head_login',
+    'held',
     'host_weights',
     'labelled_issues',
     'load_schedule',
@@ -169,6 +171,15 @@ def starved_alarms(queue: Sequence[Ranked], schedule: Schedule, repo: str) -> li
         )
         for item in starved(queue, {one.candidate.repo: schedule for one in queue})
     ]
+
+
+def held(blocked: str) -> bool:
+    """Whether *blocked* is a fleet POLICY hold -- its ref's run in flight, or its ref's budget spent.
+
+    A held candidate is no work any host could claim now, so it never makes a host idle with work pending;
+    only a block THIS host could have admitted past -- nothing, or its own capacity -- does.
+    """
+    return blocked.startswith((WAITING_BEHIND, OVER_BUDGET))
 
 
 def over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mapping[str, float] | None) -> str:
