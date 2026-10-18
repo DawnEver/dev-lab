@@ -38,8 +38,8 @@ import lab_commons.launch as _door
 from lab_commons.dev._forge_journal import Durable, Probe
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
-from lab_commons.dev.verdict import Outcome
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'DESCRIPTION_LIMIT',
@@ -60,10 +60,10 @@ STATES: Final = ('success', 'failure', 'error', 'pending')
 #: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
 DESCRIPTION_LIMIT: Final = 140
 
-_STATE_FOR: Final[dict[Outcome, str]] = {
-    Outcome.PASS: 'success',
-    Outcome.FAIL: 'failure',
-    Outcome.INCONCLUSIVE: 'error',
+_STATE_FOR: Final[dict[Conclusion, str]] = {
+    Conclusion.PASS: 'success',
+    Conclusion.FAIL: 'failure',
+    Conclusion.INCONCLUSIVE: 'error',
 }
 
 
@@ -96,7 +96,7 @@ def _status(raw: Mapping[str, Any]) -> Status:
     )
 
 
-def state_for(outcome: Outcome) -> str:
+def state_for(outcome: Conclusion) -> str:
     """``success`` for PASS, ``failure`` for FAIL, ``error`` for INCONCLUSIVE."""
     return _STATE_FOR[outcome]
 

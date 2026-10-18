@@ -28,7 +28,8 @@ from lab_commons.dev.forgestatus import (
 )
 from lab_commons.dev.logref import LogRef
 from lab_commons.dev.treedirt import status_paths
-from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
+from lab_commons.outcomes import Conclusion
 
 
 @pytest.fixture
@@ -44,23 +45,23 @@ CASES = (
 _SHA = 'a' * 40
 
 
-def _verdict(tmp_path: Path, outcome: Outcome) -> Verdict:
+def _verdict(tmp_path: Path, outcome: Conclusion) -> Verdict:
     log = tmp_path / 'v.log'
     log.write_text('ran\n', encoding='utf-8')
     selector = Selector(spec='verify', node_ids=('x',))
-    if outcome is Outcome.INCONCLUSIVE:
+    if outcome is Conclusion.INCONCLUSIVE:
         result = Result.inconclusive('x went silent', proof=Proof.of(selector, []))
     else:
-        result = Result.settled(proof=Proof.of(selector, ['x']), failures=['x'] if outcome is Outcome.FAIL else [])
+        result = Result.settled(proof=Proof.of(selector, ['x']), failures=['x'] if outcome is Conclusion.FAIL else [])
     return Verdict(tree='sha256:' + 'b' * 64, env='env:1', selector=selector, result=result, log=LogRef.of(log))
 
 
 def test_pass_is_success_fail_is_failure_and_inconclusive_is_error() -> None:
     # User ruling 2026-10-04: a lane may push an INCONCLUSIVE tree, so every pushed tree carries its
     # verdict -- a non-success state the trunk's protection still refuses.
-    assert state_for(Outcome.PASS) == 'success'
-    assert state_for(Outcome.FAIL) == 'failure'
-    assert state_for(Outcome.INCONCLUSIVE) == 'error'
+    assert state_for(Conclusion.PASS) == 'success'
+    assert state_for(Conclusion.FAIL) == 'failure'
+    assert state_for(Conclusion.INCONCLUSIVE) == 'error'
 
 
 @pytest.mark.parametrize(('forge', 'root'), CASES)
@@ -135,7 +136,7 @@ def test_head_sha_and_status_paths_read_a_real_checkout(tmp_path: Path) -> None:
 
 
 def test_an_inconclusive_verdict_names_itself_in_the_error_description(tmp_path: Path) -> None:
-    verdict = _verdict(tmp_path, Outcome.INCONCLUSIVE)
+    verdict = _verdict(tmp_path, Conclusion.INCONCLUSIVE)
     assert state_for(verdict.result.outcome) == 'error'
     assert 'result=inconclusive' in verdict.line()[:DESCRIPTION_LIMIT]
 

@@ -406,7 +406,7 @@ from lab_commons.dev.units import (
     scan_files,
     trailing_token,
 )
-from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
 
 __all__ = [
     'ABSENT',
@@ -430,7 +430,6 @@ __all__ = [
     'HookAdoption',
     'IncompleteRun',
     'LogRef',
-    'Outcome',
     'Overwidth',
     'Proof',
     'Remedy',

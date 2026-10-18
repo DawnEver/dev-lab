@@ -23,7 +23,8 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
-from lab_commons.dev.verdict import Outcome, Verdict
+from lab_commons.dev.verdict import Verdict
+from lab_commons.outcomes import Conclusion
 
 __all__ = ['CACHED', 'CACHE_REL', 'CachedRun', 'cache_path', 'cached', 'remember', 'runs']
 
@@ -31,7 +32,7 @@ __all__ = ['CACHED', 'CACHE_REL', 'CachedRun', 'cache_path', 'cached', 'remember
 CACHE_REL: Final = 'output/runcache/runs.jsonl'
 
 #: The only results cached. INCONCLUSIVE says nothing about the tree.
-CACHED: Final = frozenset(outcome.value.upper() for outcome in Outcome if outcome.settled)
+CACHED: Final = frozenset(outcome.value.upper() for outcome in Conclusion if outcome.settled)
 
 _GIT_TIMEOUT_S: Final = 60
 

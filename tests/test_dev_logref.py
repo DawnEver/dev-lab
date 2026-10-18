@@ -11,7 +11,8 @@ import re
 import pytest
 
 from lab_commons.dev.logref import _STAMPED, MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
-from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
+from lab_commons.outcomes import Conclusion
 
 SELECTOR = Selector('gate:integrate/main', ('t/a.py::test_one',))
 
@@ -56,7 +57,7 @@ class TestTheReader:
         _verdict(log).stamp()
         citation = verify_log(log.path)
         assert isinstance(citation, Citation)
-        assert (citation.result, citation.tree, citation.env) == (Outcome.PASS.value, 'sha256:deadbeef', 'c0ffee')
+        assert (citation.result, citation.tree, citation.env) == (Conclusion.PASS.value, 'sha256:deadbeef', 'c0ffee')
         assert citation.spec == SELECTOR.spec
 
     def test_a_log_with_no_stamp_is_refused(self, log) -> None:
@@ -69,7 +70,7 @@ class TestTheReader:
         _verdict(log).stamp()
         with log.path.open('a', encoding='utf-8') as handle:
             handle.write('teardown noise that arrived after the conclusion\n')
-        assert verify_log(log.path).result == Outcome.PASS.value
+        assert verify_log(log.path).result == Conclusion.PASS.value
 
     def test_a_log_whose_EARLIER_lines_were_edited_is_refused(self, log) -> None:
         """The evidence a verdict names moved, so the verdict describes a log that no longer exists."""

@@ -9,7 +9,8 @@ declaration the constructor does not enforce.
 import pytest
 
 from lab_commons.dev.logref import LogRef, UnverifiableLog
-from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
+from lab_commons.outcomes import Conclusion
 
 
 @pytest.fixture
@@ -93,18 +94,18 @@ class TestTheProof:
 class TestPromotionIsRefusedWithoutProof:
     def test_two_covered_nodes_and_a_clean_proof_is_a_pass(self, proof) -> None:
         settled = Result.settled(proof=proof)
-        assert settled.outcome is Outcome.PASS
+        assert settled.outcome is Conclusion.PASS
         assert not settled.failures
 
     def test_SETTLED_DERIVES_FAIL_FROM_THE_FAILURES_NAMED(self, proof) -> None:
         settled = Result.settled(proof=proof, failures=('t/a.py::test_two',))
-        assert settled.outcome is Outcome.FAIL
+        assert settled.outcome is Conclusion.FAIL
         assert settled.failures == ('t/a.py::test_two',)
 
     def test_a_pass_cannot_be_constructed_without_a_proof(self) -> None:
         """THE DECISIVE ONE, through the CONSTRUCTOR rather than the classmethod."""
         with pytest.raises(IncompleteRun, match='requires PROOF of completeness'):
-            Result(outcome=Outcome.PASS)
+            Result(outcome=Conclusion.PASS)
 
     def test_a_pass_cannot_be_constructed_over_a_partial_proof(self, selector) -> None:
         partial = Proof.of(selector, ('t/a.py::test_one',))
@@ -114,12 +115,12 @@ class TestPromotionIsRefusedWithoutProof:
     def test_a_fail_needs_a_proof_as_much_as_a_pass_does(self) -> None:
         """A crash at 30 % does not know a FAIL either -- it knows nothing, which is the point."""
         with pytest.raises(IncompleteRun, match='requires PROOF of completeness'):
-            Result(outcome=Outcome.FAIL, failures=('t/a.py::test_one',))
+            Result(outcome=Conclusion.FAIL, failures=('t/a.py::test_one',))
 
     def test_a_fail_that_names_no_failure_is_refused(self, proof) -> None:
         """A red verdict that cannot say which test was red is the refusal a count pin is."""
         with pytest.raises(IncompleteRun, match='names no failure'):
-            Result(outcome=Outcome.FAIL, proof=proof)
+            Result(outcome=Conclusion.FAIL, proof=proof)
 
     def test_a_failure_that_never_reported_is_refused(self, proof) -> None:
         with pytest.raises(IncompleteRun, match='never reported'):
@@ -127,13 +128,13 @@ class TestPromotionIsRefusedWithoutProof:
 
     def test_a_pass_carrying_failures_is_refused(self, proof) -> None:
         with pytest.raises(IncompleteRun, match='absence of failures'):
-            Result(outcome=Outcome.PASS, proof=proof, failures=('t/a.py::test_two',))
+            Result(outcome=Conclusion.PASS, proof=proof, failures=('t/a.py::test_two',))
 
 
 class TestTheInconclusiveDefault:
     def test_inconclusive_needs_no_proof(self) -> None:
         result = Result.inconclusive('3 collection errors; 0 of 307 node ids reported')
-        assert result.outcome is Outcome.INCONCLUSIVE
+        assert result.outcome is Conclusion.INCONCLUSIVE
         assert not result.outcome.settled
 
     def test_inconclusive_must_say_why(self) -> None:
@@ -154,7 +155,7 @@ class TestTheInconclusiveDefault:
     def test_inconclusive_cannot_carry_failures(self) -> None:
         """Named through the CONSTRUCTOR, because the classmethod does not offer the field at all."""
         with pytest.raises(IncompleteRun, match='names 1 failure'):
-            Result(outcome=Outcome.INCONCLUSIVE, reason='not sure', failures=('t/a.py::test_one',))
+            Result(outcome=Conclusion.INCONCLUSIVE, reason='not sure', failures=('t/a.py::test_one',))
 
     def test_the_rendered_line_is_the_outcome_and_the_proof_is_elsewhere(self) -> None:
         assert Result.inconclusive('interrupted: 0 of 307 reported').render().startswith('inconclusive ')

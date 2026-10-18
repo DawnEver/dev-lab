@@ -55,11 +55,12 @@ from lab_commons.dev.reports import (
     stale_declarations,
 )
 from lab_commons.dev.runcache import CachedRun, runs
-from lab_commons.dev.verdict import Outcome, Verdict
+from lab_commons.dev.verdict import Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
+from lab_commons.outcomes import Conclusion
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -440,7 +441,7 @@ class TestTheVerdict:
             read_pytest(CLEAN, returncode=0),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.PASS
+        assert verdict.result.outcome is Conclusion.PASS
         assert EXIT_CODES[verdict.result.outcome] == 0
 
     def test_a_failing_suite_fails_with_its_failures_named(self, log: Path) -> None:
@@ -450,7 +451,7 @@ class TestTheVerdict:
             read_pytest(FAILING, returncode=1),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.FAIL
+        assert verdict.result.outcome is Conclusion.FAIL
         assert 'tests/test_paths.py::test_the_root_is_the_checkout' in verdict.result.failures
         assert EXIT_CODES[verdict.result.outcome] == 1
 
@@ -462,10 +463,10 @@ class TestTheVerdict:
             read_pytest(INTERRUPTED, returncode=2),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'pytest' in verdict.result.reason, 'the silent step must be named, not counted'
         assert EXIT_CODES[verdict.result.outcome] == 3, 'the producer contract: 2 is a refused argv'
-        assert EXIT_CODES[Outcome.FAIL] != EXIT_CODES[Outcome.INCONCLUSIVE], 'the two remedies differ'
+        assert EXIT_CODES[Conclusion.FAIL] != EXIT_CODES[Conclusion.INCONCLUSIVE], 'the two remedies differ'
 
     def test_a_step_that_never_launched_is_silent_by_name(self, log: Path) -> None:
         """``selected`` comes from the step NAMES, which is the only way ``silent`` means anything."""
@@ -475,7 +476,7 @@ class TestTheVerdict:
             read_pytest(CLEAN, returncode=0),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'silent: ruff format --check .' in verdict.result.reason
 
     def test_the_verdict_stamps_a_log_a_later_reader_can_check(self, log: Path) -> None:
@@ -576,20 +577,20 @@ class TestThePlantedControl:
             (
                 ('tests/test_selected.py::test_a', 'tests/test_selected.py::test_b', 'tests/test_selected.py::test_c'),
                 '3 passed in 0.1s\n',
-                Outcome.PASS,
+                Conclusion.PASS,
             ),
             (
                 ('tests/test_selected.py::test_a',),
                 'SKIPPED tests/test_selected.py::test_a - unavailable\n20 passed, 1 skipped in 0.1s\n',
-                Outcome.INCONCLUSIVE,
+                Conclusion.INCONCLUSIVE,
             ),
-            ((), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
-            (('-v',), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
-            (('-k', 'selected'), '3 passed in 0.1s\n', Outcome.PASS),
-            (('-m', 'selected'), '3 passed in 0.1s\n', Outcome.PASS),
-            (('--deselect', 'tests/test_other.py'), '3 passed in 0.1s\n', Outcome.PASS),
-            (('--deselect=tests/test_other.py',), '3 passed in 0.1s\n', Outcome.PASS),
-            (('--unknown-selection',), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
+            ((), '3 passed in 0.1s\n', Conclusion.INCONCLUSIVE),
+            (('-v',), '3 passed in 0.1s\n', Conclusion.INCONCLUSIVE),
+            (('-k', 'selected'), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('-m', 'selected'), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('--deselect', 'tests/test_other.py'), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('--deselect=tests/test_other.py',), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('--unknown-selection',), '3 passed in 0.1s\n', Conclusion.INCONCLUSIVE),
         ],
         ids=[
             'three-nodes-not-a-global-census',
@@ -649,7 +650,7 @@ class TestThePlantedControl:
         assert verdict.result.outcome is expected
         if selection == ('--unknown-selection',):
             assert 'cannot establish skip census scope' in verdict.result.reason
-        elif selection and selection != ('-v',) and expected is Outcome.INCONCLUSIVE:
+        elif selection and selection != ('-v',) and expected is Conclusion.INCONCLUSIVE:
             assert 'not declared' in verdict.result.reason
         if not selection or selection == ('-v',):
             assert 'NOT skipped' in verdict.result.reason
@@ -685,7 +686,7 @@ class TestThePlantedControl:
         monkeypatch.setattr(verify, 'boxed', _unboxed)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path)
-        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'tests/test_gone.py::test_vanished' in verdict.result.reason
         assert 'allowed_skips' in verdict.result.reason
         pytest_step = [command for command in launched if 'pytest' in command]
@@ -748,9 +749,9 @@ class TestThePlantedControl:
     def test_a_planted_uncovered_step_cannot_be_promoted(self, log: Path) -> None:
         """The other half of the control, at the verdict level rather than the parser level."""
         clean = (read_ruff('ruff check .', 0), read_pytest(CLEAN, returncode=0))
-        assert _verdict(clean, log).result.outcome is Outcome.PASS
+        assert _verdict(clean, log).result.outcome is Conclusion.PASS
         planted = (*clean, StepReport(name='a step that never launched'))
-        assert _verdict(planted, log).result.outcome is Outcome.INCONCLUSIVE
+        assert _verdict(planted, log).result.outcome is Conclusion.INCONCLUSIVE
 
 
 class TestTheTeeOnAConsoleThatCannotCarryTheCharacter:
@@ -921,7 +922,7 @@ def _patched_main(
     monkeypatch.setattr(localpart, 'present_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
-    assert verify.main([]) == EXIT_CODES[Outcome.PASS]
+    assert verify.main([]) == EXIT_CODES[Conclusion.PASS]
     return posted
 
 
@@ -951,9 +952,9 @@ def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeyp
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('the duplicate ran the suite'))
     key = verify.run_key(root, ('tests/a.py',))
     claim_path(box, key).write_text(json.dumps({'pid': os.getpid(), 'run': 'r1'}), encoding='utf-8')
-    answer = {'code': EXIT_CODES[Outcome.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
+    answer = {'code': EXIT_CODES[Conclusion.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
     (box / f'{key.digest()}.r1.result').write_text(json.dumps(answer), encoding='utf-8')
-    assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+    assert verify.main(['tests/a.py']) == EXIT_CODES[Conclusion.FAIL]
 
 
 def test_the_run_key_is_the_tree_the_env_and_the_selection(tmp_path: Path) -> None:
@@ -991,7 +992,7 @@ def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, 
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a judged selection ran again'))
     _plant(cache, verify.run_key(tmp_path, ('tests/a.py',)), 'FAIL')
-    assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+    assert verify.main(['tests/a.py']) == EXIT_CODES[Conclusion.FAIL]
 
 
 def test_rerun_ignores_the_cache(monkeypatch, tmp_path: Path) -> None:
@@ -999,7 +1000,7 @@ def test_rerun_ignores_the_cache(monkeypatch, tmp_path: Path) -> None:
     cache = _cached(monkeypatch, tmp_path)
     _plant(cache, verify.run_key(tmp_path, ()), 'FAIL')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
-    assert verify.main(['--rerun']) == EXIT_CODES[Outcome.PASS]
+    assert verify.main(['--rerun']) == EXIT_CODES[Conclusion.PASS]
 
 
 def test_a_promoted_run_is_cached_with_its_commit(monkeypatch, tmp_path: Path) -> None:
@@ -1007,7 +1008,7 @@ def test_a_promoted_run_is_cached_with_its_commit(monkeypatch, tmp_path: Path) -
     _unposted(monkeypatch)
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
-    assert verify.main([]) == EXIT_CODES[Outcome.PASS]
+    assert verify.main([]) == EXIT_CODES[Conclusion.PASS]
     key = verify.run_key(tmp_path, ())
     assert [(run.tree, run.selector, run.result, run.commit) for run in runs(cache)] == [
         (key.tree, key.selector, 'PASS', 'a' * 40)
@@ -1022,7 +1023,7 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
     cut = StepReport(name='pytest', reported=(), failures=(), truncated=('the wall fired',))
     verdict = build_verdict((cut,), tree='sha256:' + 'b' * 64, env='env:1', spec='verify', log=LogRef.of(log))
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
-    assert verify.main([]) == EXIT_CODES[Outcome.INCONCLUSIVE]
+    assert verify.main([]) == EXIT_CODES[Conclusion.INCONCLUSIVE]
     assert runs(cache) == ()
     unsettled = localpart.post_part(tmp_path, log, 'a' * 40, (), settled=verdict.result.outcome.settled)
     assert unsettled == 'part: not posted -- an INCONCLUSIVE run is no part'
