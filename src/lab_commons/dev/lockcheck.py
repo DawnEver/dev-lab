@@ -26,6 +26,7 @@ allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carr
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 import shutil
 import sys
@@ -38,7 +39,7 @@ from lab_commons.dev.netverb import Report, run_network_verb
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 __all__ = ['DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'pushed_shas', 'stale', 'unreasoned_holds']
 
@@ -67,11 +68,29 @@ _CLAUSE: Final = re.compile(r'^\s*(?P<op>~=|===|==|!=|<=|>=|<|>)\s*[\w.*+!-]+\s*
 _HOLDING: Final = frozenset({'<', '<=', '==', '===', '~='})
 
 
-def _git(root: Path, *argv: str) -> tuple[int, str]:
+def _git(root: Path, *argv: str, env: Mapping[str, str] | None = None) -> tuple[int, str]:
     done = _door.run(
-        [_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False, timeout=120
+        [_GIT, '-C', str(root), *argv],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+        timeout=120,
+        env=env,
     )
     return done.returncode, done.stdout
+
+
+#: The variables that point git at ONE repository. A hook runs with them set to the repository pushing, so a
+#: clone or checkout of ANOTHER repository from inside a hook must run without them.
+_REPOSITORY_LOCATORS: Final = frozenset({
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR', 'GIT_PREFIX',
+})  # fmt: skip
+
+
+def _unlocated() -> dict[str, str]:
+    return {name: value for name, value in os.environ.items() if name not in _REPOSITORY_LOCATORS}
 
 
 def _holds(text: str) -> bool:
@@ -125,17 +144,43 @@ def _tree_at(root: Path, sha: str) -> Iterator[Path]:
     if code != 0:
         msg = f'cannot check out {sha[:12]} to resolve it'
         raise OSError(msg)
-    # A path dependency may point into a submodule (a product's engine crate, plan C5): the tree resolved
-    # must hold it, or the build backend fails on a path that a checkout would have.
-    code, _ = _git(tree, 'submodule', 'update', '--init', '--recursive')
-    if code != 0:
+    try:
+        _mount_submodules(root, tree)
+    except OSError:
         _git(root, 'worktree', 'remove', '--force', str(tree))
-        msg = f'cannot initialise the submodules of {sha[:12]} to resolve it'
-        raise OSError(msg)
+        raise
     try:
         yield tree
     finally:
         _git(root, 'worktree', 'remove', '--force', str(tree))
+
+
+def _mount_submodules(root: Path, tree: Path) -> None:
+    """Give *tree* every submodule its commit records, each an INDEPENDENT clone of *root*'s checkout of it.
+
+    A path dependency may point into a submodule (a product's engine crate, plan C5), so the tree resolved must
+    hold it. `git submodule update` inside a linked worktree writes the submodule's SHARED git state (its
+    ``core.worktree``) and strands every other checkout of it; a ``--shared`` clone writes nothing shared.
+    """
+    _, listing = _git(tree, 'ls-tree', '-r', 'HEAD')
+    for line in listing.splitlines():
+        meta, _, path = line.partition('	')
+        mode, _, gitlink = meta.split()
+        if mode != '160000':
+            continue
+        source, target = root / path, tree / path
+        if not (source / '.git').exists():
+            msg = f'{path} is not initialised in {root}; run `git submodule update --init` there to resolve this sha'
+            raise OSError(msg)
+        if target.is_dir() and not any(target.iterdir()):
+            target.rmdir()  # git leaves an empty directory at an uninitialised submodule
+        bare = _unlocated()
+        code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target), env=bare)
+        if code == 0:
+            code, _ = _git(target, 'checkout', '--quiet', gitlink, env=bare)
+        if code != 0:
+            msg = f'cannot mount submodule {path} at {gitlink[:12]} to resolve this sha'
+            raise OSError(msg)
 
 
 def _dry_run(tree: Path) -> Report:
