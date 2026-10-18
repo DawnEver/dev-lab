@@ -57,10 +57,13 @@ from lab_commons.hpc.shell import (
     FULL,
     INCREMENTAL,
     PREP_LOG,
+    ROOT,
     TIME,
     RunSpec,
     build_script,
+    cache_dir,
     collect_command,
+    fetch_script,
     needs_script,
     parse_ids,
     parse_times,
@@ -1460,3 +1463,24 @@ def test_the_build_facts_report_the_key_and_the_resolved_list_of_one_reading() -
     resolved = json.loads(told['resolved'])
     assert told['env'] == env_key(resolved)
     assert any(line.startswith('lab-commons==') for line in resolved)
+
+
+def test_each_repository_fetches_into_its_own_cache_whose_origin_is_that_repository() -> None:
+    url = 'https://github.com/pemc/numerics-lab.git'
+    cache = cache_dir(url)
+    assert cache.startswith(f'{ROOT}/cache/pemc-numerics-lab-'), cache
+    assert cache.endswith('.git'), cache
+    spec = RunSpec(sha=SHA, repo_url=url, builds=Builds(install='true', env_key='k1'))
+    script = fetch_script(spec)
+    assert f'{ROOT}/cache.git' not in script, 'the shared cache is retired'
+    assert f'git -C {cache} remote add origin {url}' in script
+    assert f'git -C {cache} remote set-url origin {url}' in script, 'a cache never keeps a stale origin'
+    assert f'git -C {cache} fetch -q --prune origin "+refs/heads/*:refs/remotes/origin/*"' in script
+    assert f'update-ref refs/lab-ci/{SHA} {SHA}' in script, "a shipped pack is named inside its repo's cache"
+    assert f'git -C {cache} worktree add' in build_script(spec), "a tree is a worktree of its repository's cache"
+
+
+def test_two_repositories_never_share_a_cache() -> None:
+    urls = ('https://g/a/motronics-studio.git', 'https://g/a/numerics-lab.git', 'https://h/a/numerics-lab.git', 'u')
+    assert len({cache_dir(u) for u in urls}) == len(urls)
+    assert cache_dir(urls[1]) == cache_dir(urls[1]), 'deterministic'

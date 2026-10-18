@@ -53,7 +53,9 @@ not in flight, untouched ``abandon_days`` (a state is a few files, and the carry
 ``pack-not-in-flight``, ``slurm-out-finished``, ``log-over-size`` (rotated), and on a workstation
 ``forge-tree-stale``: a ``.claude/worktrees/forge-*``
 its producer (:mod:`lab_commons.dev.shatree`) failed to remove -- the same rule, since a producer's tree is
-in flight exactly while its producer runs.
+in flight exactly while its producer runs. ``shared-cache-retired``: the one bare ``ci/cache.git`` every
+repository once fetched into goes whole -- each repository has its own ``ci/cache/<slug>.git``
+(:func:`lab_commons.hpc.shell.cache_dir`), whose worktrees are pruned every pass; a cache is regenerable.
 
 UNIT RESULTS ON THE FORGE (``unit-<unit hash>-<result hash>.*`` beside the run records,
 :class:`lab_commons.dev.forgeunit.ForgeResults`) are a content-addressed cache, not evidence: no sha keeps
@@ -273,11 +275,10 @@ def cluster_plan(
     doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
     doomed += _collect_over_budget(ci / 'collect', policy, now)
     doomed += [Doomed(p, 'pack-not-in-flight') for p in _entries(ci / 'packs') if p.stem not in flying]
+    doomed.append(Doomed(ci / 'cache.git', 'shared-cache-retired'))
     doomed += _home_rules(home, policy, now)
     hard = tuple(Doomed(ci / 'runs' / sha, 'quota-pressure') for _, sha in sorted(harder))
-    commands: list[tuple[str, ...]] = []
-    if (ci / 'cache.git').is_dir():
-        commands.append((_GIT, '--git-dir', str(ci / 'cache.git'), 'worktree', 'prune'))
+    commands = [(_GIT, '--git-dir', str(c), 'worktree', 'prune') for c in _entries(ci / 'cache') if c.is_dir()]
     commands += _uv(policy, ci / 'uv-cache')
     doomed = [d for d in doomed if d.path.exists() or d.path.is_symlink()]
     return Plan(tuple(doomed), hard, tuple(commands))

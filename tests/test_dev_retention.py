@@ -125,6 +125,19 @@ def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
     assert not {d.path.name for d in plan.doomed if d.path.parent.name == 'trees'} & kept, 'in flight: kept'
 
 
+def test_the_retired_shared_cache_goes_and_each_repository_cache_is_pruned(home: Path) -> None:
+    ci = home / 'ci'
+    (ci / 'cache.git').mkdir()
+    caches = [ci / 'cache' / 'o-a-00000000.git', ci / 'cache' / 'o-b-11111111.git']
+    for cache in caches:
+        cache.mkdir(parents=True)
+    plan = _plan(home)
+    assert {d.path: d.rule for d in plan.doomed}.get(ci / 'cache.git') == 'shared-cache-retired'
+    assert not {d.path for d in plan.doomed} & set(caches), "a repository's own cache is kept"
+    pruned = [c[2] for c in plan.commands if c[-2:] == ('worktree', 'prune')]
+    assert pruned == [str(c) for c in caches]
+
+
 def test_a_cargo_target_goes_when_no_kept_run_names_its_native_key(home: Path) -> None:
     """``cargo-target/<native key>`` follows its key; the retired shared target's dirs name no key."""
     targets = home / 'ci' / 'cargo-target'
@@ -298,7 +311,7 @@ def test_serve_pass_runs_every_tick_and_prunes_only_after_a_deletion(home: Path,
             kw['home'], policy, now=kw['now'], live=kw['live'], repo='r', sources=SOURCES
         ),
     }  # fmt: skip
-    (home / 'ci' / 'cache.git').mkdir()
+    (home / 'ci' / 'cache' / 'o-r-00000000.git').mkdir(parents=True)
     assert serve_pass(Path(), now=NOW, **kwargs) is not None
     assert not (home / 'ci' / 'runs' / 'a1').exists()
     assert calls, 'something went: git forgets it'
