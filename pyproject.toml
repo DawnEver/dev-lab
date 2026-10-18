@@ -149,6 +149,7 @@ testpaths = ["tests"]
 markers = [
     "dev_checkout: asserts a developer-checkout invariant (hooks installed, branches on origin, worktree placement)",
     "node: drives the agent-guard engine through a real `node`, which the cluster's compute nodes do not carry",
+    "not_applicable: a skip of this test is NOT_APPLICABLE (lab_commons.hpc.pytest_item.judged); any other skip is refused",
 ]
 
 [tool.ruff]

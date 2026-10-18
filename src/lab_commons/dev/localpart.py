@@ -31,7 +31,6 @@ from lab_commons.config import section
 from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import verdict_commit
-from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
 from lab_commons.dev.platformparts import (
     PartRefusal,
     UndeclaredPart,
@@ -39,10 +38,11 @@ from lab_commons.dev.platformparts import (
     record_directory,
     this_platform,
 )
+from lab_commons.dev.test_outcomes import outcomes_dir, read_cells
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
-from lab_commons.hpc.testcells import TestCell, upgraded
+from lab_commons.hpc.testcells import TestCell
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
@@ -164,10 +164,7 @@ def post_part(
         return parse_ids(done.stdout)
 
     judged = outcomes_dir(log)
-    reasons = read_reasons(judged)
-    read = {node: upgraded(word, reasons.get(node, '')) for node, word in read_outcomes(judged).items()}
-    cells = {node: one for node, one in read.items() if one is not None}
-    flaky: frozenset[str] = frozenset()
+    cells, flaky = read_cells(judged)
     owned = owners(root, commit, list(cells), collect)
     if part:
         chosen = [part]

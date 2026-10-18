@@ -72,7 +72,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'footprint': ('original',),
     'localpart': ('original',),
     'familyheads': ('original',),
-    'outcomes': ('original',),
+    'test_outcomes': ('original',),
     'lanepolicy': ('original',),
     'platformparts': ('original',),
     'bypath': ('supersedes', 'scripts/gate/_by_path.py'),

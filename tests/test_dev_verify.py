@@ -60,7 +60,8 @@ from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build
 from lab_commons.dev.verify import _tee as tee_step
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
-from lab_commons.outcomes import Conclusion
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Conclusion, Record, Status
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -917,7 +918,7 @@ def _patched_main(
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(localpart, 'read_outcomes', lambda _judged: {'t::a': 'passed'})
+    monkeypatch.setattr(localpart, 'read_cells', lambda _judged: ({'t::a': TestCell(Cell(Status.OK))}, frozenset()))
     monkeypatch.setattr(localpart, 'owners', lambda _root, _sha, reported, _collect: dict.fromkeys(reported, BASE))
     monkeypatch.setattr(localpart, 'present_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
@@ -1030,10 +1031,11 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
 
 
 def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str, str]) -> list[Path]:
-    """Route posting at a planted repo whose judged log has *judged* beside it; returns the records posted."""
+    """Route posting at a planted repo whose judged log has *judged* (id -> status) beside it; the records posted."""
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
-    (tmp_path / 'judged.outcomes').mkdir()
-    (tmp_path / 'judged.outcomes' / 'outcomes.json').write_text(json.dumps(judged), encoding='utf-8')
+    record = Record(tmp_path / 'judged.outcomes' / 'cells.jsonl')
+    for node, status in judged.items():
+        record.outcome(node, Cell(Status(status)))
     monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: Vocabulary())
     posted: list[Path] = []
     monkeypatch.setattr(localpart, 'post', lambda _root, path: posted.append(path) or 'posted')
@@ -1049,7 +1051,7 @@ def _posted_part(posted: list[Path]) -> tuple[Conclusion, int]:
 
 def test_a_fresh_pass_posts_a_part_covering_what_it_judged(monkeypatch, tmp_path: Path) -> None:
     """Live 2026-10-11 (lab-commons ff3106e): a full windows verify posted nothing -- its record covered no test."""
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed', 't::b': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok', 't::b': 'ok'})
     _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     assert verify.main([]) == ProducerExit.PASS
@@ -1058,7 +1060,7 @@ def test_a_fresh_pass_posts_a_part_covering_what_it_judged(monkeypatch, tmp_path
 
 def test_a_cited_pass_posts_the_cited_runs_part(monkeypatch, tmp_path: Path) -> None:
     """Live 2026-10-11: CITED PASS exited 0 and posted nothing, so serve released it; the cache holds the evidence."""
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok'})
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
     key = verify.run_key(tmp_path, ())
@@ -1387,7 +1389,7 @@ def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, 
     A selection outside the producer serve spawned reaches no status call, on a clean unmoved HEAD; the
     PLANTED CONTROL is the same clean run inside the producer, which posts.
     """
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok'})
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
@@ -1403,7 +1405,7 @@ def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, 
 
 def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_path: Path) -> None:
     """The cited path is the other door to the forge, and is shut the same way."""
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok'})
     cache = _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')

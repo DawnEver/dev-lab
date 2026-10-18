@@ -60,7 +60,6 @@ from lab_commons.dev.hook_install import read_hooks
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import part_selection, post_cited, post_part
 from lab_commons.dev.logref import LogRef, UnverifiableLog
-from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import ProducerExit, full_suite_refusal
 from lab_commons.dev.pytestout import strip_ansi
@@ -75,6 +74,7 @@ from lab_commons.dev.reports import (
 )
 from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
+from lab_commons.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from lab_commons.dev.treedirt import status_paths
 from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
 from lab_commons.dev.verifybox import (
@@ -161,7 +161,7 @@ PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
 LEDGER_PLUGIN: Final[tuple[str, ...]] = ('-p', durations.__name__)
 
 #: The per-test OUTCOME recorder a run's record is built from (inert without its env var).
-OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.outcomes')
+OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.test_outcomes')
 
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".

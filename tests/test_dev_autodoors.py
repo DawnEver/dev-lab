@@ -121,6 +121,7 @@ def test_no_rendering_allows_a_raw_destructive_verb_and_the_scan_sees_one() -> N
     assert promises_raw('Bash(git push origin --delete x)') == ('--delete',)
 
 
+@pytest.mark.not_applicable  # codex is no declared resource here: an absent CLI declines the question
 @pytest.mark.skipif(shutil.which('codex') is None, reason='codex CLI not installed on this box')
 def test_the_real_codex_engine_allows_a_door_and_not_a_raw_verb(tmp_path: Path) -> None:
     rules = tmp_path / 'doors.rules'
