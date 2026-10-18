@@ -225,9 +225,12 @@ def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: p
     _git_ok(repo, 'commit', '-qm', 'later')
     shared = _git_ok(repo / 'components' / 'engine', 'rev-parse', '--git-dir')
     before = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
+    # A pre-push hook runs with GIT_DIR naming the repository pushing: the mount must not inherit it.
+    monkeypatch.setenv('GIT_DIR', _git_ok(repo, 'rev-parse', '--absolute-git-dir'))
     with lockcheck._tree_at(repo, mounted) as tree:
         assert tree != repo, 'the control: HEAD moved on, so a separate tree is built'
         assert (tree / 'components' / 'engine' / 'crate.txt').is_file()
+    monkeypatch.delenv('GIT_DIR')  # the checks below are the repository's own, outside the hook
     after = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
     assert after == before, 'the submodule state every other checkout shares was written'
     assert _git_ok(repo / 'components' / 'engine', 'status', '--porcelain') == '', 'the checkout still works'
