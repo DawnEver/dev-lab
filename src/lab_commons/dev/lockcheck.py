@@ -125,17 +125,42 @@ def _tree_at(root: Path, sha: str) -> Iterator[Path]:
     if code != 0:
         msg = f'cannot check out {sha[:12]} to resolve it'
         raise OSError(msg)
-    # A path dependency may point into a submodule (a product's engine crate, plan C5): the tree resolved
-    # must hold it, or the build backend fails on a path that a checkout would have.
-    code, _ = _git(tree, 'submodule', 'update', '--init', '--recursive')
-    if code != 0:
+    try:
+        _mount_submodules(root, tree)
+    except OSError:
         _git(root, 'worktree', 'remove', '--force', str(tree))
-        msg = f'cannot initialise the submodules of {sha[:12]} to resolve it'
-        raise OSError(msg)
+        raise
     try:
         yield tree
     finally:
         _git(root, 'worktree', 'remove', '--force', str(tree))
+
+
+def _mount_submodules(root: Path, tree: Path) -> None:
+    """Give *tree* every submodule its commit records, each an INDEPENDENT clone of *root*'s checkout of it.
+
+    A path dependency may point into a submodule (a product's engine crate, plan C5), so the tree resolved must
+    hold it. `git submodule update` inside a linked worktree writes the submodule's SHARED git state (its
+    ``core.worktree``) and strands every other checkout of it; a ``--shared`` clone writes nothing shared.
+    """
+    _, listing = _git(tree, 'ls-tree', '-r', 'HEAD')
+    for line in listing.splitlines():
+        meta, _, path = line.partition('	')
+        mode, _, gitlink = meta.split()
+        if mode != '160000':
+            continue
+        source, target = root / path, tree / path
+        if not (source / '.git').exists():
+            msg = f'{path} is not initialised in {root}; run `git submodule update --init` there to resolve this sha'
+            raise OSError(msg)
+        if target.is_dir() and not any(target.iterdir()):
+            target.rmdir()  # git leaves an empty directory at an uninitialised submodule
+        code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target))
+        if code == 0:
+            code, _ = _git(target, 'checkout', '--quiet', gitlink)
+        if code != 0:
+            msg = f'cannot mount submodule {path} at {gitlink[:12]} to resolve this sha'
+            raise OSError(msg)
 
 
 def _dry_run(tree: Path) -> Report:
