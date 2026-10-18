@@ -29,7 +29,6 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
@@ -54,7 +53,7 @@ from lab_commons.dev.reports import (
     read_ruff,
     stale_declarations,
 )
-from lab_commons.dev.runcache import CachedRun, runs
+from lab_commons.dev.runcache import CachedRun, record, runs
 from lab_commons.dev.verdict import Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
@@ -982,9 +981,7 @@ def _unposted(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _plant(cache: Path, key: verify.RunKey, result: str) -> None:
-    cache.write_text(
-        json.dumps(asdict(CachedRun(key.tree, key.env, key.selector, result, '', 'x.log'))) + '\n', encoding='utf-8'
-    )
+    record(cache, CachedRun(key.tree, key.env, key.selector, result, '', 'x.log'))
 
 
 def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, tmp_path: Path) -> None:
@@ -1065,7 +1062,7 @@ def test_a_cited_pass_posts_the_cited_runs_part(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
     key = verify.run_key(tmp_path, ())
     run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
-    cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
+    record(cache, run)
     assert verify.main([]) == ProducerExit.PASS
     assert _posted_part(posted) == (Conclusion.PASS, 1)
 
@@ -1413,6 +1410,6 @@ def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_pat
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
     key = verify.run_key(tmp_path, ('tests/a.py',))
     run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
-    cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
+    record(cache, run)
     assert verify.main(['tests/a.py']) == ProducerExit.PASS
     assert posted == []
