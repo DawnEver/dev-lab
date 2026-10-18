@@ -224,3 +224,58 @@ def test_a_raced_open_is_reported_as_raced(tmp_path: Path) -> None:
     stale = Stale(clone, client=CLIENT, integration='integrate/main')
     assert tick((OPT,), stale, engines).action == RACED
     assert product.lane() is not None
+
+
+# --- C4: a red bump holds, once; concurrent bumps take turns ------------------------------------
+
+
+def test_a_red_bump_keeps_the_last_green_pointer_and_opens_exactly_one_issue() -> None:
+    """Red, then tick after tick with the engine tip unchanged: one issue, no second lane, pointer kept."""
+    product = FakeProduct({NUM.path: OLD})
+    engines = FakeEngines({'numerics-lab': NEW}, {'numerics-lab': GREEN})
+    assert tick((NUM,), product, engines).action == OPENED
+    product.lane_statuses = (part('base', 'PASS'), part('linux', 'FAIL'))
+    assert tick((NUM,), product, engines).action == HELD
+    for _ in range(3):
+        assert tick((NUM,), product, engines).action == IDLE
+    assert product.titles == [issue_title(NUM, NEW)], 'exactly one issue'
+    assert product.opened == [(NUM.path, NEW)], 'the held commit is never re-opened'
+    assert product.pointers[NUM.path] == OLD, 'the pointer stays on the last green commit'
+
+    newer = 'd' * 40
+    engines.tips['numerics-lab'] = newer
+    assert tick((NUM,), product, engines).action == OPENED, "the engine's next green commit is a new candidate"
+
+
+def test_concurrent_bumps_are_serialised_through_the_one_lane() -> None:
+    """Two engines green at once: one lane; the second opens only after the first has landed."""
+    product = FakeProduct({NUM.path: OLD, OPT.path: OLD})
+    engines = FakeEngines({'numerics-lab': NEW, 'optimi-lab': NEW}, {'numerics-lab': GREEN, 'optimi-lab': GREEN})
+    first = tick((NUM, OPT), product, engines)
+    assert (first.action, first.component) == (OPENED, 'numerics-lab')
+    product.lane_statuses = (part('base', 'PASS'), part('linux', 'PASS'))
+    assert tick((NUM, OPT), product, engines).action == READY
+    assert product.opened == [(NUM.path, NEW)], 'no second lane while one is in flight'
+
+    assert product.current is not None
+    product.current = Lane(product.current.tip, NUM.path, NEW, absorbed=True)  # the integrator merged it
+    product.pointers[NUM.path] = NEW
+    assert tick((NUM, OPT), product, engines).action == LANDED
+    second = tick((NUM, OPT), product, engines)
+    assert (second.action, second.component) == (OPENED, 'optimi-lab')
+    assert product.opened == [(NUM.path, NEW), (OPT.path, NEW)]
+
+
+def test_the_planted_second_host_loses_the_race_for_the_lane() -> None:
+    """THE CONTROL for the serialisation: a second host whose read missed the lane is refused by its creation."""
+    product = FakeProduct({NUM.path: OLD, OPT.path: OLD})
+    engines = FakeEngines({'numerics-lab': NEW, 'optimi-lab': NEW}, {'numerics-lab': GREEN, 'optimi-lab': GREEN})
+    assert tick((NUM,), product, engines).action == OPENED
+
+    class Blind(FakeProduct):
+        def lane(self) -> Lane | None:
+            return None  # this host read origin before the other host's push
+
+    blind = Blind(dict(product.pointers), current=product.current)
+    assert tick((OPT,), blind, engines).action == RACED
+    assert blind.opened == [], 'the lane exists on origin, so its creation is refused'
