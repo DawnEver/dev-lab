@@ -12,6 +12,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -42,11 +43,11 @@ from lab_commons.hpc.records import (
     files_made,
     fold,
     held_outcomes,
-    pack_streams,
     read_record,
     read_streams,
     record_name,
     run_shas,
+    split_streams,
     stream_sources,
     write_record,
 )
@@ -133,32 +134,63 @@ def test_streams_are_read_back_per_item_in_one_command() -> None:
 
     def run(command: str, stdin: str | None) -> str:
         calls.append((command, stdin))
-        return '@@@ 0.jsonl\n{"a": 1}\n@@@ 12.jsonl\n{"b": 2}\n{"c": 3}\n'
+        return '{"item": 0, "a": 1}\n{"item": 12, "b": 2}\n{"item": 12, "c": 3}\n'
 
-    assert read_streams(run, '"$HOME"/ci/x', '"$HOME"/ci/y') == {0: '{"a": 1}', 12: '{"b": 2}\n{"c": 3}'}
+    assert read_streams(run, '"$HOME"/ci/x.jsonl', '"$HOME"/ci/y') == {
+        0: '{"item": 0, "a": 1}',
+        12: '{"item": 12, "b": 2}\n{"item": 12, "c": 3}',
+    }
     assert len(calls) == 1
 
 
-def test_streams_are_read_where_retention_kept_them_once_the_tree_is_gone(tmp_path: Path) -> None:
-    """A superseded run's tree is garbage; its round's streams were PACKED into one file beside its state."""
-    tree, kept = (d.replace('"$HOME"', tmp_path.as_posix()) for d in stream_sources('s1', 'r0'))
-    packed = tmp_path / 'packed'
-    packed.mkdir()
-    (packed / '0.jsonl').write_text('{"a": 1}', encoding='utf-8')  # no final newline: the pack adds one
-    (packed / '0.ids.json').write_text('["t::a"]', encoding='utf-8')  # the job's input: never read back
-    Path(kept).parent.mkdir(parents=True)
-    Path(kept).write_text(pack_streams(packed), encoding='utf-8')
+def test_a_restarted_item_keeps_only_its_last_attempt_and_a_kept_file_only_its_round() -> None:
+    text = (
+        '{"round": "r0"}\n{"item": 0, "begin": 1}\n{"item": 0, "a": 1}\n{"item": 1, "begin": 1}\n'
+        '{"item": 0, "begin": 1}\n{"item": 0, "b": 2}\n{"item": 1, "c": 3}\n{"item": 0, "torn'
+    )
+    assert split_streams(text, 'r0') == {0: '{"item": 0, "b": 2}', 1: '{"item": 1, "c": 3}'}
+    assert split_streams(text, 'r1') == {}, 'PLANTED CONTROL: a kept file of another round is no stream of this one'
+
+
+def _bash_runner() -> Callable[[str, str | None], str]:
     bash = bash_executable()  # PATH first, then git's own: a forge producer's PATH carries no bash
 
     def run(command: str, _stdin: str | None) -> str:
         done = subprocess.run([bash, '-c', command], capture_output=True, text=True, encoding='utf-8', check=True)
         return done.stdout
 
-    assert not Path(tree).exists()
-    assert read_streams(run, tree, kept) == {0: '{"a": 1}'}
-    Path(tree).mkdir(parents=True)
-    (Path(tree) / '0.jsonl').write_text('{"b": 2}\n', encoding='utf-8')
-    assert read_streams(run, tree, kept) == {0: '{"b": 2}'}, 'PLANTED CONTROL: the tree, while it exists, wins'
+    return run
+
+
+def test_a_round_streams_into_one_file_and_a_live_many_file_round_reads_through_the_upgrade(tmp_path: Path) -> None:
+    """A round in flight across the change left ``.lab-ci/<tag>/<i>.jsonl``; the upgraded writer appends the rest."""
+    live, kept = (d.replace('"$HOME"', tmp_path.as_posix()) for d in stream_sources('s1', 'r0'))
+    run = _bash_runner()
+    assert live.endswith('/.lab-ci/r0.jsonl'), 'ONE file per round, beside the old directory'
+    assert kept.endswith('/runs/s1/streams.jsonl'), 'ONE kept file per run'
+    old = Path(live).with_suffix('')
+    old.mkdir(parents=True)
+    (old / '0.jsonl').write_text('{"a": 1}', encoding='utf-8')  # no final newline
+    Path(live).write_text('{"item": 1, "begin": 1}\n{"item": 1, "b": 2}\n', encoding='utf-8')
+    assert read_streams(run, live, kept) == {0: '{"item": 0, "a": 1}', 1: '{"item": 1, "b": 2}'}
+    (old / '0.jsonl').unlink()
+    old.rmdir()
+    assert read_streams(run, live, kept) == {1: '{"item": 1, "b": 2}'}, 'PLANTED CONTROL: the live file alone'
+
+
+def test_streams_are_read_where_retention_kept_them_once_the_tree_is_gone(tmp_path: Path) -> None:
+    """A superseded run's tree is garbage; its round's streams were kept in ONE file beside its state."""
+    live, kept = (d.replace('"$HOME"', tmp_path.as_posix()) for d in stream_sources('s1', 'r0'))
+    run = _bash_runner()
+    old_kept = Path(kept).with_suffix('') / 'r0.txt'  # the shape retention kept before one file per run
+    old_kept.parent.mkdir(parents=True)
+    old_kept.write_text('@@@ 0.jsonl\n{"a": 1}\n', encoding='utf-8')
+    assert read_streams(run, live, kept) == {0: '{"item": 0, "a": 1}'}, 'a kept many-file run reads upgraded'
+    Path(kept).write_text('{"round": "r0"}\n{"item": 0, "c": 3}\n', encoding='utf-8')
+    assert read_streams(run, live, kept) == {0: '{"item": 0, "c": 3}'}, 'the one kept file wins over the old'
+    Path(live).parent.mkdir(parents=True)
+    Path(live).write_text('{"item": 0, "b": 2}\n', encoding='utf-8')
+    assert read_streams(run, live, kept) == {0: '{"item": 0, "b": 2}'}, 'PLANTED CONTROL: the tree wins'
 
 
 # -- the item runner, for real ---------------------------------------------------------------------------
@@ -241,7 +273,7 @@ def test_every_awkward_id_that_ran_is_reported_under_its_collected_id(
     runner = _item_runner(tmp_path, monkeypatch)
     ids = _tree(tmp_path, _TRICKY)
     assert len(ids) == 13
-    result = runner.run({'ids': ids, 'stream': '.lab-ci/t/0.jsonl'})
+    result = runner.run({'ids': ids, 'stream': '.lab-ci/t.jsonl', 'item': 0})
     outcomes = result['outcomes']
     assert set(outcomes) == set(ids), result['tail']
     grouped = sorted(n for n in ids if 'test_grouped' in n)
@@ -262,10 +294,29 @@ def test_a_pytest_that_dies_mid_item_names_the_test_it_was_running(
     runner = _item_runner(tmp_path, monkeypatch)
     body = 'import os\n\ndef test_a():\n    pass\n\ndef test_b():\n    os._exit(3)\n\ndef test_c():\n    pass\n'
     ids = _tree(tmp_path, body)
-    result = runner.run({'ids': ids, 'stream': '.lab-ci/t/0.jsonl'})
+    result = runner.run({'ids': ids, 'stream': '.lab-ci/t.jsonl', 'item': 0})
     assert result['outcomes'] == {ids[0]: 'passed'}
     assert result['done']['done'] == 3
     assert result['started'] == ids[1], 'the plugin streams a START line, so the in-flight id is known'
+
+
+def test_a_round_of_items_leaves_one_file_where_it_left_two_per_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``runs/*/streams`` measured 600-1000 files per sha (2026-10-17): a stream and an id list per item."""
+    runner = _item_runner(tmp_path, monkeypatch)
+    ids = _tree(tmp_path, 'def test_a():\n    pass\n\ndef test_b():\n    assert False\n')
+    results = [runner.run({'ids': [node], 'stream': '.lab-ci/t.jsonl', 'item': i}) for i, node in enumerate(ids)]
+    assert [r['outcomes'] for r in results] == [{ids[0]: 'passed'}, {ids[1]: 'failed'}], 'each item reads its own'
+    made = [p for p in (tmp_path / '.lab-ci').rglob('*') if p.is_file()]
+    assert made == [tmp_path / '.lab-ci' / 't.jsonl'], f'{len(ids)} items, one file: {made}'
+    runner.run({'ids': [ids[0]], 'stream': '.lab-ci/t.jsonl', 'item': 0})
+    text = (tmp_path / '.lab-ci' / 't.jsonl').read_text(encoding='utf-8')
+    assert split_streams(text, 't')[0].count('"done"') == 1, 'a restarted item reads its last attempt only'
+    legacy = runner.run({'ids': [ids[1]], 'stream': '.lab-ci/u/3.jsonl'})  # a manifest submitted before the change
+    assert legacy['outcomes'] == {ids[1]: 'failed'}
+    assert not (tmp_path / '.lab-ci' / 'u').exists(), 'PLANTED CONTROL: no writer of the many-file shape remains'
+    assert set(split_streams((tmp_path / '.lab-ci' / 'u.jsonl').read_text(encoding='utf-8'), 'u')) == {3}
 
 
 def test_a_clean_exit_mid_item_fails_the_in_flight_id_and_requeues_only_the_ids_after_it() -> None:

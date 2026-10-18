@@ -67,11 +67,12 @@ Each tick it:
   decides; no cron line of its own). Files are the binding HPC resource, so the rules follow what each thing is
   FOR. One function says what is IN FLIGHT (`retentionplan.in_flight`): a sha a live run file names, a tree a
   queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`), or a sha
-  whose run state, tree or `.lab-ci` stream directory was touched within `min_age_hours` (being built, or a round
+  whose run state, tree or `.lab-ci` round stream was touched within `min_age_hours` (being built, or a round
   ended and not yet gathered). "No record yet" is NOT in flight: a superseded or released run is never gathered.
-  A tree is kept only while its sha is
-  in flight (`tree-not-in-flight`); an unrecorded run's round streams are packed into ONE file
-  `runs/<sha>/streams/<tag>.txt` first, where the carry reads them (`hpc.records.stream_sources`), and a re-run re-adds the tree from the bare cache.
+  A round's items all append to ONE file `.lab-ci/<tag>.jsonl` (lines tagged `item`). A tree is kept only while
+  its sha is in flight (`tree-not-in-flight`); an unrecorded run's round stream is kept as ONE file
+  `runs/<sha>/streams.jsonl` first, where the carry reads it (`hpc.records.stream_sources`), and a re-run re-adds
+  the tree from the bare cache. A run kept in the retired many-file shape is upgraded into it (`streams-upgraded`).
   An env, native build or cargo target is kept while an in-flight run or its repo's newest recorded run names it
   in `builds`; an unreadable reference keeps them all, an unreadable queue keeps every tree. A finished run's
   STATE goes when no origin branch tip can carry from it; finished `~/slurm-*.out` and oversized

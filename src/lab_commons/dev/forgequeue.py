@@ -29,6 +29,7 @@ from typing import Any
 from lab_commons.compute.learned import learned
 from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expected_cost, rank, starved
 from lab_commons.compute.priority import Priority
+from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.config import section
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
@@ -199,6 +200,10 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     if unclaimable:
         return unclaimable
     serving = [card for card in live if needed <= present(card.platform, card.tools_present())]
+    skipping = [(card.host, Serves(card.serves).skips(needed)) for card in serving]
+    if serving and all(why for _, why in skipping):
+        return f'{NO_HOST} claims it -- ' + '; '.join(f'{host} {why}' for host, why in skipping)
+    serving = [card for card in serving if not Serves(card.serves).skips(needed)]
     reasons = [(card.host, card.waiting[candidate.key]) for card in serving if candidate.key in card.waiting]
     refused = [(host, why) for host, why in reasons if why.startswith(f'{NOT_ADMITTED}: ')]
     if refused and len(refused) == len(serving):
@@ -239,6 +244,7 @@ def render(view_: Mapping[str, Any]) -> list[str]:
             ),
             *([f'    running {", ".join(h["running"])}'] if h.get('running') else []),
             *([f'    priority {Priority.of(h["priority"]).text()}'] if any(h.get('priority', {}).values()) else []),
+            *([f'    serves {Serves(h["serves"]).text()}'] if h.get('serves', EVERY) != EVERY else []),
             *(f'    ALARM {a["kind"]}: {a["subject"]} -- {a["body"]}' for a in h.get('alarms', ())),
         )
     ] or ['  (no host has published a card)']
