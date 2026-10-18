@@ -120,6 +120,11 @@ PAGES: Final[tuple[Page, ...]] = (
         'An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments',
     ),
     Page('hpc', 'HPC clusters', 'A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records'),
+    Page(
+        'components',
+        'Components',
+        'A product mounts its engines as submodules: the table, the derived-file check, the bump loop',
+    ),
     Page('artefacts', 'Artefacts', "A run's declared outputs: the store, its layout and its retention"),
     Page('retirement', 'Retirement', 'The archive keeps old code, the registry keeps a dead spelling dead'),
     Page(
