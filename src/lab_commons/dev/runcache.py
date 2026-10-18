@@ -15,8 +15,10 @@ decision writes nothing, so the first log is the one cited.
 A cache of the retired line shape (one JSON object per run, no schema) is refused by name with
 :class:`RetiredCache`: it is regenerable -- delete it and the next runs re-fill it.
 
-WHERE IT LIVES. ``output/runcache/runs.jsonl`` in the MAIN checkout -- resolved through git's common
-directory, so every lane worktree shares one cache.
+WHERE IT LIVES. ``output/runcache/record.jsonl`` in the MAIN checkout -- resolved through git's common
+directory, so every lane worktree shares one cache. It is a NEW file, not the retired line-shape file
+renamed in place: a checkout still at the retired code keeps appending its own file, so the two shapes never
+meet in one file while the family converges (the retired file is regenerable; delete it at will).
 """
 
 from __future__ import annotations
@@ -46,7 +48,7 @@ __all__ = [
 ]
 
 #: The cache, relative to the MAIN checkout's root.
-CACHE_REL: Final = 'output/runcache/runs.jsonl'
+CACHE_REL: Final = 'output/runcache/record.jsonl'
 
 #: The only results cached. INCONCLUSIVE says nothing about the tree.
 CACHED: Final = frozenset(outcome.value.upper() for outcome in Conclusion if outcome.settled)
