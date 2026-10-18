@@ -26,7 +26,6 @@ from lab_commons.box.ledger import Read
 from lab_commons.box.supply import Reading
 from lab_commons.compute import probe
 from lab_commons.compute.model import Demand, Supply
-from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun, forgerunstate
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgeclaim import Work
@@ -158,7 +157,7 @@ def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: obj
     try:
         return tick(root, **kwargs)
     except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
+        if failed.credential_refused:
             seat = kwargs.get('seat')
             host = card_host(str(kwargs.get('machine') or ''), seat if isinstance(seat, ClusterAccount) else None)
             alarm(Alarm(AUTH, repo, f'the forge refused the stored credential on {host}', str(failed)))

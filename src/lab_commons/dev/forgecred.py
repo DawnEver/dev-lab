@@ -17,13 +17,22 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-__all__ = ['AUTH_REFUSED', 'AUTH_REMEDY', 'authorization', 'token_for']
+__all__ = ['AUTH_REFUSED', 'AUTH_REMEDY', 'AUTH_TRANSIENT', 'authorization', 'token_for']
 
-#: HTTP statuses that refuse the presented credential: permanent, the remedy is a re-stored credential.
+#: HTTP statuses that MAY refuse the presented credential -- a SUSPICION, never a verdict. One 401 is not
+#: evidence the credential is bad: 2026-10-18 a gitea answered 401 "invalid username, password or token" and
+#: minutes later the same stored credential authenticated. The verdict is MEASURED by asking the forge who the
+#: credential is (``GET /user``, what ``auth status`` asks); only a refusal THERE names the credential.
 AUTH_REFUSED: Final = frozenset({401, 403})
 
-#: The remedy an auth refusal names.
+#: The remedy a MEASURED credential refusal names (the request AND ``GET /user`` refused it).
 AUTH_REMEDY: Final = 'the forge refused the stored credential; re-store it: python -m lab_commons.dev.forge auth login'
+
+#: What a 401/403 says when ``GET /user`` still authenticated the same credential: re-storing cannot help.
+AUTH_TRANSIENT: Final = (
+    'the forge refused this request, yet the stored credential authenticates (GET /user answered) -- '
+    'do not re-store it; report this output if it persists'
+)
 
 
 def authorization(username: str, secret: str, scheme: str) -> str:

@@ -285,7 +285,7 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 ## Alarms
 
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
-"delivered", "repeat"}` to stderr for: `auth` (401/403 or no credential), `lease` (a lease lost or not
+"delivered", "repeat"}` to stderr for: `auth` (a credential `GET /user` refuses after a 401/403, or none stored -- a 401/403 whose credential still authenticates is transient and never alarms `auth`), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a

@@ -73,7 +73,7 @@ from lab_commons.compute.model import (
     Schedule,
     starved,
 )
-from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, AUTH_REFUSED
+from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgecoalesce import WAITING_BEHIND
 from lab_commons.dev.forgepulls import pr_list
@@ -256,7 +256,7 @@ def head_login(client: Client, sha: str) -> str:
     try:
         raw = client.call('GET', path)
     except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode in AUTH_REFUSED:
+        if failed.credential_refused:
             raise
         return ''
     if not isinstance(raw, Mapping):
@@ -333,7 +333,7 @@ def optional[T](what: str, listing: Callable[[], Sequence[T]], say: Callable[[st
     try:
         return listing()
     except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode in AUTH_REFUSED:
+        if failed.credential_refused:
             raise
         say(f'[serve] skipped the {what}: {failed}')
         return ()
