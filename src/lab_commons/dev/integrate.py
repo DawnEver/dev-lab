@@ -45,6 +45,7 @@ from lab_commons.dev.trialmerge import contains, rev
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'merge', 'promote']
 
@@ -184,10 +185,8 @@ def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
         why = f'{policy.trunk} ({trunk[:12]}) is not an ancestor of {found[:12]}: it cannot fast-forward'
         return Promotion('refused', found, (why,))
     parts = standing(status_list(client, found), head=found, scope=FULL)
-    if parts.result != 'PASS':
-        return Promotion(
-            'refused', found, (f'the parts of {found[:12]} stand {parts.result or "unsettled"}', *parts.problems)
-        )
+    if parts.result is not Conclusion.PASS:
+        return Promotion('refused', found, (f'the parts of {found[:12]} stand {parts.result.name}', *parts.problems))
     return Promotion('promote', found)
 
 

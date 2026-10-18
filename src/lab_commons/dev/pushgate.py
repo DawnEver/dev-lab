@@ -54,6 +54,7 @@ from lab_commons.dev.logref import MARKER
 from lab_commons.dev.platformparts import standing
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -153,8 +154,8 @@ def decide(destination: str, *, head: str, statuses: Callable[[], Sequence[Commi
         )
     judged = standing(found, head=head, scope=TRUNK_SCOPE)
     cited = judged.cited()
-    if judged.result != 'PASS':
-        problems = judged.problems or tuple(f'{part.platform} is {part.result}' for part in judged.parts)
+    if judged.result is not Conclusion.PASS:
+        problems = judged.problems or tuple(f'{part.platform} is {part.result.name}' for part in judged.parts)
         return Decision(
             allowed=False,
             message='\n'.join(

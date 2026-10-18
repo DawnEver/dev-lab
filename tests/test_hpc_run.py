@@ -67,6 +67,7 @@ from lab_commons.hpc.shell import (
 from lab_commons.hpc.slurm import parse_snapshot
 from lab_commons.hpc.tree import build_run
 from lab_commons.hpc.watch import PENDING
+from lab_commons.outcomes import Conclusion
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
@@ -1351,7 +1352,9 @@ def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> 
     assert record['outcomes']['tests/a.py::t2'] == 'failed', 'a carried red stays red'
     assert record['scope'] == FULL, 'a carried run is still the full suite'
     part = part_of(record)
-    assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, 'FAIL'), 'carried is never counted as run'
+    assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, Conclusion.FAIL), (
+        'carried is never counted as run'
+    )
     assert part.description().endswith(f'kept={A_SHA[:12]}:2')
     assert (
         parts_of([CommitStatus(f'tests/{part.platform}', 'failure', part.description(), '')])[0][part.platform] == part

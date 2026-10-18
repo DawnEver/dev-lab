@@ -19,13 +19,14 @@ from lab_commons.dev import mergeaudit, pushgate
 from lab_commons.dev.forge import NoCredential
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import Part, part_context
+from lab_commons.outcomes import Conclusion
 
 _GIT = shutil.which('git') or 'git'
 HEAD = 'abc1234' + 'd' * 33
 
 
 def _status(
-    platform: str, result: str = 'PASS', *, scope: str = 'full', hands: dict[str, int] | None = None
+    platform: str, result: Conclusion = Conclusion.PASS, *, scope: str = 'full', hands: dict[str, int] | None = None
 ) -> CommitStatus:
     part = Part(platform, scope, result, ran=10, hands=hands or {})
     return CommitStatus(part_context(platform), part.state, part.description(), 'https://forge/attachments/1')
@@ -69,7 +70,7 @@ def test_a_missing_part_is_refused_naming_the_part_and_its_producer() -> None:
     [
         ([], 'no tests/base part is posted'),
         ([_status('jmag')], 'no tests/base part is posted'),
-        ([_status('base', 'FAIL')], 'base is FAIL of scope full'),
+        ([_status('base', Conclusion.FAIL)], 'base is FAIL of scope full'),
         ([_status('base', scope='incremental')], 'base is PASS of scope incremental'),
         ([CommitStatus('tests/base', 'pending', 'claim machine=G login=a until=x', '')], 'not a settled part'),
         ([CommitStatus('tests/base', 'success', 'free text', '')], 'not a settled part'),
@@ -119,7 +120,7 @@ def _forge(monkeypatch: pytest.MonkeyPatch, statuses: list[CommitStatus]) -> Non
 
 
 def test_the_cli_reads_the_forge_and_routes_each_destination(tmp_path: Path, monkeypatch) -> None:
-    _forge(monkeypatch, [_status('base', 'FAIL')])
+    _forge(monkeypatch, [_status('base', Conclusion.FAIL)])
     base = ['--root', str(tmp_path), '--trunk-ref', 'refs/heads/main']
     assert pushgate.main([*base, '--remote-ref', 'refs/heads/feat/x']) == 0
     assert pushgate.main([*base, '--remote-ref', 'refs/heads/integrate/main']) == 0

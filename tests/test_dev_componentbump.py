@@ -29,25 +29,25 @@ from lab_commons.dev.componentbump import (
 )
 from lab_commons.dev.components import Component
 from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgestatus import CommitStatus
+from lab_commons.dev.forgestatus import CommitStatus, state_for
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import Part
+from lab_commons.outcomes import Conclusion
 
 NUM = Component('numerics-lab', 'https://f/o/numerics-lab.git', 'main', ('base', 'linux'))
 OPT = Component('solver-lab', 'https://f/o/solver-lab.git', 'main', ('base',))
 OLD, NEW = 'a' * 40, 'b' * 40
 
 
-def part(platform: str, result: str) -> CommitStatus:
+def part(platform: str, result: Conclusion) -> CommitStatus:
     """The status a forge holds for *platform* at *result*, in the producer's own description."""
-    state = {'PASS': 'success', 'FAIL': 'failure'}[result]
     return CommitStatus(
-        f'tests/{platform}', state, Part(platform, 'full', result, 3).description(), f'https://r/{platform}'
+        f'tests/{platform}', state_for(result), Part(platform, 'full', result, 3).description(), f'https://r/{platform}'
     )
 
 
 CLIENT = Client(Forge('forge.example', 'o', 'product'), 'token')
-GREEN: tuple[CommitStatus, ...] = (part('base', 'PASS'),)
+GREEN: tuple[CommitStatus, ...] = (part('base', Conclusion.PASS),)
 
 
 @dataclass
@@ -118,7 +118,7 @@ def test_a_forge_green_engine_tip_opens_one_lane_moving_its_pointer() -> None:
     [
         ({'numerics-lab': OLD}, {'numerics-lab': GREEN}, []),  # already the pointer
         ({'numerics-lab': NEW}, {}, []),  # the engine tip is not forge-green
-        ({'numerics-lab': NEW}, {'numerics-lab': (part('base', 'FAIL'),)}, []),
+        ({'numerics-lab': NEW}, {'numerics-lab': (part('base', Conclusion.FAIL),)}, []),
         ({'numerics-lab': NEW}, {'numerics-lab': GREEN}, [issue_title(NUM, NEW)]),  # held by its issue
     ],
 )
@@ -135,13 +135,13 @@ def _in_flight(statuses: tuple[CommitStatus, ...], *, absorbed: bool = False) ->
 
 
 def test_a_lane_green_on_every_declared_part_is_ready_for_the_integrator() -> None:
-    product = _in_flight((part('base', 'PASS'), part('linux', 'PASS')))
+    product = _in_flight((part('base', Conclusion.PASS), part('linux', Conclusion.PASS)))
     assert tick((NUM,), product, FakeEngines({}, {})).action == READY
     assert product.closed == [], 'a ready lane is the integrator to merge, never deleted'
 
 
 def test_a_lane_missing_a_declared_part_waits() -> None:
-    assert tick((NUM,), _in_flight((part('base', 'PASS'),)), FakeEngines({}, {})).action == WAITING
+    assert tick((NUM,), _in_flight((part('base', Conclusion.PASS),)), FakeEngines({}, {})).action == WAITING
 
 
 def test_a_lane_the_integration_branch_holds_is_deleted_as_landed() -> None:
@@ -151,7 +151,7 @@ def test_a_lane_the_integration_branch_holds_is_deleted_as_landed() -> None:
 
 
 def test_a_red_lane_is_held_and_deleted() -> None:
-    product = _in_flight((part('base', 'PASS'), part('linux', 'FAIL')))
+    product = _in_flight((part('base', Conclusion.PASS), part('linux', Conclusion.FAIL)))
     done = tick((NUM,), product, FakeEngines({}, {}))
     assert (done.action, done.detail) == (HELD, 'linux')
     assert product.titles == [issue_title(NUM, NEW)]
@@ -236,7 +236,7 @@ def test_a_red_bump_keeps_the_last_green_pointer_and_opens_exactly_one_issue() -
     product = FakeProduct({NUM.path: OLD})
     engines = FakeEngines({'numerics-lab': NEW}, {'numerics-lab': GREEN})
     assert tick((NUM,), product, engines).action == OPENED
-    product.lane_statuses = (part('base', 'PASS'), part('linux', 'FAIL'))
+    product.lane_statuses = (part('base', Conclusion.PASS), part('linux', Conclusion.FAIL))
     assert tick((NUM,), product, engines).action == HELD
     for _ in range(3):
         assert tick((NUM,), product, engines).action == IDLE
@@ -255,7 +255,7 @@ def test_concurrent_bumps_are_serialised_through_the_one_lane() -> None:
     engines = FakeEngines({'numerics-lab': NEW, 'solver-lab': NEW}, {'numerics-lab': GREEN, 'solver-lab': GREEN})
     first = tick((NUM, OPT), product, engines)
     assert (first.action, first.component) == (OPENED, 'numerics-lab')
-    product.lane_statuses = (part('base', 'PASS'), part('linux', 'PASS'))
+    product.lane_statuses = (part('base', Conclusion.PASS), part('linux', Conclusion.PASS))
     assert tick((NUM, OPT), product, engines).action == READY
     assert product.opened == [(NUM.path, NEW)], 'no second lane while one is in flight'
 

@@ -11,13 +11,14 @@ from _forge_fake import git_out, make_repo, run_git
 from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
-from lab_commons.dev.forgestatus import CommitStatus
+from lab_commons.dev.forgestatus import CommitStatus, state_for
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.tree import NotSubmitted
+from lab_commons.outcomes import Conclusion
 
 SHA = 'a' * 40
 
@@ -48,14 +49,14 @@ def test_the_part_is_derived_strictly_from_the_run() -> None:
         {'t::f': 'femm', 't::m': 'femm+windows'},
     )
     part = platformparts.part_of(passing)
-    assert (part.platform, part.scope, part.result, part.state) == (BASE, 'full', 'PASS', 'success'), (
+    assert (part.platform, part.scope, part.result, part.state) == (BASE, 'full', Conclusion.PASS, 'success'), (
         "part and scope are the record's"
     )
     assert (part.ran, part.hands) == (3, {'femm': 1, 'femm+windows': 1})
     assert part.description() == 'scope=full ran=3 hands=femm:1,femm+windows:1'
     for bad in ('failed', 'error'):
         failing = platformparts.part_of(_record({'t::a': 'passed', 't::x': bad}))
-        assert (failing.result, failing.state) == ('FAIL', 'failure'), bad
+        assert (failing.result, failing.state) == (Conclusion.FAIL, 'failure'), bad
 
 
 @pytest.mark.parametrize('unrun', ['lost', 'missing'])
@@ -77,7 +78,7 @@ def test_a_record_handing_off_its_own_ids_or_to_no_part_is_refused() -> None:
 
 
 def test_the_description_round_trips_through_a_status() -> None:
-    part = platformparts.Part('femm+windows', 'full', 'FAIL', ran=7, hands={BASE: 1})
+    part = platformparts.Part('femm+windows', 'full', Conclusion.FAIL, ran=7, hands={BASE: 1})
     status = CommitStatus(platformparts.part_context('femm+windows'), part.state, part.description(), 'u')
     parts, problems = platformparts.parts_of([status, CommitStatus('ci/foreign', 'success', 'not a part', '')])
     assert parts == {'femm+windows': part}
@@ -89,7 +90,7 @@ def test_the_description_round_trips_through_a_status() -> None:
 def test_a_commits_parts_are_derived_from_what_its_parts_hand_to() -> None:
     """Nothing posted: base alone is known. A posted part names every part it handed ids to."""
     assert platformparts.derived([]) == (BASE,)
-    base = platformparts.Part(BASE, 'full', 'PASS', ran=2, hands={'femm': 3, 'jmag': 1})
+    base = platformparts.Part(BASE, 'full', Conclusion.PASS, ran=2, hands={'femm': 3, 'jmag': 1})
     posted = [CommitStatus('tests/base', base.state, base.description(), '')]
     assert platformparts.derived(posted) == (BASE, 'femm', 'jmag')
 
@@ -246,18 +247,20 @@ def _status(part: str, state: str = 'success', *, scope: str = 'full', hands: st
 
 def test_the_standing_requires_base_and_every_part_handed_to() -> None:
     """PASS only when base and every derived part stand; a FAIL part is FAIL whatever else; unsettled otherwise."""
-    assert platformparts.standing([_status(BASE)], head=SHA).result == 'PASS'
-    assert platformparts.standing([], head=SHA).result == ''
-    assert platformparts.standing([_status('jmag')], head=SHA).result == '', 'no base: nothing proves the rest'
-    assert platformparts.standing([_status(BASE, hands='femm+windows:1')], head=SHA).result == ''
+    assert platformparts.standing([_status(BASE)], head=SHA).result is Conclusion.PASS
+    assert platformparts.standing([], head=SHA).result is Conclusion.INCONCLUSIVE
+    assert platformparts.standing([_status('jmag')], head=SHA).result is Conclusion.INCONCLUSIVE, (
+        'no base: nothing proves the rest'
+    )
+    assert platformparts.standing([_status(BASE, hands='femm+windows:1')], head=SHA).result is Conclusion.INCONCLUSIVE
     both = [_status(BASE, hands='femm+windows:1'), _status('femm+windows')]
-    assert platformparts.standing(both, head=SHA).result == 'PASS'
+    assert platformparts.standing(both, head=SHA).result is Conclusion.PASS
     red = [_status(BASE, 'failure'), _status('femm', 'pending')]
-    assert platformparts.standing(red, head=SHA).result == 'FAIL'
+    assert platformparts.standing(red, head=SHA).result is Conclusion.FAIL
     incremental = [_status(BASE, scope='incremental')]
-    assert platformparts.standing(incremental, head=SHA).result == 'PASS'
+    assert platformparts.standing(incremental, head=SHA).result is Conclusion.PASS
     full = platformparts.standing(incremental, head=SHA, scope='full')
-    assert full.result == ''
+    assert full.result is Conclusion.INCONCLUSIVE
     assert any('scope incremental' in problem for problem in full.problems)
 
 
@@ -279,10 +282,10 @@ def test_a_local_run_becomes_one_record_per_part_of_the_cluster_shape(tmp_path: 
     assert base['handed'] == {'t::f': 'femm', 't::w': 'windows', 't::fw': 'femm+windows'}
     assert base['reasons'] == {}
     part = platformparts.part_of(base)
-    assert (part.platform, part.result, part.ran) == (BASE, 'PASS', 1)
+    assert (part.platform, part.result, part.ran) == (BASE, Conclusion.PASS, 1)
     assert part.hands == {'femm': 1, 'windows': 1, 'femm+windows': 1}, 'the parts this commit needs, discovered'
     femm = platformparts.part_of(local('femm'))
-    assert (femm.result, femm.ran, femm.hands) == ('FAIL', 1, {BASE: 1, 'windows': 1, 'femm+windows': 1})
+    assert (femm.result, femm.ran, femm.hands) == (Conclusion.FAIL, 1, {BASE: 1, 'windows': 1, 'femm+windows': 1})
 
 
 def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path: Path, monkeypatch) -> None:
@@ -334,3 +337,13 @@ def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, mon
 
     monkeypatch.setattr(platformparts, 'flush', down)
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE
+
+
+def test_a_part_posts_the_state_its_conclusion_names_and_an_error_status_is_no_part() -> None:
+    """Plan A1.9: the ``tests/<part>`` state is ``forgestatus.state_for`` of the part's Conclusion."""
+    for result in (Conclusion.PASS, Conclusion.FAIL):
+        part = platformparts.Part(BASE, 'full', result, ran=1)
+        assert part.state == state_for(result)
+        assert platformparts.parts_of([_status(BASE, part.state)])[0][BASE].result is result
+    parts, problems = platformparts.parts_of([_status(BASE, state_for(Conclusion.INCONCLUSIVE))])
+    assert (parts, len(problems)) == ({}, 1), 'control: an INCONCLUSIVE (error) status is never a settled part'

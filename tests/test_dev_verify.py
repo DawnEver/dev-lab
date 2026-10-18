@@ -1040,7 +1040,7 @@ def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str,
     return posted
 
 
-def _posted_part(posted: list[Path]) -> tuple[str, int]:
+def _posted_part(posted: list[Path]) -> tuple[Conclusion, int]:
     (path,) = posted
     assert 'out' in path.parts, 'the record is written under [tool.lab_commons.parts] output'
     part = part_of(read_record(path))
@@ -1053,7 +1053,7 @@ def test_a_fresh_pass_posts_a_part_covering_what_it_judged(monkeypatch, tmp_path
     _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     assert verify.main([]) == ProducerExit.PASS
-    assert _posted_part(posted) == ('PASS', 2)
+    assert _posted_part(posted) == (Conclusion.PASS, 2)
 
 
 def test_a_cited_pass_posts_the_cited_runs_part(monkeypatch, tmp_path: Path) -> None:
@@ -1065,7 +1065,7 @@ def test_a_cited_pass_posts_the_cited_runs_part(monkeypatch, tmp_path: Path) -> 
     run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
     cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
     assert verify.main([]) == ProducerExit.PASS
-    assert _posted_part(posted) == ('PASS', 1)
+    assert _posted_part(posted) == (Conclusion.PASS, 1)
 
 
 def test_a_run_that_judged_no_test_still_posts_no_part(monkeypatch, tmp_path: Path) -> None:
@@ -1398,7 +1398,7 @@ def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, 
     for name, value in producing(part_context(BASE), 'a' * 40).items():
         monkeypatch.setenv(name, value)
     assert verify.main(['--rerun']) == ProducerExit.PASS
-    assert _posted_part(posted) == ('PASS', 1)
+    assert _posted_part(posted) == (Conclusion.PASS, 1)
 
 
 def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_path: Path) -> None:

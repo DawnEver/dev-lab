@@ -49,6 +49,7 @@ from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import standing
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'BLOCKED',
@@ -110,21 +111,21 @@ class Queue:
 
 def lane_ready(statuses: Sequence[CommitStatus], *, head: str) -> bool:
     """THE ready predicate on a lane tip -- ``forgeissue`` derives ``ready`` from this same call."""
-    return standing(statuses, head=head).result == 'PASS'
+    return standing(statuses, head=head).result is Conclusion.PASS
 
 
 def _lane_state(statuses: Sequence[CommitStatus], head: str) -> str:
     result = standing(statuses, head=head).result
-    if result == 'PASS':
+    if result is Conclusion.PASS:
         return MERGE
-    return BLOCKED if result == 'FAIL' else WAITING
+    return BLOCKED if result is Conclusion.FAIL else WAITING
 
 
 def _promotion_state(statuses: Sequence[CommitStatus], head: str) -> str:
     result = standing(statuses, head=head, scope=FULL).result
-    if result == 'PASS':
+    if result is Conclusion.PASS:
         return PROMOTE
-    return BLOCKED if result == 'FAIL' else PARTS_NEEDED
+    return BLOCKED if result is Conclusion.FAIL else PARTS_NEEDED
 
 
 def ready_lanes(refs: Sequence[LaneRef], statuses: Mapping[str, Sequence[CommitStatus]], policy: Policy) -> Queue:

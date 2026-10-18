@@ -44,6 +44,7 @@ from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import standing
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'HELD',
@@ -150,7 +151,7 @@ def tick(rows: Sequence[Component], product: Product, engines: Engines) -> Tick:
         tip = engines.tip(row)
         if not tip or tip == product.pointer(row.path) or issue_title(row, tip) in titles:
             continue
-        if standing(engines.statuses(row, tip), head=tip).result != 'PASS':
+        if standing(engines.statuses(row, tip), head=tip).result is not Conclusion.PASS:
             continue
         message = f'chore(deps): bump {row.name} to {tip[:12]}\n\n{row.url} {row.branch} is forge-green at {tip}.\n'
         opened = product.open_lane(row.path, tip, message)
@@ -166,7 +167,7 @@ def _advance(rows: Sequence[Component], product: Product, lane: Lane) -> Tick:
         product.close_lane(lane.tip)
         return Tick(LANDED, row.name, lane.sha)
     parts = {part.platform: part for part in standing(product.statuses(lane.tip), head=lane.tip).parts}
-    red = [parts[name] for name in row.parts if name in parts and parts[name].result == 'FAIL']
+    red = [parts[name] for name in row.parts if name in parts and parts[name].result is Conclusion.FAIL]
     if red:
         title = issue_title(row, lane.sha)
         if title not in product.issue_titles():
@@ -179,7 +180,7 @@ def _advance(rows: Sequence[Component], product: Product, lane: Lane) -> Tick:
             product.open_issue(title, body)
         product.close_lane(lane.tip)
         return Tick(HELD, row.name, lane.sha, ', '.join(part.platform for part in red))
-    if all(name in parts and parts[name].result == 'PASS' for name in row.parts):
+    if all(name in parts and parts[name].result is Conclusion.PASS for name in row.parts):
         return Tick(READY, row.name, lane.sha)
     return Tick(WAITING, row.name, lane.sha)
 

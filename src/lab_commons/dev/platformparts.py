@@ -83,12 +83,14 @@ from lab_commons.compute.probe import os_name
 from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
+from lab_commons.dev.forgestatus import state_for
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
 from lab_commons.hpc.records import read_record
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -141,8 +143,8 @@ UNRUN: Final = frozenset({'lost', 'missing'})
 #: The record's word for an id it handed to another part.
 NOT_COVERED: Final = 'not-covered'
 
-_STATE: Final = {'PASS': 'success', 'FAIL': 'failure'}
-_RESULT: Final = {state: result for result, state in _STATE.items()}
+#: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
+_RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
 
 _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
@@ -296,7 +298,7 @@ class Part:
 
     platform: str
     scope: str
-    result: str
+    result: Conclusion
     ran: int
     hands: dict[str, int] = field(default_factory=dict)
     carried: str = ''  # the sha12 this verdict was judged at, when it is carried (lab_commons.dev.forgecarry)
@@ -304,8 +306,8 @@ class Part:
 
     @property
     def state(self) -> str:
-        """``success`` for PASS, ``failure`` for FAIL."""
-        return _STATE[self.result]
+        """The forge state its conclusion posts as (:func:`lab_commons.dev.forgestatus.state_for`)."""
+        return state_for(self.result)
 
     def description(self) -> str:
         """The status description: ``scope= ran= hands=`` (module docstring)."""
@@ -355,7 +357,7 @@ def part_of(record: Mapping[str, Any]) -> Part:
     return Part(
         platform=platform,
         scope=scope,
-        result='FAIL' if failing else 'PASS',
+        result=Conclusion.FAIL if failing else Conclusion.PASS,
         ran=len(covered) - sum(kept.values()),
         hands=hands,
         kept=kept,
@@ -426,14 +428,14 @@ class Composition:
     """The composed answer: the parts it rests on, PASS/FAIL, and why it cannot be cited (empty when it can)."""
 
     parts: tuple[Part, ...]
-    result: str
+    result: Conclusion
     problems: tuple[str, ...]
 
 
 def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     """Compose *parts* by the rule in the module docstring."""
     ordered = tuple(parts[name] for name in sorted(parts))
-    result = 'FAIL' if any(part.result != 'PASS' for part in ordered) else 'PASS'
+    result = Conclusion.FAIL if any(part.result is not Conclusion.PASS for part in ordered) else Conclusion.PASS
     problems: list[str] = []
     if BASE not in parts:
         problems.append(f'no {part_context(BASE)} part is posted for {head}; {_PRODUCE}')
@@ -447,20 +449,20 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
 
 @dataclass(frozen=True)
 class Standing:
-    """A commit's result as its parts on the forge say it: ``PASS``, ``FAIL``, or ``''`` while unsettled.
+    """A commit's result as its parts on the forge say it: PASS, FAIL, or INCONCLUSIVE while unsettled.
 
     THE ONE READING of a commit's parts, shared by push admission and the integrator's queue: a FAIL
     part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, or of
-    the wrong scope) leaves it ``''``; else ``PASS``.
+    the wrong scope) leaves it INCONCLUSIVE; else PASS.
     """
 
-    result: str
+    result: Conclusion
     parts: tuple[Part, ...]
     problems: tuple[str, ...]
 
     def cited(self) -> str:
         """The parts it rests on, one ``part=RESULT/scope ran=N`` each."""
-        return ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in self.parts)
+        return ', '.join(f'{part.platform}={part.result.name}/{part.scope} ran={part.ran}' for part in self.parts)
 
 
 def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None = None) -> Standing:
@@ -470,18 +472,18 @@ def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None =
     problems = [*unsettled, *composed.problems]
     if scope is not None:
         problems += [
-            f'{part.platform} is {part.result} of scope {part.scope}; only a PASS of scope {scope} counts here'
+            f'{part.platform} is {part.result.name} of scope {part.scope}; only a PASS of scope {scope} counts here'
             for part in composed.parts
-            if part.result != 'PASS' or part.scope != scope
+            if part.result is not Conclusion.PASS or part.scope != scope
         ]
-    failed = any(part.result == 'FAIL' for part in composed.parts)
+    failed = any(part.result is Conclusion.FAIL for part in composed.parts)
     return Standing(result=_settled(failed=failed, problems=problems), parts=composed.parts, problems=tuple(problems))
 
 
-def _settled(*, failed: bool, problems: Sequence[str]) -> str:
+def _settled(*, failed: bool, problems: Sequence[str]) -> Conclusion:
     if failed:
-        return 'FAIL'
-    return '' if problems else 'PASS'
+        return Conclusion.FAIL
+    return Conclusion.INCONCLUSIVE if problems else Conclusion.PASS
 
 
 def post(root: Path, path: Path, onto: str = '') -> str:
@@ -497,7 +499,7 @@ def post(root: Path, path: Path, onto: str = '') -> str:
     sha = onto or str(record['sha'])
     enqueue(root, Post(sha, part_context(part.platform), part.state, part.description()), record=path)
     lines = flush(root)
-    return '\n'.join([f'[platformparts] {part.platform} part {part.result}: {part.description()}', *lines])
+    return '\n'.join([f'[platformparts] {part.platform} part {part.result.name}: {part.description()}', *lines])
 
 
 def main(argv: Sequence[str] | None = None) -> int:

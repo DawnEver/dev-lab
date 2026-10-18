@@ -22,6 +22,7 @@ from lab_commons.dev.forgeclaim import Claim, Work
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import Part, parts_of, standing
 from lab_commons.dev.shatree import Tree
+from lab_commons.outcomes import Conclusion
 
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))
@@ -82,13 +83,16 @@ def test_a_non_descendant_never_carries(tmp_path: Path) -> None:
 
 
 def test_a_carried_part_names_its_source_and_still_admits() -> None:
-    part = Part('base', 'full', 'PASS', 12, carried='a' * 12)
+    part = Part('base', 'full', Conclusion.PASS, 12, carried='a' * 12)
     text = part.description()
     assert text.endswith(f'carried from {"a" * 12}: every outcome carried by footprint')
     parts, problems = parts_of([CommitStatus('tests/base', 'success', text, '')])
     assert problems == ()
     assert parts['base'] == part
-    assert standing([CommitStatus('tests/base', 'success', text, '')], head='b' * 40, scope='full').result == 'PASS'
+    assert (
+        standing([CommitStatus('tests/base', 'success', text, '')], head='b' * 40, scope='full').result
+        is Conclusion.PASS
+    )
 
 
 class _Forge:
