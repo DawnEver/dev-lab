@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Outcome, Refused, command, read_ended
+from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, ProcessEnd, Refused, command, read_ended
 from lab_commons.compute import learned
 from lab_commons.dev.forgedemand import refresh_checkout
 from lab_commons.dev.platformparts import origin_url
@@ -142,7 +142,7 @@ def selection_producer(files: Sequence[str]) -> str:
 def learn_ended(root: Path, argv: Sequence[str], record: Path | None) -> None:
     """Keep what the box measured of this selection's whole tree; a memory kill is a floor that grows."""
     ended = None if record is None else read_ended(record)
-    if not isinstance(ended, Outcome) or ended.peak_mem_bytes <= 0:
+    if not isinstance(ended, ProcessEnd) or ended.peak_mem_bytes <= 0:
         return
     run = learned.Run(ended.peak_mem_bytes / GB, ended.cpu_s, max(ended.wall_s, 1e-3))
     producer = selection_producer(selection_files(root, argv))

@@ -10,17 +10,17 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
-from lab_commons.box import Capacity, Outcome, Refused, write_ended
+from lab_commons.box import Capacity, ProcessEnd, Refused, write_ended
 from lab_commons.box.supply import Reading
 from lab_commons.supervise.process.base import Ran
 
 
-def ended(code: int, reason: str = 'exit') -> Outcome:
-    """The Outcome of a boxed child that exited *code*, ended by *reason* (``exit``, ``memory`` or ``wall``)."""
-    return Outcome(code, reason, 0, 0.0, 0.0, 'fake', 'k', None)
+def ended(code: int, reason: str = 'exit') -> ProcessEnd:
+    """The ProcessEnd of a boxed child that exited *code*, ended by *reason* (``exit``, ``memory`` or ``wall``)."""
+    return ProcessEnd(code, reason, 0, 0.0, 0.0, 'fake', 'k', None)
 
 
-def record(argv: Sequence[str], what: Outcome | Refused | None) -> None:
+def record(argv: Sequence[str], what: ProcessEnd | Refused | None) -> None:
     """Write *what* where the box argv *argv* names its ``--outcome``; ``None`` writes nothing (a crashed box)."""
     if what is not None:
         path = Path(argv[list(argv).index('--outcome') + 1])

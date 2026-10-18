@@ -1359,11 +1359,11 @@ def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_p
     (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
     files = verifybox.selection_files(tmp_path, ['tests'])
     record = tmp_path / 'o.json'
-    write_ended(record, box.Outcome(-9, 'memory', 2 * GB, 1.0, 10.0, 'fake', 'k', None))
+    write_ended(record, box.ProcessEnd(-9, 'memory', 2 * GB, 1.0, 10.0, 'fake', 'k', None))
     verifybox.learn_ended(tmp_path, ['tests'], record)
     killed = verifybox.selection_mem_gb('https://g/w.git', files, 1)
     assert killed == pytest.approx(2 * 2 * learned.BOX_HEADROOM, abs=1e-6)  # GB: the 2 GB limit, doubled
-    write_ended(record, box.Outcome(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
+    write_ended(record, box.ProcessEnd(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
     verifybox.learn_ended(tmp_path, ['tests'], record)
     assert verifybox.selection_mem_gb('https://g/w.git', files, 1) == pytest.approx(3 * learned.BOX_HEADROOM, abs=1e-6)
     verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing

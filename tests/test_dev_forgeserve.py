@@ -17,7 +17,7 @@ import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
 
-from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
+from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
@@ -58,7 +58,7 @@ SEAT = ClusterAccount('ada', 'alice')
 class _Proc:
     """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*; the box records *box*.
 
-    *box* defaults to the child's own exit; a :class:`Refused`, a killed :class:`Outcome` or ``None`` (a
+    *box* defaults to the child's own exit; a :class:`Refused`, a killed :class:`ProcessEnd` or ``None`` (a
     crashed box, no record) is what the box decided instead.
     """
 
@@ -70,7 +70,7 @@ class _Proc:
         lines: tuple[str, ...] = (),
         beats: int = 0,
         pid: int | None = None,
-        box: Outcome | Refused | object | None = _OWN,
+        box: ProcessEnd | Refused | object | None = _OWN,
     ) -> None:
         self.code, self.beats, self.pid = code, beats, pid
         self.box = ended(code) if box is _Proc._OWN else box
