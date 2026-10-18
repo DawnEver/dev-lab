@@ -59,7 +59,7 @@ from lab_commons.dev.worktreeplace import main_checkout
 from lab_commons.hpc.records import pack_streams
 from lab_commons.log import emit
 
-__all__ = ['EVENT', 'Outcome', 'apply', 'main', 'serve_pass', 'summary']
+__all__ = ['EVENT', 'Freed', 'apply', 'main', 'serve_pass', 'summary']
 
 #: The ``event`` of every deletion line.
 EVENT: Final = 'lab_commons.forge.retention'
@@ -69,7 +69,7 @@ _GIT: Final = shutil.which('git') or 'git'
 
 
 @dataclass(frozen=True)
-class Outcome:
+class Freed:
     """What one apply freed, and whether usage is still at the pressure line; *by_rule* is (paths, bytes, files)."""
 
     freed_bytes: int
@@ -100,7 +100,7 @@ def apply(
     dry_run: bool,
     say: Callable[[str], None],
     run: Callable[..., Any] = _door.run,
-) -> Outcome:
+) -> Freed:
     """Delete *plan*'s paths -- then its harder ones while *usage* is over ``pressure`` -- one JSON line each."""
     freed = [0, 0]
     by_rule: dict[str, tuple[int, int, int]] = {}
@@ -131,10 +131,10 @@ def apply(
         if not dry_run:
             run(list(argv), capture_output=True, text=True, encoding='utf-8', errors='replace', check=False)
     over = usage is not None and usage.fraction(*freed) >= policy.pressure
-    return Outcome(freed[0], freed[1], over, by_rule)
+    return Freed(freed[0], freed[1], over, by_rule)
 
 
-def summary(done: Outcome, usage: Usage | None, *, applied: bool) -> list[str]:
+def summary(done: Freed, usage: Usage | None, *, applied: bool) -> list[str]:
     """One line per rule (paths, MB, files), the total, then usage now -> after for bytes and FILES."""
     verb = 'deleted' if applied else 'would delete'
     lines = [
@@ -189,7 +189,7 @@ def serve_pass(
     run: Callable[..., Any] = _door.run,
     now: datetime | None = None,
     planner: Callable[..., Plan] | None = None,
-) -> Outcome | None:
+) -> Freed | None:
     """One pass, every tick (module docstring): ``None`` only when another serve of the account holds it."""
     home = Path.home() if home is None else home
     lock = config_path().parent / 'forge-retention.lock' if lock is None else lock

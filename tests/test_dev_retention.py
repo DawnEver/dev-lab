@@ -464,3 +464,9 @@ def test_an_unreadable_queue_deletes_no_artifact(home: Path) -> None:
     assert not any(d.rule == 'artifact-not-live' for d in plan.doomed)
     plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=set())
     assert {d.path.name for d in plan.doomed if d.rule == 'artifact-not-live'} == {'c1.tar.gz'}, 'PLANTED CONTROL'
+
+
+def test_what_an_apply_frees_is_named_freed_and_the_generic_name_is_gone() -> None:
+    """Plan A1.8: ``Outcome`` is the task-result word ``lab_commons.outcomes`` owns; retention's result is ``Freed``."""
+    assert 'Freed' in retention.__all__
+    assert not hasattr(retention, 'Outcome')
