@@ -1,4 +1,4 @@
-"""``lab_commons.hpc`` remote run: streamed outcomes, retried kills and measured plans.
+"""``lab_commons.hpc`` remote run: streamed test cells, retried kills and measured plans.
 
 Every number in a docstring here was measured on a real cluster for one downstream run
 (2026-10-09): 26233 passed, 13751 lost, 8786 missing. The item runner is exercised by
@@ -26,7 +26,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.dev.envkey import env_key
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.githooks import bash_executable
-from lab_commons.dev.platformparts import part_of, parts_of
+from lab_commons.dev.platformparts import PartRefusal, part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc import shell
@@ -38,11 +38,11 @@ from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
 from lab_commons.hpc.plan import Plan, make_plan
 from lab_commons.hpc.progress import Progress, held_by_a_limit, parse_queue, where
-from lab_commons.hpc.pytest_item import canonical, item_argv, outcome_of, read_stream
+from lab_commons.hpc.pytest_item import canonical, item_argv, read_stream
 from lab_commons.hpc.records import (
     files_made,
     fold,
-    held_outcomes,
+    held_cells,
     read_record,
     read_streams,
     record_name,
@@ -66,6 +66,7 @@ from lab_commons.hpc.shell import (
     parse_times,
 )
 from lab_commons.hpc.slurm import parse_snapshot
+from lab_commons.hpc.testcells import TestCell
 from lab_commons.hpc.tree import build_run
 from lab_commons.hpc.watch import PENDING
 from lab_commons.outcomes import Conclusion
@@ -92,20 +93,14 @@ def test_the_item_runner_is_standalone() -> None:
 # -- the stream ------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ('when', 'outcome', 'xfail', 'expected'),
-    [
-        ('setup', 'passed', False, None),
-        ('call', 'passed', False, 'passed'),
-        ('call', 'failed', False, 'failed'),
-        ('setup', 'failed', False, 'error'),
-        ('teardown', 'failed', False, 'error'),
-        ('setup', 'skipped', False, 'skipped'),
-        ('call', 'skipped', True, 'xfailed'),
-    ],
-)
-def test_a_phase_decides_only_what_it_can(when: str, outcome: str, *, xfail: bool, expected: str | None) -> None:
-    assert outcome_of(when, outcome, xfail=xfail) == expected
+def _words(cells: dict[str, dict[str, object]]) -> dict[str, str]:
+    """Each id's test cell as its word (``ok``, ``rejected/expected-rejected``, ...)."""
+    return {node: TestCell.from_plain(plain).word() for node, plain in cells.items()}
+
+
+def _whys(cells: dict[str, dict[str, object]]) -> dict[str, str]:
+    """Each id's reason text, where its cell carries one."""
+    return {node: one.why for node, one in ((n, TestCell.from_plain(p)) for n, p in cells.items()) if one.why}
 
 
 def test_the_xdist_group_suffix_is_stripped_only_back_to_a_collected_id() -> None:
@@ -118,15 +113,29 @@ def test_the_xdist_group_suffix_is_stripped_only_back_to_a_collected_id() -> Non
 
 def test_an_unclosed_stream_is_unfinished_and_keeps_what_it_finished() -> None:
     text = (
-        '{"id": "t.py::a", "outcome": "passed", "s": 1.5}\n'
-        '{"id": "t.py::b", "outcome": "passed", "s": 0.5}\n'
-        '{"id": "t.py::b", "outcome": "error", "s": 0.25}\n'
-        '{"id": "t.py::c", "outc'
+        '{"id": "t.py::a", "status": "ok", "s": 1.5}\n'
+        '{"id": "t.py::b", "status": "ok", "s": 0.5}\n'
+        '{"id": "t.py::b", "status": "error", "reason": {"kind": "teardown", "text": "x"}, "s": 0.25}\n'
+        '{"id": "t.py::c", "stat'
     )
     folded = read_stream(text, ['t.py::a', 't.py::b', 't.py::c'])
     assert folded['done'] is None
-    assert folded['outcomes'] == {'t.py::a': 'passed', 't.py::b': 'error'}
+    assert _words(folded['cells']) == {'t.py::a': 'ok', 't.py::b': 'error'}, 'the worse phase is the test'
     assert folded['seconds'] == {'t.py::a': 1.5, 't.py::b': 0.75}
+
+
+def test_a_retired_stream_line_of_a_round_in_flight_is_upgraded_on_read() -> None:
+    """FORMATS-UPGRADE-ON-READ: a round submitted before the change streams the retired words; fold reads them."""
+    items = [{'ids': ['t.py::a', 't.py::b']}]
+    streams = {
+        0: '{"id": "t.py::a", "outcome": "passed", "s": 1}\n'
+        '{"id": "t.py::b", "outcome": "failed", "why": "AssertionError", "s": 1}\n'
+        '{"done": 0, "wall": 3.0, "peak_mb": null}\n'
+    }
+    cells: dict[str, dict[str, object]] = {}
+    fold(items, streams, cells, Measured.of({}), shards=[(0, 1)], walls=[60.0])
+    assert _words(cells) == {'t.py::a': 'ok', 't.py::b': 'rejected'}
+    assert _whys(cells) == {'t.py::b': 'AssertionError'}
 
 
 def test_streams_are_read_back_per_item_in_one_command() -> None:
@@ -213,9 +222,9 @@ class TestKind:
     def test_xfail(self):
         raise AssertionError
 
-    @pytest.mark.skip(reason='not here')
+    @pytest.mark.not_applicable
     def test_skip(self):
-        pass
+        pytest.skip('not here')
 
 @pytest.fixture
 def broken():
@@ -274,16 +283,16 @@ def test_every_awkward_id_that_ran_is_reported_under_its_collected_id(
     ids = _tree(tmp_path, _TRICKY)
     assert len(ids) == 13
     result = runner.run({'ids': ids, 'stream': '.lab-ci/t.jsonl', 'item': 0})
-    outcomes = result['outcomes']
-    assert set(outcomes) == set(ids), result['tail']
+    words, whys = _words(result['cells']), _whys(result['cells'])
+    assert set(words) == set(ids), result['tail']
     grouped = sorted(n for n in ids if 'test_grouped' in n)
-    assert [outcomes[n] for n in grouped] == ['failed', 'passed']
-    assert outcomes[next(n for n in ids if n.endswith('test_xfail'))] == 'xfailed'
-    assert outcomes[next(n for n in ids if n.endswith('test_skip'))] == 'skipped'
-    assert result['whys'][next(n for n in ids if n.endswith('test_skip'))] == 'not here', 'a skip keeps its reason'
-    assert result['whys'][next(n for n in ids if n.endswith('test_xfail'))] == 'known', 'an xfail keeps its reason'
-    assert outcomes[next(n for n in ids if n.endswith('test_setup_error'))] == 'error'
-    assert sum(o == 'passed' for o in outcomes.values()) == 9
+    assert [words[n] for n in grouped] == ['rejected', 'ok']
+    assert words[next(n for n in ids if n.endswith('test_xfail'))] == 'rejected/expected-rejected'
+    assert words[next(n for n in ids if n.endswith('test_skip'))] == 'not_applicable'
+    assert whys[next(n for n in ids if n.endswith('test_skip'))] == 'not here', 'a skip keeps its reason'
+    assert whys[next(n for n in ids if n.endswith('test_xfail'))] == 'known', 'an xfail keeps its reason'
+    assert words[next(n for n in ids if n.endswith('test_setup_error'))] == 'error'
+    assert sum(o == 'ok' for o in words.values()) == 9
     assert result['done']['done'] == 1
     assert result['done']['wall'] > 0
 
@@ -295,7 +304,7 @@ def test_a_pytest_that_dies_mid_item_names_the_test_it_was_running(
     body = 'import os\n\ndef test_a():\n    pass\n\ndef test_b():\n    os._exit(3)\n\ndef test_c():\n    pass\n'
     ids = _tree(tmp_path, body)
     result = runner.run({'ids': ids, 'stream': '.lab-ci/t.jsonl', 'item': 0})
-    assert result['outcomes'] == {ids[0]: 'passed'}
+    assert _words(result['cells']) == {ids[0]: 'ok'}
     assert result['done']['done'] == 3
     assert result['started'] == ids[1], 'the plugin streams a START line, so the in-flight id is known'
 
@@ -307,14 +316,14 @@ def test_a_round_of_items_leaves_one_file_where_it_left_two_per_item(
     runner = _item_runner(tmp_path, monkeypatch)
     ids = _tree(tmp_path, 'def test_a():\n    pass\n\ndef test_b():\n    assert False\n')
     results = [runner.run({'ids': [node], 'stream': '.lab-ci/t.jsonl', 'item': i}) for i, node in enumerate(ids)]
-    assert [r['outcomes'] for r in results] == [{ids[0]: 'passed'}, {ids[1]: 'failed'}], 'each item reads its own'
+    assert [_words(r['cells']) for r in results] == [{ids[0]: 'ok'}, {ids[1]: 'rejected'}], 'each item reads its own'
     made = [p for p in (tmp_path / '.lab-ci').rglob('*') if p.is_file()]
     assert made == [tmp_path / '.lab-ci' / 't.jsonl'], f'{len(ids)} items, one file: {made}'
     runner.run({'ids': [ids[0]], 'stream': '.lab-ci/t.jsonl', 'item': 0})
     text = (tmp_path / '.lab-ci' / 't.jsonl').read_text(encoding='utf-8')
     assert split_streams(text, 't')[0].count('"done"') == 1, 'a restarted item reads its last attempt only'
     legacy = runner.run({'ids': [ids[1]], 'stream': '.lab-ci/u/3.jsonl'})  # a manifest submitted before the change
-    assert legacy['outcomes'] == {ids[1]: 'failed'}
+    assert _words(legacy['cells']) == {ids[1]: 'rejected'}
     assert not (tmp_path / '.lab-ci' / 'u').exists(), 'PLANTED CONTROL: no writer of the many-file shape remains'
     assert set(split_streams((tmp_path / '.lab-ci' / 'u.jsonl').read_text(encoding='utf-8'), 'u')) == {3}
 
@@ -322,14 +331,15 @@ def test_a_round_of_items_leaves_one_file_where_it_left_two_per_item(
 def test_a_clean_exit_mid_item_fails_the_in_flight_id_and_requeues_only_the_ids_after_it() -> None:
     items = [{'ids': ['t.py::a', 't.py::b', 't.py::c', 't.py::d']}]
     streams = {
-        0: '{"start": "t.py::a"}\n{"id": "t.py::a", "outcome": "passed", "s": 0}\n'
+        0: '{"start": "t.py::a"}\n{"id": "t.py::a", "status": "ok", "s": 0}\n'
         '{"start": "t.py::b"}\n{"done": 1, "wall": 2.0, "peak_mb": null}\n'
     }
-    outcomes: dict[str, str] = {}
-    reasons: dict[str, str] = {}
-    pending, killed, _ = fold(items, streams, outcomes, Measured.of({}), reasons, shards=[(0, 1)], walls=[60.0])
-    assert outcomes == {'t.py::a': 'passed', 't.py::b': 'failed'}, 'nothing is missing when the in-flight id is known'
-    assert 'exited 1' in reasons['t.py::b']
+    cells: dict[str, dict[str, object]] = {}
+    pending, killed, _ = fold(items, streams, cells, Measured.of({}), shards=[(0, 1)], walls=[60.0])
+    assert _words(cells) == {'t.py::a': 'ok', 't.py::b': 'error'}, (
+        'nothing is unreported when the in-flight id is known'
+    )
+    assert 'exited 1' in _whys(cells)['t.py::b']
     assert sorted(node for part in pending for node in part) == ['t.py::c', 't.py::d']
     assert not killed
 
@@ -543,10 +553,10 @@ class FakeRunCluster:
             out.append(f'@@@ {index}.jsonl')
             if self.hog in item['ids']:
                 ran = item['ids'][: item['ids'].index(self.hog)]
-                out += [json.dumps({'id': n, 'outcome': 'passed', 's': 1.0}) for n in ran]
+                out += [json.dumps({'id': n, 'status': 'ok', 's': 1.0}) for n in ran]
                 out.append(json.dumps({'done': -9, 'wall': 5.0, 'peak_mb': 1024.0}))
                 continue
-            out += [json.dumps({'id': n, 'outcome': 'passed', 's': 1.0}) for n in ran]
+            out += [json.dumps({'id': n, 'status': 'ok', 's': 1.0}) for n in ran]
             if not killed:
                 out.append(json.dumps({'done': 0, 'wall': 5.0 + len(ran), 'peak_mb': self.peak_mb}))
         return '\n'.join(out) + '\n'
@@ -580,7 +590,7 @@ def _run(fake: FakeRunCluster, **kw: object) -> dict:
     pytest.fail('the gathers never returned a record')
 
 
-def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None:
+def test_the_run_records_cells_and_never_passes_what_it_did_not_run() -> None:
     fake = FakeRunCluster()
     record = _run(fake)
     assert record['sha'] == SHA
@@ -599,9 +609,9 @@ def test_the_run_records_outcomes_and_never_passes_what_it_did_not_run() -> None
     assert record['plan']['comment'] == 'lc:session=ws-a'
     assert record['plan']['job_id'] == '4243'
     assert record['plan']['unmeasured'] == ['tests/a.py', 'tests/b.py']
-    assert record['outcomes']['tests/w.py::t'] == 'not-covered'
-    assert set(record['outcomes'].values()) == {'passed', 'not-covered'}
-    assert record['reasons'] == {}, 'a green run carries no reasons'
+    assert 'tests/w.py::t' not in record['cells'], 'a handed id is no cell of this run'
+    assert set(_words(record['cells']).values()) == {'ok'}
+    assert _whys(record['cells']) == {}, 'a green run carries no reasons'
     assert record['overheads'] == {'tests/a.py': 5.0, 'tests/b.py': 5.0}
     assert record['peaks_mb'] == {'tests/a.py': 2048.0, 'tests/b.py': 2048.0}
     assert '#SBATCH --comment=lc:session=ws-a' in fake.scripts[0]
@@ -614,15 +624,18 @@ def test_a_killed_shard_reruns_only_its_unfinished_ids_split_in_halves() -> None
     record = _run(fake)
     assert len(fake.manifests) == 2
     assert [i['ids'] for i in fake.manifests[1]['items']] == [['tests/b.py::t4'], ['tests/b.py::t5']]
-    assert all(record['outcomes'][f'tests/b.py::t{n}'] == 'passed' for n in (3, 4, 5))
+    assert all(_words(record['cells'])[f'tests/b.py::t{n}'] == 'ok' for n in (3, 4, 5))
     assert len(record['rounds']) == 2
 
 
-def test_what_is_still_unfinished_after_the_retries_is_lost() -> None:
+def test_what_is_still_unfinished_after_the_retries_is_infra() -> None:
     record = _run(FakeRunCluster(dies=frozenset({'tests/b.py'}), kills=1 + RETRIES))
     assert len(record['rounds']) == 1 + RETRIES
-    assert record['outcomes']['tests/b.py::t3'] == 'passed', 'what a killed shard finished is kept'
-    assert [record['outcomes'][f'tests/b.py::t{n}'] for n in (4, 5)] == ['lost', 'lost']
+    words = _words(record['cells'])
+    assert words['tests/b.py::t3'] == 'ok', 'what a killed shard finished is kept'
+    assert [words[f'tests/b.py::t{n}'] for n in (4, 5)] == ['infra', 'infra'], 'the machine, not the test, said no'
+    with pytest.raises(PartRefusal, match='INCONCLUSIVE'):
+        part_of(record)
 
 
 def test_an_out_of_memory_round_doubles_the_memory_of_the_next() -> None:
@@ -632,16 +645,17 @@ def test_an_out_of_memory_round_doubles_the_memory_of_the_next() -> None:
     assert second['mem_mb'] == 2 * first['mem_mb']
 
 
-def test_an_oom_item_is_bisected_at_the_grantable_ceiling_and_its_lone_hog_fails_by_id() -> None:
+def test_an_oom_item_is_bisected_at_the_grantable_ceiling_and_its_lone_hog_is_out_of_memory_by_id() -> None:
     """Ada 2026-10-14: an item OOM-killed at 62.7 GB was re-asked at 366.77 GB of a 360 GB quota and never ran again."""
     fake = FakeRunCluster(hog='tests/b.py::t4', mem_ceiling='3G')
     record = _run(fake)
     assert [r['mem_mb'] for r in record['rounds']] == [1024, 3072], 'grown once (1024 x 1.5 x 2), held to the quota'
     assert [i['ids'] for i in fake.manifests[1]['items']] == [['tests/b.py::t4'], ['tests/b.py::t5']]
-    assert record['outcomes']['tests/b.py::t4'] == 'failed', 'the hog alone at the ceiling is its own failure'
-    why = 'OUT_OF_MEMORY alone at 3072 MB, the most any grant gives (peak 1024 MB)'
-    assert record['reasons']['tests/b.py::t4'] == why
-    assert [record['outcomes'][f'tests/b.py::t{n}'] for n in (3, 5)] == ['passed', 'passed'], 'its mates got results'
+    words = _words(record['cells'])
+    assert words['tests/b.py::t4'] == 'out_of_memory', 'PLANTED CONTROL: an OOM-killed test is never REJECTED'
+    why = 'alone at 3072 MB, the most any grant gives (peak 1024 MB)'
+    assert _whys(record['cells'])['tests/b.py::t4'] == why
+    assert [words[f'tests/b.py::t{n}'] for n in (3, 5)] == ['ok', 'ok'], 'its mates got results'
 
 
 def test_an_oom_item_under_the_ceiling_is_retried_not_failed() -> None:
@@ -650,19 +664,20 @@ def test_an_oom_item_under_the_ceiling_is_retried_not_failed() -> None:
     _submit(fake)
     _gather(fake)
     assert _gather(fake) is None, 'still bisecting/growing, not settled'
-    assert 'tests/b.py::t4' not in json.loads(fake.state)['outcomes']
+    assert 'tests/b.py::t4' not in json.loads(fake.state)['cells']
 
 
-def test_a_round_no_grant_can_take_settles_as_an_error_naming_why() -> None:
+def test_a_round_no_grant_can_take_settles_as_unavailable_naming_why() -> None:
     """Ada 2026-10-14: 'cannot advance: no grant can take this work' repeated for hours, and no verdict came."""
     fake = FakeRunCluster(dies=frozenset({'tests/b.py'}))
     _submit(fake)
     fake.closed = True
     record = _gather(fake)
     assert record is not None, 'an unplaceable round settles the run in the same gather'
-    assert [record['outcomes'][f'tests/b.py::t{n}'] for n in (4, 5)] == ['error', 'error']
-    assert record['reasons']['tests/b.py::t4'].startswith('could not be placed: no grant can take this work')
-    assert record['outcomes']['tests/b.py::t3'] == 'passed', 'PLANTED CONTROL: what ran keeps its result'
+    words = _words(record['cells'])
+    assert [words[f'tests/b.py::t{n}'] for n in (4, 5)] == ['unavailable', 'unavailable']
+    assert _whys(record['cells'])['tests/b.py::t4'].startswith('could not be placed: no grant can take this work')
+    assert words['tests/b.py::t3'] == 'ok', 'PLANTED CONTROL: what ran keeps its result'
     assert len(fake.manifests) == 1, 'nothing was submitted'
 
 
@@ -729,7 +744,7 @@ def test_submit_returns_with_the_state_on_the_cluster_and_gather_reports_pending
     assert _gather(fake) is None
     record = _gather(fake)
     assert record is not None
-    assert set(record['outcomes'].values()) == {'passed', 'not-covered'}
+    assert set(_words(record['cells']).values()) == {'ok'}
     assert _gather(fake) == record, 'a finished run answers its record again'
 
 
@@ -906,7 +921,11 @@ class _RedCluster(FakeRunCluster):
         for raw in super()._streams().splitlines():
             line = json.loads(raw) if raw.startswith('{') else {}
             if line.get('id', '').startswith('tests/a.py'):
-                line = {**line, 'outcome': 'failed', 'why': f'AssertionError: {line["id"]}'}
+                line = {
+                    **line,
+                    'status': 'rejected',
+                    'reason': {'kind': 'assertion', 'text': f'AssertionError: {line["id"]}'},
+                }
             out.append(json.dumps(line) if line else raw)
         return '\n'.join(out) + '\n'
 
@@ -914,9 +933,9 @@ class _RedCluster(FakeRunCluster):
 def test_the_record_names_why_each_red_failed() -> None:
     """A 3000-red run triages from the record: every failed/error id carries its crash line, nothing else does."""
     record = _run(_RedCluster())
-    red = {n for n, o in record['outcomes'].items() if o == 'failed'}
+    red = {n for n, o in _words(record['cells']).items() if o == 'rejected'}
     assert red
-    assert record['reasons'] == {n: f'AssertionError: {n}' for n in red}
+    assert _whys(record['cells']) == {n: f'AssertionError: {n}' for n in red}
 
 
 def test_a_multi_file_item_pays_each_files_overhead_and_its_memory_reads_every_file() -> None:
@@ -960,7 +979,7 @@ def test_a_multi_file_item_shares_its_overhead_and_teaches_its_peak_to_every_fil
 def test_an_id_killed_mid_run_is_floored_at_the_time_it_was_given_not_its_files_mean() -> None:
     """Measured 2026-10-10: a file's costly id kept dying and was re-priced from its cheap survivors."""
     measured = Measured(durations={'a.py::cheap': 1.0}, overheads={'a.py': 10.0})
-    folded = {'outcomes': {'a.py::cheap': 'passed'}, 'seconds': {'a.py::cheap': 1.0}, 'done': None}
+    folded = {'cells': {'a.py::cheap': {'status': 'ok'}}, 'seconds': {'a.py::cheap': 1.0}, 'done': None}
     measured.killed(['a.py::cheap', 'a.py::slow', 'a.py::after'], folded, spent=600.0)
     assert measured.floors == {'a.py::slow': 589.0}, 'the interrupted id; the one after it never started'
     seconds, _ = measured.estimate([['a.py::slow', 'a.py::after']], Cost())
@@ -980,13 +999,13 @@ def test_fold_charges_a_killed_item_what_its_shard_wall_had_left() -> None:
     """Items in a shard run back to back: the unclosed one was killed after the wall minus its predecessors."""
     items = [{'ids': ['a.py::x']}, {'ids': ['b.py::fast', 'b.py::slow']}, {'ids': ['c.py::never']}]
     streams = {
-        0: json.dumps({'id': 'a.py::x', 'outcome': 'passed', 's': 50.0})
+        0: json.dumps({'id': 'a.py::x', 'status': 'ok', 's': 50.0})
         + '\n'
         + json.dumps({'done': 0, 'wall': 100.0, 'peak_mb': 1.0}),
-        1: json.dumps({'id': 'b.py::fast', 'outcome': 'passed', 's': 20.0}),
+        1: json.dumps({'id': 'b.py::fast', 'status': 'ok', 's': 20.0}),
     }
-    measured, outcomes = Measured(), {}
-    pending, killed, busy = fold(items, streams, outcomes, measured, {}, shards=[(0, 3)], walls=[1000.0])
+    measured, cells = Measured(), {}
+    pending, killed, busy = fold(items, streams, cells, measured, shards=[(0, 3)], walls=[1000.0])
     assert not killed
     assert busy == 100.0, 'only the closed item reports its wall'
     assert pending == [['b.py::slow'], ['c.py::never']]
@@ -1196,10 +1215,10 @@ def test_a_kill_is_charged_the_seconds_slurm_says_the_shard_ran_not_its_planned_
     """Measured 2026-10-11: a shard killed after 7 s was charged its 216-min plan; one id got a 12960 s floor."""
     items = [{'ids': ['a.py::dies', 'a.py::after']}]
     measured = Measured()
-    fold(items, {}, {}, measured, {}, shards=[(0, 1)], walls=[7.0])
+    fold(items, {}, {}, measured, shards=[(0, 1)], walls=[7.0])
     assert measured.floors == {'a.py::dies': 7.0}
     planted = Measured()
-    fold(items, {}, {}, planted, {}, shards=[(0, 1)], walls=[12960.0])
+    fold(items, {}, {}, planted, shards=[(0, 1)], walls=[12960.0])
     assert planted.floors == {'a.py::dies': 12960.0}, 'PLANTED CONTROL: the wall given is the wall charged'
 
 
@@ -1329,7 +1348,7 @@ def test_two_out_of_memory_rounds_then_a_completed_one_is_gathered_from_the_late
     assert record['job_ids'] == ['4243', '4244', '4245']
     first, second, third = record['rounds']
     assert (second['mem_mb'], third['mem_mb']) == (2 * first['mem_mb'], 4 * first['mem_mb'])
-    assert all(record['outcomes'][f'tests/b.py::t{n}'] == 'passed' for n in (3, 4, 5)), 'r2 results gathered'
+    assert all(_words(record['cells'])[f'tests/b.py::t{n}'] == 'ok' for n in (3, 4, 5)), 'r2 results gathered'
     asked = [c.split(' -j ')[1].split()[0] for c, _ in fake.calls if c.startswith('sacct ')]
     assert asked == ['4243', '4244', '4245'], 'each gather asks sacct about the current round only'
     assert not any(' -j ' in c for c, _ in fake.calls if 'squeue' in c), 'squeue decides no job in a gather'
@@ -1379,20 +1398,26 @@ def test_a_failed_run_build_is_inconclusive(
     assert 'could not find `cargo`' in capsys.readouterr().err
 
 
-# -- carried outcomes (lab_commons.dev.forgecarry) ------------------------------------------------------
+# -- carried cells (lab_commons.dev.forgecarry) ------------------------------------------------------
 
 A_SHA = 'a' * 40
+OK_CELL: dict[str, object] = {'status': 'ok', 'evidence': 'observed'}
+RED_CELL: dict[str, object] = {
+    'status': 'rejected',
+    'evidence': 'observed',
+    'reason': {'kind': 'assertion', 'text': 'x'},
+}
 
 
 def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> None:
     fake, envs = FakeRunCluster(), []
 
-    def carry(env: str) -> dict[str, tuple[str, str, str]]:
+    def carry(env: str) -> dict[str, tuple[dict[str, object], str, str]]:
         envs.append(env)
         return {
-            'tests/a.py::t1': ('passed', A_SHA, A_SHA),
-            'tests/a.py::t2': ('failed', A_SHA, A_SHA),
-            'x::y': ('passed', A_SHA, A_SHA),
+            'tests/a.py::t1': (OK_CELL, A_SHA, A_SHA),
+            'tests/a.py::t2': (RED_CELL, A_SHA, A_SHA),
+            'x::y': (OK_CELL, A_SHA, A_SHA),
         }
 
     record = _run(fake, carry=carry)
@@ -1400,7 +1425,7 @@ def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> 
     submitted = {node for item in fake.manifests[0]['items'] for node in item['ids']}
     assert submitted == {'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5'}
     assert record['carried'] == {'tests/a.py::t1': A_SHA, 'tests/a.py::t2': A_SHA}, 'an id not collected is not taken'
-    assert record['outcomes']['tests/a.py::t2'] == 'failed', 'a carried red stays red'
+    assert _words(record['cells'])['tests/a.py::t2'] == 'rejected', 'a carried red stays red'
     assert record['scope'] == FULL, 'a carried run is still the full suite'
     part = part_of(record)
     assert (part.ran, part.kept, part.result) == (3, {A_SHA[:12]: 2}, Conclusion.FAIL), (
@@ -1415,7 +1440,7 @@ def test_carried_ids_are_never_submitted_and_the_record_names_their_origin() -> 
 def test_a_run_whose_every_id_is_carried_writes_its_record_without_a_job() -> None:
     fake = FakeRunCluster()
     ids = ['tests/a.py::t1', 'tests/a.py::t2', 'tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5']
-    state = _submit(fake, carry=lambda _env: dict.fromkeys(ids, ('passed', A_SHA, A_SHA)))
+    state = _submit(fake, carry=lambda _env: dict.fromkeys(ids, (OK_CELL, A_SHA, A_SHA)))
     assert not fake.manifests, 'nothing was submitted'
     assert state['rounds'] == []
     assert _gather(fake) == state['record']
@@ -1442,12 +1467,12 @@ def test_two_parts_of_one_sha_are_two_runs_with_two_states_and_two_job_names() -
 def test_a_superseded_run_holds_its_folded_rounds_and_every_id_its_last_round_streamed() -> None:
     fake = FakeRunCluster(dies=frozenset({'tests/b.py'}), kills=5)
     state = _submit(fake)
-    held = held_outcomes(json.loads(fake.state), fake)
+    held = held_cells(json.loads(fake.state), fake)
     assert held == {
-        'tests/a.py::t1': ('passed', SHA),
-        'tests/a.py::t2': ('passed', SHA),
-        'tests/b.py::t3': ('passed', SHA),
-    }, 'the killed item kept what it streamed; the handed id is not an outcome'
+        'tests/a.py::t1': (OK_CELL, SHA),
+        'tests/a.py::t2': (OK_CELL, SHA),
+        'tests/b.py::t3': (OK_CELL, SHA),
+    }, 'the killed item kept what it streamed; the handed id is not a cell'
     assert state['sha'] == SHA
     assert run_shas(MACHINE, {GRANT.account: lambda _c, _s: f'/h/ci/runs/{SHA}/{BASE}/state.json\n'}, BASE) == [SHA]
 

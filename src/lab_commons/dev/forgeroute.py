@@ -17,7 +17,7 @@ twice writes nothing the second time.
 WHAT A ROW MEANS, derived rather than accumulated: ``- [ ] `<id>` (<part>) <outcome>`` says "the latest
 record of <part> -- the part that NOW selects <id> -- reported <id> red". A part is a need-set and every
 id belongs to exactly one (:mod:`lab_commons.dev.platformparts`), and every record names the owner of
-EVERY collected id: its own outcome, or ``not-covered`` with the part it is handed to. So the body is a
+EVERY collected id: its own test cell, or its entry in ``handed`` naming the part it is handed to. So the body is a
 pure function of the latest record per part, and routing a record of part P (:func:`render`):
 
 * REPLACES P's rows with P's reds in this record -- a row of P the record no longer reports red is gone;
@@ -31,8 +31,8 @@ Every open ``area:*`` issue is re-rendered on each record, so an area the record
 the rows it disowns.
 
 AN INCONCLUSIVE RECORD IS ROUTED. Its part is never posted (:func:`lab_commons.dev.platformparts.part_of`),
-but each id it DID report red is a real red, so it is a row. The ids it never reported (``lost``,
-``missing``) are not reds of their own: they become ONE row per area, ``never reported``, counting them
+but each id it DID report red is a real red, so it is a row. The ids that gave no answer (a RETRYABLE
+cell: never reported, lost, killed) are not reds of their own: they become ONE ``no answer`` row per area, counting them
 and naming the first few -- the latest record says nothing about them, and that is itself the fact. A
 record covering no id is no evidence at all and routes nothing. Unowned reds land in the default area, so
 a red is never dropped.
@@ -58,13 +58,12 @@ import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgepulls import issues
 from lab_commons.dev.forgework import Client, ForgeCallFailed, Issue, client_for
-from lab_commons.dev.platformparts import NOT_COVERED, UNRUN
-from lab_commons.hpc.records import read_record
+from lab_commons.hpc.records import cells_of, read_record
+from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
 
 __all__ = [
     'DEFAULT_AREA',
-    'RED',
     'Routed',
     'area_of',
     'covers_any',
@@ -84,8 +83,6 @@ __all__ = [
 
 #: The area an unmatched red lands in when the repo names none.
 DEFAULT_AREA: Final = 'unowned'
-#: The reported outcomes routed as red, one row per id; an id never reported is ``UNRUN``, never red.
-RED: Final = frozenset({'failed', 'error'})
 _ROW: Final = re.compile(r'^- \[( |x)\] `([^`]+)`(.*)$', re.MULTILINE)
 _OPEN: Final = re.compile(r'^- \[ \] `', re.MULTILINE)
 _TAG: Final = re.compile(r' \(([^)\s]+)\) ')
@@ -160,18 +157,17 @@ def group(
 ) -> dict[str, dict[str, str]]:
     """``{area: {row key: row text after the key}}`` -- *record*'s own rows; an area with none is absent.
 
-    A reported red is one row per id; the ids the record never reported are ONE row per area.
+    A reported red is one row per id; the ids that gave no answer are ONE row per area.
     """
-    part, outcomes = str(record['platform']), record['outcomes']
-    reasons = record.get('reasons', {})
+    part = str(record['platform'])
     grouped: dict[str, dict[str, str]] = {}
     unrun: dict[str, list[str]] = {}
-    for node, outcome in sorted(outcomes.items()):
+    for node, one in sorted(cells_of(dict(record)).items()):
         area = area_of(node, areas, default)
-        if outcome in RED:
-            why = _reason(reasons.get(node, ''))
-            grouped.setdefault(area, {})[node] = f' ({part}) {outcome}' + (f' -- {why}' if why else '')
-        elif outcome in UNRUN:
+        if one.red:
+            why = _reason(one.why)
+            grouped.setdefault(area, {})[node] = f' ({part}) {one.word()}' + (f' -- {why}' if why else '')
+        elif one.met is None:
             unrun.setdefault(area, []).append(node)
     for area, nodes in unrun.items():
         named = ', '.join(nodes[:_NAMED]) + (', ...' if len(nodes) > _NAMED else '')
@@ -180,12 +176,12 @@ def group(
 
 
 def _unrun_key(part: str) -> str:
-    return f'{part}: never reported'
+    return f'{part}: no answer'
 
 
 def covers_any(record: Mapping[str, Any]) -> bool:
     """Whether *record* covers any id at all -- a record covering none is no evidence and routes nothing."""
-    return any(outcome != NOT_COVERED for outcome in record['outcomes'].values())
+    return bool(record['cells'])
 
 
 def still_red(body: str) -> bool:
@@ -211,9 +207,8 @@ def render(previous: str, mine: Mapping[str, str], record: Mapping[str, Any], co
 
     A row of another part stands only while *record* says that part selects its id (module docstring).
     """
-    part, outcomes = str(record['platform']), record['outcomes']
-    handed = record.get('handed', {})
-    owner = {node: str(handed.get(node, '')) if out == NOT_COVERED else part for node, out in outcomes.items()}
+    part, cells = str(record['platform']), cells_of(dict(record))
+    owner = {**{node: str(other) for node, other in record.get('handed', {}).items()}, **dict.fromkeys(cells, part)}
     current = set(owner.values())
     rows = {}
     for mark, node, rest in _ROW.findall(previous):
@@ -224,8 +219,7 @@ def render(previous: str, mine: Mapping[str, str], record: Mapping[str, Any], co
             if stands:
                 rows[node] = rest
     rows.update(mine)
-    unrun = any(out in UNRUN for out in outcomes.values())
-    verdict = 'INCONCLUSIVE' if unrun else 'FAIL' if any(out in RED for out in outcomes.values()) else 'PASS'
+    verdict = conclude(cells.values(), record.get('flaky', ())).name
     head = (
         f'Last routed: part `{part}` at [{record["sha"][:12]}]({commit_url}) (req `{record["req"]}`), {verdict}.'
         ' A row is a red of the latest record of the part that now selects it.'

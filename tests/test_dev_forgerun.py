@@ -481,7 +481,7 @@ def _shipping(home: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, 
     root.mkdir()
     table = f'[tool.lab_commons.artefacts]\nbackend = "folder"\nremote = "{big.as_posix()}"\nthreshold_mb = 1\n'
     (root / 'pyproject.toml').write_text(table, encoding='utf-8')
-    record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1'}, home / 'gathered')
+    record = records.write_record({'sha': SHA, 'platform': 'linux', 'req': 'r1', 'cells': {}}, home / 'gathered')
     tree = record.parent / 'tree'
     (tree / 'fields').mkdir(parents=True)
     (tree / 'fields' / 'b.h5').write_bytes(os.urandom(2 << 20))  # 2 MB incompressible

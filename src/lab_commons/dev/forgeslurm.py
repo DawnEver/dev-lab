@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from lab_commons.box import declared_seats
 from lab_commons.compute import learned
@@ -40,7 +41,7 @@ from lab_commons.hpc.config import Config
 from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
-from lab_commons.hpc.records import held_outcomes, run_shas
+from lab_commons.hpc.records import held_cells, run_shas
 from lab_commons.hpc.run import NoRoom, job_name, load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
@@ -119,8 +120,8 @@ class SlurmCluster:
         )
         return [one['job_id'] for one in state['rounds']]
 
-    def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[str, str, str]]:
-        """The outcomes *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
+    def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[dict[str, Any], str, str]]:
+        """The cells *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
 
         Its own earlier run is one stopped before it ended -- released retryable and claimed again -- whose
         finished shards stand as they are (:func:`lab_commons.dev.forgecarry.carry_from`).
@@ -134,7 +135,7 @@ class SlurmCluster:
         for ancestor in read_by(self.root, sha, shas):
             state, shell = load_state(ancestor, part, self.machine, runners)
             if state.get('env') == env and state.get('platform') == part:
-                held[ancestor] = held_outcomes(state, shell)
+                held[ancestor] = held_cells(state, shell)
         return carry_from(self.root, sha, held)
 
     def tree(self, run: Run) -> Path:

@@ -150,12 +150,22 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   wall limit and memory from the slowest shard and worst peak times `policy.safety`.
 - The array asks for every declared partition that admits its shard (`--partition=shortq,defq`). A task pending
   past `stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy.
-- **Outcomes are streamed**, one JSON line per test phase keyed by pytest's `nodeid`, so a killed shard keeps
-  what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with doubled memory
-  after an out-of-memory kill; only what is still unfinished after that is `lost`.
-- The record holds (`platform` is the part's name) `{sha, req, scope, platform, system, env, account, job_ids, cluster, python, prep, plan,
-  rounds, outcomes, reasons, handed, durations, overheads, peaks_mb}`. Outcomes: `passed`, `failed`, `error`,
-  `skipped`, `xfailed`, `not-covered`, `lost`, `missing`. Only `passed` means passed.
+- **Test cells are streamed**, one JSON line per test phase keyed by pytest's `nodeid` -- a plain
+  `lab_commons.outcomes.Cell` (status, reason) plus the test's `Expectation` when it declares one -- so a killed
+  shard keeps what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with
+  doubled memory after an out-of-memory kill; only what is still unfinished after that is `INFRA`.
+- The record holds (`platform` is the part's name) `{sha, req, scope, platform, system, env, account, job_ids, cluster,
+  python, prep, plan, rounds, cells, handed, durations, overheads, peaks_mb}`; `cells` holds only the ids it
+  covered (`lab_commons.hpc.testcells.TestCell`), `handed` every other id with its part. A record of the retired
+  word shape is refused by name (it is regenerable; the forge re-produces the sha); a run's live `state.json` of
+  that shape is upgraded on read.
+- **The pytest mapping** (`lab_commons.hpc.pytest_item.judged`, the one mapping for a local run and a cluster
+  item): passed -> `OK`; failed call -> `REJECTED`/assertion; setup or teardown error -> `ERROR`; a
+  pytest-timeout failure -> `TIMEOUT`; xfail / xpass -> `REJECTED` / `OK` under `Expectation(REJECTED)`. A SKIP is
+  mapped by the marker that declares it: a declared resource marker -> `UNAVAILABLE`, `not_applicable` ->
+  `NOT_APPLICABLE`; a skip with neither is refused by name, `REJECTED`/`xfail_not_skip` (XFAIL-NOT-SKIP). Killed
+  alone at the memory ceiling -> `OUT_OF_MEMORY`; exited mid-test -> `ERROR`; never reported -> `PENDING`; could
+  not be placed -> `UNAVAILABLE`; a file that does not collect -> `REJECTED`/collection.
 
 ## Parts by need-set
 
@@ -189,8 +199,9 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   6 h, re-run each serve tick when due) and has not failed a real unit (exit 4) here since; any other
   `[capabilities.<name>]` is present as declared. `seats` is its concurrency, the only declaration. A part no live host has the needs of waits
   `no host provides <resource>` in `forge queue`: blocked, never red, never skipped.
-- **A part is strict**: PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is
-  FAIL; any `lost`/`missing` id makes it INCONCLUSIVE and it is not posted.
+- **A part is strict** (`lab_commons.hpc.testcells.conclude`): PASS only if every covered cell is DECIDED and meets
+  its expectation; any decided miss is FAIL; otherwise -- a RETRYABLE cell, or a FLAKY id (decided both ways in
+  one run) -- it is INCONCLUSIVE and it is not posted.
 - A producer other than `verify` calls `platformparts.select(root, sha, part, collect=...)` (``(its ids, every
   other id -> its part)``), runs its ids and writes a record of the same shape. The cluster runs a part with
   `hpc run submit --part <part>`; `forge serve` passes the claimed part.

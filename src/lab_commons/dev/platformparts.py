@@ -29,10 +29,11 @@ is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
   part's name): ``python -m lab_commons.hpc run gather`` writes it, and ``python -m
   lab_commons.dev.platformparts post <record>`` queues its status and the record
   (:mod:`lab_commons.dev.forgeoutbox`) -- posted once the commit is on origin. :func:`part_of` derives
-  the part STRICTLY: PASS only when every covered outcome is passed / skipped / xfailed; a failed or
-  error id is FAIL. A record with ANY lost or missing id is INCONCLUSIVE and is REFUSED, never posted:
-  measured 2026-10-09 a record of 50349 lost ids (a build that never produced a venv) was written as a
-  FAIL. Nothing covered is refused, and so is a record handing off an id of its own part.
+  the part STRICTLY, as :func:`lab_commons.hpc.testcells.conclude` over the record's test cells: PASS only
+  when every covered cell is DECIDED and meets its expectation, FAIL on any decided miss. An INCONCLUSIVE
+  record -- a RETRYABLE cell (never reported, lost, killed) and no miss, or a flaky id -- is REFUSED, never
+  posted: measured 2026-10-09 a record of 50349 ids lost to a build that never produced a venv was written
+  as a FAIL. Nothing covered is refused, and so is a record handing off an id of its own part.
 * Any other producer (a consumer's door, run as the declared ``produce``) calls :func:`select` with a
   collector over its own checkout, runs the ids of its part and writes a record of the same shape.
 
@@ -87,8 +88,9 @@ from lab_commons.dev.forgestatus import state_for
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
-from lab_commons.hpc.records import read_record
+from lab_commons.hpc.records import cells_of, read_record
 from lab_commons.hpc.retired import refusal
+from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
@@ -100,10 +102,7 @@ if TYPE_CHECKING:
 __all__ = [
     'BASE',
     'CONTEXT_PREFIX',
-    'NOT_COVERED',
     'PART_FIELD',
-    'PASSING',
-    'UNRUN',
     'ClusterPart',
     'Composition',
     'Part',
@@ -131,17 +130,8 @@ CONTEXT_PREFIX: Final = 'tests/'
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
 
-#: Covered outcomes that do not fail a part: ran and passed, or declined by the test's own design.
-PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
-
 #: How many ids a refusal names before eliding; the count is always given.
 _NAMED: Final = 5
-
-#: Outcomes of ids that never reported: they make a part INCONCLUSIVE, never FAIL.
-UNRUN: Final = frozenset({'lost', 'missing'})
-
-#: The record's word for an id it handed to another part.
-NOT_COVERED: Final = 'not-covered'
 
 #: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
 _RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
@@ -324,20 +314,22 @@ def part_of(record: Mapping[str, Any]) -> Part:
     did not cover to the part that id belongs to.
     """
     platform, scope, sha = str(record['platform']), str(record['scope']), str(record['sha'])
-    outcomes: dict[str, str] = dict(record['outcomes'])
-    covered = {node: outcome for node, outcome in outcomes.items() if outcome != NOT_COVERED}
+    covered = cells_of(dict(record))
     if not covered:
         msg = f'the {platform} record for {sha} covers no test -- an empty part is not a pass'
         raise PartRefusal(msg)
-    unrun = sorted(node for node, outcome in covered.items() if outcome in UNRUN)
-    if unrun:
+    flaky = sorted(record.get('flaky', ()))
+    result = conclude(covered.values(), flaky)
+    if result is Conclusion.INCONCLUSIVE:
+        unanswered = sorted(node for node, one in covered.items() if one.met is None)
         msg = (
-            f'the {platform} record for {sha} is INCONCLUSIVE: {len(unrun)} of {len(covered)} covered test(s) '
-            f'never reported ({_elided(unrun)}) -- gather again or re-submit; it is not posted, so no admission '
-            'can cite it'
+            f'the {platform} record for {sha} is INCONCLUSIVE: {len(unanswered)} of {len(covered)} covered test(s) '
+            f'gave no answer ({_elided(unanswered)})'
+            + (f' and {len(flaky)} were decided both ways ({_elided(flaky)})' if flaky else '')
+            + ' -- gather again or re-submit; it is not posted, so no admission can cite it'
         )
         raise PartRefusal(msg)
-    handed = {node: str(record['handed'].get(node, '')) for node, out in outcomes.items() if out == NOT_COVERED}
+    handed = {node: str(owner) for node, owner in record['handed'].items()}
     disowned = sorted(node for node, owner in handed.items() if owner == platform)
     if disowned:
         msg = f'the {platform} record for {sha} hands off {len(disowned)} test(s) of its own part: {_elided(disowned)}'
@@ -349,7 +341,6 @@ def part_of(record: Mapping[str, Any]) -> Part:
     hands: dict[str, int] = {}
     for owner in handed.values():
         hands[owner] = hands.get(owner, 0) + 1
-    failing = any(outcome not in PASSING for outcome in covered.values())
     kept: dict[str, int] = {}
     for node, origin in record.get('carried', {}).items():
         if node in covered:
@@ -357,7 +348,7 @@ def part_of(record: Mapping[str, Any]) -> Part:
     return Part(
         platform=platform,
         scope=scope,
-        result=Conclusion.FAIL if failing else Conclusion.PASS,
+        result=result,
         ran=len(covered) - sum(kept.values()),
         hands=hands,
         kept=kept,

@@ -2,8 +2,8 @@
 
 The cluster's parts come from ``hpc run gather``; a local run's come from here, so both are one kind of
 run record and post as one kind of ``tests/<part>`` part (:mod:`lab_commons.dev.platformparts`). Each
-reported id belongs to ONE part, its need-set (:mod:`lab_commons.hpc.needsets`); a record covers the ids
-of its own part and hands every other collected id ``not-covered`` to the part it belongs to.
+reported id belongs to ONE part, its need-set (:mod:`lab_commons.hpc.needsets`); a record holds the test
+cells of its own part's ids and names, in ``handed``, the part every other collected id belongs to.
 
 WHICH PARTS A RUN POSTS. A producer told its part (``verify --part <part>``, the declared ``produce``)
 posts exactly that part. A run nobody named a part for posts EVERY part it judged whose needs THIS host
@@ -33,7 +33,6 @@ from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.outcomes import outcomes_dir, read_outcomes, read_reasons
 from lab_commons.dev.platformparts import (
-    NOT_COVERED,
     PartRefusal,
     UndeclaredPart,
     post,
@@ -43,6 +42,7 @@ from lab_commons.dev.platformparts import (
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
+from lab_commons.hpc.testcells import TestCell, upgraded
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
@@ -77,29 +77,30 @@ def local_record(
     part: str,
     scope: str,
     req: str,
-    outcomes: Mapping[str, str],
-    reasons: Mapping[str, str],
+    cells: Mapping[str, TestCell],
     owned: Mapping[str, str],
+    flaky: Collection[str] = (),
     tools: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """The run record of *part* from a LOCAL run, in the cluster record's shape.
 
-    An id of *part* the run reported carries its outcome; every other id of *owned* (id -> part) is
-    handed off, ``not-covered``, to the part it belongs to. It states the environment it ran against
+    An id of *part* the run reported carries its test cell (and is ``flaky`` when the run decided it both
+    ways); every other id of *owned* (id -> part) is handed off to the part it belongs to.
+    It states the environment it ran against
     (:func:`lab_commons.dev.envkey.env_record`) and the vendor tool versions this host's presence probe READ
     (*tools*, default :func:`lab_commons.compute.presence.measured` over the cached reading): nothing is
     pinned, so the record is the reproducibility.
     """
-    mine = [node for node, owner in owned.items() if owner == part and node in outcomes]
+    mine = [node for node, owner in owned.items() if owner == part and node in cells]
     handed = {node: owner for node, owner in owned.items() if owner != part}
     return {
         'sha': sha,
         'platform': part,
         'scope': scope,
         'req': req,
-        'outcomes': {**{node: outcomes[node] for node in mine}, **dict.fromkeys(handed, NOT_COVERED)},
+        'cells': {node: cells[node].to_plain() for node in mine},
+        'flaky': sorted(node for node in flaky if node in mine),
         'handed': handed,
-        'reasons': {node: why for node, why in reasons.items() if node in mine},
         **env_record(),
         'tools': dict(measured(cached()) if tools is None else tools),
     }
@@ -163,20 +164,21 @@ def post_part(
         return parse_ids(done.stdout)
 
     judged = outcomes_dir(log)
-    outcomes, reasons = read_outcomes(judged), read_reasons(judged)
-    owned = owners(root, commit, list(outcomes), collect)
+    reasons = read_reasons(judged)
+    read = {node: upgraded(word, reasons.get(node, '')) for node, word in read_outcomes(judged).items()}
+    cells = {node: one for node, one in read.items() if one is not None}
+    flaky: frozenset[str] = frozenset()
+    owned = owners(root, commit, list(cells), collect)
     if part:
         chosen = [part]
     else:
         here = present() if present else present_here(root)
-        chosen = sorted({owned[node] for node in outcomes if needs_of(owned[node]) <= here}) or [BASE]
+        chosen = sorted({owned[node] for node in cells if needs_of(owned[node]) <= here}) or [BASE]
     scope = INCREMENTAL if arguments else FULL
     return '\n'.join(
         post_local(
             root,
-            local_record(
-                sha=commit, part=name, scope=scope, req=log.stem, outcomes=outcomes, reasons=reasons, owned=owned
-            ),
+            local_record(sha=commit, part=name, scope=scope, req=log.stem, cells=cells, owned=owned, flaky=flaky),
             directory,
         )
         for name in chosen
