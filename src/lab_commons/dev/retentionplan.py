@@ -8,11 +8,12 @@ derived from what each is FOR, not from what happens to name it:
 
 * A TREE is the workdir of a run's jobs and the place its streams land until :func:`gather_run
   <lab_commons.hpc.run.gather_run>` folds them into the record. Of its ~22 k files only the streams of the
-  round in flight (``.lab-ci/<tag>``, a few dozen) are read after its jobs end: the carry takes a SUPERSEDED
+  round in flight (``.lab-ci/<tag>.jsonl``, one file) are read after its jobs end: the carry takes a SUPERSEDED
   run's finished shards from them (:func:`lab_commons.hpc.records.held_outcomes`). So a tree is kept exactly
   while its sha is IN FLIGHT, by any repo's run -- ``tree-not-in-flight`` otherwise -- and before an
-  unrecorded run's tree goes its streams are PACKED into one file beside its state
-  (:func:`lab_commons.hpc.records.stream_sources`).
+  unrecorded run's tree goes its round's stream is KEPT as one file beside its state
+  (:func:`lab_commons.hpc.records.stream_sources`). A run kept in the retired many-file shape
+  (``runs/<sha>/streams/<tag>.txt``) is upgraded into that one file, ``streams-upgraded``.
   A re-run of the sha re-adds the tree from the bare cache (its env lives apart, keyed). Keeping the newest
   tree per branch would save one checkout at the price of ~22 k files; it does not.
 * An ENV (``envs/<key>``), a NATIVE build and its ``cargo-target/<key>`` are kept while an in-flight run
@@ -132,7 +133,7 @@ class Doomed:
     path: Path
     rule: str
     rotate: bool = False
-    keep: tuple[tuple[Path, Path], ...] = ()  # (streams dir, pack file): packed before the path goes
+    keep: tuple[tuple[Path, Path], ...] = ()  # (round stream, kept file): kept before the path goes
 
 
 @dataclass(frozen=True)
@@ -266,6 +267,7 @@ def cluster_plan(
             for tree in _entries(ci / 'trees')
             if tree.name not in flying
         ]
+    doomed += _retired_kept_streams(ci, states)
     if occupied is not None:
         doomed += _dead_artifacts(ci / 'artifacts', flying)
     doomed += _unreferenced_builds(ci, _needed_builds(ci, states, flying, occupied), now, policy)
@@ -291,13 +293,34 @@ def _dead_artifacts(store: Path, flying: set[str]) -> list[Doomed]:
     return [Doomed(e, 'artifact-not-live') for e in files if e not in newest and e.name.split('.')[0] not in flying]
 
 
+def _current_tag(state: Mapping[str, Any] | None) -> str:
+    return str(((state or {}).get('current') or {}).get('tag', ''))
+
+
 def _kept_streams(ci: Path, sha: str, state: Mapping[str, Any] | None) -> tuple[tuple[Path, Path], ...]:
-    """An unrecorded run's round streams and the one file :func:`lab_commons.hpc.records.stream_sources` reads."""
-    tag = str(((state or {}).get('current') or {}).get('tag', ''))
-    if not tag:
+    """An unrecorded run's round stream and the one file :func:`lab_commons.hpc.records.stream_sources` keeps."""
+    if not (tag := _current_tag(state)):
         return ()
-    _, kept = stream_sources(sha, tag)
-    return ((ci / 'trees' / sha / '.lab-ci' / tag, ci / kept.split('/ci/', 1)[1]),)
+    live, kept = (ci / source.split('/ci/', 1)[1] for source in stream_sources(sha, tag))
+    return ((live, kept),)
+
+
+def _retired_kept_streams(ci: Path, states: list[tuple[Path, dict[str, Any], datetime]]) -> list[Doomed]:
+    """Each run kept in the retired ``streams/<tag>.txt`` shape, its current round upgraded into one file.
+
+    Upgraded only while the run is unrecorded and its tree is gone -- the one case a reader opens it; a tree
+    still present streams the round itself and is kept from (:func:`_kept_streams`) when it goes.
+    """
+    doomed = []
+    for path, state, _ in states:
+        old = path / 'streams'
+        if not old.is_dir():
+            continue
+        tag = _current_tag(state)
+        live = not (ci / 'trees' / path.name).exists() and 'record' not in state and tag
+        keep = ((old / f'{tag}.txt', _kept_streams(ci, path.name, state)[0][1]),) if live else ()
+        doomed.append(Doomed(old, 'streams-upgraded', keep=keep))
+    return doomed
 
 
 def _sourced_builds(tree: Path) -> object:
