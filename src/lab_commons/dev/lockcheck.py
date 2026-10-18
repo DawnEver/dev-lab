@@ -26,6 +26,7 @@ allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carr
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 import shutil
 import sys
@@ -38,7 +39,7 @@ from lab_commons.dev.netverb import Report, run_network_verb
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 __all__ = ['DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'pushed_shas', 'stale', 'unreasoned_holds']
 
@@ -67,11 +68,29 @@ _CLAUSE: Final = re.compile(r'^\s*(?P<op>~=|===|==|!=|<=|>=|<|>)\s*[\w.*+!-]+\s*
 _HOLDING: Final = frozenset({'<', '<=', '==', '===', '~='})
 
 
-def _git(root: Path, *argv: str) -> tuple[int, str]:
+def _git(root: Path, *argv: str, env: Mapping[str, str] | None = None) -> tuple[int, str]:
     done = _door.run(
-        [_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', check=False, timeout=120
+        [_GIT, '-C', str(root), *argv],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=False,
+        timeout=120,
+        env=env,
     )
     return done.returncode, done.stdout
+
+
+#: The variables that point git at ONE repository. A hook runs with them set to the repository pushing, so a
+#: clone or checkout of ANOTHER repository from inside a hook must run without them.
+_REPOSITORY_LOCATORS: Final = frozenset({
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR', 'GIT_PREFIX',
+})  # fmt: skip
+
+
+def _unlocated() -> dict[str, str]:
+    return {name: value for name, value in os.environ.items() if name not in _REPOSITORY_LOCATORS}
 
 
 def _holds(text: str) -> bool:
@@ -155,9 +174,10 @@ def _mount_submodules(root: Path, tree: Path) -> None:
             raise OSError(msg)
         if target.is_dir() and not any(target.iterdir()):
             target.rmdir()  # git leaves an empty directory at an uninitialised submodule
-        code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target))
+        bare = _unlocated()
+        code, _ = _git(root, 'clone', '--quiet', '--no-checkout', '--shared', str(source), str(target), env=bare)
         if code == 0:
-            code, _ = _git(target, 'checkout', '--quiet', gitlink)
+            code, _ = _git(target, 'checkout', '--quiet', gitlink, env=bare)
         if code != 0:
             msg = f'cannot mount submodule {path} at {gitlink[:12]} to resolve this sha'
             raise OSError(msg)
