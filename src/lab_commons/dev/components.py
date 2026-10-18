@@ -17,19 +17,46 @@ THE ROW, declared once in the product's ``pyproject.toml``::
 
 The mount path is DERIVED, never declared: ``components/<name>`` (:attr:`Component.path`). An unknown
 or missing key is refused naming the row, so a typo is never read as a default.
+
+DERIVED, AND CHECKED (:func:`drift`). Three files restate the table and are checked against it rather
+than trusted: ``.gitmodules`` (an entry per component: path, url, branch -- :func:`gitmodules_text`
+derives it), ``[tool.uv.sources]`` (``<package> = { path = "components/<name>" }``, which overrides the
+engine's floating git dependency so the environment holds ONE copy of it) and every Cargo path
+dependency into ``components/`` (a declared crate at its declared path). The index must hold a gitlink
+at each mount. Only what lies under ``components/`` is policed; a drift names the file and the fix.
+``python -m lab_commons.dev.components`` prints the drift and exits 1 on any.
 """
 
 from __future__ import annotations
 
+import argparse
+import posixpath
 import re
-from collections.abc import Mapping
+import shutil
+import sys
+import tomllib
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
+import lab_commons.launch as _door
 from lab_commons.hpc.declared import kit_tables
+from lab_commons.log import emit
 
-__all__ = ['MOUNT', 'Component', 'ComponentRefused', 'components_of']
+__all__ = [
+    'MOUNT',
+    'Component',
+    'ComponentRefused',
+    'components_of',
+    'drift',
+    'drift_at',
+    'gitmodules_text',
+    'main',
+    'submodules',
+]
+
+_GIT: Final = shutil.which('git') or 'git'
 
 #: Where every component is mounted, relative to the product's root.
 MOUNT: Final = 'components'
@@ -131,3 +158,173 @@ def _crates(name: str, value: object) -> dict[str, str]:
             msg = f'component {name}: crate {crate} path {path!r} must be inside the engine'
             raise ComponentRefused(msg)
     return dict(value)
+
+
+#: The Cargo tables whose entries may carry a ``path`` (``target.<cfg>.<table>`` is walked too).
+_CARGO_TABLES: Final = ('dependencies', 'dev-dependencies', 'build-dependencies')
+
+_SECTION: Final = re.compile(r'\s*\[\s*submodule\s+"(?P<name>[^"]+)"\s*\]\s*$')
+_SETTING: Final = re.compile(r'\s*(?P<key>[A-Za-z][\w-]*)\s*=\s*(?P<value>.*?)\s*$')
+
+
+def gitmodules_text(components: tuple[Component, ...]) -> str:
+    """The ``.gitmodules`` the table derives: one entry per component, named by its mount path."""
+    return ''.join(
+        f'[submodule "{row.path}"]\n\tpath = {row.path}\n\turl = {row.url}\n\tbranch = {row.branch}\n'
+        for row in components
+    )
+
+
+def submodules(text: str) -> dict[str, dict[str, str]]:
+    """``{path: {key: value}}`` of a ``.gitmodules`` *text*; an entry without a path is keyed by its name."""
+    found: dict[str, dict[str, str]] = {}
+    current: dict[str, str] = {}
+    for line in text.splitlines():
+        if heading := _SECTION.match(line):
+            current = found.setdefault(heading['name'], {})
+        elif (setting := _SETTING.match(line)) and found:
+            current[setting['key'].lower()] = setting['value']
+    return {entry.get('path', name): entry for name, entry in found.items()}
+
+
+def drift(
+    components: tuple[Component, ...],
+    *,
+    gitmodules: str,
+    pyproject: str,
+    cargo: Mapping[str, str],
+    gitlinks: frozenset[str],
+) -> tuple[str, ...]:
+    """Every way the product's mounts disagree with its table, each naming the file and the fix; ``()`` agrees.
+
+    *cargo* maps each ``Cargo.toml``'s repo-relative path to its text; *gitlinks* is every path the
+    index holds as a submodule commit. Only what lies under ``components/`` is policed: a product may
+    hold other submodules and other path dependencies.
+    """
+    declared = {row.path for row in components}
+    return (
+        *_gitmodules_drift(components, submodules(gitmodules)),
+        *(
+            f'{row.path} is declared and the index holds no gitlink there'
+            for row in components
+            if row.path not in gitlinks
+        ),
+        *(f'{path} is a gitlink no component declares' for path in sorted(gitlinks - declared) if _mounted(path)),
+        *_uv_drift(components, pyproject),
+        *_cargo_drift(components, cargo),
+    )
+
+
+def _mounted(path: str) -> bool:
+    return PurePosixPath(path).parts[:1] == (MOUNT,)
+
+
+def _gitmodules_drift(components: tuple[Component, ...], entries: Mapping[str, Mapping[str, str]]) -> list[str]:
+    problems = []
+    for row in components:
+        entry = entries.get(row.path)
+        wanted = {'url': row.url, 'branch': row.branch}
+        if entry is None:
+            problems.append(f'.gitmodules has no entry at {row.path}; derived: {gitmodules_text((row,))!r}')
+        elif {key: entry.get(key, '') for key in wanted} != wanted:
+            problems.append(f'.gitmodules {row.path} says {dict(entry)}; the table says {wanted}')
+    declared = {row.path for row in components}
+    stray = sorted(path for path in entries if _mounted(path) and path not in declared)
+    return problems + [f'.gitmodules mounts {path}, which no component declares' for path in stray]
+
+
+def _uv_drift(components: tuple[Component, ...], pyproject: str) -> list[str]:
+    sources = tomllib.loads(pyproject).get('tool', {}).get('uv', {}).get('sources', {})
+    problems = [
+        f'[tool.uv.sources] {row.package} is {sources.get(row.package)!r}; the table derives {{ path = "{row.path}" }}'
+        for row in components
+        if row.package and [_normal(entry.get('path')) for entry in _entries(sources.get(row.package))] != [row.path]
+    ]
+    provides = {row.path: row.package for row in components}
+    for package, value in sorted(sources.items()):
+        for entry in _entries(value):
+            path = _normal(entry.get('path'))
+            if _mounted(path) and provides.get(path) != package:
+                problems.append(
+                    f'[tool.uv.sources] {package} points into {path}; no component declares it provides that'
+                )
+    return problems
+
+
+def _entries(value: object) -> list[Mapping[str, Any]]:
+    listed = value if isinstance(value, list) else [value]
+    return [entry for entry in listed if isinstance(entry, dict)]
+
+
+def _normal(path: object) -> str:
+    return posixpath.normpath(path) if isinstance(path, str) and path else ''
+
+
+def _cargo_drift(components: tuple[Component, ...], cargo: Mapping[str, str]) -> list[str]:
+    wanted = {f'{row.path}/{inner}': (row.name, crate) for row in components for crate, inner in row.crates.items()}
+    used: set[str] = set()
+    problems = []
+    for manifest, text in sorted(cargo.items()):
+        for crate, entry in _path_dependencies(tomllib.loads(text)):
+            target = _normal(posixpath.join(posixpath.dirname(manifest), str(entry['path'])))
+            if not _mounted(target):
+                continue
+            if wanted.get(target, ('', ''))[1] != str(entry.get('package', crate)):
+                problems.append(
+                    f'{manifest}: {crate} = {{ path = "{entry["path"]}" }} is no crate a component declares'
+                )
+            else:
+                used.add(target)
+    unused = sorted(set(wanted) - used)
+    return problems + [
+        f'component {wanted[t][0]} declares crate {wanted[t][1]} at {t}; no Cargo.toml uses it' for t in unused
+    ]
+
+
+def _path_dependencies(manifest: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
+    tables = [manifest.get(name, {}) for name in _CARGO_TABLES]
+    tables.append(manifest.get('workspace', {}).get('dependencies', {}))
+    for target in manifest.get('target', {}).values():
+        tables += [target.get(name, {}) for name in _CARGO_TABLES]
+    return [
+        (crate, entry)
+        for table in tables
+        for crate, entry in table.items()
+        if isinstance(entry, dict) and 'path' in entry
+    ]
+
+
+def drift_at(root: Path) -> tuple[str, ...]:
+    """:func:`drift` over the checkout at *root*: its pyproject, ``.gitmodules``, Cargo manifests and index."""
+    pyproject = (root / 'pyproject.toml').read_text(encoding='utf-8')
+    gitmodules = root / '.gitmodules'
+    staged = [line.partition('\t') for line in _git(root, 'ls-files', '--stage', '-z').split('\0') if '\t' in line]
+    gitlinks = frozenset(path for meta, _, path in staged if meta.startswith('160000 '))
+    manifests = [path for _, _, path in staged if posixpath.basename(path) == 'Cargo.toml' and not _mounted(path)]
+    return drift(
+        components_of(pyproject),
+        gitmodules=gitmodules.read_text(encoding='utf-8') if gitmodules.is_file() else '',
+        pyproject=pyproject,
+        cargo={path: (root / path).read_text(encoding='utf-8') for path in manifests},
+        gitlinks=gitlinks,
+    )
+
+
+def _git(root: Path, *args: str) -> str:
+    argv = [_GIT, '-C', str(root), *args]
+    return _door.run(argv, capture_output=True, text=True, encoding='utf-8', errors='replace', check=True).stdout
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m lab_commons.dev.components [--root R]``: each drift printed; 0 when the mounts agree, else 1."""
+    parser = argparse.ArgumentParser(prog='lab_commons.dev.components', description=main.__doc__)
+    parser.add_argument('--root', type=Path, default=Path.cwd(), help='the product checkout (default: here)')
+    args = parser.parse_args(argv)
+    problems = drift_at(args.root)
+    for problem in problems:
+        emit(f'components: {problem}', err=True)
+    return 1 if problems else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
