@@ -68,6 +68,7 @@ from lab_commons.compute.model import (
     submitted,
 )
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
+from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
@@ -139,6 +140,7 @@ def tick(
     owners: Mapping[str, Collection[str]] | None = None,
     priority: Priority | None = None,
     authors: Collection[str] | None = None,
+    serves: Serves | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -156,7 +158,9 @@ def tick(
     host's declared ordering (default: its machine file's ``[priority]``, :mod:`lab_commons.compute.priority`):
     a matching candidate is considered before every other, and nothing is set aside for it. *authors* are
     the logins whose requests run here at any served sha (default: the machine file's ``[requests] authors``);
-    anyone else's runs only at a sha on the integration branch or the trunk.
+    anyone else's runs only at a sha on the integration branch or the trunk. *serves* is which parts this host
+    claims (default: the machine file's ``[serve] parts``, :mod:`lab_commons.compute.serves`): a part its rule
+    skips waits, named, for another host.
     """
     lines: list[str] = []
     try:
@@ -201,6 +205,7 @@ def tick(
         taken=list(running), trunks=(policy.integration, policy.trunk),
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
+        serves=serves or Serves.of(section(SERVE_TABLE)),
     )  # fmt: skip
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
         priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,

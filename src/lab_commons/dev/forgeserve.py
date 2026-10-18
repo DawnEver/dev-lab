@@ -104,6 +104,7 @@ from lab_commons.compute.model import Supply
 from lab_commons.compute.presence import Presence, declared_versions, refresh
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.probe import inventory
+from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
 from lab_commons.dev import forgerun, forgerunstate, retention
 from lab_commons.dev.branchprune import serve_prune
@@ -188,6 +189,7 @@ def serve(
     refuse_retired_keys('serve', section('serve'))
     tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
+    serves = Serves.of(section(SERVE_TABLE))
     slurm, standing, why = standing_of(cluster) if seat is not None else (None, None, '')
     if standing is not None and (untagged := standing.facts.get('untagged')):
         body = 'set $LC_HPC_SESSION for every submitter: an untagged job holds a share no session can be throttled by'
@@ -206,11 +208,12 @@ def serve(
         ticking={
             'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
             'usage': standing.usage if standing else None, 'weights': host_weights(table),
-            'owners': card_owners(cards), 'priority': priority,
+            'owners': card_owners(cards), 'priority': priority, 'serves': serves,
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
+            'serves': serves.parts,
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,

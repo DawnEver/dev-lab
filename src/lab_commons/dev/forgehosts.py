@@ -48,6 +48,7 @@ from typing import Any, Final
 
 from lab_commons.compute.model import Candidate, Ranked, Supply
 from lab_commons.compute.priority import Priority
+from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.dev import forgerunstate
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
@@ -120,6 +121,7 @@ class HostCard:
     artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
     tools: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # tool -> {present, evidence}, as probed
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
+    serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -148,6 +150,7 @@ class HostCard:
         ]
         head += f'\n\ntools absent: {"; ".join(absent)}' if absent else ''
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
+        head += f'\n\nserves: {Serves(self.serves).text()}' if self.serves != EVERY else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
@@ -297,12 +300,14 @@ def publish_card(
     supply: Supply | None = None,
     running: Sequence[str] = (),
     priority: Mapping[str, Sequence[str]] | None = None,
+    serves: str = EVERY,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
     *progress* is what each local part it holds has done so far, by ``(sha, platform)`` (``producing 42m``),
     published while they run. *supply* is what the tick admitted against (default: the cluster
-    standing's), *running* what else runs here, *priority* the subjects this host orders first.
+    standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
+    ``[serve] parts`` rule.
     """
     progress = progress or {}
     built = client(root)
@@ -327,6 +332,7 @@ def publish_card(
             artefacts=artefacts,
             tools=dict(tools or {}),
             priority=dict(priority or {}),
+            serves=serves,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:
