@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from lab_commons.dev import lockcheck
 from lab_commons.dev.githooks.table import base_rows
 from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_shas, unreasoned_holds
 
@@ -188,3 +189,40 @@ def test_a_hold_names_its_reason_on_its_line_or_the_line_above() -> None:
 def test_the_family_hook_base_runs_the_lock_check_at_push() -> None:
     rows = {row['id']: row for row in base_rows()['pre-push']}
     assert rows['lock']['run'] == ['python', '-m', 'lab_commons.dev.lockcheck']
+
+
+_GIT_EXE = shutil.which('git') or 'git'
+
+
+def _git_ok(cwd: Path, *argv: str) -> str:
+    return subprocess.run([_GIT_EXE, *argv], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C5: a path dependency into a submodule (a product's engine crate) must exist in the tree that is resolved.
+
+    Planted control: HEAD moves past the mounted sha, so the tree is a fresh worktree, not the checkout.
+    """
+    # The test's engine is a local path; git refuses file:// submodules unless told, and only the env reaches
+    # the clone `submodule update` runs.
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'protocol.file.allow')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', 'always')
+    sub, repo = tmp_path / 'engine', tmp_path / 'product'
+    for path in (sub, repo):
+        path.mkdir()
+        _git_ok(path, 'init', '-q', '-b', 'main')
+        _git_ok(path, 'config', 'user.email', 't@t')
+        _git_ok(path, 'config', 'user.name', 't')
+    (sub / 'crate.txt').write_text('engine', encoding='utf-8')
+    _git_ok(sub, 'add', 'crate.txt')
+    _git_ok(sub, 'commit', '-qm', 'engine')
+    _git_ok(repo, 'submodule', 'add', '-q', sub.as_uri(), 'components/engine')
+    _git_ok(repo, 'commit', '-qm', 'mount')
+    mounted = _git_ok(repo, 'rev-parse', 'HEAD')
+    (repo / 'later.txt').write_text('x', encoding='utf-8')
+    _git_ok(repo, 'add', 'later.txt')
+    _git_ok(repo, 'commit', '-qm', 'later')
+    with lockcheck._tree_at(repo, mounted) as tree:
+        assert tree != repo, 'the control: HEAD moved on, so a separate tree is built'
+        assert (tree / 'components' / 'engine' / 'crate.txt').is_file()
