@@ -83,7 +83,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-MEASURED 2026-10-11 AT 238 after the branch-flow modules: floor 205.
 #: RE-TAKEN 2026-10-11 AT 248 (branch-flow plus the cluster tick): floor 220.
 #: RE-TAKEN 2026-10-12 AT 262 (the forge owners, issue routing and hygiene modules): floor 230.
-FILE_FLOOR = 280  # re-taken 2026-10-13 at 291 (was 250 at 281): requests, retention, forge audit joined the kit
+FILE_FLOOR = 317  # re-taken 2026-10-18 at 328 (was 280 at 291): outcomes, compute, forge coalesce/unit joined the kit
 
 
 def _tree() -> dict[str, str]:

@@ -47,7 +47,9 @@ EXEMPT: Final[tuple[str, ...]] = ('src/lab_commons/dev/famtests/echoedtoken.py',
 #: re-priced on the same ~90%: 5157.
 #: RE-MEASURED 2026-10-13 at 6383, after requests, storage retention and the forge audit; re-priced on
 #: the same ~90%: 5745.
-FUNCTION_FLOOR: Final = 5745
+#: RE-MEASURED 2026-10-18 at 7073, after the outcomes, compute and forge coalesce/unit modules; re-priced on
+#: the same ~90%: 6366.
+FUNCTION_FLOOR: Final = 6366
 
 #: How far past the floor the population may grow before the floor is re-measured.
 HEADROOM: Final = 1200

@@ -162,6 +162,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL: split out of forgetick/forgeserve inside the kit; no consumer held them.
     'forgetake': ('original',),
     'forgerounds': ('original',),
+    'forgecoalesce': ('original',),
+    'forgeservesteps': ('original',),
+    'forgeunit': ('original',),
     'forgeorigin': ('original',),
     'forgerequest': ('original',),
     'retention': ('original',),
