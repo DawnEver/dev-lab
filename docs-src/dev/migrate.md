@@ -44,8 +44,8 @@ Details: [the integrator](integrator.md#child-branches-sync-from-integration).
 python -m lab_commons.dev.verify -- tests/test_the_thing_you_changed.py
 ```
 
-Targeted, seconds to minutes, never blocks. On a clean, unmoved HEAD it posts an `incremental` part for your
-platform; `--no-status` keeps it local. A consumer repo may declare its own targeted door (consumer-a:
+Targeted, seconds to minutes, never blocks, and posts nothing: only the producer `forge serve` spawns posts a
+part. A consumer repo may declare its own targeted door (consumer-a:
 `python scripts/gate/runner.py measure <paths>`). Details: [the verdict model](verdict-model.md#the-tiers).
 
 ### 3. Push

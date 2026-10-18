@@ -18,8 +18,8 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
   `3` inconclusive.
 - **A full tier refuses outside the producer** (`VERDICTS-FROM-THE-FORGE`) and names the remedy: push.
 - **A measurement runs on a dirty tree** and answers "where am I"; it never decides whether anything may land.
-- On a clean, unmoved HEAD a settled `verify` posts its platform's part (`incremental` with paths, `full`
-  bare); `--no-status` keeps it local. A dirty tree posts nothing.
+- **Only the producer posts.** A `verify` that `forge serve` spawned for a part posts that part on a clean,
+  unmoved HEAD; any other `verify` is a local measure and posts nothing. A dirty tree posts nothing.
 - **An engine is enabled by the tier, never by the shell**: the heavy tier sets the live-engine environment
   itself. A skip says which fact stopped it: not installed on this box, or installed but not enabled.
 - A resource on another host is never part of a verdict about this tree.

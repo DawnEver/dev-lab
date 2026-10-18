@@ -20,7 +20,7 @@ from lab_commons.dev.stoprun import (
 )
 
 _TABLE = {
-    10: (1, 'python -m lab_commons.dev.verify --no-status'),
+    10: (1, 'python -m lab_commons.dev.verify tests/a.py'),
     11: (10, 'python -m pytest -n 4'),
     12: (11, 'python worker'),
     20: (1, 'node server.js'),
