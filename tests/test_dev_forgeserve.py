@@ -476,6 +476,28 @@ def test_a_tree_that_cannot_be_built_spawns_nothing_and_names_the_step(monkeypat
     assert trees.closed == [SHA], 'a half-built tree is removed too'
 
 
+def test_a_tree_the_box_did_not_admit_is_released_retryable_never_an_error_verdict(monkeypatch, tmp_path: Path) -> None:
+    """PLANTED (live 2026-10-17, 1d698d494d31): a full box queue refused the bootstrap; serve posted it as error."""
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    refusal = (
+        'dep --bootstrap exited 1: REFUSED: dep:x: not admitted -- no room within the queue limit -- '
+        "queued behind 'verify:p8', which came first (strict FIFO)"
+    )
+    trees, spawned = _Trees(tmp_path, refuse=refusal), []
+    report, _said, _alarms = _serve(
+        monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(0)}, forge, spawned=spawned, trees=trees
+    )
+    assert spawned == []
+    assert report.produced[0].returncode == ProducerExit.UNREACHABLE
+    context, _state, description = forge.posts[-1]
+    assert context == 'tests/windows'
+    assert description.startswith(RETRYABLE), 'the next tick claims it again (forgeclaim.assess: OPEN)'
+    assert "queued behind 'verify:p8'" in description
+    assert trees.closed == [SHA]
+
+
 def test_a_producer_that_posted_its_part_is_left_alone(monkeypatch, tmp_path: Path) -> None:
     forge = _Forge()
     forge.post(None, SHA, context='tests/windows', state='failure', description='FAIL')

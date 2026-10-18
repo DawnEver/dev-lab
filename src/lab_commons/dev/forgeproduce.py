@@ -58,7 +58,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, Capacity, Demand, Outcome, Refused, command, read_ended
+from lab_commons.box import GB, Capacity, Demand, Outcome, Refused, command, not_admitted, read_ended
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
@@ -71,7 +71,7 @@ from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgestatus import Status, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url, parts_of
-from lab_commons.dev.producer import ProducerExit, box_release_reason, producing, release_reason
+from lab_commons.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
 from lab_commons.hpc.needsets import needs_of
@@ -187,11 +187,14 @@ def produce(
     journal(root, _intent(item))  # intent before action: a restarted host re-attaches (forgeintent)
     try:
         tree = open_tree(root, item.sha, item.context)
-    except TreeFailed as failed:
-        _post(client(root), item, 'error', f'released: no tree at {item.sha[:12]} -- {failed}', say)
+    except TreeFailed as failed:  # a box with no room yet is no verdict: released RETRYABLE, claimed next tick
+        waits = not_admitted(str(failed))
+        why = f'{RETRYABLE} -- the box did not admit its tree yet' if waits else 'released: no tree'
+        _post(client(root), item, 'error', f'{why} at {item.sha[:12]} -- {failed}', say)
         say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
         forget(root, item.sha, item.context)
-        return Produced(item.ref, item.sha, item.platform, item.argv, ProducerExit.INCONCLUSIVE)
+        code = ProducerExit.UNREACHABLE if waits else ProducerExit.INCONCLUSIVE
+        return Produced(item.ref, item.sha, item.platform, item.argv, code)
     heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
     try:
         argv = (str(tree.python), *item.argv)
