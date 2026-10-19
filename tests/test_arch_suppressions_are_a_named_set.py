@@ -416,6 +416,21 @@ ALLOWED: Final[dict[Site, str]] = {
         'def _python_signatures(text: str) -> Iterator[_Signature]:',
     ): 'one branch per AST node kind read; splitting it hides that the set is exhaustive',
     (
+        'src/lab_commons/dev/unit_slices.py',
+        'C901',
+        'def _read_python(path: str, text: str, tokens: Collection[str], out: _Collector) -> None:',
+    ): 'one branch per AST node kind read, and that set IS the slice list; splitting it hides a missing slice',
+    (
+        'src/lab_commons/dev/unit_slices.py',
+        'C901',
+        'def _read_binding(',
+    ): 'one branch per assignment-target kind, each feeding a different slice; the dispatch is the table',
+    (
+        'src/lab_commons/dev/unit_slices.py',
+        'C901',
+        'def _read_rust(path: str, text: str, tokens: Collection[str], out: _Collector) -> None:',
+    ): "a lexer's state machine: comment, string and code states in one loop, which is what a lexer is",
+    (
         'src/lab_commons/outcomes/conclusion.py',
         'S105',
         "PASS = 'pass'",

@@ -55,6 +55,9 @@ are too unqualified to survive being flattened into a namespace this wide.
   identifier whose trailing segment spells a unit, because the unit belongs in the VALUE (see
   :func:`lab_commons.units.quantity_parser`). It reports the token set it searched for, so finding
   nothing is distinguishable from searching for nothing.
+* :mod:`lab_commons.dev.unit_slices` -- the unit-in-name gap that scan does NOT see, measured as
+  named slices (locals, attributes, output keys, Rust identifiers, comment units, absolute
+  tolerances) and reported, never a verdict; ``python -m lab_commons.dev.units report <root>``.
 * :mod:`lab_commons.dev.cjk` — the family's ONE "no CJK in tracked source" guard (user directive,
   2026-09-16): the scan, the five CJK ranges, the ``.claude/memory/``/``attic/``/``archived/``
   exemptions and the floor are shared; each adopting repo supplies its own named-set declaration of
