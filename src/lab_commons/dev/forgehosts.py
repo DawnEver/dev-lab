@@ -28,6 +28,16 @@ so the login a body states is never trusted -- it is what vouches for a job's or
 A CARD IS READ BY ITS FIELDS: a key this version does not declare is not read, so a card published
 before a field was renamed reads as that field empty -- never as a crash of every reader.
 
+A PUBLIC REPOSITORY CARRIES NO IDENTIFYING CARD (user ruling 2026-10-19). Read from the forge's ``private``
+flag (:func:`is_private`, one field on both gitea and GitHub; an answer without it is read as PUBLIC), a
+public repo gets :meth:`HostCard.redacted`: the host under an opaque stable id (:func:`host_id`, a short
+hash -- never the raw ``<cluster>/<account>`` or machine), and only what scheduling reads -- platform,
+supply, tools present, parts served, holds, waits, alarm kinds and the tick. Facts (storage paths,
+partitions, quota), what else runs, alarm texts, the artefact-store reason, tool evidence and the
+``[priority]`` subjects are dropped. A card published under the raw name before the repo turned public
+is deleted on the first redacted tick. A ``Forge-Host`` trailer still names the raw host; a reader
+vouches it against either spelling (:func:`lab_commons.dev.forgeschedule.vouched`).
+
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
 ``forge queue`` shows it so rather than counting it as serving. It is also how a REFUSED CREDENTIAL shows:
 a host whose token the forge refuses cannot publish anything, so its card simply stops moving.
@@ -36,6 +46,8 @@ a host whose token the forge refuses cannot publish anything, so its card simply
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import json
 import re
 import socket
@@ -76,9 +88,11 @@ __all__ = [
     'card_host',
     'card_of',
     'card_owners',
+    'host_id',
     'hosts_issue',
     'hosts_issues',
     'is_hosts',
+    'is_private',
     'main',
     'publish',
     'publish_card',
@@ -135,6 +149,19 @@ class HostCard:
         """Older than :data:`STALE_TICKS` of its own period on the forge's clock."""
         return now - datetime.fromisoformat(self.ticked) > timedelta(minutes=STALE_TICKS * self.tick_minutes)
 
+    def redacted(self) -> HostCard:
+        """The card as a PUBLIC repository may show it: an opaque host id and only what scheduling reads."""
+        return dataclasses.replace(
+            self,
+            host=host_id(self.host),
+            facts={},
+            running=(),
+            alarms=tuple({'kind': a['kind'], 'subject': '', 'body': ''} for a in self.alarms),
+            artefacts='',
+            tools={name: {'present': bool(row.get('present'))} for name, row in self.tools.items()},
+            priority={},
+        )
+
     def text(self) -> str:
         """The comment body: one line a human reads, then the card as JSON."""
         holds = ', '.join(self.holds) or 'nothing'
@@ -163,6 +190,17 @@ class HostCard:
 
 class HostsIssueLost(RuntimeError):
     """The hosts issue was just created and the listing still does not show it: refuse, never open another."""
+
+
+def host_id(host: str) -> str:
+    """The opaque, stable name a PUBLIC repository's card carries for *host*: a short hash, never the name."""
+    return 'host-' + hashlib.sha256(host.encode()).hexdigest()[:12]
+
+
+def is_private(client: Client) -> bool:
+    """Whether the forge says this repository is private; an answer without the flag is read as public."""
+    repo = client.call('GET', client.repo)
+    return isinstance(repo, Mapping) and repo.get('private') is True
 
 
 def is_hosts(raw: Mapping[str, Any]) -> bool:
@@ -210,10 +248,16 @@ def _open_hosts_issue(client: Client) -> int:
 
 
 def publish(client: Client, card: HostCard) -> str:
-    """Write *card* in place on the hosts issue: ``created``, ``updated`` or ``unchanged``."""
+    """Write *card* in place on the hosts issue: ``created``, ``updated`` or ``unchanged``.
+
+    On a public repository the card is :meth:`HostCard.redacted` and a card left under the raw name is deleted.
+    """
     number = hosts_issue(client)
     if number is None:
         number = _open_hosts_issue(client)
+    if not is_private(client):
+        _delete_card(client, number, card.host)
+        card = card.redacted()
     action, _ = comment_upsert(client, number, kind=Marker.HOST, key=card.host, text=card.text())
     return action
 
@@ -221,15 +265,23 @@ def publish(client: Client, card: HostCard) -> str:
 def retire(client: Client, host: str) -> str:
     """Delete *host*'s card from the hosts issue: ``retired``, or ``absent`` when it has none.
 
+    *host* is the raw name; its opaque :func:`host_id` card (a public repo's) is retired too.
     A retired host is no longer listed; it rejoins by ticking again, which publishes a fresh card.
     """
     number = hosts_issue(client)
-    line = marker(Marker.HOST, host)
-    found = None if number is None else next((c for c in comment_list(client, number) if line in c.body), None)
-    if found is None:
+    if number is None:
         return 'absent'
-    client.call('DELETE', f'{client.repo}/issues/comments/{found.id}')
-    return 'retired'
+    deleted = [_delete_card(client, number, name) for name in (host, host_id(host))]
+    return 'retired' if any(deleted) else 'absent'
+
+
+def _delete_card(client: Client, number: int, host: str) -> bool:
+    """Delete the card keyed *host* on issue *number*; whether there was one."""
+    line = marker(Marker.HOST, host)
+    found = next((c for c in comment_list(client, number) if line in c.body), None)
+    if found is not None:
+        client.call('DELETE', f'{client.repo}/issues/comments/{found.id}')
+    return found is not None
 
 
 def read_cards(client: Client) -> tuple[HostCard, ...]:

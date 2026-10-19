@@ -53,7 +53,7 @@ from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
-from lab_commons.dev.forgerequest import TESTS
+from lab_commons.dev.forgerequest import offer_line
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import read_hooks
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
@@ -83,7 +83,6 @@ from lab_commons.dev.verifybox import (
     boxed,
     ended_in_the_box,
     learn_ended,
-    selection_files,
 )
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import refusal
@@ -521,20 +520,6 @@ def run_key(root: Path, pytest_args: tuple[str, ...]) -> RunKey:
         tree=content_address(root, MEASURED_TARGETS),
         env=env_key(env_manifest()),
         selector=' '.join(('verify', *pytest_args)),
-    )
-
-
-def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
-    """The OFFER of this selection to a host that can admit it (D5), or why it cannot be offered.
-
-    Only committed test files at a pushed sha can run elsewhere: a dirty tree is this box's alone.
-    """
-    files = selection_files(root, arguments)
-    if not files or status_paths(root):
-        return 'It cannot be offered elsewhere: commit and push the files it selects first.'
-    return (
-        'Or offer it to a host that admits it: '
-        f'python -m lab_commons.dev.forge request {TESTS} --sha {head} --paths {" ".join(files)}'
     )
 
 

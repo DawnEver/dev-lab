@@ -151,3 +151,71 @@ def test_the_cli_retires_through_the_forge_door(monkeypatch, capsys) -> None:
     assert forgehosts.main(['retire', 'duip622037']) == 0
     assert 'duip622037: retired' in capsys.readouterr().out
     assert read_cards(forge) == ()
+
+
+# A PUBLIC REPOSITORY NEVER CARRIES AN IDENTIFYING CARD (user ruling 2026-10-19): the card a public repo
+# shows names no account, login node, machine, team or home path -- only what scheduling reads, under an
+# opaque stable host id. A private repo's card is unchanged.
+
+_SEAT = 'ada/zz9acct'
+_HOME = '/gpfs01/home/zz9acct/artefacts'
+
+
+def _identifying_card() -> HostCard:
+    return HostCard(
+        _SEAT, 'alice', 'linux', NOW.isoformat(),
+        supply={'cpu': 32},
+        facts={'storage': _HOME, 'partitions': ['team-q7']},
+        holds=('abcdef012345 linux',),
+        running=(f'{_SEAT} sweep (pid 7)',),
+        waiting={'k': 'needs gpu'},
+        alarms=({'kind': 'untagged', 'subject': f'3 untagged on {_SEAT}', 'body': _HOME},),
+        artefacts=f'cannot write {_HOME}',
+        tools={'jmag': {'present': True, 'evidence': [{'source': 'path', 'value': _HOME}]},
+               'femm': {'present': False, 'evidence': [{'source': 'host', 'value': 'ada-login1'}]}},
+        priority={'hosts': [_SEAT]},
+    )  # fmt: skip
+
+
+def _bodies(forge: StateForge) -> str:
+    return '\n'.join(c['body'] for cs in forge.comments.values() for c in cs)
+
+
+def test_a_public_repository_publishes_a_redacted_card_under_an_opaque_id() -> None:
+    forge = StateForge()
+    forge.private = False
+    publish(forge, _identifying_card())
+    published = _bodies(forge)
+    assert not any(raw in published for raw in (_SEAT, 'zz9acct', _HOME, 'team-q7', 'ada-login1'))
+    (card,) = read_cards(forge)
+    assert card.host == forgehosts.host_id(_SEAT) != _SEAT
+    assert (card.platform, dict(card.supply), card.holds, dict(card.waiting)) == (
+        'linux', {'cpu': 32}, ('abcdef012345 linux',), {'k': 'needs gpu'},
+    )  # fmt: skip
+    assert card.tools_present() == {'jmag'}
+    assert [a['kind'] for a in card.alarms] == ['untagged']
+
+
+def test_planted_control_a_private_repository_publishes_the_card_unchanged() -> None:
+    forge = StateForge()
+    publish(forge, _identifying_card())
+    assert _SEAT in _bodies(forge), 'PLANTED: the scan would pass a card that was never identifying'
+    (card,) = read_cards(forge)
+    assert card == HostCard(**{**_identifying_card().__dict__, 'login': forge.login})
+
+
+def test_a_repository_that_does_not_say_private_is_read_as_public() -> None:
+    forge = StateForge()
+    forge.private = None  # type: ignore[assignment]  # a forge answer without the flag
+    publish(forge, _identifying_card())
+    assert _SEAT not in _bodies(forge)
+
+
+def test_turning_public_retires_the_named_card_and_retire_finds_the_opaque_one() -> None:
+    forge = StateForge()
+    publish(forge, _identifying_card())
+    forge.private = False
+    publish(forge, _identifying_card())
+    assert _SEAT not in _bodies(forge)
+    assert forgehosts.retire(forge, _SEAT) == 'retired'
+    assert read_cards(forge) == ()

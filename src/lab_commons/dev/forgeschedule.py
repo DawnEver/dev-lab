@@ -76,6 +76,7 @@ from lab_commons.compute.model import (
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgecoalesce import WAITING_BEHIND
+from lab_commons.dev.forgehosts import host_id
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
@@ -274,17 +275,20 @@ def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -
     A trailer or a request body is text anyone can write; the forge records who authored the PR or the
     issue, and the hosts issue who authored each card
     (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`). A part's unvouched trailer
-    is dropped; a REQUEST's unvouched ``host`` pin is REFUSED by name (``refused``), never silently run unpinned.
+    is dropped; a public repo's card is keyed by the opaque :func:`~lab_commons.dev.forgehosts.host_id`
+    of the raw name the trailer carries, and vouches it the same.
+    A REQUEST's unvouched ``host`` pin is REFUSED by name (``refused``), never silently run unpinned.
     """
     return tuple(_vouched(one, owners) for one in found)
 
 
 def _vouched(one: Candidate, owners: Mapping[str, Collection[str]]) -> Candidate:
-    if not one.origin_host or one.origin in owners.get(one.origin_host, ()):
+    publishers = (*owners.get(one.origin_host, ()), *owners.get(host_id(one.origin_host), ()))
+    if not one.origin_host or one.origin in publishers:
         return one
     if one.kind != REQUEST:
         return dataclasses.replace(one, origin_host='')
-    publisher = ', '.join(sorted(owners.get(one.origin_host, ()))) or 'nobody'
+    publisher = ', '.join(sorted(publishers)) or 'nobody'
     why = (
         f'host = "{one.origin_host}" pins a host card {one.origin or "its author"} does not publish '
         f'(published by {publisher}): drop the pin, or ask its publisher'

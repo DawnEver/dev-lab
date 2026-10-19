@@ -293,12 +293,12 @@ def test_a_commits_runs_live_under_its_sha_and_hold_three_files(tmp_path: Path) 
 # -- phase 1: one artifact per sha ---------------------------------------------------------------------------
 
 
-def test_the_artifact_format_is_a_declared_choice_and_the_image_waits_for_the_probe() -> None:
+def test_the_artifact_format_is_a_declared_choice_and_the_image_is_refused_for_good() -> None:
     assert set(FORMATS) == {TARBALL, IMAGE}
     require(TARBALL)
-    with pytest.raises(ArtifactRefused, match='apptainer') as refused:
+    with pytest.raises(ArtifactRefused, match='phase 6 closed') as refused:
         require(IMAGE)
-    assert 'TMPDIR' in str(refused.value), 'the refusal names the probe still owed'
+    assert 'uv sync --frozen' in str(refused.value), 'the refusal names why the phase closed'
     with pytest.raises(ArtifactRefused, match='not a format'):
         require('zip')
     with pytest.raises(ArtifactRefused):

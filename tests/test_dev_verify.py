@@ -40,7 +40,7 @@ from lab_commons import box
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
-from lab_commons.dev import localpart, platformparts, verify, verifybox
+from lab_commons.dev import forgerequest, localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.platformparts import part_context, part_of
@@ -1396,11 +1396,11 @@ def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, mon
     """D5: the refusal prints the exact `forge request tests` command; a dirty tree cannot be offered."""
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
-    monkeypatch.setattr(verify, 'status_paths', lambda _root: ())
-    offer = verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',))
+    monkeypatch.setattr(forgerequest, 'status_paths', lambda _root: ())
+    offer = forgerequest.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',))
     assert f'python -m lab_commons.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
-    monkeypatch.setattr(verify, 'status_paths', lambda _root: ('tests/test_a.py',))
-    assert 'cannot be offered' in verify.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'
+    monkeypatch.setattr(forgerequest, 'status_paths', lambda _root: ('tests/test_a.py',))
+    assert 'cannot be offered' in forgerequest.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'
 
 
 def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, tmp_path: Path) -> None:
