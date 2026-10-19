@@ -51,7 +51,8 @@ def test_the_first_card_opens_the_hosts_issue_and_the_next_edits_it_in_place(ser
     built = client(FORGE, Loopback(server))
     card = _card('ada/alice', 'linux', NOW, supply={'cpu': 64, 'submits': 10})
     answer('GET', f'{API}/issues', (200, []), (200, []), (200, [_issue(3, HOSTS_TITLE)]))
-    answer('GET', API, (200, {'open_issues_count': 0, 'open_pr_counter': 0}))
+    private = (200, {'open_issues_count': 0, 'open_pr_counter': 0, 'private': True})
+    answer('GET', API, private, private)
     answer('POST', f'{API}/issues', (201, _issue(3, HOSTS_TITLE)))
     answer('GET', f'{API}/issues/3/comments', (200, []))
     answer('POST', f'{API}/issues/3/comments', (201, _comment(10, card)))
@@ -62,6 +63,7 @@ def test_the_first_card_opens_the_hosts_issue_and_the_next_edits_it_in_place(ser
     Recorder.received.clear()
     later = _card('ada/alice', 'linux', NOW + timedelta(minutes=5))
     answer('GET', f'{API}/issues', (200, [_issue(3, HOSTS_TITLE)]))
+    answer('GET', API, private)
     answer('GET', f'{API}/issues/3/comments', (200, [_comment(10, card)]))
     answer('PATCH', f'{API}/issues/comments/10', (200, _comment(10, later)))
     assert publish(built, later) == 'updated'
@@ -264,3 +266,17 @@ def test_the_queue_explains_a_part_every_live_host_skips_by_its_restriction() ->
     assert 'G skipped here' in why
     assert 'needs-a-resource' in why
     assert 'skipped' not in forgequeue._why(wanted, [g, _card('ada/alice', 'linux', NOW)], NOW)
+
+
+def test_a_card_withholding_jmag_skips_a_jmag_part_and_round_trips_through_its_comment() -> None:
+    """``[serve] withhold``: the queue names the kept resource; PLANTED CONTROL: a femm-only part is not skipped."""
+    keeps = _card(
+        'G', 'windows', NOW, withholds=('jmag',), tools={'jmag': {'present': True}, 'femm': {'present': True}}
+    )
+    assert 'withhold' in keeps.text()
+    jmag_part = Candidate('o/r', 'integrate/main', 'a' * 40, 'femm+jmag', 'integration', NOW, FULL)
+    femm_part = Candidate('o/r', 'integrate/main', 'b' * 40, 'femm', 'integration', NOW, FULL)
+    assert 'jmag' in forgequeue._why(jmag_part, [keeps], NOW)
+    assert 'skipped' not in forgequeue._why(femm_part, [keeps], NOW)
+    raw = json.loads(keeps.text().split('```json\n', 1)[1].split('\n```', 1)[0])
+    assert raw['withholds'] == ['jmag']

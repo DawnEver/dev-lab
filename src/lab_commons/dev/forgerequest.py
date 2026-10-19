@@ -62,7 +62,8 @@ from lab_commons.dev.forgelabels import add_label
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.producer import ProducerExit, release_reason
-from lab_commons.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_mem_gb
+from lab_commons.dev.treedirt import status_paths
+from lab_commons.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
 from lab_commons.hpc.needsets import part_name
 
@@ -85,6 +86,7 @@ __all__ = [
     'UndeclaredRequest',
     'declared_request',
     'git_sources',
+    'offer_line',
     'parse_body',
     'parse_paths',
     'remind',
@@ -474,3 +476,17 @@ def settle(
     client.issue_comment(number, body)
     if state == 'success':
         add_label(client, number, DONE_LABEL)
+
+
+def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
+    """The OFFER of this selection to a host that can admit it (D5), or why it cannot be offered.
+
+    Only committed test files at a pushed sha can run elsewhere: a dirty tree is this box's alone.
+    """
+    files = selection_files(root, arguments)
+    if not files or status_paths(root):
+        return 'It cannot be offered elsewhere: commit and push the files it selects first.'
+    return (
+        'Or offer it to a host that admits it: '
+        f'python -m lab_commons.dev.forge request {TESTS} --sha {head} --paths {" ".join(files)}'
+    )

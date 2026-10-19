@@ -257,8 +257,9 @@ keeps its tree. The format is declared (`[job] artifact`, `run build --artifact`
   scratch directory under the login node's `$TMPDIR` (`git archive`, a fresh venv with `UV_CACHE_DIR` there,
   removed on exit); only a native build stays keyed in `~/ci/native/<key>`. A task unpacks it into node-local
   `$TMPDIR`, sources `activate.sh` and runs in `$ART/tree`. Needs only `tar` on the node.
-- `image` -- an Apptainer `.sif` or squashfs, REFUSED by name until the compute nodes are probed:
-  `which apptainer singularity squashfuse` and `df -h $TMPDIR` inside `srun`.
+- `image` -- an Apptainer/Singularity image, REFUSED by name. Phase 6 (container images) is CLOSED, not
+  pending (user ruling 2026-10-19): `uv sync --frozen` from the committed lock already gives a reproducible
+  env, and Ada offers only singularity 3.8.5 as a module. No image code path exists; the refusal is kept.
 
 Not carried: git submodules (`git archive` omits them) -- declare their data in `artifact_paths` from a
 checkout that has them, or keep that job on a test layout. Retention keeps an artifact while a queued or

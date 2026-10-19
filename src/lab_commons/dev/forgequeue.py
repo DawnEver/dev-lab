@@ -200,10 +200,10 @@ def _why(candidate: Candidate, cards: Sequence[HostCard], now: datetime) -> str:
     if unclaimable:
         return unclaimable
     serving = [card for card in live if needed <= present(card.platform, card.tools_present())]
-    skipping = [(card.host, Serves(card.serves).skips(needed)) for card in serving]
+    skipping = [(card.host, Serves(card.serves, frozenset(card.withholds)).skips(needed)) for card in serving]
     if serving and all(why for _, why in skipping):
         return f'{NO_HOST} claims it -- ' + '; '.join(f'{host} {why}' for host, why in skipping)
-    serving = [card for card in serving if not Serves(card.serves).skips(needed)]
+    serving = [card for card in serving if not Serves(card.serves, frozenset(card.withholds)).skips(needed)]
     reasons = [(card.host, card.waiting[candidate.key]) for card in serving if candidate.key in card.waiting]
     refused = [(host, why) for host, why in reasons if why.startswith(f'{NOT_ADMITTED}: ')]
     if refused and len(refused) == len(serving):
