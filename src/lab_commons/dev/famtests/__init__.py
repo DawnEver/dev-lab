@@ -51,7 +51,7 @@ WHAT IS HERE, one module per shared body:
   with a reason, and every managed one is rendered; the configrender bodies, composed.
 * :mod:`lab_commons.dev.famtests.boxneeds` -- a body that judges the live checkout or runs ``node``
   declares that need once, and a consumer test calling it must carry the resource marker, so a host
-  lacking it records the test not-covered instead of reding on the host.
+  lacking it hands the test to the part that has it instead of reding on the host.
 * :mod:`lab_commons.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
 * :mod:`lab_commons.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND
