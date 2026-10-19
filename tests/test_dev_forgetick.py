@@ -701,8 +701,9 @@ def test_a_failed_optional_listing_never_hides_the_integration_head(server, tmp_
 
 
 def test_a_credential_refusal_on_an_optional_listing_still_raises(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL for the two above: a 401 is the auth alarm's, never a skipped listing."""
+    """PLANTED CONTROL for the two above: a 401 ``GET /user`` confirms is the auth alarm's, never a skipped listing."""
     answer('GET', f'{API}/pulls', (401, {'message': 'token is required'}))
+    answer('GET', '/api/v1/user', (401, {'message': 'token is required'}))
     with pytest.raises(ForgeCallFailed):
         _integrate(server, tmp_path, [])
 

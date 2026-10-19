@@ -188,6 +188,38 @@ def test_a_failure_that_never_clears_stops_at_the_bound(server) -> None:
     assert len(_Recorder.received) == 3
 
 
+_STATUSES = '/api/v1/repos/o/r/statuses/abc'
+_INVALID = {'message': 'invalid username, password or token'}
+
+
+@pytest.mark.parametrize('code', [401, 403])
+def test_a_refusal_whose_credential_still_authenticates_is_retried_and_names_no_re_store(server, code) -> None:
+    """PLANTED CONTROL, the 2026-10-18 incident: one 401 while GET /user authenticates is not a bad credential."""
+    _answer('GET', _STATUSES, (code, _INVALID), (200, []))
+    _answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    assert _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES) == []
+    _answer('GET', _STATUSES, (code, _INVALID))
+    with pytest.raises(ForgeCallFailed) as caught:
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+    assert not caught.value.credential_refused
+    assert caught.value.report.disposition is Disposition.EXHAUSTED
+    assert 'auth login' not in str(caught.value)
+    assert 'credential authenticates' in str(caught.value)
+    assert 'retrying cannot change' not in str(caught.value)
+
+
+@pytest.mark.parametrize('code', [401, 403])
+def test_a_refusal_whose_credential_check_also_refuses_names_the_re_store_remedy(server, code) -> None:
+    _answer('GET', _STATUSES, (code, _INVALID))
+    _answer('GET', '/api/v1/user', (401, _INVALID))
+    with pytest.raises(ForgeCallFailed) as caught:
+        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+    assert caught.value.credential_refused
+    assert caught.value.report.disposition is Disposition.REFUSED
+    assert 'auth login' in str(caught.value)
+    assert [r['path'] for r in _Recorder.received] == [_STATUSES, '/api/v1/user']
+
+
 # --------------------------------------------------------------------------------------------
 # a create whose response was LOST is not created twice
 
