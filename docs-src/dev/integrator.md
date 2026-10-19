@@ -23,12 +23,9 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    refused at pre-push (`INTEGRATION-TAKES-ONLY-FORGE-MERGES`). There is no break-glass.
 4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
 
-GitHub (`DawnEver/*`) is a read-only public mirror, and cloud sessions reach only it. Their PRs are carried
-across by the same tick (`lab_commons.dev.forgemirror`), from the mirror declared once as `mirror`: the head is
-pushed to gitea `pr/gh-<N>` (dropping any commit that only registers its own branch in `sessions`), a gitea PR
-is opened or updated with the title and body and a link back, the GitHub PR gets one comment linking it, and
-once the gitea PR merges or closes the GitHub PR is closed with a pointer. GitHub credentials are read like
-the forge's (`git credential fill` for `github.com`) and never printed.
+All maintenance happens on gitea (user ruling 2026-10-19): PRs are opened, judged and merged there, and
+auto-merge is gitea-only. GitHub (`DawnEver/*`) is ONLY a push mirror (`branch-set.md`); nothing reads or
+writes its pull requests.
 
 ```toml
 [tool.lab_commons.branchset]
@@ -36,7 +33,6 @@ ephemeral = ['pr/*']
 
 [tool.lab_commons.integrator]
 pr_merges_since = "<the integrate/main sha the rule starts after>"
-mirror = "https://github.com/DawnEver/<repo>"    # only where a GitHub mirror exists
 ```
 
 ## The branch flow
@@ -134,7 +130,7 @@ with a comment saying why. Each child carries one PR at most.
 python -m lab_commons.dev.forge integration
 ```
 
-- First carries the GitHub mirror's open PRs to the forge (above), then fetches origin and each PR head (`pull/N/head`).
+- Fetches origin and each PR head (`pull/N/head`).
 - Per child, says: merged into integration at `<sha>`, or deferred and why; behind N, clean or the conflicting
   files; its upstream set; the head's `tests/<part>` states and the open `area:*` issues citing it;
   promoted once the trunk holds the merge.

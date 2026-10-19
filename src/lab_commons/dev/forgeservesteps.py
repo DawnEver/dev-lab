@@ -15,7 +15,6 @@ from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgehosts import HostCard
 from lab_commons.dev.forgeintegration import alarms as sync_alarms
 from lab_commons.dev.forgeintegration import tick as integration_tick
-from lab_commons.dev.forgemirror import step as mirror_step
 from lab_commons.dev.forgepulls import ListingIncomplete
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgeroute import reconcile
@@ -82,7 +81,6 @@ def prompt(
     try:
         found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
         policy = load_policy(root)
-        mirror_step(root, built, policy, say=lambda line: say(f'[serve] {line}'))
         ticked = integration_tick(root, built, policy)
         for line in ticked.lines:
             say(f'[serve] integration: {line}')

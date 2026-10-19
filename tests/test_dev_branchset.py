@@ -152,7 +152,7 @@ def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Pat
     head = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
     found = branchset_from(head + "ephemeral = ['pr/*']\n", 'p')
     assert found.ephemeral == ('pr/*',)
-    assert found.admits('pr/gh-3')
+    assert found.admits('pr/fix-3')
     assert not found.admits('feat/x')
     assert not found.is_ephemeral('integrate/main')
     with pytest.raises(BranchSetNotDeclared, match='ephemeral'):
