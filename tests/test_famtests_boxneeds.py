@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import importlib
+import ast
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -83,10 +84,14 @@ def test_the_assertion_reds_on_unmarked_undeclared_and_unread(tmp_path: Path) ->
 
 
 def test_every_need_names_a_real_body() -> None:
-    """A row naming a body that moved would police nothing: each must import."""
+    """A row naming a body that moved would police nothing: each must be a top-level def of its module."""
     for name in NEEDS:
         module, _, attr = name.rpartition('.')
-        assert callable(getattr(importlib.import_module(module), attr)), name
+        spec = importlib.util.find_spec(module)
+        assert spec is not None, name
+        assert spec.origin is not None, name
+        tree = ast.parse(Path(spec.origin).read_text(encoding='utf-8'))
+        assert attr in {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}, name
 
 
 def test_the_kits_own_tests_mark_what_they_judge() -> None:
