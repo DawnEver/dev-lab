@@ -36,7 +36,9 @@ considered before every other; it takes no supply and preempts nothing.
 A JOB'S DEMAND IS WHAT IT MEASURED. A BOX part is admitted at exactly what it will declare to the box
 (:func:`~lab_commons.compute.learned.box_demand`: the cores it kept busy and its peak with headroom, else
 its selection, :func:`~lab_commons.compute.learned.selection_gb` at the ids it is handed), so the
-admission and the box's enforced claim are one number. A CLUSTER part asks what its
+admission and the box's enforced claim are one number -- and ONE CLAIM: given *reserve*, a local part's box
+claim is taken before the part is claimed, and its producer adopts it (:mod:`lab_commons.dev.forgetake`).
+A CLUSTER part asks what its
 last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
@@ -141,6 +143,7 @@ def tick(
     priority: Priority | None = None,
     authors: Collection[str] | None = None,
     serves: Serves | None = None,
+    reserve: Callable[[Work], int | str] | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -160,7 +163,8 @@ def tick(
     the logins whose requests run here at any served sha (default: the machine file's ``[requests] authors``);
     anyone else's runs only at a sha on the integration branch or the trunk. *serves* is which parts this host
     claims (default: the machine file's ``[serve] parts``, :mod:`lab_commons.compute.serves`): a part its rule
-    skips waits, named, for another host.
+    skips waits, named, for another host. *reserve* takes a local part's box claim before it is claimed (its
+    ledger row, or why the box refused it); ``None`` (a cluster seat, a dry run's caller) takes none.
     """
     lines: list[str] = []
     try:
@@ -205,7 +209,7 @@ def tick(
         taken=list(running), trunks=(policy.integration, policy.trunk),
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
-        serves=serves or Serves.of(section(SERVE_TABLE)),
+        serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve,
     )  # fmt: skip
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
         priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,

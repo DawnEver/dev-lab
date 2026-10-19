@@ -7,6 +7,7 @@ The race and the lease are decided from the forge's own post order, so they are 
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -17,7 +18,7 @@ import pytest
 from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.box import GB, Capacity
+from lab_commons.box import BOX_ENV, GB, Capacity, holdings
 from lab_commons.compute import probe as compute_probe
 from lab_commons.compute.model import (
     BRANCH,
@@ -32,7 +33,7 @@ from lab_commons.compute.model import (
 )
 from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import SKIPPED_HERE, Serves
-from lab_commons.dev import forgetick
+from lab_commons.dev import forgeproduce, forgerounds, forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
     CLAIMED,
@@ -44,6 +45,7 @@ from lab_commons.dev.forgeclaim import (
     STALE,
     Claim,
     Serving,
+    Work,
     assess,
     serving,
     this_machine,
@@ -449,6 +451,56 @@ def test_two_small_jobs_are_both_admitted_on_one_tick(server, tmp_path: Path) ->
         'each carries what it was admitted at'
     )
     assert [item.blocked for item in report.queue] == []
+
+
+@pytest.mark.parametrize('box_gib', [10, 32], ids=['one-fits', 'both-fit'])
+def test_the_tick_takes_the_box_claim_before_it_claims_a_part(
+    server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, box_gib: int
+) -> None:
+    """ONE LEDGER DECIDES: a part the box will not admit is never claimed, so nothing is posted on it.
+
+    No claim, so no ``error`` can follow; a claimed part carries the box claim its producer adopts.
+
+    The tick's supply (32 GB) says both fit; the ledger (10 GiB) holds room for one. PLANTED CONTROL: a 32 GiB
+    ledger admits both, each its own row.
+    """
+    monkeypatch.setenv(BOX_ENV, str(tmp_path / 'box.sqlite'))
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips)
+    size = Capacity(cpu=4.0, mem_bytes=box_gib * 2**30, seats={})
+    reserve = functools.partial(forgerounds.reserve, root=repo, capacity=lambda: size, read=quiet(size))
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8), reserve=reserve)
+    rows = {one.id for one in holdings()}
+    assert {w.box for w in report.claimed} == rows, 'each claimed part carries its own ledger row'
+    posted = {r['path'] for r in Recorder.received if r['method'] == 'POST'}
+    if box_gib == 32:
+        assert [w.sha for w in report.claimed] == [lane, head]
+        assert len(rows) == 2
+        return
+    assert [w.sha for w in report.claimed] == [lane]
+    assert f'{API}/statuses/{head}' not in posted, 'a part the box refused is not posted: no claim, no error'
+    (waiting,) = report.queue
+    assert waiting.candidate.sha == head
+    assert waiting.blocked.startswith(NOT_ADMITTED)
+
+
+def test_the_producer_adopts_the_ticks_box_claim_and_drops_it_when_nothing_ran(tmp_path: Path) -> None:
+    """The box run is spelled to ADOPT the tick's row; a producer that never reached its run releases it.
+
+    PLANTED CONTROL: a part the tick took no claim for (``box=0``) is admitted by its own run, as before.
+    """
+    size = Capacity(cpu=4.0, mem_bytes=16 * 2**30, seats={})
+    work = Work('integrate/main', 'a' * 40, BASE, MINE, demand={'cpu': 1, 'mem_gb': 2.0})
+    row = forgerounds.reserve(work, root=tmp_path, capacity=lambda: size, read=quiet(size))
+    assert isinstance(row, int)
+    taken = dataclasses.replace(work, box=row)
+    argv = forgeproduce.boxed(taken, ['x'], size, tmp_path / 'o.json')
+    assert argv[argv.index('--claim') + 1] == str(row)
+    assert '--claim' not in forgeproduce.boxed(work, ['x'], size, tmp_path / 'o.json')
+    assert [one.id for one in holdings()] == [row]
+    with forgeproduce._released(taken):
+        pass
+    assert holdings() == [], 'no run adopted it: the claim does not outlive its producer'
 
 
 def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, tmp_path: Path) -> None:

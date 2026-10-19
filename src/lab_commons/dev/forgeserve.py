@@ -33,6 +33,8 @@ WHAT THE TICK ADMITS AGAINST (:func:`lab_commons.compute.admission.admit`), read
   machine file's ``[reserve]`` margins less every claim on it -- each producer this serve runs (it runs in
   the box at its declared demand, :mod:`lab_commons.dev.forgeproduce`) and each interactive ``verify``
   (:mod:`lab_commons.dev.verify`) alike. Named as the card is (:func:`~lab_commons.dev.forgehosts.card_host`).
+  The tick TAKES a local part's box claim before it claims the part, and the producer adopts it: the one
+  admission is the tick's, so a started part is never box-refused and a refused one posts nothing.
 * RUNNING -- each cluster run in flight here, at its learned demand
   (:func:`~lab_commons.compute.learned.cluster_demand`).
 
@@ -123,7 +125,7 @@ from lab_commons.dev.forgeintent import reattach
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgeproduce import Produced, demote_unreachable, produce
 from lab_commons.dev.forgerecords import serve_prune as serve_records_prune
-from lab_commons.dev.forgerounds import Rounds, locked_fetch, supply_now
+from lab_commons.dev.forgerounds import Rounds, locked_fetch, reserve, supply_now
 from lab_commons.dev.forgeschedule import host_weights
 from lab_commons.dev.forgeservesteps import hygiene, prompt, retain_storage, starved, tidy_runs
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
@@ -168,13 +170,15 @@ def serve(
     present: Callable[[Path], Mapping[str, Presence]] = lambda here: refresh(declared_versions(here)),
     holding: Callable[[], Sequence[Holding]] = holdings,
     retain: Callable[..., retention.Freed | None] = retention.serve_pass,
+    reserving: Callable[..., int | str] = reserve,
 ) -> ServeReport:
     """The module docstring's sequence. *table* is the machine file's ``[schedule]`` (weights, tick_minutes).
 
     *present* re-probes this host's tools where due (:func:`lab_commons.compute.presence.refresh`), before
     anything reads them; *supplied* is what a round admits against
     (:func:`~lab_commons.dev.forgerounds.supply_now`), *holding* the box ledger's claims now, *retain* the
-    retention pass -- each a seam a test fakes.
+    retention pass, *reserving* what takes a local part's box claim before the tick claims it
+    (:func:`~lab_commons.dev.forgerounds.reserve`; none on a cluster seat) -- each a seam a test fakes.
     """
     started = clock()
     repo = origin_url(root)
@@ -209,6 +213,7 @@ def serve(
             'client': client, 'machine': machine, 'seat': seat, 'lease': lease, 'fetch': fetched, 'host': host,
             'usage': standing.usage if standing else None, 'weights': host_weights(table),
             'owners': card_owners(cards), 'priority': priority, 'serves': serves,
+            'reserve': None if seat is not None else functools.partial(reserving, root=root),
         },
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,

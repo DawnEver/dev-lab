@@ -52,13 +52,14 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, Capacity, Demand, ProcessEnd, Refused, command, not_admitted, read_ended
+from lab_commons.box import GB, Capacity, Demand, ProcessEnd, Refused, command, not_admitted, read_ended, release
+from lab_commons.box import Claim as BoxClaim
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
@@ -141,7 +142,15 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *,
     what = f'{item.context}@{item.sha[:12]}'
     demand = box_claim(item, capacity, root=root)
     return command(
-        argv, demand, BOX_QUEUE_S, key=item.context, what=what, outcome=outcome, fingerprint=item.sha, capacity=capacity
+        argv,
+        demand,
+        BOX_QUEUE_S,
+        key=item.context,
+        what=what,
+        outcome=outcome,
+        fingerprint=item.sha,
+        capacity=capacity,
+        claim=item.box,
     )
 
 
@@ -184,32 +193,33 @@ def produce(
     (:func:`boxed`, sized against *capacity*, default this box's). At each heartbeat the ref is
     renewed; a ref that moved on never stops the producer -- *fetch* reads the tip once, at the end, to carry to.
     """
-    journal(root, _intent(item))  # intent before action: a restarted host re-attaches (forgeintent)
-    try:
-        tree = open_tree(root, item.sha, item.context)
-    except TreeFailed as failed:  # a box with no room yet is no verdict: released RETRYABLE, claimed next tick
-        waits = not_admitted(str(failed))
-        why = f'{RETRYABLE} -- the box did not admit its tree yet' if waits else 'released: no tree'
-        _post(client(root), item, 'error', f'{why} at {item.sha[:12]} -- {failed}', say)
-        say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
-        forget(root, item.sha, item.context)
-        code = ProducerExit.UNREACHABLE if waits else ProducerExit.INCONCLUSIVE
-        return Produced(item.ref, item.sha, item.platform, item.argv, code)
-    heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
-    try:
-        argv = (str(tree.python), *item.argv)
-        record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
-        size = (capacity or Capacity.read)()
-        held = boxed(item, argv, size, record, root=root)
-        declared = box_claim(item, size, root=root).mem_gb
-        produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
-                        say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard, declared_gb=declared,
-                        beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
-                        meter=meter)  # fmt: skip
-    finally:
-        say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
-    forget(root, item.sha, item.context)  # released: only a run that never got here is re-attached
-    return produced
+    with _released(item):  # the box claim the tick took: dropped however this ends (no-op once its run adopted it)
+        journal(root, _intent(item))  # intent before action: a restarted host re-attaches (forgeintent)
+        try:
+            tree = open_tree(root, item.sha, item.context)
+        except TreeFailed as failed:  # a box with no room yet is no verdict: released RETRYABLE, claimed next tick
+            waits = not_admitted(str(failed))
+            why = f'{RETRYABLE} -- the box did not admit its tree yet' if waits else 'released: no tree'
+            _post(client(root), item, 'error', f'{why} at {item.sha[:12]} -- {failed}', say)
+            say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
+            forget(root, item.sha, item.context)
+            code = ProducerExit.UNREACHABLE if waits else ProducerExit.INCONCLUSIVE
+            return Produced(item.ref, item.sha, item.platform, item.argv, code)
+        heard: list[str] = []  # the run's log, kept beside its record in the serving checkout by close_tree
+        try:
+            argv = (str(tree.python), *item.argv)
+            record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
+            size = (capacity or Capacity.read)()
+            held = boxed(item, argv, size, record, root=root)
+            declared = box_claim(item, size, root=root).mem_gb
+            produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
+                            say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard, declared_gb=declared,
+                            beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
+                            meter=meter)  # fmt: skip
+        finally:
+            say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
+        forget(root, item.sha, item.context)  # released: only a run that never got here is re-attached
+        return produced
 
 
 def _intent(item: Work, pid: int = 0) -> Intent:
@@ -405,3 +415,13 @@ def below_normal[P](spawn: Callable[..., P], argv: list[str], **kwargs: object) 
         with contextlib.suppress(OSError):
             os.setpriority(os.PRIO_PROCESS, proc.pid, BELOW_NORMAL_NICE)
     return proc
+
+
+@contextlib.contextmanager
+def _released(item: Work) -> Iterator[None]:
+    """Release the box claim the tick took for *item* when the body ends: a no-op once its run adopted and left it."""
+    try:
+        yield
+    finally:
+        if item.box:
+            release(BoxClaim(item.box, 0.0))
