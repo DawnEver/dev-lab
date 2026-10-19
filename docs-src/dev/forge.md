@@ -93,7 +93,10 @@ Each tick it:
 - **PIN + FRESHNESS (user ruling 2026-10-17).** Every repo commits `uv.lock`, and every install -- `dep
   --bootstrap`, a cluster's served venv, a workstation refresh -- is `uv sync --frozen` from the commit's lock:
   a commit's code and its exact dependencies are tested together and identical on every host, and the lock's
-  hash keys the served venv. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
+  hash keys the served venv. So a RUN judges its environment against the checkout's own lock and nothing
+  else: `verify` refuses as STALE only when a git-installed package's commit differs from the one `uv.lock` at
+  HEAD pins (`lab_commons.dev.lockpins`) -- never against a dependency's remote tip, which would leave every
+  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
   whose lock is not at the NEWEST resolution -- `uv lock --upgrade --dry-run`, run at the pushed sha, would
   change something: an in-house git dependency behind the tip of its declared ref, a PyPI dependency below its
   latest -- or that commits no lock, or that holds a requirement below the newest (an upper bound, an exact

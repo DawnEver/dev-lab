@@ -53,12 +53,12 @@ from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
-from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgerequest import TESTS
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import read_hooks
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import part_selection, post_cited, post_part
+from lab_commons.dev.lockpins import lock_freshness
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import ProducerExit, full_suite_refusal
@@ -475,9 +475,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(refused, err=True)
         return ProducerExit.USAGE
     wait_s = parsed.lock_wait_s if parsed.lock_wait_s is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
-    stale, offline = family_freshness(root)
-    if offline:
-        emit(f'verify: {offline}', err=True)
+    stale = lock_freshness(root)
     if stale:
         emit(f'verify: inconclusive -- nothing ran: {stale}', err=True)
         return EXIT_CODES[Conclusion.INCONCLUSIVE]
