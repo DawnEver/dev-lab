@@ -265,6 +265,9 @@ class _Slurm:
         self.cancelled += run.job_ids
         return list(run.job_ids)
 
+    def started(self, _run: forgerunstate.Run) -> bool:
+        return True
+
 
 def _claimed(*work: Work) -> TickReport:
     return TickReport(work, work, ('tick: one line',))

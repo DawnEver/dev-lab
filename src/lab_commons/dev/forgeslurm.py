@@ -170,6 +170,14 @@ class SlurmCluster:
         """Where the run's current job is, from the cluster's run state and one ``squeue``."""
         return progress_text(where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy))
 
+    def started(self, run: Run) -> bool:
+        """Whether any task of *run* started: a retry round exists (round 0 ran), or a task runs or ended."""
+        state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
+        if 'record' in state or len(state['rounds']) > 1:
+            return True
+        at = where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy)
+        return at.finished or at.running > 0 or at.done > 0
+
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
         ids = sorted({*self.submitted(run), *run.job_ids, *self.orphans(run)})
