@@ -103,6 +103,7 @@ __all__ = [
     'BASE',
     'CONTEXT_PREFIX',
     'PART_FIELD',
+    'REVIEW_CONTEXT',
     'ClusterPart',
     'Composition',
     'Part',
@@ -126,6 +127,10 @@ __all__ = [
 
 #: Every part's status context starts with this; the rest is the part's name (its need-set).
 CONTEXT_PREFIX: Final = 'tests/'
+
+#: The ADVISORY review's context (:mod:`lab_commons.dev.forgereview`): under the prefix so it reads beside the
+#: parts, and never a part -- :func:`parts_of` skips it, so no merge, promotion or push admission waits on it.
+REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
@@ -364,7 +369,7 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
     parts: dict[str, Part] = {}
     problems: list[str] = []
     for status in statuses:
-        if not status.context.startswith(CONTEXT_PREFIX):
+        if not status.context.startswith(CONTEXT_PREFIX) or status.context == REVIEW_CONTEXT:
             continue
         name = status.context.removeprefix(CONTEXT_PREFIX)
         found = _DESCRIPTION.match(status.description)

@@ -146,6 +146,13 @@ class StateForge(Client):
         self.merges.append((number, body))
         self.pulls[number] |= {'state': 'closed', 'merged': True}
 
+    def _post_status(self, sha: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Gitea keeps every post, answering the state as ``status``; ids ascend across the forge."""
+        self._next_comment += 1
+        made = {'id': self._next_comment, 'status': body['state'], 'creator': {'login': self.login}} | body
+        self.statuses.setdefault(sha, []).append(made)
+        return made
+
     def _delete_comment(self, comment_id: int) -> None:
         for listed in self.comments.values():
             listed[:] = [c for c in listed if c['id'] != comment_id]
@@ -193,5 +200,6 @@ class StateForge(Client):
             ('PATCH', 'pull'): lambda: self._edit_pull(number, sent),
             ('POST', 'merge'): lambda: self._merge(number, sent),
             ('GET', 'statuses'): lambda: self.statuses.get(key, []),
+            ('POST', 'statuses'): lambda: self._post_status(key, sent),
         }
         return handlers[method, kind]()

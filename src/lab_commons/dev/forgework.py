@@ -164,6 +164,12 @@ class PullRequest:
     head_sha: str = ''
     #: The labels on the PR -- where a user's designation (``priority:user``, ``priority:<n>``) is read.
     labels: tuple[str, ...] = ()
+    #: Whether the forge holds it as a draft (gitea: ``draft``, or a ``WIP:``/``[WIP]`` title prefix).
+    draft: bool = False
+
+
+#: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
+_WIP_PREFIXES: Final = ('WIP:', '[WIP]')
 
 
 def _issue(raw: Mapping[str, Any]) -> Issue:
@@ -181,6 +187,7 @@ def pull_of(raw: Mapping[str, Any]) -> PullRequest:
         raw['base']['ref'],
         raw['head'].get('sha') or '',
         tuple(str(label['name']) for label in raw.get('labels') or ()),
+        bool(raw.get('draft')) or issue.title.upper().startswith(_WIP_PREFIXES),
     )
 
 
