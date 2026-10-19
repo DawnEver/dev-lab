@@ -38,7 +38,8 @@ family default and a repository overrides key by key (a table key by table key):
 
 ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
 of a part in flight across the fleet; its current tip waits behind that run
-(:mod:`lab_commons.dev.forgecoalesce`), which is never cancelled, and is tested next as one batch. An
+(:mod:`lab_commons.dev.forgecoalesce`) and is tested next as one batch -- unless that run has NOT STARTED,
+when its holder cancels it for the tip (user ruling 2026-10-19, :mod:`lab_commons.dev.forgerun`). An
 earlier tip never claimed is never a candidate. A lane is tested at every pushed sha.
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's
@@ -80,7 +81,7 @@ from lab_commons.dev.forgehosts import host_id
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
-from lab_commons.dev.lanepolicy import Policy
+from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import part_refs
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL
@@ -91,6 +92,7 @@ __all__ = [
     'ORIGIN_HOST',
     'OVER_BUDGET',
     'candidates',
+    'coalesced',
     'head_login',
     'held',
     'host_weights',
@@ -190,6 +192,13 @@ def over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mappin
         return ''
     used = ref_usage(root, wanted.ref, usage)
     return f'{OVER_BUDGET}: {wanted.ref} used {used:.1f} of {cap:g} core-h in 24 h' if used >= cap else ''
+
+
+def coalesced(root: Path, ref: str) -> bool:
+    """Whether *ref* is of a ``coalesce`` class in *root*'s schedule: the integration branch, else its child class."""
+    schedule, policy = load_schedule(root), load_policy(root)
+    kind = INTEGRATION if ref == policy.integration else schedule.class_of(ref)
+    return kind in schedule.coalesce
 
 
 def tip_of(root: Path, ref: str) -> str:

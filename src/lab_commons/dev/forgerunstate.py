@@ -101,6 +101,9 @@ class Cluster(Protocol):
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every job of *run*; the ids cancelled."""
 
+    def started(self, run: Run) -> bool:
+        """Whether any task of *run* has started: past its first round, or a task running or ended in it."""
+
     def standing(self) -> Standing:
         """The account's supply, core-hours used per run in the last day, and the partitions and quota."""
 

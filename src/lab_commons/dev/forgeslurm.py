@@ -84,7 +84,7 @@ class SlurmCluster:
             raise
         except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
             return []
-        return [one['job_id'] for one in state['rounds']]
+        return [job for one in state['rounds'] for job in one['job_ids']]
 
     def orphans(self, run: Run) -> list[str]:
         """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>-<part>``), one id per array.
@@ -118,7 +118,7 @@ class SlurmCluster:
             history=learned.learned(run.repo_url),
             carry=lambda env: self.carry(run.sha, env, run.platform),
         )
-        return [one['job_id'] for one in state['rounds']]
+        return [job for one in state['rounds'] for job in one['job_ids']]
 
     def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[dict[str, Any], str, str]]:
         """The cells *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
@@ -169,6 +169,14 @@ class SlurmCluster:
     def progress(self, run: Run) -> str:
         """Where the run's current job is, from the cluster's run state and one ``squeue``."""
         return progress_text(where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy))
+
+    def started(self, run: Run) -> bool:
+        """Whether any task of *run* started: a retry round exists (round 0 ran), or a task runs or ended."""
+        state, _ = load_state(run.sha, run.platform, self.machine, self._runners())
+        if 'record' in state or len(state['rounds']) > 1:
+            return True
+        at = where(run.sha, run.platform, self.machine, self.connect, policy=self.config.policy)
+        return at.finished or at.running > 0 or at.done > 0
 
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""

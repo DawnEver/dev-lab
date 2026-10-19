@@ -998,6 +998,10 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     tip = _candidate('integrate/main', new, INTEGRATION)
     running = _history(**{old: [_pending(BOB, 1)]})
     assert behind(repo, tip, schedule, running, NOW) == f'{WAITING_BEHIND} {old[:12]} (in flight on ada/bob)'
+    queued = _history(**{old: [_pending(dataclasses.replace(BOB, progress='queued 0/12'), 1)]})
+    assert behind(repo, tip, schedule, queued, NOW) == (
+        f'{WAITING_BEHIND} {old[:12]} (not started on ada/bob: superseded at its next tick)'
+    ), 'the queue says a run that has not started gives its slot to the tip (user ruling 2026-10-19)'
     settled = _history(**{old: [_pending(BOB, 1), CommitStatus('tests/base', 'success', 'ok', '', 2, 'bob')]})
     assert behind(repo, tip, schedule, settled, NOW) == ''
     assert behind(repo, tip, schedule, _history(), NOW) == ''
