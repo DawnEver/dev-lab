@@ -1527,7 +1527,9 @@ def test_the_build_checks_out_submodules_from_their_own_caches_never_the_shared_
 
 
 def _git(*args: str | Path, cwd: Path | None = None) -> str:
-    done = subprocess.run([shell._GIT, *map(str, args)], cwd=cwd, capture_output=True, text=True, check=True)
+    done = subprocess.run(
+        [shell._GIT, *map(str, args)], cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True
+    )
     return done.stdout.strip()
 
 
@@ -1563,7 +1565,9 @@ def test_a_tree_gets_every_submodule_recursively_each_from_its_own_cache(tmp_pat
     command = '\n'.join(['set -eo pipefail', f'cd {tree.as_posix()}', *shell.submodules_script(top)])
     env = {**os.environ, 'HOME': home.as_posix(), 'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'"}
     for attempt in ('first', 'reused'):
-        done = subprocess.run([bash_executable(), '-c', command], capture_output=True, text=True, env=env, check=False)
+        done = subprocess.run(
+            [bash_executable(), '-c', command], capture_output=True, text=True, encoding='utf-8', env=env, check=False
+        )
         assert done.returncode == 0, (attempt, done.stdout, done.stderr)
         assert (tree / 'mid' / 'mid.txt').is_file(), attempt
         assert (tree / 'mid' / 'leaf' / 'leaf.txt').is_file(), f'{attempt}: recursive'
