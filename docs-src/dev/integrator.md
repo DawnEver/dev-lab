@@ -20,7 +20,14 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    (`lab_commons.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
    what is missing -- on a conflict, "merge `integrate/main` into the branch".
 3. `integrate/main` takes nothing else: with `pr_merges_since` declared, a client push adding a commit to it is
-   refused at pre-push (`INTEGRATION-TAKES-ONLY-FORGE-MERGES`). There is no break-glass.
+   refused at pre-push (`INTEGRATION-TAKES-ONLY-FORGE-MERGES`). The one exception is the emergency
+   BREAK-GLASS (user ruling 2026-10-19), for when the forge itself is down or its auto-merge is broken, so
+   the fix cannot arrive through a PR. A direct push is admitted only when EVERY new first-parent commit
+   carries a `Break-Glass: <reason>` trailer. No env var or config flag opens it, and an empty reason is
+   refused at commit-msg. Every `forge serve` tick then keeps one `integration` issue per break-glass
+   commit past `pr_merges_since`, naming the commit and its reason (`lab_commons.dev.breakglass`). Put only
+   the emergency fix through it, follow up with a PR for anything else, and close the notice by moving
+   `pr_merges_since` past the commit in that PR.
 4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
 
 All maintenance happens on gitea (user ruling 2026-10-19): PRs are opened, judged and merged there, and

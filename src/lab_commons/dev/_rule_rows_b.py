@@ -263,9 +263,12 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'by the forge merging a pull request server-side -- a merge commit, made once every `tests/<part>` '
             'part of its head stands PASS, the head merges cleanly, and the merge audit passes -- and a client '
             'push adding any commit to it is refused at pre-push. A PR still missing a condition stays open and '
-            'its one integration comment names what is missing. No break-glass exists.'
+            'its one integration comment names what is missing. The ONE bypass is in history: a direct push is '
+            'admitted only when EVERY new first-parent commit carries a non-empty `Break-Glass: <reason>` trailer '
+            '(an empty reason is refused at commit-msg), and every such commit past the declared start stays an '
+            'open `integration` issue naming it and its reason until `pr_merges_since` moves past it.'
         ),
-        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_forgemerge.py'),
+        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_forgemerge.py', 'tests/test_dev_mergeaudit.py'),
     ),
     (
         'FORMATS-UPGRADE-ON-READ',

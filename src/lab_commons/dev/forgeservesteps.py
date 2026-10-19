@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from lab_commons.dev import forgeship, retention
+from lab_commons.dev.breakglass import notices as break_glass
 from lab_commons.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
 from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgehosts import HostCard
@@ -84,7 +85,8 @@ def prompt(
         ticked = integration_tick(root, built, policy)
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
-        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo)], alarm=alarm)
+        glass = break_glass(root, policy, repo)
+        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass], alarm=alarm)
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 

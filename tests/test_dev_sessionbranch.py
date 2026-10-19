@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from lab_commons.dev.breakglass import notices
+from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.sessionbranch import P2, P3, P5
 
 _GIT = shutil.which('git') or 'git'
@@ -345,3 +347,55 @@ def test_with_forge_merges_declared_even_an_audited_merge_push_is_refused(repo: 
     _git(repo, 'fetch', 'origin')
     passed = _push(repo, 'int/line')
     assert passed.returncode == 0, passed.stderr
+
+
+def _forge_merges_declared(repo: Path) -> str:
+    """Declare ``pr_merges_since`` at the seed and publish it as the forge would (no hook); the new tip."""
+    seed = _git(repo, 'rev-parse', 'stable')
+    text = (repo / 'pyproject.toml').read_text(encoding='utf-8')
+    (repo / 'pyproject.toml').write_text(text + f"pr_merges_since = '{seed}'\n", encoding='utf-8')
+    _git(repo, 'commit', '-am', 'chore: integration takes only forge merges')
+    _git(repo, 'branch', '-f', 'int/line', 'stable')
+    _git(repo, 'push', 'origin', 'int/line')
+    _git(repo, 'checkout', 'int/line')
+    return _git(repo, 'rev-parse', 'HEAD')
+
+
+@pytest.mark.parametrize(
+    ('messages', 'admitted'),
+    [
+        (['fix: hot'], False),  # PLANTED: no trailer
+        (['fix: hot\n\nBreak-Glass:'], False),  # an empty reason
+        (['fix: a\n\nBreak-Glass: forge down', 'fix: b'], False),  # one new commit without it
+        (['fix: a\n\nBreak-Glass: forge down', 'fix: b\n\nBreak-Glass: auto-merge broken'], True),
+    ],
+)
+def test_break_glass_admits_a_direct_push_only_when_every_new_commit_names_its_reason(
+    repo: Path, messages: list[str], *, admitted: bool
+) -> None:
+    """The one bypass of P5: a non-empty ``Break-Glass:`` trailer on EVERY new first-parent commit."""
+    before = _forge_merges_declared(repo)
+    for n, message in enumerate(messages):
+        (repo / f'hot{n}.txt').write_text('x\n', encoding='utf-8')
+        _git(repo, 'add', '.')
+        _git(repo, 'commit', '-m', message)
+    done = _push(repo, 'int/line')
+    assert (done.returncode == 0) is admitted, done.stderr
+    assert _remote(repo, 'int/line') == (_git(repo, 'rev-parse', 'HEAD') if admitted else before)
+    if not admitted:
+        assert P5 in done.stderr
+        assert 'Break-Glass: <reason>' in done.stderr
+
+
+def test_every_break_glass_commit_past_the_declared_start_is_one_notice_naming_its_reason(repo: Path) -> None:
+    """The bypass stays visible: one integration notice per break-glass commit. PLANTED: a plain one is none."""
+    _forge_merges_declared(repo)
+    _git(repo, 'commit', '--allow-empty', '-m', 'fix: plain')
+    _git(repo, 'commit', '--allow-empty', '-m', 'fix: hot\n\nBreak-Glass: forge down since 09:00')
+    glass = _git(repo, 'rev-parse', 'HEAD')
+    _git(repo, 'push', 'origin', 'int/line')
+    _git(repo, 'fetch', 'origin')
+    (one,) = notices(repo, load_policy(repo), 'o/r')
+    assert glass[:12] in one.subject
+    assert 'forge down since 09:00' in one.body
+    assert one.kind == 'integration'

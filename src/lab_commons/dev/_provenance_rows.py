@@ -167,6 +167,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgeservesteps': ('original',),
     'forgeunit': ('original',),
     'forgeorigin': ('original',),
+    'breakglass': ('original',),
     'forgerequest': ('original',),
     'retention': ('original',),
     'retentionplan': ('original',),
