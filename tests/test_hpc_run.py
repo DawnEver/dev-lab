@@ -37,7 +37,7 @@ from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
-from lab_commons.hpc.plan import Plan, make_plan
+from lab_commons.hpc.plan import Plan, live_throttle, make_plan
 from lab_commons.hpc.progress import Progress, held_by_a_limit, parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, read_stream
 from lab_commons.hpc.records import (
@@ -748,6 +748,36 @@ def test_each_memory_class_is_its_own_array_at_its_own_files_peak() -> None:
     assert [(b['shards'], b['mem_mb']) for b in bands] == [([0, 1], 30720), ([1, 2], 1024)]
     assert '--array=0%' in heavy, 'each array runs its own shards of the one manifest'
     assert '--array=1%' in light
+
+
+def test_the_live_throttle_is_the_ceilings_free_room_bounded_by_the_tasks_and_the_qos() -> None:
+    """Ada 2026-10-19: 96 cores a grant, 22 single-core tasks running -- arrays pended on their own ``%N``.
+
+    The throttle is what runs plus what the account's ceiling (GrpTRES cpu=96, mem=360G) has free NOW.
+    """
+    snapshot = parse_snapshot(IDLE + 'acct-free|1|1|8G|N/A\n' * 40)  # 40 one-core 8 GB tasks hold 320 GB
+    task = Cost(cpus=1, mem_gb=8)
+    assert live_throttle(snapshot, task, running=2, unfinished=100) == 2 + 5, 'memory binds: 40 GB free is 5 tasks'
+    small = Cost(cpus=1, mem_gb=1)
+    assert live_throttle(snapshot, small, running=2, unfinished=100) == 2 + 40, 'cpu binds: 96 - 40 held, 56 free'
+    assert live_throttle(snapshot, small, running=2, unfinished=10) == 10, 'never past the tasks left'
+    assert live_throttle(snapshot, small, running=2, unfinished=100, max_jobs=20) == 20, 'the QOS job limit holds'
+    full = parse_snapshot(IDLE + 'acct-free|1|1|8G|N/A\n' * 45)
+    assert live_throttle(full, task, running=0, unfinished=9) == 1, 'never zero: a throttle of one still queues'
+
+
+def test_a_gather_raises_the_throttle_when_the_accounts_other_jobs_end() -> None:
+    """Submitted ``%1`` beside 352 GB held; the held jobs end while the array pends: the next gather lifts it."""
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 8 * 1024 / 1.5, 'tests/b.py': 8 * 1024 / 1.5})
+    fake = FakeRunCluster(held='acct-free|1|1|8G|N/A\n' * 44, active=1)
+    state = _submit(fake, history=learned.learned('https://g/r.git'))
+    assert state['current']['bands'][0]['throttle'] == 1
+    fake.held = ''
+    assert _gather(fake) is None
+    lifted = [c for c, _ in fake.calls if c.startswith('scontrol update')]
+    shards = len(state['rounds'][0]['shards'])
+    assert lifted == [f'scontrol update JobId=4243 ArrayTaskThrottle={shards}']
+    assert json.loads(fake.state)['current']['bands'][0]['throttle'] == shards, 'kept, so the next gather compares'
 
 
 def test_an_oom_grows_only_the_files_of_the_killed_item_and_a_file_that_finished_resets() -> None:
