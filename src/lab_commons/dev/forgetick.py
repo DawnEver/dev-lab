@@ -35,8 +35,8 @@ considered before every other; it takes no supply and preempts nothing.
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A BOX part is admitted at exactly what it will declare to the box
 (:func:`~lab_commons.compute.learned.box_demand`: the cores it kept busy and its peak with headroom, else
-its prior, :func:`~lab_commons.compute.learned.part_prior`), so the admission and the box's enforced claim
-are one number. A CLUSTER part asks what its
+its selection, :func:`~lab_commons.compute.learned.selection_gb` at the ids it is handed), so the
+admission and the box's enforced claim are one number. A CLUSTER part asks what its
 last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
@@ -94,7 +94,7 @@ from lab_commons.dev.forgestatus import CommitStatus, status_history
 from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import derived, origin_url, this_platform
+from lab_commons.dev.platformparts import derived, origin_url, parts_of, this_platform
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.config import Cost
 from lab_commons.log import emit
@@ -198,7 +198,7 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or _whole(machine or 'this host', cluster=bool(serve.hpc))
-    sized = demand or _demand_of(root, cluster=bool(serve.hpc))
+    sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
@@ -246,11 +246,19 @@ def _whole(scope: str, *, cluster: bool) -> Supply:
     return Supply(scope, task) if cluster else probe.box(scope, capacity=Capacity.read())
 
 
-def _demand_of(root: Path, *, cluster: bool) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
+def handed(statuses: Sequence[CommitStatus], part: str) -> int | None:
+    """How many ids the commit's posted parts hand to *part* -- its selection's size; ``None`` when none says."""
+    counts = [one.hands[part] for one in parts_of(statuses)[0].values() if part in one.hands]
+    return sum(counts) if counts else None
+
+
+def _demand_of(
+    root: Path, *, cluster: bool, history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: ()
+) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
     """A candidate's demand: a cluster part's measured ask, else what it will declare to this box.
 
     A box REQUEST is sized by its own row (:func:`~lab_commons.compute.learned.request_demand`), a box part
-    by :func:`~lab_commons.compute.learned.box_demand`.
+    by :func:`~lab_commons.compute.learned.box_demand` at the ids its commit's parts hand it (:func:`handed`).
     """
     repo_url = origin_url(root)
     if cluster:
@@ -262,7 +270,8 @@ def _demand_of(root: Path, *, cluster: bool) -> Callable[[Candidate, frozenset[s
         if wanted.kind == REQUEST:
             row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
             return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem_gb)
-        return box_demand(repo_url, needed, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
+        ids = handed(history(wanted.sha), wanted.platform)
+        return box_demand(repo_url, needed, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB, ids=ids)
 
     return sized
 

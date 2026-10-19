@@ -1046,3 +1046,17 @@ def test_a_host_serving_only_resource_parts_leaves_base_to_the_others(
     if not claimed:
         assert report.queue[0].blocked.startswith(SKIPPED_HERE)
         assert 'needs-a-resource' in report.queue[0].blocked
+
+
+def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
+    """The selection a box part is priced at is what base HANDS it (numerics-lab 2026-10-19: 1 test, asked 6 GB).
+
+    PLANTED CONTROL: a part nobody hands to (``base`` itself) has no known size, never zero.
+    """
+    statuses = [
+        CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=dev_checkout:1,jmag:2', ''),
+        CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=dev_checkout:5', ''),
+    ]
+    assert forgetick.handed(statuses, 'dev_checkout') == 6
+    assert forgetick.handed(statuses, 'jmag') == 2
+    assert forgetick.handed(statuses, 'base') is None
