@@ -233,7 +233,8 @@ lower-ranked one is still claimed, so several parts run on one host at once.
   memory with headroom; unmeasured, its SELECTION `compute.learned.selection_gb` -- the arithmetic a verify
   selection reads too: one worker per id the commit's parts hand it, up to `PART_WIDTH`, each at the worst
   learned peak of the files its need-set's latest forge record ran (`part_files`) with headroom, never under
-  the per-task floor, never the whole box; past the box's memory the cores narrow in proportion; one seat of
+  the per-task floor, never the whole box; the width is `compute.learned.fit_width` -- narrowed to the box's
+  FREE cores and the workers its FREE memory holds at that price, never under one; one seat of
   each tool it needs), and
   its producer runs in the box at that claim -- its pytest `-n` IS the declared cores (the box's
   `LAB_COMMONS_BOX_CPU`, `dev.verifybox.claimed_width`) -- holding against the
