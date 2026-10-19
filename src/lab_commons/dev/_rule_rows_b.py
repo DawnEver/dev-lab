@@ -257,6 +257,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py'),
     ),
     (
+        'INTEGRATION-TAKES-ONLY-FORGE-MERGES',
+        (
+            'Where `[tool.lab_commons.integrator] pr_merges_since` is declared, the integration branch moves only '
+            'by the forge merging a pull request server-side -- a merge commit, made once every `tests/<part>` '
+            'part of its head stands PASS, the head merges cleanly, and the merge audit passes -- and a client '
+            'push adding any commit to it is refused at pre-push. A PR still missing a condition stays open and '
+            'its one integration comment names what is missing. No break-glass exists.'
+        ),
+        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_forgemerge.py'),
+    ),
+    (
         'FORMATS-UPGRADE-ON-READ',
         (
             'A persisted format a tool writes -- a run journal, a record, a state file, a ledger -- READS every '

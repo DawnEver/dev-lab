@@ -1,9 +1,11 @@
 """``forge integration``: the integration tick -- integration's standing for EVERY open child branch.
 
 A child branch is an ``origin`` branch the schedule's one rule classes (``classes_by_ref``) or the head
-of an open pull request (on ``origin``, or on a GitHub mirror remote, whose fork heads are fetched as ``pull/N/head``).
-The integrator never
-writes one; it only REPORTS on it. Per child branch, against ``origin/<integration>`` and with no
+of an open pull request on ``origin`` (fetched as ``pull/N/head``). A PR on the GitHub mirror is first
+carried to ``origin`` as ``pr/gh-<N>`` (:mod:`lab_commons.dev.forgemirror`). The tick never writes a child;
+it REPORTS on it -- and, where ``[tool.lab_commons.integrator] pr_merges_since`` is declared, asks the forge to
+MERGE a PR that is green, clean and audit-passing (:mod:`lab_commons.dev.forgemerge`), saying in its comment
+what is missing otherwise. Per child branch, against ``origin/<integration>`` and with no
 checkout (:mod:`lab_commons.dev.trialmerge`):
 
 * merged into integration at <sha>, or deferred and why (conflicts / parts not green / ready, waiting);
@@ -30,6 +32,7 @@ beside the integrator's prompts.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -40,14 +43,16 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
 from lab_commons.dev.branchprune import listing
-from lab_commons.dev.branchset import BranchSetNotDeclared
-from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, UnreadableRemote, fetch_origin, forge_from_remote
+from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
+from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
+from lab_commons.dev.forgemerge import decide, merge
+from lab_commons.dev.forgemirror import step as mirror_step
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
-from lab_commons.dev.forgework import GITHUB_HOST, Client, ForgeCallFailed, PullRequest, client_for
+from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed, PullRequest, client_for
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
@@ -55,7 +60,7 @@ from lab_commons.dev.trialmerge import contains, merged_at, rev, trial
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-__all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'tick', 'venues']
+__all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'settle', 'tick']
 
 #: The commit-status context a child branch without a PR carries its integration line in.
 CONTEXT: Final = 'integration'
@@ -221,33 +226,47 @@ def _publish(child: Child, said: Feedback) -> str:
     return 'status posted'
 
 
+def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback:
+    """Merge PR *child* through the forge when nothing is missing; *said* with the outcome added as a line.
+
+    Only where ``pr_merges_since`` is declared and the forge is gitea; an already-merged child is left alone.
+    """
+    if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
+        return said
+    statuses = status_list(child.client, child.head)
+    found = decide(root, policy, branch=child.branch, number=child.pr, head=child.head, statuses=statuses)
+    if found.ready:
+        ephemeral = declared_branchset(root).is_ephemeral(child.branch)
+        merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
+        line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', 'merged by the forge'
+    else:
+        line = 'the forge merges it once it has: ' + '; '.join(found.missing)
+        summary = f'{said.summary}; auto-merge waits'
+    return dataclasses.replace(said, text=f'{said.text}\n- {line}', summary=summary)
+
+
 def tick(
     root: Path,
-    venues: Sequence[tuple[str, Client]],
+    origin: Client,
     policy: Policy,
     *,
     fetch_pull: Callable[[Path, str, int], str] = _fetch_pull,
 ) -> Ticked:
-    """One pass over every child branch of every venue ``(remote, client)``."""
+    """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes."""
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []
-    with_pr: set[str] = set()
-    for remote, client in venues:
-        for listed in pr_list(client):
-            pr = _retarget(client, listed, policy) if listed.base == policy.trunk else listed
-            if pr is not listed:
-                lines.append(f'{remote} #{pr.number} retargeted {policy.trunk} -> {policy.integration}')
-            if pr.base != policy.integration:
-                continue
-            head = fetch_pull(root, remote, pr.number)
-            children.append(Child(pr.head, head, client, pr.number))
-            if remote == 'origin':
-                with_pr.add(pr.head)
-    origin = dict(venues)['origin']
+    for listed in pr_list(origin):
+        pr = _retarget(origin, listed, policy) if listed.base == policy.trunk else listed
+        if pr is not listed:
+            lines.append(f'#{pr.number} retargeted {policy.trunk} -> {policy.integration}')
+        if pr.base != policy.integration:
+            continue
+        children.append(Child(pr.head, fetch_pull(root, 'origin', pr.number), origin, pr.number))
+    with_pr = {child.branch for child in children}
     children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
     for child in children:
-        one = feedback(root, child, policy)
+        one = settle(root, child, policy, feedback(root, child, policy))
         said.append((child, one))
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
@@ -260,22 +279,6 @@ def _retarget(client: Client, pr: PullRequest, policy: Policy) -> PullRequest:
     return moved
 
 
-def venues(root: Path, origin: Client) -> list[tuple[str, Client]]:
-    """``origin`` with *origin*, plus each GitHub mirror remote of a non-GitHub origin."""
-    names = _git(root, 'remote').split()
-    found = [('origin', origin)]
-    for name in names:
-        if name == 'origin':
-            continue
-        try:
-            forge = forge_from_remote(root, remote=name)
-        except UnreadableRemote:
-            continue
-        if forge.host.lower() == GITHUB_HOST and origin.forge.host.lower() != GITHUB_HOST:
-            found.append((name, client_for(root, remote=name)))
-    return found
-
-
 def main(
     argv: Sequence[str] | None = None, *, cwd: Path | None = None, fetch: Callable[[Path], None] = fetch_origin
 ) -> int:
@@ -286,9 +289,10 @@ def main(
     root = Path.cwd() if cwd is None else cwd
     try:
         fetch(root)
-        found = venues(root, client_for(root))
-        lines = list(tick(root, found, load_policy(root)).lines)
-        lines += [f'branch: {row.line()}' for row in listing(root, dict(found)['origin'], now=datetime.now(UTC))]
+        origin, policy = client_for(root), load_policy(root)
+        lines = [f'mirror: {line}' for line in mirror_step(root, origin, policy, say=lambda _line: None)]
+        lines += tick(root, origin, policy).lines
+        lines += [f'branch: {row.line()}' for row in listing(root, origin, now=datetime.now(UTC))]
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
         return 1

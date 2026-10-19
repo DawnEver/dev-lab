@@ -311,6 +311,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   full-PASS integration commit). Neither checks out nor pushes.
 * :mod:`lab_commons.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
+* :mod:`lab_commons.dev.forgemerge` -- the forge's server-side merge of a green PR into integration.
+* :mod:`lab_commons.dev.forgemirror` -- GitHub mirror PRs carried to the forge as ``pr/gh-<N>``.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.

@@ -39,6 +39,13 @@ class Policy:
     #: (:mod:`lab_commons.dev.behindpush`); ``forge serve`` raises an ``integration`` alarm for a child branch
     #: past it (:mod:`lab_commons.dev.forgeintegration`).
     behind_max: int = 20
+    #: INTEGRATION-TAKES-ONLY-FORGE-MERGES from this sha on: the forge merges a PR into the integration branch
+    #: server-side once it is green (:mod:`lab_commons.dev.forgemerge`), and a client push adding any commit to
+    #: it is refused (:mod:`lab_commons.dev.sessionbranch`). ``''``: the integrator merges and pushes.
+    pr_merges_since: str = ''
+    #: The repository's read-only public GitHub mirror (``https://github.com/<owner>/<repo>``): its open PRs
+    #: are carried to this forge as ``pr/gh-<N>`` (:mod:`lab_commons.dev.forgemirror`). ``''``: none.
+    mirror: str = ''
 
 
 def load_policy(root: Path) -> Policy:

@@ -7,6 +7,38 @@ loop is `forge integration` (report on every child), `integrate merge <branch>` 
 integration commit is fully green. Everyone else syncs their branch with `forge sync` and opens pull
 requests into integration. Who the integrator is, and where it runs, moves; nothing records it.
 
+## The one flow (user ruling 2026-10-19)
+
+Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a pull request into
+`integrate/main` on the gitea forge, the single source of truth. No long-lived feature branch exists.
+
+1. Cut `pr/<topic>` from `origin/integrate/main` (`ephemeral = ['pr/*']` lets it be pushed with no row), push it,
+   and open a PR into `integrate/main` (`forge pr create`). Sync with `forge sync`, never rebase.
+2. The forge produces its `tests/<part>` parts. Each tick (`forge integration`, and every `forge serve`), a PR
+   whose every part stands PASS, whose head merges cleanly into `integrate/main`, and whose merge passes the
+   merge audit is MERGED BY THE FORGE: a merge commit carrying `Merged-Branch: <head>` and `Forge-Pull: <N>`
+   (`lab_commons.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
+   what is missing -- on a conflict, "merge `integrate/main` into the branch".
+3. `integrate/main` takes nothing else: with `pr_merges_since` declared, a client push adding a commit to it is
+   refused at pre-push (`INTEGRATION-TAKES-ONLY-FORGE-MERGES`). There is no break-glass.
+4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
+
+GitHub (`DawnEver/*`) is a read-only public mirror, and cloud sessions reach only it. Their PRs are carried
+across by the same tick (`lab_commons.dev.forgemirror`), from the mirror declared once as `mirror`: the head is
+pushed to gitea `pr/gh-<N>` (dropping any commit that only registers its own branch in `sessions`), a gitea PR
+is opened or updated with the title and body and a link back, the GitHub PR gets one comment linking it, and
+once the gitea PR merges or closes the GitHub PR is closed with a pointer. GitHub credentials are read like
+the forge's (`git credential fill` for `github.com`) and never printed.
+
+```toml
+[tool.lab_commons.branchset]
+ephemeral = ['pr/*']
+
+[tool.lab_commons.integrator]
+pr_merges_since = "<the integrate/main sha the rule starts after>"
+mirror = "https://github.com/DawnEver/<repo>"    # only where a GitHub mirror exists
+```
+
 ## The branch flow
 
 | branch | who writes it | the one verb that moves it |
@@ -102,7 +134,7 @@ with a comment saying why. Each child carries one PR at most.
 python -m lab_commons.dev.forge integration
 ```
 
-- Fetches origin and each PR head (`pull/N/head`, including PRs on a GitHub mirror remote).
+- First carries the GitHub mirror's open PRs to the forge (above), then fetches origin and each PR head (`pull/N/head`).
 - Per child, says: merged into integration at `<sha>`, or deferred and why; behind N, clean or the conflicting
   files; its upstream set; the head's `tests/<part>` states and the open `area:*` issues citing it;
   promoted once the trunk holds the merge.

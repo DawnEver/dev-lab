@@ -36,6 +36,8 @@ class Trial:
 
     behind: int
     conflicts: tuple[str, ...]
+    #: The merged tree git wrote (conflict markers included when not clean).
+    tree: str = ''
 
     @property
     def clean(self) -> bool:
@@ -72,8 +74,10 @@ def trial(root: Path, base: str, head: str) -> Trial:
     if done.returncode not in {0, _CONFLICTED}:
         msg = f'git merge-tree could not merge {base} into {head}: {done.stderr.strip()}'
         raise ValueError(msg)
-    files = tuple(line for line in done.stdout.splitlines()[1:] if line.strip())
-    return Trial(behind=int(behind.stdout.strip()), conflicts=files if done.returncode == _CONFLICTED else ())
+    lines = done.stdout.splitlines()
+    files = tuple(line for line in lines[1:] if line.strip())
+    conflicts = files if done.returncode == _CONFLICTED else ()
+    return Trial(behind=int(behind.stdout.strip()), conflicts=conflicts, tree=lines[0].strip() if lines else '')
 
 
 def contains(root: Path, target: str, tip: str) -> bool:
