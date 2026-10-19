@@ -11,18 +11,21 @@ import time
 import pytest
 
 from lab_commons.dev.codeplace import (
+    ARCHIVED_SEGMENTS,
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
     PlacementNotDeclared,
     archive_scratch,
     declared_misplaced,
     declared_placement,
+    is_archived,
     main,
     misplaced_code,
     overdue_scratch,
     pending_scratch,
     refuse_write,
 )
+from lab_commons.dev.famtests import noreflection
 
 _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 _DAY = 86400.0
@@ -209,3 +212,25 @@ def test_the_hook_entry_denies_through_the_harness_json_and_allows_by_silence(tm
     assert main(stdin=io.StringIO(good)) == 0
     assert capsys.readouterr().out == ''
     assert main(stdin=io.StringIO('not json')) == 0
+
+
+@pytest.mark.parametrize(
+    ('rel', 'archived'),
+    [
+        ('attic/repo/x.py', True),
+        ('src/pkg/archived/x.py', True),
+        ('.claude/memory/2026/10/19/attachments/probe.py', True),
+        ('rust/.claude/memory/2026/10/19/attachments/sub/probe.py', True),
+        ('.claude/memory/2026/10/19/note.md', False),
+        ('src/attachments/x.py', False),
+        ('.claude/memory/attachments', False),
+        ('src/notattic/x.py', False),
+    ],
+)
+def test_archived_code_is_one_reading_of_the_archive_constants(rel: str, *, archived: bool) -> None:
+    assert is_archived(rel) is archived
+
+
+def test_noreflection_excludes_the_same_archive_codeplace_writes() -> None:
+    assert noreflection.EXCLUDED_SEGMENTS is ARCHIVED_SEGMENTS
+    assert noreflection.is_archived is is_archived

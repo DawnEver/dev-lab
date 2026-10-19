@@ -161,3 +161,11 @@ def test_the_control_refuses_an_empty_root_declaration(tmp_path: Path) -> None:
     """A control handed nothing to walk would plant nothing, find nothing and pass in triumph."""
     with pytest.raises(AssertionError, match='walk nothing'):
         assert_the_scanner_still_convicts(tmp_path, roots=())
+
+
+def test_archived_code_is_not_read_and_its_live_twin_is(tmp_path: Path) -> None:
+    body = 'import subprocess\nsubprocess.run(["x"], check=False)\n'
+    for rel in ('attic/old.py', 'src/.claude/memory/2026/10/19/attachments/probe.py', 'live.py'):
+        _plant(tmp_path, rel, body)
+    scan = untimed_waits(tmp_path, roots=(('.', '*.py'),), exempt=())
+    assert scan.offenders == ('live.py:2: run() waits with no timeout=',)

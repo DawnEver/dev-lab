@@ -72,6 +72,9 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
             'does not appear to be a git repository',
             'remote: repository does not exist',
             'could not read from remote repository',
+            # git's own spelling for a path or URL with no repository behind it: `repository '<x>'
+            # does not exist` (git 2.42, Linux, measured on Ada 2026-10-19) or `... not found`.
+            "fatal: repository '",
         ),
     ),
     (

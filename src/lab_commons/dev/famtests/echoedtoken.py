@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from lab_commons.dev import floors
+from lab_commons.dev.codeplace import is_archived
 
 if TYPE_CHECKING:
     from collections.abc import Collection
@@ -227,7 +228,7 @@ def echoed_tokens(root: Path, *, roots: Collection[tuple[str, str]], exempt: Col
             continue
         for path in sorted(base.rglob(pattern)):
             rel = path.relative_to(root).as_posix()
-            if '__pycache__' in path.parts or rel in skip:
+            if '__pycache__' in path.parts or rel in skip or is_archived(rel):
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
