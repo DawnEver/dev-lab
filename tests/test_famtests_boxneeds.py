@@ -16,7 +16,7 @@ _PYPROJECT = '[tool.lab_commons.tests]\nresources = ["dev_checkout", "node"]\n'
 _PLANTED = """
 from pathlib import Path
 import pytest
-from lab_commons.dev.famtests import agentguard
+from lab_commons.dev.famtests import agentguard, allowguard
 from lab_commons.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
 from lab_commons.dev.famtests.visibility import assert_origin_branch_set
 
@@ -45,6 +45,11 @@ def test_the_refusal_is_measurable_anywhere(tmp_path):
     with pytest.raises(agentguard.GuardNotLive):
         agentguard.decision_for(root=ROOT, command='x')
 
+def test_allow_rows_unmarked(tmp_path):
+    allowguard.assert_no_allow_contradicts(root=ROOT, sanctioned='x')
+    allowguard.assert_the_scan_can_still_see(root=ROOT)
+    allowguard.contradictions(tmp_path, tmp_path, cwd=tmp_path)
+
 def test_origin_stays_on_the_cluster():
     assert_origin_branch_set(root=ROOT, declared=frozenset())
 
@@ -61,6 +66,7 @@ def test_a_planted_module_is_read_both_ways() -> None:
         'test_live_unmarked': frozenset({'dev_checkout'}),
         'test_node_through_a_helper': frozenset({'node'}),
         'test_engine_on_a_planted_tree': frozenset({'node'}),
+        'test_allow_rows_unmarked': frozenset({'node'}),
     }
 
 
