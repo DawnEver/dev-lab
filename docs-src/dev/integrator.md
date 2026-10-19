@@ -39,6 +39,36 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 mirror = "https://github.com/DawnEver/<repo>"    # only where a GitHub mirror exists
 ```
 
+## The PR reviewer is advisory
+
+`PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`, user ruling 2026-10-19). Each open, non-draft PR into
+`integrate/main` on gitea is reviewed by Claude ONCE per head sha: the prompt is the repo's own rule files
+(`AGENTS.md`, `.claude/rules/*.md`, read at `origin/integrate/main`, never the PR's copy) plus the PR's diff, and
+the answer is one PR comment of findings as `path:line` and a `tests/review` commit status. **It gates
+nothing**: `tests/review` is never a part, so the forge's auto-merge, `integrate promote` and push admission
+never wait on it, whatever it says. A second tick on the same head asks nothing and posts nothing; a new head
+is reviewed afresh. A diff over the cap is never sent (`tests/review` says so); a failed model call posts
+`error` and is not retried on that head.
+
+It runs as a `forge serve` step only on a host whose machine file declares the capability, so only that host
+holds the key:
+
+```toml
+[capabilities.pr_review]      # the machine file (lab_commons.config) of the ONE reviewing host
+```
+
+The key is ONE dedicated Anthropic API key used for nothing else, stored in the git credential store under the
+host `pr-review.anthropic.lab-commons` (username `pr-review`); no other AI key is ever read, and with it absent
+the step refuses by that name and raises an `auth` alarm. Never printed or logged. Per repo, optionally:
+
+```toml
+[tool.lab_commons.review]
+model = "claude-opus-5-5"                       # the default: the latest Claude
+max_diff_bytes = 200000                         # a larger diff is not sent
+max_tokens = 8192
+rules = ["AGENTS.md", ".claude/rules/*.md"]     # fnmatch over tracked paths; `*` crosses `/`
+```
+
 ## The branch flow
 
 | branch | who writes it | the one verb that moves it |
