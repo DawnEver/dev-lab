@@ -130,6 +130,8 @@ def test_a_transient_that_never_clears_STOPS_at_the_bound(tmp_path: Path) -> Non
         ('remote: error: 403 Forbidden: protected branch\n', 'stderr', Diagnosis.FORGE_REFUSED),
         ('[gate] the pre-push hook refused this push\n', 'stdout', Diagnosis.HOOK_REFUSED),
         ('fatal: Repository not found\n', 'stderr', Diagnosis.REMOTE_ABSENT),
+        # git 2.42 on Linux (Ada, 2026-10-19), cloning a local path that holds no repository
+        ("fatal: repository 'nf/not-a-forge' does not exist\n", 'stderr', Diagnosis.REMOTE_ABSENT),
     ],
 )
 def test_a_non_retryable_failure_is_reported_on_the_FIRST_attempt(
