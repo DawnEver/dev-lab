@@ -18,7 +18,11 @@ THERE IS NO BYPASS. No flag, no environment variable, no ``--force`` spelling re
 The one documented way to push a new long-lived branch is to DECLARE it -- which is a reviewed edit
 to ``pyproject.toml``, in the repo that argues for the branch, which is the whole point.
 
-Exit codes: ``0`` allowed, ``1`` REFUSED, ``2`` the guard could not judge (no readable branch set).
+THE DECLARATION IS THE PUSHED COMMIT'S: each ref is judged by ``<sha>:pyproject.toml`` of the sha being
+pushed to it, never by the pushing checkout's working tree (see :func:`refusal`).
+
+Exit codes: ``0`` allowed, ``1`` REFUSED, ``2`` the guard could not judge (no readable branch set
+at the pushed commit).
 A ``2`` blocks the push exactly as a ``1`` does, because "I could not tell" is not "it is fine" --
 the defect this module exists for was a guard that was not consulted, and a silent pass would rebuild
 it one layer down.
@@ -37,7 +41,7 @@ from lab_commons.dev.branchset import (
     BranchSetKeyRetired,
     BranchSetNotDeclared,
     KitOlderThanCheckout,
-    declared_branchset,
+    branchset_at,
 )
 from lab_commons.log import emit
 
@@ -131,55 +135,58 @@ def _refusal(rows: Sequence[str], branchset: BranchSet) -> str:
     )
 
 
-def refusal(
-    root: Path,
-    *,
-    lines: Iterable[str] = (),
-    branchset: BranchSet | None = None,
-) -> tuple[int, str]:
+def _unjudgeable(sha: str, exc: Exception) -> str:
+    """Why the declaration commit *sha* carries cannot judge it -- naming the remedy for each kind."""
+    if isinstance(exc, KitOlderThanCheckout):
+        remedy = 'rebuild this venv from the lock of the checkout, then push again; the declaration is not the problem'
+    elif isinstance(exc, BranchSetKeyRetired):
+        remedy = (
+            'delete the retired key(s) from pyproject.toml (merge the integration branch, which already has), '
+            'commit, then push again'
+        )
+    else:
+        remedy = (
+            'commit [tool.lab_commons.branchset] with a trunk and a sessions list to pyproject.toml on the branch '
+            'you push.\n[branchset-push]   It is REFUSED rather than passed: a guard that cannot judge is not a '
+            'guard, and passing here would rebuild -- one layer down -- exactly the defect this hook was written for'
+        )
+    what = 'declares no readable branch set: ' if type(exc) is BranchSetNotDeclared else 'cannot be judged: '
+    return f'[branchset-push] REFUSED -- commit {sha} {what}{exc}\n[branchset-push]   REMEDY: {remedy}.\n'
+
+
+def refusal(root: Path, *, lines: Iterable[str] = ()) -> tuple[int, str]:
     """The verdict for one push: an exit code and the text to print.
 
-    Separated from :func:`main` -- which owns stdin and the exit -- so a test can
-    drive the DECISION on a planted repository without a subprocess and without a real push.
+    EACH PUSHED REF IS JUDGED BY THE DECLARATION ITS OWN COMMIT CARRIES (``<sha>:pyproject.toml``), never by
+    *root*'s working tree. MEASURED 2026-10-19: a checkout on ``main`` (``sessions = []``, not yet promoted)
+    was refused pushing ``integrate/main`` whose commit declared it, while a worktree carrying the same
+    declaration passed -- a pre-push verdict that depended on WHICH checkout pushed. The push carries its
+    declaration; that declaration is the one reviewed with it. A commit with no readable declaration is
+    :data:`COULD_NOT_JUDGE`, as a checkout without one used to be. Deletions carry no content and pass.
 
     Args:
-        root: The checkout being pushed; its ``pyproject.toml`` carries the declaration.
+        root: The repository being pushed; only its object store is read.
         lines: The refspec lines, as git would write them.
-        branchset: The declared set; read from *root* when omitted.
 
     Returns:
         ``(ALLOWED, '')``, ``(REFUSED, <the refusal>)``, or ``(COULD_NOT_JUDGE, <why>)``.
 
     """
-    refs = pushed_refs(lines)
-    if refs and all(ref.deleted or ref.branch is None for ref in refs):
-        return ALLOWED, ''  # a deletion carries no content, so the checkout's declaration has nothing to judge
-    try:
-        declared = declared_branchset(root) if branchset is None else branchset
-    except KitOlderThanCheckout as exc:
-        return COULD_NOT_JUDGE, (
-            f'[branchset-push] REFUSED -- {exc}.\n'
-            '[branchset-push]   REMEDY: rebuild this venv from the lock of the checkout, then push again; the '
-            'declaration is not the problem.\n'
-        )
-    except BranchSetKeyRetired as exc:
-        return COULD_NOT_JUDGE, (
-            f'[branchset-push] REFUSED -- {exc}.\n'
-            f'[branchset-push]   REMEDY: delete the retired key(s) from {root / "pyproject.toml"} (merge the '
-            'integration branch, which already has), then push again.\n'
-        )
-    except BranchSetNotDeclared as exc:
-        return COULD_NOT_JUDGE, (
-            f'[branchset-push] REFUSED -- this checkout declares no readable branch set, so this '
-            f'hook cannot tell a declared branch from an undeclared one: {exc}\n'
-            f'[branchset-push]   REMEDY: add [tool.lab_commons.branchset] with a trunk and a sessions '
-            f'list to {root / "pyproject.toml"}.\n'
-            f'[branchset-push]   It is REFUSED rather than passed: a guard that cannot judge is not a '
-            f'guard, and passing here would rebuild -- one layer down -- exactly the defect this hook '
-            f'was written for.\n'
-        )
-    rows = undeclared(refs, declared)
-    return (REFUSED, _refusal(rows, declared)) if rows else (ALLOWED, '')
+    judged = [ref for ref in pushed_refs(lines) if not ref.deleted and ref.branch is not None]
+    texts: list[str] = []
+    could_not_judge = False
+    for sha in sorted({ref.local_sha for ref in judged}):
+        try:
+            declared = branchset_at(root, sha)
+        except BranchSetNotDeclared as exc:  # KitOlderThanCheckout and BranchSetKeyRetired included
+            could_not_judge = True
+            texts.append(_unjudgeable(sha, exc))
+            continue
+        if rows := undeclared([ref for ref in judged if ref.local_sha == sha], declared):
+            texts.append(_refusal(rows, declared))
+    if not texts:
+        return ALLOWED, ''
+    return (COULD_NOT_JUDGE if could_not_judge else REFUSED), ''.join(texts)
 
 
 def _stdin_lines() -> tuple[str, ...]:
