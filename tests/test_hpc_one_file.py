@@ -8,6 +8,7 @@ files per sha against a 2 M file quota. Every rule here is checked against a pla
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -317,9 +318,7 @@ def test_the_artifact_build_leaves_one_file_and_no_resident_cache() -> None:
     assert 'for p in src cases;' in script, 'the source roots and the declared paths, nothing else'
     assert 'PYTHONPATH="$ART/tree/src${PYTHONPATH' in script
     assert 'tar -czf "$A.part" -C "$S/pack" . && mv "$A.part" "$A"' in script, 'one file, atomically'
-    native = artifact_script(
-        RunSpec(sha=SHA, repo_url='u', builds=Builds(**{**BUILDS.__dict__, 'native_key': 'n9', 'native_build': 'b'}))
-    )
+    native = artifact_script(RunSpec(sha=SHA, repo_url='u', builds=replace(BUILDS, native_key='n9', native_build='b')))
     assert 'ci/native/n9' in native, 'a native build stays keyed'
     assert '$ART/native' in native, 'and is packed'
 

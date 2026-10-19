@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import shutil
@@ -41,6 +42,12 @@ def _touch(path: Path, when: datetime, size: int = 10) -> Path:
         path.write_bytes(b'x' * size)
     os.utime(path, (when.timestamp(), when.timestamp()))
     return path
+
+
+def _written(path: Path, text: str, when: datetime) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+    return _touch(path, when)
 
 
 def _dir(path: Path, when: datetime, size: int = 10) -> Path:
@@ -395,14 +402,15 @@ def _superseded(home: Path, sha: str, env: str, when: datetime, *, streams: date
     _touch(path, when)
     tree = _dir(home / 'ci' / 'trees' / sha, when)
     _touch(tree / '.lab-ci' / 'env.sh', when)
+    # A stream's content is written BEFORE its stamp: a write after the stamp moves the mtime to the wall clock.
     if many:
         for i in range(3):
-            _touch(tree / '.lab-ci' / TAG / f'{i}.jsonl', streams).write_text(f'{{"n": {i}}}\n', encoding='utf-8')
+            _written(tree / '.lab-ci' / TAG / f'{i}.jsonl', f'{{"n": {i}}}\n', streams)
             _touch(tree / '.lab-ci' / TAG / f'{i}.ids.json', streams)
         _dir(tree / '.lab-ci' / TAG, streams)
     else:
         lines = ''.join(f'{{"item": {i}, "n": {i}}}\n' for i in range(3))
-        _touch(tree / '.lab-ci' / f'{TAG}.jsonl', streams).write_text(lines, encoding='utf-8')
+        _written(tree / '.lab-ci' / f'{TAG}.jsonl', lines, streams)
     for made in (tree / '.lab-ci', tree):
         os.utime(made, (when.timestamp(), when.timestamp()))
     return tree
@@ -458,10 +466,11 @@ def test_a_round_that_ended_within_min_age_is_still_in_flight(home: Path) -> Non
 def test_a_job_file_job_names_the_env_its_env_sh_sources(home: Path) -> None:
     """A tree no run state names (a job-file job) is read through ``.lab-ci/env.sh``, not taken as unprovable."""
     tree = _dir(home / 'ci' / 'trees' / 'j1', OLD)
-    _touch(tree / '.lab-ci' / 'env.sh', OLD).write_text(
+    _written(
+        tree / '.lab-ci' / 'env.sh',
         'export VIRTUAL_ENV="/h/ci/envs/e3" PATH="/h/ci/envs/e3/bin:$PATH"\n'
         'export PYTHONPATH="/h/ci/trees/j1/src:/h/ci/native/n0:/h/ci/bin${PYTHONPATH:+:$PYTHONPATH}"\n',
-        encoding='utf-8',
+        OLD,
     )
     plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied={'j1'})
     doomed = _doomed(plan)
@@ -519,4 +528,5 @@ def test_an_unreadable_queue_deletes_no_artifact(home: Path) -> None:
 def test_what_an_apply_frees_is_named_freed_and_the_generic_name_is_gone() -> None:
     """Plan A1.8: ``Outcome`` is the task-result word ``lab_commons.outcomes`` owns; retention's result is ``Freed``."""
     assert 'Freed' in retention.__all__
-    assert not hasattr(retention, 'Outcome')
+    with pytest.raises(AttributeError):
+        _ = importlib.import_module(retention.__name__).Outcome

@@ -24,7 +24,7 @@ meet in one file while the family converges (the retired file is regenerable; de
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -102,7 +102,7 @@ def _key(run: CachedRun) -> str:
 def record(path: Path, run: CachedRun) -> None:
     """Append *run* as its key's outcome; an opposite decision is a ``flaky`` event, never an overwrite."""
     cache = _open(path)
-    data = {field.name: getattr(run, field.name) for field in fields(run) if field.name != 'result'}
+    data = {name: value for name, value in asdict(run).items() if name != 'result'}
     try:
         cache.outcome(_key(run), _CELL[run.result], data=data)
     except FinalityError:

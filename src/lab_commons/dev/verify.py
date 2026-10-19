@@ -540,6 +540,12 @@ def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
     )
 
 
+def _inconclusive(line: str) -> tuple[int, list[str]]:
+    """A run that measured nothing: *line* to stderr, the INCONCLUSIVE exit code, and the line it printed."""
+    emit(line, err=True)
+    return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
+
+
 def _judge(
     root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
 ) -> tuple[int, list[str]]:
@@ -551,22 +557,17 @@ def _judge(
     try:
         verdict = run_verify(root, arguments, wait_s=wait_s)
     except MalformedAllowance as exc:
-        line = f'verify refuses to run: {exc}'
-        emit(line, err=True)
-        return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
+        return _inconclusive(f'verify refuses to run: {exc}')
     except Refused as exc:
-        held = str(exc)
-        line = (
-            f'verify: inconclusive -- this box is held and nothing was measured. Held by: {held}. '
+        return _inconclusive(
+            f'verify: inconclusive -- this box is held and nothing was measured. Held by: {exc}. '
             f'Wait for it, or stop that holder, then re-run; '
             f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait. {offer_line(root, head, arguments)}'
         )
-        emit(line, err=True)
-        return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
     except UnverifiableLog as exc:
-        line = f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'
-        emit(line, err=True)
-        return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
+        return _inconclusive(
+            f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'
+        )
     verdict.stamp()
     lines = [verdict.line(), f'verify: {verdict.result.render()}']
     lines += [f'  failed: {failure}' for failure in verdict.result.failures]

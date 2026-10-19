@@ -7,7 +7,7 @@ checkout went red there -- hooks not installed, ``NotVisibleOnOrigin``, a worktr
 agent-guard arm ``NoNode`` -- and none of those reds was about the commit. They were about the host.
 A part may only judge what its host can measure (NOT COVERED IS NOT PASSED): such a test belongs to the
 part whose need-set names the resource (:mod:`lab_commons.hpc.needsets`), and the host that lacks it
-records it ``not-covered`` rather than failing or passing it.
+hands it to that part (the run record's ``handed``) rather than failing or passing it.
 
 THE NEED IS THE BODY'S FACT, so it is declared HERE, once (:data:`NEEDS`), and a consumer cannot
 forget it: :func:`assert_box_bodies_are_marked` reads the consumer's test files and refuses a test
@@ -68,6 +68,9 @@ NEEDS: Final[Mapping[str, Need]] = {
     f'{_PKG}.agentguard.decision_for': _ENGINE,
     f'{_PKG}.agentguard.assert_refused_by': _ENGINE,
     f'{_PKG}.agentguard.assert_sanctioned': _ENGINE,
+    f'{_PKG}.allowguard.assert_no_allow_contradicts': _ENGINE,
+    f'{_PKG}.allowguard.assert_the_scan_can_still_see': _ENGINE,
+    f'{_PKG}.allowguard.contradictions': _ENGINE,
     f'{_PKG}.hookinstall.assert_declared_hooks_are_installed': _LIVE,
     f'{_PKG}.hookinstall.assert_hooks_dir_is_the_one_git_consults': _LIVE,
     f'{_PKG}.visibility.assert_readable': _LIVE,

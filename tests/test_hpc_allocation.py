@@ -141,15 +141,17 @@ def test_allocate_writes_shows_and_clears_the_one_record(
 ) -> None:
     store = _Store()
     monkeypatch.setattr(verb, 'allocation_store', lambda: store)
-    assert cli.main(['allocate', '--until', '2026-10-18T09:00Z', 'a=64/240', 'b=32/120']) == 0
+    # The expiry is derived from now: a literal date passes until that day and then is refused as past.
+    until = (datetime.now(UTC) + timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
+    assert cli.main(['allocate', '--until', until.strftime('%Y-%m-%dT%H:%MZ'), 'a=64/240', 'b=32/120']) == 0
     written = parse(store.text or '')
-    assert written.expires == datetime(2026, 10, 18, 9, tzinfo=UTC)
+    assert written.expires == until
     assert set(written.sessions) == {'a', 'b'}
     capsys.readouterr()
     assert cli.main(['allocate', '--show']) == 0
     shown = capsys.readouterr().out
     assert 'a' in shown
-    assert '2026-10-18T09:00:00+00:00' in shown
+    assert until.isoformat() in shown
     assert cli.main(['allocate', '--clear']) == 0
     assert store.text is None
     # Planted control: shown with nothing stored, it says the share is derived.
