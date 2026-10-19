@@ -375,6 +375,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # `untimedwaits`' own docstring already pointed at `bounded.wall_reason` for the sized-ceiling
     # claim; the pointer existed and the module it should have pointed at did not. The readings half,
     # `famtests/_boundedremedy_readings.py`, is private and has no row.
+    'boxneeds': ('original',),
     'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was

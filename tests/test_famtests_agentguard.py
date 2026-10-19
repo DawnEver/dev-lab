@@ -96,6 +96,7 @@ def _track_everything(root: Path) -> None:
 # the box, and the refusal that is not a skip
 
 
+@pytest.mark.node
 def test_node_is_available_here_and_the_refusal_is_not_a_skip() -> None:
     """If node is absent this arm REDS rather than going quiet, which is the whole design."""
     if _NODE is None:
