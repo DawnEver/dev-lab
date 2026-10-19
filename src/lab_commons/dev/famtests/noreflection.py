@@ -6,8 +6,9 @@ against a Protocol, a dataclass surface by ``dataclasses.fields``/``replace``, a
 by an explicit dict, and an absent attribute by ``pytest.raises(AttributeError)``. Moving the call
 behind ``vars()`` or ``__dict__`` is the same probe renamed, and is not a fix.
 
-THE CORPUS IS EVERY TRACKED ``*.py`` -- source, tests, scripts, examples -- except a path with an
-``attic`` or ``archived`` segment, which is read-only history. Each consumer had its own copy of this
+THE CORPUS IS EVERY TRACKED ``*.py`` -- source, tests, scripts, examples -- except archived code
+(:func:`lab_commons.dev.codeplace.is_archived`: an ``attic``/``archived`` segment or a memory day's
+``attachments/``), which is read-only history. Each consumer had its own copy of this
 scan over its own subset of trees, and each copy banned a different subset of the four names.
 
 THE ONE REPO-SHAPED FACT IS THE ALLOW-SET, keyed by repo-relative POSIX path with the REASON as the
@@ -19,10 +20,11 @@ optional symbol) belongs there; convenience does not.
 from __future__ import annotations
 
 import ast
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lab_commons.dev import floors
+from lab_commons.dev.codeplace import ARCHIVED_SEGMENTS, is_archived
 from lab_commons.dev.rules import tracked_files
 
 if TYPE_CHECKING:
@@ -31,7 +33,7 @@ if TYPE_CHECKING:
 __all__ = ['BANNED_CALLS', 'EXCLUDED_SEGMENTS', 'assert_no_reflection', 'reflection_sites', 'scanned_files']
 
 BANNED_CALLS = frozenset({'getattr', 'hasattr', 'setattr', 'delattr', 'vars', 'dir'})
-EXCLUDED_SEGMENTS = frozenset({'attic', 'archived'})
+EXCLUDED_SEGMENTS = ARCHIVED_SEGMENTS
 _HOOKS = frozenset({'__getattr__', '__getattribute__', '__setattr__', '__delattr__'})
 _ORIGINS = frozenset(
     {
@@ -176,14 +178,8 @@ def reflection_sites(source: str, filename: str) -> list[int]:
 
 
 def scanned_files(root: Path) -> tuple[str, ...]:
-    """Every tracked ``*.py`` under *root* outside an excluded segment, sorted."""
-    return tuple(
-        sorted(
-            rel
-            for rel in tracked_files(root)
-            if rel.endswith('.py') and not EXCLUDED_SEGMENTS.intersection(PurePosixPath(rel).parts)
-        )
-    )
+    """Every tracked ``*.py`` under *root* that is not archived code, sorted."""
+    return tuple(sorted(rel for rel in tracked_files(root) if rel.endswith('.py') and not is_archived(rel)))
 
 
 def assert_no_reflection(*, root: Path, allowed: Mapping[str, str], floor: int) -> None:
