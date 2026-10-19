@@ -40,6 +40,9 @@ that layout.
 
 ## Open
 
+- CLOSED 2026-10-19 (user ruling): the image format is refused for good -- `uv sync --frozen` from the
+  committed lock already gives reproducibility, and Ada offers only singularity 3.8.5 as a module. The probe
+  below is no longer owed.
 - Ada probe not run (the classifier denied the ssh). Still needed: `which apptainer singularity squashfuse`,
   plus `srun -p <partition> -t 2 bash -c 'which apptainer singularity squashfuse; df -h $TMPDIR'`.
 - Not proven: one gathered T3 shard reproducing the checkout layout's rows.
