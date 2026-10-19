@@ -325,6 +325,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.disclosure` -- INJECTED-TEXT-IS-PROGRESSIVE: the injected-text budgets and the details pointer.
 * :mod:`lab_commons.dev.family` -- who is in the family: a checkout whose own ``pyproject.toml`` declares
   ``[tool.lab_commons]``.
+* :mod:`lab_commons.dev.breakglass` -- the one emergency bypass of INTEGRATION-TAKES-ONLY-FORGE-MERGES: a
+  ``Break-Glass: <reason>`` trailer on every new commit, kept visible as an ``integration`` issue.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
 * :mod:`lab_commons.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's
