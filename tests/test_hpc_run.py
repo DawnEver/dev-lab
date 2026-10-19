@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -1514,3 +1515,61 @@ def test_two_repositories_never_share_a_cache() -> None:
     urls = ('https://g/a/motronics-studio.git', 'https://g/a/numerics-lab.git', 'https://h/a/numerics-lab.git', 'u')
     assert len({cache_dir(u) for u in urls}) == len(urls)
     assert cache_dir(urls[1]) == cache_dir(urls[1]), 'deterministic'
+
+
+def test_the_build_checks_out_submodules_from_their_own_caches_never_the_shared_update() -> None:
+    script = shell.build_script(
+        RunSpec(sha='a' * 40, repo_url='https://h/o/r.git', builds=Builds(install='true', env_key='k1'))
+    )
+    assert 'git submodule update' not in script, 'PLANTED CONTROL: the update wrote into the parent cache'
+    worktree, subs, env = (script.index(s) for s in ('worktree add -q --detach', 'lc_subs "$PWD"', 'uv venv'))
+    assert worktree < subs < env, 'submodules land after the tree and before the env build reads a path dep'
+
+
+def _git(*args: str | Path, cwd: Path | None = None) -> str:
+    done = subprocess.run([shell._GIT, *map(str, args)], cwd=cwd, capture_output=True, text=True, check=True)
+    return done.stdout.strip()
+
+
+def _commit(work: Path, files: dict[str, str]) -> None:
+    for name, text in files.items():
+        (work / name).write_text(text, encoding='utf-8')
+    _git('add', '.', cwd=work)
+    _git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'c', '--allow-empty', cwd=work)
+
+
+def _planted(tmp_path: Path) -> tuple[str, Path]:
+    """``top.git`` pins ``../mid.git`` (relative), which pins ``../leaf.git``: two levels, both bare remotes."""
+    remotes = tmp_path / 'remotes'
+    urls = {name: (remotes / f'{name}.git').as_posix() for name in ('leaf', 'mid', 'top')}
+    for name, child in (('leaf', None), ('mid', 'leaf'), ('top', 'mid')):
+        work = tmp_path / 'work' / name
+        _git('init', '-q', '-b', 'main', work)
+        _git('remote', 'add', 'origin', urls[name], cwd=work)  # a relative URL resolves against it
+        _commit(work, {f'{name}.txt': name})
+        if child:
+            _git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', f'../{child}.git', child, cwd=work)
+            _commit(work, {})
+        _git('clone', '-q', '--bare', work, urls[name])
+    tree = tmp_path / 'tree'
+    _git('clone', '-q', urls['top'], tree)
+    return urls['top'], tree
+
+
+def test_a_tree_gets_every_submodule_recursively_each_from_its_own_cache(tmp_path: Path) -> None:
+    top, tree = _planted(tmp_path)
+    home = tmp_path / 'home'
+    home.mkdir()
+    command = '\n'.join(['set -eo pipefail', f'cd {tree.as_posix()}', *shell.submodules_script(top)])
+    env = {**os.environ, 'HOME': home.as_posix(), 'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'"}
+    for attempt in ('first', 'reused'):
+        done = subprocess.run([bash_executable(), '-c', command], capture_output=True, text=True, env=env, check=False)
+        assert done.returncode == 0, (attempt, done.stdout, done.stderr)
+        assert (tree / 'mid' / 'mid.txt').is_file(), attempt
+        assert (tree / 'mid' / 'leaf' / 'leaf.txt').is_file(), f'{attempt}: recursive'
+    for name in ('mid', 'leaf'):
+        url = top.replace('top.git', f'{name}.git')
+        assert Path(shell.cache_dir(url).replace('"$HOME"', home.as_posix())).is_dir(), f'{name} has cache_dir'
+    assert not (Path(top) / 'modules').exists(), 'nothing written into the parent repository'
+    pinned = _git('ls-tree', 'HEAD', 'mid', cwd=tree).split()[2]
+    assert _git('rev-parse', 'HEAD', cwd=tree / 'mid') == pinned, 'the checkout is the recorded gitlink'
