@@ -124,7 +124,7 @@ VENDOR_B = 'tests/test_vendor.py::test_b'
 @pytest.fixture(autouse=True)
 def _fresh_family(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every ``main`` here judges a planted run, never this box's forge: the family check is its own file."""
-    monkeypatch.setattr(verify, 'family_freshness', lambda _root: (None, None))
+    monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
 
 
 def _verdict(reports: tuple[StepReport, ...], log: Path) -> Verdict:
@@ -1100,7 +1100,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     """Run the REAL ``main`` and ``run_verify`` with the seat free, the hooks clean and the steps planted."""
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
-    monkeypatch.setattr(verify, 'family_freshness', lambda _root: ('', ''))
+    monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
     monkeypatch.setattr(verify, 'boxed', _unboxed)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
     monkeypatch.setattr(verify, 'read_hooks', lambda _root, **_kw: clean)

@@ -71,7 +71,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgecarry': ('original',),
     'footprint': ('original',),
     'localpart': ('original',),
-    'familyheads': ('original',),
+    'lockpins': ('original',),
     'test_outcomes': ('original',),
     'lanepolicy': ('original',),
     'platformparts': ('original',),

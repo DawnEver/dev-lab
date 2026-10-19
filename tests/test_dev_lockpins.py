@@ -1,4 +1,4 @@
-"""FAMILY HEADS: a floating family package behind its forge head is STALE, offline is UNKNOWN, never fresh."""
+"""LOCK PINS: an env is stale against the checkout's OWN uv.lock, never against a dependency's remote tip."""
 
 from __future__ import annotations
 
@@ -8,15 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from lab_commons.dev import familyheads, verify
-from lab_commons.dev.familyheads import (
-    CACHE_TTL_S,
+from lab_commons.dev import lockpins, verify
+from lab_commons.dev.lockpins import (
     DEFAULT_DOOR,
-    Freshness,
     Installed,
-    check,
-    installed_family,
-    offline_line,
+    installed_git,
+    lock_freshness,
+    locked_git,
+    mismatches,
     refusal,
     sync_door,
 )
@@ -24,7 +23,7 @@ from lab_commons.dev.platformparts import BASE, part_context
 from lab_commons.dev.producer import PRODUCING_VAR
 from lab_commons.outcomes import Conclusion
 
-_OLD, _NEW = 'a' * 40, 'b' * 40
+_X, _Y = 'a' * 40, 'b' * 40
 _URL = 'https://gitea.example.org/Team/lab-commons.git'
 
 
@@ -33,9 +32,18 @@ def _dist(name: str, direct_url: dict[str, object] | None) -> SimpleNamespace:
     return SimpleNamespace(metadata={'Name': name}, read_text=lambda _name: text)
 
 
+def _lock(root: Path, commit: str) -> None:
+    (root / 'uv.lock').write_text(
+        'version = 1\n\n[[package]]\nname = "lab-commons"\nversion = "0.3"\n'
+        f'source = {{ git = "{_URL}?rev={commit}#{commit}" }}\n\n'
+        '[[package]]\nname = "numpy"\nversion = "2.0"\nsource = { registry = "https://pypi.org/simple" }\n',
+        encoding='utf-8',
+    )
+
+
 def test_only_distributions_installed_from_git_are_read() -> None:
-    vcs = {'url': _URL, 'vcs_info': {'vcs': 'git', 'commit_id': _OLD}}
-    found = installed_family(
+    vcs = {'url': _URL, 'vcs_info': {'vcs': 'git', 'commit_id': _X}}
+    found = installed_git(
         lambda: [
             _dist('lab_commons', vcs),
             _dist('numpy', {'url': 'https://files/numpy.whl', 'archive_info': {}}),
@@ -43,60 +51,36 @@ def test_only_distributions_installed_from_git_are_read() -> None:
             _dist('dep-c', None),
         ]
     )
-    assert found == (Installed('lab-commons', _URL, 'HEAD', _OLD),)
+    assert found == (Installed('lab-commons', _X),)
 
 
-def test_a_commit_behind_its_head_is_stale_and_the_refusal_names_the_door(tmp_path: Path) -> None:
-    """PLANTED: the installed commit lags the forge head."""
-    behind = Installed('lab-commons', _URL, 'HEAD', _OLD)
-    freshness = check([behind], cache=tmp_path / 'heads.json', ls_remote=lambda _u, _r: _NEW)
-    assert freshness.stale == ((behind, _NEW),)
-    text = refusal(freshness, door='python scripts/gate/dep_sync.py --sync')
+def test_the_lock_pins_git_packages_by_commit(tmp_path: Path) -> None:
+    _lock(tmp_path, _X)
+    assert locked_git(tmp_path / 'uv.lock') == {'lab-commons': _X}
+    assert locked_git(tmp_path / 'absent.lock') == {}
+
+
+def test_an_env_built_from_the_lock_is_fresh_whatever_the_tip(tmp_path: Path, monkeypatch) -> None:
+    """THE DEFECT: the lock pins X, the env holds X, the dependency's tip is Y -- that is NOT stale."""
+    _lock(tmp_path, _X)
+    monkeypatch.setattr(lockpins, 'installed_git', lambda: (Installed('lab-commons', _X),))
+    assert lock_freshness(tmp_path) is None
+
+
+def test_an_env_that_differs_from_the_lock_is_stale(tmp_path: Path, monkeypatch) -> None:
+    """PLANTED CONTROL: the lock pins Y, the env holds X."""
+    _lock(tmp_path, _Y)
+    monkeypatch.setattr(lockpins, 'installed_git', lambda: (Installed('lab-commons', _X),))
+    text = lock_freshness(tmp_path)
     assert text is not None
     assert 'STALE' in text
-    assert 'python scripts/gate/dep_sync.py --sync' in text
-    assert '--upgrade-package lab-commons' in text
+    assert DEFAULT_DOOR in text
+    assert f'uv.lock pins {_Y[:12]}' in text
 
 
-def test_a_commit_at_its_head_or_pinned_is_fresh(tmp_path: Path) -> None:
-    """THE OTHER SIDE: fresh is silent, and a pinned commit never floats."""
-    at_head = Installed('lab-commons', _URL, 'HEAD', _NEW)
-    pinned = Installed('dep-b', _URL, _OLD, _OLD)
-    freshness = check(
-        [at_head, pinned],
-        cache=tmp_path / 'heads.json',
-        ls_remote=lambda _u, ref: pytest.fail('a pinned commit asked the forge') if ref == _OLD else _NEW,
-    )
-    assert freshness == Freshness((), ())
-    assert refusal(freshness, door='d') is None
-    assert offline_line(freshness) is None
-
-
-def test_offline_is_unknown_and_said_never_read_as_fresh(tmp_path: Path) -> None:
-    one = Installed('dep-c', _URL, 'main', _OLD)
-    freshness = check([one], cache=tmp_path / 'heads.json', ls_remote=lambda _u, _r: None)
-    assert freshness.unknown == (one,)
-    assert refusal(freshness, door='d') is None
-    line = offline_line(freshness)
-    assert line is not None
-    assert 'UNKNOWN' in line
-    assert 'dep-c' in line
-
-
-def test_the_head_is_cached_briefly(tmp_path: Path) -> None:
-    asked: list[str] = []
-
-    def ls_remote(url: str, _ref: str) -> str:
-        asked.append(url)
-        return _NEW
-
-    one = Installed('lab-commons', _URL, 'HEAD', _OLD)
-    cache = tmp_path / 'heads.json'
-    check([one], cache=cache, now=1000.0, ls_remote=ls_remote)
-    check([one], cache=cache, now=1000.0 + CACHE_TTL_S / 2, ls_remote=ls_remote)
-    assert asked == [_URL], 'a burst of runs asks the forge once'
-    check([one], cache=cache, now=1000.0 + CACHE_TTL_S + 1, ls_remote=ls_remote)
-    assert asked == [_URL, _URL], 'an expired head is asked again'
+def test_a_package_the_lock_does_not_pin_by_git_is_not_judged() -> None:
+    assert mismatches([Installed('dep-b', _X)], {'lab-commons': _Y}) == ()
+    assert refusal((), door='d') is None
 
 
 def test_the_sync_door_is_the_repos_declaration_else_the_shared_one(tmp_path: Path) -> None:
@@ -112,8 +96,8 @@ def test_verify_refuses_a_stale_environment_before_anything_runs(monkeypatch, tm
     monkeypatch.setenv(PRODUCING_VAR, f'{part_context(BASE)}@planted')  # the full suite is the producer's
     monkeypatch.setattr(verify, 'project_root', lambda: tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a stale environment ran'))
-    monkeypatch.setattr(familyheads, 'installed_family', lambda: (Installed('lab-commons', _URL, 'HEAD', _OLD),))
-    monkeypatch.setattr(familyheads, '_ls_remote', lambda _u, _r: _NEW)
+    _lock(tmp_path, _Y)
+    monkeypatch.setattr(lockpins, 'installed_git', lambda: (Installed('lab-commons', _X),))
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path))
     assert verify.main([]) == verify.EXIT_CODES[Conclusion.INCONCLUSIVE]
     assert 'STALE' in capsys.readouterr().err

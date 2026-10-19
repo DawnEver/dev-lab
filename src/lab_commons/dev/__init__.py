@@ -129,8 +129,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   box at a declared, enforced demand; a producer serve spawned is not boxed twice.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
-* :mod:`lab_commons.dev.familyheads` -- a floating git package behind its forge head makes an env STALE;
-  verify refuses it naming the sync door, and an unreachable forge is said, never read as fresh.
+* :mod:`lab_commons.dev.lockpins` -- a git-installed package whose commit differs from the checkout's
+  ``uv.lock`` makes an env STALE; verify refuses it naming the sync door. Never judged against a remote tip.
 * :mod:`lab_commons.dev.selection` -- what a verify argv selects: targeted or the whole suite, and
   whether it may claim the skip census.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
