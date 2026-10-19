@@ -136,6 +136,7 @@ class HostCard:
     tools: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # tool -> {present, evidence}, as probed
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
     serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
+    withholds: tuple[str, ...] = ()  # machine-file [serve] withhold: resources it keeps for its own work
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -177,13 +178,15 @@ class HostCard:
         ]
         head += f'\n\ntools absent: {"; ".join(absent)}' if absent else ''
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
-        head += f'\n\nserves: {Serves(self.serves).text()}' if self.serves != EVERY else ''
+        rule = Serves(self.serves, frozenset(self.withholds))
+        head += f'\n\nserves: {rule.text()}' if self.serves != EVERY or self.withholds else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
             'holds': list(self.holds),
             'alarms': [dict(a) for a in self.alarms],
             'running': list(self.running),
+            'withholds': list(self.withholds),
         }
         return f'{head}{loud}\n\n```json\n{json.dumps(raw, indent=1)}\n```'
 
@@ -299,7 +302,7 @@ def card_of(comment: Comment) -> HostCard | None:
         return None
     raw = json.loads(found['json'])
     known = {key: value for key, value in raw.items() if key in HostCard.__dataclass_fields__}
-    tupled = {key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'running')}
+    tupled = {key: tuple(raw.get(key, ())) for key in ('holds', 'alarms', 'running', 'withholds')}
     return HostCard(**{**known, **tupled, 'login': comment.author or known.get('login', '')})
 
 
@@ -353,6 +356,7 @@ def publish_card(
     running: Sequence[str] = (),
     priority: Mapping[str, Sequence[str]] | None = None,
     serves: str = EVERY,
+    withholds: Sequence[str] = (),
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
@@ -385,6 +389,7 @@ def publish_card(
             tools=dict(tools or {}),
             priority=dict(priority or {}),
             serves=serves,
+            withholds=tuple(sorted(withholds)),
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:
