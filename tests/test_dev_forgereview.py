@@ -12,14 +12,16 @@ import pytest
 from _branch_repos import advance, clone_pair
 from _forge_state import StateForge
 
-from lab_commons.credentials import NoCredential
+from lab_commons.credentials import API_KEY_TASKS, NoCredential, task_username
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgemerge import decide
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgereview import (
+    API_HOST,
     CAPABILITY,
-    CREDENTIAL_HOST,
     DEFAULT_MODEL,
+    KEY_NAME,
+    KEY_TASK,
     REVIEW_CONTEXT,
     Ask,
     Review,
@@ -114,21 +116,23 @@ def test_a_second_tick_on_the_same_head_posts_nothing_and_asks_nothing(tmp_path:
 
 def test_a_missing_key_is_refused_by_its_own_name_and_no_other_key_is_read() -> None:
     """PLANTED control: the same reader with the key stored returns it."""
-    asked: list[str] = []
+    asked: list[tuple[str, object]] = []
 
-    def empty(host: str, **_: object) -> tuple[str, str]:
-        asked.append(host)
+    def empty(host: str, **options: object) -> str:
+        asked.append((host, options.get('task')))
         raise NoCredential(host)
 
-    with pytest.raises(ReviewKeyMissing, match=CREDENTIAL_HOST.replace('.', r'\.')):
+    with pytest.raises(ReviewKeyMissing, match=KEY_NAME.replace('.', r'\.')):
         review_key(fill=empty)
-    assert asked == [CREDENTIAL_HOST]
-    assert review_key(fill=lambda _host, **_: ('pr-review', _KEY)) == _KEY
+    assert asked == [(API_HOST, KEY_TASK)]
+    assert review_key(fill=lambda _host, **_: _KEY) == _KEY
 
 
-def test_the_review_credential_is_its_own_name_never_a_model_hosts() -> None:
-    assert CREDENTIAL_HOST not in {'api.anthropic.com', 'anthropic.com'}
-    assert 'review' in CREDENTIAL_HOST
+def test_the_review_key_is_the_anthropic_hosts_pr_review_task_key() -> None:
+    """The existing scheme, not a second one: the model's own host, the task's own username."""
+    assert API_HOST == 'api.anthropic.com'
+    assert KEY_TASK in API_KEY_TASKS
+    assert KEY_NAME == f'{task_username(KEY_TASK)}@{API_HOST}' == 'api-key-pr-review@api.anthropic.com'
 
 
 def test_a_tick_without_the_key_posts_nothing_and_raises_naming_it(tmp_path: Path) -> None:
@@ -137,7 +141,7 @@ def test_a_tick_without_the_key_posts_nothing_and_raises_naming_it(tmp_path: Pat
     model = FakeModel()
 
     def missing() -> str:
-        raise ReviewKeyMissing(CREDENTIAL_HOST)
+        raise ReviewKeyMissing(KEY_NAME)
 
     with pytest.raises(ReviewKeyMissing):
         review_tick(work, forge, Review(), base='integrate/main', key=missing, ask=model)
@@ -252,7 +256,7 @@ def test_the_step_alarms_a_missing_key_by_its_name_and_posts_nothing(tmp_path: P
     forge, _ = _forge(head)
     raised: list[Alarm] = []
 
-    def empty(host: str, **_: object) -> tuple[str, str]:
+    def empty(host: str, **_: object) -> str:
         raise NoCredential(host)
 
     step(
@@ -261,5 +265,5 @@ def test_the_step_alarms_a_missing_key_by_its_name_and_posts_nothing(tmp_path: P
     )  # fmt: skip
     (alarm,) = raised
     assert alarm.kind == AUTH
-    assert CREDENTIAL_HOST in alarm.subject
+    assert KEY_NAME in alarm.subject
     assert forge.statuses.get(head, []) == []
