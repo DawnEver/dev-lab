@@ -20,7 +20,9 @@ What keeps a pin from rotting is THIS row, the shape of the behind-push refusal:
 
 The developer who pushes upgrades through :data:`DOOR` (:data:`REMEDY`); no scheduled job does it for them.
 Exit codes: ``0``
-allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carries no content and is allowed.
+allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carries no content and is allowed, and a
+sha a remote branch already holds was judged when it was first pushed (:func:`published`) -- a promotion is not
+re-resolved.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ from lab_commons.log import emit
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
-__all__ = ['DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'pushed_shas', 'stale', 'unreasoned_holds']
+__all__ = ['DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'published', 'pushed_shas', 'stale', 'unreasoned_holds']
 
 #: The lockfile every family repo commits.
 LOCK: Final = 'uv.lock'
@@ -228,6 +230,16 @@ def pushed_shas(lines: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(found))
 
 
+def published(root: Path, sha: str) -> bool:
+    """Whether a remote branch already holds *sha*: it was judged when it was first pushed, so it is not judged again.
+
+    A promotion fast-forwards `main` to a sha the integration branch already carries; re-resolving it against
+    a newer kit would refuse every verified sha the moment any dependency moved.
+    """
+    code, held = _git(root, 'branch', '-r', '--contains', sha)
+    return code == 0 and bool(held.strip())
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -239,7 +251,8 @@ def main(
     root = Path(args[0]) if args else Path.cwd()
     if lines is None:
         lines = () if sys.stdin.isatty() else sys.stdin.read().splitlines()
-    refused = [f'{sha[:12]}: {why}' for sha in pushed_shas(lines) for why in lock_problems(root, sha, resolve=resolve)]
+    fresh = [sha for sha in pushed_shas(lines) if not published(root, sha)]
+    refused = [f'{sha[:12]}: {why}' for sha in fresh for why in lock_problems(root, sha, resolve=resolve)]
     if not refused:
         return 0
     emit('[lock] REFUSED -- ' + '\n[lock]   '.join(refused) + f'\n[lock]   REMEDY: {REMEDY}.', err=True)
