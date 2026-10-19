@@ -195,7 +195,9 @@ _GIT_EXE = shutil.which('git') or 'git'
 
 
 def _git_ok(cwd: Path, *argv: str) -> str:
-    return subprocess.run([_GIT_EXE, *argv], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        [_GIT_EXE, *argv], cwd=cwd, check=True, capture_output=True, text=True, encoding='utf-8'
+    ).stdout.strip()
 
 
 def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

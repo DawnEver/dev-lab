@@ -96,7 +96,7 @@ def _commit_staged(root: Path) -> str:
 
 def _sha(root: Path) -> str:
     return subprocess.run(
-        [_GIT, 'rev-parse', 'HEAD'], cwd=root, check=True, capture_output=True, text=True, timeout=60
+        [_GIT, 'rev-parse', 'HEAD'], cwd=root, check=True, capture_output=True, text=True, encoding='utf-8', timeout=60
     ).stdout.strip()
 
 
