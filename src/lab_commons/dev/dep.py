@@ -77,6 +77,7 @@ from lab_commons.dev import _dep_project
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.lockcheck import unreasoned_holds
+from lab_commons.dev.netverb import run_network_verb
 from lab_commons.log import emit
 
 __all__ = [
@@ -89,6 +90,7 @@ __all__ = [
     'Version',
     'current_env_key',
     'has_pip',
+    'init_submodules',
     'main',
     'mutate',
     'pip_argv',
@@ -405,6 +407,24 @@ def _change(
         raise _held_refusal(port.name, exc, prefix) from exc
 
 
+def init_submodules(root: Path, *, dry_run: bool = False) -> str | None:
+    """Initialise every submodule *root*'s commit records, through the network door; why it failed, else ``None``.
+
+    A path dependency may point INTO a submodule (a product's engine under ``components/``, plan C5), so a
+    checkout whose submodules were never initialised cannot be resolved: ``uv`` reports the path as not
+    existing. MEASURED 2026-10-19 on a serve checkout of motronics-studio, which bootstrapped only after a
+    manual ``git submodule update --init``. Every sync, bootstrap and lock therefore does this first.
+    """
+    if not (root / '.gitmodules').is_file():
+        return None
+    command = [shutil.which('git') or 'git', '-C', str(root), 'submodule', 'update', '--init', '--recursive']
+    if dry_run:
+        emit('would run: ' + ' '.join(command))
+        return None
+    report = run_network_verb(command, timeout=CHILD_WALL_S)
+    return None if report.ok else f'submodules of {root} could not be initialised: {report.remedy}'
+
+
 def _lock_upgrade(
     root: Path, python: str, *, run: Callable[..., Any], dry_run: bool, environment: dict[str, str]
 ) -> int:
@@ -449,6 +469,10 @@ def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.r
     environment = dict(os.environ)
     environment.pop('VIRTUAL_ENV', None)
     environment['UV_PROJECT_ENVIRONMENT'] = str(prefix)
+    syncing = args.bootstrap is not None or args.sync or locking
+    if syncing and (why := init_submodules(root, dry_run=args.dry_run)):
+        emit(f'REFUSED: {why}')
+        return 1
     if locking:
         code = _lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
         if code:
@@ -457,7 +481,7 @@ def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.r
         root,
         python,
         selected,
-        syncing=args.bootstrap is not None or args.sync or locking,
+        syncing=syncing,
         upgrade_packages=args.upgrade_package,
         frozen=args.bootstrap is not None or locking,
     )
