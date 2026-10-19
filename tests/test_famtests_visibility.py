@@ -108,8 +108,24 @@ def test_a_guessed_trunk_reports_a_foreign_checkout_clean_and_this_refuses(tmp_p
     """
     planted = plant_checkout(tmp_path, trunk='trunk')
     assert_readable(root=planted.work, trunk='trunk')
-    with pytest.raises(AssertionError, match='trunk row'):
+    with pytest.raises(AssertionError, match='resolves to no ref'):
         assert_readable(root=planted.work, trunk='main')
+
+
+def test_a_serve_clone_with_no_local_trunk_on_a_session_branch_is_readable(tmp_path: Path) -> None:
+    """THE FAMILY BRANCH FLOW, PLANTED: no worktree need sit on the trunk.
+
+    A host clones ``-b integrate/main`` and never creates a local ``main``; the trunk moves only by
+    promotion. ``origin/main`` still resolves, so the scan read a real repository with a real trunk.
+    """
+    planted = plant_checkout(tmp_path, trunk='main')
+    _run(planted.work, 'push', '-q', 'origin', 'main:integrate/main')
+    serve = tmp_path / 'serve'
+    _run(tmp_path, 'clone', '-q', '-b', 'integrate/main', str(planted.bare), str(serve))
+    _run(serve, 'worktree', 'add', '-q', '--detach', str(tmp_path / 'forge'))
+    assert_readable(root=serve, trunk='main')
+    with pytest.raises(AssertionError, match='resolves to no ref'):
+        assert_readable(root=serve, trunk='trunk')
 
 
 # --------------------------------------------------------------------------------------------

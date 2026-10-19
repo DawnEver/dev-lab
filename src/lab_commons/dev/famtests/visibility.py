@@ -49,6 +49,7 @@ from lab_commons.dev.checkout import (
     authority_for,
     classify,
     debris,
+    git_out,
     origin_branches,
     stale_branches,
     unmerged_changes,
@@ -123,15 +124,32 @@ def plant_checkout(tmp_path: Path, *, trunk: str) -> Planted:
     return Planted(bare=bare, work=work)
 
 
+def _trunk_resolves(root: Path, trunk: str) -> bool:
+    """Does *trunk* name a real ref here -- a local branch, or origin's copy of it?"""
+    return any(
+        git_out(root, 'show-ref', '--verify', '--quiet', ref) is not None
+        for ref in (f'refs/heads/{trunk}', f'refs/remotes/origin/{trunk}')
+    )
+
+
 def assert_readable(*, root: Path, trunk: str) -> None:
     """THE FLOOR. An unreadable repository must never render as a clean one.
 
-    Also the arm a guessed trunk dies on: if *trunk* names no branch this checkout is on, the trunk
-    row is empty and every count downstream would be a zero about nothing.
+    The floor asks two things: the scan read a REAL repository, and the trunk NAME RESOLVES to a ref.
+    It does not ask that a worktree sit on the trunk. Under the family branch flow the trunk moves
+    only by promotion and work happens on the integration branch and lanes, so a host that cloned
+    ``-b integrate/main`` and never made a local trunk -- a forge serve checkout -- is legitimate,
+    and requiring a trunk worktree made the floor lie on exactly that host. ``origin/<trunk>`` is
+    the authority every downstream count is measured against (:func:`authority_for`), so it is what
+    must exist.
+
+    Also the arm a guessed trunk dies on: a trunk that is neither ``refs/heads/<trunk>`` nor
+    ``refs/remotes/origin/<trunk>`` resolves to nothing, and every count downstream would be a zero
+    about nothing.
 
     Raises:
-        NotVisibleOnOrigin: the repository could not be read, holds no worktree, is not on *trunk*,
-            or its debris census did not answer.
+        NotVisibleOnOrigin: the repository could not be read, holds no worktree, its trunk name
+            resolves to no ref, or its debris census did not answer.
 
     """
     rows = classify(root, trunk=trunk)
@@ -140,12 +158,11 @@ def assert_readable(*, root: Path, trunk: str) -> None:
         return
     if not rows:
         _refuse(f'{root} reports no worktrees at all: an unread answer, not a tidy one')
-    found = [row.branch for row in rows if row.kind == 'trunk']
-    if found != [trunk]:
+    if not _trunk_resolves(root, trunk):
         _refuse(
-            f'the trunk row is {found}, not [{trunk!r}]. Either this checkout is not on its trunk, or '
-            f'the trunk this guard was given is stale -- and a trunk that resolves to nothing reports '
-            f'every branch as clean.'
+            f'the trunk {trunk!r} resolves to no ref (neither refs/heads/{trunk} nor '
+            f'refs/remotes/origin/{trunk}). The trunk this guard was given is guessed or stale -- and a '
+            f'trunk that resolves to nothing reports every branch as clean.'
         )
     if not debris(root).readable:
         _refuse(f'the debris census of {root} could not be read; a silent census is not a clean one')
