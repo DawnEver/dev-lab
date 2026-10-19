@@ -236,3 +236,25 @@ def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: p
     after = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
     assert after == before, 'the submodule state every other checkout shares was written'
     assert _git_ok(repo / 'components' / 'engine', 'status', '--porcelain') == '', 'the checkout still works'
+
+
+def test_a_sha_already_on_a_remote_branch_is_not_judged_again(tmp_path: Path) -> None:
+    """A promotion fast-forwards a branch to a sha origin already holds: it was judged when it was first pushed.
+
+    Measured 2026-10-19: numerics-lab f52debf passed every part, `integrate promote` moved main to it, and the
+    push of main was refused because lab-commons had moved since -- so a verified sha could never reach main.
+    """
+    root = tmp_path / 'r'
+    root.mkdir()
+    _git(root, 'init', '-q', '-b', 'main')
+    old = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "0"\n'})
+    _git(root, 'update-ref', 'refs/remotes/origin/integrate/main', old)
+    new = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "1"\n'})
+
+    def never(_tree: Path) -> object:
+        msg = 'a published sha must not be resolved again'
+        raise AssertionError(msg)
+
+    assert main([str(root)], lines=[f'refs/heads/main {old} refs/heads/main {"0" * 40}'], resolve=never) == 0
+    # Planted control: a sha no remote branch holds is still judged (it commits no lock -> refused).
+    assert main([str(root)], lines=[f'refs/heads/main {new} refs/heads/main {old}'], resolve=never) == 1
