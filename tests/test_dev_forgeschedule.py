@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
+from lab_commons.dev.forgehosts import host_id
 from lab_commons.dev.forgeschedule import host_weights, load_schedule, parse_usage, vouched
 from lab_commons.hpc.shell import FULL
 
@@ -153,3 +154,12 @@ def test_an_origin_host_stands_only_where_its_login_publishes_the_host_card() ->
     assert vouched([forged], owners) == (dataclasses.replace(forged, origin_host=''),)
     unknown = dataclasses.replace(claimed, origin_host='Z')
     assert vouched([unknown], owners)[0].origin_host == ''
+
+
+def test_a_public_repos_opaque_card_vouches_the_raw_trailer_and_vouches_no_other() -> None:
+    """A public repo keys the card by ``host_id``; the trailer still names the raw host. CONTROL: another host."""
+    claimed = dataclasses.replace(_cand('lane/x', 'pr'), origin='bob', origin_host='ada/bob')
+    owners = {host_id('ada/bob'): ('bob',)}
+    assert vouched([claimed], owners) == (claimed,)
+    other = dataclasses.replace(claimed, origin_host='ada/eve')
+    assert vouched([other], owners)[0].origin_host == ''

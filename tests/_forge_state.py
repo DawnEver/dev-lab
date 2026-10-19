@@ -28,6 +28,7 @@ class StateForge(Client):
         self.comments: dict[int, list[dict[str, Any]]] = {}
         self.fail_lists = False
         self.deny_delete = False
+        self.private = True  # the repository's visibility, as the forge's `private` flag answers it
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         self._next_comment = 1000
 
@@ -117,7 +118,12 @@ class StateForge(Client):
         opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
         handlers = {
             ('GET', 'user'): lambda: {'login': self.login},
-            ('GET', 'repo'): lambda: {'open_issues_count': opened, 'open_pr_counter': 0, 'has_pull_requests': True},
+            ('GET', 'repo'): lambda: {
+                'open_issues_count': opened,
+                'open_pr_counter': 0,
+                'has_pull_requests': True,
+                'private': self.private,
+            },
             ('GET', 'issues'): lambda: self._listed(query),
             ('POST', 'issues'): lambda: self.issues_by_number[self.add_issue(sent['title'], sent['body'])],
             ('GET', 'issue'): lambda: self.issues_by_number[number],
