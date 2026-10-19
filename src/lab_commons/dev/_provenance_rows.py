@@ -281,6 +281,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # population half `collect` and `census` already own; what moved is the reading.
     'testfacts': ('supersedes', 'tests/architecture/ratchets/test_no_test_asserts_only_is_not_none.py'),
     'treedirt': ('supersedes', 'scripts/gate/tree_state.py'),
+    'unit_slices': ('original',),
     'units': ('original',),
     'verdict': ('original',),
     # `scripts/gate/runner.py` is the tree this was CARVED FROM and it stayed: it shares 0 of its 51

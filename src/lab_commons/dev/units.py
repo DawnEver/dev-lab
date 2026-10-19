@@ -537,7 +537,7 @@ def scan_files(
     )
 
 
-if __name__ == '__main__':  # pragma: no cover -- `python -m lab_commons.dev.units report <root>`
+if __name__ == '__main__':  # `python -m lab_commons.dev.units report <root>`
     import sys
 
     from lab_commons.dev.unit_slices import main

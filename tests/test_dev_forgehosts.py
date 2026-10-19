@@ -8,6 +8,7 @@ stateful forge and shows it duplicating.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -201,12 +202,12 @@ def test_planted_control_a_private_repository_publishes_the_card_unchanged() -> 
     publish(forge, _identifying_card())
     assert _SEAT in _bodies(forge), 'PLANTED: the scan would pass a card that was never identifying'
     (card,) = read_cards(forge)
-    assert card == HostCard(**{**_identifying_card().__dict__, 'login': forge.login})
+    assert card == replace(_identifying_card(), login=forge.login)
 
 
 def test_a_repository_that_does_not_say_private_is_read_as_public() -> None:
     forge = StateForge()
-    forge.private = None  # type: ignore[assignment]  # a forge answer without the flag
+    forge.private = None  # a forge answer without the flag
     publish(forge, _identifying_card())
     assert _SEAT not in _bodies(forge)
 

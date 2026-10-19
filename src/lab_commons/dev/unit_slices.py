@@ -56,6 +56,7 @@ from lab_commons.dev._unit_tokens import UNIT_TOKENS
 from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.rules import tracked_files
 from lab_commons.dev.units import _exempt_annotation, _exempt_assignment, trailing_token
+from lab_commons.log import emit
 
 __all__ = [
     'DECLARED_EXCEPTIONS',
@@ -430,9 +431,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f'{name:<{width}}  {len(part.sites):>6}  (exempt {len(part.exempt)})' for name, part in result.slices.items()
     ]
     lines.append(f'named sets: {args.out}')
-    sys.stdout.write('\n'.join(lines) + '\n')
+    emit('\n'.join(lines))
     return 0
 
 
-if __name__ == '__main__':  # pragma: no cover
+if __name__ == '__main__':
     sys.exit(main())

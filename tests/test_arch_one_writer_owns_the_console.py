@@ -79,7 +79,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-17 at 320 (hpc allocate, forge records, serve prune/tick, session cap, paging): 273 -> 280.
 #: Re-taken 2026-10-17 at 327 (outcomes, the forge run state and deploy account splits): 280 -> 287, the same 40 under.
 #: Re-taken 2026-10-18 at 333 (hpc.testcells; dev.test_outcomes replaces dev.outcomes): 287 -> 293, the same 40 under.
-MODULE_FLOOR = 293
+#: Re-taken 2026-10-19 at 340 (dev.unit_slices; box._store, dev._forgesource split): 293 -> 300, same 40 under.
+MODULE_FLOOR = 300
 MODULE_HEADROOM = 45
 
 

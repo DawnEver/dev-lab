@@ -28,7 +28,7 @@ class StateForge(Client):
         self.comments: dict[int, list[dict[str, Any]]] = {}
         self.fail_lists = False
         self.deny_delete = False
-        self.private = True  # the repository's visibility, as the forge's `private` flag answers it
+        self.private: bool | None = True  # the repository's visibility, as the forge's `private` flag answers it
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         self._next_comment = 1000
 
