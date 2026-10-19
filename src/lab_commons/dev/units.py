@@ -535,3 +535,11 @@ def scan_files(
         files_read=read,
         skipped=tuple(sorted(skipped)),
     )
+
+
+if __name__ == '__main__':  # pragma: no cover -- `python -m lab_commons.dev.units report <root>`
+    import sys
+
+    from lab_commons.dev.unit_slices import main
+
+    sys.exit(main())
