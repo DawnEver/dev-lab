@@ -39,6 +39,7 @@ from _box_fake import ended
 from lab_commons import box
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Refused, write_ended
 from lab_commons.compute import learned
+from lab_commons.compute.model import Resources
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import claim_path
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -1238,11 +1239,12 @@ def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatc
     assert "needs ['matlab']" in capsys.readouterr().err
 
 
-def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool) -> None:
+def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool, free_gb: float = 16.0) -> None:
     monkeypatch.delenv(INSIDE_ENV, raising=False)
     monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')  # naming a part is not being in the box
     box = Capacity(cpu=cpu, mem_bytes=16 * GB, seats={})
     monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: box))
+    monkeypatch.setattr(verifybox, 'free_room', lambda size: Resources(cpu=size.cpu, mem_gb=free_gb))
     monkeypatch.setattr(verifybox, 'xdist_installed', lambda: xdist)
     monkeypatch.setattr(verifybox, 'refresh_checkout', lambda _root: 0)  # no forge in a unit test
 
@@ -1309,6 +1311,27 @@ def test_a_producer_inside_the_box_runs_the_width_it_was_admitted_at(monkeypatch
     monkeypatch.setenv(CPU_ENV, '3')
     argv, record = verifybox.boxed(Path('r'), ['py', *given], queue_s=5, outcome=Path('o.json'))
     assert (argv, record) == (['py', *runs], None), 'not reboxed, and sized to the claim'
+
+
+def test_a_selection_runs_the_width_its_files_and_free_memory_hold(monkeypatch, tmp_path: Path) -> None:
+    """THE DECLARATION THAT LIED: a 1-file selection asked SELECTION_CPU workers it could never use.
+
+    The width is :func:`learned.fit_width` of SELECTION_CPU, the files selected and the FREE room, and the -n
+    the step runs IS the cores it declares. PLANTED CONTROL: a box with plenty runs the full width.
+    """
+    (tmp_path / 'tests').mkdir()
+    for name in ('a', 'b', 'c', 'd', 'e', 'f'):
+        (tmp_path / 'tests' / f'test_{name}.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(verifybox, 'origin_url', lambda _root: 'https://g/none.git')
+    _boxed_on(monkeypatch, 16.0, xdist=True)
+    one, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests/test_a.py'], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(one) == ('1', ['py', '-m', 'pytest', 'tests/test_a.py', '-n', '1']), 'one file, one worker'
+    full, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests'], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(full)[0] == str(verifybox.SELECTION_CPU), 'PLANTED CONTROL: plenty runs the full width'
+    _boxed_on(monkeypatch, 16.0, xdist=True, free_gb=1.6)
+    starved, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests'], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(starved) == ('1', ['py', '-m', 'pytest', 'tests', '-n', '1']), '1.6 GB free holds one 1 GB worker'
+    assert starved[starved.index('--mem-gb') + 1] == '1', 'declared at the width it runs'
 
 
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:

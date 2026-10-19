@@ -20,14 +20,16 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
-import math
 import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
 from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, ProcessEnd, Refused, command, read_ended
+from lab_commons.box.ledger import holdings
+from lab_commons.box.supply import Reading, room
 from lab_commons.compute import learned
+from lab_commons.compute.model import Resources
 from lab_commons.dev.forgedemand import refresh_checkout
 from lab_commons.dev.platformparts import origin_url
 
@@ -39,6 +41,7 @@ __all__ = [
     'boxed',
     'claimed_width',
     'ended_in_the_box',
+    'free_room',
     'learn_ended',
     'selection_demand',
     'selection_files',
@@ -88,19 +91,29 @@ def _explicit_width(argv: Sequence[str]) -> str | None:
     return width
 
 
-def selection_workers(argv: Sequence[str], capacity: Capacity, *, xdist: bool) -> tuple[int, list[str]]:
+def free_room(capacity: Capacity) -> Resources:
+    """The box's FREE room now beside the ledger's claims (:func:`lab_commons.box.supply.room`, the one formula)."""
+    held = holdings()
+    return room(capacity, held, Reading.now([one.pid for one in held]))
+
+
+def selection_workers(
+    argv: Sequence[str], free: Resources, *, files: int, per_gb: float, xdist: bool
+) -> tuple[int, list[str]]:
     """The workers *argv*'s pytest runs, and the ``-n`` to append so it runs exactly that many.
 
-    The caller's own width is honoured as given (``auto`` is the cap); without one, xdist runs
-    :data:`SELECTION_CPU` capped at the box, and without xdist the step is one interpreter: ``0``.
+    The caller's own width is honoured as given; else (and for ``auto``) xdist runs
+    :func:`~lab_commons.compute.learned.fit_width` of :data:`SELECTION_CPU` and the *files* selected (``0``:
+    unknown) in the *free* room at *per_gb* a worker, and without xdist the step is one interpreter: ``0``.
     """
-    cap = max(1, min(SELECTION_CPU, math.floor(capacity.cpu)))
+    cap = min(SELECTION_CPU, files or SELECTION_CPU)
+    fit = learned.fit_width(cap, cpu=free['cpu'], mem_gb=free['mem_gb'], per_gb=per_gb)
     if not xdist:
         return 0, []
     given = _explicit_width(argv)
     if given is None:
-        return cap, ['-n', str(cap)]
-    return (cap if given in _AUTO else int(given)), []
+        return fit, ['-n', str(fit)]
+    return (fit if given in _AUTO else int(given)), []
 
 
 def selection_files(root: Path, argv: Sequence[str]) -> tuple[str, ...]:
@@ -171,9 +184,11 @@ def boxed(root: Path, argv: list[str], *, queue_s: float, outcome: Path) -> tupl
     if INSIDE_ENV in os.environ:
         return [*argv, *claimed_width(argv, os.environ.get(CPU_ENV), xdist=xdist_installed())], None
     size = Capacity.read()
-    workers, width = selection_workers(argv, size, xdist=xdist_installed())
     refresh_checkout(root)
-    demand = selection_demand(workers, selection_mem_gb(_repo(root), selection_files(root, argv), workers))
+    repo, files = _repo(root), selection_files(root, argv)
+    per = selection_mem_gb(repo, files, 1)
+    workers, width = selection_workers(argv, free_room(size), files=len(files), per_gb=per, xdist=xdist_installed())
+    demand = selection_demand(workers, selection_mem_gb(repo, files, workers))
     run = [*argv, *width]
     return command(
         run, demand, queue_s, key=f'verify:{root}', what=f'verify:{root.name}', outcome=outcome, capacity=size

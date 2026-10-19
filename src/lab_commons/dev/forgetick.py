@@ -54,7 +54,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import GB, Capacity
+from lab_commons.box import Capacity
 from lab_commons.compute import probe
 from lab_commons.compute.learned import box_demand, cluster_demand, learned, request_demand
 from lab_commons.compute.model import (
@@ -198,7 +198,7 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or _whole(machine or 'this host', cluster=bool(serve.hpc))
-    sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history)
+    sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
@@ -253,25 +253,30 @@ def handed(statuses: Sequence[CommitStatus], part: str) -> int | None:
 
 
 def _demand_of(
-    root: Path, *, cluster: bool, history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: ()
+    root: Path,
+    *,
+    cluster: bool,
+    history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: (),
+    room: Supply | None = None,
 ) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
     """A candidate's demand: a cluster part's measured ask, else what it will declare to this box.
 
     A box REQUEST is sized by its own row (:func:`~lab_commons.compute.learned.request_demand`), a box part
-    by :func:`~lab_commons.compute.learned.box_demand` at the ids its commit's parts hand it (:func:`handed`).
+    by :func:`~lab_commons.compute.learned.box_demand` at the ids its commit's parts hand it (:func:`handed`),
+    narrowed to the box's FREE *room* (this tick's supply; measured now when not given).
     """
     repo_url = origin_url(root)
     if cluster:
         asked = cluster_demand(repo_url)
         return lambda _wanted, needed: asked(needed)
-    capacity = Capacity.read()
+    free = (room or probe.box('this host', capacity=Capacity.read())).resources
 
     def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
         if wanted.kind == REQUEST:
             row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
             return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem_gb)
         ids = handed(history(wanted.sha), wanted.platform)
-        return box_demand(repo_url, needed, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB, ids=ids)
+        return box_demand(repo_url, needed, cpu=free['cpu'], mem_gb=free['mem_gb'], ids=ids)
 
     return sized
 
