@@ -13,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.credentials import NoCredential, credential_for, store_credential
+from lab_commons.credentials import (
+    API_KEY_TASKS,
+    NoCredential,
+    api_key,
+    credential_for,
+    store_credential,
+    task_username,
+)
 from lab_commons.dev import forge
 
 #: What each platform's git or credential helper needs from the host: the loader path a module-built
@@ -138,3 +145,49 @@ def test_the_runtime_module_does_not_import_the_dev_kit() -> None:
 def test_the_forge_reads_the_same_store() -> None:
     assert forge.credential_for is credential_for
     assert forge.NoCredential is NoCredential
+
+
+def _store_of(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: dict[str, str]) -> None:
+    """A planted helper holding *held* (username -> secret): it answers the username git asks for, else nothing."""
+    cases = ' '.join(
+        f'username={user}) echo username={user}; echo password={secret};;' for user, secret in held.items()
+    )
+    helper = f'!f() {{ while read -r line; do case "$line" in {cases} esac; done; }}; f'
+    for name, value in _helper_config(tmp_path, helper).items():
+        monkeypatch.setenv(name, value)
+
+
+def test_a_task_key_is_its_own_username_under_the_providers_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store_of(tmp_path, monkeypatch, {'api-key': 'default', 'api-key-pr-review': 'the-review-key'})
+    assert api_key('api.example.org') == 'default'
+    assert api_key('api.example.org', task='pr-review') == 'the-review-key'
+
+
+def test_a_missing_task_key_is_refused_by_name_and_never_falls_back_to_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED control: the default key IS stored on the same host, and must not answer for the task."""
+    _store_of(tmp_path, monkeypatch, {'api-key': 'default'})
+    assert api_key('api.example.org') == 'default'
+    with pytest.raises(NoCredential, match='api-key-pr-review'):
+        api_key('api.example.org', task='pr-review')
+
+
+def test_a_helper_answering_another_username_is_refused_not_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A helper that ignores the username it was asked for would hand the default key to a task."""
+    for name, value in _helper_config(tmp_path, '!f() { echo username=api-key; echo password=default; }; f').items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(NoCredential, match='api-key-optimization'):
+        api_key('api.example.org', task='optimization')
+
+
+def test_an_undeclared_task_is_refused_naming_the_declared_ones() -> None:
+    with pytest.raises(ValueError, match='pr-review'):
+        task_username('pr_reveiw')
+    assert {task_username(task) for task in API_KEY_TASKS} == {f'api-key-{task}' for task in API_KEY_TASKS}
+    assert task_username(None) == 'api-key'
+    assert not any(task.isdigit() for task in API_KEY_TASKS)  # api-key-<N> is a fallback slot (ai_lab)

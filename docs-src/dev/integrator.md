@@ -57,9 +57,11 @@ holds the key:
 [capabilities.pr_review]      # the machine file (lab_commons.config) of the ONE reviewing host
 ```
 
-The key is ONE dedicated Anthropic API key used for nothing else, stored in the git credential store under the
-host `pr-review.anthropic.lab-commons` (username `pr-review`); no other AI key is ever read, and with it absent
-the step refuses by that name and raises an `auth` alarm. Never printed or logged. Per repo, optionally:
+The key is ONE dedicated Anthropic API key used for nothing else: the `pr-review` TASK key of the one
+model-key scheme -- host `api.anthropic.com`, username `api-key-pr-review` in the git credential store, read by
+`lab_commons.credentials.api_key`, stored by `python -m ai_lab.auth login anthropic --task pr-review`. Never the
+host's default `api-key` and no other AI key is ever read; with it absent the step refuses by that name and
+raises an `auth` alarm. Never printed or logged. Per repo, optionally:
 
 ```toml
 [tool.lab_commons.review]

@@ -6,10 +6,12 @@ carried to the forge as ``pr/gh-<N>`` before they are reviewed here.
 WHERE IT RUNS. A ``forge serve`` step (:func:`step`), on a host whose machine file declares the capability
 ``[capabilities.pr_review]``; no other host reads the key or calls the model.
 
-THE KEY IS ITS OWN. The reviewer reads ONE dedicated Anthropic API key, used for nothing else, from the git
-credential store (:mod:`lab_commons.credentials`) under :data:`CREDENTIAL_HOST` -- never another AI key,
-never an environment variable. Absent, it is REFUSED BY THAT NAME (:class:`ReviewKeyMissing`), and nothing is
-posted. The key is never logged, printed, posted or put in an exception text.
+THE KEY IS ITS OWN. The reviewer reads ONE dedicated Anthropic API key, used for nothing else: the
+``pr-review`` TASK key of the Anthropic host (:data:`KEY_NAME`), read through the one model-key scheme
+(:func:`lab_commons.credentials.api_key`; stored by ``python -m ai_lab.auth login anthropic --task pr-review``)
+-- never the host's default key, never another AI key, never an environment variable. Absent, it is
+REFUSED BY THAT NAME (:class:`ReviewKeyMissing`), and nothing is posted. The key is never
+logged, printed, posted or put in an exception text.
 
 WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integration`` whose head carries no
 :data:`REVIEW_CONTEXT` status yet:
@@ -46,7 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.credentials import NoCredential, credential_for
+from lab_commons.credentials import NoCredential, api_key, task_username
 from lab_commons.dev.forge import https_transport
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
@@ -59,21 +61,26 @@ if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client, PullRequest
 
 __all__ = [
-    'CAPABILITY', 'CREDENTIAL_HOST', 'DEFAULT_MODEL', 'REVIEW_CONTEXT', 'Ask', 'Review', 'ReviewKeyMissing',
-    'anthropic', 'load_review', 'review_from', 'review_key', 'review_tick', 'step',
+    'API_HOST', 'CAPABILITY', 'DEFAULT_MODEL', 'KEY_NAME', 'KEY_TASK', 'REVIEW_CONTEXT', 'Ask', 'Review',
+    'ReviewKeyMissing', 'anthropic', 'load_review', 'review_from', 'review_key', 'review_tick', 'step',
 ]  # fmt: skip
 
 #: The machine-file capability a host declares to run the reviewer: ``[capabilities.pr_review]``.
 CAPABILITY: Final = 'pr_review'
 
-#: The git-credential host the reviewer's OWN key is stored under -- a name no other key uses.
-CREDENTIAL_HOST: Final = 'pr-review.anthropic.lab-commons'
+#: The Messages API host: where the review is asked, and the credential host its key is stored under.
+API_HOST: Final = 'api.anthropic.com'
+
+#: The API-key task the reviewer's OWN key is stored for (:data:`lab_commons.credentials.API_KEY_TASKS`).
+KEY_TASK: Final = 'pr-review'
+
+#: The reviewer's key as a refusal names it: ``<username>@<host>``.
+KEY_NAME: Final = f'{task_username(KEY_TASK)}@{API_HOST}'
 
 #: The latest Claude, the default reviewer.
 DEFAULT_MODEL: Final = 'claude-opus-5-5'
 
 _TABLE: Final = 'review'
-_API_HOST: Final = 'api.anthropic.com'
 _API_VERSION: Final = '2023-06-01'
 _TIMEOUT_S: Final = 600.0
 _OK: Final = 200  # the one success the Messages API answers
@@ -128,14 +135,14 @@ def load_review(root: Path) -> Review:
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
 
 
-def review_key(*, cwd: Path | None = None, fill: Callable[..., tuple[str, str]] = credential_for) -> str:
-    """The reviewer's own key, from :data:`CREDENTIAL_HOST` alone; :class:`ReviewKeyMissing` naming it when absent."""
+def review_key(*, cwd: Path | None = None, fill: Callable[..., str] = api_key) -> str:
+    """The reviewer's own key, :data:`KEY_NAME` alone; :class:`ReviewKeyMissing` naming it when absent."""
     try:
-        return fill(CREDENTIAL_HOST, cwd=cwd)[1]
+        return fill(API_HOST, task=KEY_TASK, cwd=cwd)
     except NoCredential as missing:
         msg = (
-            f'the PR reviewer has no key: store its dedicated Anthropic API key in the git credential store '
-            f'under host {CREDENTIAL_HOST} (no other key is ever used): {missing}'
+            f'the PR reviewer has no key {KEY_NAME} (no other key is ever used): store its dedicated Anthropic '
+            f'API key with `python -m ai_lab.auth login anthropic --task {KEY_TASK}`: {missing}'
         )
         raise ReviewKeyMissing(msg) from None
 
@@ -151,7 +158,7 @@ def anthropic(
         'messages': [{'role': 'user', 'content': ask.prompt}],
     }
     headers = {'x-api-key': key, 'anthropic-version': _API_VERSION, 'content-type': 'application/json'}
-    connection = transport(_API_HOST, _TIMEOUT_S)
+    connection = transport(API_HOST, _TIMEOUT_S)
     try:
         connection.request('POST', '/v1/messages', json.dumps(body).encode(), headers)
         answer = connection.getresponse()
@@ -256,6 +263,6 @@ def step(
         for line in review_tick(root, built, review, base=policy.integration, key=reading, ask=ask):
             say(f'[serve] review: {line}')
     except ReviewKeyMissing as missing:
-        alarm(Alarm(AUTH, repo, f'the PR reviewer has no key ({CREDENTIAL_HOST})', str(missing)))
+        alarm(Alarm(AUTH, repo, f'the PR reviewer has no key ({KEY_NAME})', str(missing)))
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:
         say(f'[serve] the PR review did not run: {failed}')
