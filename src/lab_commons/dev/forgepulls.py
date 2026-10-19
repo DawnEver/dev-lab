@@ -81,6 +81,7 @@ class Marker(StrEnum):
     HOST = 'host'  #: one card comment per serving host, keyed by the host (:mod:`lab_commons.dev.forgehosts`)
     INTEGRATION = 'integration'  #: a child PR's one integration comment (:mod:`lab_commons.dev.forgeintegration`)
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`lab_commons.dev.forgetidy`)
+    REVIEW = 'review'  #: one advisory review per PR head, keyed by the sha (:mod:`lab_commons.dev.forgereview`)
 
 
 def marker(kind: Marker, key: str = '') -> str:

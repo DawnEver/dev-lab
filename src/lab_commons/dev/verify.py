@@ -445,13 +445,13 @@ def main(argv: list[str] | None = None) -> int:
         epilog='Exit codes: 0 pass, 1 fail (failures named), 2 refused argv, 3 inconclusive (the run cannot say).',
     )
     parser.add_argument(
-        '--lock-wait-s',
-        type=float,
+        '--lock-wait',
+        type=_lock_wait_arg,
         default=None,
-        metavar='SECONDS',
+        metavar='DURATION',
         help=(
-            f'ceiling on the wait for this box (default {MEASURE_WAIT_S:.0f}s for a selection, '
-            f'{WAIT_S:.0f}s for the producer); 0 checks once and refuses'
+            f'ceiling on the wait for this box, a duration such as "30 s" (default {MEASURE_WAIT_S:.0f} s for a '
+            f'selection, {WAIT_S:.0f} s for the producer); "0 s" checks once and refuses'
         ),
     )
     parser.add_argument('--part', default='', help='produce this part (tests/<part>): exactly its need-set')
@@ -473,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     if refused is not None:
         emit(refused, err=True)
         return ProducerExit.USAGE
-    wait_s = parsed.lock_wait_s if parsed.lock_wait_s is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
+    wait_s = parsed.lock_wait if parsed.lock_wait is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
     stale = lock_freshness(root)
     if stale:
         emit(f'verify: inconclusive -- nothing ran: {stale}', err=True)
@@ -507,6 +507,31 @@ def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, pro
     """The PRODUCER's cited run posts from its own outcomes, beside *log*; nothing re-runs, and nobody else posts."""
     if producer:
         emit(post_cited(root, log, posted, head=head_sha(root), dirt=status_paths(root), part=part))
+
+
+def lock_wait(text: str) -> float:
+    """``--lock-wait`` in seconds. The unit lives in the VALUE: a bare number, or a non-duration, is refused."""
+    from lab_commons.units import Q_  # noqa: PLC0415 -- pint is an extra; only this flag needs it
+
+    try:
+        quantity = Q_(text)
+    except Exception as exc:
+        msg = f'--lock-wait {text!r} is not a duration; write one such as "30 s" or "2 min"'
+        raise ValueError(msg) from exc
+    if not isinstance(quantity, Q_) or quantity.dimensionless:
+        msg = f'--lock-wait {text!r} is a bare number, not a duration: it has no unit -- write e.g. "30 s"'
+        raise ValueError(msg)
+    if not quantity.check('[time]'):
+        msg = f'--lock-wait {text!r} is {quantity.dimensionality}, not a duration; write e.g. "30 s"'
+        raise ValueError(msg)
+    return float(quantity.m_as('s'))
+
+
+def _lock_wait_arg(text: str) -> float:
+    try:
+        return lock_wait(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _retired(argv: list[str]) -> str | None:
@@ -545,7 +570,8 @@ def _judge(
         return _inconclusive(
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: {exc}. '
             f'Wait for it, or stop that holder, then re-run; '
-            f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait. {offer_line(root, head, arguments)}'
+            f'--lock-wait "<duration>" raises or drops the {wait_s:.0f} s ceiling on the wait. '
+            f'{offer_line(root, head, arguments)}'
         )
     except UnverifiableLog as exc:
         return _inconclusive(
