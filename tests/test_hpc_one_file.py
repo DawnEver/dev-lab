@@ -413,9 +413,11 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     moved = work / 'dep'
     _commit(moved, {'dep/__init__.py': 'PINNED = False\n'})
     _git('push', '-q', 'origin', 'main', cwd=moved)  # the pin is now behind the branch head
-
     home = tmp_path / 'home'
-    builds = Builds(install='uv sync -q --frozen --offline', source_roots=('components',), env_key='k1')
+    # The build targets a POSIX login node (``$E/bin/python``); a Windows venv keeps it in ``Scripts/``.
+    posix_layout = '[ -x "$E/bin/python" ] || { mkdir -p "$E/bin" && cp "$E/Scripts/python.exe" "$E/bin/python"; }'
+    install = f'uv sync -q --frozen --offline --no-install-package dep && {posix_layout}'
+    builds = Builds(install=install, source_roots=('components',), env_key='k1')
     spec = RunSpec(sha=sha, repo_url=urls['top'], builds=builds, python=Path(sys.executable).as_posix())
     cache = Path(cache_dir(spec.repo_url).replace('"$HOME"', home.as_posix()))
     _git('clone', '-q', '--bare', urls['top'], cache)
@@ -430,11 +432,12 @@ def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_in
     )
     assert BUILD_FAILED not in done.stdout, done.stdout
     assert done.returncode == 0, (done.stdout, done.stderr)
-    with tarfile.open(facts(done.stdout)['artifact'].replace('"$HOME"', home.as_posix())) as tar:
+    assert facts(done.stdout)['artifact'].endswith(f'/ci/artifacts/{sha}.tar.gz')
+    with tarfile.open(home / 'ci' / 'artifacts' / f'{sha}.tar.gz') as tar:
         names = set(tar.getnames())
         pinned = tar.extractfile('./tree/components/dep/dep/__init__.py')
         assert pinned is not None
-        assert pinned.read() == b'PINNED = True\n', 'the commit the sha pins, not the branch head'
+        assert pinned.read().strip() == b'PINNED = True', 'the commit the sha pins, not the branch head'
     assert './tree/components/dep/leaf/leaf.txt' in names, 'recursively'
     assert not (Path(urls['top']) / 'modules').exists(), "nothing written into the repository's cache"
 
