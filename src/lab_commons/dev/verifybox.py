@@ -30,7 +30,6 @@ from lab_commons.box import CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, ProcessEn
 from lab_commons.compute import learned
 from lab_commons.dev.forgedemand import refresh_checkout
 from lab_commons.dev.platformparts import origin_url
-from lab_commons.hpc.config import Cost
 
 __all__ = [
     'MEASURE_WAIT_S',
@@ -128,10 +127,8 @@ def selection_mem_gb(repo: str, files: Sequence[str], workers: int) -> float:
     priced at its own whole-tree peak (:func:`learn_ended`) times the headroom -- one the box killed for
     memory at twice the limit it died at -- whichever is larger.
     """
-    per = learned.worker_gb(repo, files, prior_gb=Cost().mem_gb, safety=learned.BOX_HEADROOM)
     ran = learned.run_of(repo, selection_producer(files), ())
-    whole = 0.0 if ran is None else ran.peak_mem_gb * learned.BOX_HEADROOM
-    return round(max(max(1, workers) * per, whole), 3)
+    return learned.selection_gb(repo, files, workers, whole_gb=0.0 if ran is None else ran.peak_mem_gb)
 
 
 def selection_producer(files: Sequence[str]) -> str:
