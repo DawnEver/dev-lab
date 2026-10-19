@@ -340,7 +340,8 @@ def test_with_forge_merges_declared_even_an_audited_merge_push_is_refused(repo: 
     assert P5 in done.stderr
     assert _remote(repo, 'int/line') == control
     origin = tmp_path / 'origin.git'
-    _git(origin, 'update-ref', 'refs/heads/int/line', refused_sha)  # the forge merged it server-side
+    _git(repo, 'push', 'origin', f'{refused_sha}:refs/forge/merged')  # the objects reach the forge ...
+    _git(origin, 'update-ref', 'refs/heads/int/line', refused_sha)  # ... and it merges server-side
     _git(repo, 'fetch', 'origin')
     passed = _push(repo, 'int/line')
     assert passed.returncode == 0, passed.stderr

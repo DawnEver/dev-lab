@@ -34,9 +34,17 @@ def _statuses(raw: list[dict[str, object]]) -> tuple[CommitStatus, ...]:
     return tuple(CommitStatus(str(r['context']), str(r['status']), str(r['description']), '', 1) for r in raw)
 
 
-def _work(tmp_path: Path) -> tuple[Path, str]:
-    """A clone whose ``pr/x`` is one commit off ``integrate/main`` (itself one ahead of main), and its head."""
+def _tested(tmp_path: Path) -> Path:
+    """A clone whose ``integrate/main`` carries a test, so the merge audit has something to audit."""
     _, work = clone_pair(tmp_path)
+    (work / 'tests').mkdir()
+    advance(work, 'integrate/main', 'tests/test_a.py', 'def test_a():\n    assert True\n')
+    return work
+
+
+def _work(tmp_path: Path) -> tuple[Path, str]:
+    """A clone whose ``pr/x`` is one commit off main, ``integrate/main`` two ahead of it, and the PR head."""
+    work = _tested(tmp_path)
     advance(work, 'integrate/main', 'i.txt', 'i\n')
     head = advance(work, 'pr/x', 'x.txt', 'x\n')
     (work / 'pyproject.toml').write_text(_MANIFEST, encoding='utf-8')
@@ -67,7 +75,7 @@ def test_a_pr_whose_parts_are_not_all_pass_waits_naming_them(tmp_path: Path) -> 
 
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
     """PLANTED control: once integration is merged into the branch, the same PR is ready."""
-    _, work = clone_pair(tmp_path)
+    work = _tested(tmp_path)
     advance(work, 'integrate/main', 'c.txt', 'ours\n')
     run_git(work, 'checkout', '-q', '-B', 'pr/x', 'origin/main')
     head = commit(work, 'c.txt', 'theirs\n')
