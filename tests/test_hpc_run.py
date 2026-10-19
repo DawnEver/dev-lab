@@ -37,7 +37,7 @@ from lab_commons.hpc.config import Cost, Limits, Policy
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
-from lab_commons.hpc.plan import Plan, make_plan
+from lab_commons.hpc.plan import Plan, live_throttle, make_plan
 from lab_commons.hpc.progress import Progress, held_by_a_limit, parse_queue, where
 from lab_commons.hpc.pytest_item import canonical, item_argv, read_stream
 from lab_commons.hpc.records import (
@@ -388,10 +388,10 @@ def test_measured_estimates_fall_back_only_for_files_never_measured() -> None:
 def test_memory_is_the_worst_measured_peak_with_margin() -> None:
     """3 shards were OOM-killed at 6 GB; the completed ones peaked at 5.15 GB."""
     measured = Measured(peaks_mb={'a.py': 5274.0, 'b.py': 900.0})
-    worst = measured.mem_gb([['a.py::t'], ['b.py::t']], Cost(mem_gb=6), Policy(safety=1.5))
+    worst = measured.item_gb(['a.py::t', 'b.py::t'], Cost(mem_gb=6), Policy(safety=1.5))
     # floor: abs=0.0 -- the same float product on both sides, so only the relative 1e-12 rounding is allowed
     assert worst == pytest.approx(5274.0 * 1.5 / 1024, rel=1e-12, abs=0.0)
-    assert measured.mem_gb([['a.py::t'], ['c.py::t']], Cost(mem_gb=9), Policy(safety=1.5)) == 9, 'unmeasured: cost'
+    assert measured.item_gb(['a.py::t', 'c.py::t'], Cost(mem_gb=9), Policy(safety=1.5)) == 9, 'unmeasured: cost'
 
 
 def test_a_measured_peak_raises_the_memory_and_never_lowers_it_under_the_declared_cost() -> None:
@@ -401,8 +401,8 @@ def test_a_measured_peak_raises_the_memory_and_never_lowers_it_under_the_declare
     is the floor a measurement may only raise.
     """
     measured = Measured(peaks_mb={'a.py': 150.0})
-    assert measured.mem_gb([['a.py::t']], Cost(mem_gb=1), Policy(safety=1.5)) == 1
-    assert measured.mem_gb([['a.py::t']], Cost(mem_gb=0.1), Policy(safety=1.5)) == pytest.approx(
+    assert measured.item_gb(['a.py::t'], Cost(mem_gb=1), Policy(safety=1.5)) == 1
+    assert measured.item_gb(['a.py::t'], Cost(mem_gb=0.1), Policy(safety=1.5)) == pytest.approx(
         150.0 * 1.5 / 1024, rel=1e-12, abs=0.0
     ), 'PLANTED CONTROL: over the floor the peak decides'
 
@@ -437,7 +437,7 @@ def test_a_killed_multi_file_item_teaches_no_file_a_peak() -> None:
     measured = Measured(peaks_mb={'tests/sweep/test_0.py': 900.0})
     measured.learn(ids, {'seconds': {}, 'done': {'done': -9, 'wall': 30.0, 'peak_mb': 120219.2}})
     assert measured.peaks_mb == {'tests/sweep/test_0.py': 900.0}
-    assert measured.mem_gb([ids], Cost(), Policy()) == pytest.approx(900.0 * 1.5 / 1024, rel=1e-12, abs=0.0)
+    assert measured.item_gb(ids, Cost(), Policy()) == pytest.approx(900.0 * 1.5 / 1024, rel=1e-12, abs=0.0)
     measured.learn(ids, {'seconds': {}, 'done': {'done': 0, 'wall': 30.0, 'peak_mb': 3000.0}})
     assert set(measured.peaks_mb.values()) == {3000.0}
     assert len(measured.peaks_mb) == 56
@@ -611,7 +611,7 @@ def test_the_run_records_cells_and_never_passes_what_it_did_not_run() -> None:
     assert record['resolved'] == json.loads(RESOLVED), 'the record says exactly what it ran against'
     assert (record['account'], record['job_ids']) == ('acct-free', ['4243'])
     assert record['plan']['comment'] == 'lc:session=ws-a'
-    assert record['plan']['job_id'] == '4243'
+    assert record['plan']['job_ids'] == ['4243']
     assert record['plan']['unmeasured'] == ['tests/a.py', 'tests/b.py']
     assert 'tests/w.py::t' not in record['cells'], 'a handed id is no cell of this run'
     assert set(_words(record['cells']).values()) == {'ok'}
@@ -713,6 +713,92 @@ def test_a_first_round_with_headroom_is_throttled_to_it_not_to_the_ceiling() -> 
     assert plan['throttle'] == min(16, len(plan['shards']))
 
 
+def _asks(state: dict) -> dict[tuple[str, ...], int]:
+    """Each item of the round in flight and the memory its array asks."""
+    shards, current = state['rounds'][-1]['shards'], state['current']
+    return {
+        tuple(item['ids']): band['mem_mb']
+        for band in current['bands']
+        for n in range(*band['shards'])
+        for item in current['items'][shards[n][0] : shards[n][1]]
+    }
+
+
+def _sbatched(fake: FakeRunCluster) -> list[str]:
+    return [command for command, _ in fake.calls if 'sbatch' in command]
+
+
+def test_each_memory_class_is_its_own_array_at_its_own_files_peak() -> None:
+    """PER-FILE MEMORY (Ada 2026-10-19): a 20 GB file and a 0.5 GB one are two arrays of ONE manifest.
+
+    PLANTED PEAKS. The light file asks the floor, never the heavy file's 30 GB; the two never share an item.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 20480.0, 'tests/b.py': 512.0})
+    fake = FakeRunCluster()
+    state = _submit(fake, history=learned.learned('https://g/r.git'))
+    heavy, light = _sbatched(fake)
+    assert '--mem=30720M' in heavy
+    assert '--mem=1024M' in light, 'the light file asks its own peak (under the floor: the floor)'
+    [manifest] = fake.manifests
+    assert [item['ids'] for item in manifest['items']] == [
+        ['tests/a.py::t1', 'tests/a.py::t2'],
+        ['tests/b.py::t3', 'tests/b.py::t4', 'tests/b.py::t5'],
+    ]
+    bands = state['current']['bands']
+    assert [(b['shards'], b['mem_mb']) for b in bands] == [([0, 1], 30720), ([1, 2], 1024)]
+    assert '--array=0%' in heavy, 'each array runs its own shards of the one manifest'
+    assert '--array=1%' in light
+
+
+def test_the_live_throttle_is_the_ceilings_free_room_bounded_by_the_tasks_and_the_qos() -> None:
+    """Ada 2026-10-19: 96 cores a grant, 22 single-core tasks running -- arrays pended on their own ``%N``.
+
+    The throttle is what runs plus what the account's ceiling (GrpTRES cpu=96, mem=360G) has free NOW.
+    """
+    snapshot = parse_snapshot(IDLE + 'acct-free|1|1|8G|N/A\n' * 40)  # 40 one-core 8 GB tasks hold 320 GB
+    task = Cost(cpus=1, mem_gb=8)
+    assert live_throttle(snapshot, task, running=2, unfinished=100) == 2 + 5, 'memory binds: 40 GB free is 5 tasks'
+    small = Cost(cpus=1, mem_gb=1)
+    assert live_throttle(snapshot, small, running=2, unfinished=100) == 2 + 40, 'cpu binds: 96 - 40 held, 56 free'
+    assert live_throttle(snapshot, small, running=2, unfinished=10) == 10, 'never past the tasks left'
+    assert live_throttle(snapshot, small, running=2, unfinished=100, max_jobs=20) == 20, 'the QOS job limit holds'
+    full = parse_snapshot(IDLE + 'acct-free|1|1|8G|N/A\n' * 45)
+    assert live_throttle(full, task, running=0, unfinished=9) == 1, 'never zero: a throttle of one still queues'
+
+
+def test_a_gather_raises_the_throttle_when_the_accounts_other_jobs_end() -> None:
+    """Submitted ``%1`` beside 352 GB held; the held jobs end while the array pends: the next gather lifts it."""
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 8 * 1024 / 1.5, 'tests/b.py': 8 * 1024 / 1.5})
+    fake = FakeRunCluster(held='acct-free|1|1|8G|N/A\n' * 44, active=1)
+    state = _submit(fake, history=learned.learned('https://g/r.git'))
+    assert state['current']['bands'][0]['throttle'] == 1
+    fake.held = ''
+    assert _gather(fake) is None
+    lifted = [c for c, _ in fake.calls if c.startswith('scontrol update')]
+    shards = len(state['rounds'][0]['shards'])
+    assert lifted == [f'scontrol update JobId=4243 ArrayTaskThrottle={shards}']
+    assert json.loads(fake.state)['current']['bands'][0]['throttle'] == shards, 'kept, so the next gather compares'
+
+
+def test_an_oom_grows_only_the_files_of_the_killed_item_and_a_file_that_finished_resets() -> None:
+    """Ada 2026-10-19: an OOM doubled the ask of EVERY later item of the run, so one hog sized them all.
+
+    a.py's item is OOM-killed in round 0 and b.py's finishes: only a.py grows x2. When a.py then
+    finishes, its growth is dropped -- it asks its measured peak again.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 20480.0, 'tests/b.py': 512.0})
+    fake = FakeRunCluster(oom=True, dies=frozenset({'tests/a.py'}))
+    _submit(fake, history=learned.learned('https://g/r.git'))
+    assert _gather(fake) is None
+    state = json.loads(fake.state)
+    assert state['grown'] == {'tests/a.py': 2.0}, 'never every file of the run'
+    asked = _asks(state)
+    assert asked == {('tests/a.py::t2',): 61440}, 'the killed file asks twice its peak x safety'
+    record = _gather(fake)
+    assert record is not None
+    assert json.loads(fake.state)['grown'] == {}, 'a file that ran fine is back at its measured peak'
+
+
 def test_every_folded_round_teaches_its_repo_not_only_the_record() -> None:
     """A run superseded before its record has still measured what it ran.
 
@@ -742,7 +828,7 @@ def test_history_prices_the_plan_and_names_nothing_unmeasured() -> None:
 def test_submit_returns_with_the_state_on_the_cluster_and_gather_reports_pending_while_jobs_run() -> None:
     fake = FakeRunCluster(active=2)
     assert _submit(fake)['sha'] == SHA
-    assert json.loads(fake.state)['current']['job_id'] == '4243', 'the run state lives on the cluster'
+    assert json.loads(fake.state)['current']['job_ids'] == ['4243'], 'the run state lives on the cluster'
     assert fake.active == 2, 'submit polls no job state'
     assert _gather(fake) is None
     assert _gather(fake) is None
@@ -952,7 +1038,7 @@ def test_a_multi_file_item_pays_each_files_overhead_and_its_memory_reads_every_f
     seconds, unmeasured = measured.estimate([['a.py::x', 'b.py::y'], ['a.py::x', 'c.py::t']], Cost(seconds=120))
     assert seconds == [7.0 + 8.0 + 2.0 + 3.0, 7.0 + 2.0 + 120.0], 'the overheads add: a 600 s file is not hidden'
     assert unmeasured == ['c.py']
-    assert measured.mem_gb([['a.py::x', 'b.py::y']], Cost(mem_gb=1), Policy(safety=1.0)) == 4.0
+    assert measured.item_gb(['a.py::x', 'b.py::y'], Cost(mem_gb=1), Policy(safety=1.0)) == 4.0
 
 
 def test_whole_files_are_packed_into_items_up_to_the_budget() -> None:
@@ -966,6 +1052,36 @@ def test_whole_files_are_packed_into_items_up_to_the_budget() -> None:
         'a file is never split; one over budget sits alone; the next does not join it'
     )
     assert measured.pack([['e.py::t'], ['f.py::t']], Cost(seconds=120), budget=45.0) == [['e.py::t'], ['f.py::t']]
+
+
+def test_packing_groups_files_of_one_memory_class_so_a_heavy_file_never_sizes_a_light_one() -> None:
+    """Ada 2026-10-19: every task of a part asked 12-47 GB on ONE core -- the array's memory was its worst file's.
+
+    PLANTED PEAKS: a 20 GB file between two 0.5 GB ones. Without a band the three share one item and it asks
+    30 GB; with the band the light files share an item at the floor and the heavy one is alone at its own.
+    """
+    measured = Measured(
+        durations={'a.py::t': 1.0, 'h.py::t': 1.0, 'b.py::t': 1.0},
+        overheads={'a.py': 1.0, 'h.py': 1.0, 'b.py': 1.0},
+        peaks_mb={'a.py': 512.0, 'h.py': 20480.0, 'b.py': 512.0},
+    )
+    cost, policy = Cost(seconds=120, mem_gb=1), Policy(safety=1.5)
+    files = [['a.py::t'], ['h.py::t'], ['b.py::t']]
+    assert measured.pack(files, cost, budget=60.0) == [['a.py::t', 'h.py::t', 'b.py::t']], 'PLANTED CONTROL'
+    band = lambda ids: learned.memory_band(measured.item_gb(ids, cost, policy))  # noqa: E731
+    items = measured.pack(files, cost, budget=60.0, band=band)
+    assert items == [['a.py::t', 'b.py::t'], ['h.py::t']]
+    assert [measured.item_gb(ids, cost, policy) for ids in items] == [1.0, 30.0]
+
+
+def test_an_items_memory_is_its_own_files_peaks_grown_only_where_this_run_grew_them() -> None:
+    measured = Measured(peaks_mb={'a.py': 2048.0, 'b.py': 4096.0})
+    cost, policy = Cost(mem_gb=1), Policy(safety=1.5)
+    assert measured.item_gb(['a.py::t'], cost, policy, {'b.py': 2.0}) == 3.0, 'b grew; a did not'
+    assert measured.item_gb(['b.py::t'], cost, policy, {'b.py': 2.0}) == 12.0
+    assert measured.item_gb(['c.py::t'], cost, policy) == pytest.approx(3072 * 1.5 / 1024, rel=1e-12, abs=0.0), (
+        "an unmeasured file asks its siblings' median, never the table's max"
+    )
 
 
 def test_a_multi_file_item_shares_its_overhead_and_teaches_its_peak_to_every_file() -> None:

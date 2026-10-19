@@ -50,6 +50,11 @@ ref moved on finishes and posts on its own sha, the newer pushes queue behind it
 reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its record is posted on the tip too, as a part naming
 the sha it was judged at.
 
+A PART NOT YET UNDER TEST IS (user ruling 2026-10-19). A coalesced ref's run whose ref moved on and none of
+whose tasks has started (:meth:`~lab_commons.dev.forgerunstate.Cluster.started`) is cancelled and released
+as superseded, naming the tip -- its slot goes to the tip, which waited behind it (:mod:`forgecoalesce`).
+Measured 2026-10-19 (Ada): integrate/main's newest tip waited hours behind an older sha's array still pending.
+
 THE RUN STATE -- the file, its schema and the cluster protocol -- lives in :mod:`lab_commons.dev.forgerunstate`.
 """
 
@@ -80,7 +85,7 @@ from lab_commons.dev.forgerunstate import (
     drop,
     save,
 )
-from lab_commons.dev.forgeschedule import tip_of
+from lab_commons.dev.forgeschedule import coalesced, tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
 from lab_commons.dev.platformparts import PartRefusal, part_context
@@ -175,6 +180,16 @@ def _gather(
     if not ids and not cluster.orphans(run):  # no state and no job of this part: it never ran
         _settle(root, run, client=client, why='no job of this part was ever submitted', say=say, alarm=alarm, ran=False)
         return None
+    if (tip := _superseding_tip(root, run)) and not cluster.started(run):
+        cancelled = cluster.cancel(run)
+        reason = f'released: superseded -- not started when {run.ref} moved on to {tip[:12]}; its slot goes to the tip'
+        reason = reason[:_DESCRIPTION_MAX]
+        why = f'jobs {" ".join(cancelled) or "none"} cancelled'
+        alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded before it started', why))
+        say(f'{tag}: {why} -- {reason}')
+        _release(client, run, reason, say)
+        drop(run)
+        return None
     try:
         record = cluster.gather(run)
     except Unrecorded as why:
@@ -188,6 +203,15 @@ def _gather(
         return _report(client, run, cluster.progress(run), lease, say)
     run = _step(run, phase=GATHERED, record=str(record))
     return _report(client, run, 'publishing', lease, say)
+
+
+def _superseding_tip(root: Path, run: Run) -> str:
+    """The newer tip of *run*'s coalesced ref it would give its slot to; ``''`` when none (still the tip, a lane).
+
+    Asked BEFORE whether the run started, so a run that is still its ref's tip costs no squeue.
+    """
+    tip = tip_of(root, run.ref)
+    return tip if tip and tip != run.sha and coalesced(root, run.ref) else ''
 
 
 def _settle(
