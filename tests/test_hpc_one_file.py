@@ -8,12 +8,19 @@ files per sha against a 2 M file quota. Every rule here is checked against a pla
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from lab_commons.dev.githooks import bash_executable
 from lab_commons.hpc import __main__ as cli
+from lab_commons.hpc import shell
 from lab_commons.hpc.artifact import (
     FORMATS,
     IMAGE,
@@ -30,7 +37,7 @@ from lab_commons.hpc.config import Cluster, Config, Cost, JobSpec, Limits, Polic
 from lab_commons.hpc.grants import Grant, Machine
 from lab_commons.hpc.jobs import gather_job
 from lab_commons.hpc.plan import make_plan
-from lab_commons.hpc.shell import BUILD_FAILED, UV_PRUNE, RunSpec, build_script
+from lab_commons.hpc.shell import BUILD_FAILED, UV_PRUNE, RunSpec, build_script, cache_dir, facts
 from lab_commons.hpc.slurm import parse_snapshot
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.hpc.worker import RESULTS, TAIL_LINES, Rejected, append_event, close_shard, run_shard
@@ -353,3 +360,87 @@ def test_a_test_runs_env_build_prunes_the_shared_uv_cache() -> None:
     script = build_script(RunSpec(sha=SHA, repo_url='u', builds=BUILDS))
     assert UV_PRUNE in script
     assert script.index(UV_PRUNE) > script.index('uv sync'), 'after the install it served'
+
+
+def _git(*args: str | Path, cwd: Path | None = None) -> str:
+    done = subprocess.run(
+        [shell._GIT, *map(str, args)], cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True
+    )
+    return done.stdout.strip()
+
+
+def _commit(work: Path, files: dict[str, str]) -> str:
+    for name, text in files.items():
+        (work / name).parent.mkdir(parents=True, exist_ok=True)
+        (work / name).write_text(text, encoding='utf-8')
+    _git('add', '.', cwd=work)
+    _git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'c', '--allow-empty', cwd=work)
+    return _git('rev-parse', 'HEAD', cwd=work)
+
+
+def _project(name: str, deps: str = '') -> str:
+    return f'[project]\nname = "{name}"\nversion = "0"\nrequires-python = ">=3.9"\ndependencies = [{deps}]\n'
+
+
+def test_the_artifact_exports_every_submodule_at_its_pinned_commit_before_the_install(tmp_path: Path) -> None:
+    """A submodule that is a path dependency reaches the install at the commit the exported sha pins.
+
+    PLANTED CONTROL: ``top`` pins ``components/dep`` -- a submodule that is ``top``'s uv PATH dependency, and
+    itself pins ``leaf``. A bare ``git archive`` leaves ``components/dep`` empty and ``uv sync --frozen`` fails.
+
+    The submodule moves on after the pin: the artifact must carry the PINNED commit, not its branch head.
+    """
+    remotes, work = tmp_path / 'remotes', tmp_path / 'work'
+    urls = {n: (remotes / f'{n}.git').as_posix() for n in ('leaf', 'dep', 'top')}
+    for name in ('leaf', 'dep', 'top'):
+        _git('init', '-q', '-b', 'main', work / name)
+        _git('remote', 'add', 'origin', urls[name], cwd=work / name)
+    allow = ('-c', 'protocol.file.allow=always')
+    _commit(work / 'leaf', {'leaf.txt': 'leaf'})
+    _git('clone', '-q', '--bare', work / 'leaf', urls['leaf'])
+    _commit(work / 'dep', {'pyproject.toml': _project('dep'), 'dep/__init__.py': 'PINNED = True\n'})
+    _git(*allow, 'submodule', 'add', '-q', '../leaf.git', 'leaf', cwd=work / 'dep')
+    _commit(work / 'dep', {})
+    _git('clone', '-q', '--bare', work / 'dep', urls['dep'])
+    top = work / 'top'
+    _commit(
+        top, {'pyproject.toml': _project('top', '"dep"') + '[tool.uv.sources]\ndep = { path = "components/dep" }\n'}
+    )
+    _git(*allow, 'submodule', 'add', '-q', '../dep.git', 'components/dep', cwd=top)
+    subprocess.run([shutil.which('uv') or 'uv', 'lock', '-q', '--offline'], cwd=top, check=True)
+    sha = _commit(top, {})
+    _git('clone', '-q', '--bare', top, urls['top'])
+    moved = work / 'dep'
+    _commit(moved, {'dep/__init__.py': 'PINNED = False\n'})
+    _git('push', '-q', 'origin', 'main', cwd=moved)  # the pin is now behind the branch head
+
+    home = tmp_path / 'home'
+    builds = Builds(install='uv sync -q --frozen --offline', source_roots=('components',), env_key='k1')
+    spec = RunSpec(sha=sha, repo_url=urls['top'], builds=builds, python=Path(sys.executable).as_posix())
+    cache = Path(cache_dir(spec.repo_url).replace('"$HOME"', home.as_posix()))
+    _git('clone', '-q', '--bare', urls['top'], cache)
+    env = {**os.environ, 'HOME': home.as_posix(), 'GIT_CONFIG_PARAMETERS': "'protocol.file.allow=always'"}
+    done = subprocess.run(
+        [bash_executable(), '-c', artifact_script(spec)],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        env=env,
+        check=False,
+    )
+    assert BUILD_FAILED not in done.stdout, done.stdout
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    with tarfile.open(facts(done.stdout)['artifact'].replace('"$HOME"', home.as_posix())) as tar:
+        names = set(tar.getnames())
+        pinned = tar.extractfile('./tree/components/dep/dep/__init__.py')
+        assert pinned is not None
+        assert pinned.read() == b'PINNED = True\n', 'the commit the sha pins, not the branch head'
+    assert './tree/components/dep/leaf/leaf.txt' in names, 'recursively'
+    assert not (Path(urls['top']) / 'modules').exists(), "nothing written into the repository's cache"
+
+
+def test_the_artifact_exports_submodules_between_the_archive_and_the_install() -> None:
+    script = artifact_script(RunSpec(sha=SHA, repo_url='https://x/r.git', builds=BUILDS))
+    assert 'git submodule update' not in script
+    archive, subs, venv = (script.index(s) for s in (f'archive {SHA} |', 'lc_export ', 'uv venv'))
+    assert archive < subs < venv
