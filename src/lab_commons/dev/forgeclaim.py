@@ -172,6 +172,7 @@ class Work:
     demand: Mapping[str, float] = field(default_factory=dict)
     producer: str = LOCAL  # what its run is LEARNED under: a part's ``local``, a request's declared name
     wall_s: int = BOX_WALL_S  # past it the box kills the run: a part's one day, a request's declared wall
+    box: int = 0  # the box ledger row the tick took for it (0: none); its producer adopts it, never re-admitted
 
     @property
     def context(self) -> str:
