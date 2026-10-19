@@ -21,6 +21,11 @@ The invariants refused here by name, with NO network call beyond the push itself
   two-parent merge naming its branch in a ``Merged-Branch:`` trailer, and the merge audit
   (:func:`lab_commons.dev.mergeaudit.judge`, the SAME judgement the commit-msg hook makes) passes on it.
   Judged from ``[tool.lab_commons.integrator] merges_only_since`` forward: no retroactive check.
+* ``INTEGRATION-TAKES-ONLY-FORGE-MERGES`` (P5) -- once ``[tool.lab_commons.integrator] pr_merges_since`` is
+  declared, the integration branch moves ONLY by the forge's server-side merge of a green pull request
+  (:mod:`lab_commons.dev.forgemerge`). Such a merge is on origin before any client holds it, so a client push
+  that adds ANY first-parent commit past origin's tip (and past the declared start) is not one, and is refused.
+  It replaces P4 for that branch. There is no integrator break-glass: no such rule exists in the family.
 
 Every ref is judged by the declaration its pushed tip carries, never the working tree's; a deletion carries
 no content, so it is judged by the integration branch's declaration (``origin/<integration>``, else the
@@ -49,6 +54,7 @@ __all__ = [
     'P2',
     'P3',
     'P4',
+    'P5',
     'main',
     'merged_branch',
     'refusals',
@@ -57,6 +63,7 @@ __all__ = [
 P2: Final = 'PUBLISH-IS-THE-LOCAL-REF'
 P3: Final = 'SESSION-HISTORY-ONLY-GROWS'
 P4: Final = 'INTEGRATION-IS-MERGES-ONLY'
+P5: Final = 'INTEGRATION-TAKES-ONLY-FORGE-MERGES'
 #: The trailer an integration merge names its merged branch under.
 MERGED_BRANCH: Final = 'Merged-Branch'
 
@@ -117,6 +124,24 @@ def _merges_only(root: Path, policy: Policy, old: str, new: str) -> list[str]:
     return found
 
 
+def _forge_merges_only(root: Path, policy: Policy, old: str, new: str) -> list[str]:
+    """P5: the first-parent commits *new* adds past origin's *old* and the declared start -- every one refused."""
+    excluded = [f'^{sha}' for sha in (old, policy.pr_merges_since) if not _zero(sha)]
+    listed = _git(root, 'rev-list', '--first-parent', new, *excluded)
+    if listed.returncode != 0:
+        return [f'{P5}: cannot list the new commits of {policy.integration}: {listed.stderr.strip()}']
+    added = listed.stdout.split()
+    if not added:
+        return []
+    return [
+        (
+            f'{P5}: this push adds {len(added)} commit(s) to {policy.integration} (newest {added[0][:12]}); it '
+            f'moves only by the forge merging a green pull request. Push a pr/<topic> branch and open a PR into '
+            f'{policy.integration} instead'
+        )
+    ]
+
+
 def _local(root: Path, local: str) -> str:
     if local != 'HEAD':
         return local
@@ -141,7 +166,9 @@ def _judge_ref(root: Path, policy: Policy, fields: Sequence[str]) -> list[str]:
             f'{P3}: {branch} at {old[:12]} on origin is not an ancestor of {sha[:12]}; history only grows: '
             f'fetch, merge origin/{branch} into {branch}, push again (never force)'
         )
-    if branch == policy.integration:
+    if branch == policy.integration and policy.pr_merges_since:
+        found += _forge_merges_only(root, policy, old, sha)
+    elif branch == policy.integration:
         found += _merges_only(root, policy, old, sha)
     return found
 

@@ -11,12 +11,18 @@ what to merge and what to delete, and `--apply` to delete the merged local ones.
 [tool.lab_commons.branchset]
 trunk = 'main'                 # required
 sessions = ['integrate/main']  # one per session or lane owner; [] when there are none
+ephemeral = ['pr/*']           # default []: glob namespaces of short-lived PR heads, pushable with no row
 prune_merged = true            # default false: every serving host deletes merged idle origin branches
 grace_hours = 24               # default 24: idle time before a branch is pruned (merged) or alarmed (unmerged)
 ```
 
 Read by `lab_commons.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
 raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
+
+A branch in an `ephemeral` namespace is the head of ONE pull request: the push hook and the census accept it
+without a row, and the forge deletes it once no open PR has it as head and it has sat idle `grace_hours` (merged
+or closed; `branchprune`'s `ephemeral-done` rule, no `prune_merged` needed). A forge merge deletes it at once.
+Registering a branch in `sessions` to get it pushed is never the remedy; push it under `pr/` instead.
 
 ## The census and the candidates
 

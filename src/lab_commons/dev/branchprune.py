@@ -12,6 +12,9 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
 * MERGED (:data:`MERGED`): its tip is an ancestor of origin's integration branch or trunk, and no open pull
   request has it as head. Deleted (:data:`DELETE`) when the repo declares ``prune_merged = true``, else
   listed as :data:`DELETABLE` -- what ``forge integration`` and ``forge queue`` print.
+* EPHEMERAL (:data:`EPHEMERAL`): it lies in a declared ephemeral namespace (``[tool.lab_commons.branchset]
+  ephemeral``, e.g. ``pr/*``) and no open pull request has it as head: its PR merged or closed. Always
+  DELETED -- declaring the namespace IS the opt-in, and a PR head outlives its PR by nothing but the grace.
 * UNMERGED (:data:`UNMERGED`): anything else. ALARMED with its age (:data:`STALE`), NEVER deleted: its
   commits exist nowhere else.
 
@@ -48,6 +51,7 @@ if TYPE_CHECKING:
 __all__ = [
     'DELETABLE',
     'DELETE',
+    'EPHEMERAL',
     'EVENT',
     'MERGED',
     'STALE',
@@ -65,6 +69,7 @@ EVENT: Final = 'lab_commons.forge.prune'
 #: The rules a row is judged by.
 MERGED: Final = 'merged-idle'
 UNMERGED: Final = 'unmerged-stale'
+EPHEMERAL: Final = 'ephemeral-done'
 
 #: What happens to a row: deleted (opted in), listed for a human (not opted in), alarmed (unmerged).
 DELETE: Final = 'delete'
@@ -119,6 +124,10 @@ def survey(
         name = ref.removeprefix(_ORIGIN)
         idle_h = (now - datetime.fromtimestamp(int(stamp), tz=UTC)).total_seconds() / _HOUR_S
         if name in keep or idle_h < branchset.grace_hours:
+            continue
+        if branchset.is_ephemeral(name):
+            if name not in heads:
+                rows.append(Row(name, sha, EPHEMERAL, DELETE, idle_h))
             continue
         merged = any(git_out(root, 'merge-base', '--is-ancestor', sha, holder) is not None for holder in holders)
         if not merged:

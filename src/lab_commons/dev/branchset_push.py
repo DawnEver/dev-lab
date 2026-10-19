@@ -112,9 +112,7 @@ def undeclared(refs: Iterable[PushedRef], branchset: BranchSet) -> tuple[str, ..
     would refuse its own remedy.
     """
     found = {
-        ref.branch
-        for ref in refs
-        if not ref.deleted and ref.branch is not None and ref.branch not in branchset.declared
+        ref.branch for ref in refs if not ref.deleted and ref.branch is not None and not branchset.admits(ref.branch)
     }
     return tuple(sorted(name for name in found if name is not None))
 
@@ -122,14 +120,14 @@ def undeclared(refs: Iterable[PushedRef], branchset: BranchSet) -> tuple[str, ..
 def _refusal(rows: Sequence[str], branchset: BranchSet) -> str:
     """The refusal text -- and it names the remedy, because a refusal that does not is a wall."""
     names = ', '.join(rows)
-    declared = ', '.join(sorted(branchset.declared))
+    declared = ', '.join([*sorted(branchset.declared), *branchset.ephemeral])
     return (
         f'[branchset-push] REFUSED -- this push carries {names} onto refs/heads, which the declared '
         f'branch set does not name.\n'
         f'[branchset-push]   declared: {declared}\n'
-        f'[branchset-push]   REMEDY: merge each one into the session branch it belongs to and push '
-        f'THAT branch; if one really is a new long-lived branch, add it to '
-        f'[tool.lab_commons.branchset] sessions in pyproject.toml and push again.\n'
+        f'[branchset-push]   REMEDY: push the change as a short-lived branch in a declared ephemeral namespace '
+        f'([tool.lab_commons.branchset] ephemeral, e.g. pr/<topic>) and open a pull request into the '
+        f'integration branch; a new LONG-LIVED branch is a reviewed edit of sessions in pyproject.toml.\n'
         f'[branchset-push]   There is no switch to bypass this. A branch nobody declared is a branch '
         f'nobody owns, and the census that finds them afterwards runs too late to stop the push.\n'
     )

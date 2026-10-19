@@ -15,6 +15,7 @@ import pytest
 from lab_commons.dev.branchset import (
     BranchSet,
     BranchSetNotDeclared,
+    branchset_from,
     census,
     declared_branchset,
     main,
@@ -141,3 +142,30 @@ def test_this_repo_carries_only_its_declared_branches() -> None:
     found = census(root, declared)
     assert found is not None
     assert set(found.undeclared_origin) == _PENDING_DELETION, 'a pending deletion landed; drop it from the pin'
+
+
+def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Path) -> None:
+    """The census reads an ephemeral-namespace branch as declared; a non-list is refused by name.
+
+    PLANTED control: the same origin branch is debt to a set declaring no namespace.
+    """
+    head = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+    found = branchset_from(head + "ephemeral = ['pr/*']\n", 'p')
+    assert found.ephemeral == ('pr/*',)
+    assert found.admits('pr/gh-3')
+    assert not found.admits('feat/x')
+    assert not found.is_ephemeral('integrate/main')
+    with pytest.raises(BranchSetNotDeclared, match='ephemeral'):
+        branchset_from(head + "ephemeral = 'pr/*'\n", 'p')
+    work = plant_checkout(tmp_path, trunk='main').work
+    _run(work, 'switch', '-q', '-c', 'pr/topic')
+    commit(work, 'topic.txt')
+    _run(work, 'push', '-q', 'origin', 'pr/topic')
+    _run(work, 'switch', '-q', 'main')
+    with_ns = BranchSet('main', _DECLARED.sessions, ephemeral=('pr/*',))
+    read = census(work, with_ns)
+    assert read is not None
+    assert (read.undeclared_origin, read.local_debt) == ((), ())
+    control = census(work, _DECLARED)
+    assert control is not None
+    assert control.undeclared_origin == ('pr/topic',)

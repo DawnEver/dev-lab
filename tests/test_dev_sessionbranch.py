@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.sessionbranch import P2, P3
+from lab_commons.dev.sessionbranch import P2, P3, P5
 
 _GIT = shutil.which('git') or 'git'
 _DECL = (
@@ -309,3 +309,38 @@ def test_two_sessions_in_two_worktrees_of_one_repo_on_one_host_never_share_a_wri
     _git(first, 'pull', '-q', '--no-rebase', '--no-edit', 'origin', 'feat/s')
     landed = _push(first, 'feat/s')
     assert landed.returncode == 0, landed.stderr
+
+
+# --- P5 INTEGRATION-TAKES-ONLY-FORGE-MERGES ---------------------------------------------------------
+
+
+def test_with_forge_merges_declared_even_an_audited_merge_push_is_refused(repo: Path, tmp_path: Path) -> None:
+    """Integration moves only by the forge's server-side PR merge; a client push adding any commit is refused.
+
+    PLANTED controls: the SAME audited merge lands when the declaration is absent (P4 alone); and once the
+    forge's merge is on origin, pushing the integration branch at that tip adds nothing and passes.
+    """
+    seed = _git(repo, 'rev-parse', 'stable')
+    _git(repo, 'checkout', 'lane/x')
+    (repo / 'x.txt').write_text('x\n', encoding='utf-8')
+    _git(repo, 'add', 'x.txt')
+    _git(repo, 'commit', '-m', 'feat: x')
+    _git(repo, 'checkout', 'stable')
+    message = 'chore(merge): lane/x into int/line\n\nMerged-Branch: lane/x\n'
+    control = _merge(repo, 'lane/x', message)
+    assert _push(repo, 'int/line').returncode == 0, 'P4 alone admits the audited merge'
+    _git(repo, 'checkout', 'lane/x')
+    text = (repo / 'pyproject.toml').read_text(encoding='utf-8')
+    (repo / 'pyproject.toml').write_text(text + f"pr_merges_since = '{seed}'\n", encoding='utf-8')
+    _git(repo, 'commit', '-am', 'chore: integration takes only forge merges')
+    _git(repo, 'checkout', 'stable')
+    refused_sha = _merge(repo, 'lane/x', message.replace('lane/x into', 'lane/x again into'))
+    done = _push(repo, 'int/line')
+    assert done.returncode != 0
+    assert P5 in done.stderr
+    assert _remote(repo, 'int/line') == control
+    origin = tmp_path / 'origin.git'
+    _git(origin, 'update-ref', 'refs/heads/int/line', refused_sha)  # the forge merged it server-side
+    _git(repo, 'fetch', 'origin')
+    passed = _push(repo, 'int/line')
+    assert passed.returncode == 0, passed.stderr

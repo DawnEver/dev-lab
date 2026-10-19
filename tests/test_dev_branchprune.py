@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from lab_commons.dev.branchprune import DELETABLE, DELETE, MERGED, STALE, prune, serve_prune, survey
+from lab_commons.dev.branchprune import DELETABLE, DELETE, EPHEMERAL, MERGED, STALE, prune, serve_prune, survey
 from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
 from lab_commons.dev.forgework import Client, ForgeCallFailed
@@ -258,3 +258,22 @@ def test_any_host_prunes_and_a_racing_second_delete_is_a_no_op(tmp_path: Path) -
     _git(origin, 'update-ref', 'refs/heads/lane/merged', _git(root, 'rev-parse', 'origin/lane/merged'))
     serve_prune(root, forge, now=NOW, say=lambda _l: None, alarm=alarms.append)
     assert forge.deleted == ['lane/merged'], 'the uncontested host deletes'
+
+
+# ------------------------------------------------------------------------------------- ephemeral namespaces
+
+
+def test_an_ephemeral_branch_is_deleted_once_no_open_pr_heads_it_merged_or_not(tmp_path: Path) -> None:
+    """A ``pr/*`` head is the forge's to delete once its PR is gone -- even unmerged, even without the opt-in.
+
+    PLANTED controls: the same namespace with an OPEN PR on it is kept, and a young one is kept (grace).
+    """
+    root, _ = _planted(tmp_path)
+    for name, date in (('pr/done', OLD), ('pr/open', OLD), ('pr/young', YOUNG)):
+        _git(root, 'checkout', '-qb', name, 'main')
+        _commit(root, name.replace('/', '-'), date=date)
+        _git(root, 'push', '-q', 'origin', name)
+    _git(root, 'fetch', '-q', 'origin')
+    branchset = BranchSet('main', frozenset({'integrate/main', 'feat/session'}), ephemeral=('pr/*',))
+    rows = survey(root, branchset, POLICY, open_heads=frozenset({'pr/open'}), now=NOW)
+    assert {(r.ref, r.rule, r.action) for r in rows if r.ref.startswith('pr/')} == {('pr/done', EPHEMERAL, DELETE)}

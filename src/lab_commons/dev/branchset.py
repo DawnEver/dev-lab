@@ -8,6 +8,7 @@ and read by :func:`declared_branchset`::
     [tool.lab_commons.branchset]
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
+    ephemeral = ['pr/*']           # glob namespaces a PR head lives in; deleted once its PR merges or closes
     prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
 
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import fnmatch
 import subprocess
 import tomllib
 from pathlib import Path
@@ -57,7 +59,7 @@ __all__ = [
 ]
 
 _TABLE = '[tool.lab_commons.branchset]'
-_KEYS = frozenset({'trunk', 'sessions', 'prune_merged', 'grace_hours'})
+_KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours'})
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
@@ -92,11 +94,22 @@ class BranchSet:
     prune_merged: bool = False
     #: How long a branch tip sits idle before it is pruned (merged) or alarmed (unmerged).
     grace_hours: float = 24.0
+    #: Glob namespaces (``pr/*``) of SHORT-LIVED branches: pushable undeclared, each the head of one pull
+    #: request, deleted by the forge once no open PR has it as head (:mod:`lab_commons.dev.branchprune`).
+    ephemeral: tuple[str, ...] = ()
 
     @property
     def declared(self) -> frozenset[str]:
         """Every branch name the repo may carry long-term."""
         return self.sessions | {self.trunk}
+
+    def is_ephemeral(self, name: str) -> bool:
+        """Whether *name* lies in a declared ephemeral namespace (and is not a long-lived branch)."""
+        return name not in self.declared and any(fnmatch.fnmatchcase(name, glob) for glob in self.ephemeral)
+
+    def admits(self, name: str) -> bool:
+        """Whether *name* may sit on origin: a declared long-lived branch or one in an ephemeral namespace."""
+        return name in self.declared or self.is_ephemeral(name)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -172,6 +185,10 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
             f'(python -m lab_commons.dev.dep --bootstrap <checkout>)'
         )
         raise KitOlderThanCheckout(msg)
+    ephemeral = table.get('ephemeral', [])
+    if not isinstance(ephemeral, list) or not all(isinstance(glob, str) and glob for glob in ephemeral):
+        msg = f'{_TABLE} ephemeral in {manifest} is {ephemeral!r}; it must be a list of branch globs (pr/*)'
+        raise BranchSetNotDeclared(msg)
     prune = table.get('prune_merged', False)
     grace = table.get('grace_hours', 24.0)
     if not isinstance(prune, bool):
@@ -180,7 +197,9 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
     if isinstance(grace, bool) or not isinstance(grace, int | float) or grace < 0:
         msg = f'{_TABLE} grace_hours in {manifest} is {grace!r}; it must be a non-negative number of hours'
         raise BranchSetNotDeclared(msg)
-    return BranchSet(trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace))
+    return BranchSet(
+        trunk, frozenset(sessions), prune_merged=prune, grace_hours=float(grace), ephemeral=tuple(ephemeral)
+    )
 
 
 def _local_branches(root: Path) -> tuple[str, ...] | None:
@@ -202,13 +221,13 @@ def census(root: Path, branchset: BranchSet) -> Census | None:
     debt: list[str] = []
     unpushed: list[str] = []
     for name in local:
-        if name in branchset.declared:
+        if branchset.admits(name):
             continue
         ahead = _unpushed(root, name)
         if ahead is None:
             return None
         (unpushed if ahead else debt).append(name)
-    return Census(tuple(n for n in remote if n not in branchset.declared), tuple(debt), tuple(unpushed))
+    return Census(tuple(n for n in remote if not branchset.admits(n)), tuple(debt), tuple(unpushed))
 
 
 def _holders(root: Path, branchset: BranchSet) -> tuple[str, ...]:

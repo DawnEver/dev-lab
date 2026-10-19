@@ -1,4 +1,7 @@
-"""A STATEFUL gitea-shaped forge: issues and comments that persist between calls, paged like gitea.
+"""A STATEFUL forge: issues, pull requests, comments and commit statuses that persist between calls, paged.
+
+Gitea-shaped by default; built over a ``github.com`` :class:`Forge` it answers the GitHub paths of the same
+verbs (the repository collection is the backend's, so one handler table serves both).
 
 The recorder in ``_forge_fake.py`` replays canned answers, so it cannot show that running a tick twice
 leaves ONE issue. This one holds the state, and it answers exactly as gitea does in the detail that
@@ -22,9 +25,13 @@ NOW_HTTP = 'Mon, 12 Oct 2026 12:00:00 GMT'
 class StateForge(Client):
     """A :class:`Client` whose every call is answered from in-memory issues; *fail_lists* refuses listings."""
 
-    def __init__(self) -> None:
-        super().__init__(FORGE, 'T', sleep=lambda _s: None)
+    def __init__(self, forge: Forge = FORGE) -> None:
+        super().__init__(forge, 'T', sleep=lambda _s: None)
         self.issues_by_number: dict[int, dict[str, Any]] = {}
+        self.pulls: dict[int, dict[str, Any]] = {}
+        self.statuses: dict[str, list[dict[str, Any]]] = {}
+        #: Every merge the forge was asked for, as sent: ``(number, body)``.
+        self.merges: list[tuple[int, dict[str, Any]]] = []
         self.comments: dict[int, list[dict[str, Any]]] = {}
         self.fail_lists = False
         self.deny_delete = False
@@ -32,8 +39,28 @@ class StateForge(Client):
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         self._next_comment = 1000
 
+    def _number(self) -> int:
+        """Issues and pulls share one number space, as on both forges."""
+        return max([*self.issues_by_number, *self.pulls], default=0) + 1
+
+    def add_pull(self, head: str, base: str, *, title: str = 't', body: str = '', sha: str = '') -> int:
+        number = self._number()
+        self.pulls[number] = {
+            'number': number,
+            'title': title,
+            'state': 'open',
+            'merged': False,
+            'body': body,
+            'html_url': f'https://{self.forge.host}/o/r/pulls/{number}',
+            'user': {'login': 'a'},
+            'head': {'ref': head, 'sha': sha},
+            'base': {'ref': base},
+        }
+        self.comments[number] = []
+        return number
+
     def add_issue(self, title: str, body: str = '', *, state: str = 'open', **extra: object) -> int:
-        number = max(self.issues_by_number, default=0) + 1
+        number = self._number()
         self.issues_by_number[number] = {
             'number': number,
             'title': title,
@@ -57,16 +84,26 @@ class StateForge(Client):
         page = int(query.get('page', '1'))
         return items[(page - 1) * size : page * size]
 
-    @staticmethod
-    def _shape(route: str) -> tuple[str, int]:
-        """The route's kind and the number in it (0 when none)."""
-        fixed = {'/api/v1/user': 'user', API: 'repo', f'{API}/issues': 'issues'}
+    def _shape(self, route: str) -> tuple[str, str]:
+        """The route's kind and the key in it (a number or a sha; ``''`` when none)."""
+        api = self.repo
+        fixed = {
+            f'{self.backend.api_root}/user': 'user',
+            api: 'repo',
+            f'{api}/issues': 'issues',
+            f'{api}/pulls': 'pulls',
+        }
         if route in fixed:
-            return fixed[route], 0
-        head, _, tail = route.removeprefix(f'{API}/issues/').partition('/')
+            return fixed[route], ''
+        if route.startswith(f'{api}/statuses/'):
+            return 'statuses', route.removeprefix(f'{api}/statuses/')
+        if route.startswith(f'{api}/pulls/'):
+            number, _, tail = route.removeprefix(f'{api}/pulls/').partition('/')
+            return ('merge' if tail == 'merge' else 'pull'), number
+        head, _, tail = route.removeprefix(f'{api}/issues/').partition('/')
         if head == 'comments':
-            return 'comment', int(tail)
-        return ('comments' if tail == 'comments' else 'issue'), int(head)
+            return 'comment', tail
+        return ('comments' if tail == 'comments' else 'issue'), head
 
     def _listed(self, query: dict[str, str]) -> list[dict[str, Any]]:
         if self.fail_lists:
@@ -93,6 +130,22 @@ class StateForge(Client):
         found['body'] = body['body']
         return found
 
+    def _pulls_listed(self, query: dict[str, str]) -> list[dict[str, Any]]:
+        state = query.get('state', 'open')
+        return self._page([p for _, p in sorted(self.pulls.items()) if state in ('all', p['state'])], query)
+
+    def _create_pull(self, body: dict[str, Any]) -> dict[str, Any]:
+        number = self.add_pull(body['head'], body['base'], title=body['title'], body=body['body'])
+        return self.pulls[number]
+
+    def _edit_pull(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
+        self.pulls[number] |= body
+        return self.pulls[number]
+
+    def _merge(self, number: int, body: dict[str, Any]) -> None:
+        self.merges.append((number, body))
+        self.pulls[number] |= {'state': 'closed', 'merged': True}
+
     def _delete_comment(self, comment_id: int) -> None:
         for listed in self.comments.values():
             listed[:] = [c for c in listed if c['id'] != comment_id]
@@ -114,7 +167,8 @@ class StateForge(Client):
         route, _, raw_query = path.partition('?')
         query = dict(urllib.parse.parse_qsl(raw_query))
         sent: dict[str, Any] = body if isinstance(body, dict) else {}
-        kind, number = self._shape(route)
+        kind, key = self._shape(route)
+        number = int(key) if key.isdigit() else 0
         opened = sum(i['state'] == 'open' for i in self.issues_by_number.values())
         handlers = {
             ('GET', 'user'): lambda: {'login': self.login},
@@ -133,5 +187,11 @@ class StateForge(Client):
             ('PATCH', 'comment'): lambda: self._edit_comment(number, sent),
             ('DELETE', 'issue'): lambda: self._delete(number),
             ('DELETE', 'comment'): lambda: self._delete_comment(number),
+            ('GET', 'pulls'): lambda: self._pulls_listed(query),
+            ('POST', 'pulls'): lambda: self._create_pull(sent),
+            ('GET', 'pull'): lambda: self.pulls[number],
+            ('PATCH', 'pull'): lambda: self._edit_pull(number, sent),
+            ('POST', 'merge'): lambda: self._merge(number, sent),
+            ('GET', 'statuses'): lambda: self.statuses.get(key, []),
         }
         return handlers[method, kind]()
