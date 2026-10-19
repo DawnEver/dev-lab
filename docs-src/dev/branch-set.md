@@ -51,7 +51,9 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 The family base hook table carries the pre-push row `branchset-push`
 (`src/lab_commons/dev/githooks/base.toml`), so every repo that opts into `[tool.lab_commons.hooks]` runs it with no
 line of its own. It judges every pushed `refs/heads/**` ref (`lab_commons.dev.branchset_push`, reading git's ref
-lines from stdin through the family hook runner). Agent lanes are local: only the declared branches reach origin.
+lines from stdin through the family hook runner). Each ref is judged by the declaration its OWN pushed commit carries
+(`<sha>:pyproject.toml`), never by the pushing checkout's working tree, so the verdict does not depend on
+which checkout pushes. Agent lanes are local: only the declared branches reach origin.
 
 | push | verdict |
 |---|---|
@@ -59,7 +61,7 @@ lines from stdin through the family hook runner). Agent lanes are local: only th
 | a branch the set does not name | refused, naming the branch and both remedies |
 | a deletion | allowed: deleting a stray branch is the remedy |
 | a tag, or a machine ref | allowed |
-| a checkout with no declared branch set | refused: a guard that cannot judge must not read as one that acquitted |
+| a pushed commit with no readable branch set | refused: a guard that cannot judge must not read as one that acquitted |
 
 There is no bypass flag; the way to push a new long-lived branch is to add it to `sessions`.
 
