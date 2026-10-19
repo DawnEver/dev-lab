@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.credentials import NoCredential, api_key, task_username
+from lab_commons.credentials import NoCredential, api_key, key_username
 from lab_commons.dev.forge import https_transport
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
@@ -75,7 +75,7 @@ API_HOST: Final = 'api.anthropic.com'
 KEY_TASK: Final = 'pr-review'
 
 #: The reviewer's key as a refusal names it: ``<username>@<host>``.
-KEY_NAME: Final = f'{task_username(KEY_TASK)}@{API_HOST}'
+KEY_NAME: Final = f'{key_username(KEY_TASK)}@{API_HOST}'
 
 #: The latest Claude, the default reviewer.
 DEFAULT_MODEL: Final = 'claude-opus-5-5'

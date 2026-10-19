@@ -17,9 +17,10 @@ from lab_commons.credentials import (
     API_KEY_TASKS,
     NoCredential,
     api_key,
+    api_keys,
     credential_for,
+    key_username,
     store_credential,
-    task_username,
 )
 from lab_commons.dev import forge
 
@@ -187,7 +188,39 @@ def test_a_helper_answering_another_username_is_refused_not_taken(
 
 def test_an_undeclared_task_is_refused_naming_the_declared_ones() -> None:
     with pytest.raises(ValueError, match='pr-review'):
-        task_username('pr_reveiw')
-    assert {task_username(task) for task in API_KEY_TASKS} == {f'api-key-{task}' for task in API_KEY_TASKS}
-    assert task_username(None) == 'api-key'
+        key_username('pr_reveiw')
+    assert {key_username(task) for task in API_KEY_TASKS} == {f'api-key-{task}' for task in API_KEY_TASKS}
+    assert key_username(None) == 'api-key'
     assert not any(task.isdigit() for task in API_KEY_TASKS)  # api-key-<N> is a fallback slot (ai_lab)
+
+
+def test_one_username_rule_for_every_slot_with_and_without_a_task() -> None:
+    assert [key_username(None, slot) for slot in (1, 2, 3)] == ['api-key', 'api-key-2', 'api-key-3']
+    assert [key_username('pr-review', slot) for slot in (1, 2)] == ['api-key-pr-review', 'api-key-pr-review-2']
+    with pytest.raises(ValueError, match='1 or more'):
+        key_username('pr-review', 0)
+
+
+def test_a_tasks_slots_are_read_in_order_up_to_the_first_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    held = {'api-key-optimization': 'o1', 'api-key-optimization-2': 'o2', 'api-key-optimization-4': 'o4'}
+    _store_of(tmp_path, monkeypatch, held)
+    assert api_keys('api.example.org', task='optimization') == ('o1', 'o2')
+    assert api_key('api.example.org', task='optimization', slot=2) == 'o2'
+
+
+def test_a_tasks_slots_never_borrow_another_tasks_or_the_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLANTED control: the default and another task hold slots 1 and 2; this task holds slot 1 only."""
+    held = {'api-key': 'd1', 'api-key-2': 'd2', 'api-key-pr-review': 'r1', 'api-key-pr-review-2': 'r2',
+            'api-key-optimization': 'o1'}  # fmt: skip
+    _store_of(tmp_path, monkeypatch, held)
+    assert api_keys('api.example.org') == ('d1', 'd2')
+    assert api_keys('api.example.org', task='pr-review') == ('r1', 'r2')
+    assert api_keys('api.example.org', task='optimization') == ('o1',)
+
+
+def test_a_task_with_no_slot_1_is_refused_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _store_of(tmp_path, monkeypatch, {'api-key': 'd1', 'api-key-optimization-2': 'o2'})
+    with pytest.raises(NoCredential, match='api-key-optimization@'):
+        api_keys('api.example.org', task='optimization')
