@@ -11,13 +11,15 @@ from _forge_fake import git_out, make_repo, run_git
 from lab_commons.dev import localpart, platformparts
 from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus, state_for
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
 from lab_commons.hpc.records import write_record
+from lab_commons.hpc.testcells import TestCell
 from lab_commons.hpc.tree import NotSubmitted
+from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Status
 
 SHA = 'a' * 40
 
@@ -27,7 +29,15 @@ resources = ["femm", "windows"]
 """
 
 
-def _record(outcomes: dict[str, str], handed: dict[str, str] | None = None, part: str = BASE) -> dict[str, object]:
+def _cell(word: str) -> TestCell:
+    """A test cell by status word; ``xfail`` is REJECTED under an expectation of REJECTED."""
+    if word == 'xfail':
+        return TestCell(Cell(Status.REJECTED, reason=Reason('expected')), Expectation(Status.REJECTED, 'issue 7'))
+    status = Status(word)
+    return TestCell(Cell(status, reason=None if status in (Status.OK, Status.PENDING) else Reason('x', 'why')))
+
+
+def _record(statuses: dict[str, str], handed: dict[str, str] | None = None, part: str = BASE) -> dict[str, object]:
     return {
         'sha': SHA,
         'platform': part,
@@ -37,60 +47,65 @@ def _record(outcomes: dict[str, str], handed: dict[str, str] | None = None, part
         'cluster': 'login.ada',
         'python': '3.13.1',
         'plan': {},
-        'outcomes': outcomes,
+        'cells': {node: _cell(word).to_plain() for node, word in statuses.items()},
         'handed': handed or {},
     }
 
 
 def test_the_part_is_derived_strictly_from_the_run() -> None:
     passing = _record(
-        {'t::a': 'passed', 't::b': 'skipped', 't::c': 'xfailed', 't::f': 'not-covered', 't::m': 'not-covered'},
+        {'t::a': 'ok', 't::b': 'not_applicable', 't::c': 'xfail'},
         {'t::f': 'femm', 't::m': 'femm+windows'},
     )
     part = platformparts.part_of(passing)
-    assert (part.platform, part.scope, part.result, part.state) == (BASE, 'full', 'PASS', 'success'), (
+    assert (part.platform, part.scope, part.result, part.state) == (BASE, 'full', Conclusion.PASS, 'success'), (
         "part and scope are the record's"
     )
     assert (part.ran, part.hands) == (3, {'femm': 1, 'femm+windows': 1})
     assert part.description() == 'scope=full ran=3 hands=femm:1,femm+windows:1'
-    for bad in ('failed', 'error'):
-        failing = platformparts.part_of(_record({'t::a': 'passed', 't::x': bad}))
-        assert (failing.result, failing.state) == ('FAIL', 'failure'), bad
+    for bad in ('rejected', 'unavailable'):
+        failing = platformparts.part_of(_record({'t::a': 'ok', 't::x': 'rejected', 't::y': bad}))
+        assert (failing.result, failing.state) == (Conclusion.FAIL, 'failure'), 'a decided miss fails whatever else'
 
 
-@pytest.mark.parametrize('unrun', ['lost', 'missing'])
-def test_a_part_whose_ids_never_reported_is_inconclusive_and_never_posted(unrun: str) -> None:
-    """Measured 2026-10-09: 50349 lost ids from a build that never made a venv were written as a FAIL."""
-    outcomes = {'t::a': 'passed', 't::e': 'error', 't::x': unrun}
-    with pytest.raises(platformparts.PartRefusal, match=r'INCONCLUSIVE: 1 of 3 .*t::x'):
-        platformparts.part_of(_record(outcomes))
+@pytest.mark.parametrize('unanswered', ['infra', 'pending', 'error', 'out_of_memory', 'timeout'])
+def test_a_part_with_an_unanswered_id_is_inconclusive_and_never_posted(unanswered: str) -> None:
+    """Measured 2026-10-09: 50349 ids lost to a build that never made a venv were written as a FAIL."""
+    with pytest.raises(platformparts.PartRefusal, match=r'INCONCLUSIVE: 1 of 2 .*t::x'):
+        platformparts.part_of(_record({'t::a': 'ok', 't::x': unanswered}))
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.part_of(_record({'t::f': 'not-covered'}))
+        platformparts.part_of(_record({}, {'t::f': 'femm'}))
+
+
+def test_a_part_with_a_flaky_id_is_inconclusive_and_never_posted() -> None:
+    """A single run's conclusion is decided: the same id decided both ways proves nothing about it."""
+    with pytest.raises(platformparts.PartRefusal, match=r'decided both ways \(t::a\)'):
+        platformparts.part_of(_record({'t::a': 'ok'}) | {'flaky': ['t::a']})
 
 
 def test_a_record_handing_off_its_own_ids_or_to_no_part_is_refused() -> None:
     """PLANTED CONTROL: base handing off a base id is a selection defect, not a part."""
     with pytest.raises(platformparts.PartRefusal, match='of its own part: t::a'):
-        platformparts.part_of(_record({'t::b': 'passed', 't::a': 'not-covered'}, {'t::a': BASE}))
+        platformparts.part_of(_record({'t::b': 'ok'}, {'t::a': BASE}))
     with pytest.raises(platformparts.PartRefusal, match='to no part: t::a'):
-        platformparts.part_of(_record({'t::b': 'passed', 't::a': 'not-covered'}, {'t::a': ''}))
+        platformparts.part_of(_record({'t::b': 'ok'}, {'t::a': ''}))
 
 
 def test_the_description_round_trips_through_a_status() -> None:
-    part = platformparts.Part('femm+windows', 'full', 'FAIL', ran=7, hands={BASE: 1})
-    status = Status(platformparts.part_context('femm+windows'), part.state, part.description(), 'u')
-    parts, problems = platformparts.parts_of([status, Status('ci/foreign', 'success', 'not a part', '')])
+    part = platformparts.Part('femm+windows', 'full', Conclusion.FAIL, ran=7, hands={BASE: 1})
+    status = CommitStatus(platformparts.part_context('femm+windows'), part.state, part.description(), 'u')
+    parts, problems = platformparts.parts_of([status, CommitStatus('ci/foreign', 'success', 'not a part', '')])
     assert parts == {'femm+windows': part}
     assert problems == ()
-    _, claimed = platformparts.parts_of([Status('tests/base', 'pending', 'claim machine=G', '')])
+    _, claimed = platformparts.parts_of([CommitStatus('tests/base', 'pending', 'claim machine=G', '')])
     assert 'not a settled part' in claimed[0]
 
 
 def test_a_commits_parts_are_derived_from_what_its_parts_hand_to() -> None:
     """Nothing posted: base alone is known. A posted part names every part it handed ids to."""
     assert platformparts.derived([]) == (BASE,)
-    base = platformparts.Part(BASE, 'full', 'PASS', ran=2, hands={'femm': 3, 'jmag': 1})
-    posted = [Status('tests/base', base.state, base.description(), '')]
+    base = platformparts.Part(BASE, 'full', Conclusion.PASS, ran=2, hands={'femm': 3, 'jmag': 1})
+    posted = [CommitStatus('tests/base', base.state, base.description(), '')]
     assert platformparts.derived(posted) == (BASE, 'femm', 'jmag')
 
 
@@ -115,7 +130,7 @@ def test_a_part_selects_from_its_own_collection_without_reading_any_ledger(tmp_p
 
 
 def test_the_cli_queues_the_part_with_its_record_and_flushes(tmp_path: Path, monkeypatch, capsys) -> None:
-    source = write_record(_record({'t::a': 'passed'}), tmp_path / 'runs')
+    source = write_record(_record({'t::a': 'ok'}), tmp_path / 'runs')
     queued: list = []
     monkeypatch.setattr(platformparts, 'enqueue', lambda _root, post, *, record: queued.append((post, record)))
     monkeypatch.setattr(platformparts, 'flush', lambda _root: ['status: held tests/base'])
@@ -240,49 +255,49 @@ def test_a_hand_run_submit_whose_build_failed_exits_inconclusive_naming_its_log(
     assert log in capsys.readouterr().err
 
 
-def _status(part: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> Status:
-    return Status(f'tests/{part}', state, f'scope={scope} ran=2 hands={hands}', '')
+def _status(part: str, state: str = 'success', *, scope: str = 'full', hands: str = '-') -> CommitStatus:
+    return CommitStatus(f'tests/{part}', state, f'scope={scope} ran=2 hands={hands}', '')
 
 
 def test_the_standing_requires_base_and_every_part_handed_to() -> None:
     """PASS only when base and every derived part stand; a FAIL part is FAIL whatever else; unsettled otherwise."""
-    assert platformparts.standing([_status(BASE)], head=SHA).result == 'PASS'
-    assert platformparts.standing([], head=SHA).result == ''
-    assert platformparts.standing([_status('jmag')], head=SHA).result == '', 'no base: nothing proves the rest'
-    assert platformparts.standing([_status(BASE, hands='femm+windows:1')], head=SHA).result == ''
+    assert platformparts.standing([_status(BASE)], head=SHA).result is Conclusion.PASS
+    assert platformparts.standing([], head=SHA).result is Conclusion.INCONCLUSIVE
+    assert platformparts.standing([_status('jmag')], head=SHA).result is Conclusion.INCONCLUSIVE, (
+        'no base: nothing proves the rest'
+    )
+    assert platformparts.standing([_status(BASE, hands='femm+windows:1')], head=SHA).result is Conclusion.INCONCLUSIVE
     both = [_status(BASE, hands='femm+windows:1'), _status('femm+windows')]
-    assert platformparts.standing(both, head=SHA).result == 'PASS'
+    assert platformparts.standing(both, head=SHA).result is Conclusion.PASS
     red = [_status(BASE, 'failure'), _status('femm', 'pending')]
-    assert platformparts.standing(red, head=SHA).result == 'FAIL'
+    assert platformparts.standing(red, head=SHA).result is Conclusion.FAIL
     incremental = [_status(BASE, scope='incremental')]
-    assert platformparts.standing(incremental, head=SHA).result == 'PASS'
+    assert platformparts.standing(incremental, head=SHA).result is Conclusion.PASS
     full = platformparts.standing(incremental, head=SHA, scope='full')
-    assert full.result == ''
+    assert full.result is Conclusion.INCONCLUSIVE
     assert any('scope incremental' in problem for problem in full.problems)
 
 
 def test_a_local_run_becomes_one_record_per_part_of_the_cluster_shape(tmp_path: Path, monkeypatch) -> None:
     """A local run covers the ids of the part it records and hands every other id to its own part."""
     monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: read_vocabulary(PYPROJECT))
-    outcomes = {'t::a': 'passed', 't::f': 'failed', 't::w': 'skipped'}
+    cells = {'t::a': _cell('ok'), 't::f': _cell('rejected'), 't::w': _cell('unavailable')}
     collected = {'': ['t::a', 't::f', 't::w', 't::fw'], 'femm': ['t::f', 't::fw'], 'windows': ['t::w', 't::fw']}
-    owned = localpart.owners(tmp_path, SHA, list(outcomes), collected.__getitem__)
+    owned = localpart.owners(tmp_path, SHA, list(cells), collected.__getitem__)
     assert owned == {'t::a': BASE, 't::f': 'femm', 't::w': 'windows', 't::fw': 'femm+windows'}
 
     def local(part: str) -> dict[str, object]:
-        reasons = {'t::w': 'skipped here', 't::f': 'red'}
-        fields = {'sha': SHA, 'scope': 'full', 'req': 'verify-x', 'outcomes': outcomes, 'reasons': reasons}
+        fields = {'sha': SHA, 'scope': 'full', 'req': 'verify-x', 'cells': cells}
         return localpart.local_record(part=part, owned=owned, **fields)
 
     base = local(BASE)
-    assert base['outcomes'] == {'t::a': 'passed', **dict.fromkeys(['t::f', 't::w', 't::fw'], 'not-covered')}
+    assert base['cells'] == {'t::a': _cell('ok').to_plain()}, 'a handed id is no cell of this part'
     assert base['handed'] == {'t::f': 'femm', 't::w': 'windows', 't::fw': 'femm+windows'}
-    assert base['reasons'] == {}
     part = platformparts.part_of(base)
-    assert (part.platform, part.result, part.ran) == (BASE, 'PASS', 1)
+    assert (part.platform, part.result, part.ran) == (BASE, Conclusion.PASS, 1)
     assert part.hands == {'femm': 1, 'windows': 1, 'femm+windows': 1}, 'the parts this commit needs, discovered'
     femm = platformparts.part_of(local('femm'))
-    assert (femm.result, femm.ran, femm.hands) == ('FAIL', 1, {BASE: 1, 'windows': 1, 'femm+windows': 1})
+    assert (femm.result, femm.ran, femm.hands) == (Conclusion.FAIL, 1, {BASE: 1, 'windows': 1, 'femm+windows': 1})
 
 
 def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path: Path, monkeypatch) -> None:
@@ -291,39 +306,35 @@ def test_a_repo_declaring_no_resource_is_all_base_and_collects_nothing(tmp_path:
     PLANTED CONTROL: a run that judged no test is still refused, so an empty part is never a pass.
     """
     monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: Vocabulary())
-    reported = {'t::a': 'passed', 't::s': 'skipped'}
+    reported = {'t::a': _cell('ok'), 't::s': _cell('not_applicable')}
     owned = localpart.owners(tmp_path, SHA, list(reported), lambda _e: pytest.fail('nothing is declared'))
     assert owned == dict.fromkeys(reported, BASE)
 
-    def local(outcomes: dict[str, str]) -> dict[str, object]:
-        fields = {'sha': SHA, 'scope': 'full', 'req': 'r', 'reasons': {'t::s': 'why'}}
-        return localpart.local_record(part=BASE, outcomes=outcomes, owned=owned, **fields)
+    def local(cells: dict[str, TestCell]) -> dict[str, object]:
+        return localpart.local_record(part=BASE, cells=cells, owned=owned, sha=SHA, scope='full', req='r')
 
     record = local(reported)
-    assert record['outcomes'] == reported
+    assert record['cells'] == {node: one.to_plain() for node, one in reported.items()}
     assert {key: record[key] for key in ('env', 'resolved')} == env_record(), 'it names what it ran against'
     probed = localpart.local_record(
         part=BASE,
-        outcomes=reported,
+        cells=reported,
         owned=owned,
         sha=SHA,
         scope='full',
         req='r',
-        reasons={},
         tools={'jmag': '25.2.01zp'},
     )
     assert probed['tools'] == {'jmag': '25.2.01zp'}, 'and the vendor versions its presence probe read'
-    assert record['reasons'] == {'t::s': 'why'}
+    assert TestCell.from_plain(record['cells']['t::s']).why == 'why', 'a reason travels in its cell'
     assert platformparts.part_of(record).hands == {}
     with pytest.raises(platformparts.PartRefusal, match='covers no test'):
-        platformparts.part_of(
-            localpart.local_record(part=BASE, outcomes={}, owned={}, sha=SHA, scope='full', req='r', reasons={})
-        )
+        platformparts.part_of(localpart.local_record(part=BASE, cells={}, owned={}, sha=SHA, scope='full', req='r'))
 
 
 def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, monkeypatch) -> None:
     """PLANTED CONTROL: the same green record posts (0) when the forge answers."""
-    source = write_record(_record({'t::a': 'passed'}), tmp_path / 'runs')
+    source = write_record(_record({'t::a': 'ok'}), tmp_path / 'runs')
     monkeypatch.setattr(platformparts, 'enqueue', lambda *_a, **_k: None)
     monkeypatch.setattr(platformparts, 'flush', lambda _root: [])
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == 0
@@ -334,3 +345,13 @@ def test_a_forge_outage_on_post_is_unreachable_not_a_refusal(tmp_path: Path, mon
 
     monkeypatch.setattr(platformparts, 'flush', down)
     assert platformparts.main(['post', str(source), '--root', str(tmp_path)]) == ProducerExit.UNREACHABLE
+
+
+def test_a_part_posts_the_state_its_conclusion_names_and_an_error_status_is_no_part() -> None:
+    """Plan A1.9: the ``tests/<part>`` state is ``forgestatus.state_for`` of the part's Conclusion."""
+    for result in (Conclusion.PASS, Conclusion.FAIL):
+        part = platformparts.Part(BASE, 'full', result, ran=1)
+        assert part.state == state_for(result)
+        assert platformparts.parts_of([_status(BASE, part.state)])[0][BASE].result is result
+    parts, problems = platformparts.parts_of([_status(BASE, state_for(Conclusion.INCONCLUSIVE))])
+    assert (parts, len(problems)) == ({}, 1), 'control: an INCONCLUSIVE (error) status is never a settled part'

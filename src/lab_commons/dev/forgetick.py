@@ -35,8 +35,10 @@ considered before every other; it takes no supply and preempts nothing.
 
 A JOB'S DEMAND IS WHAT IT MEASURED. A BOX part is admitted at exactly what it will declare to the box
 (:func:`~lab_commons.compute.learned.box_demand`: the cores it kept busy and its peak with headroom, else
-its prior, :func:`~lab_commons.compute.learned.part_prior`), so the admission and the box's enforced claim
-are one number. A CLUSTER part asks what its
+its selection, :func:`~lab_commons.compute.learned.selection_gb` at the ids it is handed), so the
+admission and the box's enforced claim are one number -- and ONE CLAIM: given *reserve*, a local part's box
+claim is taken before the part is claimed, and its producer adopts it (:mod:`lab_commons.dev.forgetake`).
+A CLUSTER part asks what its
 last Slurm run measured (:func:`~lab_commons.compute.learned.cluster_demand`).
 Where the supply counts ``submits`` (a cluster account), a claim takes one.
 """
@@ -54,7 +56,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import GB, Capacity
+from lab_commons.box import Capacity
 from lab_commons.compute import probe
 from lab_commons.compute.learned import box_demand, cluster_demand, learned, request_demand
 from lab_commons.compute.model import (
@@ -68,6 +70,7 @@ from lab_commons.compute.model import (
     submitted,
 )
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
+from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
 from lab_commons.dev.artefacts import remote_problem
 from lab_commons.dev.forge import (
@@ -89,11 +92,11 @@ from lab_commons.dev.forgeclaim import (
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgerequest import declared_request, remind, request_authors
 from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
-from lab_commons.dev.forgestatus import Status, status_history
+from lab_commons.dev.forgestatus import CommitStatus, status_history
 from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.platformparts import derived, origin_url, this_platform
+from lab_commons.dev.platformparts import derived, origin_url, parts_of, this_platform
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.config import Cost
 from lab_commons.log import emit
@@ -139,6 +142,8 @@ def tick(
     owners: Mapping[str, Collection[str]] | None = None,
     priority: Priority | None = None,
     authors: Collection[str] | None = None,
+    serves: Serves | None = None,
+    reserve: Callable[[Work], int | str] | None = None,
 ) -> TickReport:
     """One tick, in the order the module docstring gives: claim in rank order while jobs admit.
 
@@ -156,7 +161,10 @@ def tick(
     host's declared ordering (default: its machine file's ``[priority]``, :mod:`lab_commons.compute.priority`):
     a matching candidate is considered before every other, and nothing is set aside for it. *authors* are
     the logins whose requests run here at any served sha (default: the machine file's ``[requests] authors``);
-    anyone else's runs only at a sha on the integration branch or the trunk.
+    anyone else's runs only at a sha on the integration branch or the trunk. *serves* is which parts this host
+    claims (default: the machine file's ``[serve] parts``, :mod:`lab_commons.compute.serves`): a part its rule
+    skips waits, named, for another host. *reserve* takes a local part's box claim before it is claimed (its
+    ledger row, or why the box refused it); ``None`` (a cluster seat, a dry run's caller) takes none.
     """
     lines: list[str] = []
     try:
@@ -165,9 +173,9 @@ def tick(
         lines += str(failed).splitlines()
     fetch(root)
     built = client(root)
-    histories: dict[str, tuple[Status, ...]] = {}  # one read per sha: it derives the parts and assesses each
+    histories: dict[str, tuple[CommitStatus, ...]] = {}  # one read per sha: it derives the parts and assesses each
 
-    def history(sha: str) -> tuple[Status, ...]:
+    def history(sha: str) -> tuple[CommitStatus, ...]:
         if sha not in histories:
             histories[sha] = status_history(built, sha)
         return histories[sha]
@@ -194,13 +202,14 @@ def tick(
     learned_now = learned(origin_url(root)) if measured is None else measured
     cost = expected_cost(learned_now, schedule.prior_cost_h, cores=cores)
     room = supply or _whole(machine or 'this host', cluster=bool(serve.hpc))
-    sized = demand or _demand_of(root, cluster=bool(serve.hpc))
+    sized = demand or _demand_of(root, cluster=bool(serve.hpc), history=history, room=room)
     taken = ClaimPass(
         root, built, serve, me, now, schedule, usage, dry_run, repo=repo, supply=room,
         size=lambda wanted, needed: submitted(sized(wanted, needed), room),
         taken=list(running), trunks=(policy.integration, policy.trunk),
         authors=frozenset(request_authors() if authors is None else authors),
         store_why=probe(root) if serve.hpc else '', history=history,
+        serves=serves or Serves.of(section(SERVE_TABLE)), reserve=reserve,
     )  # fmt: skip
     ranked = rank(found, {repo: schedule}, now, cost_h={repo: cost}, weights=weights,
         priority=(priority or Priority.of(section(PRIORITY_TABLE))).matches,
@@ -241,23 +250,37 @@ def _whole(scope: str, *, cluster: bool) -> Supply:
     return Supply(scope, task) if cluster else probe.box(scope, capacity=Capacity.read())
 
 
-def _demand_of(root: Path, *, cluster: bool) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
+def handed(statuses: Sequence[CommitStatus], part: str) -> int | None:
+    """How many ids the commit's posted parts hand to *part* -- its selection's size; ``None`` when none says."""
+    counts = [one.hands[part] for one in parts_of(statuses)[0].values() if part in one.hands]
+    return sum(counts) if counts else None
+
+
+def _demand_of(
+    root: Path,
+    *,
+    cluster: bool,
+    history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: (),
+    room: Supply | None = None,
+) -> Callable[[Candidate, frozenset[str]], Mapping[str, float]]:
     """A candidate's demand: a cluster part's measured ask, else what it will declare to this box.
 
     A box REQUEST is sized by its own row (:func:`~lab_commons.compute.learned.request_demand`), a box part
-    by :func:`~lab_commons.compute.learned.box_demand`.
+    by :func:`~lab_commons.compute.learned.box_demand` at the ids its commit's parts hand it (:func:`handed`),
+    narrowed to the box's FREE *room* (this tick's supply; measured now when not given).
     """
     repo_url = origin_url(root)
     if cluster:
         asked = cluster_demand(repo_url)
         return lambda _wanted, needed: asked(needed)
-    capacity = Capacity.read()
+    free = (room or probe.box('this host', capacity=Capacity.read())).resources
 
     def sized(wanted: Candidate, needed: frozenset[str]) -> Mapping[str, float]:
         if wanted.kind == REQUEST:
             row = declared_request(root, wanted.sha, wanted.producer, wanted.paths)
             return request_demand(repo_url, row.name, needed, cpu=row.cpu, mem_gb=row.mem_gb)
-        return box_demand(repo_url, needed, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
+        ids = handed(history(wanted.sha), wanted.platform)
+        return box_demand(repo_url, needed, cpu=free['cpu'], mem_gb=free['mem_gb'], ids=ids)
 
     return sized
 

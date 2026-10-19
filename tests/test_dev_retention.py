@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
+import shutil
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Final
 
 import pytest
 from _forge_fake import git_out, run_git
@@ -39,6 +42,12 @@ def _touch(path: Path, when: datetime, size: int = 10) -> Path:
         path.write_bytes(b'x' * size)
     os.utime(path, (when.timestamp(), when.timestamp()))
     return path
+
+
+def _written(path: Path, text: str, when: datetime) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+    return _touch(path, when)
 
 
 def _dir(path: Path, when: datetime, size: int = 10) -> Path:
@@ -121,6 +130,19 @@ def test_cluster_plan_deletes_only_the_unreferenced(home: Path) -> None:
     assert (home / 'ci' / 'runs' / 'a3') not in {d.path for d in plan.doomed}, 'a carry source keeps its STATE'
     kept = {'f1', 'building'}
     assert not {d.path.name for d in plan.doomed if d.path.parent.name == 'trees'} & kept, 'in flight: kept'
+
+
+def test_the_retired_shared_cache_goes_and_each_repository_cache_is_pruned(home: Path) -> None:
+    ci = home / 'ci'
+    (ci / 'cache.git').mkdir()
+    caches = [ci / 'cache' / 'o-a-00000000.git', ci / 'cache' / 'o-b-11111111.git']
+    for cache in caches:
+        cache.mkdir(parents=True)
+    plan = _plan(home)
+    assert {d.path: d.rule for d in plan.doomed}.get(ci / 'cache.git') == 'shared-cache-retired'
+    assert not {d.path for d in plan.doomed} & set(caches), "a repository's own cache is kept"
+    pruned = [c[2] for c in plan.commands if c[-2:] == ('worktree', 'prune')]
+    assert pruned == [str(c) for c in caches]
 
 
 def test_a_cargo_target_goes_when_no_kept_run_names_its_native_key(home: Path) -> None:
@@ -296,7 +318,7 @@ def test_serve_pass_runs_every_tick_and_prunes_only_after_a_deletion(home: Path,
             kw['home'], policy, now=kw['now'], live=kw['live'], repo='r', sources=SOURCES
         ),
     }  # fmt: skip
-    (home / 'ci' / 'cache.git').mkdir()
+    (home / 'ci' / 'cache' / 'o-r-00000000.git').mkdir(parents=True)
     assert serve_pass(Path(), now=NOW, **kwargs) is not None
     assert not (home / 'ci' / 'runs' / 'a1').exists()
     assert calls, 'something went: git forgets it'
@@ -364,27 +386,45 @@ def test_the_queue_read_fails_closed() -> None:
     assert retentionplan.slurm_occupied(run=answer(0, '')) == set(), 'an empty queue occupies nothing'
 
 
-def _superseded(home: Path, sha: str, env: str, when: datetime, *, streams: datetime) -> Path:
-    """The shape 9 run states in 10 had on the served accounts: no record, a round tag, nobody gathering it."""
+TAG: Final = '20261015-055638-r0'
+
+
+def _superseded(home: Path, sha: str, env: str, when: datetime, *, streams: datetime, many: bool = False) -> Path:
+    """The shape 9 run states in 10 had on the served accounts: no record, a round tag, nobody gathering it.
+
+    *many*: the round streamed in the retired shape, a directory of one file per item (and its id list).
+    """
     builds = {'env': env, 'native': 'n4'}
-    state = {'sha': sha, 'repo': 'r', 'builds': builds, 'current': {'tag': '20261015-055638-r0', 'job_id': '7'}}
+    state = {'sha': sha, 'repo': 'r', 'builds': builds, 'current': {'tag': TAG, 'job_id': '7'}}
     path = home / 'ci' / 'runs' / sha / 'base' / 'state.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state), encoding='utf-8')
     _touch(path, when)
     tree = _dir(home / 'ci' / 'trees' / sha, when)
     _touch(tree / '.lab-ci' / 'env.sh', when)
-    _touch(tree / '.lab-ci' / '20261015-055638-r0' / '0.jsonl', streams)
-    _dir(tree / '.lab-ci' / '20261015-055638-r0', streams)
+    # A stream's content is written BEFORE its stamp: a write after the stamp moves the mtime to the wall clock.
+    if many:
+        for i in range(3):
+            _written(tree / '.lab-ci' / TAG / f'{i}.jsonl', f'{{"n": {i}}}\n', streams)
+            _touch(tree / '.lab-ci' / TAG / f'{i}.ids.json', streams)
+        _dir(tree / '.lab-ci' / TAG, streams)
+    else:
+        lines = ''.join(f'{{"item": {i}, "n": {i}}}\n' for i in range(3))
+        _written(tree / '.lab-ci' / f'{TAG}.jsonl', lines, streams)
     for made in (tree / '.lab-ci', tree):
         os.utime(made, (when.timestamp(), when.timestamp()))
     return tree
 
 
-def test_a_superseded_run_is_not_in_flight_and_its_streams_outlive_its_tree(home: Path) -> None:
+#: What retention keeps of the three-item round either shape streamed: the one file the reader takes.
+_KEPT: Final = f'{{"round": "{TAG}"}}\n' + ''.join(f'{{"item": {i}, "n": {i}}}\n' for i in range(3))
+
+
+@pytest.mark.parametrize('many', [False, True], ids=['one-file', 'many-file-in-flight'])
+def test_a_superseded_run_is_not_in_flight_and_its_streams_outlive_its_tree(home: Path, *, many: bool) -> None:
     """No record is not in flight: a superseded run is never gathered. Its tree goes, its streams and state stay."""
     stale = NOW - timedelta(days=3)
-    tree = _superseded(home, 's1', 'e7', stale, streams=stale)
+    tree = _superseded(home, 's1', 'e7', stale, streams=stale, many=many)
     _dir(home / 'ci' / 'envs' / 'e7', stale)
     plan = _plan(home)
     assert 's1' not in in_flight(home / 'ci', POLICY, now=NOW, live={'f1'}, occupied=())
@@ -394,9 +434,27 @@ def test_a_superseded_run_is_not_in_flight_and_its_streams_outlive_its_tree(home
     assert home / 'ci' / 'runs' / 's1' not in doomed, 'its state is a carry source, kept until abandon_days'
     apply(plan, POLICY, usage=None, dry_run=False, say=lambda _: None, run=_no_run)
     assert not tree.exists()
-    kept = home / 'ci' / 'runs' / 's1' / 'streams'
-    assert [p.name for p in kept.iterdir()] == ['20261015-055638-r0.txt'], 'ONE file per kept round'
-    assert (kept / '20261015-055638-r0.txt').read_text(encoding='utf-8') == '@@@ 0.jsonl\nxxxxxxxxxx\n'
+    run = home / 'ci' / 'runs' / 's1'
+    assert sorted(p.name for p in run.iterdir()) == ['base', 'streams.jsonl'], 'ONE file per kept run'
+    assert (run / 'streams.jsonl').read_text(encoding='utf-8') == _KEPT
+
+
+def test_a_run_kept_in_the_many_file_shape_is_upgraded_to_one_file(home: Path) -> None:
+    """``runs/<sha>/streams/<tag>.txt`` is read by the carry while the run is unrecorded: upgraded, not refused."""
+    stale = NOW - timedelta(days=3)
+    tree = _superseded(home, 's1', 'e7', stale, streams=stale)
+    shutil.rmtree(tree)
+    old = home / 'ci' / 'runs' / 's1' / 'streams'
+    old.mkdir()
+    (old / f'{TAG}.txt').write_text(''.join(f'@@@ {i}.jsonl\n{{"n": {i}}}\n' for i in range(3)), encoding='utf-8')
+    (old / '20261014-000000-r0.txt').write_text('@@@ 0.jsonl\n{"n": 9}\n', encoding='utf-8')  # an earlier round
+    before = sum(1 for p in (home / 'ci' / 'runs' / 's1').rglob('*') if p.is_file())
+    apply(_plan(home), POLICY, usage=None, dry_run=False, say=lambda _: None, run=_no_run)
+    run = home / 'ci' / 'runs' / 's1'
+    assert sorted(p.name for p in run.iterdir()) == ['base', 'streams.jsonl'], 'the old directory is gone'
+    assert (run / 'streams.jsonl').read_text(encoding='utf-8') == _KEPT
+    after = sum(1 for p in run.rglob('*') if p.is_file())
+    assert (before, after) == (3, 2), 'PLANTED CONTROL: the state and one stream file, where three were'
 
 
 def test_a_round_that_ended_within_min_age_is_still_in_flight(home: Path) -> None:
@@ -408,10 +466,11 @@ def test_a_round_that_ended_within_min_age_is_still_in_flight(home: Path) -> Non
 def test_a_job_file_job_names_the_env_its_env_sh_sources(home: Path) -> None:
     """A tree no run state names (a job-file job) is read through ``.lab-ci/env.sh``, not taken as unprovable."""
     tree = _dir(home / 'ci' / 'trees' / 'j1', OLD)
-    _touch(tree / '.lab-ci' / 'env.sh', OLD).write_text(
+    _written(
+        tree / '.lab-ci' / 'env.sh',
         'export VIRTUAL_ENV="/h/ci/envs/e3" PATH="/h/ci/envs/e3/bin:$PATH"\n'
         'export PYTHONPATH="/h/ci/trees/j1/src:/h/ci/native/n0:/h/ci/bin${PYTHONPATH:+:$PYTHONPATH}"\n',
-        encoding='utf-8',
+        OLD,
     )
     plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied={'j1'})
     doomed = _doomed(plan)
@@ -464,3 +523,10 @@ def test_an_unreadable_queue_deletes_no_artifact(home: Path) -> None:
     assert not any(d.rule == 'artifact-not-live' for d in plan.doomed)
     plan = cluster_plan(home, POLICY, now=NOW, live={'f1'}, repo='r', sources=SOURCES, occupied=set())
     assert {d.path.name for d in plan.doomed if d.rule == 'artifact-not-live'} == {'c1.tar.gz'}, 'PLANTED CONTROL'
+
+
+def test_what_an_apply_frees_is_named_freed_and_the_generic_name_is_gone() -> None:
+    """Plan A1.8: ``Outcome`` is the task-result word ``lab_commons.outcomes`` owns; retention's result is ``Freed``."""
+    assert 'Freed' in retention.__all__
+    with pytest.raises(AttributeError):
+        _ = importlib.import_module(retention.__name__).Outcome

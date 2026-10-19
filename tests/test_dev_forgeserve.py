@@ -17,7 +17,7 @@ import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
 
-from lab_commons.box import GB, Capacity, Holding, Outcome, Refused
+from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
@@ -58,7 +58,7 @@ SEAT = ClusterAccount('ada', 'alice')
 class _Proc:
     """A fake producer: prints *lines*, outlives *beats* heartbeats, exits *code*; the box records *box*.
 
-    *box* defaults to the child's own exit; a :class:`Refused`, a killed :class:`Outcome` or ``None`` (a
+    *box* defaults to the child's own exit; a :class:`Refused`, a killed :class:`ProcessEnd` or ``None`` (a
     crashed box, no record) is what the box decided instead.
     """
 
@@ -70,7 +70,7 @@ class _Proc:
         lines: tuple[str, ...] = (),
         beats: int = 0,
         pid: int | None = None,
-        box: Outcome | Refused | object | None = _OWN,
+        box: ProcessEnd | Refused | object | None = _OWN,
     ) -> None:
         self.code, self.beats, self.pid = code, beats, pid
         self.box = ended(code) if box is _Proc._OWN else box
@@ -302,9 +302,9 @@ def test_the_producer_is_spawned_holding_its_claim_and_nothing_else_is(monkeypat
 def test_the_producer_runs_in_the_box_at_the_demand_it_was_admitted_at(monkeypatch, tmp_path: Path) -> None:
     """Admission and enforcement are one number, held against the ONE capacity reading the producer sized it by.
 
-    Unmeasured (no demand, nothing learned), a box part declares its D5 prior -- here the per-task floor a worker,
-    at as many workers as this 3-core box allows -- never the whole box
-    (:func:`~lab_commons.compute.learned.part_prior`).
+    Unmeasured (no demand, nothing learned), a box part declares its selection -- here the per-task floor a
+    worker, at as many workers as this 3-core box allows -- never the whole box
+    (:func:`~lab_commons.compute.learned.selection_gb`).
     """
     local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
     spawned: list[dict] = []
@@ -313,7 +313,7 @@ def test_the_producer_runs_in_the_box_at_the_demand_it_was_admitted_at(monkeypat
     (argv,) = [one['argv'] for one in spawned]
     assert argv[1:4] == ['-m', 'lab_commons.box', 'run']
     assert argv[argv.index('--cpu') + 1] == '3'
-    assert argv[argv.index('--mem-gb') + 1] == '4.5'
+    assert argv[argv.index('--mem-gb') + 1] == '3'
     assert json.loads(argv[argv.index('--capacity') + 1]) == dataclasses.asdict(BOX), 'the child holds this size'
     assert argv[argv.index('--fingerprint') + 1] == SHA
     assert argv[argv.index('--') + 2 :] == ['verify']

@@ -18,11 +18,14 @@ token variable a process tree inherits). Nothing is written to disk and the toke
 RETRY, THEN REPORT, IN NETVERB'S VOCABULARY. Every call is bounded by
 :data:`~lab_commons.dev.netverb.DEFAULT_ATTEMPTS` and its outcome is a
 :class:`~lab_commons.dev.netverb.Report`, so an HTTP failure reads exactly like a failed ``git
-push``. An ANSWERED 4xx is a refusal and is never repeated (a 401, 408 or 429 stays retryable, as the
-table says); a 5xx or a dropped connection is retried. A create whose response was lost may still
-have landed, so before a create is RETRIED the newest objects are read back and the token's own
-identical one created since the attempt began is returned instead (:class:`~lab_commons.dev._forge_journal.Probe`);
-when that read itself fails the create is reported rather than sent blind a second time.
+push``. An ANSWERED 4xx is a refusal and is never repeated (408 and 429 stay retryable, as the table
+says); a 5xx or a dropped connection is retried. A 401/403 is MEASURED before it is named: the same
+credential is asked ``GET /user``; a refusal there is a credential refusal (not retried, the ``auth
+login`` remedy), an answer there makes the 401/403 transient (retried, and never told to re-store).
+A create whose response was lost may still have landed, so before a create is RETRIED the newest
+objects are read back and the token's own identical one created since the attempt began is returned
+instead (:class:`~lab_commons.dev._forge_journal.Probe`); when that read itself fails the create is
+reported rather than sent blind a second time.
 
 PROVENANCE IS A GENERIC ENVIRONMENT CONTRACT. When ``HARNESS_MACHINE`` and ``HARNESS_AGENT`` are both
 set, every created issue body, PR body and comment opens with ``[<machine> · <agent> · <branch>]``
@@ -104,10 +107,22 @@ class ForgeCallFailed(OSError):
     """A forge call that did not succeed within the bound; :attr:`report` is netverb's report of it."""
 
     def __init__(self, report: Report) -> None:
-        """Carry the report; the message is its derived remedy, plus the auth remedy on a 401/403."""
+        """Carry the report; on a 401/403 the message adds what the credential check MEASURED."""
         last = report.attempts[-1].returncode if report.attempts else 0
-        super().__init__(f'{report.remedy}. {_forge.AUTH_REMEDY}' if last in _forge.AUTH_REFUSED else report.remedy)
+        said = _forge.AUTH_REMEDY if _credential_refused(report) else _forge.AUTH_TRANSIENT
+        super().__init__(f'{report.remedy}. {said}' if last in _forge.AUTH_REFUSED else report.remedy)
         self.report = report
+
+    @property
+    def credential_refused(self) -> bool:
+        """Whether the forge refused the stored CREDENTIAL -- measured by ``GET /user``, never read off one status."""
+        return _credential_refused(self.report)
+
+
+def _credential_refused(report: Report) -> bool:
+    """The last attempt was a 401/403 that :meth:`Client._diagnosis` diagnosed refused after asking ``GET /user``."""
+    last = report.attempts[-1] if report.attempts else None
+    return last is not None and last.returncode in _forge.AUTH_REFUSED and last.diagnosis is Diagnosis.FORGE_REFUSED
 
 
 @dataclass(frozen=True)
@@ -196,12 +211,8 @@ def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
 def _diagnose(status: int, text: str) -> Diagnosis:
     """Read through netverb's table first; an answered 4xx it does not know is a refusal, never a transient.
 
-    A 401/403 from the API is an ANSWER about the presented credential and is refused before the
-    table is read: the table's 401-is-transient row was measured on ``git`` (a credential helper
-    mid-flight), and an API call's header is fixed, so asking again cannot change the answer.
+    A 401/403 never reaches here: :meth:`Client._diagnosis` measures it against ``GET /user`` first.
     """
-    if status in _forge.AUTH_REFUSED:
-        return Diagnosis.FORGE_REFUSED
     found = classify(f'error: {status} {text}')
     answered = _HTTP_ERROR_FLOOR <= status < _HTTP_SERVER_FLOOR and status not in _HTTP_RETRYABLE_4XX
     return Diagnosis.FORGE_REFUSED if found is Diagnosis.UNCLASSIFIED and answered else found
@@ -244,6 +255,23 @@ class Client:
             return response.status, response.read()
         finally:
             conn.close()
+
+    def _diagnosis(self, status: int, text: str, path: str) -> Diagnosis:
+        """:func:`_diagnose`, except a 401/403 is MEASURED: refused only when ``GET /user`` refuses the credential too.
+
+        The incident (2026-10-18): one 401 was read as "permanent, re-store the credential" while ``git
+        credential fill`` held a credential that authenticated minutes later. A check that cannot be made
+        (dropped, 5xx) is not evidence against the credential, so the attempt stays transient.
+        """
+        if status not in _forge.AUTH_REFUSED:
+            return _diagnose(status, text)
+        user = f'{self.backend.api_root}/user'
+        if path != user:
+            try:
+                status, _ = self._once('GET', user, None, 'application/json', None)
+            except OSError:
+                return Diagnosis.TRANSIENT
+        return Diagnosis.FORGE_REFUSED if status in _forge.AUTH_REFUSED else Diagnosis.TRANSIENT
 
     @property
     def repo(self) -> str:
@@ -288,7 +316,9 @@ class Client:
         status, payload = self._once('GET', path, None, 'application/octet-stream', parts.netloc or None)
         if not 0 < status < _HTTP_ERROR_FLOOR:
             text = payload.decode(errors='replace')[:300]
-            raise ForgeCallFailed(Report(('GET', path), (Attempt(1, status or 1, text, _diagnose(status, text)),), 1))
+            raise ForgeCallFailed(
+                Report(('GET', path), (Attempt(1, status or 1, text, self._diagnosis(status, text, path)),), 1)
+            )
         return payload
 
     def _request(
@@ -316,7 +346,7 @@ class Client:
             if 0 < status < _HTTP_ERROR_FLOOR:
                 return json.loads(payload) if payload else None
             text = payload.decode(errors='replace')[:300]
-            made.append(Attempt(index, status or 1, text, _diagnose(status, text)))
+            made.append(Attempt(index, status or 1, text, self._diagnosis(status, text, write.path)))
             if not made[-1].retryable:
                 break
             if index < DEFAULT_ATTEMPTS:

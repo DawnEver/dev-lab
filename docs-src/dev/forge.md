@@ -8,7 +8,9 @@ suite to learn whether a sha is green, and you never wait for one to push.
 ## Parts
 
 - **A part** is one NEED-SET's result for one sha, posted as the commit status `tests/<part>`:
-  `success` is PASS, `failure` is FAIL, `pending` is a claim. The description is
+  its state is `forgestatus.state_for` of the part's `lab_commons.outcomes.Conclusion` -- `success` is
+  PASS, `failure` is FAIL, `error` (INCONCLUSIVE) is never a settled part -- and `pending` is a claim. The
+  record each status is read into is `forgestatus.CommitStatus`. The description is
   `scope=<full|incremental> ran=<n> hands=<part>:<n>,...`; `target_url` links the run record.
 - **Parts are derived, never declared** ([parts by need-set](hpc.md#parts-by-need-set)). A test marks the
   resources it needs; its part is that set, named sorted and `+`-joined (`tests/femm+windows`), or
@@ -20,7 +22,7 @@ suite to learn whether a sha is green, and you never wait for one to push.
   integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
   at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.
 - **One reader.** The integrator, issue readiness and admission all read parts through
-  `lab_commons.dev.platformparts.standing`.
+  `lab_commons.dev.platformparts.standing`, which concludes PASS, FAIL or INCONCLUSIVE (unsettled).
 - An INCONCLUSIVE run is no part and posts nothing. Which ids a part runs is its need-set over the repo's
   `[tool.lab_commons.tests] resources` ([HPC clusters](hpc.md#parts-by-need-set)).
 
@@ -65,11 +67,12 @@ Each tick it:
   decides; no cron line of its own). Files are the binding HPC resource, so the rules follow what each thing is
   FOR. One function says what is IN FLIGHT (`retentionplan.in_flight`): a sha a live run file names, a tree a
   queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`), or a sha
-  whose run state, tree or `.lab-ci` stream directory was touched within `min_age_hours` (being built, or a round
+  whose run state, tree or `.lab-ci` round stream was touched within `min_age_hours` (being built, or a round
   ended and not yet gathered). "No record yet" is NOT in flight: a superseded or released run is never gathered.
-  A tree is kept only while its sha is
-  in flight (`tree-not-in-flight`); an unrecorded run's round streams are packed into ONE file
-  `runs/<sha>/streams/<tag>.txt` first, where the carry reads them (`hpc.records.stream_sources`), and a re-run re-adds the tree from the bare cache.
+  A round's items all append to ONE file `.lab-ci/<tag>.jsonl` (lines tagged `item`). A tree is kept only while
+  its sha is in flight (`tree-not-in-flight`); an unrecorded run's round stream is kept as ONE file
+  `runs/<sha>/streams.jsonl` first, where the carry reads it (`hpc.records.stream_sources`), and a re-run re-adds
+  the tree from the bare cache. A run kept in the retired many-file shape is upgraded into it (`streams-upgraded`).
   An env, native build or cargo target is kept while an in-flight run or its repo's newest recorded run names it
   in `builds`; an unreadable reference keeps them all, an unreadable queue keeps every tree. A finished run's
   STATE goes when no origin branch tip can carry from it; finished `~/slurm-*.out` and oversized
@@ -90,7 +93,10 @@ Each tick it:
 - **PIN + FRESHNESS (user ruling 2026-10-17).** Every repo commits `uv.lock`, and every install -- `dep
   --bootstrap`, a cluster's served venv, a workstation refresh -- is `uv sync --frozen` from the commit's lock:
   a commit's code and its exact dependencies are tested together and identical on every host, and the lock's
-  hash keys the served venv. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
+  hash keys the served venv. So a RUN judges its environment against the checkout's own lock and nothing
+  else: `verify` refuses as STALE only when a git-installed package's commit differs from the one `uv.lock` at
+  HEAD pins (`lab_commons.dev.lockpins`) -- never against a dependency's remote tip, which would leave every
+  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
   whose lock is not at the NEWEST resolution -- `uv lock --upgrade --dry-run`, run at the pushed sha, would
   change something: an in-house git dependency behind the tip of its declared ref, a PyPI dependency below its
   latest -- or that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
@@ -227,10 +233,12 @@ lower-ranked one is still claimed, so several parts run on one host at once.
 
 - **Demand** is what the part's last run measured (`compute.learned`, keyed by part). A box part is admitted at
   exactly what it then DECLARES to the box (`compute.learned.box_demand`: the cores it kept busy and its peak
-  memory with headroom; unmeasured, the D5 prior `compute.learned.part_prior` -- the median of this host's
-  measured parts, else of every host's forge records for its need-set, else the per-task floor, never the whole
-  box -- the last two are ONE worker's peak, so the part declares `PART_WIDTH` workers' cores and that many
-  times the peak; past the box's memory the cores narrow in proportion; one seat of each tool it needs), and
+  memory with headroom; unmeasured, its SELECTION `compute.learned.selection_gb` -- the arithmetic a verify
+  selection reads too: one worker per id the commit's parts hand it, up to `PART_WIDTH`, each at the worst
+  learned peak of the files its need-set's latest forge record ran (`part_files`) with headroom, never under
+  the per-task floor, never the whole box; the width is `compute.learned.fit_width` -- narrowed to the box's
+  FREE cores and the workers its FREE memory holds at that price, never under one; one seat of
+  each tool it needs), and
   its producer runs in the box at that claim -- its pytest `-n` IS the declared cores (the box's
   `LAB_COMMONS_BOX_CPU`, `dev.verifybox.claimed_width`) -- holding against the
   capacity it was sized by (`box run --capacity`; [box resources](box-resources.md)). A cluster part asks what its last Slurm run measured.
@@ -277,7 +285,7 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
 ## Alarms
 
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
-"delivered", "repeat"}` to stderr for: `auth` (401/403 or no credential), `lease` (a lease lost or not
+"delivered", "repeat"}` to stderr for: `auth` (a credential `GET /user` refuses after a 401/403, or none stored -- a 401/403 whose credential still authenticates is transient and never alarms `auth`), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a

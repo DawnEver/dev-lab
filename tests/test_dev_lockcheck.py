@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from lab_commons.dev import lockcheck
 from lab_commons.dev.githooks.table import base_rows
 from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_shas, unreasoned_holds
 
@@ -188,3 +189,72 @@ def test_a_hold_names_its_reason_on_its_line_or_the_line_above() -> None:
 def test_the_family_hook_base_runs_the_lock_check_at_push() -> None:
     rows = {row['id']: row for row in base_rows()['pre-push']}
     assert rows['lock']['run'] == ['python', '-m', 'lab_commons.dev.lockcheck']
+
+
+_GIT_EXE = shutil.which('git') or 'git'
+
+
+def _git_ok(cwd: Path, *argv: str) -> str:
+    return subprocess.run(
+        [_GIT_EXE, *argv], cwd=cwd, check=True, capture_output=True, text=True, encoding='utf-8'
+    ).stdout.strip()
+
+
+def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C5: a path dependency into a submodule (a product's engine crate) must exist in the tree that is resolved.
+
+    Planted control: HEAD moves past the mounted sha, so the tree is a fresh worktree, not the checkout.
+    """
+    # The test's engine is a local path; git refuses file:// submodules unless told, and only the env reaches
+    # the clone `submodule update` runs.
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'protocol.file.allow')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', 'always')
+    sub, repo = tmp_path / 'engine', tmp_path / 'product'
+    for path in (sub, repo):
+        path.mkdir()
+        _git_ok(path, 'init', '-q', '-b', 'main')
+        _git_ok(path, 'config', 'user.email', 't@t')
+        _git_ok(path, 'config', 'user.name', 't')
+    (sub / 'crate.txt').write_text('engine', encoding='utf-8')
+    _git_ok(sub, 'add', 'crate.txt')
+    _git_ok(sub, 'commit', '-qm', 'engine')
+    _git_ok(repo, 'submodule', 'add', '-q', sub.as_uri(), 'components/engine')
+    _git_ok(repo, 'commit', '-qm', 'mount')
+    mounted = _git_ok(repo, 'rev-parse', 'HEAD')
+    (repo / 'later.txt').write_text('x', encoding='utf-8')
+    _git_ok(repo, 'add', 'later.txt')
+    _git_ok(repo, 'commit', '-qm', 'later')
+    shared = _git_ok(repo / 'components' / 'engine', 'rev-parse', '--git-dir')
+    before = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
+    # A pre-push hook runs with GIT_DIR naming the repository pushing: the mount must not inherit it.
+    monkeypatch.setenv('GIT_DIR', _git_ok(repo, 'rev-parse', '--absolute-git-dir'))
+    with lockcheck._tree_at(repo, mounted) as tree:
+        assert tree != repo, 'the control: HEAD moved on, so a separate tree is built'
+        assert (tree / 'components' / 'engine' / 'crate.txt').is_file()
+    monkeypatch.delenv('GIT_DIR')  # the checks below are the repository's own, outside the hook
+    after = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
+    assert after == before, 'the submodule state every other checkout shares was written'
+    assert _git_ok(repo / 'components' / 'engine', 'status', '--porcelain') == '', 'the checkout still works'
+
+
+def test_a_sha_already_on_a_remote_branch_is_not_judged_again(tmp_path: Path) -> None:
+    """A promotion fast-forwards a branch to a sha origin already holds: it was judged when it was first pushed.
+
+    Measured 2026-10-19: numerics-lab f52debf passed every part, `integrate promote` moved main to it, and the
+    push of main was refused because lab-commons had moved since -- so a verified sha could never reach main.
+    """
+    root = tmp_path / 'r'
+    root.mkdir()
+    _git(root, 'init', '-q', '-b', 'main')
+    old = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "0"\n'})
+    _git(root, 'update-ref', 'refs/remotes/origin/integrate/main', old)
+    new = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "1"\n'})
+
+    def never(_tree: Path) -> object:
+        msg = 'a published sha must not be resolved again'
+        raise AssertionError(msg)
+
+    assert main([str(root)], lines=[f'refs/heads/main {old} refs/heads/main {"0" * 40}'], resolve=never) == 0
+    # Planted control: a sha no remote branch holds is still judged (it commits no lock -> refused).
+    assert main([str(root)], lines=[f'refs/heads/main {new} refs/heads/main {old}'], resolve=never) == 1

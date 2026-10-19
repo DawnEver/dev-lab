@@ -38,12 +38,13 @@ import lab_commons.launch as _door
 from lab_commons.dev.components import Component, components_of
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgepulls import issues
-from lab_commons.dev.forgestatus import Status, status_list
+from lab_commons.dev.forgestatus import CommitStatus, status_list
 from lab_commons.dev.forgework import Client, client_for
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import standing
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'HELD',
@@ -115,7 +116,7 @@ class Product(Protocol):
     def close_lane(self, tip: str) -> None:
         """Delete :data:`LANE`, only while it is still at *tip*."""
 
-    def statuses(self, sha: str) -> Sequence[Status]:
+    def statuses(self, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha*."""
 
     def issue_titles(self) -> frozenset[str]:
@@ -131,7 +132,7 @@ class Engines(Protocol):
     def tip(self, row: Component) -> str:
         """The sha *row*'s branch points at on its repository."""
 
-    def statuses(self, row: Component, sha: str) -> Sequence[Status]:
+    def statuses(self, row: Component, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha* in *row*'s repository."""
 
 
@@ -150,7 +151,7 @@ def tick(rows: Sequence[Component], product: Product, engines: Engines) -> Tick:
         tip = engines.tip(row)
         if not tip or tip == product.pointer(row.path) or issue_title(row, tip) in titles:
             continue
-        if standing(engines.statuses(row, tip), head=tip).result != 'PASS':
+        if standing(engines.statuses(row, tip), head=tip).result is not Conclusion.PASS:
             continue
         message = f'chore(deps): bump {row.name} to {tip[:12]}\n\n{row.url} {row.branch} is forge-green at {tip}.\n'
         opened = product.open_lane(row.path, tip, message)
@@ -166,7 +167,7 @@ def _advance(rows: Sequence[Component], product: Product, lane: Lane) -> Tick:
         product.close_lane(lane.tip)
         return Tick(LANDED, row.name, lane.sha)
     parts = {part.platform: part for part in standing(product.statuses(lane.tip), head=lane.tip).parts}
-    red = [parts[name] for name in row.parts if name in parts and parts[name].result == 'FAIL']
+    red = [parts[name] for name in row.parts if name in parts and parts[name].result is Conclusion.FAIL]
     if red:
         title = issue_title(row, lane.sha)
         if title not in product.issue_titles():
@@ -179,7 +180,7 @@ def _advance(rows: Sequence[Component], product: Product, lane: Lane) -> Tick:
             product.open_issue(title, body)
         product.close_lane(lane.tip)
         return Tick(HELD, row.name, lane.sha, ', '.join(part.platform for part in red))
-    if all(name in parts and parts[name].result == 'PASS' for name in row.parts):
+    if all(name in parts and parts[name].result is Conclusion.PASS for name in row.parts):
         return Tick(READY, row.name, lane.sha)
     return Tick(WAITING, row.name, lane.sha)
 
@@ -245,7 +246,7 @@ class GitProduct:
         if not report.ok:
             raise OSError(report.remedy)
 
-    def statuses(self, sha: str) -> Sequence[Status]:
+    def statuses(self, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha*."""
         return status_list(self.client, sha)
 
@@ -272,7 +273,7 @@ class GitEngines:
             raise OSError(report.remedy)
         return report.attempts[-1].output.split('\t', 1)[0].strip()
 
-    def statuses(self, row: Component, sha: str) -> Sequence[Status]:
+    def statuses(self, row: Component, sha: str) -> Sequence[CommitStatus]:
         """The latest status per context on *sha* in *row*'s repository."""
         return status_list(self.client(row.url), sha)
 

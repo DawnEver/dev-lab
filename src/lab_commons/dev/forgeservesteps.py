@@ -120,7 +120,7 @@ def hygiene(root: Path, built: Client, *, say: Callable[[str], None]) -> None:
 def retain_storage(
     root: Path,
     repo: str,
-    retain: Callable[..., retention.Outcome | None],
+    retain: Callable[..., retention.Freed | None],
     *,
     cluster: bool,
     who: str,

@@ -53,14 +53,13 @@ from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.content import content_address
 from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
-from lab_commons.dev.familyheads import family_freshness
 from lab_commons.dev.forgerequest import TESTS
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
 from lab_commons.dev.hook_install import read_hooks
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import part_selection, post_cited, post_part
+from lab_commons.dev.lockpins import lock_freshness
 from lab_commons.dev.logref import LogRef, UnverifiableLog
-from lab_commons.dev.outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import ProducerExit, full_suite_refusal
 from lab_commons.dev.pytestout import strip_ansi
@@ -75,8 +74,9 @@ from lab_commons.dev.reports import (
 )
 from lab_commons.dev.runcache import cache_path, cached, remember
 from lab_commons.dev.selection import census_scope, is_targeted
+from lab_commons.dev.test_outcomes import OUTCOMES_DIR_VAR, outcomes_dir
 from lab_commons.dev.treedirt import status_paths
-from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
 from lab_commons.dev.verifybox import (
     MEASURE_WAIT_S,
     WAIT_S,
@@ -88,6 +88,7 @@ from lab_commons.dev.verifybox import (
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'EXIT_CODES',
@@ -160,11 +161,11 @@ PYTEST_ARGS: Final[tuple[str, ...]] = ('-rfEs', '--no-fold-skipped')
 LEDGER_PLUGIN: Final[tuple[str, ...]] = ('-p', durations.__name__)
 
 #: The per-test OUTCOME recorder a run's record is built from (inert without its env var).
-OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.outcomes')
+OUTCOME_PLUGIN: Final[tuple[str, ...]] = ('-p', 'lab_commons.dev.test_outcomes')
 
 #: The process exit code each outcome maps to. FAIL and INCONCLUSIVE are distinct because their
 #: remedies are distinct: one is "fix the code", the other is "nobody knows yet".
-EXIT_CODES: Final[dict[Outcome, int]] = {outcome: ProducerExit[outcome.name] for outcome in Outcome}
+EXIT_CODES: Final[dict[Conclusion, int]] = {outcome: ProducerExit[outcome.name] for outcome in Conclusion}
 
 #: The line that separates the ruff half of the log from the pytest half. The pytest parser is fed
 #: what comes AFTER it and never the whole log, because ruff's own output can carry a ``FAILED``
@@ -474,12 +475,10 @@ def main(argv: list[str] | None = None) -> int:
         emit(refused, err=True)
         return ProducerExit.USAGE
     wait_s = parsed.lock_wait_s if parsed.lock_wait_s is not None else (MEASURE_WAIT_S if targeted else WAIT_S)
-    stale, offline = family_freshness(root)
-    if offline:
-        emit(f'verify: {offline}', err=True)
+    stale = lock_freshness(root)
     if stale:
         emit(f'verify: inconclusive -- nothing ran: {stale}', err=True)
-        return EXIT_CODES[Outcome.INCONCLUSIVE]
+        return EXIT_CODES[Conclusion.INCONCLUSIVE]
     key = run_key(root, arguments)
     cache = cache_path(root)
     cited = None if parsed.rerun else cached(cache, tree=key.tree, env=key.env, selector=key.selector)
@@ -489,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
             f'evidence: {cited.log}. Nothing ran; --rerun runs it again.'
         )
         _post_cited(root, cited.log, posted, part=parsed.part, producer=outside is None)
-        return EXIT_CODES[Outcome(cited.result.lower())]
+        return EXIT_CODES[Conclusion(cited.result.lower())]
 
     def lead() -> str:
         post = None if outside is not None else functools.partial(post_part, root, arguments=posted, part=parsed.part)
@@ -539,6 +538,12 @@ def offer_line(root: Path, head: str, arguments: tuple[str, ...]) -> str:
     )
 
 
+def _inconclusive(line: str) -> tuple[int, list[str]]:
+    """A run that measured nothing: *line* to stderr, the INCONCLUSIVE exit code, and the line it printed."""
+    emit(line, err=True)
+    return EXIT_CODES[Conclusion.INCONCLUSIVE], [line]
+
+
 def _judge(
     root: Path, arguments: tuple[str, ...], key: RunKey, cache: Path, *, wait_s: float, post: Callable[..., str] | None
 ) -> tuple[int, list[str]]:
@@ -550,22 +555,17 @@ def _judge(
     try:
         verdict = run_verify(root, arguments, wait_s=wait_s)
     except MalformedAllowance as exc:
-        line = f'verify refuses to run: {exc}'
-        emit(line, err=True)
-        return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
+        return _inconclusive(f'verify refuses to run: {exc}')
     except Refused as exc:
-        held = str(exc)
-        line = (
-            f'verify: inconclusive -- this box is held and nothing was measured. Held by: {held}. '
+        return _inconclusive(
+            f'verify: inconclusive -- this box is held and nothing was measured. Held by: {exc}. '
             f'Wait for it, or stop that holder, then re-run; '
             f'--lock-wait-s raises or drops the {wait_s:.0f}s ceiling on the wait. {offer_line(root, head, arguments)}'
         )
-        emit(line, err=True)
-        return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
     except UnverifiableLog as exc:
-        line = f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'
-        emit(line, err=True)
-        return EXIT_CODES[Outcome.INCONCLUSIVE], [line]
+        return _inconclusive(
+            f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'
+        )
     verdict.stamp()
     lines = [verdict.line(), f'verify: {verdict.result.render()}']
     lines += [f'  failed: {failure}' for failure in verdict.result.failures]

@@ -42,13 +42,14 @@ import sys
 import time
 import tomllib
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TextIO
 
 from lab_commons.dev.reportplace import refuse_report
 from lab_commons.log import emit
 
 __all__ = [
+    'ARCHIVED_SEGMENTS',
     'ARCHIVE_DIRECTORY',
     'CODE_SUFFIXES',
     'FAMILY_CODE_ROOTS',
@@ -60,6 +61,7 @@ __all__ = [
     'archive_scratch',
     'declared_misplaced',
     'declared_placement',
+    'is_archived',
     'main',
     'misplaced_code',
     'overdue_scratch',
@@ -106,6 +108,10 @@ FAMILY_CODE_ROOTS: tuple[str, ...] = tuple(
 
 #: The directory under a day's memory that holds archived one-offs, with an ``INDEX.md`` of reasons.
 ARCHIVE_DIRECTORY = 'attachments'
+#: Segments whose tree is read-only archived code at ANY depth: a migrated repo's ``attic/`` and an
+#: ``archived/`` tree. With a memory day's :data:`ARCHIVE_DIRECTORY` these are every archive a scan
+#: skips; :func:`is_archived` is the one reading, so no scan keeps its own copy of the set.
+ARCHIVED_SEGMENTS = frozenset({'attic', 'archived'})
 _INDEX = 'INDEX.md'
 _SECONDS_PER_DAY = 86400.0
 #: Where a repo declares its delta: ``[tool.lab_commons.placement]`` in this file.
@@ -324,3 +330,18 @@ def archive_scratch(
 
 if __name__ == '__main__':
     sys.exit(main())
+
+
+def is_archived(rel: str) -> bool:
+    """Whether repo-relative POSIX *rel* is archived code, which every code scan skips.
+
+    Archived means under an :data:`ARCHIVED_SEGMENTS` segment, or under the :data:`ARCHIVE_DIRECTORY`
+    of a ``.claude/memory/`` tree at any depth (memory is scoped per module in some consumers), which
+    is where :func:`archive_scratch` moves a one-off.
+    """
+    parts = PurePosixPath(rel).parts
+    if ARCHIVED_SEGMENTS.intersection(parts):
+        return True
+    return any(
+        parts[i : i + 2] == ('.claude', 'memory') and ARCHIVE_DIRECTORY in parts[i + 2 : -1] for i in range(len(parts))
+    )

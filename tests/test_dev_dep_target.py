@@ -405,3 +405,47 @@ def test_a_failed_lock_upgrade_syncs_nothing(tmp_path) -> None:
 
     assert dep.main(['--lock-upgrade'], cwd=tmp_path, run=run) == 2
     assert [call[1] for call in calls] == ['lock']
+
+
+def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into(tmp_path, monkeypatch) -> None:
+    """A checkout cloned WITHOUT its submodules is synced only after they are initialised (plan C5).
+
+    The sync's path dependency points into ``components/engine``; uv saw it as not existing until a
+    manual ``git submodule update --init``. The fake sync records whether the engine is there when it runs.
+    """
+    git = shutil.which('git')
+    assert git is not None
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '1')  # a local submodule url is a file:// transport
+    monkeypatch.setenv('GIT_CONFIG_KEY_0', 'protocol.file.allow')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0', 'always')
+    who = ['-c', 'user.name=control', '-c', 'user.email=control@example.invalid']
+
+    def git_in(where: Path, *argv: str) -> None:
+        subprocess.run([git, '-C', str(where), *who, *argv], check=True, capture_output=True)
+
+    engine, product, lane = tmp_path / 'engine', tmp_path / 'product', tmp_path / 'lane'
+    for repo in (engine, product):
+        subprocess.run([git, 'init', '-q', str(repo)], check=True, capture_output=True)
+    (engine / 'pyproject.toml').write_text('[project]\nname="engine"\nversion="0"\n', encoding='utf-8')
+    git_in(engine, 'add', '.')
+    git_in(engine, 'commit', '-qm', 'engine')
+    (product / 'pyproject.toml').write_text(
+        '[project]\nname="product"\nversion="0"\ndependencies=["engine"]\n'
+        '[tool.uv.sources]\nengine={path="components/engine"}\n',
+        encoding='utf-8',
+    )
+    git_in(product, 'submodule', 'add', '-q', engine.as_uri(), 'components/engine')
+    git_in(product, 'add', '.')
+    git_in(product, 'commit', '-qm', 'product')
+    subprocess.run([git, 'clone', '-q', str(product), str(lane)], check=True, capture_output=True)
+    mounted = lane / 'components/engine/pyproject.toml'
+    assert not mounted.exists(), 'PLANTED CONTROL: a plain clone leaves the submodule uninitialised'
+    seen = []
+
+    def run(argv, **_kwargs: object) -> SimpleNamespace:
+        seen.append(('sync' in argv, mounted.exists()))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
+    assert dep.main(['--bootstrap', str(lane)], run=run, cwd=lane) == 0
+    assert (True, True) in seen, 'the sync ran with the engine mounted'

@@ -33,12 +33,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from enum import Enum
 from typing import NamedTuple, Self
 
 from lab_commons.dev.logref import LogRef, stamp_line
+from lab_commons.outcomes import Conclusion
 
-__all__ = ['IncompleteRun', 'Outcome', 'Proof', 'Result', 'Selector', 'Verdict']
+__all__ = ['IncompleteRun', 'Proof', 'Result', 'Selector', 'Verdict']
 
 
 class IncompleteRun(RuntimeError):
@@ -48,24 +48,6 @@ class IncompleteRun(RuntimeError):
     fix is to make the run report everything it selected (or to record WHICH node id stayed
     silent), and a generic refusal would send that reader looking for a bad argument instead.
     """
-
-
-class Outcome(Enum):
-    """The three states a run can be in. TOTAL, and INCONCLUSIVE is the starting member.
-
-    Not a bool, and not an ``Optional[bool]``: ``None``/``False`` collapses "it ran and failed" with
-    "it did not really run", and every repair that follows from that collapse edits the digit rather
-    than running the suite.
-    """
-
-    INCONCLUSIVE = 'inconclusive'
-    PASS = 'pass'  # noqa: S105 -- a verdict name, not a credential
-    FAIL = 'fail'
-
-    @property
-    def settled(self) -> bool:
-        """Whether the run PROVED an answer, as opposed to being unable to say."""
-        return self is not Outcome.INCONCLUSIVE
 
 
 class _SelectorValues(NamedTuple):
@@ -201,7 +183,7 @@ class Result:
     constructor does not enforce, and every attribute here is one a caller could otherwise set.
     """
 
-    outcome: Outcome
+    outcome: Conclusion
     proof: Proof | None = None
     failures: tuple[str, ...] = ()
     reason: str = ''
@@ -217,21 +199,21 @@ class Result:
         """An unsettled result must say WHY, and must not be holding a proof that settles it."""
         if self.proof is not None and self.proof.complete:
             msg = (
-                f'this result is {Outcome.INCONCLUSIVE.value} while carrying a COMPLETE proof, so '
+                f'this result is {Conclusion.INCONCLUSIVE.value} while carrying a COMPLETE proof, so '
                 f'the answer was available and was not taken. A result that refuses to conclude '
                 f'over sufficient evidence is a declaration that lies.'
             )
             raise IncompleteRun(msg)
         if not self.reason.strip():
             msg = (
-                f'{Outcome.INCONCLUSIVE.value} with no reason is indistinguishable from an error '
+                f'{Conclusion.INCONCLUSIVE.value} with no reason is indistinguishable from an error '
                 f'message with the error removed. State which node ids stayed silent, or which '
                 f'truncation fired -- "cannot say" is only information once it says what it is.'
             )
             raise ValueError(msg)
         if self.failures:
             msg = (
-                f'this result is {Outcome.INCONCLUSIVE.value} and names {len(self.failures)} '
+                f'this result is {Conclusion.INCONCLUSIVE.value} and names {len(self.failures)} '
                 f'failure(s). Either the run covered its selector and this is a FAIL naming them, '
                 f'or it did not and nothing failed that can be attributed yet.'
             )
@@ -243,20 +225,20 @@ class Result:
             why = 'No proof was supplied.' if self.proof is None else self.proof.refusal
             msg = (
                 f'{self.outcome.value} cannot be claimed for this run: {why} Promotion out of '
-                f'{Outcome.INCONCLUSIVE.value} requires PROOF of completeness, because the default '
+                f'{Conclusion.INCONCLUSIVE.value} requires PROOF of completeness, because the default '
                 f'must be the answer a new way of running incompletely degrades to.'
             )
             raise IncompleteRun(msg)
-        if self.outcome is Outcome.PASS and self.failures:
+        if self.outcome is Conclusion.PASS and self.failures:
             msg = (
-                f'{Outcome.PASS.value} with {len(self.failures)} named failure(s) '
+                f'{Conclusion.PASS.value} with {len(self.failures)} named failure(s) '
                 f'({", ".join(self.failures)}). PASS is the absence of failures that were observed, '
                 f'not a value a caller may assert independently of them.'
             )
             raise IncompleteRun(msg)
-        if self.outcome is Outcome.FAIL and not self.failures:
+        if self.outcome is Conclusion.FAIL and not self.failures:
             msg = (
-                f'{Outcome.FAIL.value} names no failure, so there is nothing to act on. A red '
+                f'{Conclusion.FAIL.value} names no failure, so there is nothing to act on. A red '
                 f'verdict that cannot say which test was red is the same refusal a count pin is.'
             )
             raise IncompleteRun(msg)
@@ -272,7 +254,7 @@ class Result:
     @classmethod
     def inconclusive(cls, reason: str, *, proof: Proof | None = None) -> Result:
         """The honest default. *reason* is required and travels with the result."""
-        return cls(outcome=Outcome.INCONCLUSIVE, proof=proof, reason=reason)
+        return cls(outcome=Conclusion.INCONCLUSIVE, proof=proof, reason=reason)
 
     @classmethod
     def settled(cls, *, proof: Proof, failures: Iterable[str] = ()) -> Result:
@@ -283,7 +265,7 @@ class Result:
 
         """
         named = tuple(sorted(set(failures)))
-        return cls(outcome=Outcome.FAIL if named else Outcome.PASS, proof=proof, failures=named)
+        return cls(outcome=Conclusion.FAIL if named else Conclusion.PASS, proof=proof, failures=named)
 
     def render(self) -> str:
         """One line a report prints. Never the only place the fact is available."""

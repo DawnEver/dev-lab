@@ -129,8 +129,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   box at a declared, enforced demand; a producer serve spawned is not boxed twice.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
-* :mod:`lab_commons.dev.familyheads` -- a floating git package behind its forge head makes an env STALE;
-  verify refuses it naming the sync door, and an unreachable forge is said, never read as fresh.
+* :mod:`lab_commons.dev.lockpins` -- a git-installed package whose commit differs from the checkout's
+  ``uv.lock`` makes an env STALE; verify refuses it naming the sync door. Never judged against a remote tip.
 * :mod:`lab_commons.dev.selection` -- what a verify argv selects: targeted or the whole suite, and
   whether it may claim the skip census.
 * :mod:`lab_commons.dev.forgeserve` -- ``forge serve``: the one harness entry (tick, produce,
@@ -146,8 +146,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   record's shape.
 * :mod:`lab_commons.dev.runcache` -- this box's cache of judged verify runs, keyed by tree, env and
   selector: a judged key is cited, not re-run. It decides no push.
-* :mod:`lab_commons.dev.outcomes` -- the pytest plugin writing a run's per-test outcomes in the run
-  record's vocabulary, so a local run posts the same kind of part a cluster run does.
+* :mod:`lab_commons.dev.test_outcomes` -- the pytest plugin writing a Record of per-test cells
+  (:mod:`lab_commons.outcomes`) per process, so a local run posts the same kind of part a cluster run does.
 * :mod:`lab_commons.dev.lockcheck` -- the ``lock`` pre-push row (PIN + FRESHNESS): a pushed commit commits
   ``uv.lock`` at the NEWEST resolution, and every hold below the newest declares its reason.
 * :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
@@ -406,7 +406,7 @@ from lab_commons.dev.units import (
     scan_files,
     trailing_token,
 )
-from lab_commons.dev.verdict import IncompleteRun, Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
 
 __all__ = [
     'ABSENT',
@@ -430,7 +430,6 @@ __all__ = [
     'HookAdoption',
     'IncompleteRun',
     'LogRef',
-    'Outcome',
     'Overwidth',
     'Proof',
     'Remedy',

@@ -50,7 +50,7 @@ from typing import Final
 
 from lab_commons.compute.learned import BOX_WALL_S, LOCAL
 from lab_commons.compute.probe import OS_NAMES
-from lab_commons.dev.forgestatus import Status, status_history, status_post
+from lab_commons.dev.forgestatus import CommitStatus, status_history, status_post
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import ClusterPart, part_context
 from lab_commons.dev.producer import RETRYABLE
@@ -172,6 +172,7 @@ class Work:
     demand: Mapping[str, float] = field(default_factory=dict)
     producer: str = LOCAL  # what its run is LEARNED under: a part's ``local``, a request's declared name
     wall_s: int = BOX_WALL_S  # past it the box kills the run: a part's one day, a request's declared wall
+    box: int = 0  # the box ledger row the tick took for it (0: none); its producer adopts it, never re-admitted
 
     @property
     def context(self) -> str:
@@ -195,7 +196,7 @@ def this_machine(seat: ClusterAccount | None) -> str:
     return named or (socket.gethostname().split('.')[0] if seat is not None else '')
 
 
-def assess(history: Sequence[Status], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
+def assess(history: Sequence[CommitStatus], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:
     """Where the job posted in *context* stands on a commit whose every post is *history* (oldest first).
 
     *now* is the FORGE's time. Returns the state and the claim holding it (``None`` when nobody holds it).

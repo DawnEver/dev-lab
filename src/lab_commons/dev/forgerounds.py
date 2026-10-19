@@ -21,23 +21,22 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from lab_commons.box import Capacity, Holding
+from lab_commons.box import Capacity, Holding, Refused, take
 from lab_commons.box.ledger import Read
 from lab_commons.box.supply import Reading
 from lab_commons.compute import probe
 from lab_commons.compute.model import Demand, Supply
-from lab_commons.dev import forge as _forge
 from lab_commons.dev import forgerun, forgerunstate
 from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgeclaim import Work
 from lab_commons.dev.forgehosts import card_host, publish_card
-from lab_commons.dev.forgeproduce import Produced
+from lab_commons.dev.forgeproduce import Produced, box_claim
 from lab_commons.dev.forgetick import TickReport, tick
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.needsets import needs_of
 
-__all__ = ['Producing', 'Rounds', 'locked_fetch', 'supply_now']
+__all__ = ['Producing', 'Rounds', 'locked_fetch', 'reserve', 'supply_now']
 
 
 def locked_fetch(fetch: Callable[[Path], None]) -> Callable[[Path], None]:
@@ -135,12 +134,30 @@ def supply_now(
     return probe.box(name, capacity=capacity(), holdings=held, read=read)
 
 
+def reserve(
+    item: Work, *, root: Path, capacity: Callable[[], Capacity] = Capacity.read, read: Read = Reading.now
+) -> int | str:
+    """TAKE *item*'s box claim now, at exactly what its producer declares: its ledger row.
+
+    The demand is :func:`~lab_commons.dev.forgeproduce.box_claim`'s. The tick calls this before it claims the
+    part and the producer's box run adopts the row, so the one admission is the tick's. A box with no room
+    returns why (nothing held, nothing to post).
+    """
+    size = capacity()
+    try:
+        held = take(box_claim(item, size, root=root), f'{item.context}@{item.sha[:12]}', key=item.context,
+                    capacity=size, read=read)  # fmt: skip
+    except Refused as refused:
+        return str(refused)
+    return held.id
+
+
 def _tick(repo: str, root: Path, alarm: Callable[[Alarm], object], **kwargs: object) -> TickReport:
     """One :func:`~lab_commons.dev.forgetick.tick`; the forge refusing the stored credential alarms before it raises."""
     try:
         return tick(root, **kwargs)
     except ForgeCallFailed as failed:
-        if failed.report.attempts and failed.report.attempts[-1].returncode in _forge.AUTH_REFUSED:
+        if failed.credential_refused:
             seat = kwargs.get('seat')
             host = card_host(str(kwargs.get('machine') or ''), seat if isinstance(seat, ClusterAccount) else None)
             alarm(Alarm(AUTH, repo, f'the forge refused the stored credential on {host}', str(failed)))

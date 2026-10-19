@@ -7,6 +7,7 @@ The race and the lease are decided from the forge's own post order, so they are 
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -17,7 +18,7 @@ import pytest
 from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.box import GB, Capacity
+from lab_commons.box import BOX_ENV, GB, Capacity, holdings
 from lab_commons.compute import probe as compute_probe
 from lab_commons.compute.model import (
     BRANCH,
@@ -31,7 +32,8 @@ from lab_commons.compute.model import (
     Supply,
 )
 from lab_commons.compute.priority import Priority
-from lab_commons.dev import forgetick
+from lab_commons.compute.serves import SKIPPED_HERE, Serves
+from lab_commons.dev import forgeproduce, forgerounds, forgetick
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import (
     CLAIMED,
@@ -43,13 +45,14 @@ from lab_commons.dev.forgeclaim import (
     STALE,
     Claim,
     Serving,
+    Work,
     assess,
     serving,
     this_machine,
 )
 from lab_commons.dev.forgecoalesce import WAITING_BEHIND, behind
 from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgetick import tick
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import Policy
@@ -77,11 +80,11 @@ def server() -> Iterator[ThreadingHTTPServer]:
         yield httpd
 
 
-def _pending(claim: Claim, status_id: int, platform: str = BASE) -> Status:
-    return Status(f'tests/{platform}', 'pending', claim.description(), '', status_id, claim.login)
+def _pending(claim: Claim, status_id: int, platform: str = BASE) -> CommitStatus:
+    return CommitStatus(f'tests/{platform}', 'pending', claim.description(), '', status_id, claim.login)
 
 
-def _assess(history: list[Status], platform: str = BASE) -> tuple[str, Claim | None]:
+def _assess(history: list[CommitStatus], platform: str = BASE) -> tuple[str, Claim | None]:
     return assess(history, f'tests/{platform}', me=ME, now=NOW)
 
 
@@ -95,8 +98,8 @@ def test_a_claim_round_trips_through_its_description() -> None:
 
 def test_no_post_is_open_a_settled_part_is_done_and_my_live_claim_is_mine() -> None:
     assert _assess([]) == (OPEN, None)
-    assert _assess([Status('tests/jmag', 'success', 'x', '', 1)]) == (OPEN, None), 'another part is not mine'
-    assert _assess([_pending(ME, 1), Status('tests/base', 'failure', 'scope=full', '', 2)]) == (DONE, None)
+    assert _assess([CommitStatus('tests/jmag', 'success', 'x', '', 1)]) == (OPEN, None), 'another part is not mine'
+    assert _assess([_pending(ME, 1), CommitStatus('tests/base', 'failure', 'scope=full', '', 2)]) == (DONE, None)
     assert _assess([_pending(ME, 1)]) == (MINE, ME)
 
 
@@ -117,8 +120,8 @@ def test_a_stale_local_claim_is_retaken_by_anyone_serving_the_platform() -> None
 
 def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None:
     """PLANTED CONTROL: the same ``error`` state released for any other reason stays done."""
-    outage = Status('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
-    inconclusive = Status('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
+    outage = CommitStatus('tests/base', 'error', release_reason(ProducerExit.UNREACHABLE), '', 2)
+    inconclusive = CommitStatus('tests/base', 'error', release_reason(ProducerExit.INCONCLUSIVE), '', 2)
     assert _assess([_pending(ME, 1), outage]) == (OPEN, None)
     assert _assess([_pending(ME, 1), inconclusive]) == (DONE, None)
 
@@ -145,7 +148,7 @@ def test_my_holding_claim_is_my_latest_renewal() -> None:
 
 
 def test_a_foreign_pending_status_is_not_a_claim() -> None:
-    assert _assess([Status('tests/base', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
+    assert _assess([CommitStatus('tests/base', 'pending', 'queued by some CI', '', 1)]) == (OPEN, None)
 
 
 def test_a_box_serves_only_its_own_platform_and_never_a_cluster_over_ssh() -> None:
@@ -450,6 +453,56 @@ def test_two_small_jobs_are_both_admitted_on_one_tick(server, tmp_path: Path) ->
     assert [item.blocked for item in report.queue] == []
 
 
+@pytest.mark.parametrize('box_gib', [10, 32], ids=['one-fits', 'both-fit'])
+def test_the_tick_takes_the_box_claim_before_it_claims_a_part(
+    server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, box_gib: int
+) -> None:
+    """ONE LEDGER DECIDES: a part the box will not admit is never claimed, so nothing is posted on it.
+
+    No claim, so no ``error`` can follow; a claimed part carries the box claim its producer adopts.
+
+    The tick's supply (32 GB) says both fit; the ledger (10 GiB) holds room for one. PLANTED CONTROL: a 32 GiB
+    ledger admits both, each its own row.
+    """
+    monkeypatch.setenv(BOX_ENV, str(tmp_path / 'box.sqlite'))
+    repo, tips = _origin(tmp_path)
+    head, lane = _head_and_pr(tips)
+    size = Capacity(cpu=4.0, mem_bytes=box_gib * 2**30, seats={})
+    reserve = functools.partial(forgerounds.reserve, root=repo, capacity=lambda: size, read=quiet(size))
+    report = _tick(repo, server, supply=BOX, demand=_sized(head=8, topic_a=8), reserve=reserve)
+    rows = {one.id for one in holdings()}
+    assert {w.box for w in report.claimed} == rows, 'each claimed part carries its own ledger row'
+    posted = {r['path'] for r in Recorder.received if r['method'] == 'POST'}
+    if box_gib == 32:
+        assert [w.sha for w in report.claimed] == [lane, head]
+        assert len(rows) == 2
+        return
+    assert [w.sha for w in report.claimed] == [lane]
+    assert f'{API}/statuses/{head}' not in posted, 'a part the box refused is not posted: no claim, no error'
+    (waiting,) = report.queue
+    assert waiting.candidate.sha == head
+    assert waiting.blocked.startswith(NOT_ADMITTED)
+
+
+def test_the_producer_adopts_the_ticks_box_claim_and_drops_it_when_nothing_ran(tmp_path: Path) -> None:
+    """The box run is spelled to ADOPT the tick's row; a producer that never reached its run releases it.
+
+    PLANTED CONTROL: a part the tick took no claim for (``box=0``) is admitted by its own run, as before.
+    """
+    size = Capacity(cpu=4.0, mem_bytes=16 * 2**30, seats={})
+    work = Work('integrate/main', 'a' * 40, BASE, MINE, demand={'cpu': 1, 'mem_gb': 2.0})
+    row = forgerounds.reserve(work, root=tmp_path, capacity=lambda: size, read=quiet(size))
+    assert isinstance(row, int)
+    taken = dataclasses.replace(work, box=row)
+    argv = forgeproduce.boxed(taken, ['x'], size, tmp_path / 'o.json')
+    assert argv[argv.index('--claim') + 1] == str(row)
+    assert '--claim' not in forgeproduce.boxed(work, ['x'], size, tmp_path / 'o.json')
+    assert [one.id for one in holdings()] == [row]
+    with forgeproduce._released(taken):
+        pass
+    assert holdings() == [], 'no run adopted it: the claim does not outlive its producer'
+
+
 def test_a_big_job_is_skipped_and_a_smaller_lower_ranked_one_is_claimed(server, tmp_path: Path) -> None:
     """The boosted PR ranks first and does not fit; the head behind it does. PLANTED CONTROL: 64 GB takes both."""
     repo, tips = _origin(tmp_path)
@@ -648,8 +701,9 @@ def test_a_failed_optional_listing_never_hides_the_integration_head(server, tmp_
 
 
 def test_a_credential_refusal_on_an_optional_listing_still_raises(server, tmp_path: Path) -> None:
-    """PLANTED CONTROL for the two above: a 401 is the auth alarm's, never a skipped listing."""
+    """PLANTED CONTROL for the two above: a 401 ``GET /user`` confirms is the auth alarm's, never a skipped listing."""
     answer('GET', f'{API}/pulls', (401, {'message': 'token is required'}))
+    answer('GET', '/api/v1/user', (401, {'message': 'token is required'}))
     with pytest.raises(ForgeCallFailed):
         _integrate(server, tmp_path, [])
 
@@ -924,7 +978,7 @@ def _candidate(ref: str, sha: str, kind: str) -> Candidate:
     return Candidate('o/r', ref, sha, BASE, kind, NOW, 'full')
 
 
-def _history(**by_sha: list[Status]) -> object:
+def _history(**by_sha: list[CommitStatus]) -> object:
     return lambda sha: tuple(by_sha.get(sha, ()))
 
 
@@ -944,7 +998,7 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     tip = _candidate('integrate/main', new, INTEGRATION)
     running = _history(**{old: [_pending(BOB, 1)]})
     assert behind(repo, tip, schedule, running, NOW) == f'{WAITING_BEHIND} {old[:12]} (in flight on ada/bob)'
-    settled = _history(**{old: [_pending(BOB, 1), Status('tests/base', 'success', 'ok', '', 2, 'bob')]})
+    settled = _history(**{old: [_pending(BOB, 1), CommitStatus('tests/base', 'success', 'ok', '', 2, 'bob')]})
     assert behind(repo, tip, schedule, settled, NOW) == ''
     assert behind(repo, tip, schedule, _history(), NOW) == ''
     lane_old = tips['other']
@@ -1021,3 +1075,41 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB), settled]))
     assert new in {w.sha for w in _tick(repo, server, dry_run=True).pending}, 'planted control: claimable is pending'
+
+
+@pytest.mark.parametrize(
+    ('declared', 'claimed'),
+    [({'parts': 'needs-a-resource'}, False), ({}, True)],  # PLANTED CONTROL: undeclared claims base as today
+    ids=['restricted-skips-base', 'unrestricted-claims-base'],
+)
+def test_a_host_serving_only_resource_parts_leaves_base_to_the_others(
+    server,
+    tmp_path: Path,
+    declared: dict,
+    claimed: bool,  # noqa: FBT001 -- a parametrized case
+) -> None:
+    """User ruling 2026-10-18: G produces only what needs it; ``base`` any host produces waits for one, named."""
+    repo, tips = _origin(tmp_path)
+    head = tips['integrate/main']
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server, serves=Serves.of(declared), demand=lambda *_: Demand(cpu=1))
+    assert bool(report.claimed) is claimed
+    if not claimed:
+        assert report.queue[0].blocked.startswith(SKIPPED_HERE)
+        assert 'needs-a-resource' in report.queue[0].blocked
+
+
+def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
+    """The selection a box part is priced at is what base HANDS it (numerics-lab 2026-10-19: 1 test, asked 6 GB).
+
+    PLANTED CONTROL: a part nobody hands to (``base`` itself) has no known size, never zero.
+    """
+    statuses = [
+        CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=dev_checkout:1,jmag:2', ''),
+        CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=dev_checkout:5', ''),
+    ]
+    assert forgetick.handed(statuses, 'dev_checkout') == 6
+    assert forgetick.handed(statuses, 'jmag') == 2
+    assert forgetick.handed(statuses, 'base') is None

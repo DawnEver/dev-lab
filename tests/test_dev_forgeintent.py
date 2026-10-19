@@ -18,7 +18,7 @@ from _forge_fake import run_git
 
 from lab_commons.dev import forgeintent, forgeproduce
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work, assess
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.producer import RETRYABLE
@@ -35,7 +35,7 @@ class _Forge:
     """Every status post on one commit, ids ascending; :attr:`down` refuses every call."""
 
     def __init__(self) -> None:
-        self.posts: list[Status] = []
+        self.posts: list[CommitStatus] = []
         self.down = False
 
     def _gate(self) -> None:
@@ -43,13 +43,13 @@ class _Forge:
             attempt = Attempt(1, 1, 'connection refused', Diagnosis.TRANSIENT)
             raise ForgeCallFailed(Report(('POST', '/statuses'), (attempt,), 3))
 
-    def post(self, _client, _sha, *, context, state, description, target_url='') -> Status:
+    def post(self, _client, _sha, *, context, state, description, target_url='') -> CommitStatus:
         self._gate()
-        made = Status(context, state, description, target_url, id=len(self.posts) + 1)
+        made = CommitStatus(context, state, description, target_url, id=len(self.posts) + 1)
         self.posts.append(made)
         return made
 
-    def history(self, _client, _sha) -> tuple[Status, ...]:
+    def history(self, _client, _sha) -> tuple[CommitStatus, ...]:
         self._gate()
         return tuple(self.posts)
 

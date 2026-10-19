@@ -35,9 +35,11 @@ a host whose token the forge refuses cannot publish anything, so its card simply
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import socket
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -46,6 +48,7 @@ from typing import Any, Final
 
 from lab_commons.compute.model import Candidate, Ranked, Supply
 from lab_commons.compute.priority import Priority
+from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.dev import forgerunstate
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
@@ -58,9 +61,10 @@ from lab_commons.dev.forgepulls import (
     marker,
     marker_kinds,
 )
-from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed
+from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url, this_platform
 from lab_commons.hpc.account import ClusterAccount
+from lab_commons.log import emit
 
 __all__ = [
     'HOSTS_MARKER',
@@ -75,10 +79,12 @@ __all__ = [
     'hosts_issue',
     'hosts_issues',
     'is_hosts',
+    'main',
     'publish',
     'publish_card',
     'read_cards',
     'recording',
+    'retire',
     'this_host',
 ]
 
@@ -115,6 +121,7 @@ class HostCard:
     artefacts: str = ''  # why this host cannot write the large artefact store; '' when it can
     tools: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # tool -> {present, evidence}, as probed
     priority: Mapping[str, Sequence[str]] = field(default_factory=dict)  # machine-file [priority]: ordered first
+    serves: str = EVERY  # machine-file [serve] parts: which parts this host claims
 
     def favours(self, candidate: Candidate) -> bool:
         """Whether this host's declared ``[priority]`` orders *candidate* first."""
@@ -143,6 +150,7 @@ class HostCard:
         ]
         head += f'\n\ntools absent: {"; ".join(absent)}' if absent else ''
         head += f'\n\npriority: {Priority.of(self.priority).text()}' if any(self.priority.values()) else ''
+        head += f'\n\nserves: {Serves(self.serves).text()}' if self.serves != EVERY else ''
         loud = ''.join(f'\n- ALARM {a["kind"]}: {a["subject"]}' for a in self.alarms)
         raw = {
             **asdict(self),
@@ -208,6 +216,20 @@ def publish(client: Client, card: HostCard) -> str:
         number = _open_hosts_issue(client)
     action, _ = comment_upsert(client, number, kind=Marker.HOST, key=card.host, text=card.text())
     return action
+
+
+def retire(client: Client, host: str) -> str:
+    """Delete *host*'s card from the hosts issue: ``retired``, or ``absent`` when it has none.
+
+    A retired host is no longer listed; it rejoins by ticking again, which publishes a fresh card.
+    """
+    number = hosts_issue(client)
+    line = marker(Marker.HOST, host)
+    found = None if number is None else next((c for c in comment_list(client, number) if line in c.body), None)
+    if found is None:
+        return 'absent'
+    client.call('DELETE', f'{client.repo}/issues/comments/{found.id}')
+    return 'retired'
 
 
 def read_cards(client: Client) -> tuple[HostCard, ...]:
@@ -278,12 +300,14 @@ def publish_card(
     supply: Supply | None = None,
     running: Sequence[str] = (),
     priority: Mapping[str, Sequence[str]] | None = None,
+    serves: str = EVERY,
 ) -> None:
     """Publish this serving host's card, with the *alarms* it raised; a refusal is said, never fatal.
 
     *progress* is what each local part it holds has done so far, by ``(sha, platform)`` (``producing 42m``),
     published while they run. *supply* is what the tick admitted against (default: the cluster
-    standing's), *running* what else runs here, *priority* the subjects this host orders first.
+    standing's), *running* what else runs here, *priority* the subjects this host orders first, *serves* its
+    ``[serve] parts`` rule.
     """
     progress = progress or {}
     built = client(root)
@@ -308,7 +332,23 @@ def publish_card(
             artefacts=artefacts,
             tools=dict(tools or {}),
             priority=dict(priority or {}),
+            serves=serves,
         )
         say(f'[serve] host card {publish(built, card)}')
     except (ForgeCallFailed, ListingIncomplete, HostsIssueLost, OSError) as failed:
         say(f'[serve] ALARM could not publish the host card, and opened nothing: {failed}')
+
+
+def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
+    """``forge hosts retire HOST``: drop a host's card from this repo's hosts issue; exit 1 when the forge fails."""
+    parser = argparse.ArgumentParser(prog='lab_commons.dev.forge hosts', description=main.__doc__)
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    verbs.add_parser('retire', help='delete HOST card; it rejoins by ticking again').add_argument('host')
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    try:
+        outcome = retire(client_for(Path.cwd() if cwd is None else cwd), args.host)
+    except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
+        emit(f'[hosts] {failed}', err=True)
+        return 1
+    emit(f'[hosts] {args.host}: {outcome}')
+    return 0

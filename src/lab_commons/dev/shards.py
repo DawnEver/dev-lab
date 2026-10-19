@@ -3,7 +3,7 @@
 Migrated 2026-09-17 from consumer-a's ``scripts/gate/_shards.py``. Nothing repo-shaped was
 left behind to strip: the population's directory and filename pattern already arrived as arguments
 there, and :func:`compose` is handed rows somebody else read and parsed. What changed in the move is
-the VOCABULARY -- the outcome is :class:`lab_commons.dev.verdict.Outcome` rather than three bare
+the VOCABULARY -- the outcome is :class:`lab_commons.dev.verdict.Conclusion` rather than three bare
 strings, because this family already has a total three-state enum and a second spelling of it would
 be a fourth state nobody declared.
 
@@ -32,14 +32,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lab_commons.dev.testfacts import VacuousScanError
-from lab_commons.dev.verdict import Outcome
+from lab_commons.outcomes import Conclusion
 
 __all__ = ['Composed', 'Row', 'compose', 'member_costs', 'pack', 'partition', 'population']
 
 #: A row is ``(tree, env, outcome)`` as some reader recovered it, or ``None`` when that piece is
 #: absent or unreadable. The distinction between "absent" and "unreadable" belongs to the reader;
 #: from here both are the same fact -- this piece did not answer.
-type Row = tuple[str, str, Outcome] | None
+type Row = tuple[str, str, Conclusion] | None
 
 
 def population(root: Path, subdir: str, pattern: str, *, floor: int) -> tuple[str, ...]:
@@ -208,7 +208,7 @@ class Composed:
     """The composition's answer, and the evidence for it."""
 
     #: The composed outcome. ``INCONCLUSIVE`` whenever the set cannot answer for the whole.
-    result: Outcome
+    result: Conclusion
     #: Why, in words a reader who was not there can act on.
     reason: str
     #: How many pieces reported at all.
@@ -225,7 +225,7 @@ def _incomplete(rows: tuple[Row, ...], count: int) -> Composed | None:
     present = len([row for row in rows if row is not None])
     where = f'indices {missing}' if missing else f'{len(rows)} rows for a set of {count}'
     return Composed(
-        Outcome.INCONCLUSIVE,
+        Conclusion.INCONCLUSIVE,
         f'{count - present} of {count} shard verdicts did not arrive ({where}) -- an incomplete set '
         f'is not a verdict about the whole, it is a verdict about whichever shards happened to '
         f'finish',
@@ -269,7 +269,7 @@ def compose(rows: tuple[Row, ...], count: int) -> Composed:
     envs = {env for _tree, env, _outcome in settled}
     if len(trees) != 1 or len(envs) != 1:
         return Composed(
-            Outcome.INCONCLUSIVE,
+            Conclusion.INCONCLUSIVE,
             f'shards disagree about what was judged: tree={sorted(trees)} env={sorted(envs)} -- '
             f'shards of different trees or environments are not one run',
             count,
@@ -278,20 +278,20 @@ def compose(rows: tuple[Row, ...], count: int) -> Composed:
     tree = next(iter(trees))
     if tree == 'unknown' or tree.endswith('-dirty'):
         return Composed(
-            Outcome.INCONCLUSIVE,
+            Conclusion.INCONCLUSIVE,
             f'the shards agree on tree={tree}, which names no committed state -- shards measured on '
             f'an unidentifiable or uncommitted tree are not a verdict about a commit',
             count,
             count,
         )
     outcomes = [outcome for _tree, _env, outcome in settled]
-    failed = sum(1 for outcome in outcomes if outcome is Outcome.FAIL)
+    failed = sum(1 for outcome in outcomes if outcome is Conclusion.FAIL)
     if failed:
-        return Composed(Outcome.FAIL, f'{failed} of {count} shards FAILED', count, count)
-    if all(outcome is Outcome.PASS for outcome in outcomes):
-        return Composed(Outcome.PASS, f'all {count} shards PASSED over one tree', count, count)
+        return Composed(Conclusion.FAIL, f'{failed} of {count} shards FAILED', count, count)
+    if all(outcome is Conclusion.PASS for outcome in outcomes):
+        return Composed(Conclusion.PASS, f'all {count} shards PASSED over one tree', count, count)
     return Composed(
-        Outcome.INCONCLUSIVE,
+        Conclusion.INCONCLUSIVE,
         f'shard results are {sorted({outcome.value for outcome in outcomes})} -- a set cannot be '
         f'greener than its least conclusive shard',
         count,

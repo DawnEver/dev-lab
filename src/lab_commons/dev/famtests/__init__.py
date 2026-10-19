@@ -49,6 +49,9 @@ WHAT IS HERE, one module per shared body:
 * :mod:`lab_commons.dev.famtests.configrender` -- the rendered family artefacts equal base + delta.
 * :mod:`lab_commons.dev.famtests.famfiles` -- every project-level file is family-managed or owned
   with a reason, and every managed one is rendered; the configrender bodies, composed.
+* :mod:`lab_commons.dev.famtests.boxneeds` -- a body that judges the live checkout or runs ``node``
+  declares that need once, and a consumer test calling it must carry the resource marker, so a host
+  lacking it hands the test to the part that has it instead of reding on the host.
 * :mod:`lab_commons.dev.famtests.worktreeplace` -- no checkout of the repo lives outside
   ``<toplevel>/.claude/worktrees/``.
 * :mod:`lab_commons.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND

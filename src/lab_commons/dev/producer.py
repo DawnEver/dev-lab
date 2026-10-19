@@ -35,7 +35,7 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import TYPE_CHECKING, Final
 
-from lab_commons.box import Outcome, Refused
+from lab_commons.box import ProcessEnd, Refused
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -98,7 +98,7 @@ def release_reason(code: int) -> str:
     return reasons.get(code, f'released: producer crashed (exit {code})')
 
 
-def box_release_reason(ended: Outcome | Refused | None) -> str | None:
+def box_release_reason(ended: ProcessEnd | Refused | None) -> str | None:
     """The release a box record forces (refused, killed, or none: crashed); ``None`` when the producer ended itself.
 
     A refusal is RETRYABLE (nothing ran: the box had no room in time, or no enforcer); a kill and a crash

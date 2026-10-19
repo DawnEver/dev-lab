@@ -29,7 +29,6 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
@@ -40,6 +39,7 @@ from _box_fake import ended
 from lab_commons import box
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Refused, hold, write_ended
 from lab_commons.compute import learned
+from lab_commons.compute.model import Resources
 from lab_commons.dev import localpart, platformparts, verify, verifybox
 from lab_commons.dev.inflight import seat
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
@@ -54,12 +54,14 @@ from lab_commons.dev.reports import (
     read_ruff,
     stale_declarations,
 )
-from lab_commons.dev.runcache import CachedRun, runs
-from lab_commons.dev.verdict import Outcome, Verdict
+from lab_commons.dev.runcache import CachedRun, record, runs
+from lab_commons.dev.verdict import Verdict
 from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from lab_commons.dev.verify import _tee as tee_step
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.records import read_record
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Conclusion, Record, Status
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -122,7 +124,7 @@ VENDOR_B = 'tests/test_vendor.py::test_b'
 @pytest.fixture(autouse=True)
 def _fresh_family(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every ``main`` here judges a planted run, never this box's forge: the family check is its own file."""
-    monkeypatch.setattr(verify, 'family_freshness', lambda _root: (None, None))
+    monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
 
 
 def _verdict(reports: tuple[StepReport, ...], log: Path) -> Verdict:
@@ -440,7 +442,7 @@ class TestTheVerdict:
             read_pytest(CLEAN, returncode=0),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.PASS
+        assert verdict.result.outcome is Conclusion.PASS
         assert EXIT_CODES[verdict.result.outcome] == 0
 
     def test_a_failing_suite_fails_with_its_failures_named(self, log: Path) -> None:
@@ -450,7 +452,7 @@ class TestTheVerdict:
             read_pytest(FAILING, returncode=1),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.FAIL
+        assert verdict.result.outcome is Conclusion.FAIL
         assert 'tests/test_paths.py::test_the_root_is_the_checkout' in verdict.result.failures
         assert EXIT_CODES[verdict.result.outcome] == 1
 
@@ -462,10 +464,10 @@ class TestTheVerdict:
             read_pytest(INTERRUPTED, returncode=2),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'pytest' in verdict.result.reason, 'the silent step must be named, not counted'
         assert EXIT_CODES[verdict.result.outcome] == 3, 'the producer contract: 2 is a refused argv'
-        assert EXIT_CODES[Outcome.FAIL] != EXIT_CODES[Outcome.INCONCLUSIVE], 'the two remedies differ'
+        assert EXIT_CODES[Conclusion.FAIL] != EXIT_CODES[Conclusion.INCONCLUSIVE], 'the two remedies differ'
 
     def test_a_step_that_never_launched_is_silent_by_name(self, log: Path) -> None:
         """``selected`` comes from the step NAMES, which is the only way ``silent`` means anything."""
@@ -475,7 +477,7 @@ class TestTheVerdict:
             read_pytest(CLEAN, returncode=0),
         )
         verdict = _verdict(reports, log)
-        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'silent: ruff format --check .' in verdict.result.reason
 
     def test_the_verdict_stamps_a_log_a_later_reader_can_check(self, log: Path) -> None:
@@ -576,20 +578,20 @@ class TestThePlantedControl:
             (
                 ('tests/test_selected.py::test_a', 'tests/test_selected.py::test_b', 'tests/test_selected.py::test_c'),
                 '3 passed in 0.1s\n',
-                Outcome.PASS,
+                Conclusion.PASS,
             ),
             (
                 ('tests/test_selected.py::test_a',),
                 'SKIPPED tests/test_selected.py::test_a - unavailable\n20 passed, 1 skipped in 0.1s\n',
-                Outcome.INCONCLUSIVE,
+                Conclusion.INCONCLUSIVE,
             ),
-            ((), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
-            (('-v',), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
-            (('-k', 'selected'), '3 passed in 0.1s\n', Outcome.PASS),
-            (('-m', 'selected'), '3 passed in 0.1s\n', Outcome.PASS),
-            (('--deselect', 'tests/test_other.py'), '3 passed in 0.1s\n', Outcome.PASS),
-            (('--deselect=tests/test_other.py',), '3 passed in 0.1s\n', Outcome.PASS),
-            (('--unknown-selection',), '3 passed in 0.1s\n', Outcome.INCONCLUSIVE),
+            ((), '3 passed in 0.1s\n', Conclusion.INCONCLUSIVE),
+            (('-v',), '3 passed in 0.1s\n', Conclusion.INCONCLUSIVE),
+            (('-k', 'selected'), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('-m', 'selected'), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('--deselect', 'tests/test_other.py'), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('--deselect=tests/test_other.py',), '3 passed in 0.1s\n', Conclusion.PASS),
+            (('--unknown-selection',), '3 passed in 0.1s\n', Conclusion.INCONCLUSIVE),
         ],
         ids=[
             'three-nodes-not-a-global-census',
@@ -649,7 +651,7 @@ class TestThePlantedControl:
         assert verdict.result.outcome is expected
         if selection == ('--unknown-selection',):
             assert 'cannot establish skip census scope' in verdict.result.reason
-        elif selection and selection != ('-v',) and expected is Outcome.INCONCLUSIVE:
+        elif selection and selection != ('-v',) and expected is Conclusion.INCONCLUSIVE:
             assert 'not declared' in verdict.result.reason
         if not selection or selection == ('-v',):
             assert 'NOT skipped' in verdict.result.reason
@@ -685,7 +687,7 @@ class TestThePlantedControl:
         monkeypatch.setattr(verify, 'boxed', _unboxed)
         monkeypatch.setattr(verify, '_tee', recorded_step)
         verdict = verify.run_verify(tmp_path)
-        assert verdict.result.outcome is Outcome.INCONCLUSIVE
+        assert verdict.result.outcome is Conclusion.INCONCLUSIVE
         assert 'tests/test_gone.py::test_vanished' in verdict.result.reason
         assert 'allowed_skips' in verdict.result.reason
         pytest_step = [command for command in launched if 'pytest' in command]
@@ -748,9 +750,9 @@ class TestThePlantedControl:
     def test_a_planted_uncovered_step_cannot_be_promoted(self, log: Path) -> None:
         """The other half of the control, at the verdict level rather than the parser level."""
         clean = (read_ruff('ruff check .', 0), read_pytest(CLEAN, returncode=0))
-        assert _verdict(clean, log).result.outcome is Outcome.PASS
+        assert _verdict(clean, log).result.outcome is Conclusion.PASS
         planted = (*clean, StepReport(name='a step that never launched'))
-        assert _verdict(planted, log).result.outcome is Outcome.INCONCLUSIVE
+        assert _verdict(planted, log).result.outcome is Conclusion.INCONCLUSIVE
 
 
 class TestTheTeeOnAConsoleThatCannotCarryTheCharacter:
@@ -916,12 +918,12 @@ def _patched_main(
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     monkeypatch.setattr(verify, 'head_sha', lambda _root: heads.pop(0))
     monkeypatch.setattr(verify, 'status_paths', lambda _root: dirt.pop(0))
-    monkeypatch.setattr(localpart, 'read_outcomes', lambda _judged: {'t::a': 'passed'})
+    monkeypatch.setattr(localpart, 'read_cells', lambda _judged: ({'t::a': TestCell(Cell(Status.OK))}, frozenset()))
     monkeypatch.setattr(localpart, 'owners', lambda _root, _sha, reported, _collect: dict.fromkeys(reported, BASE))
     monkeypatch.setattr(localpart, 'present_here', lambda _root: frozenset({'windows'}))
     monkeypatch.setattr(localpart, 'local_record', lambda **fields: fields)
     monkeypatch.setattr(localpart, 'post_local', lambda _root, record, _directory: posted.append(record) or 'posted')
-    assert verify.main([]) == EXIT_CODES[Outcome.PASS]
+    assert verify.main([]) == EXIT_CODES[Conclusion.PASS]
     return posted
 
 
@@ -950,10 +952,10 @@ def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeyp
     monkeypatch.setattr(verify, 'cache_path', lambda _root: tmp_path / 'runs.jsonl')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('the duplicate ran the suite'))
     key = verify.run_key(root, ('tests/a.py',))
-    answer = {'code': EXIT_CODES[Outcome.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
+    answer = {'code': EXIT_CODES[Conclusion.FAIL], 'lines': ['[verdict] result=fail', 'verify: fail (1 failed)']}
     (box / f'{key.digest()}.r1.result').write_text(json.dumps(answer), encoding='utf-8')
     with hold(Demand(0, 0, 60, {seat(key): 1}), 'leader', 1, key=f'{seat(key)}:r1'):
-        assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+        assert verify.main(['tests/a.py']) == EXIT_CODES[Conclusion.FAIL]
 
 
 def test_the_run_key_is_the_tree_the_env_and_the_selection(tmp_path: Path) -> None:
@@ -980,9 +982,7 @@ def _unposted(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _plant(cache: Path, key: verify.RunKey, result: str) -> None:
-    cache.write_text(
-        json.dumps(asdict(CachedRun(key.tree, key.env, key.selector, result, '', 'x.log'))) + '\n', encoding='utf-8'
-    )
+    record(cache, CachedRun(key.tree, key.env, key.selector, result, '', 'x.log'))
 
 
 def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, tmp_path: Path) -> None:
@@ -991,7 +991,7 @@ def test_a_selection_the_cache_already_judged_is_cited_and_not_run(monkeypatch, 
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a judged selection ran again'))
     _plant(cache, verify.run_key(tmp_path, ('tests/a.py',)), 'FAIL')
-    assert verify.main(['tests/a.py']) == EXIT_CODES[Outcome.FAIL]
+    assert verify.main(['tests/a.py']) == EXIT_CODES[Conclusion.FAIL]
 
 
 def test_rerun_ignores_the_cache(monkeypatch, tmp_path: Path) -> None:
@@ -999,7 +999,7 @@ def test_rerun_ignores_the_cache(monkeypatch, tmp_path: Path) -> None:
     cache = _cached(monkeypatch, tmp_path)
     _plant(cache, verify.run_key(tmp_path, ()), 'FAIL')
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
-    assert verify.main(['--rerun']) == EXIT_CODES[Outcome.PASS]
+    assert verify.main(['--rerun']) == EXIT_CODES[Conclusion.PASS]
 
 
 def test_a_promoted_run_is_cached_with_its_commit(monkeypatch, tmp_path: Path) -> None:
@@ -1007,7 +1007,7 @@ def test_a_promoted_run_is_cached_with_its_commit(monkeypatch, tmp_path: Path) -
     _unposted(monkeypatch)
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
-    assert verify.main([]) == EXIT_CODES[Outcome.PASS]
+    assert verify.main([]) == EXIT_CODES[Conclusion.PASS]
     key = verify.run_key(tmp_path, ())
     assert [(run.tree, run.selector, run.result, run.commit) for run in runs(cache)] == [
         (key.tree, key.selector, 'PASS', 'a' * 40)
@@ -1022,24 +1022,25 @@ def test_an_inconclusive_run_is_not_cached_and_posts_no_part(monkeypatch, tmp_pa
     cut = StepReport(name='pytest', reported=(), failures=(), truncated=('the wall fired',))
     verdict = build_verdict((cut,), tree='sha256:' + 'b' * 64, env='env:1', spec='verify', log=LogRef.of(log))
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: verdict)
-    assert verify.main([]) == EXIT_CODES[Outcome.INCONCLUSIVE]
+    assert verify.main([]) == EXIT_CODES[Conclusion.INCONCLUSIVE]
     assert runs(cache) == ()
     unsettled = localpart.post_part(tmp_path, log, 'a' * 40, (), settled=verdict.result.outcome.settled)
     assert unsettled == 'part: not posted -- an INCONCLUSIVE run is no part'
 
 
 def _postable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judged: dict[str, str]) -> list[Path]:
-    """Route posting at a planted repo whose judged log has *judged* beside it; returns the records posted."""
+    """Route posting at a planted repo whose judged log has *judged* (id -> status) beside it; the records posted."""
     (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.parts]\noutput = "out"\n', encoding='utf-8')
-    (tmp_path / 'judged.outcomes').mkdir()
-    (tmp_path / 'judged.outcomes' / 'outcomes.json').write_text(json.dumps(judged), encoding='utf-8')
+    record = Record(tmp_path / 'judged.outcomes' / 'cells.jsonl')
+    for node, status in judged.items():
+        record.outcome(node, Cell(Status(status)))
     monkeypatch.setattr(localpart, 'vocabulary_at', lambda _root, _sha: Vocabulary())
     posted: list[Path] = []
     monkeypatch.setattr(localpart, 'post', lambda _root, path: posted.append(path) or 'posted')
     return posted
 
 
-def _posted_part(posted: list[Path]) -> tuple[str, int]:
+def _posted_part(posted: list[Path]) -> tuple[Conclusion, int]:
     (path,) = posted
     assert 'out' in path.parts, 'the record is written under [tool.lab_commons.parts] output'
     part = part_of(read_record(path))
@@ -1048,23 +1049,23 @@ def _posted_part(posted: list[Path]) -> tuple[str, int]:
 
 def test_a_fresh_pass_posts_a_part_covering_what_it_judged(monkeypatch, tmp_path: Path) -> None:
     """Live 2026-10-11 (lab-commons ff3106e): a full windows verify posted nothing -- its record covered no test."""
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed', 't::b': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok', 't::b': 'ok'})
     _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: _judged(tmp_path))
     assert verify.main([]) == ProducerExit.PASS
-    assert _posted_part(posted) == ('PASS', 2)
+    assert _posted_part(posted) == (Conclusion.PASS, 2)
 
 
 def test_a_cited_pass_posts_the_cited_runs_part(monkeypatch, tmp_path: Path) -> None:
     """Live 2026-10-11: CITED PASS exited 0 and posted nothing, so serve released it; the cache holds the evidence."""
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok'})
     cache = _cached(monkeypatch, tmp_path)
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
     key = verify.run_key(tmp_path, ())
     run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
-    cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
+    record(cache, run)
     assert verify.main([]) == ProducerExit.PASS
-    assert _posted_part(posted) == ('PASS', 1)
+    assert _posted_part(posted) == (Conclusion.PASS, 1)
 
 
 def test_a_run_that_judged_no_test_still_posts_no_part(monkeypatch, tmp_path: Path) -> None:
@@ -1099,7 +1100,7 @@ def _planted_steps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, pytest_te
     """Run the REAL ``main`` and ``run_verify`` with the seat free, the hooks clean and the steps planted."""
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
-    monkeypatch.setattr(verify, 'family_freshness', lambda _root: ('', ''))
+    monkeypatch.setattr(verify, 'lock_freshness', lambda _root: None)
     monkeypatch.setattr(verify, 'boxed', _unboxed)
     clean = StepReport(name='hooks', reported=('hooks',), failures=())
     monkeypatch.setattr(verify, 'read_hooks', lambda _root, **_kw: clean)
@@ -1238,11 +1239,12 @@ def test_a_part_the_declaration_cannot_have_is_refused_before_it_runs(monkeypatc
     assert "needs ['matlab']" in capsys.readouterr().err
 
 
-def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool) -> None:
+def _boxed_on(monkeypatch: pytest.MonkeyPatch, cpu: float, *, xdist: bool, free_gb: float = 16.0) -> None:
     monkeypatch.delenv(INSIDE_ENV, raising=False)
     monkeypatch.setenv(PRODUCING_VAR, 'tests/base@planted')  # naming a part is not being in the box
     box = Capacity(cpu=cpu, mem_bytes=16 * GB, seats={})
     monkeypatch.setattr(verifybox.Capacity, 'read', staticmethod(lambda: box))
+    monkeypatch.setattr(verifybox, 'free_room', lambda size: Resources(cpu=size.cpu, mem_gb=free_gb))
     monkeypatch.setattr(verifybox, 'xdist_installed', lambda: xdist)
     monkeypatch.setattr(verifybox, 'refresh_checkout', lambda _root: 0)  # no forge in a unit test
 
@@ -1311,6 +1313,27 @@ def test_a_producer_inside_the_box_runs_the_width_it_was_admitted_at(monkeypatch
     assert (argv, record) == (['py', *runs], None), 'not reboxed, and sized to the claim'
 
 
+def test_a_selection_runs_the_width_its_files_and_free_memory_hold(monkeypatch, tmp_path: Path) -> None:
+    """THE DECLARATION THAT LIED: a 1-file selection asked SELECTION_CPU workers it could never use.
+
+    The width is :func:`learned.fit_width` of SELECTION_CPU, the files selected and the FREE room, and the -n
+    the step runs IS the cores it declares. PLANTED CONTROL: a box with plenty runs the full width.
+    """
+    (tmp_path / 'tests').mkdir()
+    for name in ('a', 'b', 'c', 'd', 'e', 'f'):
+        (tmp_path / 'tests' / f'test_{name}.py').write_text('', encoding='utf-8')
+    monkeypatch.setattr(verifybox, 'origin_url', lambda _root: 'https://g/none.git')
+    _boxed_on(monkeypatch, 16.0, xdist=True)
+    one, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests/test_a.py'], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(one) == ('1', ['py', '-m', 'pytest', 'tests/test_a.py', '-n', '1']), 'one file, one worker'
+    full, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests'], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(full)[0] == str(verifybox.SELECTION_CPU), 'PLANTED CONTROL: plenty runs the full width'
+    _boxed_on(monkeypatch, 16.0, xdist=True, free_gb=1.6)
+    starved, _ = verifybox.boxed(tmp_path, ['py', '-m', 'pytest', 'tests'], queue_s=5, outcome=Path('o.json'))
+    assert _claimed(starved) == ('1', ['py', '-m', 'pytest', 'tests', '-n', '1']), '1.6 GB free holds one 1 GB worker'
+    assert starved[starved.index('--mem-gb') + 1] == '1', 'declared at the width it runs'
+
+
 def test_the_box_ending_the_pytest_step_is_named_never_read_as_a_verdict(tmp_path: Path) -> None:
     """The box's RECORD decides: refused raises naming the holder, killed and crashed are truncations."""
     record = tmp_path / 'step.outcome.json'
@@ -1359,11 +1382,11 @@ def test_a_selection_learns_its_whole_tree_peak_and_a_memory_kill_grows_it(tmp_p
     (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
     files = verifybox.selection_files(tmp_path, ['tests'])
     record = tmp_path / 'o.json'
-    write_ended(record, box.Outcome(-9, 'memory', 2 * GB, 1.0, 10.0, 'fake', 'k', None))
+    write_ended(record, box.ProcessEnd(-9, 'memory', 2 * GB, 1.0, 10.0, 'fake', 'k', None))
     verifybox.learn_ended(tmp_path, ['tests'], record)
     killed = verifybox.selection_mem_gb('https://g/w.git', files, 1)
     assert killed == pytest.approx(2 * 2 * learned.BOX_HEADROOM, abs=1e-6)  # GB: the 2 GB limit, doubled
-    write_ended(record, box.Outcome(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
+    write_ended(record, box.ProcessEnd(0, 'exit', 3 * GB, 1.0, 10.0, 'fake', 'k', None))
     verifybox.learn_ended(tmp_path, ['tests'], record)
     assert verifybox.selection_mem_gb('https://g/w.git', files, 1) == pytest.approx(3 * learned.BOX_HEADROOM, abs=1e-6)
     verifybox.learn_ended(tmp_path, ['tests'], None)  # a step the box did not run teaches nothing
@@ -1386,7 +1409,7 @@ def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, 
     A selection outside the producer serve spawned reaches no status call, on a clean unmoved HEAD; the
     PLANTED CONTROL is the same clean run inside the producer, which posts.
     """
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok'})
     _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
@@ -1397,12 +1420,12 @@ def test_a_local_measure_posts_no_part_and_the_producer_still_does(monkeypatch, 
     for name, value in producing(part_context(BASE), 'a' * 40).items():
         monkeypatch.setenv(name, value)
     assert verify.main(['--rerun']) == ProducerExit.PASS
-    assert _posted_part(posted) == ('PASS', 1)
+    assert _posted_part(posted) == (Conclusion.PASS, 1)
 
 
 def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_path: Path) -> None:
     """The cited path is the other door to the forge, and is shut the same way."""
-    posted = _postable(monkeypatch, tmp_path, {'t::a': 'passed'})
+    posted = _postable(monkeypatch, tmp_path, {'t::a': 'ok'})
     cache = _cached(monkeypatch, tmp_path)
     (tmp_path / 'tests').mkdir()
     (tmp_path / 'tests' / 'a.py').write_text('', encoding='utf-8')
@@ -1410,6 +1433,6 @@ def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_pat
     monkeypatch.setattr(verify, 'run_verify', lambda *_a, **_k: pytest.fail('a cited selection ran again'))
     key = verify.run_key(tmp_path, ('tests/a.py',))
     run = CachedRun(key.tree, key.env, key.selector, 'PASS', 'a' * 40, f'{tmp_path / "judged.log"}@sha256:x@1')
-    cache.write_text(json.dumps(asdict(run)) + '\n', encoding='utf-8')
+    record(cache, run)
     assert verify.main(['tests/a.py']) == ProducerExit.PASS
     assert posted == []

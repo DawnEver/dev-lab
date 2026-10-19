@@ -5,12 +5,20 @@ selector)``; it decides no push and is read by nobody else. A platform result is
 part on the forge (:mod:`lab_commons.dev.platformparts`), which every workstation can read; the
 per-test outcomes travel in that part's run record, not here.
 
-WHAT IS STORED. Only a PASS or FAIL on a tree that did not move during the run (:func:`remember`
-refuses anything else), with the commit it was about and the log it rests on. A key seen as both PASS
-and FAIL is FLAKY and is never served, whatever came last.
+WHAT IS STORED. An :class:`lab_commons.outcomes.Record` (plan A1.5): per key -- the identity of
+``(tree, env, selector)`` -- one outcome event, ``OK`` for PASS and ``REJECTED`` for FAIL, its data the key,
+the commit it was about and the log it rests on. Only a settled verdict on a tree that did not move is
+stored (:func:`remember` refuses anything else). The first decision is final: a run deciding a key the
+other way is a ``flaky`` event, never an overwrite, and a flaky key is never served. A repeat of the same
+decision writes nothing, so the first log is the one cited.
 
-WHERE IT LIVES. ``output/runcache/runs.jsonl`` in the MAIN checkout -- resolved through git's common
-directory, so every lane worktree shares one cache.
+A cache of the retired line shape (one JSON object per run, no schema) is refused by name with
+:class:`RetiredCache`: it is regenerable -- delete it and the next runs re-fill it.
+
+WHERE IT LIVES. ``output/runcache/record.jsonl`` in the MAIN checkout -- resolved through git's common
+directory, so every lane worktree shares one cache. It is a NEW file, not the retired line-shape file
+renamed in place: a checkout still at the retired code keeps appending its own file, so the two shapes never
+meet in one file while the family converges (the retired file is regenerable; delete it at will).
 """
 
 from __future__ import annotations
@@ -23,17 +31,42 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
-from lab_commons.dev.verdict import Outcome, Verdict
+from lab_commons.dev.verdict import Verdict
+from lab_commons.outcomes import OUTCOME, Cell, Conclusion, Event, FinalityError, Identity, Reason, Record, Status
 
-__all__ = ['CACHED', 'CACHE_REL', 'CachedRun', 'cache_path', 'cached', 'remember', 'runs']
+__all__ = [
+    'CACHED',
+    'CACHE_REL',
+    'FLAKY',
+    'CachedRun',
+    'RetiredCache',
+    'cache_path',
+    'cached',
+    'record',
+    'remember',
+    'runs',
+]
 
 #: The cache, relative to the MAIN checkout's root.
-CACHE_REL: Final = 'output/runcache/runs.jsonl'
+CACHE_REL: Final = 'output/runcache/record.jsonl'
 
 #: The only results cached. INCONCLUSIVE says nothing about the tree.
-CACHED: Final = frozenset(outcome.value.upper() for outcome in Outcome if outcome.settled)
+CACHED: Final = frozenset(outcome.value.upper() for outcome in Conclusion if outcome.settled)
 
 _GIT_TIMEOUT_S: Final = 60
+
+#: The caller event kind recorded when a key is decided the other way.
+FLAKY: Final = 'flaky'
+
+#: A settled result word -> the cell it is.
+_CELL: Final = {
+    Conclusion.PASS.value.upper(): Cell(Status.OK),
+    Conclusion.FAIL.value.upper(): Cell(Status.REJECTED, reason=Reason('fail', 'the verdict was FAIL')),
+}
+
+
+class RetiredCache(ValueError):
+    """A cache of the retired line shape: regenerable, so refused -- delete it and re-run."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,8 +95,22 @@ def cache_path(root: Path) -> Path:
     return Path(common).parent / CACHE_REL
 
 
+def _key(run: CachedRun) -> str:
+    return Identity.of({'tree': run.tree, 'env': run.env, 'selector': run.selector}).key
+
+
+def record(path: Path, run: CachedRun) -> None:
+    """Append *run* as its key's outcome; an opposite decision is a ``flaky`` event, never an overwrite."""
+    cache = _open(path)
+    data = {name: value for name, value in asdict(run).items() if name != 'result'}
+    try:
+        cache.outcome(_key(run), _CELL[run.result], data=data)
+    except FinalityError:
+        cache.append(Event(FLAKY, _key(run), data={**data, 'result': run.result}))
+
+
 def remember(path: Path, verdict: Verdict, *, tree: str, env: str, selector: str, commit: str) -> CachedRun | None:
-    """Append the run when its verdict is settled; an unsettled one is not a fact and is not cached."""
+    """Record the run when its verdict is settled; an unsettled one is not a fact and is not cached."""
     if not verdict.result.outcome.settled:
         return None
     run = CachedRun(
@@ -75,30 +122,50 @@ def remember(path: Path, verdict: Verdict, *, tree: str, env: str, selector: str
         f'{verdict.log.path.resolve()}@{verdict.log.digest}',
         datetime.now(UTC).isoformat(timespec='seconds'),
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as handle:
-        handle.write(json.dumps(asdict(run), sort_keys=True) + '\n')
+    record(path, run)
     return run
 
 
-def runs(path: Path) -> tuple[CachedRun, ...]:
-    """Every cached run, oldest first; an absent cache is empty, a torn or foreign line is skipped."""
+def _open(path: Path) -> Record:
+    """The cache's Record; a file of the retired line shape raises :class:`RetiredCache`."""
     try:
-        lines = path.read_text(encoding='utf-8').splitlines()
+        first = path.read_text(encoding='utf-8').splitlines()[0]
     except FileNotFoundError:
-        return ()
-    out: list[CachedRun] = []
-    for line in lines:
-        try:
-            out.append(CachedRun(**json.loads(line)))
-        except (ValueError, TypeError):
-            continue
-    return tuple(out)
+        return Record(path)
+    try:
+        retired = 'schema' not in json.loads(first)
+    except ValueError:
+        retired = False  # a torn tail is the Record's to judge
+    if retired:
+        msg = (
+            f'{path} is a run cache of the retired line shape; it is regenerable, so it is refused, never '
+            'upgraded -- delete it and the next runs re-fill it'
+        )
+        raise RetiredCache(msg)
+    return Record(path)
+
+
+def _replayed(path: Path) -> tuple[list[CachedRun], set[str]]:
+    found: list[CachedRun] = []
+    flaky: set[str] = set()
+    for event in _open(path).replay():
+        if event.kind == FLAKY:
+            flaky.add(event.key)
+        elif event.kind == OUTCOME and event.cell is not None:
+            result = next(word for word, cell in _CELL.items() if cell.status is event.cell.status)
+            found.append(CachedRun(**{**event.data, 'result': result}))
+    return found, flaky
+
+
+def runs(path: Path) -> tuple[CachedRun, ...]:
+    """Every cached decision, oldest first; an absent cache is empty."""
+    return tuple(_replayed(path)[0])
 
 
 def cached(path: Path, *, tree: str, env: str, selector: str) -> CachedRun | None:
-    """The newest run for the key, or ``None`` when there is none or the key is FLAKY."""
-    matching = [run for run in runs(path) if (run.tree, run.env, run.selector) == (tree, env, selector)]
-    if not matching or {run.result for run in matching} == CACHED:
+    """The key's decision, or ``None`` when there is none or the key is FLAKY."""
+    found, flaky = _replayed(path)
+    probe = CachedRun(tree, env, selector, '', '', '')
+    if _key(probe) in flaky:
         return None
-    return matching[-1]
+    return next((run for run in found if _key(run) == _key(probe)), None)

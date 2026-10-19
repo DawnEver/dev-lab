@@ -137,7 +137,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   `[tool.lab_commons.hpc] dependency_inputs`, `source_roots`, `install`, `needs`, `collect`, `outputs`,
   `timeout_s = {incremental = ..., full = ...}` and `native = { inputs = [...], build = "..." }`. A fresh sha
   with unchanged inputs builds nothing. The committed `uv.lock` is an input, so its hash keys the venv.
-- Everything lives under `~/ci/` in the account's home: `cache.git`, `envs/<key>`, `native/<key>`,
+- Everything lives under `~/ci/` in the account's home: `cache/<owner>-<name>-<hash8>.git` (one bare cache per repository, `origin` its URL, heads fetched with `--prune`), `envs/<key>`, `native/<key>`,
   `trees/<sha>`, `runs/<sha>`, `collect/`, `uv-cache`, `cargo-target`. A day-to-day checkout is never touched.
 - **Collection is cached per test file** (`lab_commons.hpc.collect`); only files with no entry are collected.
 - **A failed build stops the run** with the tail of `~/ci/trees/<sha>/.lab-ci/build.log`; prerequisites
@@ -150,12 +150,22 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   wall limit and memory from the slowest shard and worst peak times `policy.safety`.
 - The array asks for every declared partition that admits its shard (`--partition=shortq,defq`). A task pending
   past `stall_minutes` while a declared partition has a free slot is reported as a STALL with its remedy.
-- **Outcomes are streamed**, one JSON line per test phase keyed by pytest's `nodeid`, so a killed shard keeps
-  what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with doubled memory
-  after an out-of-memory kill; only what is still unfinished after that is `lost`.
-- The record holds (`platform` is the part's name) `{sha, req, scope, platform, system, env, account, job_ids, cluster, python, prep, plan,
-  rounds, outcomes, reasons, handed, durations, overheads, peaks_mb}`. Outcomes: `passed`, `failed`, `error`,
-  `skipped`, `xfailed`, `not-covered`, `lost`, `missing`. Only `passed` means passed.
+- **Test cells are streamed**, one JSON line per test phase keyed by pytest's `nodeid` -- a plain
+  `lab_commons.outcomes.Cell` (status, reason) plus the test's `Expectation` when it declares one -- so a killed
+  shard keeps what it reported. Its unfinished ids are re-submitted in halves for up to two more rounds, with
+  doubled memory after an out-of-memory kill; only what is still unfinished after that is `INFRA`.
+- The record holds (`platform` is the part's name) `{sha, req, scope, platform, system, env, account, job_ids, cluster,
+  python, prep, plan, rounds, cells, handed, durations, overheads, peaks_mb}`; `cells` holds only the ids it
+  covered (`lab_commons.hpc.testcells.TestCell`), `handed` every other id with its part. A record of the retired
+  word shape is refused by name (it is regenerable; the forge re-produces the sha); a run's live `state.json` of
+  that shape is upgraded on read.
+- **The pytest mapping** (`lab_commons.hpc.pytest_item.judged`, the one mapping for a local run and a cluster
+  item): passed -> `OK`; failed call -> `REJECTED`/assertion; setup or teardown error -> `ERROR`; a
+  pytest-timeout failure -> `TIMEOUT`; xfail / xpass -> `REJECTED` / `OK` under `Expectation(REJECTED)`. A SKIP is
+  mapped by the marker that declares it: a declared resource marker -> `UNAVAILABLE`, `not_applicable` ->
+  `NOT_APPLICABLE`; a skip with neither is refused by name, `REJECTED`/`xfail_not_skip` (XFAIL-NOT-SKIP). Killed
+  alone at the memory ceiling -> `OUT_OF_MEMORY`; exited mid-test -> `ERROR`; never reported -> `PENDING`; could
+  not be placed -> `UNAVAILABLE`; a file that does not collect -> `REJECTED`/collection.
 
 ## Parts by need-set
 
@@ -182,15 +192,16 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   `hands=<part>:<n>,...`. `base` is always wanted, and a part handed to is wanted next (`platformparts.derived`).
 - **A host claims a part when it HAS its need-set** (`lab_commons.compute.admission.admit`). What a host has is
   measured (`lab_commons.compute.probe`): its OS (a Slurm account is `linux`), and every checked tool
-  (`femm`, `jmag`, `matlab`, `node`, `simba`; `lab_commons.compute.presence`) that is FOUND, reads a version at or above
+  (`codex`, `femm`, `jmag`, `matlab`, `node`, `simba`; `lab_commons.compute.presence`) that is FOUND, reads a version at or above
   the FLOOR the serving repo declares once in `[tool.lab_commons.tools]` (`femm = {floor = "5.0", reason =
   "<why>"}`; no pin -- an undeclared tool is present at any version, and the version read is recorded in every
   local run record's `tools`), passed its SMOKE (cached
   6 h, re-run each serve tick when due) and has not failed a real unit (exit 4) here since; any other
   `[capabilities.<name>]` is present as declared. `seats` is its concurrency, the only declaration. A part no live host has the needs of waits
   `no host provides <resource>` in `forge queue`: blocked, never red, never skipped.
-- **A part is strict**: PASS only if every covered id is `passed`/`skipped`/`xfailed`; any `failed`/`error` is
-  FAIL; any `lost`/`missing` id makes it INCONCLUSIVE and it is not posted.
+- **A part is strict** (`lab_commons.hpc.testcells.conclude`): PASS only if every covered cell is DECIDED and meets
+  its expectation; any decided miss is FAIL; otherwise -- a RETRYABLE cell, or a FLAKY id (decided both ways in
+  one run) -- it is INCONCLUSIVE and it is not posted.
 - A producer other than `verify` calls `platformparts.select(root, sha, part, collect=...)` (``(its ids, every
   other id -> its part)``), runs its ids and writes a record of the same shape. The cluster runs a part with
   `hpc run submit --part <part>`; `forge serve` passes the claimed part.
@@ -214,7 +225,10 @@ These verbs reach the login hosts over ssh and are not how a commit's suite runs
   when it exists. A grant whose build fails is dropped and the batch re-spanned without it. A `workdir` under
   `~/ci/trees/` is refused by name: that tree is a test run's.
 - **One results file per run.** A run directory (`~/ci/jobs/<sha>/<name>-<stamp>`, else `<workdir>/.lab-hpc/...`)
-  holds the manifest, `job.sh` and `results.jsonl`. Each task appends one line per item and, after the worker
+  holds the manifest, `job.sh` and `results.jsonl`. Each task appends one `outcome` line per item, carrying a
+  `lab_commons.outcomes.Cell`: returned -> `OK` (the value rides in the line's data), raised the declared
+  `lab_commons.hpc.worker.Rejected` -> `REJECTED` with its reason, any other exception -> `ERROR`; a
+  pre-Cell worker's `item` lines are still read. After the worker
   exits, one `shard` line with its exit code and the tail of its output; the output itself stays in node-local
   `$TMPDIR` (`--output=/dev/null`). A shard is returned by a `shard` line with exit 0; `gather` and `retry` read
   only this file. A run an earlier worker wrote (`results/<shard>.json`) is read through a one-way upgrade.

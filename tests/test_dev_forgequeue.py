@@ -13,10 +13,12 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
+from lab_commons.compute.model import Candidate
 from lab_commons.dev import forgequeue
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgeclaim import Claim
 from lab_commons.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
+from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 NOW_HTTP = 'Sun, 11 Oct 2026 12:00:00 GMT'
@@ -242,3 +244,23 @@ def test_a_card_shows_probed_presence_with_the_evidence_a_tool_is_absent_on() ->
     assert present.tools_present() == {'femm'}
     assert 'tools absent' not in present.text()
     assert '+ `femm`' in present.text()
+
+
+def test_a_card_and_the_queue_show_a_hosts_claim_restriction() -> None:
+    """PLANTED CONTROL: an unrestricted card says nothing about it."""
+    card = _card('G', 'windows', NOW, serves='needs-a-resource')
+    assert 'serves: only parts needing a resource (`[serve] parts = "needs-a-resource"`)' in card.text()
+    assert 'serves:' not in _card('ada/alice', 'linux', NOW).text()
+    row = {**dataclasses.asdict(card), 'holds': [], 'alarms': [], 'running': [], 'stale': False}
+    view = {'now': NOW.isoformat(), 'queue': [], 'in_flight': [], 'hosts': [row], 'starved': [], 'branches': []}
+    assert any(line.startswith('    serves only parts needing a resource') for line in forgequeue.render(view))
+
+
+def test_the_queue_explains_a_part_every_live_host_skips_by_its_restriction() -> None:
+    """``base`` with only G (restricted) live names G's rule; PLANTED CONTROL: an Ada card serving it is not skipped."""
+    wanted = Candidate('o/r', 'integrate/main', 'a' * 40, 'base', 'integration', NOW, FULL)
+    g = _card('G', 'windows', NOW, serves='needs-a-resource')
+    why = forgequeue._why(wanted, [g], NOW)
+    assert 'G skipped here' in why
+    assert 'needs-a-resource' in why
+    assert 'skipped' not in forgequeue._why(wanted, [g, _card('ada/alice', 'linux', NOW)], NOW)

@@ -31,7 +31,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.footprint import Footprints, test_files
@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 __all__ = [
     'NEAREST',
     'SETTLED',
-    'UNCARRIED',
     'carried',
     'carry_from',
     'carry_target',
@@ -59,9 +58,6 @@ __all__ = [
 
 #: The states that are a part's verdict; ``pending`` is a claim and ``error`` a release.
 SETTLED: Final = frozenset({'success', 'failure'})
-
-#: The outcomes that are not a run's: an id never reported, or handed to another part.
-UNCARRIED: Final = frozenset({'lost', 'missing', 'not-covered'})
 
 #: How many ancestor runs B looks back at, nearest first -- each costs one footprint parse.
 NEAREST: Final = 3
@@ -150,9 +146,12 @@ def read_by(root: Path, b: str, shas: Iterable[str]) -> list[str]:
 
 
 def carry_from(
-    root: Path, b: str, runs: Mapping[str, Mapping[str, tuple[str, str]]]
-) -> dict[str, tuple[str, str, str]]:
-    """``{node: (outcome, origin sha, run sha)}`` *b* takes from *runs* -- ``{run sha: {node: (outcome, origin)}}``.
+    root: Path, b: str, runs: Mapping[str, Mapping[str, tuple[dict[str, Any], str]]]
+) -> dict[str, tuple[dict[str, Any], str, str]]:
+    """``{node: (cell, origin sha, run sha)}`` *b* takes from *runs* -- ``{run sha: {node: (cell, origin)}}``.
+
+    *runs* hold DECIDED plain test cells only (:func:`lab_commons.hpc.records.held_cells`): an id never
+    reported or handed to another part is no answer and is never offered.
 
     An earlier run of *b* ITSELF -- one released retryable (an outage, a box with no room) and claimed again --
     gives every outcome it holds first: nothing changed, so each stands. Then only the :func:`nearest` runs are
@@ -160,9 +159,9 @@ def carry_from(
     was RUN at (an outcome carried again keeps its first origin);
     *run sha* is the run it was read from.
     """
-    taken = {node: (told[0], told[1], b) for node, told in runs.get(b, {}).items() if told[0] not in UNCARRIED}
+    taken = {node: (told[0], told[1], b) for node, told in runs.get(b, {}).items()}
     for sha in nearest(root, b, runs):
-        held = {node: told for node, told in runs[sha].items() if node not in taken and told[0] not in UNCARRIED}
+        held = {node: told for node, told in runs[sha].items() if node not in taken}
         for node in carried(root, sha, b, held):
             taken[node] = (held[node][0], held[node][1], sha)
     return taken

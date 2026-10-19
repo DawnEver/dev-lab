@@ -9,6 +9,11 @@ does not know is the serving host's defect, so that sha waits. Any other job is 
 kind lacking its producer, its ref's budget, or admission -- and otherwise
 claimed, its demand then counted as running for every later candidate
 (:func:`lab_commons.compute.admission.admit`).
+
+ON A BOX THE LEDGER DECIDES LAST, AND ONCE: a local part is claimed only after its box claim is TAKEN
+(*reserve*, :func:`lab_commons.dev.forgerounds.reserve`) at exactly the demand its producer declares; the
+producer adopts that row, so a started part is never refused by the same box a moment later. A part the
+ledger refuses posts nothing -- it stays open and waits ``not admitted`` -- so no false ``error`` is published.
 """
 
 from __future__ import annotations
@@ -19,8 +24,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from lab_commons.box import Claim as BoxClaim
+from lab_commons.box import release
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
+from lab_commons.compute.serves import Serves
 from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
 from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgerequest import (
@@ -34,7 +42,7 @@ from lab_commons.dev.forgerequest import (
     untrusted,
 )
 from lab_commons.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
-from lab_commons.dev.forgestatus import Status
+from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import Client
 from lab_commons.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
 from lab_commons.hpc.declared import OutdatedKit
@@ -62,7 +70,7 @@ class ClaimPass:
     store_why: str = ''  # why the large artefact store is unusable here; '' when it is usable
     declarations: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why its declaration is refused
     unservable: set[str] = dataclasses.field(default_factory=set)  # keys whose producer this host kind cannot build
-    history: Callable[[str], Sequence[Status]] = lambda _sha: ()  # every status of a sha, read once a tick
+    history: Callable[[str], Sequence[CommitStatus]] = lambda _sha: ()  # every status of a sha, read once a tick
     work: list[Work] = dataclasses.field(default_factory=list)
     claimed: list[Work] = dataclasses.field(default_factory=list)
     refused: list[str] = dataclasses.field(default_factory=list)
@@ -73,6 +81,9 @@ class ClaimPass:
     trunks: tuple[str, ...] = ()  # origin refs whose code runs for any requester (X1)
     authors: frozenset[str] = frozenset()  # whose requests run here at any served sha (X1)
     reached: dict[str, str] = dataclasses.field(default_factory=dict)  # sha -> why a git source is unreachable here
+    serves: Serves = dataclasses.field(default_factory=Serves)  # [serve] parts: a skipped part waits for another host
+    #: Takes a LOCAL part's box claim before it is claimed: its ledger row, or why the box refused (None: no box).
+    reserve: Callable[[Work], int | str] | None = None
 
     def consider(self, item: Ranked) -> None:
         """Assess *item*, claim it when nothing blocks it, and keep it in the queue while it waits."""
@@ -98,7 +109,8 @@ class ClaimPass:
         self.work.append(one)
         if one.state in CLAIMABLE:
             self.queue.append(dataclasses.replace(item, blocked=blocked))
-            if not held(blocked) and wanted.key not in self.unservable and self._servable(wanted):
+            skipped = wanted.kind != REQUEST and self.serves.skips(needs_of(wanted.platform))
+            if not held(blocked) and not skipped and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
 
     def _servable(self, wanted: Candidate) -> bool:
@@ -183,7 +195,8 @@ class ClaimPass:
         """Why *wanted* is not claimed (``''``: it admits), and the resource names it needs."""
         needed = self._needs(wanted)
         why = (
-            behind(self.root, wanted, self.schedule, self.history, self.now)
+            (self.serves.skips(needed) if wanted.kind != REQUEST else '')
+            or behind(self.root, wanted, self.schedule, self.history, self.now)
             or over_budget(self.root, wanted, self.schedule, self.usage)
             or self._admission(wanted, needed)
         )
@@ -204,10 +217,23 @@ class ClaimPass:
             why = f'its declared outputs could exceed threshold_mb and {self.store_why}'
             self.refused.append(f'{one.context}: not claimed -- {why}')
             return one, why
-        one = claim(self.client, dataclasses.replace(one, demand=self.size(wanted, needed)), self.me)
+        one = dataclasses.replace(one, demand=self.size(wanted, needed))
+        if self.reserve is not None and one.cluster is None:
+            held = self.reserve(one)  # the box's one ledger decides BEFORE anything is posted on the part
+            if isinstance(held, str):
+                return one, f'{NOT_ADMITTED}: the box ledger refused it -- {held}'
+            one = dataclasses.replace(one, box=held)
+        try:
+            one = claim(self.client, one, self.me)
+        except BaseException:
+            if one.box:
+                release(BoxClaim(one.box, 0.0))
+            raise
         if one.state == MINE:
             self.claimed.append(one)
             self._took(wanted, needed)
+        elif one.box:
+            release(BoxClaim(one.box, 0.0))  # another host holds the part: its box claim is not ours to keep
         return one, ''
 
 

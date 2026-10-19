@@ -29,10 +29,11 @@ is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
   part's name): ``python -m lab_commons.hpc run gather`` writes it, and ``python -m
   lab_commons.dev.platformparts post <record>`` queues its status and the record
   (:mod:`lab_commons.dev.forgeoutbox`) -- posted once the commit is on origin. :func:`part_of` derives
-  the part STRICTLY: PASS only when every covered outcome is passed / skipped / xfailed; a failed or
-  error id is FAIL. A record with ANY lost or missing id is INCONCLUSIVE and is REFUSED, never posted:
-  measured 2026-10-09 a record of 50349 lost ids (a build that never produced a venv) was written as a
-  FAIL. Nothing covered is refused, and so is a record handing off an id of its own part.
+  the part STRICTLY, as :func:`lab_commons.hpc.testcells.conclude` over the record's test cells: PASS only
+  when every covered cell is DECIDED and meets its expectation, FAIL on any decided miss. An INCONCLUSIVE
+  record -- a RETRYABLE cell (never reported, lost, killed) and no miss, or a flaky id -- is REFUSED, never
+  posted: measured 2026-10-09 a record of 50349 ids lost to a build that never produced a venv was written
+  as a FAIL. Nothing covered is refused, and so is a record handing off an id of its own part.
 * Any other producer (a consumer's door, run as the declared ``produce``) calls :func:`select` with a
   collector over its own checkout, runs the ids of its part and writes a record of the same shape.
 
@@ -83,25 +84,25 @@ from lab_commons.compute.probe import os_name
 from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
+from lab_commons.dev.forgestatus import state_for
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
-from lab_commons.hpc.records import read_record
+from lab_commons.hpc.records import cells_of, read_record
 from lab_commons.hpc.retired import refusal
+from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from lab_commons.dev.forgestatus import Status
+    from lab_commons.dev.forgestatus import CommitStatus
 
 __all__ = [
     'BASE',
     'CONTEXT_PREFIX',
-    'NOT_COVERED',
     'PART_FIELD',
-    'PASSING',
-    'UNRUN',
     'ClusterPart',
     'Composition',
     'Part',
@@ -129,20 +130,11 @@ CONTEXT_PREFIX: Final = 'tests/'
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
 
-#: Covered outcomes that do not fail a part: ran and passed, or declined by the test's own design.
-PASSING: Final = frozenset({'passed', 'skipped', 'xfailed'})
-
 #: How many ids a refusal names before eliding; the count is always given.
 _NAMED: Final = 5
 
-#: Outcomes of ids that never reported: they make a part INCONCLUSIVE, never FAIL.
-UNRUN: Final = frozenset({'lost', 'missing'})
-
-#: The record's word for an id it handed to another part.
-NOT_COVERED: Final = 'not-covered'
-
-_STATE: Final = {'PASS': 'success', 'FAIL': 'failure'}
-_RESULT: Final = {state: result for result, state in _STATE.items()}
+#: The forge state a settled part reads back as; ``error`` (INCONCLUSIVE) is never a settled part.
+_RESULT: Final = {state_for(result): result for result in (Conclusion.PASS, Conclusion.FAIL)}
 
 _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
@@ -296,7 +288,7 @@ class Part:
 
     platform: str
     scope: str
-    result: str
+    result: Conclusion
     ran: int
     hands: dict[str, int] = field(default_factory=dict)
     carried: str = ''  # the sha12 this verdict was judged at, when it is carried (lab_commons.dev.forgecarry)
@@ -304,8 +296,8 @@ class Part:
 
     @property
     def state(self) -> str:
-        """``success`` for PASS, ``failure`` for FAIL."""
-        return _STATE[self.result]
+        """The forge state its conclusion posts as (:func:`lab_commons.dev.forgestatus.state_for`)."""
+        return state_for(self.result)
 
     def description(self) -> str:
         """The status description: ``scope= ran= hands=`` (module docstring)."""
@@ -322,20 +314,22 @@ def part_of(record: Mapping[str, Any]) -> Part:
     did not cover to the part that id belongs to.
     """
     platform, scope, sha = str(record['platform']), str(record['scope']), str(record['sha'])
-    outcomes: dict[str, str] = dict(record['outcomes'])
-    covered = {node: outcome for node, outcome in outcomes.items() if outcome != NOT_COVERED}
+    covered = cells_of(dict(record))
     if not covered:
         msg = f'the {platform} record for {sha} covers no test -- an empty part is not a pass'
         raise PartRefusal(msg)
-    unrun = sorted(node for node, outcome in covered.items() if outcome in UNRUN)
-    if unrun:
+    flaky = sorted(record.get('flaky', ()))
+    result = conclude(covered.values(), flaky)
+    if result is Conclusion.INCONCLUSIVE:
+        unanswered = sorted(node for node, one in covered.items() if one.met is None)
         msg = (
-            f'the {platform} record for {sha} is INCONCLUSIVE: {len(unrun)} of {len(covered)} covered test(s) '
-            f'never reported ({_elided(unrun)}) -- gather again or re-submit; it is not posted, so no admission '
-            'can cite it'
+            f'the {platform} record for {sha} is INCONCLUSIVE: {len(unanswered)} of {len(covered)} covered test(s) '
+            f'gave no answer ({_elided(unanswered)})'
+            + (f' and {len(flaky)} were decided both ways ({_elided(flaky)})' if flaky else '')
+            + ' -- gather again or re-submit; it is not posted, so no admission can cite it'
         )
         raise PartRefusal(msg)
-    handed = {node: str(record['handed'].get(node, '')) for node, out in outcomes.items() if out == NOT_COVERED}
+    handed = {node: str(owner) for node, owner in record['handed'].items()}
     disowned = sorted(node for node, owner in handed.items() if owner == platform)
     if disowned:
         msg = f'the {platform} record for {sha} hands off {len(disowned)} test(s) of its own part: {_elided(disowned)}'
@@ -347,7 +341,6 @@ def part_of(record: Mapping[str, Any]) -> Part:
     hands: dict[str, int] = {}
     for owner in handed.values():
         hands[owner] = hands.get(owner, 0) + 1
-    failing = any(outcome not in PASSING for outcome in covered.values())
     kept: dict[str, int] = {}
     for node, origin in record.get('carried', {}).items():
         if node in covered:
@@ -355,14 +348,14 @@ def part_of(record: Mapping[str, Any]) -> Part:
     return Part(
         platform=platform,
         scope=scope,
-        result='FAIL' if failing else 'PASS',
+        result=result,
         ran=len(covered) - sum(kept.values()),
         hands=hands,
         kept=kept,
     )
 
 
-def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ...]]:
+def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[str, ...]]:
     """``(parts by name, problems)`` from a commit's LATEST status per context.
 
     A ``tests/<part>`` status that is not a settled part -- a claim still ``pending``, an
@@ -393,7 +386,7 @@ def parts_of(statuses: Sequence[Status]) -> tuple[dict[str, Part], tuple[str, ..
     return parts, tuple(problems)
 
 
-def derived(statuses: Sequence[Status]) -> tuple[str, ...]:
+def derived(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
     """The parts a commit is known to need, sorted: :data:`BASE`, every posted part, and every part one hands to."""
     parts, _ = parts_of(statuses)
     return tuple(sorted({BASE, *parts, *(name for part in parts.values() for name in part.hands)}))
@@ -426,14 +419,14 @@ class Composition:
     """The composed answer: the parts it rests on, PASS/FAIL, and why it cannot be cited (empty when it can)."""
 
     parts: tuple[Part, ...]
-    result: str
+    result: Conclusion
     problems: tuple[str, ...]
 
 
 def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     """Compose *parts* by the rule in the module docstring."""
     ordered = tuple(parts[name] for name in sorted(parts))
-    result = 'FAIL' if any(part.result != 'PASS' for part in ordered) else 'PASS'
+    result = Conclusion.FAIL if any(part.result is not Conclusion.PASS for part in ordered) else Conclusion.PASS
     problems: list[str] = []
     if BASE not in parts:
         problems.append(f'no {part_context(BASE)} part is posted for {head}; {_PRODUCE}')
@@ -447,41 +440,41 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
 
 @dataclass(frozen=True)
 class Standing:
-    """A commit's result as its parts on the forge say it: ``PASS``, ``FAIL``, or ``''`` while unsettled.
+    """A commit's result as its parts on the forge say it: PASS, FAIL, or INCONCLUSIVE while unsettled.
 
     THE ONE READING of a commit's parts, shared by push admission and the integrator's queue: a FAIL
     part is ``FAIL`` whatever else is missing; otherwise any problem (a part missing, unsettled, or of
-    the wrong scope) leaves it ``''``; else ``PASS``.
+    the wrong scope) leaves it INCONCLUSIVE; else PASS.
     """
 
-    result: str
+    result: Conclusion
     parts: tuple[Part, ...]
     problems: tuple[str, ...]
 
     def cited(self) -> str:
         """The parts it rests on, one ``part=RESULT/scope ran=N`` each."""
-        return ', '.join(f'{part.platform}={part.result}/{part.scope} ran={part.ran}' for part in self.parts)
+        return ', '.join(f'{part.platform}={part.result.name}/{part.scope} ran={part.ran}' for part in self.parts)
 
 
-def standing(statuses: Sequence[Status], *, head: str, scope: str | None = None) -> Standing:
+def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None = None) -> Standing:
     """The :class:`Standing` of commit *head* from its latest statuses; *scope* requires every part at it."""
     parts, unsettled = parts_of(statuses)
     composed = compose(parts, head=head)
     problems = [*unsettled, *composed.problems]
     if scope is not None:
         problems += [
-            f'{part.platform} is {part.result} of scope {part.scope}; only a PASS of scope {scope} counts here'
+            f'{part.platform} is {part.result.name} of scope {part.scope}; only a PASS of scope {scope} counts here'
             for part in composed.parts
-            if part.result != 'PASS' or part.scope != scope
+            if part.result is not Conclusion.PASS or part.scope != scope
         ]
-    failed = any(part.result == 'FAIL' for part in composed.parts)
+    failed = any(part.result is Conclusion.FAIL for part in composed.parts)
     return Standing(result=_settled(failed=failed, problems=problems), parts=composed.parts, problems=tuple(problems))
 
 
-def _settled(*, failed: bool, problems: Sequence[str]) -> str:
+def _settled(*, failed: bool, problems: Sequence[str]) -> Conclusion:
     if failed:
-        return 'FAIL'
-    return '' if problems else 'PASS'
+        return Conclusion.FAIL
+    return Conclusion.INCONCLUSIVE if problems else Conclusion.PASS
 
 
 def post(root: Path, path: Path, onto: str = '') -> str:
@@ -497,7 +490,7 @@ def post(root: Path, path: Path, onto: str = '') -> str:
     sha = onto or str(record['sha'])
     enqueue(root, Post(sha, part_context(part.platform), part.state, part.description()), record=path)
     lines = flush(root)
-    return '\n'.join([f'[platformparts] {part.platform} part {part.result}: {part.description()}', *lines])
+    return '\n'.join([f'[platformparts] {part.platform} part {part.result.name}: {part.description()}', *lines])
 
 
 def main(argv: Sequence[str] | None = None) -> int:

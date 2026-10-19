@@ -1,7 +1,7 @@
 """VERDICT-AS-STATUS: ``lab_commons.dev.forgestatus`` against a REAL loopback server and REAL git repos.
 
 The evidence is what the server RECORDED. Both forges are one table of cases, because the claim is
-one normalized ``Status`` whichever forge answered; only the request shape differs.
+one normalized ``CommitStatus`` whichever forge answered; only the request shape differs.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from _forge_fake import Loopback, Recorder, answer, client, credential_env, make
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgestatus import (
     DESCRIPTION_LIMIT,
-    Status,
+    CommitStatus,
     head_sha,
     main,
     state_for,
@@ -28,7 +28,8 @@ from lab_commons.dev.forgestatus import (
 )
 from lab_commons.dev.logref import LogRef
 from lab_commons.dev.treedirt import status_paths
-from lab_commons.dev.verdict import Outcome, Proof, Result, Selector, Verdict
+from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
+from lab_commons.outcomes import Conclusion
 
 
 @pytest.fixture
@@ -44,23 +45,23 @@ CASES = (
 _SHA = 'a' * 40
 
 
-def _verdict(tmp_path: Path, outcome: Outcome) -> Verdict:
+def _verdict(tmp_path: Path, outcome: Conclusion) -> Verdict:
     log = tmp_path / 'v.log'
     log.write_text('ran\n', encoding='utf-8')
     selector = Selector(spec='verify', node_ids=('x',))
-    if outcome is Outcome.INCONCLUSIVE:
+    if outcome is Conclusion.INCONCLUSIVE:
         result = Result.inconclusive('x went silent', proof=Proof.of(selector, []))
     else:
-        result = Result.settled(proof=Proof.of(selector, ['x']), failures=['x'] if outcome is Outcome.FAIL else [])
+        result = Result.settled(proof=Proof.of(selector, ['x']), failures=['x'] if outcome is Conclusion.FAIL else [])
     return Verdict(tree='sha256:' + 'b' * 64, env='env:1', selector=selector, result=result, log=LogRef.of(log))
 
 
 def test_pass_is_success_fail_is_failure_and_inconclusive_is_error() -> None:
     # User ruling 2026-10-04: a lane may push an INCONCLUSIVE tree, so every pushed tree carries its
     # verdict -- a non-success state the trunk's protection still refuses.
-    assert state_for(Outcome.PASS) == 'success'
-    assert state_for(Outcome.FAIL) == 'failure'
-    assert state_for(Outcome.INCONCLUSIVE) == 'error'
+    assert state_for(Conclusion.PASS) == 'success'
+    assert state_for(Conclusion.FAIL) == 'failure'
+    assert state_for(Conclusion.INCONCLUSIVE) == 'error'
 
 
 @pytest.mark.parametrize(('forge', 'root'), CASES)
@@ -72,7 +73,7 @@ def test_status_post_sends_state_context_and_a_truncated_description(server, for
     sent = Recorder.received[-1]
     assert (sent['method'], sent['path']) == ('POST', f'{root}/statuses/{_SHA}')
     assert sent['body'] == {'state': 'success', 'context': 'tests/linux', 'description': 'x' * DESCRIPTION_LIMIT}
-    assert posted == Status('tests/linux', 'success', 'd', '')
+    assert posted == CommitStatus('tests/linux', 'success', 'd', '')
 
 
 def test_a_state_outside_the_four_is_refused_before_anything_is_sent(server) -> None:
@@ -96,14 +97,17 @@ def test_gitea_list_keeps_the_newest_status_per_context_and_reads_status_as_stat
         ),
     )
     listed = status_list(client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (Status('tests/linux', 'success', 'new', ''), Status('tests/windows', 'pending', 'h', ''))
+    assert listed == (
+        CommitStatus('tests/linux', 'success', 'new', ''),
+        CommitStatus('tests/windows', 'pending', 'h', ''),
+    )
 
 
 def test_github_list_reads_the_combined_status(server) -> None:
     combined = {'state': 'success', 'statuses': [{'context': 'tests/linux', 'state': 'success', 'description': 'd'}]}
     answer('GET', f'/repos/o/r/commits/{_SHA}/status', (200, combined))
     listed = status_list(client(Forge('github.com', 'o', 'r'), Loopback(server)), _SHA)
-    assert listed == (Status('tests/linux', 'success', 'd', ''),)
+    assert listed == (CommitStatus('tests/linux', 'success', 'd', ''),)
 
 
 # --------------------------------------------------------------------------------------------
@@ -135,7 +139,7 @@ def test_head_sha_and_status_paths_read_a_real_checkout(tmp_path: Path) -> None:
 
 
 def test_an_inconclusive_verdict_names_itself_in_the_error_description(tmp_path: Path) -> None:
-    verdict = _verdict(tmp_path, Outcome.INCONCLUSIVE)
+    verdict = _verdict(tmp_path, Conclusion.INCONCLUSIVE)
     assert state_for(verdict.result.outcome) == 'error'
     assert 'result=inconclusive' in verdict.line()[:DESCRIPTION_LIMIT]
 

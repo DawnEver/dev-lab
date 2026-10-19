@@ -91,6 +91,10 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | delete merged origin branches by hand | declare `prune_merged = true`; every serving host prunes them ([pruning origin](branch-set.md#pruning-origin)) |
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
+| define your own `Outcome`/`Status`/`Conclusion` | import them from `lab_commons.outcomes`, the one place they are defined |
+| a retired outcome spelling (every old -> new is a row of `lab_commons.hpc.retired.RETIRED`, plan A1) | `lab_commons.dev.test_outcomes` (`CellRecorder`, `read_cells(directory) -> (cells, flaky)`), `compute.execute.Settled`, `dev.retention.Freed`, `box.ProcessEnd`, `supervise.deploy.PhaseResult`, `dev.forgestatus.CommitStatus`, `hpc.records.held_cells` |
+| read a run record's per-test words | `lab_commons.hpc.records.cells_of(record)` (id -> `TestCell`); a part's verdict is `lab_commons.hpc.testcells.conclude(cells, flaky)` |
+| `pytest.skip` / `skipif` a test that cannot run here | a declared resource marker when it needs a tool or host fact (`[tool.lab_commons.tests] resources`, e.g. `codex`); `@pytest.mark.not_applicable` only when the question does not exist on this platform; any other skip is refused (XFAIL-NOT-SKIP) |
 
 ## One queue for every serving host
 

@@ -1,7 +1,8 @@
 """The RUN CACHE: this box's judged runs, keyed by (tree, env, selector), cited instead of re-run.
 
-Driven over a real file. The two refusals that keep it honest are planted: an INCONCLUSIVE is never
-cached, and a key seen as both PASS and FAIL (flaky) is never served.
+Driven over a real file, an :class:`lab_commons.outcomes.Record` (plan A1.5). The refusals that keep it
+honest are planted: an INCONCLUSIVE is never cached, a key seen as both PASS and FAIL (flaky) is never
+served and never overwritten, and a cache of the retired line shape is refused by name.
 """
 
 from __future__ import annotations
@@ -12,9 +13,11 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
+import pytest
+
 from lab_commons.dev.logref import LogRef
 from lab_commons.dev.reports import StepReport
-from lab_commons.dev.runcache import CACHE_REL, CachedRun, cache_path, cached, remember, runs
+from lab_commons.dev.runcache import CACHE_REL, CachedRun, RetiredCache, cache_path, cached, record, remember, runs
 from lab_commons.dev.verdict import Verdict
 from lab_commons.dev.verify import build_verdict
 
@@ -28,8 +31,8 @@ def _verdict(tmp_path: Path, *, truncated: tuple[str, ...] = ()) -> Verdict:
     return build_verdict((report,), tree='T', env='E', spec='verify', log=LogRef.of(log))
 
 
-def _line(result: str) -> str:
-    return json.dumps(asdict(CachedRun('T', 'E', 'verify', result, '', 'x.log'))) + '\n'
+def _run(result: str) -> CachedRun:
+    return CachedRun('T', 'E', 'verify', result, '', 'x.log')
 
 
 def test_a_remembered_pass_is_cited_for_its_key_only(tmp_path: Path) -> None:
@@ -50,15 +53,38 @@ def test_an_inconclusive_run_is_not_remembered(tmp_path: Path) -> None:
 
 def test_a_key_seen_both_ways_is_flaky_and_never_served(tmp_path: Path) -> None:
     cache = tmp_path / 'runs.jsonl'
-    cache.write_text(_line('PASS') + _line('FAIL') + _line('PASS'), encoding='utf-8')
+    for result in ('PASS', 'FAIL', 'PASS'):
+        record(cache, _run(result))
     assert cached(cache, tree='T', env='E', selector='verify') is None
+    kinds = [json.loads(line)['kind'] for line in cache.read_text(encoding='utf-8').splitlines()]
+    assert kinds == ['outcome', 'flaky'], 'the first decision stands; the opposite one is a flaky event'
+    assert [run.result for run in runs(cache)] == ['PASS']
 
 
-def test_an_absent_cache_or_a_torn_line_serves_nothing_extra(tmp_path: Path) -> None:
+def test_the_cache_is_an_outcomes_record_keyed_by_tree_env_and_selector(tmp_path: Path) -> None:
+    cache = tmp_path / 'runs.jsonl'
+    record(cache, _run('FAIL'))
+    (line,) = cache.read_text(encoding='utf-8').splitlines()
+    event = json.loads(line)
+    assert (event['kind'], event['cell']['status']) == ('outcome', 'rejected')
+    assert (event['data']['tree'], event['data']['env'], event['data']['selector']) == ('T', 'E', 'verify')
+
+
+def test_a_cache_of_the_retired_line_shape_is_refused_by_name(tmp_path: Path) -> None:
+    """Regenerable: no dual-format reading -- the cache is deleted and re-filled by re-running."""
+    cache = tmp_path / 'runs.jsonl'
+    cache.write_text(json.dumps(asdict(_run('PASS'))) + '\n', encoding='utf-8')
+    with pytest.raises(RetiredCache, match='retired line shape'):
+        runs(cache)
+
+
+def test_an_absent_cache_or_a_torn_last_line_serves_nothing_extra(tmp_path: Path) -> None:
     assert cached(tmp_path / 'absent.jsonl', tree='T', env='E', selector='verify') is None
     cache = tmp_path / 'runs.jsonl'
-    cache.write_text('{"torn\n' + _line('FAIL'), encoding='utf-8')
-    assert [run.result for run in runs(cache)] == ['FAIL']
+    record(cache, _run('FAIL'))
+    with cache.open('a', encoding='utf-8') as handle:
+        handle.write('{"torn')
+    assert [run.result for run in runs(cache)] == ['FAIL'], 'a torn LAST line is a kill mid-append, dropped'
 
 
 def test_the_cache_lives_in_the_main_checkout_even_from_a_worktree(tmp_path: Path) -> None:

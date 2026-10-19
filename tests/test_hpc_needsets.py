@@ -87,11 +87,11 @@ def test_the_suite_is_partitioned_by_need_set() -> None:
 
 
 def test_this_repo_names_its_off_cluster_tests_as_resources() -> None:
-    """Neither a dev checkout nor ``node`` is on the cluster's per-sha tree (Ada, 2026-10-12): both are resources.
+    """Neither a dev checkout, ``node`` nor the ``codex`` CLI is on the cluster's per-sha tree: each is a resource.
 
-    So a dev_checkout or node test is its own part, claimed only where a host has it.
+    So a codex, dev_checkout or node test is its own part, claimed only where a host has it.
     """
     declared = (Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8')
     vocabulary = read_vocabulary(declared)
-    assert vocabulary == Vocabulary(('dev_checkout', 'node'))
-    assert selecting(vocabulary, BASE) == 'not dev_checkout and not node'
+    assert vocabulary == Vocabulary(('codex', 'dev_checkout', 'node'))
+    assert selecting(vocabulary, BASE) == 'not codex and not dev_checkout and not node'
