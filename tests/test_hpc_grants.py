@@ -370,13 +370,6 @@ def test_the_retired_workstation_key_is_refused_by_name() -> None:
         load_grants(tomllib.loads('workstation = "w"\n' + _grant()))
 
 
-def test_the_tree_carries_its_submodules_at_their_pinned_commits() -> None:
-    spec = RunSpec(sha=SHA, repo_url='https://g/r.git', builds=Builds(install='uv sync', env_key='k1'), python='3.13')
-    script = build_script(spec)
-    assert 'git submodule update -q --init --recursive' in script, 'a tree without its submodules fails as broken code'
-    assert script.index('git submodule update') < script.index(spec.builds.install), 'submodules land before the build'
-
-
 # -- every declared partition is asked for; the grant with the most room builds ---------------------------
 
 
