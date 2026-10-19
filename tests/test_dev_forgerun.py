@@ -592,7 +592,8 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
     held = Progress('a' * 40, '7', 52, pending=52, reasons=('AssocGrpMemLimit',), pending_minutes=59.0)
     monkeypatch.setattr(forgeslurm, 'settle', lambda *_a, **_k: forgeslurm.PENDING)
     monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: held)
-    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: ({'rounds': [{'job_id': '7', 'mem_mb': 360658}]}, runner))
+    state = {'rounds': [{'job_ids': ['7'], 'mem_mb': 360658}]}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(

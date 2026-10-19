@@ -84,7 +84,7 @@ class SlurmCluster:
             raise
         except RuntimeError:  # no state.json: nothing was submitted, or it died before writing one
             return []
-        return [one['job_id'] for one in state['rounds']]
+        return [job for one in state['rounds'] for job in one['job_ids']]
 
     def orphans(self, run: Run) -> list[str]:
         """Jobs Slurm holds under this account with *run*'s job name (``run-<sha12>-<part>``), one id per array.
@@ -118,7 +118,7 @@ class SlurmCluster:
             history=learned.learned(run.repo_url),
             carry=lambda env: self.carry(run.sha, env, run.platform),
         )
-        return [one['job_id'] for one in state['rounds']]
+        return [job for one in state['rounds'] for job in one['job_ids']]
 
     def carry(self, sha: str, env: str, part: str) -> dict[str, tuple[dict[str, Any], str, str]]:
         """The cells *sha*'s run of *part* takes from its own earlier run and the nearest earlier runs of that part.
