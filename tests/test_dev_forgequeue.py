@@ -266,3 +266,17 @@ def test_the_queue_explains_a_part_every_live_host_skips_by_its_restriction() ->
     assert 'G skipped here' in why
     assert 'needs-a-resource' in why
     assert 'skipped' not in forgequeue._why(wanted, [g, _card('ada/alice', 'linux', NOW)], NOW)
+
+
+def test_a_card_withholding_jmag_skips_a_jmag_part_and_round_trips_through_its_comment() -> None:
+    """``[serve] withhold``: the queue names the kept resource; PLANTED CONTROL: a femm-only part is not skipped."""
+    keeps = _card(
+        'G', 'windows', NOW, withholds=('jmag',), tools={'jmag': {'present': True}, 'femm': {'present': True}}
+    )
+    assert 'withhold' in keeps.text()
+    jmag_part = Candidate('o/r', 'integrate/main', 'a' * 40, 'femm+jmag', 'integration', NOW, FULL)
+    femm_part = Candidate('o/r', 'integrate/main', 'b' * 40, 'femm', 'integration', NOW, FULL)
+    assert 'jmag' in forgequeue._why(jmag_part, [keeps], NOW)
+    assert 'skipped' not in forgequeue._why(femm_part, [keeps], NOW)
+    raw = json.loads(keeps.text().split('```json\n', 1)[1].split('\n```', 1)[0])
+    assert raw['withholds'] == ['jmag']

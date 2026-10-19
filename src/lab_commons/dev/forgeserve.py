@@ -218,7 +218,7 @@ def serve(
         carding={
             'client': client, 'machine': machine, 'seat': seat, 'host': host, 'standing': standing, 'table': table,
             'say': say, 'alarms': raised, 'tools': tools, 'priority': priority.row(),
-            'serves': serves.parts,
+            'serves': serves.parts, 'withholds': sorted(serves.withholds),
         },
         produce=functools.partial(
             produce, root, client=client, spawn=spawn, clock=clock, say=say, lease=lease, renew_s=every,
