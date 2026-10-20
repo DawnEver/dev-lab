@@ -49,7 +49,6 @@ from __future__ import annotations
 import dataclasses
 import re
 import shutil
-import socket
 import subprocess
 import tomllib
 from collections.abc import Callable, Sequence
@@ -316,7 +315,7 @@ def review_tick(
     base: str,
     run: Callable[[Sequence[str], Path], str] = run_command,
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
-    host: str = '',
+    host: str,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[str, ...]:
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
@@ -327,7 +326,6 @@ def review_tick(
     """
     lines: list[str] = []
     target = f'origin/{base}'
-    host = host or socket.gethostname()
     for pull in pr_list(client):
         head = pull.head_sha
         if pull.base != base or pull.draft or not head:

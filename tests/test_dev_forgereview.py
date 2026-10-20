@@ -108,7 +108,7 @@ def _forge(head: str, **pull: object) -> tuple[StateForge, int]:
 
 
 def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | None = None) -> tuple[str, ...]:
-    return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command, ready=_can)
+    return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command, ready=_can, host='box')
 
 
 def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_posted(tmp_path: Path) -> None:
@@ -161,7 +161,7 @@ def test_exit_2_is_the_commands_named_refusal_and_its_reason_is_the_status(tmp_p
         msg = 'the review command refused: unknown method version 9'
         raise ReviewRefused(msg)
 
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can, host='box')
     (status,) = status_list(forge, head)
     assert status.state == 'error'
     assert 'refused: unknown method version 9' in status.description
@@ -207,7 +207,7 @@ def test_a_host_without_the_commands_interpreter_or_module_is_unsupported_and_po
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     command = FakeCommand()
-    lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=can_start)
+    lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=can_start, host='box')
     assert 'unsupported' in lines[0]
     assert 'nothing posted' in lines[0]
     assert command.ran == []
@@ -411,8 +411,8 @@ def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
         msg = 'the review command exited 1: no provider'
         raise OSError(msg)
 
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can)
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can, host='box')
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can, host='box')
     (status,) = status_list(forge, head)
     assert status.state == 'error'
     assert 'OSError' in status.description
