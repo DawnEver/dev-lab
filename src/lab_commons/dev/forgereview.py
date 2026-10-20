@@ -213,10 +213,11 @@ def can_start(argv: Sequence[str], root: Path) -> str | None:
     found = shutil.which(argv[0]) or (argv[0] if Path(argv[0]).is_file() else None)
     if found is None:
         return f'unsupported: the review command {argv[0]!r} is not installed on this host'
-    if len(argv) >= 3 and argv[1] == '-m':  # noqa: PLR2004 -- interpreter, -m, module
-        probe = _door.run([found, '-c', _PROBE, argv[2]], cwd=root, capture_output=True, timeout=120, check=False)
-        if probe.returncode != 0:
-            return f'unsupported: the review command cannot import {argv[2]!r} on this host'
+    match argv:
+        case [_, '-m', module, *_]:
+            probe = _door.run([found, '-c', _PROBE, module], cwd=root, capture_output=True, timeout=120, check=False)
+            if probe.returncode != 0:
+                return f'unsupported: the review command cannot import {module!r} on this host'
     return None
 
 
