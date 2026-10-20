@@ -16,7 +16,7 @@ from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys
 ROOT = Path(__file__).resolve().parents[1]
 
 #: The registry itself and this test hold every spelling by construction; memory keeps history verbatim.
-_EXEMPT = ('src/lab_commons/hpc/retired.py', 'tests/test_hpc_retired.py')
+_EXEMPT = ('src/lab_commons/hpc/retired.py', 'src/lab_commons/hpc/_retired_compute.py', 'tests/test_hpc_retired.py')
 _HISTORY = '.claude/memory/'
 
 
