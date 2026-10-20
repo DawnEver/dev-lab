@@ -22,11 +22,12 @@ from lab_commons.dev import forgereview
 from lab_commons.dev.forgemerge import decide
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgereview import (
-    DEFAULT_COMMAND,
     RANGE_FIELD,
+    REFUSED_EXIT,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
     Review,
+    ReviewRefused,
     render,
     review_from,
     review_tick,
@@ -39,8 +40,12 @@ from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import standing
 from lab_commons.outcomes import Conclusion
 
+_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
-_MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+_MANIFEST = (
+    "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
+    "[tool.lab_commons.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+)
 
 
 def _output(*, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), **top: object) -> str:
@@ -95,7 +100,7 @@ def _forge(head: str, **pull: object) -> tuple[StateForge, int]:
 
 
 def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | None = None) -> tuple[str, ...]:
-    return review_tick(work, forge, review or Review(), base='integrate/main', run=command)
+    return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command)
 
 
 def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_posted(tmp_path: Path) -> None:
@@ -118,10 +123,41 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert 'does not gate' in status.description
 
 
-def test_the_family_default_command_is_the_headless_sharp_review_through_ai_lab() -> None:
-    assert Review().command == DEFAULT_COMMAND
-    assert DEFAULT_COMMAND[:3] == ('python', '-m', 'ai_lab.review')
-    assert RANGE_FIELD in DEFAULT_COMMAND
+def test_an_undeclared_command_reviews_nothing_and_says_so(tmp_path: Path) -> None:
+    """No default command: the model is the command's to name. PLANTED control: declared, it reviews."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    command = FakeCommand()
+    said: list[str] = []
+    assert Review().command == ()
+    (work / 'pyproject.toml').write_text(_MANIFEST.split('[tool.lab_commons.review]', maxsplit=1)[0], encoding='utf-8')
+    step(work, forge, policy=Policy(), say=said.append, run=command)
+    assert command.ran == []
+    assert forge.comments[number] == []
+    assert any('command is not declared' in line for line in said)
+
+
+def test_exit_2_is_the_commands_named_refusal_and_its_reason_is_the_status(tmp_path: Path) -> None:
+    """PLANTED control: another non-zero exit is a plain failure, not a refusal."""
+    interpreter = sys.executable
+    refuse = [interpreter, '-c', f'import sys; sys.stderr.write("unknown method version 9"); sys.exit({REFUSED_EXIT})']
+    with pytest.raises(ReviewRefused, match='refused: unknown method version 9'):
+        run_command(refuse, tmp_path)
+    with pytest.raises(OSError, match='exited 1') as other:
+        run_command([interpreter, '-c', 'import sys; sys.exit(1)'], tmp_path)
+    assert not isinstance(other.value, ReviewRefused)
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+
+    def refusing(_argv: Sequence[str], _root: Path) -> str:
+        msg = 'the review command refused: unknown method version 9'
+        raise ReviewRefused(msg)
+
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing)
+    (status,) = status_list(forge, head)
+    assert status.state == 'error'
+    assert 'refused: unknown method version 9' in status.description
+    assert forge.comments[number] == []
 
 
 @pytest.mark.parametrize('version', [2, 0, '1'])
@@ -217,12 +253,12 @@ def test_a_diff_over_the_cap_is_not_sent_and_says_so_once(tmp_path: Path) -> Non
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
-    _tick(work, forge, command, Review(max_diff_bytes=10))
+    _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert command.ran == []
     (status,) = status_list(forge, head)
     assert status.context == REVIEW_CONTEXT
     assert 'cap' in status.description
-    _tick(work, forge, command, Review(max_diff_bytes=10))
+    _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert len(forge.statuses[head]) == 1
 
 
@@ -243,8 +279,8 @@ def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
         msg = 'the review command exited 1: no provider'
         raise OSError(msg)
 
-    review_tick(work, forge, Review(), base='integrate/main', run=broken)
-    review_tick(work, forge, Review(), base='integrate/main', run=broken)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken)
     (status,) = status_list(forge, head)
     assert status.state == 'error'
     assert 'OSError' in status.description

@@ -25,8 +25,12 @@ THE COST IS BOUNDED: one command run per head sha (the status is the record; a s
 runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_bytes`` never reviewed. Declared::
 
     [tool.lab_commons.review]
-    command = ["python", "-m", "ai_lab.review", "--range", "{range}"]   # {range}: <merge base>..<head>
-    max_diff_bytes = 200000                                            # a larger diff is not reviewed
+    # {range}: <merge base>..<head>; the command names its own method and model (no default model exists)
+    command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
+    max_diff_bytes = 200000   # a larger diff is not reviewed
+
+Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
+(:class:`ReviewRefused`): its stderr reason is the ``error`` status.
 
 The keys of the retired in-process reviewer (``model``, ``max_tokens``, ``rules``) are refused by name.
 """
@@ -59,15 +63,16 @@ if TYPE_CHECKING:
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
-    'DEFAULT_COMMAND', 'RANGE_FIELD', 'RETIRED_KEYS', 'REVIEW_CONTEXT', 'Review', 'command_for', 'load_review',
+    'RANGE_FIELD', 'REFUSED_EXIT', 'RETIRED_KEYS', 'REVIEW_CONTEXT', 'Review', 'ReviewRefused', 'command_for',
+    'load_review',
     'render', 'review_from', 'review_tick', 'run_command', 'step',
 ]  # fmt: skip
 
 #: The placeholder the declared command carries; the reviewed ``<merge base>..<head>`` range replaces it.
 RANGE_FIELD: Final = '{range}'
 
-#: The family default: sharp-review's method, run headless through ai-lab, printing the findings JSON.
-DEFAULT_COMMAND: Final = ('python', '-m', 'ai_lab.review', '--range', RANGE_FIELD)
+#: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
+REFUSED_EXIT: Final = 2
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
@@ -86,7 +91,7 @@ _GIT_TIMEOUT_S: Final = 120
 class Review:
     """``[tool.lab_commons.review]``: the command that reviews, and the diff-size bound."""
 
-    command: tuple[str, ...] = DEFAULT_COMMAND
+    command: tuple[str, ...] = ()  # undeclared: nothing is reviewed (the command names its own model)
     max_diff_bytes: int = 200_000
 
 
@@ -120,14 +125,22 @@ def _git(root: Path, *args: str) -> str:
     return done.stdout
 
 
+class ReviewRefused(OSError):
+    """The review command refused the request (exit :data:`REFUSED_EXIT`), naming why on stderr."""
+
+
 def run_command(argv: Sequence[str], root: Path) -> str:
-    """The stdout of the declared review command run in *root*; :class:`OSError` naming a non-zero exit."""
+    """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure."""
     done = _door.run(
         list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
         timeout=_COMMAND_TIMEOUT_S, check=False,
     )  # fmt: skip
+    why = done.stderr.strip()[-300:]
+    if done.returncode == REFUSED_EXIT:
+        msg = f'the review command refused: {why}'
+        raise ReviewRefused(msg)
     if done.returncode != 0:
-        msg = f'the review command exited {done.returncode}: {done.stderr.strip()[-300:]}'
+        msg = f'the review command exited {done.returncode}: {why}'
         raise OSError(msg)
     return done.stdout
 
@@ -188,8 +201,8 @@ def review_tick(
         reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
         try:
             found = parse_findings(run(command_for(review, reviewed), root))
-        except UnknownSchemaVersion as unknown:
-            why = f'not reviewed: {unknown}'[:_DESCRIPTION]
+        except (UnknownSchemaVersion, ReviewRefused) as named:
+            why = f'not reviewed: {named}'[:_DESCRIPTION]
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
@@ -219,6 +232,9 @@ def step(
     """The review inside the integration step, on whichever host runs it; a failure is said, never raised."""
     try:
         review = load_review(root)
+        if not review.command:
+            say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
+            return
         for line in review_tick(root, built, review, base=policy.integration, run=run):
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:

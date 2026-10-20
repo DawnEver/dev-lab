@@ -59,9 +59,13 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 
 ```toml
 [tool.lab_commons.review]
-command = ["python", "-m", "ai_lab.review", "--range", "{range}"]   # {range}: <merge base>..<head>
-max_diff_bytes = 200000                                            # a larger diff is not reviewed
+# {range}: <merge base>..<head>; the command names its method and its model (the catalogue has no default)
+command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
+max_diff_bytes = 200000   # a larger diff is not reviewed
 ```
+
+Undeclared, nothing is reviewed. Exit 2 is the command's named refusal (bad method, version or range): its
+stderr reason is the `error` status.
 
 The in-process reviewer's keys (`model`, `max_tokens`, `rules`) and its machine-file capability are retired
 and refused by name (`lab_commons.hpc.retired`).
