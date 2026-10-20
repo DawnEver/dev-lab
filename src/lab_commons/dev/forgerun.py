@@ -193,10 +193,7 @@ def _gather(
     try:
         record = cluster.gather(run)
     except Unrecorded as why:
-        # a dropped run's live arrays would hold QOS submit slots forever (Ada 2026-10-20): cancel first
-        cancelled = cluster.cancel(run)
-        reason = f'{why}; jobs {" ".join(cancelled) or "none"} cancelled'
-        _settle(root, run, client=client, why=reason, say=say, alarm=alarm, ran=True)
+        _settle(root, run, client=client, why=str(why), say=say, alarm=alarm, ran=True)
         return None
     if record is None:
         # hpc submits retry rounds inside a gather: re-read every round's job id each tick (Ada,

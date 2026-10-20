@@ -1697,3 +1697,40 @@ def test_a_tree_gets_every_submodule_recursively_each_from_its_own_cache(tmp_pat
     assert not (Path(top) / 'modules').exists(), 'nothing written into the parent repository'
     pinned = _git('ls-tree', 'HEAD', 'mid', cwd=tree).split()[2]
     assert _git('rev-parse', 'HEAD', cwd=tree / 'mid') == pinned, 'the checkout is the recorded gitlink'
+
+
+def test_a_run_that_cannot_be_gathered_has_its_live_jobs_cancelled_before_it_is_dropped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ada 2026-10-20: a run dropped as "cannot be gathered" left its arrays queued, holding QOS submit slots.
+
+    The drop cancels every job of the run Slurm still holds. PLANTED CONTROL: a run still pending cancels nothing.
+    """
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from lab_commons.hpc import watch  # noqa: PLC0415
+    from lab_commons.hpc.config import Config  # noqa: PLC0415
+
+    asked: list[str] = []
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return '7738129\n' if command.startswith('squeue') else ''
+
+    machine = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
+    sha = 'a' * 40
+
+    def unreadable(*_a: object, **_k: object) -> None:
+        msg = 'ssh exited 1: scontrol: error: something else'
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(watch, 'gather_run', unreadable)
+    args = ([sha], machine, lambda _grant: runner, Config(), tmp_path)
+    assert watch.settle(*args, part='base', sleep=None) == 1  # type: ignore[arg-type]
+    assert 'scancel 7738129' in asked, 'a dropped run leaves no live job'
+
+    asked.clear()
+    monkeypatch.setattr(watch, 'gather_run', lambda *_a, **_k: None)
+    monkeypatch.setattr(watch, 'where', lambda *_a, **_k: SimpleNamespace(describe=lambda: 'pending'))
+    assert watch.settle(*args, part='base', sleep=None) == PENDING  # type: ignore[arg-type]
+    assert not any(command.startswith('scancel') for command in asked), asked

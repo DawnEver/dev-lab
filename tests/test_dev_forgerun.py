@@ -31,6 +31,7 @@ from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
+from lab_commons.hpc import run as hpc_run
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Config
@@ -600,6 +601,7 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
     monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: held)
     state = {'rounds': [{'job_ids': ['7'], 'mem_mb': 360658}]}
     monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(hpc_run, 'load_state', lambda *_a: (state, runner))  # the one cancel path reads it there
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(
@@ -648,24 +650,6 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     post = store.posts[-1]
     assert post['status'] == 'error'
     assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
-
-
-def test_a_run_settled_without_a_record_cancels_its_live_jobs_first(home: Path) -> None:
-    """Ada 2026-10-20: a run dropped as un-gatherable left its arrays queued, holding QOS submit slots.
-
-    Settling it cancels every job it still holds, through the cluster's one cancel path, before the
-    release. PLANTED CONTROL: a run still running cancels nothing.
-    """
-    store = _Store()
-    _submitted_run(home, store, _Slurm(home / 'r'))
-    running = _Slurm(home / 'r')
-    running.recorded = ['4242']
-    assert _tick(store, running) is not None
-    assert running.cancelled == []
-    ended = _Unrecorded(home / 'r')
-    ended.recorded = ['4242']
-    assert _tick(store, ended) is None
-    assert ended.cancelled == ['4242'], 'a dropped run leaves no live job'
 
 
 def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sha_is_the_tip(
