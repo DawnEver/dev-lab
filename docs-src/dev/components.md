@@ -51,7 +51,7 @@ same state.
    that gitlink, `chore(deps): bump <engine> to <sha12>`.
 3. The forge produces the lane's verdict like any other lane's.
 4. Green on every part the component declares: the lane is READY, and the
-   [integrator](integrator.md) merges it like any other lane. Once the integration branch holds it,
+   [the forge](integration.md) merges it like any other PR. Once the integration branch holds it,
    the next tick deletes the lane.
    Red on any declared part: the tick opens one issue,
    `components: bump <engine> to <sha12> is red`, naming the engine commit and the red parts, and

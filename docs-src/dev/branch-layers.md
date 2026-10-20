@@ -2,15 +2,15 @@
 
 Three layers, each proving something different: a child branch proves a change in isolation, the integration
 branch proves the children together, and `main` is the proven state every box fast-forwards to. Work on your
-own child branch, take integration into it with `forge sync`, and let the integrator move the other two. The
-verbs are on [the integrator](integrator.md); the bars are on [the verdict model](verdict-model.md).
+own `pr/<topic>` branch, take integration into it with `forge sync`, and let the forge move the other two. The
+verbs are on [the integration branch](integration.md); the bars are on [the verdict model](verdict-model.md).
 
 ## What each layer proves
 
 | layer | proves | moved by |
 |---|---|---|
-| child (`feat/...`, `fix/...`, a session branch, a PR head) | this change, on a tree nobody else writes | its owner's commits and `forge sync` |
-| integration (`integrate/main`) | these children together, on one tree | the integrator's merges |
+| child (`pr/<topic>`, a session branch, a PR head) | this change, on a tree nobody else writes | its owner's commits and `forge sync` |
+| integration (`integrate/main`) | these children together, on one tree | the forge's merges of green PRs |
 | trunk (`main`) | the state everyone may branch from and fast-forward to | `integrate promote` only |
 
 - **Branch from integration, never from `main`**, which lags by the integration cycle.

@@ -1,4 +1,4 @@
-"""The integrator's merge queue, DERIVED from origin refs and commit statuses (docs-src/dev/integrator.md).
+"""The integrator's merge queue, DERIVED from origin refs and commit statuses (docs-src/dev/integration.md).
 
 ONE PREDICATE, TWO MODES. The integrator is either WOKEN (the observer saw a lane's parts go green
 and pinged its session) or SELF-POLLING (a scheduled loop). Neither mode carries readiness: a

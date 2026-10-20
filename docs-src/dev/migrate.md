@@ -36,7 +36,7 @@ python -m lab_commons.dev.forge sync
 
 Trial-merges `integrate/main` (and any ref you opted in with `--watch`) and merges only when every merge is
 clean. On a conflict it names the files and merges nothing; resolve by hand with `git merge`. It never pushes.
-Details: [the integrator](integrator.md#child-branches-sync-from-integration).
+Details: [the integration branch](integration.md#child-branches-sync-from-integration).
 
 ### 2. `verify -- <paths>` -- measure what you touched
 
@@ -55,8 +55,8 @@ git push origin <your-branch>
 ```
 
 Through the repo's retry wrapper where it declares one. The push is the hand-off: the forge queues the new
-sha, a producer claims it and posts `tests/<part>`. Open a pull request into `integrate/main` when you
-want the integrator to take it. A subagent never pushes; it hands its SHA to the main session.
+sha, a producer claims it and posts `tests/<part>`. Open a pull request into `integrate/main`; the forge merges it
+once its parts stand PASS. A subagent never pushes; it hands its SHA to the main session.
 
 ### 4. `forge queue` -- read where everything stands
 
@@ -85,7 +85,7 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | you used to | now |
 |---|---|
 | read a local log to know if a sha is green | `forge status list <sha>` or `forge queue` |
-| push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the integrator), when every part is a full PASS |
+| push `main` after a local heavy run | `integrate promote <sha>` then `git push origin main` (the steward), when every part is a full PASS |
 | hold a branch "for later" | merge it or delete it ([one branch per session](branch-set.md)) |
 | push a lane branch to origin | keep lanes local; the pre-push hook refuses an undeclared branch ([the push-time check](branch-set.md#the-push-time-check)) |
 | delete merged origin branches by hand | declare `prune_merged = true`; every serving host prunes them ([pruning origin](branch-set.md#pruning-origin)) |

@@ -1,16 +1,11 @@
-# The integrator
-
-The integrator is the session whose branch is the integration branch: it merges child branches into it
-and moves the trunk. It runs no tests: it reads `tests/<part>` parts from the forge. Its
-loop is `forge integration` (report on every child), `integrate merge <branch>` for what is ready, a plain
-`git push origin <integration>`, and `integrate promote <sha>` then `git push origin <trunk>` when an
-integration commit is fully green. Everyone else syncs their branch with `forge sync` and opens pull
-requests into integration. Who the integrator is, and where it runs, moves; nothing records it.
-
-## The one flow (user ruling 2026-10-19)
+# The integration branch
 
 Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a pull request into
-`integrate/main` on the gitea forge, the single source of truth. No long-lived feature branch exists.
+`integrate/main` on the gitea forge, the single source of truth. The FORGE is the only merger of
+`integrate/main`; `main` moves only by `integrate promote`. No long-lived feature branch exists
+(user ruling 2026-10-19).
+
+## The path of one change
 
 1. Cut `pr/<topic>` from `origin/integrate/main` (`ephemeral = ['pr/*']` lets it be pushed with no row), push it,
    and open a PR into `integrate/main` (`forge pr create`). Sync with `forge sync`, never rebase.
@@ -41,6 +36,42 @@ ephemeral = ['pr/*']
 [tool.lab_commons.integrator]
 pr_merges_since = "<the integrate/main sha the rule starts after>"
 ```
+
+## Roles
+
+| role | does | never |
+|---|---|---|
+| human | goals, rulings, forge settings, remote deletions | accepts "done" without tests |
+| author | its `pr/*` branch, push, PR, `forge sync`, fixes its own PR's reds | merges another branch |
+| producer | produces the parts it claimed | produces unclaimed parts |
+| forge | the ONLY merger of `integrate/main` | merges a PR lacking a part |
+| steward | keeps the pipeline flowing: producers alive, every PR judged, stuck PRs routed to their authors, `promote`, break-glass | hand merges, direct pushes to `integrate/main`, runs suites |
+
+Who the steward is, and where it runs, moves; nothing records it. A steward is a session like any other: it
+reads the forge and writes nothing else.
+
+## What enforces it
+
+| rule | mechanism |
+|---|---|
+| INTEGRATION-TAKES-ONLY-FORGE-MERGES | pre-push `session-branch`, from `[tool.lab_commons.integrator] pr_merges_since` |
+| a `pr/*` head pushes with no row | `[tool.lab_commons.branchset] ephemeral = ['pr/*']`, pre-push `branchset-push` |
+| PRS-TARGET-INTEGRATION | the integration tick retargets a PR opened against the trunk, with a comment |
+| no long-lived child | `branchset.sessions` names only the integration branch; anything else is merged and deleted |
+| every repo declares the flow | `famtests.branchset.assert_the_pr_flow_is_declared` |
+
+## The steward's loop
+
+Each tick, and nothing else:
+
+1. `python -m lab_commons.dev.forge queue` -- what is waiting, what is starved, which host is idle.
+2. `python -m lab_commons.dev.forge integration` -- every child's standing, the forge's merges, the branch rows.
+3. A PR stuck past an hour: its reason is already its one integration comment; route it to its author's session.
+4. `integrate promote <sha>` when an integration commit's every part stands PASS at scope `full`.
+5. Break-glass notices: read the `integration` issue each break-glass commit opened, and close it with the PR
+   that moves `pr_merges_since` past the commit.
+
+A steward runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
 ## The PR reviewer is advisory
 
@@ -75,33 +106,10 @@ max_tokens = 8192
 rules = ["AGENTS.md", ".claude/rules/*.md"]     # fnmatch over tracked paths; `*` crosses `/`
 ```
 
-## The branch flow
-
-| branch | who writes it | the one verb that moves it |
-|---|---|---|
-| trunk (`main`) | the integrator | `integrate promote <sha>`, then a push |
-| integration (`integrate/main`) | the integrator | `integrate merge <branch>`, then a push |
-| any other declared session branch | its session | that session's commits and merges, then a push |
-| a child (lane, feat branch, PR head) | its owner | the owner's commits, and `forge sync` from integration |
-
-Declared once in the consumer's `pyproject.toml`; every key is optional and an unknown key is refused:
-
-```toml
-[tool.lab_commons.integrator]
-integration = "integrate/main"      # the branch children merge into
-trunk = "main"                      # moved only by `integrate promote`
-test_roots = ["tests"]              # what the merge audit reads
-merges_only_since = "<sha>"         # INTEGRATION-IS-MERGES-ONLY holds after this commit
-```
-
-Which origin branches are CHILDREN is not a list here but the schedule's one rule,
-`[tool.lab_commons.schedule] classes_by_ref` ([scheduling](forge.md#scheduling)): a branch the rule classes
-is a child, served and queued; one it does not is neither.
-
 ## Session branches: one writer, by git
 
-Every repo declares its session branches in `[tool.lab_commons.branchset] sessions` -- the integration branch
-is one of them. One host's one repo may carry SEVERAL sessions at once, each on its own branch in its own
+Every repo declares its long-lived branches in `[tool.lab_commons.branchset] sessions` -- the integration
+branch is one of them. One host's one repo may carry SEVERAL sessions at once, each on its own branch in its own
 worktree (the main checkout is just one more worktree). So a branch is protected for what it IS, never for
 where it is checked out or which box pushes it: both move.
 
@@ -120,25 +128,13 @@ local reads only -- no network call beyond the push itself -- with no escape hat
 |---|---|
 | PUBLISH-IS-THE-LOCAL-REF | a push to `refs/heads/X` whose local ref, `HEAD` resolved, is not `refs/heads/X`: `HEAD:X` from another branch, `Y:X`, a bare sha, a detached HEAD |
 | SESSION-HISTORY-ONLY-GROWS | a push whose old remote tip (as git hands it to the hook) is not an ancestor of the new one: a forced non-fast-forward, and a deletion |
-| INTEGRATION-IS-MERGES-ONLY | a new first-parent commit on the integration branch (after `merges_only_since`) that is not a two-parent merge with a `Merged-Branch:` trailer whose merge audit passes |
+| INTEGRATION-TAKES-ONLY-FORGE-MERGES | a new first-parent commit on the integration branch past `pr_merges_since` that the forge did not merge: replaces INTEGRATION-IS-MERGES-ONLY for that branch |
+
+Before `pr_merges_since` stands, INTEGRATION-IS-MERGES-ONLY holds instead: a new first-parent commit on the
+integration branch after `merges_only_since` that is not a two-parent merge with a `Merged-Branch:` trailer
+whose merge audit passes.
 
 The CPU/box seat stays a RESOURCE lock; it decides no ownership.
-
-## Integrating without a working tree
-
-```
-python -m lab_commons.dev.integrate merge <branch> [--audit "<KIND> <test> -- <reason>"]...
-python -m lab_commons.dev.integrate promote <sha>
-```
-
-- `merge` runs `git merge-tree --write-tree` of the local integration branch and `<branch>`, refuses a
-  conflict naming the files, passes the message (`Merged-Branch: <branch>` plus the `--audit` lines) through
-  the repo's own `commit-msg` hook stage and `mergeaudit.judge` -- the same functions the hooks run -- then
-  `commit-tree` and `update-ref` with the old tip as compare-and-swap.
-- `promote` fast-forwards the LOCAL trunk ref to `<sha>`, an origin integration commit whose every derived
-  part stands PASS at scope full; it refuses naming the missing parts.
-- Neither checks out nor pushes; both refuse a target branch that is checked out in some worktree. The
-  session publishes with `git push origin <branch>`.
 
 ## Child branches sync from integration
 
@@ -176,7 +172,7 @@ python -m lab_commons.dev.forge integration
   promoted once the trunk holds the merge.
 - **The report is one comment per PR**, found by a hidden marker and edited in place. A child without a PR gets
   an `integration` commit status on its head, posted only when it changed.
-- The integrator never writes a child branch.
+- The tick never writes a child branch.
 
 ## The ready predicate
 
@@ -225,14 +221,14 @@ push admission row checks the same standing when the holder pushes it.
 - Price a batch before touching a tree: `git merge-tree --write-tree --name-only <integration> origin/<branch>`
   lists a merge's conflicts without a checkout.
 
-## Waking the integrator
+## Waking the steward
 
-The integrator may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
+The steward may poll (fetch, `forge integration`, act, reschedule) or be woken by the observer. A wake
 carries no state: it only means "derive again now". Polling is the floor that makes a lost wake harmless.
 
-**The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives this same
-queue (`integrator.observe`), and every row that asks the integrator to act -- a lane READY to merge, the
-integration tip PROMOTE-able, a lane or tip BLOCKED on a red to route -- is kept as ONE forge issue titled
+**The observer is `forge serve`, on EVERY host.** No host owns integration. Each serve tick derives the
+queue (`integrator.observe`), and every row that asks a session to act -- a PR READY to merge, the
+integration tip PROMOTE-able, a child or tip BLOCKED on a red to route -- is kept as ONE forge issue titled
 `integration: <subject>` (`forgeroute.reconcile`, the found-by-title rule failure routing keeps an `area:*`
 issue by). N hosts deriving the same row write one issue; only the host that creates or changes it raises the
 alarm (the stderr JSONL line, the host card, `[alerts]`), and a row no longer derived closes its issue. The
@@ -245,5 +241,5 @@ alarm (the stderr JSONL line, the host card, `[alerts]`), and a row no longer de
 | the child moved after its part was posted | the new tip has no part and reads `waiting` until a producer posts one |
 | stale refs (no fetch) | every row prints its tip, so the staleness is visible; the module never fetches |
 | forge unreachable | the command exits non-zero with the remedy; nothing is merged on a guess |
-| two integrators on one repo | the second's push is a non-fast-forward and refused; it merges first |
+| the forge's auto-merge is broken | nothing reaches `integrate/main` but a break-glass push, whose issue names it |
 | a child blocked on `failure` | listed with its tip; it is the owner's to fix, through its `area:*` issue |
