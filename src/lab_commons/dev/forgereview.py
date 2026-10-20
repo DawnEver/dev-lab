@@ -42,7 +42,7 @@ import http.client
 import json
 import subprocess
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -60,19 +60,16 @@ from lab_commons.dev.forgereview_findings import (
 )
 from lab_commons.dev.forgestatus import status_list, status_post
 from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import REVIEW_CONTEXT
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
+    from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
-    'API_HOST', 'CAPABILITY', 'DEFAULT_MODEL', 'KEY_NAME', 'KEY_TASK', 'REVIEW_CONTEXT', 'Ask', 'Review',
+    'API_HOST', 'DEFAULT_MODEL', 'KEY_NAME', 'KEY_TASK', 'REVIEW_CONTEXT', 'Ask', 'Review',
     'ReviewKeyMissing', 'anthropic', 'load_review', 'review_from', 'review_key', 'review_tick', 'step',
 ]  # fmt: skip
-
-#: The machine-file capability a host declares to run the reviewer: ``[capabilities.pr_review]``.
-CAPABILITY: Final = 'pr_review'
 
 #: The Messages API host: where the review is asked, and the credential host its key is stored under.
 API_HOST: Final = 'api.anthropic.com'
@@ -297,15 +294,13 @@ def step(
     root: Path,
     built: Client,
     *,
-    capabilities: Mapping[str, object],
+    policy: Policy,
     say: Callable[[str], None],
     run: Callable[[Sequence[str], Path], str] = run_command,
 ) -> None:
-    """The serve step: on a host declaring :data:`CAPABILITY` only; a failure is said, never raised."""
-    if CAPABILITY not in capabilities:
-        return
+    """The review inside the integration step, on whichever host runs it; a failure is said, never raised."""
     try:
-        policy, review = load_policy(root), load_review(root)
+        review = load_review(root)
         for line in review_tick(root, built, review, base=policy.integration, run=run):
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:

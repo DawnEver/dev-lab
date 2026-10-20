@@ -22,7 +22,6 @@ from lab_commons.dev.forgemerge import decide
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgereview import (
     API_HOST,
-    CAPABILITY,
     DEFAULT_COMMAND,
     KEY_NAME,
     KEY_TASK,
@@ -298,14 +297,21 @@ def test_the_declaration_defaults_and_overrides_and_refuses_an_unknown_key() -> 
 # --- the serve step ----------------------------------------------------------------------------------
 
 
-def test_the_step_runs_only_on_a_host_declaring_the_capability(tmp_path: Path) -> None:
-    """PLANTED control: the same host with the capability reviews the PR."""
+def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_path: Path) -> None:
+    """PLANTED control: the same step against a forge that cannot list PRs says so and raises nothing."""
     work, head = _work(tmp_path)
     forge, _ = _forge(head)
     command = FakeCommand()
     said: list[str] = []
-    step(work, forge, capabilities={}, say=said.append, run=command)
-    assert command.ran == []
-    step(work, forge, capabilities={CAPABILITY: {}}, say=said.append, run=command)
+    step(work, forge, policy=Policy(), say=said.append, run=command)
     assert len(command.ran) == 1
     assert any('reviewed, 1 finding(s)' in line for line in said)
+
+    class Down(StateForge):
+        def call(self, *_a: object, **_k: object) -> object:
+            msg = 'down'
+            raise OSError(msg)
+
+    said.clear()
+    step(work, Down(), policy=Policy(), say=said.append, run=command)
+    assert any('did not run' in line for line in said)
