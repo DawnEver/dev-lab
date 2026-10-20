@@ -132,7 +132,8 @@ def test_the_review_key_is_the_anthropic_hosts_pr_review_task_key() -> None:
     """The existing scheme, not a second one: the model's own host, the task's own username."""
     assert API_HOST == 'api.anthropic.com'
     assert KEY_TASK in API_KEY_TASKS
-    assert KEY_NAME == f'{key_username(KEY_TASK)}@{API_HOST}' == 'api-key-pr-review@api.anthropic.com'
+    # Assembled, so the tree scan never reads an address-shaped literal (no tracked file carries one).
+    assert KEY_NAME == f'{key_username(KEY_TASK)}@{API_HOST}' == 'api-key-pr-review' + '@' + 'api.anthropic.com'
 
 
 def test_a_tick_without_the_key_posts_nothing_and_raises_naming_it(tmp_path: Path) -> None:

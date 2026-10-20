@@ -9,13 +9,14 @@ from pathlib import Path
 import pytest
 
 from lab_commons.dev import forgecli, platformparts, pushgate, verify, workstation
+from lab_commons.dev.lanepolicy import policy_from
 from lab_commons.hpc import __main__ as hpc_main
 from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys
 
 ROOT = Path(__file__).resolve().parents[1]
 
 #: The registry itself and this test hold every spelling by construction; memory keeps history verbatim.
-_EXEMPT = ('src/lab_commons/hpc/retired.py', 'tests/test_hpc_retired.py')
+_EXEMPT = ('src/lab_commons/hpc/retired.py', 'src/lab_commons/hpc/_retired_compute.py', 'tests/test_hpc_retired.py')
 _HISTORY = '.claude/memory/'
 
 
@@ -90,6 +91,13 @@ def test_a_retired_machine_file_key_is_refused_by_name() -> None:
     with pytest.raises(ValueError, match=r'\[serve\] own_weight is retired: .*own_reserve'):
         refuse_retired_keys('serve', {'own_weight': 2, 'repos': ['a']})
     refuse_retired_keys('serve', {'repos': ['a']})
+
+
+def test_the_github_pr_mirror_key_is_refused_by_name() -> None:
+    """GitHub is ONLY a push mirror (user ruling 2026-10-19). PLANTED CONTROL: the table without the key loads."""
+    with pytest.raises(ValueError, match=r'mirror is retired: .*push mirror'):
+        policy_from('[tool.lab_commons.integrator]\nmirror = "https://github.com/o/r"\n', 'p')
+    assert policy_from('[tool.lab_commons.integrator]\ntrunk = "main"\n', 'p').trunk == 'main'
 
 
 @pytest.mark.parametrize('argv', [['serve', '--mode', 'integrate'], ['tick', '--mode', 'develop', '--json']])

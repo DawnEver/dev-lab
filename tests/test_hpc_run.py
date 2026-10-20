@@ -34,6 +34,7 @@ from lab_commons.hpc import shell
 from lab_commons.hpc.builds import Builds, cargo_target
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Cost, Limits, Policy
+from lab_commons.hpc.gather import gather_run
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.needsets import BASE, Vocabulary
 from lab_commons.hpc.phases import describe, phases
@@ -52,7 +53,7 @@ from lab_commons.hpc.records import (
     stream_sources,
     write_record,
 )
-from lab_commons.hpc.run import RETRIES, NoRoom, gather_run, load_state, submit_run
+from lab_commons.hpc.run import RETRIES, NoRoom, load_state, submit_run
 from lab_commons.hpc.shards import balance
 from lab_commons.hpc.shell import (
     FULL,
@@ -1068,7 +1069,10 @@ def test_packing_groups_files_of_one_memory_class_so_a_heavy_file_never_sizes_a_
     cost, policy = Cost(seconds=120, mem_gb=1), Policy(safety=1.5)
     files = [['a.py::t'], ['h.py::t'], ['b.py::t']]
     assert measured.pack(files, cost, budget=60.0) == [['a.py::t', 'h.py::t', 'b.py::t']], 'PLANTED CONTROL'
-    band = lambda ids: learned.memory_band(measured.item_gb(ids, cost, policy))  # noqa: E731
+
+    def band(ids: list[str]) -> int:
+        return learned.memory_band(measured.item_gb(ids, cost, policy))
+
     items = measured.pack(files, cost, budget=60.0, band=band)
     assert items == [['a.py::t', 'b.py::t'], ['h.py::t']]
     assert [measured.item_gb(ids, cost, policy) for ids in items] == [1.0, 30.0]

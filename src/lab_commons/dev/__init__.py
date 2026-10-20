@@ -132,6 +132,7 @@ are too unqualified to survive being flattened into a namespace this wide.
   box at a declared, enforced demand; a producer serve spawned is not boxed twice.
 * :mod:`lab_commons.dev.inflight` -- one run per ``(tree, env, selector)`` on the box: a duplicate
   request ATTACHES to the run in flight and receives its answer instead of running the suite again.
+* :mod:`lab_commons.dev.lockwait` -- verify's ``--lock-wait``: a duration quantity, a bare number refused.
 * :mod:`lab_commons.dev.lockpins` -- a git-installed package whose commit differs from the checkout's
   ``uv.lock`` makes an env STALE; verify refuses it naming the sync door. Never judged against a remote tip.
 * :mod:`lab_commons.dev.selection` -- what a verify argv selects: targeted or the whole suite, and
@@ -313,7 +314,6 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`lab_commons.dev.forgemerge` -- the forge's server-side merge of a green PR into integration.
 * :mod:`lab_commons.dev.forgereview` -- the ADVISORY Claude review of each open PR head, its own key, gating nothing.
-* :mod:`lab_commons.dev.forgemirror` -- GitHub mirror PRs carried to the forge as ``pr/gh-<N>``.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.
@@ -327,6 +327,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.disclosure` -- INJECTED-TEXT-IS-PROGRESSIVE: the injected-text budgets and the details pointer.
 * :mod:`lab_commons.dev.family` -- who is in the family: a checkout whose own ``pyproject.toml`` declares
   ``[tool.lab_commons]``.
+* :mod:`lab_commons.dev.breakglass` -- the one emergency bypass of INTEGRATION-TAKES-ONLY-FORGE-MERGES: a
+  ``Break-Glass: <reason>`` trailer on every new commit, kept visible as an ``integration`` issue.
 * :mod:`lab_commons.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
 * :mod:`lab_commons.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's

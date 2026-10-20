@@ -1,8 +1,8 @@
 """``forge integration``: the integration tick -- integration's standing for EVERY open child branch.
 
 A child branch is an ``origin`` branch the schedule's one rule classes (``classes_by_ref``) or the head
-of an open pull request on ``origin`` (fetched as ``pull/N/head``). A PR on the GitHub mirror is first
-carried to ``origin`` as ``pr/gh-<N>`` (:mod:`lab_commons.dev.forgemirror`). The tick never writes a child;
+of an open pull request on ``origin`` (fetched as ``pull/N/head``). PRs are opened on the forge only; GitHub is
+a push mirror and is never read. The tick never writes a child;
 it REPORTS on it -- and, where ``[tool.lab_commons.integrator] pr_merges_since`` is declared, asks the forge to
 MERGE a PR that is green, clean and audit-passing (:mod:`lab_commons.dev.forgemerge`), saying in its comment
 what is missing otherwise. Per child branch, against ``origin/<integration>`` and with no
@@ -47,7 +47,6 @@ from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
 from lab_commons.dev.forgemerge import decide, merge
-from lab_commons.dev.forgemirror import step as mirror_step
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
@@ -290,8 +289,7 @@ def main(
     try:
         fetch(root)
         origin, policy = client_for(root), load_policy(root)
-        lines = [f'mirror: {line}' for line in mirror_step(root, origin, policy, say=lambda _line: None)]
-        lines += tick(root, origin, policy).lines
+        lines = tick(root, origin, policy).lines
         lines += [f'branch: {row.line()}' for row in listing(root, origin, now=datetime.now(UTC))]
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)

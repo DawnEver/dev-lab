@@ -81,7 +81,6 @@ class Marker(StrEnum):
     HOST = 'host'  #: one card comment per serving host, keyed by the host (:mod:`lab_commons.dev.forgehosts`)
     INTEGRATION = 'integration'  #: a child PR's one integration comment (:mod:`lab_commons.dev.forgeintegration`)
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`lab_commons.dev.forgetidy`)
-    MIRROR = 'mirror'  #: a GitHub PR's one link to its forge PR (:mod:`lab_commons.dev.forgemirror`)
     REVIEW = 'review'  #: one advisory review per PR head, keyed by the sha (:mod:`lab_commons.dev.forgereview`)
 
 

@@ -1,7 +1,7 @@
 """PR-REVIEW-IS-ADVISORY: a Claude review of every open PR into integration, once per head, gating nothing.
 
-Step 4 of the branch flow (user ruling 2026-10-19). Gitea only: GitHub is a push mirror, and its PRs are
-carried to the forge as ``pr/gh-<N>`` before they are reviewed here.
+Step 4 of the branch flow (user ruling 2026-10-19). Gitea only: GitHub is ONLY a push mirror, and no GitHub
+pull request is read or reviewed.
 
 WHERE IT RUNS. A ``forge serve`` step (:func:`step`), on a host whose machine file declares the capability
 ``[capabilities.pr_review]``; no other host reads the key or calls the model.

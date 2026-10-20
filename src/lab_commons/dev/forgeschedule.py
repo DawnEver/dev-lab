@@ -58,7 +58,7 @@ import fnmatch
 import re
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -77,10 +77,10 @@ from lab_commons.compute.model import (
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgealarm import STARVED, Alarm
 from lab_commons.dev.forgecoalesce import WAITING_BEHIND
-from lab_commons.dev.forgehosts import host_id
+from lab_commons.dev.forgeorigin import head_login, origin_host_of
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
-from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, is_pull
+from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import part_refs
 from lab_commons.hpc.retired import RETIRED
@@ -89,11 +89,9 @@ from lab_commons.hpc.shell import FULL
 __all__ = [
     'NOT_ADMITTED',
     'NO_HOST',
-    'ORIGIN_HOST',
     'OVER_BUDGET',
     'candidates',
     'coalesced',
-    'head_login',
     'held',
     'host_weights',
     'labelled_issues',
@@ -104,7 +102,6 @@ __all__ = [
     'repo_name',
     'starved_alarms',
     'tip_of',
-    'vouched',
 ]
 
 #: Why a candidate is not claimed -- the prefix of :attr:`Ranked.blocked`.
@@ -246,65 +243,6 @@ def _when(root: Path, sha: str, fallback: datetime) -> datetime:
     return datetime.fromisoformat(stamp).astimezone(UTC) if stamp else fallback
 
 
-#: The commit trailer naming the host card a commit was made on (written by the ``forge-host`` commit-msg hook).
-ORIGIN_HOST: Final = 'Forge-Host'
-
-
-def _trailer(root: Path, sha: str, key: str) -> str:
-    """The last *key* trailer of commit *sha*; ``''`` when it carries none."""
-    values = _git(root, 'show', '-s', f'--format=%(trailers:key={key},valueonly)', sha).split()
-    return values[-1] if values else ''
-
-
-def head_login(client: Client, sha: str) -> str:
-    """The forge login commit *sha* resolves to (author, else committer); ``''`` when the forge resolves none.
-
-    The forge maps the commit's email to an account; git's own author text is never read as a login, so an
-    unresolved head carries no origin -- and no login priority -- rather than a guess. A credential refusal raises.
-    """
-    path = f'{client.repo}/commits/{sha}' if client.backend is GITHUB else f'{client.repo}/git/commits/{sha}'
-    try:
-        raw = client.call('GET', path)
-    except ForgeCallFailed as failed:
-        if failed.credential_refused:
-            raise
-        return ''
-    if not isinstance(raw, Mapping):
-        return ''
-    for role in ('author', 'committer'):
-        who = raw.get(role)
-        if isinstance(who, Mapping) and who.get('login'):
-            return str(who['login'])
-    return ''
-
-
-def vouched(found: Sequence[Candidate], owners: Mapping[str, Collection[str]]) -> tuple[Candidate, ...]:
-    """*found* with each ``origin_host`` kept only where its FORGE-RECORDED login publishes that host card.
-
-    A trailer or a request body is text anyone can write; the forge records who authored the PR or the
-    issue, and the hosts issue who authored each card
-    (*owners*: host -> its login, :func:`~lab_commons.dev.forgehosts.card_owners`). A part's unvouched trailer
-    is dropped; a public repo's card is keyed by the opaque :func:`~lab_commons.dev.forgehosts.host_id`
-    of the raw name the trailer carries, and vouches it the same.
-    A REQUEST's unvouched ``host`` pin is REFUSED by name (``refused``), never silently run unpinned.
-    """
-    return tuple(_vouched(one, owners) for one in found)
-
-
-def _vouched(one: Candidate, owners: Mapping[str, Collection[str]]) -> Candidate:
-    publishers = (*owners.get(one.origin_host, ()), *owners.get(host_id(one.origin_host), ()))
-    if not one.origin_host or one.origin in publishers:
-        return one
-    if one.kind != REQUEST:
-        return dataclasses.replace(one, origin_host='')
-    publisher = ', '.join(sorted(publishers)) or 'nobody'
-    why = (
-        f'host = "{one.origin_host}" pins a host card {one.origin or "its author"} does not publish '
-        f'(published by {publisher}): drop the pin, or ask its publisher'
-    )
-    return dataclasses.replace(one, origin_host='', refused=why)
-
-
 def _tips(root: Path) -> dict[str, str]:
     listed = _git(root, 'for-each-ref', '--format=%(refname) %(objectname)', _TRACKING)
     return {ref.removeprefix(_TRACKING): sha for ref, sha in (line.split(' ') for line in listed.splitlines() if line)}
@@ -429,7 +367,7 @@ def candidates(
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
     (:func:`lab_commons.dev.platformparts.part_refs`, the exclusion said through *say*) -- PRs and requests
     :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
-    login the forge resolves for its commit (:func:`head_login`), ``''`` when it resolves none.
+    login the forge resolves for its commit (:func:`~lab_commons.dev.forgeorigin.head_login`), ``''`` when none.
     """
     found = []
     for ref, sha, kind, labels, number, pr_author in _part_refs(root, client, schedule, policy, say=say):
@@ -447,7 +385,7 @@ def candidates(
                 labels=labels,
                 number=number,
                 origin=by,
-                origin_host=_trailer(root, sha, ORIGIN_HOST) if by else '',
+                origin_host=origin_host_of(root, sha) if by else '',
                 session=ref,
             )
             for platform in needed

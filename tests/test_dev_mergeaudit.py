@@ -307,3 +307,18 @@ def test_bases_that_disagree_on_a_test_leave_it_no_base_so_only_equal_parents_ex
     assert mergeaudit.classify(base, _fp(A), _fp(A), _fp(A)) == ()
     assert mergeaudit.classify(base, _fp(A), _fp(A3), _fp(A)) == (Deviation(CONFLICTED, 'test_a'),)
     assert mergeaudit.classify(base, _fp(A), _fp(A), _fp()) == (Deviation(LOST, 'test_a'),)
+
+
+@pytest.mark.parametrize(
+    ('trailer', 'code'),
+    [('Break-Glass: forge down, auto-merge broken\n', 0), ('Break-Glass:\n', 1), ('Break-Glass:   \n', 1), ('', 0)],
+)
+def test_the_commit_msg_check_accepts_a_break_glass_reason_and_refuses_an_empty_one(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], trailer: str, code: int
+) -> None:
+    """Break-glass at commit-msg: a reason is accepted, an empty one refused (PLANTED: no trailer at all)."""
+    monkeypatch.chdir(repo)
+    message = repo / 'MSG'
+    message.write_text(f'fix: x\n\n{trailer}', encoding='utf-8')
+    assert mergeaudit.main([str(message)]) == code
+    assert ('Break-Glass' in capsys.readouterr().err) == bool(code)
