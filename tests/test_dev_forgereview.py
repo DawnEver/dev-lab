@@ -20,7 +20,6 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out
 from _forge_state import StateForge
 
-from lab_commons.dev import forgereview
 from lab_commons.dev.forgemerge import decide
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgereview import (
@@ -360,19 +359,10 @@ def test_a_key_of_the_retired_in_process_reviewer_is_refused_by_name(key: str) -
 
 
 def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
-    """The forge only orchestrates: the in-process reviewer's surface is gone, not aliased."""
-    gone = (
-        lambda: forgereview.anthropic,
-        lambda: forgereview.Ask,
-        lambda: forgereview.review_key,
-        lambda: forgereview.API_HOST,
-        lambda: forgereview.KEY_NAME,
-        lambda: forgereview.DEFAULT_MODEL,
-        lambda: forgereview.CAPABILITY,
-    )
-    for read in gone:
-        with pytest.raises(AttributeError):
-            read()
+    """The forge only orchestrates: the review table holds the command and its bounds, never a model or key.
+
+    That the retired reviewer's names are gone is the retired-spelling scan's (``lab_commons.hpc.retired``).
+    """
     assert {field.name for field in dataclasses.fields(Review)} == {'command', 'max_diff_bytes', 'claim_stale'}
 
 
