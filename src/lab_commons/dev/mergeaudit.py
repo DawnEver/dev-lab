@@ -280,8 +280,7 @@ def pending(root: Path, message: str) -> tuple[str, ...]:
 
     The merged tree is the INDEX (``git write-tree``) -- exactly what the commit will record -- and the test
     roots are the ones THAT tree declares (:func:`lab_commons.dev.lanepolicy.policy_at`), never the working
-    tree's. A non-merge reads no declaration at all, which is what ``integrate merge`` relies on: it runs
-    this stage with no merge in the working tree and audits its own merged tree through :func:`judge`.
+    tree's. A non-merge reads no declaration at all: only a merge in progress is judged.
     """
     parents = _pending_parents(root)
     if parents is None:
@@ -299,8 +298,9 @@ def judge(
 ) -> tuple[str, ...]:
     """What *message* fails to name about *merged* (a commit or a tree) as the merge of *parents*.
 
-    The ONE judgement: the commit-msg hook (:func:`pending`), ``integrate merge`` and the integration
-    branch's push guard (:mod:`lab_commons.dev.sessionbranch`) all call it.
+    The ONE judgement: the commit-msg hook (:func:`pending`), the forge's merge of a pull request
+    (:mod:`lab_commons.dev.forgemerge`) and the integration branch's push guard
+    (:mod:`lab_commons.dev.sessionbranch`) all call it.
     """
     return unnamed(_audit(root, label or merged, parents, merged, roots=roots), message)
 

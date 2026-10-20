@@ -74,7 +74,6 @@ _HEADS: Final = 'refs/heads/'
 _FIELDS: Final = 4
 _PARENTS: Final = 2
 _TRAILER: Final = re.compile(rf'^{MERGED_BRANCH}:\s*(\S+)\s*$', re.MULTILINE)
-_MERGE: Final = 'python -m lab_commons.dev.integrate merge <branch>'
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -112,11 +111,11 @@ def _merges_only(root: Path, policy: Policy, old: str, new: str) -> list[str]:
         parents = _git(root, 'rev-list', '--parents', '-n', '1', sha).stdout.split()[1:]
         message = _git(root, 'log', '-1', '--format=%B', sha).stdout
         if len(parents) != _PARENTS:
-            found.append(f'{P4}: {sha[:12]} is not a merge ({len(parents)} parent(s)); merge with {_MERGE}')
+            found.append(f'{P4}: {sha[:12]} is not a merge ({len(parents)} parent(s)); land it as a forge-merged PR')
             continue
         name = merged_branch(message)
         if name is None or name == policy.integration:
-            found.append(f'{P4}: {sha[:12]} names no {MERGED_BRANCH}: <branch> trailer; merge with {_MERGE}')
+            found.append(f'{P4}: {sha[:12]} names no {MERGED_BRANCH}: <branch> trailer; land it as a forge-merged PR')
             continue
         try:
             problems = judge(root, parents, sha, message, roots=policy.test_roots, label=sha[:12])
