@@ -13,6 +13,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 
 | page | what it covers |
 |---|---|
+| [Onboarding a repo](./onboarding.md) | Every declaration a new repo supplies, in one call and one table |
 | [Migrating a workstation](./migrate.md) | Start here if you used to run the gate before a push: what to stop, and the five commands that replace it |
 | [The three participants](./the-three-participants.md) | Who does what: the human, the authors, the producers and the integrator |
 | [The verdict model](./verdict-model.md) | What a verdict is, the tiers, and which destination needs which forge parts |
