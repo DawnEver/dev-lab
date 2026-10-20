@@ -73,7 +73,7 @@ __all__ = [
     'TAKEOVER_KINDS',
     'TAKEOVER_PENDING',
     'Review',
-    'ReviewRefused',
+    'ReviewRefused', 'ReviewUnsupported',
     'command_for',
     'load_review',
     'render',
@@ -103,6 +103,7 @@ RETIRED_KEYS: Final = {
 }
 
 _TABLE: Final = 'review'
+_MISSING_MODULE: Final = 'No module named'  # what `python -m <absent>` says
 _COMMAND_TIMEOUT_S: Final = 1800
 _DESCRIPTION: Final = 240  # a commit-status description is short
 _GIT_TIMEOUT_S: Final = 120
@@ -150,13 +151,27 @@ class ReviewRefused(OSError):
     """The review command refused the request (exit :data:`REFUSED_EXIT`), naming why on stderr."""
 
 
+class ReviewUnsupported(OSError):
+    """The host cannot run the declared command at all (its interpreter or module is missing): ``unsupported``.
+
+    Nothing is posted, so the head's one attempt is left for a host that can run it.
+    """
+
+
 def run_command(argv: Sequence[str], root: Path) -> str:
     """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure."""
-    done = _door.run(
-        list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_COMMAND_TIMEOUT_S, check=False,
-    )  # fmt: skip
+    try:
+        done = _door.run(
+            list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=_COMMAND_TIMEOUT_S, check=False,
+        )  # fmt: skip
+    except FileNotFoundError:
+        msg = f'unsupported: the review command {argv[0]!r} is not installed on this host'
+        raise ReviewUnsupported(msg) from None
     why = done.stderr.strip()[-300:]
+    if done.returncode != 0 and _MISSING_MODULE in done.stderr:
+        msg = f'unsupported: the review command cannot import its module on this host ({why})'
+        raise ReviewUnsupported(msg)
     if done.returncode == REFUSED_EXIT:
         msg = f'the review command refused: {why}'
         raise ReviewRefused(msg)
@@ -222,6 +237,9 @@ def review_tick(
         reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
         try:
             found = parse_findings(run(command_for(review, reviewed), root))
+        except ReviewUnsupported as unsupported:  # this host cannot review: post nothing, leave the head
+            lines.append(f'#{pull.number} {head[:12]}: {unsupported}; nothing posted')
+            break
         except (UnknownSchemaVersion, ReviewRefused) as named:
             why = f'not reviewed: {named}'[:_DESCRIPTION]
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)

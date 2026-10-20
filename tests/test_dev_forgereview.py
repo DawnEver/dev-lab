@@ -29,6 +29,7 @@ from lab_commons.dev.forgereview import (
     TAKEOVER_PENDING,
     Review,
     ReviewRefused,
+    ReviewUnsupported,
     render,
     review_from,
     review_tick,
@@ -183,6 +184,29 @@ def test_every_reviewer_exhausted_or_auth_is_takeover_pending_and_never_a_failur
         (posted,) = status_list(forge, moved)
         assert posted.state == state
         assert TAKEOVER_PENDING not in posted.description
+
+
+def test_a_host_without_the_commands_interpreter_or_module_is_unsupported_and_posts_nothing(tmp_path: Path) -> None:
+    """The head's one attempt is not burnt. PLANTED control: the same head on a host that can run it is reviewed."""
+    interpreter = sys.executable
+    with pytest.raises(ReviewUnsupported, match='not installed'):
+        run_command([str(tmp_path / 'no-such-python'), '-m', 'ai_lab.review'], tmp_path)
+    with pytest.raises(ReviewUnsupported, match='cannot import'):
+        run_command([interpreter, '-m', 'no_such_module_for_review'], tmp_path)
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+
+    def absent(_argv: Sequence[str], _root: Path) -> str:
+        msg = 'unsupported: the review command cannot import its module on this host'
+        raise ReviewUnsupported(msg)
+
+    lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=absent)
+    assert 'unsupported' in lines[0]
+    assert forge.statuses.get(head, []) == []
+    assert forge.comments[number] == []
+    _tick(work, forge, FakeCommand())
+    (status,) = status_list(forge, head)
+    assert status.state == 'success'
 
 
 @pytest.mark.parametrize('version', [2, 0, '1'])
