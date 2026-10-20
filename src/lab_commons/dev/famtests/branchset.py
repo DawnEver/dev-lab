@@ -23,12 +23,20 @@ from __future__ import annotations
 
 import shutil
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.dev.branchset import BranchSet, Census, census, merge_candidates
+from lab_commons.dev.branchset import (
+    BranchSet,
+    BranchSetNotDeclared,
+    Census,
+    census,
+    declared_branchset,
+    merge_candidates,
+)
 from lab_commons.dev.checkout import git_out
 from lab_commons.dev.famtests.visibility import commit, plant_checkout
+from lab_commons.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -38,6 +46,7 @@ __all__ = [
     'assert_local_branches_declared',
     'assert_origin_branches_declared',
     'assert_the_planted_branchset_is_policed',
+    'assert_the_pr_flow_is_declared',
     'merged_owed',
 ]
 
@@ -124,6 +133,49 @@ def assert_local_branches_declared(*, root: Path, branchset: BranchSet) -> tuple
         msg = f'this box carries undeclared branches {debt} (ONE-BRANCH-PER-SESSION): {_REMEDY}'
         raise BranchSetViolation(msg)
     return found.unpushed
+
+
+#: The two declarations that ARE the flow, on the lines a repo adds to adopt it.
+_PR_FLOW: Final = (
+    "[tool.lab_commons.branchset]  ephemeral = ['pr/*']\n"
+    '[tool.lab_commons.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"'
+)
+
+
+def assert_the_pr_flow_is_declared(*, root: Path) -> str:
+    """A repo declares the one flow: a ``pr/*`` head is pushable with no row, and integration moves by forge merges.
+
+    ``integrate/main`` moving ONCE BY FORGE MERGES is INTEGRATION-TAKES-ONLY-FORGE-MERGES, enforced from
+    ``pr_merges_since`` forward (:mod:`lab_commons.dev.sessionbranch`); ``ephemeral = ['pr/*']`` is what lets an
+    author push a PR head with no declared session row (:mod:`lab_commons.dev.branchset`). A repo declaring
+    neither admits a hand merge, so the declarations ARE the flow and not a convention beside it.
+
+    Returns:
+        The declared sha the rule starts after, so a case can print it.
+
+    Raises:
+        BranchSetViolation: a declaration is missing, naming the line to add.
+
+    """
+    policy = load_policy(root)
+    try:
+        declared = declared_branchset(root)
+    except BranchSetNotDeclared as undeclared:
+        msg = f'{root} declares no branch set ({undeclared}); add:\n{_PR_FLOW}'
+        raise BranchSetViolation(msg) from undeclared
+    missing = [
+        *(['[tool.lab_commons.integrator] pr_merges_since = "<sha>"'] if not policy.pr_merges_since else []),
+        *(["[tool.lab_commons.branchset] ephemeral = ['pr/*']"] if not declared.is_ephemeral('pr/x') else []),
+        *(
+            [f'[tool.lab_commons.branchset] sessions names {policy.integration!r}']
+            if policy.integration not in declared.sessions
+            else []
+        ),
+    ]
+    if missing:
+        msg = f'{root} does not declare the one PR flow; missing: {"; ".join(missing)}'
+        raise BranchSetViolation(msg)
+    return policy.pr_merges_since
 
 
 def _run(cwd: Path, *args: str) -> None:
