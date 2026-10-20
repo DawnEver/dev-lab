@@ -1441,8 +1441,8 @@ def test_a_cited_measure_outside_the_producer_posts_nothing(monkeypatch, tmp_pat
 
 def test_the_lock_wait_is_a_duration_quantity(capsys: pytest.CaptureFixture[str]) -> None:
     """``--lock-wait`` carries its unit in the VALUE (user ruling 2026-10-19): a bare number has none."""
-    assert verify.lock_wait('30 s') == pytest.approx(30.0)
-    assert verify.lock_wait('2 min') == pytest.approx(120.0)
+    assert verify.lock_wait('30 s') == pytest.approx(30.0, abs=1e-9)  # s: a unit conversion, exact to rounding
+    assert verify.lock_wait('2 min') == pytest.approx(120.0, abs=1e-9)  # s
     for bad in ('30', '3 m'):
         with pytest.raises(Exception, match='duration'):
             verify.lock_wait(bad)
