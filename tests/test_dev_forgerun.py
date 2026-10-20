@@ -31,6 +31,7 @@ from lab_commons.dev.netverb import Attempt, Diagnosis, Report
 from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
+from lab_commons.hpc import run as hpc_run
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.cluster import Unreachable
 from lab_commons.hpc.config import Config
@@ -600,6 +601,7 @@ def test_a_run_held_by_an_account_limit_is_cancelled_returned_and_its_ask_learne
     monkeypatch.setattr(forgeslurm, 'where', lambda *_a, **_k: held)
     state = {'rounds': [{'job_ids': ['7'], 'mem_mb': 360658}]}
     monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(hpc_run, 'load_state', lambda *_a: (state, runner))  # the one cancel path reads it there
     machine: Any = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
     cluster = forgeslurm.SlurmCluster(home, machine, Config(), lambda _grant: runner)
     run: Any = SimpleNamespace(
