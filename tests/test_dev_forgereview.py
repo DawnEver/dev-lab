@@ -35,6 +35,7 @@ from lab_commons.dev.forgereview import (
     ReviewRefused,
     ReviewUnsupported,
     can_start,
+    command_for,
     render,
     review_from,
     review_tick,
@@ -215,6 +216,36 @@ def test_a_host_without_the_commands_interpreter_or_module_is_unsupported_and_po
     _tick(work, forge, command)
     (status,) = status_list(forge, head)
     assert status.state == 'success'
+
+
+def test_a_host_value_field_is_replaced_by_the_hosts_declared_capability() -> None:
+    """The repo declares WHAT, the host WHERE: ``{capabilities.<name>.<key>}`` reads this host's machine file."""
+    declared = Review(
+        command=('{capabilities.ai_lab.python}', '--method', '{capabilities.sharp_review.path}', RANGE_FIELD)
+    )
+    host = {'ai_lab': {'python': 'C:/rt/python.exe'}, 'sharp_review': {'path': '~/method'}}
+    argv = command_for(declared, 'a..b', host)
+    assert argv == ['C:/rt/python.exe', '--method', str(Path('~/method').expanduser()), 'a..b']
+
+
+@pytest.mark.parametrize('host', [{}, {'ai_lab': {}}], ids=['no capability', 'no key'])
+def test_a_host_value_this_host_does_not_declare_is_unsupported_and_posts_nothing(tmp_path: Path, host) -> None:
+    """Checked BEFORE the claim. PLANTED control: the host that declares it reviews the same head."""
+    declared = Review(command=('{capabilities.ai_lab.python}', '--range', RANGE_FIELD))
+    with pytest.raises(ReviewUnsupported, match=r'\[capabilities\.ai_lab\] python'):
+        command_for(declared, 'a..b', host)
+    work, head = _work(tmp_path)
+    forge, _ = _forge(head)
+    command = FakeCommand()
+    kw = {'base': 'integrate/main', 'run': command, 'ready': _can, 'host': 'box'}
+    lines = review_tick(work, forge, declared, capabilities=host, **kw)
+    assert 'unsupported' in lines[0]
+    assert 'nothing posted' in lines[0]
+    assert command.ran == []
+    assert forge.statuses.get(head, []) == []
+    review_tick(work, forge, declared, capabilities={'ai_lab': {'python': 'py'}}, **kw)
+    ((argv, _),) = command.ran
+    assert argv[0] == 'py'
 
 
 def test_a_command_that_turns_out_unsupported_releases_its_claim(tmp_path: Path) -> None:
