@@ -25,7 +25,7 @@ from lab_commons.dev.hooks import Remedy
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
-pytestmark = pytest.mark.node
+pytestmark = pytest.mark.workstation
 
 #: A minimal but REAL declaration: one rule with an exit that exists as a command.
 ADOPTION = HookAdoption(

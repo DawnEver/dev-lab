@@ -125,7 +125,7 @@ Each tick it:
 The counterpart of the cluster's `python -m lab_commons.hpc deploy`, run once per box, as the user who serves:
 
 ```
-uv run --no-project --with "lab-commons @ git+<forge>/lab-commons.git@integrate/main" -- python -m lab_commons.dev.workstation deploy --forge <forge> --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 --dry-run
+uv run --no-project --with "lab-commons @ git+<forge>/lab-commons.git@integrate/main" -- python -m lab_commons.dev.workstation deploy --forge <forge> --repos lab-commons,<repo>,... --capabilities workstation,jmag:4 --dry-run
 ```
 
 **The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/lab-commons.git`

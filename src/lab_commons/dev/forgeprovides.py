@@ -9,7 +9,7 @@ without a probe::
     [capabilities.jmag]
     seats = 4          # how many solver jobs this box runs at once -- the one number no probe can read
 
-    [capabilities.dev_checkout]
+    [capabilities.workstation]
 
 Whether THIS host may claim a part is the admission's (:func:`lab_commons.compute.admission.admit`: the
 part's needs present, its demand within the supply). What the queue says about EVERY live host is

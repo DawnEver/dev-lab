@@ -25,7 +25,7 @@ resources = ["windows", "femm", "jmag"]
 produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 """
 
-_NAMES = ('femm', 'jmag', 'matlab', 'windows', 'linux', 'dev_checkout')
+_NAMES = ('femm', 'jmag', 'matlab', 'windows', 'linux', 'workstation')
 
 
 def test_a_part_is_named_for_its_need_set_and_the_empty_set_is_base() -> None:
@@ -87,11 +87,12 @@ def test_the_suite_is_partitioned_by_need_set() -> None:
 
 
 def test_this_repo_names_its_off_cluster_tests_as_resources() -> None:
-    """Neither a dev checkout, ``node`` nor the ``codex`` CLI is on the cluster's per-sha tree: each is a resource.
+    """The live checkout, ``node`` and the ``codex`` CLI are one host's kit, and the cluster's per-sha tree has none.
 
-    So a codex, dev_checkout or node test is its own part, claimed only where a host has it.
+    So they are ONE resource, ``workstation``: every host carrying one carries all three, and three parts would
+    queue three times on the one host that can serve them.
     """
     declared = (Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8')
     vocabulary = read_vocabulary(declared)
-    assert vocabulary == Vocabulary(('codex', 'dev_checkout', 'node'))
-    assert selecting(vocabulary, BASE) == 'not codex and not dev_checkout and not node'
+    assert vocabulary == Vocabulary(('workstation',))
+    assert selecting(vocabulary, BASE) == 'not workstation'

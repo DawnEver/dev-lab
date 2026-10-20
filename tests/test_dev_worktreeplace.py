@@ -47,7 +47,7 @@ def rules(tmp_path_factory: pytest.TempPathFactory) -> Path:
         'git worktree add --detach "../lab commons wt" HEAD',
     ],
 )
-@pytest.mark.node
+@pytest.mark.workstation
 def test_the_engine_refuses_a_misplaced_tree_and_names_the_allowed_form(rules: Path, command: str) -> None:
     """REFUSAL-NAMES-THE-REMEDY: the reason carries the exact allowed path form."""
     reason = agenthooks.decide(command, rules)
@@ -63,7 +63,7 @@ def test_the_engine_refuses_a_misplaced_tree_and_names_the_allowed_form(rules: P
         'git worktree list --porcelain',
     ],
 )
-@pytest.mark.node
+@pytest.mark.workstation
 def test_the_engine_permits_a_tree_inside_its_repository(rules: Path, command: str) -> None:
     """The other side: a guard that refuses the allowed form gets routed around."""
     assert agenthooks.decide(command, rules) is None, command
@@ -117,7 +117,7 @@ def test_the_family_assertion_is_green_here_and_red_on_the_plant(repo: Path) -> 
         assert_every_worktree_stays_inside(root=repo)
 
 
-@pytest.mark.dev_checkout
+@pytest.mark.workstation
 def test_this_checkout_keeps_every_worktree_inside() -> None:
     """THE ADOPTION, run by the kit on the kit."""
     assert_every_worktree_stays_inside(root=Path(__file__).resolve().parents[1])

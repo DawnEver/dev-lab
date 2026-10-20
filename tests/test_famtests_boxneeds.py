@@ -11,7 +11,7 @@ import pytest
 from lab_commons.dev.famtests.boxneeds import NEEDS, UnmarkedNeed, assert_box_bodies_are_marked, unmarked
 
 ROOT = Path(__file__).resolve().parents[1]
-_PYPROJECT = '[tool.lab_commons.tests]\nresources = ["dev_checkout", "node"]\n'
+_PYPROJECT = '[tool.lab_commons.tests]\nresources = ["workstation"]\n'
 
 _PLANTED = """
 from pathlib import Path
@@ -28,7 +28,7 @@ def _guard():
 def test_live_unmarked():
     assert_every_worktree_stays_inside(root=ROOT)
 
-@pytest.mark.dev_checkout
+@pytest.mark.workstation
 def test_live_marked():
     assert_every_worktree_stays_inside(root=ROOT)
 
@@ -53,7 +53,7 @@ def test_allow_rows_unmarked(tmp_path):
 def test_origin_stays_on_the_cluster():
     assert_origin_branch_set(root=ROOT, declared=frozenset())
 
-@pytest.mark.node
+@pytest.mark.workstation
 class TestGrouped:
     def test_marked_on_its_class(self):
         _guard()
@@ -63,27 +63,27 @@ class TestGrouped:
 def test_a_planted_module_is_read_both_ways() -> None:
     """PLANTED: live unmarked reds, marked/planted/origin green; node follows the body even when planted."""
     assert unmarked(_PLANTED) == {
-        'test_live_unmarked': frozenset({'dev_checkout'}),
-        'test_node_through_a_helper': frozenset({'node'}),
-        'test_engine_on_a_planted_tree': frozenset({'node'}),
-        'test_allow_rows_unmarked': frozenset({'node'}),
+        'test_live_unmarked': frozenset({'workstation'}),
+        'test_node_through_a_helper': frozenset({'workstation'}),
+        'test_engine_on_a_planted_tree': frozenset({'workstation'}),
+        'test_allow_rows_unmarked': frozenset({'workstation'}),
     }
 
 
 def test_a_module_mark_covers_every_test() -> None:
-    """``pytestmark = [pytest.mark.dev_checkout, pytest.mark.node]`` clears the whole module."""
-    marked = _PLANTED.replace('ROOT = Path', 'pytestmark = [pytest.mark.dev_checkout, pytest.mark.node]\nROOT = Path')
+    """``pytestmark = pytest.mark.workstation`` clears the whole module."""
+    marked = _PLANTED.replace('ROOT = Path', 'pytestmark = pytest.mark.workstation\nROOT = Path')
     assert unmarked(marked) == {}
 
 
 def test_the_assertion_reds_on_unmarked_undeclared_and_unread(tmp_path: Path) -> None:
     """Each refusal in turn: an unmarked test, a need the pyproject lacks, a scan under its floor."""
     (tmp_path / 'test_x.py').write_text(_PLANTED, encoding='utf-8')
-    with pytest.raises(UnmarkedNeed, match=r'test_live_unmarked: mark \[.dev_checkout.\]'):
+    with pytest.raises(UnmarkedNeed, match=r'test_live_unmarked: mark \[.workstation.\]'):
         assert_box_bodies_are_marked(tests=tmp_path, pyproject=_PYPROJECT, floor=1)
-    with pytest.raises(UnmarkedNeed, match=r"lacks \['node'\]"):
+    with pytest.raises(UnmarkedNeed, match=r"lacks \['workstation'\]"):
         assert_box_bodies_are_marked(
-            tests=tmp_path, pyproject='[tool.lab_commons.tests]\nresources = ["dev_checkout"]\n', floor=1
+            tests=tmp_path, pyproject='[tool.lab_commons.tests]\nresources = ["femm"]\n', floor=1
         )
     with pytest.raises(UnmarkedNeed, match='under the floor'):
         assert_box_bodies_are_marked(tests=tmp_path, pyproject=_PYPROJECT, floor=99)
