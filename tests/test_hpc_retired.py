@@ -11,7 +11,7 @@ import pytest
 from lab_commons.dev import forgecli, platformparts, pushgate, verify, workstation
 from lab_commons.dev.lanepolicy import policy_from
 from lab_commons.hpc import __main__ as hpc_main
-from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys
+from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys, retired_in
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,7 +72,7 @@ def test_no_retired_spelling_survives_in_the_tracked_tree() -> None:
             text = (ROOT / name).read_text(encoding='utf-8')
         except (UnicodeDecodeError, FileNotFoundError):
             continue
-        found += [f'{name}: {spelling!r} -> {remedy}' for spelling, remedy in RETIRED.items() if spelling in text]
+        found += [f'{name}: {spelling!r} -> {RETIRED[spelling]}' for spelling in retired_in(text)]
     assert not found, 'retired spellings (replace each with its remedy):\n' + '\n'.join(found)
 
 
@@ -134,3 +134,13 @@ def test_the_verify_status_opt_out_is_refused_by_name(capsys: pytest.CaptureFixt
     """VERDICTS-FROM-THE-FORGE: a local verify posts nothing, so there is nothing left to opt out of."""
     assert verify.main(['--no-status', 'tests']) == 2
     assert '`verify --no-status` is retired' in capsys.readouterr().err
+
+
+def test_a_retired_flag_matches_as_a_whole_token_never_inside_a_longer_flag() -> None:
+    """``--mode`` is retired, ``--model`` is live. PLANTED CONTROLS both ways, and a non-flag stays a substring."""
+    assert '--mode' in RETIRED
+    assert '--mode' in retired_in('forge serve --mode integrate')
+    assert '--mode' in retired_in('`--mode`')
+    assert '--mode' not in retired_in('python -m ai_lab.review --model claude-x')
+    assert '--mode' not in retired_in('--mode-x')
+    assert 'cpuseat' in retired_in('from lab_commons.dev import cpuseats')

@@ -41,11 +41,11 @@ from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import standing
 from lab_commons.outcomes import Conclusion
 
-_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD))
+_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.lab_commons.review]\ncommand = ['reviewer', '--range', '{range}']\n"
+    "[tool.lab_commons.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
 )
 
 

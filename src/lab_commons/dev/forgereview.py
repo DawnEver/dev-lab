@@ -29,7 +29,7 @@ runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_byte
 
     [tool.lab_commons.review]
     # {range}: <merge base>..<head>; the command names its own method and model (no default model exists)
-    command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "<the model flag>", "<id>"]
+    command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
     max_diff_bytes = 200000   # a larger diff is not reviewed
 
 Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
@@ -97,7 +97,7 @@ TAKEOVER_PENDING: Final = 'takeover pending'
 
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
-    'model': 'the review command chooses its model (declare it in `command`)',
+    'model': 'the review command chooses its model (declare it in `command`: `--model <id>`)',
     'max_tokens': 'the review command bounds its own output',
     'rules': 'the review method reads its own rules and profiles (`--method <dir>` in `command`)',
 }
