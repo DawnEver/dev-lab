@@ -65,7 +65,15 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 # {range}: <merge base>..<head>; the command names its method and its model (the catalogue has no default)
 command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
 max_diff_bytes = 200000   # a larger diff is not reviewed
+claim_stale = "1 h"       # the default
 ```
+
+Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
+command a host checks it can start it -- a missing interpreter or module is `unsupported` and posts nothing --
+then posts `tests/review` = `pending`, `claimed by <host> at <time>, reviewing`, and replaces it with the final
+status. Any other host skips a head whose `tests/review` carries any status, pending included, unless it is a
+released claim (`released by ...`) or a claim older than `claim_stale` (default `"1 h"`, above the command's
+own 30 min timeout): a host that died mid-review never blocks a head for good.
 
 Undeclared, nothing is reviewed. Exit 2 is the command's named refusal (bad method, version or range): its
 stderr reason is the `error` status.

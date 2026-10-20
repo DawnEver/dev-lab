@@ -31,6 +31,12 @@ runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_byte
     # {range}: <merge base>..<head>; the command names its own method and model (no default model exists)
     command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
     max_diff_bytes = 200000   # a larger diff is not reviewed
+    claim_stale = "1 h"       # the default: a claim older than this may be taken over
+
+BEFORE it runs the command, the host checks it can start it (:func:`can_start`: a missing interpreter or
+module is ``unsupported`` and posts nothing), then CLAIMS the head: a ``pending`` status
+``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is anything but a
+released (``released by``) or stale claim (:func:`claimable`), so N serving hosts review a head once.
 
 Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
 (:class:`ReviewRefused`): its stderr reason is the ``error`` status.
@@ -41,10 +47,14 @@ The keys of the retired in-process reviewer (``model``, ``max_tokens``, ``rules`
 from __future__ import annotations
 
 import dataclasses
+import re
+import shutil
+import socket
 import subprocess
 import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -60,9 +70,11 @@ from lab_commons.dev.forgereview_findings import (
 from lab_commons.dev.forgestatus import status_list, status_post
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.platformparts import REVIEW_CONTEXT
+from lab_commons.units import Q_
 
 if TYPE_CHECKING:
-    from lab_commons.dev.forgework import Client
+    from lab_commons.dev.forgestatus import CommitStatus
+    from lab_commons.dev.forgework import Client, PullRequest
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
@@ -95,6 +107,19 @@ TAKEOVER_KINDS: Final = frozenset({'exhausted', 'auth'})
 #: What :data:`REVIEW_CONTEXT` says when every reviewer is one of :data:`TAKEOVER_KINDS` (a ``pending`` status).
 TAKEOVER_PENDING: Final = 'takeover pending'
 
+#: How old a claim may grow before another host may take the head over (its claimant presumed dead): above the
+#: command's own timeout, so a live review is never taken over.
+DEFAULT_CLAIM_STALE: Final = '1 h'
+
+#: The claim a host posts (``pending``) before it runs the command: every other host skips the head.
+CLAIMED: Final = 'claimed by'
+
+#: A claim given back (``pending``): the head is free again at once.
+RELEASED: Final = 'released by'
+
+_CLAIM: Final = re.compile(rf'^{CLAIMED} (?P<host>\S+) at (?P<at>\S+), reviewing')
+_PROBE: Final = 'import importlib.util, sys; sys.exit(importlib.util.find_spec(sys.argv[1]) is None)'
+
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
     'model': 'the review command chooses its model (declare it in `command`: `--model <id>`)',
@@ -115,6 +140,16 @@ class Review:
 
     command: tuple[str, ...] = ()  # undeclared: nothing is reviewed (the command names its own model)
     max_diff_bytes: int = 200_000
+    claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
+
+    def __post_init__(self) -> None:
+        """Refuse a ``claim_stale`` that is not a duration, naming it."""
+        stale_after(self)
+
+    @property
+    def stale(self) -> timedelta:
+        """``claim_stale`` as a :class:`~datetime.timedelta`."""
+        return stale_after(self)
 
 
 def review_from(text: str, origin: str) -> Review:
@@ -156,6 +191,51 @@ class ReviewUnsupported(OSError):
 
     Nothing is posted, so the head's one attempt is left for a host that can run it.
     """
+
+
+def stale_after(review: Review) -> timedelta:
+    """*review*'s ``claim_stale``; a bare number or a non-duration is refused naming it."""
+    try:
+        quantity = Q_(review.claim_stale)
+    except Exception as bad:
+        msg = f'claim_stale {review.claim_stale!r} is not a duration; write one such as "1 h"'
+        raise ValueError(msg) from bad
+    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
+        msg = f'claim_stale {review.claim_stale!r} is not a duration (it needs a unit); write one such as "1 h"'
+        raise ValueError(msg)
+    return timedelta(seconds=float(quantity.m_as('s')))
+
+
+def can_start(argv: Sequence[str], root: Path) -> str | None:
+    """Why this host cannot start *argv* (its executable absent, or its ``-m`` module unimportable); ``None`` if it can.
+
+    Checked BEFORE a claim is posted, so a host that cannot review posts nothing.
+    """
+    found = shutil.which(argv[0]) or (argv[0] if Path(argv[0]).is_file() else None)
+    if found is None:
+        return f'unsupported: the review command {argv[0]!r} is not installed on this host'
+    if len(argv) >= 3 and argv[1] == '-m':  # noqa: PLR2004 -- interpreter, -m, module
+        probe = _door.run([found, '-c', _PROBE, argv[2]], cwd=root, capture_output=True, timeout=120, check=False)
+        if probe.returncode != 0:
+            return f'unsupported: the review command cannot import {argv[2]!r} on this host'
+    return None
+
+
+def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> bool:
+    """Whether a head whose review status is *status* may be claimed: none, a released claim, or a stale one."""
+    if status is None:
+        return True
+    if status.state != 'pending':
+        return False
+    if status.description.startswith(RELEASED):
+        return True
+    if (claim := _CLAIM.match(status.description)) is None:
+        return False  # takeover pending, or any other pending: not ours to take
+    try:
+        at = datetime.fromisoformat(claim['at'])
+    except ValueError:
+        return True  # an unreadable claim cannot hold a head forever
+    return now - at >= stale
 
 
 def run_command(argv: Sequence[str], root: Path) -> str:
@@ -206,6 +286,28 @@ def _counted(found: Findings) -> str:
     return f'{len(found.findings)} finding(s), {high} HIGH'
 
 
+def _settle(client: Client, pull: PullRequest, found: Findings) -> str:
+    """Replace the claim on *pull*'s head with the final status *found* earns (and its comment); the line said."""
+    head = pull.head_sha
+    if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
+        kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
+        why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); advisory, never blocks'[:_DESCRIPTION]
+        status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
+        return f'#{pull.number} {head[:12]}: {why}'
+    if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
+        kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
+        why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
+        status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+        return f'#{pull.number} {head[:12]}: {why}'
+    _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=render(head, found))
+    url = comment.url if comment else ''
+    status_post(
+        client, head, context=REVIEW_CONTEXT, state='success', target_url=url,
+        description=f'advisory review posted: {_counted(found)}; it does not gate the merge',
+    )  # fmt: skip
+    return f'#{pull.number} {head[:12]}: reviewed, {_counted(found)}'
+
+
 def review_tick(
     root: Path,
     client: Client,
@@ -213,6 +315,9 @@ def review_tick(
     *,
     base: str,
     run: Callable[[Sequence[str], Path], str] = run_command,
+    ready: Callable[[Sequence[str], Path], str | None] = can_start,
+    host: str = '',
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[str, ...]:
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
 
@@ -222,11 +327,13 @@ def review_tick(
     """
     lines: list[str] = []
     target = f'origin/{base}'
+    host = host or socket.gethostname()
     for pull in pr_list(client):
         head = pull.head_sha
         if pull.base != base or pull.draft or not head:
             continue
-        if any(status.context == REVIEW_CONTEXT for status in status_list(client, head)):
+        latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+        if not claimable(latest, clock(), review.stale):
             continue
         size = len(_git(root, 'diff', f'{target}...{head}').encode())
         if size > review.max_diff_bytes:
@@ -235,10 +342,18 @@ def review_tick(
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
         reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
+        argv = command_for(review, reviewed)
+        if (cannot := ready(argv, root)) is not None:  # checked first: a host that cannot review posts nothing
+            lines.append(f'#{pull.number} {head[:12]}: {cannot}; nothing posted')
+            break
+        claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
+        status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
         try:
-            found = parse_findings(run(command_for(review, reviewed), root))
-        except ReviewUnsupported as unsupported:  # this host cannot review: post nothing, leave the head
-            lines.append(f'#{pull.number} {head[:12]}: {unsupported}; nothing posted')
+            found = parse_findings(run(argv, root))
+        except ReviewUnsupported as unsupported:  # it started and then could not: give the claim back
+            why = f'{RELEASED} {host}: {unsupported}'[:_DESCRIPTION]
+            status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
+            lines.append(f'#{pull.number} {head[:12]}: {unsupported}; the claim is released')
             break
         except (UnknownSchemaVersion, ReviewRefused) as named:
             why = f'not reviewed: {named}'[:_DESCRIPTION]
@@ -250,25 +365,7 @@ def review_tick(
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
             continue
-        if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
-            kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
-            why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); advisory, never blocks'[:_DESCRIPTION]
-            status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
-            lines.append(f'#{pull.number} {head[:12]}: {why}')
-            continue
-        if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
-            kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
-            why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
-            status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
-            lines.append(f'#{pull.number} {head[:12]}: {why}')
-            continue
-        _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=render(head, found))
-        url = comment.url if comment else ''
-        status_post(
-            client, head, context=REVIEW_CONTEXT, state='success', target_url=url,
-            description=f'advisory review posted: {_counted(found)}; it does not gate the merge',
-        )  # fmt: skip
-        lines.append(f'#{pull.number} {head[:12]}: reviewed, {_counted(found)}')
+        lines.append(_settle(client, pull, found))
     return tuple(lines)
 
 
@@ -279,6 +376,7 @@ def step(
     policy: Policy,
     say: Callable[[str], None],
     run: Callable[[Sequence[str], Path], str] = run_command,
+    ready: Callable[[Sequence[str], Path], str | None] = can_start,
 ) -> None:
     """The review inside the integration step, on whichever host runs it; a failure is said, never raised."""
     try:
@@ -286,7 +384,7 @@ def step(
         if not review.command:
             say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
             return
-        for line in review_tick(root, built, review, base=policy.integration, run=run):
+        for line in review_tick(root, built, review, base=policy.integration, run=run, ready=ready):
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:
         say(f'[serve] the PR review did not run: {failed}')

@@ -11,6 +11,7 @@ import dataclasses
 import json
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -22,14 +23,18 @@ from lab_commons.dev import forgereview
 from lab_commons.dev.forgemerge import decide
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgereview import (
+    CLAIMED,
+    DEFAULT_CLAIM_STALE,
     RANGE_FIELD,
     REFUSED_EXIT,
+    RELEASED,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
     TAKEOVER_PENDING,
     Review,
     ReviewRefused,
     ReviewUnsupported,
+    can_start,
     render,
     review_from,
     review_tick,
@@ -102,7 +107,7 @@ def _forge(head: str, **pull: object) -> tuple[StateForge, int]:
 
 
 def _tick(work: Path, forge: StateForge, command: FakeCommand, review: Review | None = None) -> tuple[str, ...]:
-    return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command)
+    return review_tick(work, forge, review or _DECLARED, base='integrate/main', run=command, ready=_can)
 
 
 def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_posted(tmp_path: Path) -> None:
@@ -133,7 +138,7 @@ def test_an_undeclared_command_reviews_nothing_and_says_so(tmp_path: Path) -> No
     said: list[str] = []
     assert Review().command == ()
     (work / 'pyproject.toml').write_text(_MANIFEST.split('[tool.lab_commons.review]', maxsplit=1)[0], encoding='utf-8')
-    step(work, forge, policy=Policy(), say=said.append, run=command)
+    step(work, forge, policy=Policy(), say=said.append, run=command, ready=_can)
     assert command.ran == []
     assert forge.comments[number] == []
     assert any('command is not declared' in line for line in said)
@@ -155,7 +160,7 @@ def test_exit_2_is_the_commands_named_refusal_and_its_reason_is_the_status(tmp_p
         msg = 'the review command refused: unknown method version 9'
         raise ReviewRefused(msg)
 
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=refusing, ready=_can)
     (status,) = status_list(forge, head)
     assert status.state == 'error'
     assert 'refused: unknown method version 9' in status.description
@@ -186,27 +191,104 @@ def test_every_reviewer_exhausted_or_auth_is_takeover_pending_and_never_a_failur
         assert TAKEOVER_PENDING not in posted.description
 
 
+def _can(_argv: Sequence[str], _root: Path) -> str | None:
+    return None  # every fake command can start
+
+
 def test_a_host_without_the_commands_interpreter_or_module_is_unsupported_and_posts_nothing(tmp_path: Path) -> None:
-    """The head's one attempt is not burnt. PLANTED control: the same head on a host that can run it is reviewed."""
+    """Checked BEFORE the claim. PLANTED control: the same head on a host that can run it is reviewed."""
     interpreter = sys.executable
-    with pytest.raises(ReviewUnsupported, match='not installed'):
-        run_command([str(tmp_path / 'no-such-python'), '-m', 'ai_lab.review'], tmp_path)
+    assert 'not installed' in (can_start([str(tmp_path / 'no-such-python'), '-m', 'ai_lab.review'], tmp_path) or '')
+    assert 'cannot import' in (can_start([interpreter, '-m', 'no_such_module_for_review'], tmp_path) or '')
+    assert can_start([interpreter, '-m', 'json.tool'], tmp_path) is None
     with pytest.raises(ReviewUnsupported, match='cannot import'):
         run_command([interpreter, '-m', 'no_such_module_for_review'], tmp_path)
     work, head = _work(tmp_path)
     forge, number = _forge(head)
+    command = FakeCommand()
+    lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=command, ready=can_start)
+    assert 'unsupported' in lines[0]
+    assert 'nothing posted' in lines[0]
+    assert command.ran == []
+    assert forge.statuses.get(head, []) == []
+    assert forge.comments[number] == []
+    _tick(work, forge, command)
+    (status,) = status_list(forge, head)
+    assert status.state == 'success'
+
+
+def test_a_command_that_turns_out_unsupported_releases_its_claim(tmp_path: Path) -> None:
+    """PLANTED control: the released head is claimed and reviewed by the next host at once."""
+    work, head = _work(tmp_path)
+    forge, _ = _forge(head)
 
     def absent(_argv: Sequence[str], _root: Path) -> str:
         msg = 'unsupported: the review command cannot import its module on this host'
         raise ReviewUnsupported(msg)
 
-    lines = review_tick(work, forge, _DECLARED, base='integrate/main', run=absent)
-    assert 'unsupported' in lines[0]
-    assert forge.statuses.get(head, []) == []
-    assert forge.comments[number] == []
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=absent, ready=_can, host='A')
+    (released,) = status_list(forge, head)
+    assert released.state == 'pending'
+    assert released.description.startswith(f'{RELEASED} A')
     _tick(work, forge, FakeCommand())
-    (status,) = status_list(forge, head)
-    assert status.state == 'success'
+    assert status_list(forge, head)[0].state == 'success'
+
+
+def test_two_hosts_on_one_new_head_only_the_first_claims_and_reviews(tmp_path: Path) -> None:
+    """The second host ticks WHILE the first is reviewing: it sees the claim and skips."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    second = FakeCommand()
+    seen: list[tuple[str, ...]] = []
+
+    class First(FakeCommand):
+        def __call__(self, argv: Sequence[str], root: Path) -> str:
+            seen.append(review_tick(work, forge, _DECLARED, base='integrate/main', run=second, ready=_can, host='B'))
+            return super().__call__(argv, root)
+
+    first = First()
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=first, ready=_can, host='A')
+    assert len(first.ran) == 1
+    assert second.ran == []
+    assert seen == [()]
+    posted = [one['description'] for one in forge.statuses[head]]
+    assert posted[0].startswith(f'{CLAIMED} A at ')
+    assert len(posted) == 2  # the claim, then the final status; B posted nothing
+    assert status_list(forge, head)[0].state == 'success'
+    assert len(forge.comments[number]) == 1
+
+
+def test_a_stale_claim_is_re_claimable_after_the_declared_age(tmp_path: Path) -> None:
+    """PLANTED control: the same claim younger than ``claim_stale`` holds the head."""
+    work, head = _work(tmp_path)
+    forge, _ = _forge(head)
+    t0 = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
+    command = FakeCommand()
+    with pytest.raises(_Died):
+        review_tick(
+            work, forge, _DECLARED, base='integrate/main', run=lambda *_: _die(), ready=_can, host='A', clock=lambda: t0
+        )
+    assert status_list(forge, head)[0].description.startswith(f'{CLAIMED} A at 2026-10-20T09:00:00')
+    declared = Review(command=_DECLARED.command, claim_stale='30 min')
+    for minutes, runs in ((29, 0), (30, 1)):
+        at = t0 + timedelta(minutes=minutes)
+        review_tick(
+            work, forge, declared, base='integrate/main', run=command, ready=_can, host='B', clock=lambda at=at: at
+        )
+        assert len(command.ran) == runs
+    assert status_list(forge, head)[0].state == 'success'
+    assert Review().claim_stale == DEFAULT_CLAIM_STALE == '1 h'
+    assert Review().stale == timedelta(hours=1)
+    with pytest.raises(ValueError, match='claim_stale'):
+        Review(claim_stale='30')
+
+
+class _Died(BaseException):
+    """The claimant dies mid-review: nothing it could catch, so its claim stays behind."""
+
+
+def _die() -> str:
+    raise _Died
 
 
 @pytest.mark.parametrize('version', [2, 0, '1'])
@@ -328,8 +410,8 @@ def test_a_failed_command_posts_an_error_once(tmp_path: Path) -> None:
         msg = 'the review command exited 1: no provider'
         raise OSError(msg)
 
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken)
-    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can)
+    review_tick(work, forge, _DECLARED, base='integrate/main', run=broken, ready=_can)
     (status,) = status_list(forge, head)
     assert status.state == 'error'
     assert 'OSError' in status.description
@@ -377,7 +459,7 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
     forge, _ = _forge(head)
     command = FakeCommand()
     said: list[str] = []
-    step(work, forge, policy=Policy(), say=said.append, run=command)
+    step(work, forge, policy=Policy(), say=said.append, run=command, ready=_can)
     assert len(command.ran) == 1
     assert any('reviewed, 1 finding(s)' in line for line in said)
 
@@ -387,5 +469,5 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
             raise OSError(msg)
 
     said.clear()
-    step(work, Down(), policy=Policy(), say=said.append, run=command)
+    step(work, Down(), policy=Policy(), say=said.append, run=command, ready=_can)
     assert any('did not run' in line for line in said)
