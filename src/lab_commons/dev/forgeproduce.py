@@ -379,7 +379,7 @@ def _settle(
     log, record = made  # the run's log, and its record (shatree.record_manifest)
     host = (item.holder.machine or item.holder.login) if item.holder else '-'
     state, description = ('error', boxed_out) if boxed_out else result(returncode, host)
-    if not record and returncode != ProducerExit.PASS:
+    if not record[0] and returncode != ProducerExit.PASS:  # record_manifest is ("", ()) when none was written
         # W1.4: a run that ended without writing its record is NAMED. "inconclusive (exit 3) -- no part"
         # left an author with nothing to act on; the missing record is the fact and it belongs in the status.
         description = f'{description}; the run wrote no record, so nothing about its tree was judged'

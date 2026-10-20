@@ -211,7 +211,7 @@ class _Proc:
         return self.code
 
 
-def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
+def _produce(monkeypatch, tmp_path: Path, code: int, kept: tuple = ()) -> tuple[_Forge, list]:
     forge, said, comments = _Forge(), [], []
     client = SimpleNamespace(
         answered='Sat, 10 Oct 2026 12:00:00 GMT', whoami=lambda: 'alice',
@@ -224,7 +224,7 @@ def _produce(monkeypatch, tmp_path: Path, code: int) -> tuple[_Forge, list]:
     monkeypatch.setattr(forgeproduce, 'status_history', forge.history)
     monkeypatch.setattr(forgeproduce, 'open_tree', lambda _r, _s, _c: SimpleNamespace(path=tmp_path, python='py'))
     monkeypatch.setattr(forgeproduce, 'close_tree', lambda _r, _s, _c, **_kw: 'removed')
-    monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: (KEPT, (('goldens.csv', DIGEST),)))
+    monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: kept or (KEPT, (('goldens.csv', DIGEST),)))
     monkeypatch.setattr(forgerequest, 'add_label', lambda _c, n, name: comments.append(('label', n, name)))
     item = Work('issue/9', sha, 'femm+windows', MINE, ME, argv=ARGV, request='request/9')
     forgeproduce.produce(
@@ -259,6 +259,18 @@ def test_a_failed_request_is_a_failure_on_record_never_silent(monkeypatch, tmp_p
     assert [c[0] for c in comments] == ['comment'], 'a failed request stays open, its failure stated'
     crashed, _ = _produce(monkeypatch, tmp_path, -9)
     assert crashed.posts[-1] == ('request/9', 'error', 'released: producer crashed (exit -9)')
+
+
+def test_a_run_that_wrote_no_record_names_the_missing_record(monkeypatch, tmp_path: Path) -> None:
+    """W1.4: an inconclusive run whose tree declares no record says so; the exit code alone gave nothing to act on.
+
+    PLANTED CONTROL: the same exit with its record written posts the bare reason -- the record decides it.
+    """
+    missing, _ = _produce(monkeypatch, tmp_path, 3, kept=('', ()))
+    assert missing.posts[-1][:2] == ('request/9', 'error')
+    assert 'the run wrote no record' in missing.posts[-1][2]
+    written, _ = _produce(monkeypatch, tmp_path, 3)
+    assert 'record' not in written.posts[-1][2]
 
 
 def test_a_request_is_named_by_its_issue_and_its_body_names_no_command() -> None:
