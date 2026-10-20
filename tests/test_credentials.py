@@ -194,6 +194,11 @@ def test_an_undeclared_task_is_refused_naming_the_declared_ones() -> None:
     assert not any(task.isdigit() for task in API_KEY_TASKS)  # api-key-<N> is a fallback slot (ai_lab)
 
 
+def test_the_interactive_host_launchers_own_the_session_task() -> None:
+    assert 'session' in API_KEY_TASKS
+    assert key_username('session') == 'api-key-session'
+
+
 def test_one_username_rule_for_every_slot_with_and_without_a_task() -> None:
     assert [key_username(None, slot) for slot in (1, 2, 3)] == ['api-key', 'api-key-2', 'api-key-3']
     assert [key_username('pr-review', slot) for slot in (1, 2)] == ['api-key-pr-review', 'api-key-pr-review-2']
