@@ -361,8 +361,18 @@ def test_a_key_of_the_retired_in_process_reviewer_is_refused_by_name(key: str) -
 
 def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     """The forge only orchestrates: the in-process reviewer's surface is gone, not aliased."""
-    for gone in ('anthropic', 'Ask', 'review_key', 'API_HOST', 'KEY_NAME', 'DEFAULT_MODEL', 'CAPABILITY'):
-        assert not hasattr(forgereview, gone), gone
+    gone = (
+        lambda: forgereview.anthropic,
+        lambda: forgereview.Ask,
+        lambda: forgereview.review_key,
+        lambda: forgereview.API_HOST,
+        lambda: forgereview.KEY_NAME,
+        lambda: forgereview.DEFAULT_MODEL,
+        lambda: forgereview.CAPABILITY,
+    )
+    for read in gone:
+        with pytest.raises(AttributeError):
+            read()
     assert {field.name for field in dataclasses.fields(Review)} == {'command', 'max_diff_bytes', 'claim_stale'}
 
 
