@@ -42,7 +42,7 @@ import http.client
 import json
 import subprocess
 import tomllib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -50,15 +50,21 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.credentials import NoCredential, api_key, key_username
 from lab_commons.dev.forge import https_transport
-from lab_commons.dev.forgealarm import AUTH, Alarm
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
+from lab_commons.dev.forgereview_findings import (
+    SEVERITIES,
+    Findings,
+    FindingsInvalid,
+    UnknownSchemaVersion,
+    parse_findings,
+)
 from lab_commons.dev.forgestatus import status_list, status_post
 from lab_commons.dev.forgework import ForgeCallFailed
 from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import REVIEW_CONTEXT
 
 if TYPE_CHECKING:
-    from lab_commons.dev.forgework import Client, PullRequest
+    from lab_commons.dev.forgework import Client
 
 __all__ = [
     'API_HOST', 'CAPABILITY', 'DEFAULT_MODEL', 'KEY_NAME', 'KEY_TASK', 'REVIEW_CONTEXT', 'Ask', 'Review',
@@ -80,7 +86,15 @@ KEY_NAME: Final = f'{key_username(KEY_TASK)}@{API_HOST}'
 #: The latest Claude, the default reviewer.
 DEFAULT_MODEL: Final = 'claude-opus-5-5'
 
+#: The placeholder the declared command carries; the reviewed ``<merge base>..<head>`` range replaces it.
+RANGE_FIELD: Final = '{range}'
+
+#: The family default: sharp-review's method, run headless through ai-lab, printing the findings JSON.
+DEFAULT_COMMAND: Final = ('python', '-m', 'ai_lab.review', '--range', RANGE_FIELD)
+
 _TABLE: Final = 'review'
+_COMMAND_TIMEOUT_S: Final = 1800
+_DESCRIPTION: Final = 240  # a commit-status description is short
 _API_VERSION: Final = '2023-06-01'
 _TIMEOUT_S: Final = 600.0
 _OK: Final = 200  # the one success the Messages API answers
@@ -107,6 +121,7 @@ class Review:
     max_diff_bytes: int = 200_000
     max_tokens: int = 8192
     rules: tuple[str, ...] = ('AGENTS.md', '.claude/rules/*.md')
+    command: tuple[str, ...] = DEFAULT_COMMAND
 
 
 @dataclass(frozen=True)
@@ -126,7 +141,8 @@ def review_from(text: str, origin: str) -> Review:
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    return Review(**declared | ({'rules': tuple(declared['rules'])} if 'rules' in declared else {}))
+    tuples = {key: tuple(declared[key]) for key in ('rules', 'command') if key in declared}
+    return Review(**declared | tuples)
 
 
 def load_review(root: Path) -> Review:
@@ -189,10 +205,41 @@ def _rules(root: Path, base: str, patterns: tuple[str, ...]) -> str:
     return '\n\n'.join(f'=== {path} ===\n{_git(root, "show", f"{base}:{path}")}' for path in chosen)
 
 
-def _ask(root: Path, review: Review, pull: PullRequest, base: str, diff: str) -> Ask:
-    system = f'{_INSTRUCTIONS}\n\n# The repository rules\n\n{_rules(root, base, review.rules)}'
-    prompt = f'# PR #{pull.number}: {pull.title}\n\n{pull.body}\n\n# The diff\n\n```diff\n{diff}\n```\n'
-    return Ask(review.model, system, prompt, review.max_tokens)
+def run_command(argv: Sequence[str], root: Path) -> str:
+    """The stdout of the declared review command run in *root*; :class:`OSError` naming a non-zero exit."""
+    done = _door.run(
+        list(argv), cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
+        timeout=_COMMAND_TIMEOUT_S, check=False,
+    )  # fmt: skip
+    if done.returncode != 0:
+        msg = f'the review command exited {done.returncode}: {done.stderr.strip()[-300:]}'
+        raise OSError(msg)
+    return done.stdout
+
+
+def command_for(review: Review, reviewed: str) -> list[str]:
+    """The declared command with every :data:`RANGE_FIELD` replaced by the *reviewed* ``a..b`` range."""
+    return [arg.replace(RANGE_FIELD, reviewed) for arg in review.command]
+
+
+def render(head: str, found: Findings) -> str:
+    """The one PR comment: who reviewed with what status, then each finding, most severe first."""
+    who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
+    rows = sorted(found.findings, key=lambda one: SEVERITIES.index(one.severity))
+    lines = [
+        f'- **{one.severity}** `{one.file}` -- {one.summary} ({one.id}, {one.category}, {one.confidence}; '
+        f'by {", ".join(one.reviewers)})' + (f'\n  - suggestion: {one.suggestion}' if one.suggestion else '')
+        for one in rows
+    ]
+    body = '\n'.join(lines) or 'No findings.'
+    return (
+        f'**Advisory review** of `{head[:12]}` over `{found.range}` -- it gates nothing.\n\nReviewers: {who}\n\n{body}'
+    )
+
+
+def _counted(found: Findings) -> str:
+    high = sum(one.severity == 'HIGH' for one in found.findings)
+    return f'{len(found.findings)} finding(s), {high} HIGH'
 
 
 def review_tick(
@@ -201,15 +248,15 @@ def review_tick(
     review: Review,
     *,
     base: str,
-    key: Callable[[], str],
-    ask: Callable[[Ask, str], str],
+    run: Callable[[Sequence[str], Path], str] = run_command,
 ) -> tuple[str, ...]:
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
 
-    *key* is read once, and only when a PR is due; a missing key raises before anything is posted.
+    The declared command reviews ``<merge base>..<head>`` and prints the findings JSON; one comment and one
+    :data:`REVIEW_CONTEXT` status per head are posted from it. A command that fails, or prints anything but a
+    known findings version, posts ``error`` naming why, and is not retried on that head.
     """
     lines: list[str] = []
-    secret = ''
     target = f'origin/{base}'
     for pull in pr_list(client):
         head = pull.head_sha
@@ -217,52 +264,49 @@ def review_tick(
             continue
         if any(status.context == REVIEW_CONTEXT for status in status_list(client, head)):
             continue
-        diff = _git(root, 'diff', f'{target}...{head}')
-        size = len(diff.encode())
+        size = len(_git(root, 'diff', f'{target}...{head}').encode())
         if size > review.max_diff_bytes:
             why = f'not reviewed: the diff is {size} bytes, over the cap max_diff_bytes={review.max_diff_bytes}'
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
-        secret = secret or key()
+        reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
         try:
-            said = ask(_ask(root, review, pull, target, diff), secret)
-        except (OSError, ValueError) as failed:
-            why = f'the model call failed ({type(failed).__name__}); advisory, not retried on this head'
+            found = parse_findings(run(command_for(review, reviewed), root))
+        except UnknownSchemaVersion as unknown:
+            why = f'not reviewed: {unknown}'[:_DESCRIPTION]
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
-        text = f'**Advisory review** of `{head[:12]}` by `{review.model}` -- it gates nothing.\n\n{said}'
-        _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=text)
+        except (OSError, FindingsInvalid, subprocess.SubprocessError) as failed:
+            why = f'the review command failed ({type(failed).__name__}); advisory, not retried on this head'
+            status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+            lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
+            continue
+        _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=render(head, found))
         url = comment.url if comment else ''
         status_post(
             client, head, context=REVIEW_CONTEXT, state='success', target_url=url,
-            description=f'advisory review by {review.model} posted; it does not gate the merge',
+            description=f'advisory review posted: {_counted(found)}; it does not gate the merge',
         )  # fmt: skip
-        lines.append(f'#{pull.number} {head[:12]}: reviewed by {review.model}')
+        lines.append(f'#{pull.number} {head[:12]}: reviewed, {_counted(found)}')
     return tuple(lines)
 
 
 def step(
     root: Path,
     built: Client,
-    repo: str,
     *,
     capabilities: Mapping[str, object],
     say: Callable[[str], None],
-    alarm: Callable[[Alarm], object],
-    key: Callable[[], str] | None = None,
-    ask: Callable[[Ask, str], str] = anthropic,
+    run: Callable[[Sequence[str], Path], str] = run_command,
 ) -> None:
-    """The serve step: on a host declaring :data:`CAPABILITY` only; a missing key alarms, a forge failure is said."""
+    """The serve step: on a host declaring :data:`CAPABILITY` only; a failure is said, never raised."""
     if CAPABILITY not in capabilities:
         return
     try:
         policy, review = load_policy(root), load_review(root)
-        reading = key or (lambda: review_key(cwd=root))
-        for line in review_tick(root, built, review, base=policy.integration, key=reading, ask=ask):
+        for line in review_tick(root, built, review, base=policy.integration, run=run):
             say(f'[serve] review: {line}')
-    except ReviewKeyMissing as missing:
-        alarm(Alarm(AUTH, repo, f'the PR reviewer has no key ({KEY_NAME})', str(missing)))
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:
         say(f'[serve] the PR review did not run: {failed}')

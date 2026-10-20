@@ -250,7 +250,7 @@ def serve(
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
     prompt(root, repo, client(root), say=say, alarm=alarm)
-    review_step(root, client(root), repo, capabilities=section('capabilities'), say=say, alarm=alarm)
+    review_step(root, client(root), capabilities=section('capabilities'), say=say)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
