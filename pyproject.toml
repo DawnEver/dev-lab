@@ -105,6 +105,7 @@ produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 trunk = "main"
 integration = "integrate/main"
 merges_only_since = "c6ba73b78d56f7e0c3a4e95d208e752b9047bdf4"  # INTEGRATION-IS-MERGES-ONLY from here on
+pr_merges_since = "b97d2aa2871e09630863620bda713de750374ccb"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha
 
 # This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
 # `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.

@@ -36,7 +36,7 @@ supply, tools present, parts served, holds, waits, alarm kinds and the tick. Fac
 partitions, quota), what else runs, alarm texts, the artefact-store reason, tool evidence and the
 ``[priority]`` subjects are dropped. A card published under the raw name before the repo turned public
 is deleted on the first redacted tick. A ``Forge-Host`` trailer still names the raw host; a reader
-vouches it against either spelling (:func:`lab_commons.dev.forgeschedule.vouched`).
+vouches it against either spelling (:func:`lab_commons.dev.forgeorigin.vouched`).
 
 A CARD OLDER THAN :data:`STALE_TICKS` OF ITS OWN TICK PERIOD IS STALE: the host is gone or wedged, and
 ``forge queue`` shows it so rather than counting it as serving. It is also how a REFUSED CREDENTIAL shows:

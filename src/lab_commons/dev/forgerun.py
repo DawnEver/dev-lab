@@ -19,7 +19,7 @@ file (:func:`directory`) -- in the account's home, so any login host of that acc
 
 SLURM IS THE TRUTH FOR JOB STATE; THE FILE ONLY SAYS HOW FAR THIS SIDE GOT. ``submitted`` is decided
 by the run state ``hpc`` keeps on the cluster (``~/ci/runs/<sha>/<part>/state.json``), and gathering asks
-``sacct`` (:func:`lab_commons.hpc.run.gather_run`). A crash between ticks therefore resumes; it never
+``sacct`` (:func:`lab_commons.hpc.gather.gather_run`). A crash between ticks therefore resumes; it never
 resubmits: a ``claimed`` run whose jobs exist (by ``squeue`` job name) but whose run state was never
 written is an ORPHAN -- it raises an alarm and waits for a human to ``scancel`` it, because submitting
 again would double the run.

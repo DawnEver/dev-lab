@@ -89,9 +89,10 @@ from lab_commons.dev.forgeclaim import (
     this_machine,
     this_seat,
 )
+from lab_commons.dev.forgeorigin import vouched
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgerequest import declared_request, remind, request_authors
-from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name, vouched
+from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name
 from lab_commons.dev.forgestatus import CommitStatus, status_history
 from lab_commons.dev.forgetake import ClaimPass
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
@@ -157,7 +158,7 @@ def tick(
     this host has is *supply*'s ``present`` (:mod:`lab_commons.compute.probe`): a part whose need-set is not
     all present waits ``not admitted: lacking <resource>``. *owners* is who may vouch
     for each host card (host -> the login that publishes it): a job's ORIGIN host stands only where its
-    forge-recorded login is one of them (:func:`lab_commons.dev.forgeschedule.vouched`). *priority* is this
+    forge-recorded login is one of them (:func:`lab_commons.dev.forgeorigin.vouched`). *priority* is this
     host's declared ordering (default: its machine file's ``[priority]``, :mod:`lab_commons.compute.priority`):
     a matching candidate is considered before every other, and nothing is set aside for it. *authors* are
     the logins whose requests run here at any served sha (default: the machine file's ``[requests] authors``);

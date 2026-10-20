@@ -59,6 +59,7 @@ from lab_commons.dev.hook_install import read_hooks
 from lab_commons.dev.inflight import RunKey, box_directory, run_once
 from lab_commons.dev.localpart import part_selection, post_cited, post_part
 from lab_commons.dev.lockpins import lock_freshness
+from lab_commons.dev.lockwait import lock_wait_arg
 from lab_commons.dev.logref import LogRef, UnverifiableLog
 from lab_commons.dev.platformparts import part_context
 from lab_commons.dev.producer import ProducerExit, full_suite_refusal
@@ -446,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         '--lock-wait',
-        type=_lock_wait_arg,
+        type=lock_wait_arg,
         default=None,
         metavar='DURATION',
         help=(
@@ -507,31 +508,6 @@ def _post_cited(root: Path, log: str, posted: tuple[str, ...], *, part: str, pro
     """The PRODUCER's cited run posts from its own outcomes, beside *log*; nothing re-runs, and nobody else posts."""
     if producer:
         emit(post_cited(root, log, posted, head=head_sha(root), dirt=status_paths(root), part=part))
-
-
-def lock_wait(text: str) -> float:
-    """``--lock-wait`` in seconds. The unit lives in the VALUE: a bare number, or a non-duration, is refused."""
-    from lab_commons.units import Q_  # noqa: PLC0415 -- pint is an extra; only this flag needs it
-
-    try:
-        quantity = Q_(text)
-    except Exception as exc:
-        msg = f'--lock-wait {text!r} is not a duration; write one such as "30 s" or "2 min"'
-        raise ValueError(msg) from exc
-    if not isinstance(quantity, Q_) or quantity.dimensionless:
-        msg = f'--lock-wait {text!r} is a bare number, not a duration: it has no unit -- write e.g. "30 s"'
-        raise ValueError(msg)
-    if not quantity.check('[time]'):
-        msg = f'--lock-wait {text!r} is {quantity.dimensionality}, not a duration; write e.g. "30 s"'
-        raise ValueError(msg)
-    return float(quantity.m_as('s'))
-
-
-def _lock_wait_arg(text: str) -> float:
-    try:
-        return lock_wait(text)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _retired(argv: list[str]) -> str | None:

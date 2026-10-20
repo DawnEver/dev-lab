@@ -43,9 +43,6 @@ class Policy:
     #: server-side once it is green (:mod:`lab_commons.dev.forgemerge`), and a client push adding any commit to
     #: it is refused (:mod:`lab_commons.dev.sessionbranch`). ``''``: the integrator merges and pushes.
     pr_merges_since: str = ''
-    #: The repository's read-only public GitHub mirror (``https://github.com/<owner>/<repo>``): its open PRs
-    #: are carried to this forge as ``pr/gh-<N>`` (:mod:`lab_commons.dev.forgemirror`). ``''``: none.
-    mirror: str = ''
 
 
 def load_policy(root: Path) -> Policy:

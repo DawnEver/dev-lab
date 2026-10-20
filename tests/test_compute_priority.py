@@ -16,7 +16,7 @@ from lab_commons.compute.priority import Priority
 from lab_commons.dev import forgequeue
 from lab_commons.dev.forge import Forge
 from lab_commons.dev.forgehosts import HostCard, card_of
-from lab_commons.dev.forgeschedule import head_login
+from lab_commons.dev.forgeorigin import head_login
 from lab_commons.dev.forgework import Comment
 from lab_commons.hpc.shell import FULL
 

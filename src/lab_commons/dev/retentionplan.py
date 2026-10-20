@@ -7,7 +7,7 @@ Measured 2026-10-15 on the cluster accounts the forge serves (GPFS file quota 2 
 derived from what each is FOR, not from what happens to name it:
 
 * A TREE is the workdir of a run's jobs and the place its streams land until :func:`gather_run
-  <lab_commons.hpc.run.gather_run>` folds them into the record. Of its ~22 k files only the streams of the
+  <lab_commons.hpc.gather.gather_run>` folds them into the record. Of its ~22 k files only the streams of the
   round in flight (``.lab-ci/<tag>.jsonl``, one file) are read after its jobs end: the carry takes a SUPERSEDED
   run's finished shards from them (:func:`lab_commons.hpc.records.held_cells`). So a tree is kept exactly
   while its sha is IN FLIGHT, by any repo's run -- ``tree-not-in-flight`` otherwise -- and before an

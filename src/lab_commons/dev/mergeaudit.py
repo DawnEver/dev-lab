@@ -52,6 +52,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.dev.breakglass import BREAK_GLASS, empty_reason
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.lanepolicy import policy_at
 from lab_commons.log import emit
@@ -313,6 +314,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         root = Path(_git(Path.cwd(), 'rev-parse', '--show-toplevel').decode().strip())
         message = Path(args[0]).read_text(encoding='utf-8', errors='replace')
+        if empty_reason(message):
+            emit(f'merge-audit: commit REFUSED -- a {BREAK_GLASS}: trailer must name its reason', err=True)
+            return 1
         problems = pending(root, message)
     except (MergeAuditError, OSError) as error:
         problems = (str(error),)

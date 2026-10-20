@@ -380,6 +380,6 @@ _EPHEMERAL = BranchSet(trunk='main', sessions=frozenset({'integrate/main'}), eph
 
 def test_a_branch_in_a_declared_ephemeral_namespace_is_pushable_without_a_row() -> None:
     """PLANTED control: the same set refuses a long-lived name outside the namespace, and a nested ``pr`` is not it."""
-    assert undeclared([_ref('refs/heads/pr/fix-ci'), _ref('refs/heads/pr/gh-12')], _EPHEMERAL) == ()
+    assert undeclared([_ref('refs/heads/pr/fix-ci'), _ref('refs/heads/pr/cloud-12')], _EPHEMERAL) == ()
     assert undeclared([_ref('refs/heads/feat/long'), _ref('refs/heads/x/pr/y')], _EPHEMERAL) == ('feat/long', 'x/pr/y')
     assert undeclared([_ref('refs/heads/pr/x')], _DECLARED) == ('pr/x',), 'no namespace is ephemeral undeclared'
