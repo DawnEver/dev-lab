@@ -124,24 +124,30 @@ def test_the_shipped_planted_control_passes(tmp_path: Path) -> None:
     assert_the_planted_branchset_is_policed(tmp_path, trunk='main')
 
 
-#: Undeclared origin branches awaiting a remote delete. The six merged lanes pinned here were deleted
-#: on 2026-10-04, so the set is empty. TWO-SIDED: a new undeclared branch reds, and so does this pin
-#: outliving a deleted branch -- shrink it in the change that deletes one.
-#: ``feat/hpc`` (2026-10-08) left origin by 2026-10-14; the merged ``lane/compute-*`` and
-#: ``lane/request-producer`` were deleted on 2026-10-14. Nothing is pending.
-_PENDING_DELETION: frozenset[str] = frozenset()
-
-
 @pytest.mark.workstation
 def test_this_repo_carries_only_its_declared_branches() -> None:
-    """lab-commons adopts its own rule: origin carries the declared set plus the named pending deletions."""
+    """lab-commons adopts its own rule: origin carries exactly its declared set, ephemeral namespaces included."""
     root = Path(__file__).resolve().parents[1]
     declared = declared_branchset(root)
-    pinned = BranchSet(declared.trunk, declared.sessions | _PENDING_DELETION)
-    assert_origin_branches_declared(root=root, branchset=pinned)
+    assert_origin_branches_declared(root=root, branchset=declared)
     found = census(root, declared)
     assert found is not None
-    assert set(found.undeclared_origin) == _PENDING_DELETION, 'a pending deletion landed; drop it from the pin'
+    assert found.undeclared_origin == ()
+
+
+def test_two_open_ephemeral_heads_pass_and_an_undeclared_branch_still_reds(tmp_path: Path) -> None:
+    """Two open ``pr/*`` heads are declared by the namespace; PLANTED control: an unmerged ``feat/*`` reds."""
+    work = plant_checkout(tmp_path, trunk='main').work
+    for name in ('pr/one', 'pr/two', 'feat/stray'):
+        _run(work, 'switch', '-q', '-c', name, 'main')
+        commit(work, f'{name.replace("/", "-")}.txt')
+        _run(work, 'push', '-q', 'origin', name)
+    _run(work, 'switch', '-q', 'main')
+    with_stray = BranchSet('main', _DECLARED.sessions | {'feat/stray'}, ephemeral=('pr/*',))
+    assert assert_origin_branches_declared(root=work, branchset=with_stray) == ()
+    without_stray = BranchSet('main', _DECLARED.sessions, ephemeral=('pr/*',))
+    with pytest.raises(BranchSetViolation, match='feat/stray'):
+        assert_origin_branches_declared(root=work, branchset=without_stray)
 
 
 def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Path) -> None:
