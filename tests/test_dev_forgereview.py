@@ -362,7 +362,7 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
     """The forge only orchestrates: the in-process reviewer's surface is gone, not aliased."""
     for gone in ('anthropic', 'Ask', 'review_key', 'API_HOST', 'KEY_NAME', 'DEFAULT_MODEL', 'CAPABILITY'):
         assert not hasattr(forgereview, gone), gone
-    assert {field.name for field in dataclasses.fields(Review)} == {'command', 'max_diff_bytes'}
+    assert {field.name for field in dataclasses.fields(Review)} == {'command', 'max_diff_bytes', 'claim_stale'}
 
 
 def test_a_draft_is_skipped(tmp_path: Path) -> None:
