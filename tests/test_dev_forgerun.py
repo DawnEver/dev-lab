@@ -650,6 +650,24 @@ def test_a_run_that_ended_without_a_record_settles_once_and_never_re_alarms(home
     assert post['description'].startswith(release_reason(ProducerExit.INCONCLUSIVE)), post['description']
 
 
+def test_a_run_settled_without_a_record_cancels_its_live_jobs_first(home: Path) -> None:
+    """Ada 2026-10-20: a run dropped as un-gatherable left its arrays queued, holding QOS submit slots.
+
+    Settling it cancels every job it still holds, through the cluster's one cancel path, before the
+    release. PLANTED CONTROL: a run still running cancels nothing.
+    """
+    store = _Store()
+    _submitted_run(home, store, _Slurm(home / 'r'))
+    running = _Slurm(home / 'r')
+    running.recorded = ['4242']
+    assert _tick(store, running) is not None
+    assert running.cancelled == []
+    ended = _Unrecorded(home / 'r')
+    ended.recorded = ['4242']
+    assert _tick(store, ended) is None
+    assert ended.cancelled == ['4242'], 'a dropped run leaves no live job'
+
+
 def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sha_is_the_tip(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
