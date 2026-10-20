@@ -18,6 +18,7 @@ from lab_commons.dev.forgeintegration import alarms as sync_alarms
 from lab_commons.dev.forgeintegration import tick as integration_tick
 from lab_commons.dev.forgepulls import ListingIncomplete
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
+from lab_commons.dev.forgereview import step as review_step
 from lab_commons.dev.forgeroute import reconcile
 from lab_commons.dev.forgeschedule import load_schedule, starved_alarms
 from lab_commons.dev.forgestatus import status_list
@@ -73,6 +74,7 @@ def prompt(
     *,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
+    host: str,
 ) -> None:
     """The integrator's prompts and every child's behind/conflict report, one issue per row.
 
@@ -85,6 +87,7 @@ def prompt(
         ticked = integration_tick(root, built, policy)
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
+        review_step(root, built, policy=policy, say=say, host=host)  # advisory: the review host follows the integrator
         glass = break_glass(root, policy, repo)
         raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass], alarm=alarm)
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
