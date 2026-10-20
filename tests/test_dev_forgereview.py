@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import socket
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -138,7 +139,7 @@ def test_an_undeclared_command_reviews_nothing_and_says_so(tmp_path: Path) -> No
     said: list[str] = []
     assert Review().command == ()
     (work / 'pyproject.toml').write_text(_MANIFEST.split('[tool.lab_commons.review]', maxsplit=1)[0], encoding='utf-8')
-    step(work, forge, policy=Policy(), say=said.append, run=command, ready=_can)
+    step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
     assert command.ran == []
     assert forge.comments[number] == []
     assert any('command is not declared' in line for line in said)
@@ -459,7 +460,7 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
     forge, _ = _forge(head)
     command = FakeCommand()
     said: list[str] = []
-    step(work, forge, policy=Policy(), say=said.append, run=command, ready=_can)
+    step(work, forge, policy=Policy(), say=said.append, host='box', run=command, ready=_can)
     assert len(command.ran) == 1
     assert any('reviewed, 1 finding(s)' in line for line in said)
 
@@ -469,5 +470,16 @@ def test_the_step_reviews_into_the_policys_integration_and_says_a_failure(tmp_pa
             raise OSError(msg)
 
     said.clear()
-    step(work, Down(), policy=Policy(), say=said.append, run=command, ready=_can)
+    step(work, Down(), policy=Policy(), say=said.append, host='box', run=command, ready=_can)
     assert any('did not run' in line for line in said)
+
+
+def test_the_steps_claim_names_the_serve_host_not_the_box(tmp_path: Path) -> None:
+    """The claim names the host serve declares (its card name). PLANTED control: never this box's hostname."""
+    work, head = _work(tmp_path)
+    forge, _ = _forge(head)
+    said: list[str] = []
+    step(work, forge, policy=Policy(), say=said.append, host='cluster/acct', run=FakeCommand(), ready=_can)
+    posted = [one['description'] for one in forge.statuses[head]]
+    assert posted[0].startswith(f'{CLAIMED} cluster/acct at ')
+    assert socket.gethostname() not in posted[0]

@@ -375,16 +375,20 @@ def step(
     *,
     policy: Policy,
     say: Callable[[str], None],
+    host: str,
     run: Callable[[Sequence[str], Path], str] = run_command,
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
 ) -> None:
-    """The review inside the integration step, on whichever host runs it; a failure is said, never raised."""
+    """The review inside the integration step, on whichever host runs it; a failure is said, never raised.
+
+    *host* is the serving host's card name (:func:`lab_commons.dev.forgehosts.card_host`): the name its claim posts.
+    """
     try:
         review = load_review(root)
         if not review.command:
             say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
             return
-        for line in review_tick(root, built, review, base=policy.integration, run=run, ready=ready):
+        for line in review_tick(root, built, review, base=policy.integration, run=run, ready=ready, host=host):
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:
         say(f'[serve] the PR review did not run: {failed}')

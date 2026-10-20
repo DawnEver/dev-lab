@@ -250,7 +250,7 @@ def serve(
         alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
-    prompt(root, repo, client(root), say=say, alarm=alarm)
+    prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced

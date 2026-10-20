@@ -74,6 +74,7 @@ def prompt(
     *,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], object],
+    host: str,
 ) -> None:
     """The integrator's prompts and every child's behind/conflict report, one issue per row.
 
@@ -86,7 +87,7 @@ def prompt(
         ticked = integration_tick(root, built, policy)
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
-        review_step(root, built, policy=policy, say=say)  # advisory: the review host follows the integrator
+        review_step(root, built, policy=policy, say=say, host=host)  # advisory: the review host follows the integrator
         glass = break_glass(root, policy, repo)
         raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass], alarm=alarm)
     except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
