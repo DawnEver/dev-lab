@@ -381,6 +381,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # claim; the pointer existed and the module it should have pointed at did not. The readings half,
     # `famtests/_boundedremedy_readings.py`, is private and has no row.
     'boxneeds': ('original',),
+    # ORIGINAL: no consumer file asserted onboarding as one statement; the five repos each failed on a
+    # different missing piece (2026-10-20), so there was no local copy for this body to supersede.
+    'onboarding': ('original',),
     'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was
