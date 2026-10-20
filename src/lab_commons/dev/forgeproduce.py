@@ -301,7 +301,8 @@ def _run(
             say,
         )  # a request: its producer posts nothing
     elif posts and posts[-1].state == 'pending':
-        reason = 'stopped' if stopped else boxed_out or release_reason(returncode)
+        manifest = record_manifest(root, item.sha, item.context)
+        reason = 'stopped' if stopped else boxed_out or _named(release_reason(returncode), returncode, manifest)
         _post(client(root), item, 'error', reason, say)
     elif posts and posts[-1].state in SETTLED:
         fetch(root)
@@ -367,6 +368,17 @@ def _carry(root: Path, client: Client, item: Work, verdict: CommitStatus, say: C
         say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
+def _named(description: str, returncode: int, record: tuple[str, tuple[tuple[str, str], ...]]) -> str:
+    """*description*, naming the missing record when an inconclusive run ended without writing one.
+
+    W1.4: "inconclusive (exit 3) -- no part" left an author with nothing to act on; the missing record is
+    the fact and it belongs in the status. *record* is :func:`record_manifest`'s, ``('', ())`` when none.
+    """
+    if record[0] or returncode != ProducerExit.INCONCLUSIVE:
+        return description
+    return f'{description}; the run wrote no record, so nothing about its tree was judged'
+
+
 def _settle(
     client: Client,
     item: Work,
@@ -379,10 +391,7 @@ def _settle(
     log, record = made  # the run's log, and its record (shatree.record_manifest)
     host = (item.holder.machine or item.holder.login) if item.holder else '-'
     state, description = ('error', boxed_out) if boxed_out else result(returncode, host)
-    if not record[0] and returncode != ProducerExit.PASS:  # record_manifest is ("", ()) when none was written
-        # W1.4: a run that ended without writing its record is NAMED. "inconclusive (exit 3) -- no part"
-        # left an author with nothing to act on; the missing record is the fact and it belongs in the status.
-        description = f'{description}; the run wrote no record, so nothing about its tree was judged'
+    description = _named(description, returncode, record)
     try:
         number = int(item.context.removeprefix(CONTEXT_PREFIX))
         settle(client, number, state, description, log=log, host=host, record=record)
