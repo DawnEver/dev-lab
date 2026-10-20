@@ -16,7 +16,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import ClassVar, Final
 
 import pytest
@@ -30,10 +30,10 @@ from lab_commons.dev.githooks import bash_executable
 from lab_commons.dev.platformparts import PartRefusal, part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
-from lab_commons.hpc import shell
+from lab_commons.hpc import shell, watch
 from lab_commons.hpc.builds import Builds, cargo_target
 from lab_commons.hpc.cluster import Unreachable
-from lab_commons.hpc.config import Cost, Limits, Policy
+from lab_commons.hpc.config import Config, Cost, Limits, Policy
 from lab_commons.hpc.gather import gather_run
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.needsets import BASE, Vocabulary
@@ -1706,18 +1706,13 @@ def test_a_run_that_cannot_be_gathered_has_its_live_jobs_cancelled_before_it_is_
 
     The drop cancels every job of the run Slurm still holds. PLANTED CONTROL: a run still pending cancels nothing.
     """
-    from types import SimpleNamespace  # noqa: PLC0415
-
-    from lab_commons.hpc import watch  # noqa: PLC0415
-    from lab_commons.hpc.config import Config  # noqa: PLC0415
-
     asked: list[str] = []
 
     def runner(command: str, _stdin: object) -> str:
         asked.append(command)
         return '7738129\n' if command.startswith('squeue') else ''
 
-    machine = SimpleNamespace(grants=[SimpleNamespace(account=('h', 'u'))])
+    machine = Machine(session=None, grants=(GRANT,))
     sha = 'a' * 40
 
     def unreadable(*_a: object, **_k: object) -> None:
@@ -1726,11 +1721,11 @@ def test_a_run_that_cannot_be_gathered_has_its_live_jobs_cancelled_before_it_is_
 
     monkeypatch.setattr(watch, 'gather_run', unreadable)
     args = ([sha], machine, lambda _grant: runner, Config(), tmp_path)
-    assert watch.settle(*args, part='base', sleep=None) == 1  # type: ignore[arg-type]
+    assert watch.settle(*args, part='base', sleep=None) == 1
     assert 'scancel 7738129' in asked, 'a dropped run leaves no live job'
 
     asked.clear()
     monkeypatch.setattr(watch, 'gather_run', lambda *_a, **_k: None)
     monkeypatch.setattr(watch, 'where', lambda *_a, **_k: SimpleNamespace(describe=lambda: 'pending'))
-    assert watch.settle(*args, part='base', sleep=None) == PENDING  # type: ignore[arg-type]
+    assert watch.settle(*args, part='base', sleep=None) == PENDING
     assert not any(command.startswith('scancel') for command in asked), asked
