@@ -44,36 +44,27 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 
 ## The PR reviewer is advisory
 
-`PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`, user ruling 2026-10-19). Each open, non-draft PR into
-`integrate/main` on gitea is reviewed by Claude ONCE per head sha: the prompt is the repo's own rule files
-(`AGENTS.md`, `.claude/rules/*.md`, read at `origin/integrate/main`, never the PR's copy) plus the PR's diff, and
-the answer is one PR comment of findings as `path:line` and a `tests/review` commit status. **It gates
-nothing**: `tests/review` is never a part, so the forge's auto-merge, `integrate promote` and push admission
-never wait on it, whatever it says. A second tick on the same head asks nothing and posts nothing; a new head
-is reviewed afresh. A diff over the cap is never sent (`tests/review` says so); a failed model call posts
-`error` and is not retried on that head.
+`PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
+into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
+`<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 1, read by
+`lab_commons.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
+of the findings and a `tests/review` commit status. **It gates nothing**: `tests/review` is never a part, so
+the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second
+tick on the same head runs nothing and posts nothing; a new head is reviewed afresh. A diff over the cap is
+never reviewed (`tests/review` says so); a failed command posts `error` and is not retried on that head.
 
-It runs as a `forge serve` step only on a host whose machine file declares the capability, so only that host
-holds the key:
-
-```toml
-[capabilities.pr_review]      # the machine file (lab_commons.config) of the ONE reviewing host
-```
-
-The key is ONE dedicated Anthropic API key used for nothing else: the `pr-review` TASK key of the one
-model-key scheme -- host `api.anthropic.com`, username `api-key-pr-review` in the git credential store, read by
-`lab_commons.credentials.api_key`, stored by `python -m ai_lab.auth login anthropic --task pr-review` (its
-slot 1: one call per head, no fall-over to a `-s 2` backup). Never the host's default `api-key` and no
-other task's key is ever read; with it absent the step refuses by that name and
-raises an `auth` alarm. Never printed or logged. Per repo, optionally:
+It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
+integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
+command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 
 ```toml
 [tool.lab_commons.review]
-model = "claude-opus-5-5"                       # the default: the latest Claude
-max_diff_bytes = 200000                         # a larger diff is not sent
-max_tokens = 8192
-rules = ["AGENTS.md", ".claude/rules/*.md"]     # fnmatch over tracked paths; `*` crosses `/`
+command = ["python", "-m", "ai_lab.review", "--range", "{range}"]   # {range}: <merge base>..<head>
+max_diff_bytes = 200000                                            # a larger diff is not reviewed
 ```
+
+The in-process reviewer's keys (`model`, `max_tokens`, `rules`) and its machine-file capability are retired
+and refused by name (`lab_commons.hpc.retired`).
 
 ## The branch flow
 

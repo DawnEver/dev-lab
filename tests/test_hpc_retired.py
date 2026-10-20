@@ -93,6 +93,13 @@ def test_a_retired_machine_file_key_is_refused_by_name() -> None:
     refuse_retired_keys('serve', {'repos': ['a']})
 
 
+def test_the_retired_pr_review_capability_is_refused_by_name() -> None:
+    """The review follows the integrator. PLANTED CONTROL: the same table without it passes."""
+    with pytest.raises(ValueError, match=r'\[capabilities\] pr_review is retired: .*integration step'):
+        refuse_retired_keys('capabilities', {'pr_review': {}, 'jmag': {}})
+    refuse_retired_keys('capabilities', {'jmag': {}})
+
+
 def test_the_github_pr_mirror_key_is_refused_by_name() -> None:
     """GitHub is ONLY a push mirror (user ruling 2026-10-19). PLANTED CONTROL: the table without the key loads."""
     with pytest.raises(ValueError, match=r'mirror is retired: .*push mirror'):

@@ -195,6 +195,7 @@ def serve(
 
     runs = list(forgerunstate.live(repo, refused=refused)) if seat is not None else []
     refuse_retired_keys('serve', section('serve'))
+    refuse_retired_keys('capabilities', section('capabilities'))
     tools = {name: one.row() for name, one in inventory(declared_seats(), present(root)).items()}
     priority = Priority.of(section(PRIORITY_TABLE))
     serves = Serves.of(section(SERVE_TABLE))

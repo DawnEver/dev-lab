@@ -7,6 +7,7 @@ refusal has its planted control.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from collections.abc import Sequence
@@ -17,21 +18,17 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out
 from _forge_state import StateForge
 
-from lab_commons.credentials import API_KEY_TASKS, NoCredential, key_username
+from lab_commons.dev import forgereview
 from lab_commons.dev.forgemerge import decide
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgereview import (
-    API_HOST,
     DEFAULT_COMMAND,
-    KEY_NAME,
-    KEY_TASK,
     RANGE_FIELD,
+    RETIRED_KEYS,
     REVIEW_CONTEXT,
     Review,
-    ReviewKeyMissing,
     render,
     review_from,
-    review_key,
     review_tick,
     run_command,
     step,
@@ -42,7 +39,6 @@ from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import standing
 from lab_commons.outcomes import Conclusion
 
-_KEY = 'sk-ant-the-review-key'
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 
@@ -187,26 +183,19 @@ def test_a_second_tick_on_the_same_head_posts_nothing_and_runs_nothing(tmp_path:
     assert [s.context for s in status_list(forge, moved)] == [REVIEW_CONTEXT]
 
 
-def test_a_missing_key_is_refused_by_its_own_name_and_no_other_key_is_read() -> None:
-    """PLANTED control: the same reader with the key stored returns it."""
-    asked: list[tuple[str, object]] = []
-
-    def empty(host: str, **options: object) -> str:
-        asked.append((host, options.get('task')))
-        raise NoCredential(host)
-
-    with pytest.raises(ReviewKeyMissing, match=KEY_NAME.replace('.', r'\.')):
-        review_key(fill=empty)
-    assert asked == [(API_HOST, KEY_TASK)]
-    assert review_key(fill=lambda _host, **_: _KEY) == _KEY
+@pytest.mark.parametrize('key', sorted(RETIRED_KEYS))
+def test_a_key_of_the_retired_in_process_reviewer_is_refused_by_name(key: str) -> None:
+    """PLANTED control: the same table without the retired key loads (the declaration test)."""
+    with pytest.raises(ValueError, match=f'{key} is retired: the review'):
+        review_from(f"[tool.lab_commons.review]\n{key} = 'x'\nmax_diff_bytes = 5\n", 'p')
+    assert review_from('[tool.lab_commons.review]\nmax_diff_bytes = 5\n', 'p').max_diff_bytes == 5
 
 
-def test_the_review_key_is_the_anthropic_hosts_pr_review_task_key() -> None:
-    """The existing scheme, not a second one: the model's own host, the task's own username."""
-    assert API_HOST == 'api.anthropic.com'
-    assert KEY_TASK in API_KEY_TASKS
-    # Assembled, so the tree scan never reads an address-shaped literal (no tracked file carries one).
-    assert KEY_NAME == f'{key_username(KEY_TASK)}@{API_HOST}' == 'api-key-pr-review' + '@' + 'api.anthropic.com'
+def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
+    """The forge only orchestrates: the in-process reviewer's surface is gone, not aliased."""
+    for gone in ('anthropic', 'Ask', 'review_key', 'API_HOST', 'KEY_NAME', 'DEFAULT_MODEL', 'CAPABILITY'):
+        assert not hasattr(forgereview, gone), gone
+    assert {field.name for field in dataclasses.fields(Review)} == {'command', 'max_diff_bytes'}
 
 
 def test_a_draft_is_skipped(tmp_path: Path) -> None:

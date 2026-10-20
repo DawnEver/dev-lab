@@ -1,45 +1,39 @@
-"""PR-REVIEW-IS-ADVISORY: a Claude review of every open PR into integration, once per head, gating nothing.
+"""PR-REVIEW-IS-ADVISORY: the repo's declared review command on every open PR into integration, once per head.
 
 Step 4 of the branch flow (user ruling 2026-10-19). Gitea only: GitHub is ONLY a push mirror, and no GitHub
 pull request is read or reviewed.
 
-WHERE IT RUNS. A ``forge serve`` step (:func:`step`), on a host whose machine file declares the capability
-``[capabilities.pr_review]``; no other host reads the key or calls the model.
+THE FORGE ONLY ORCHESTRATES. The review itself -- profiles, prompts, providers, models, keys, merging -- is
+the method's, run by the command the repo declares (``[tool.lab_commons.review] command``); this module runs
+it on ``<merge base>..<head>`` and reads its stdout as the findings JSON
+(:mod:`lab_commons.dev.forgereview_findings`). It holds no model client, no prompt and no key.
 
-THE KEY IS ITS OWN. The reviewer reads ONE dedicated Anthropic API key, used for nothing else: the
-``pr-review`` TASK key of the Anthropic host (:data:`KEY_NAME`), read through the one model-key scheme
-(:func:`lab_commons.credentials.api_key`; stored by ``python -m ai_lab.auth login anthropic --task pr-review``)
--- never the host's default key, never another AI key, never an environment variable. Absent, it is
-REFUSED BY THAT NAME (:class:`ReviewKeyMissing`), and nothing is posted. The key is never
-logged, printed, posted or put in an exception text.
+WHERE IT RUNS. Inside the integration step of ``forge serve`` (:func:`step`, called by
+:func:`lab_commons.dev.forgeservesteps.prompt`): the review host follows the integrator, on whichever host
+derives the integration queue.
 
 WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integration`` whose head carries no
 :data:`REVIEW_CONTEXT` status yet:
 
-* the review as ONE comment keyed by the head sha (``Marker.REVIEW``), findings as ``path:line``;
-* a :data:`REVIEW_CONTEXT` status on the head: ``success`` once posted, ``error`` when the model call failed
-  or the diff is over the cap. ADVISORY: :func:`lab_commons.dev.platformparts.parts_of` skips that context, so
-  the auto-merge (:mod:`lab_commons.dev.forgemerge`), promotion and push admission never wait on it.
+* the findings as ONE comment keyed by the head sha (``Marker.REVIEW``);
+* a :data:`REVIEW_CONTEXT` status on the head: ``success`` once posted, ``error`` when the command failed,
+  printed no known findings version, or the diff is over the cap. ADVISORY:
+  :func:`lab_commons.dev.platformparts.parts_of` skips that context, so the auto-merge
+  (:mod:`lab_commons.dev.forgemerge`), promotion and push admission never wait on it.
 
-THE COST IS BOUNDED: one model call per head sha (the status is the record; a second tick on the same head
-asks nothing and posts nothing), drafts skipped, and a diff over ``max_diff_bytes`` never sent.
-
-THE PROMPT is the repo's own rule files read at ``origin/<integration>`` -- never the PR's copy, which could
-rewrite the rules it is judged by -- plus the PR's title, body and its diff against the merge base. Declared::
+THE COST IS BOUNDED: one command run per head sha (the status is the record; a second tick on the same head
+runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_bytes`` never reviewed. Declared::
 
     [tool.lab_commons.review]
-    model = "claude-opus-5-5"                        # default: the latest Claude
-    max_diff_bytes = 200000                          # a larger diff is not sent
-    max_tokens = 8192                                # the review's output bound
-    rules = ["AGENTS.md", ".claude/rules/*.md"]      # fnmatch over tracked paths; ``*`` crosses ``/``
+    command = ["python", "-m", "ai_lab.review", "--range", "{range}"]   # {range}: <merge base>..<head>
+    max_diff_bytes = 200000                                            # a larger diff is not reviewed
+
+The keys of the retired in-process reviewer (``model``, ``max_tokens``, ``rules``) are refused by name.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import fnmatch
-import http.client
-import json
 import subprocess
 import tomllib
 from collections.abc import Callable, Sequence
@@ -48,8 +42,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
-from lab_commons.credentials import NoCredential, api_key, key_username
-from lab_commons.dev.forge import https_transport
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from lab_commons.dev.forgereview_findings import (
     SEVERITIES,
@@ -67,21 +59,9 @@ if TYPE_CHECKING:
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
-    'API_HOST', 'DEFAULT_MODEL', 'KEY_NAME', 'KEY_TASK', 'REVIEW_CONTEXT', 'Ask', 'Review',
-    'ReviewKeyMissing', 'anthropic', 'load_review', 'review_from', 'review_key', 'review_tick', 'step',
+    'DEFAULT_COMMAND', 'RANGE_FIELD', 'RETIRED_KEYS', 'REVIEW_CONTEXT', 'Review', 'command_for', 'load_review',
+    'render', 'review_from', 'review_tick', 'run_command', 'step',
 ]  # fmt: skip
-
-#: The Messages API host: where the review is asked, and the credential host its key is stored under.
-API_HOST: Final = 'api.anthropic.com'
-
-#: The API-key task the reviewer's OWN key is stored for (:data:`lab_commons.credentials.API_KEY_TASKS`).
-KEY_TASK: Final = 'pr-review'
-
-#: The reviewer's key as a refusal names it: ``<username>@<host>``.
-KEY_NAME: Final = f'{key_username(KEY_TASK)}@{API_HOST}'
-
-#: The latest Claude, the default reviewer.
-DEFAULT_MODEL: Final = 'claude-opus-5-5'
 
 #: The placeholder the declared command carries; the reviewed ``<merge base>..<head>`` range replaces it.
 RANGE_FIELD: Final = '{range}'
@@ -89,99 +69,44 @@ RANGE_FIELD: Final = '{range}'
 #: The family default: sharp-review's method, run headless through ai-lab, printing the findings JSON.
 DEFAULT_COMMAND: Final = ('python', '-m', 'ai_lab.review', '--range', RANGE_FIELD)
 
+#: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
+RETIRED_KEYS: Final = {
+    'model': 'the review command chooses its model (declare it in `command`, e.g. `--model <id>`)',
+    'max_tokens': 'the review command bounds its own output',
+    'rules': 'the review method reads its own rules and profiles (`--method <dir>` in `command`)',
+}
+
 _TABLE: Final = 'review'
 _COMMAND_TIMEOUT_S: Final = 1800
 _DESCRIPTION: Final = 240  # a commit-status description is short
-_API_VERSION: Final = '2023-06-01'
-_TIMEOUT_S: Final = 600.0
-_OK: Final = 200  # the one success the Messages API answers
 _GIT_TIMEOUT_S: Final = 120
-
-_INSTRUCTIONS: Final = (
-    'You review one pull request against the rules of the repository it targets, quoted below. Report only '
-    'real problems: a rule the change breaks, a bug, a missing test, a security risk. Each finding is one '
-    'Markdown bullet beginning with the location as `path:line` (a line of the new file), then the rule ID '
-    'when one applies, then the finding in one or two sentences. With no finding, say so in one line. Your '
-    'review is advisory: it gates nothing.'
-)
-
-
-class ReviewKeyMissing(NoCredential):
-    """The reviewer's own key is not stored: the reviewer refuses, naming where it must be stored."""
 
 
 @dataclass(frozen=True)
 class Review:
-    """``[tool.lab_commons.review]``: the model, the cost bounds, and the rule files the prompt carries."""
+    """``[tool.lab_commons.review]``: the command that reviews, and the diff-size bound."""
 
-    model: str = DEFAULT_MODEL
-    max_diff_bytes: int = 200_000
-    max_tokens: int = 8192
-    rules: tuple[str, ...] = ('AGENTS.md', '.claude/rules/*.md')
     command: tuple[str, ...] = DEFAULT_COMMAND
-
-
-@dataclass(frozen=True)
-class Ask:
-    """One model call: who answers, its system text (instructions and rules), the PR prompt, the output bound."""
-
-    model: str
-    system: str
-    prompt: str
-    max_tokens: int
+    max_diff_bytes: int = 200_000
 
 
 def review_from(text: str, origin: str) -> Review:
-    """The :class:`Review` *text* declares, defaults for what it omits; an unknown key is refused naming *origin*."""
+    """The :class:`Review` *text* declares, defaults for what it omits; a retired or unknown key is refused."""
     declared = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get(_TABLE, {})
+    if retired := [f'{key} is retired: {RETIRED_KEYS[key]}' for key in declared if key in RETIRED_KEYS]:
+        msg = f'[tool.lab_commons.{_TABLE}] in {origin}: ' + '; '.join(retired)
+        raise ValueError(msg)
     known = {field.name for field in dataclasses.fields(Review)}
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    tuples = {key: tuple(declared[key]) for key in ('rules', 'command') if key in declared}
-    return Review(**declared | tuples)
+    return Review(**declared | ({'command': tuple(declared['command'])} if 'command' in declared else {}))
 
 
 def load_review(root: Path) -> Review:
     """*root*'s working-tree ``[tool.lab_commons.review]``; defaults when it has no manifest."""
     manifest = root / 'pyproject.toml'
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
-
-
-def review_key(*, cwd: Path | None = None, fill: Callable[..., str] = api_key) -> str:
-    """The reviewer's own key, :data:`KEY_NAME` alone; :class:`ReviewKeyMissing` naming it when absent."""
-    try:
-        return fill(API_HOST, task=KEY_TASK, cwd=cwd)
-    except NoCredential as missing:
-        msg = (
-            f'the PR reviewer has no key {KEY_NAME} (no other key is ever used): store its dedicated Anthropic '
-            f'API key with `python -m ai_lab.auth login anthropic --task {KEY_TASK}`: {missing}'
-        )
-        raise ReviewKeyMissing(msg) from None
-
-
-def anthropic(
-    ask: Ask, key: str, *, transport: Callable[[str, float], http.client.HTTPSConnection] = https_transport
-) -> str:
-    """The text of one Messages API answer to *ask*. The key travels in a header only, never in an error."""
-    body = {
-        'model': ask.model,
-        'max_tokens': ask.max_tokens,
-        'system': ask.system,
-        'messages': [{'role': 'user', 'content': ask.prompt}],
-    }
-    headers = {'x-api-key': key, 'anthropic-version': _API_VERSION, 'content-type': 'application/json'}
-    connection = transport(API_HOST, _TIMEOUT_S)
-    try:
-        connection.request('POST', '/v1/messages', json.dumps(body).encode(), headers)
-        answer = connection.getresponse()
-        raw = answer.read().decode('utf-8', errors='replace')
-    finally:
-        connection.close()
-    if answer.status != _OK:
-        msg = f'the model answered HTTP {answer.status}: {raw[:300]}'
-        raise OSError(msg)
-    return ''.join(block.get('text', '') for block in json.loads(raw).get('content', ()))
 
 
 def _git(root: Path, *args: str) -> str:
@@ -193,13 +118,6 @@ def _git(root: Path, *args: str) -> str:
         msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'
         raise OSError(msg)
     return done.stdout
-
-
-def _rules(root: Path, base: str, patterns: tuple[str, ...]) -> str:
-    """Every tracked file at *base* one of *patterns* matches, each under its path."""
-    paths = _git(root, 'ls-tree', '-r', '--name-only', base).splitlines()
-    chosen = [path for path in paths if any(fnmatch.fnmatchcase(path, one) for one in patterns)]
-    return '\n\n'.join(f'=== {path} ===\n{_git(root, "show", f"{base}:{path}")}' for path in chosen)
 
 
 def run_command(argv: Sequence[str], root: Path) -> str:
