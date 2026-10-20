@@ -85,7 +85,7 @@ def test_one_part_can_be_asked_for_by_name() -> None:
     lines = status_show(client, _SHA, part='tests/workstation')
     assert len([line for line in lines if '  ' not in line[:2]]) == 1
     assert lines[0].startswith('tests/workstation  failure')
-    assert status_show(client, _SHA, part='tests/node') == (f'{_SHA[:12]} carries no tests/node status',)
+    assert status_show(client, _SHA, part='tests/connection') == (f'{_SHA[:12]} carries no tests/connection status',)
 
 
 def test_an_unreadable_record_names_the_url_instead_of_failing() -> None:
