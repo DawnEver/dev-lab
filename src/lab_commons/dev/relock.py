@@ -48,6 +48,9 @@ class Relock:
     branch: str
     title: str
     body: str
+    #: The four commands that carry it, in order: the door, the commit, the push, the pull request. Stated
+    #: rather than run, so the one who runs them is the author (a push) and the door (a resolution).
+    commands: tuple[str, ...] = ()
 
 
 def dist_of(change: str) -> str:
@@ -85,7 +88,13 @@ def decision(root: Path, sha: str, *, resolve: Callable[..., object] | None = No
         f'The lock resolves through the one door (`lab_commons.dev.dep --lock-upgrade`), and this branch is '
         f'`{branch}`: one open relock PR per (consumer, dist), moved when the upstream moves again.'
     )
-    return Relock(dist, branch, title, body)
+    commands = (
+        'python -m lab_commons.dev.dep --lock-upgrade .',
+        f'git add uv.lock && git commit -m "build(deps): relock {dist} to the newest resolution"',
+        f'git push origin {branch}',
+        f'python -m lab_commons.dev.forge pr create --head {branch} --base integrate/main --title "{title}"',
+    )
+    return Relock(dist, branch, title, body, commands)
 
 
 def main(

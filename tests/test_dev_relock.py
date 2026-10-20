@@ -34,6 +34,9 @@ def test_a_stale_lock_names_the_dist_its_branch_and_its_pull_request(tmp_path: P
     assert found.title == 'build(deps): relock pint to the newest resolution'
     assert 'pint' in found.body
     assert found.branch in found.body
+    assert found.commands[0].endswith('--lock-upgrade .'), 'the door first'
+    assert found.commands[2] == f'git push origin {found.branch}'
+    assert found.commands[3].startswith('python -m lab_commons.dev.forge pr create')
 
 
 def test_the_dist_is_the_word_the_change_names() -> None:
