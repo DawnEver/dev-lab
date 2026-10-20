@@ -26,6 +26,7 @@ from lab_commons.dev.forgereview import (
     REFUSED_EXIT,
     RETIRED_KEYS,
     REVIEW_CONTEXT,
+    TAKEOVER_PENDING,
     Review,
     ReviewRefused,
     render,
@@ -40,11 +41,11 @@ from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.platformparts import standing
 from lab_commons.outcomes import Conclusion
 
-_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
+_DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
 _MANIFEST = (
     "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
-    "[tool.lab_commons.review]\ncommand = ['reviewer', '--range', '{range}', '--model', 'm']\n"
+    "[tool.lab_commons.review]\ncommand = ['reviewer', '--range', '{range}']\n"
 )
 
 
@@ -158,6 +159,30 @@ def test_exit_2_is_the_commands_named_refusal_and_its_reason_is_the_status(tmp_p
     assert status.state == 'error'
     assert 'refused: unknown method version 9' in status.description
     assert forge.comments[number] == []
+
+
+@pytest.mark.parametrize('kinds', [('exhausted',), ('auth',), ('exhausted', 'auth')], ids=['exhausted', 'auth', 'both'])
+def test_every_reviewer_exhausted_or_auth_is_takeover_pending_and_never_a_failure(tmp_path: Path, kinds) -> None:
+    """PLANTED controls: one ok reviewer among them posts the findings; a timeout among them is not a takeover."""
+    work, head = _work(tmp_path)
+    forge, number = _forge(head)
+    reviewers = tuple((f'r{at}', kind) for at, kind in enumerate(kinds))
+    lines = _tick(work, forge, FakeCommand(_output(reviewers=reviewers)))
+    (status,) = status_list(forge, head)
+    assert status.state == 'pending'
+    assert status.description.startswith(TAKEOVER_PENDING)
+    assert forge.comments[number] == []
+    assert TAKEOVER_PENDING in lines[0]
+    assert standing((_status('tests/base', 'success', 'scope=full ran=3 hands=-'), status), head='h').result is (
+        Conclusion.PASS
+    )
+    for mixed, state in (((*reviewers, ('c', 'ok')), 'success'), ((*reviewers, ('c', 'timeout')), 'error')):
+        moved = advance(work, 'pr/x', f'{state}{len(mixed)}{kinds[0]}.txt', 'z\n')
+        forge.pulls[number]['head']['sha'] = moved
+        _tick(work, forge, FakeCommand(_output(reviewers=mixed)))
+        (posted,) = status_list(forge, moved)
+        assert posted.state == state
+        assert TAKEOVER_PENDING not in posted.description
 
 
 @pytest.mark.parametrize('version', [2, 0, '1'])

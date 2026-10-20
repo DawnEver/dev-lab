@@ -52,6 +52,9 @@ of the findings and a `tests/review` commit status. **It gates nothing**: `tests
 the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second
 tick on the same head runs nothing and posts nothing; a new head is reviewed afresh. A diff over the cap is
 never reviewed (`tests/review` says so); a failed command posts `error` and is not retried on that head.
+When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
+`takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
+through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
 
 It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
 integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
@@ -60,7 +63,7 @@ command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 ```toml
 [tool.lab_commons.review]
 # {range}: <merge base>..<head>; the command names its method and its model (the catalogue has no default)
-command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
+command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "<the model flag>", "<id>"]
 max_diff_bytes = 200000   # a larger diff is not reviewed
 ```
 

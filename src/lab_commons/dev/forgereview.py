@@ -16,7 +16,10 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integ
 :data:`REVIEW_CONTEXT` status yet:
 
 * the findings as ONE comment keyed by the head sha (``Marker.REVIEW``);
-* a :data:`REVIEW_CONTEXT` status on the head: ``success`` once posted, ``error`` when the command failed,
+* a :data:`REVIEW_CONTEXT` status on the head: ``success`` once posted, ``pending`` saying
+  :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
+  session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
+  when the command failed,
   printed no known findings version, or the diff is over the cap. ADVISORY:
   :func:`lab_commons.dev.platformparts.parts_of` skips that context, so the auto-merge
   (:mod:`lab_commons.dev.forgemerge`), promotion and push admission never wait on it.
@@ -26,7 +29,7 @@ runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_byte
 
     [tool.lab_commons.review]
     # {range}: <merge base>..<head>; the command names its own method and model (no default model exists)
-    command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
+    command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "<the model flag>", "<id>"]
     max_diff_bytes = 200000   # a larger diff is not reviewed
 
 Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
@@ -63,9 +66,21 @@ if TYPE_CHECKING:
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
-    'RANGE_FIELD', 'REFUSED_EXIT', 'RETIRED_KEYS', 'REVIEW_CONTEXT', 'Review', 'ReviewRefused', 'command_for',
+    'RANGE_FIELD',
+    'REFUSED_EXIT',
+    'RETIRED_KEYS',
+    'REVIEW_CONTEXT',
+    'TAKEOVER_KINDS',
+    'TAKEOVER_PENDING',
+    'Review',
+    'ReviewRefused',
+    'command_for',
     'load_review',
-    'render', 'review_from', 'review_tick', 'run_command', 'step',
+    'render',
+    'review_from',
+    'review_tick',
+    'run_command',
+    'step',
 ]  # fmt: skip
 
 #: The placeholder the declared command carries; the reviewed ``<merge base>..<head>`` range replaces it.
@@ -74,9 +89,15 @@ RANGE_FIELD: Final = '{range}'
 #: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
 REFUSED_EXIT: Final = 2
 
+#: A reviewer status meaning its provider cannot serve this run at all: the review needs a takeover.
+TAKEOVER_KINDS: Final = frozenset({'exhausted', 'auth'})
+
+#: What :data:`REVIEW_CONTEXT` says when every reviewer is one of :data:`TAKEOVER_KINDS` (a ``pending`` status).
+TAKEOVER_PENDING: Final = 'takeover pending'
+
 #: The keys of the retired in-process reviewer, each refused naming where its concern lives now.
 RETIRED_KEYS: Final = {
-    'model': 'the review command chooses its model (declare it in `command`, e.g. `--model <id>`)',
+    'model': 'the review command chooses its model (declare it in `command`)',
     'max_tokens': 'the review command bounds its own output',
     'rules': 'the review method reads its own rules and profiles (`--method <dir>` in `command`)',
 }
@@ -210,6 +231,18 @@ def review_tick(
             why = f'the review command failed ({type(failed).__name__}); advisory, not retried on this head'
             status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}: {failed}')
+            continue
+        if found.reviewers and all(one.status in TAKEOVER_KINDS for one in found.reviewers):
+            kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers)
+            why = f'{TAKEOVER_PENDING}: no reviewer could run ({kinds}); advisory, never blocks'[:_DESCRIPTION]
+            status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
+            lines.append(f'#{pull.number} {head[:12]}: {why}')
+            continue
+        if not any(one.status in {'ok', 'skipped'} for one in found.reviewers):
+            kinds = ', '.join(f'{one.name} {one.status}' for one in found.reviewers) or 'none planned'
+            why = f'not reviewed: no reviewer returned findings ({kinds}); advisory'[:_DESCRIPTION]
+            status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+            lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
         _, comment = comment_upsert(client, pull.number, kind=Marker.REVIEW, key=head, text=render(head, found))
         url = comment.url if comment else ''
