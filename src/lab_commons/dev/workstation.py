@@ -4,7 +4,7 @@ The counterpart of a cluster account's ``python -m lab_commons.hpc deploy``. It 
 :mod:`lab_commons.hpc`, because what it schedules is this package's own serve and lock (hpc imports no
 dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.Step`.
 
-``deploy --repos lab-commons,<repo>,... --capabilities dev_checkout,node,jmag:4 [--forge <https base>]
+``deploy --repos lab-commons,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
 [--root DIR] [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
@@ -69,7 +69,14 @@ from lab_commons.log import emit
 if sys.platform == 'win32':
     import winreg
 
-__all__ = ['JMAG_PROGIDS', 'Programs', 'com_server', 'deploy', 'main', 'serve']
+__all__ = ['JMAG_PROGIDS', 'WORKSTATION', 'Programs', 'com_server', 'deploy', 'main', 'serve']
+
+#: The resource a developer workstation provides: the live checkout and the agent tooling its guards run on.
+#: ONE resource, not three: every host carrying the checkout, ``node`` or ``codex`` carries all of them, and the
+#: cluster none, so a split would only queue one host's work as several parts (user directive 2026-10-19).
+WORKSTATION: Final = 'workstation'
+#: What a ``workstation`` declaration promises on ``PATH`` -- probed at deploy, so the declaration cannot lie.
+_WORKSTATION_KIT: Final = ('node', 'codex')
 
 #: The COM classes a ``jmag`` host drives: the Designer and its Scheduler.
 JMAG_PROGIDS: Final = ('designer.Application', 'scheduler.JobApplication')
@@ -78,6 +85,7 @@ _REMEDIES: Final = {
     'uv': 'install uv: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"',
     'git': 'install Git for Windows: winget install --id Git.Git -e',
     'node': 'install Node.js LTS: winget install --id OpenJS.NodeJS.LTS -e',
+    'codex': 'install the Codex CLI: npm install -g @openai/codex',
 }
 _JMAG_REMEDY: Final = 'install JMAG-Designer; its installer registers ' + ' and '.join(JMAG_PROGIDS)
 _CREDENTIAL_REMEDY: Final = (
@@ -159,8 +167,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _probe(programs: Programs, capabilities: Mapping[str, Any]) -> list[str]:
-    emit('[probe] uv, git' + ''.join(f', {name}' for name in ('node', 'jmag') if name in capabilities))
-    wanted = ['uv', 'git', *(['node'] if 'node' in capabilities else [])]
+    wanted = ['uv', 'git', *(_WORKSTATION_KIT if WORKSTATION in capabilities else ())]
+    emit(f'[probe] {", ".join([*wanted, *(["jmag"] if "jmag" in capabilities else [])])}')
     missing = [f'{tool} not on PATH: {_REMEDIES[tool]}' for tool in wanted if programs.which(tool) is None]
     if 'jmag' in capabilities and (absent := [p for p in JMAG_PROGIDS if programs.com(p) is None]):
         missing.append(f'COM class {", ".join(absent)} not registered: {_JMAG_REMEDY}')

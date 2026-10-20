@@ -29,12 +29,12 @@ def test_the_declared_set_is_what_this_repo_pinned() -> None:
     assert_stages_are_declared(root=_ROOT, declared_stages=_DECLARED_STAGES)
 
 
-@pytest.mark.dev_checkout
+@pytest.mark.workstation
 def test_every_hook_this_repository_declares_is_installed() -> None:
     assert_declared_hooks_are_installed(root=_ROOT)
 
 
-@pytest.mark.dev_checkout
+@pytest.mark.workstation
 def test_the_hooks_directory_is_the_one_git_will_consult() -> None:
     assert_hooks_dir_is_the_one_git_consults(root=_ROOT)
 

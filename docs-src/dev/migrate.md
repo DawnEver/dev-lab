@@ -160,7 +160,7 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
 
   ```toml
   [tool.lab_commons.tests]
-  resources = ["femm", "jmag", "matlab", "node", "simba"]
+  resources = ["femm", "jmag", "matlab", "simba", "workstation"]
   produce = ["scripts/gate/runner.py", "part", "{part}", "--full"]
   ```
 

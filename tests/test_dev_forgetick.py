@@ -742,7 +742,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
 
 
 NEEDS = (
-    '[tool.lab_commons.tests]\nresources = ["dev_checkout", "jmag", "linux"]\n'
+    '[tool.lab_commons.tests]\nresources = ["workstation", "jmag", "linux"]\n'
     'produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]\n'
     '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
 )
@@ -778,29 +778,29 @@ def test_two_parts_of_one_sha_each_own_a_tree_and_are_claimed_in_one_tick(server
     """S4: a job's tree is keyed by sha AND context, so a second part of the sha no longer waits a tick."""
     repo, tips = _origin(tmp_path)
     sha = _declare(repo, tips, NEEDS)
-    hands = 'dev_checkout:1,jmag:1'
+    hands = 'workstation:1,jmag:1'
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
-    claimed = [_base(hands), _post(2, ME, 'dev_checkout'), _post(3, ME, 'jmag')]
+    claimed = [_base(hands), _post(2, ME, 'jmag'), _post(3, ME, 'workstation')]
     answer('GET', f'{API}/statuses/{sha}', (200, claimed[:1]), (200, claimed[:2]), (200, claimed))
     answer('POST', f'{API}/statuses/{sha}', (201, {}), (201, {}))
-    roomy = Supply('G', Resources(cpu=8, jmag=4, dev_checkout=1), frozenset({'cpu', 'jmag', 'dev_checkout'}))
+    roomy = Supply('G', Resources(cpu=8, jmag=4, workstation=1), frozenset({'cpu', 'jmag', 'workstation'}))
     report = _tick(repo, server, supply=roomy, demand=_one_core)
-    assert sorted(w.platform for w in report.claimed) == ['dev_checkout', 'jmag']
+    assert sorted(w.platform for w in report.claimed) == ['jmag', 'workstation']
 
 
-def test_a_cluster_claims_what_it_has_and_never_a_part_needing_dev_checkout(server, tmp_path: Path) -> None:
-    """The cluster case (coordinator ruling 2026-10-12): a dev_checkout part never lands on its per-sha tree."""
+def test_a_cluster_claims_what_it_has_and_never_a_part_needing_workstation(server, tmp_path: Path) -> None:
+    """The cluster case (coordinator ruling 2026-10-12): a workstation part never lands on its per-sha tree."""
     repo, tips = _origin(tmp_path)
     sha = _declare(repo, tips, NEEDS)
     me = Claim('G', 'alice', LATER, 'ada/alice')
-    hands = 'dev_checkout:1,linux:2'
+    hands = 'workstation:1,linux:2'
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{sha}', (200, [_base(hands)]), (200, [_base(hands), _post(2, me, 'linux')]))
     answer('POST', f'{API}/statuses/{sha}', (201, {}))
     account = Supply('ada/alice', Resources(cpu=8, mem_gb=64, linux=8), frozenset({'cpu', 'mem_gb', 'linux'}))
     report = _tick(repo, server, seat=SEAT, host='linux', supply=account, demand=_one_core)
     assert [(w.platform, w.state) for w in report.claimed] == [('linux', MINE)]
-    assert [item.blocked for item in report.queue] == [f'{NOT_ADMITTED}: lacking dev_checkout']
+    assert [item.blocked for item in report.queue] == [f'{NOT_ADMITTED}: lacking workstation']
 
 
 def test_a_refused_declaration_blocks_its_own_sha_and_the_good_head_is_claimed(server, tmp_path: Path) -> None:
@@ -1111,9 +1111,9 @@ def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
     PLANTED CONTROL: a part nobody hands to (``base`` itself) has no known size, never zero.
     """
     statuses = [
-        CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=dev_checkout:1,jmag:2', ''),
-        CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=dev_checkout:5', ''),
+        CommitStatus('tests/base', 'success', 'scope=full ran=3 hands=workstation:1,jmag:2', ''),
+        CommitStatus('tests/jmag', 'success', 'scope=full ran=2 hands=workstation:5', ''),
     ]
-    assert forgetick.handed(statuses, 'dev_checkout') == 6
+    assert forgetick.handed(statuses, 'workstation') == 6
     assert forgetick.handed(statuses, 'jmag') == 2
     assert forgetick.handed(statuses, 'base') is None

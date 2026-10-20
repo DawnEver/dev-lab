@@ -87,12 +87,11 @@ install = "uv sync --frozen --all-extras"
 output = "output/logs"
 
 # One need vocabulary (lab_commons.hpc.needsets): a test marks the resources it needs, and its part is its
-# need-set -- tests/base, tests/codex, tests/dev_checkout, tests/node, tests/dev_checkout+node. A host claims a part when
-# its machine file's [capabilities.<name>] (and the probe, for node) give it every one; the cluster's per-sha
-# tree has neither. `produce` is the ONE local producer of every part ({part} filled); a cluster part runs
+# need-set -- tests/base and tests/workstation. A host claims a part when its machine file's
+# [capabilities.<name>] give it every one; the cluster's per-sha tree has none. `produce` is the ONE local producer of every part ({part} filled); a cluster part runs
 # from [tool.lab_commons.hpc].
 [tool.lab_commons.tests]
-resources = ["codex", "dev_checkout", "node"]
+resources = ["workstation"]
 produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 
 # The tool FLOORS this repo's parts need (D21): `<tool> = {floor = "<version>", reason = "<why>"}`. A
@@ -150,9 +149,7 @@ OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name>
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "codex: drives the real Codex execpolicy engine through the `codex` CLI, which only a host providing it carries",
-    "dev_checkout: asserts a developer-checkout invariant (hooks installed, branches on origin, worktree placement)",
-    "node: drives the agent-guard engine through a real `node`, which the cluster's compute nodes do not carry",
+    "workstation: needs a developer workstation -- the live checkout (hooks, branches, worktree placement) or the agent tooling its guards run on (`node`, the `codex` CLI); the cluster's per-sha tree has none of it",
     "not_applicable: a skip of this test is NOT_APPLICABLE (lab_commons.hpc.pytest_item.judged); any other skip is refused",
 ]
 

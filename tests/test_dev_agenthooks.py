@@ -43,7 +43,7 @@ from lab_commons.dev.hooks import DENY_RULES, Remedy
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
-pytestmark = pytest.mark.node
+pytestmark = pytest.mark.workstation
 
 #: An adoption that remedies EVERY rule needing a repo artefact, so the rendered file carries the
 #: whole registry. The commands are this repo's own real ones where they exist; what matters to the

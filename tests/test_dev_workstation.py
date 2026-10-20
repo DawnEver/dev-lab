@@ -27,7 +27,7 @@ from lab_commons.hpc.deploy_spec import host_serve_argv
 
 FORGE: Final = 'https://forge.example/team'
 REPOS: Final = 'lab-commons,alpha,beta'
-DEPLOY: Final = ('--repos', REPOS, '--capabilities', 'dev_checkout,node,jmag:4', '--forge', FORGE)
+DEPLOY: Final = ('--repos', REPOS, '--capabilities', 'workstation,jmag:4', '--forge', FORGE)
 VENV: Final = str(venv_interpreter(os_name=os.name))
 
 FAKE_GIT: Final = r"""
@@ -130,7 +130,7 @@ def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: B
         assert f'bootstrap {box.root / name}' in calls
         assert (box.root / name / '.git' / 'HOOKED').exists()
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    assert declared['capabilities'] == {'dev_checkout': {}, 'node': {}, 'jmag': {'seats': 4}}
+    assert declared['capabilities'] == {'workstation': {}, 'jmag': {'seats': 4}}
     assert declared['serve'] == {'repos': ['lab-commons', 'alpha', 'beta'], 'root': str(box.root)}
     assert 'reserve' not in declared, 'no delegate named, no [reserve] written'
     assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
@@ -185,19 +185,22 @@ def test_no_stored_credential_is_refused_with_the_manual_step(
 def test_every_missing_tool_is_refused_at_once_each_with_its_remedy(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    bare = replace(box.programs, which=lambda tool: None if tool in {'uv', 'node'} else tool, com=lambda _p: None)
+    bare = replace(
+        box.programs, which=lambda tool: None if tool in {'uv', 'node', 'codex'} else tool, com=lambda _p: None
+    )
     assert workstation.deploy([*DEPLOY, '--root', str(box.root)], programs=bare) == 2
     err = capsys.readouterr().err
     assert 'astral.sh/uv/install.ps1' in err
     assert 'OpenJS.NodeJS.LTS' in err
+    assert '@openai/codex' in err
     assert 'designer.Application, scheduler.JobApplication not registered' in err
-    assert '3 missing' in err
+    assert '4 missing' in err
     assert box.calls() == []
 
 
-def test_node_and_jmag_are_probed_only_when_declared(box: Box) -> None:
-    bare = replace(box.programs, which=lambda tool: None if tool == 'node' else tool, com=lambda _p: None)
-    argv = ['--repos', REPOS, '--capabilities', 'dev_checkout', '--forge', FORGE, '--root', str(box.root)]
+def test_the_workstation_kit_and_jmag_are_probed_only_when_declared(box: Box) -> None:
+    bare = replace(box.programs, which=lambda tool: None if tool in {'node', 'codex'} else tool, com=lambda _p: None)
+    argv = ['--repos', REPOS, '--capabilities', 'femm', '--forge', FORGE, '--root', str(box.root)]
     assert workstation.deploy(argv, programs=bare) == 0
 
 

@@ -18,7 +18,7 @@ test would land in ``base`` and on the cluster again).
 TWO KINDS OF NEED, because two different facts are missing on the cluster:
 
 * ``always`` -- the body needs the resource whatever it is pointed at: ``node`` runs the guard engine.
-* ``live`` -- the body needs it only when pointed at THE LIVE CHECKOUT (``dev_checkout``). The same
+* ``live`` -- the body needs it only when pointed at THE LIVE CHECKOUT (``workstation``). The same
   body pointed at a tree the test plants judges that tree, which any host has. The reading is
   syntactic and says which: an argument built from the test function's own parameters or locals
   (``tmp_path``, a fixture, a tree planted in the body) is planted; anything else -- a module
@@ -38,6 +38,7 @@ import ast
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.dev.workstation import WORKSTATION
 from lab_commons.hpc.needsets import read_vocabulary
 
 if TYPE_CHECKING:
@@ -45,9 +46,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 __all__ = ['NEEDS', 'Need', 'UnmarkedNeed', 'assert_box_bodies_are_marked', 'unmarked']
-
-DEV_CHECKOUT: Final = 'dev_checkout'
-NODE: Final = 'node'
 
 
 @dataclass(frozen=True)
@@ -59,8 +57,8 @@ class Need:
 
 
 _PKG: Final = 'lab_commons.dev.famtests'
-_LIVE: Final = Need(live=frozenset({DEV_CHECKOUT}))
-_ENGINE: Final = Need(always=frozenset({NODE}))
+_LIVE: Final = Need(live=frozenset({WORKSTATION}))
+_ENGINE: Final = Need(always=frozenset({WORKSTATION}))
 
 #: ``qualified body name -> its need``; the ONE place a famtests body's host need is stated.
 NEEDS: Final[Mapping[str, Need]] = {

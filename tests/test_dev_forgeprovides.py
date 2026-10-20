@@ -13,7 +13,7 @@ def test_a_card_has_its_os_and_its_machine_file_resources() -> None:
 def test_the_queue_names_the_resource_no_live_host_has() -> None:
     hosts = [present('windows', {}), present('linux', {})]
     assert unserved({'jmag'}, hosts) == f'{NO_PROVIDER} jmag'
-    assert unserved({'dev_checkout', 'windows'}, hosts) == f'{NO_PROVIDER} dev_checkout'
+    assert unserved({'workstation', 'windows'}, hosts) == f'{NO_PROVIDER} workstation'
     assert unserved(set(), hosts) == '', 'base needs nothing: any live host serves it'
     assert unserved({'windows'}, hosts) == ''
     assert unserved({'jmag'}, [*hosts, present('windows', {'jmag': {}})]) == '', 'PLANTED CONTROL: one host has it'

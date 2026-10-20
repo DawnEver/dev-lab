@@ -32,5 +32,10 @@ def test_a_push_to_integrate_main_needs_no_part_and_main_does() -> None:
 def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(platformparts, 'dated_log', lambda *_a, **_k: Path('output'))
     monkeypatch.setattr(platformparts, 'origin_url', lambda *_a: 'https://h/o/r.git')
-    assert platformparts.producer_argv(ROOT, 'node', sha='HEAD') == ['-m', 'lab_commons.dev.verify', '--part', 'node']
+    assert platformparts.producer_argv(ROOT, 'workstation', sha='HEAD') == [
+        '-m',
+        'lab_commons.dev.verify',
+        '--part',
+        'workstation',
+    ]
     assert platformparts.cluster_part(ROOT, 'HEAD').collect == ''
