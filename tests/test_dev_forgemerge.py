@@ -14,8 +14,9 @@ from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
+from lab_commons.dev import forgeintegration
 from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeintegration import tick
+from lab_commons.dev.forgeintegration import Ticked, tick
 from lab_commons.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
 from lab_commons.dev.forgepulls import Marker, marker
 from lab_commons.dev.forgestatus import CommitStatus
@@ -142,3 +143,36 @@ def test_a_red_pr_stays_open_with_what_is_missing_in_its_one_comment(tmp_path: P
     assert forge.pulls[number]['state'] == 'open'
     (comment,) = forge.comments[number]
     assert 'the forge merges it once it has: every `tests/<part>` part PASS' in comment['body']
+
+
+# --- the verb -------------------------------------------------------------------------------------
+
+
+def test_the_integration_verb_prints_the_tick_lines_before_the_branch_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``forge integration`` is the steward's whole loop, so its rendering is part of the flow.
+
+    PLANTED control: the same tick with no child prints the one placeholder line instead.
+    """
+    root = tmp_path
+
+    class Row:
+        def line(self) -> str:
+            return 'deletable  local  pr/gone  landed'
+
+    monkeypatch.setattr(forgeintegration, 'client_for', lambda _root: object())
+    monkeypatch.setattr(forgeintegration, 'load_policy', lambda _root: POLICY)
+    monkeypatch.setattr(forgeintegration, 'tick', lambda *_a, **_k: Ticked(('pr/x #4: merged by the forge',), ()))
+    monkeypatch.setattr(forgeintegration, 'listing', lambda *_a, **_k: (Row(),))
+    assert forgeintegration.main([], cwd=root, fetch=lambda _root: None) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        '[integration] pr/x #4: merged by the forge',
+        '[integration] branch: deletable  local  pr/gone  landed',
+    ]
+
+    monkeypatch.setattr(forgeintegration, 'tick', lambda *_a, **_k: Ticked((), ()))
+    monkeypatch.setattr(forgeintegration, 'listing', lambda *_a, **_k: ())
+    assert forgeintegration.main([], cwd=root, fetch=lambda _root: None) == 0
+    assert capsys.readouterr().out.strip() == '[integration] no open child branch'
