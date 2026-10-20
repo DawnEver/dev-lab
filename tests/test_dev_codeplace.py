@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import io
 import json
@@ -10,20 +11,26 @@ import time
 
 import pytest
 
+from lab_commons import launch
 from lab_commons.dev.codeplace import (
     ARCHIVED_SEGMENTS,
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
+    FAMILY_STRAY_ROOTS,
     PlacementNotDeclared,
+    StrayCensusUnreadable,
     archive_scratch,
     declared_misplaced,
     declared_placement,
+    declared_strays,
     is_archived,
     main,
     misplaced_code,
     overdue_scratch,
     pending_scratch,
     refuse_write,
+    stray_files,
+    stray_refusal,
 )
 from lab_commons.dev.famtests import noreflection
 
@@ -234,3 +241,73 @@ def test_archived_code_is_one_reading_of_the_archive_constants(rel: str, *, arch
 def test_noreflection_excludes_the_same_archive_codeplace_writes() -> None:
     assert noreflection.EXCLUDED_SEGMENTS is ARCHIVED_SEGMENTS
     assert noreflection.is_archived is is_archived
+
+
+# -- STRAY-FILE-REFUSED: an untracked, non-ignored file outside the stray roots -------------------------------
+
+
+def _repo(root, *, stray_roots: str = '[]') -> None:
+    launch.run(['git', 'init', '-q', str(root)], check=True)
+    (root / 'pyproject.toml').write_text(
+        f"[tool.lab_commons.placement]\npruned_paths = ['lanes']\nstray_roots = {stray_roots}\n", encoding='utf-8'
+    )
+    (root / '.gitignore').write_text('output/\n', encoding='utf-8')
+    launch.run(['git', '-C', str(root), 'add', 'pyproject.toml', '.gitignore'], check=True)
+
+
+def test_the_incidents_vendor_logs_in_the_root_are_strays_and_staged_ignored_scratch_files_are_not(tmp_path) -> None:
+    _repo(tmp_path, stray_roots="['data/']")
+    for rel in (
+        'job_node_10_0_0_1_2026-10-20T12_19_56_1.log',  # the planted control: the 2026-10-20 incident
+        'rust/pybind/uv.lock',
+        'output/logs/26/10/20/jobsystem/status.txt',  # ignored: an artefact in its place
+        'scratch/probe.py',
+        'data/drop.csv',  # a repo-declared stray root
+        'lanes/x/junk.txt',  # a pruned path: another checkout, judged by its own run
+        'src/new_module.py',
+    ):
+        _plant(tmp_path, rel)
+    launch.run(['git', '-C', str(tmp_path), 'add', 'src/new_module.py'], check=True)  # meant: staged
+    assert declared_strays(tmp_path) == ['job_node_10_0_0_1_2026-10-20T12_19_56_1.log', 'rust/pybind/uv.lock']
+    reason = stray_refusal(tmp_path)
+    assert reason is not None
+    assert reason.startswith('STRAY-FILE-REFUSED: 2 untracked')
+    assert 'output/logs/<yy>/<mm>/<dd>/<kind>/' in reason
+
+
+def test_a_clean_checkout_and_an_undeclared_one_are_silent(tmp_path) -> None:
+    _repo(tmp_path)
+    assert stray_refusal(tmp_path) is None
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n', encoding='utf-8')
+    _plant(tmp_path, 'stray.log')
+    assert stray_refusal(tmp_path) is None
+
+
+def test_a_census_git_cannot_read_is_refused_not_clean(tmp_path) -> None:
+    with pytest.raises(StrayCensusUnreadable):
+        stray_files(tmp_path / 'not-a-repo', stray_roots=FAMILY_STRAY_ROOTS)
+
+
+def test_the_shell_hook_blocks_naming_the_stray_and_a_repeated_stop_is_let_through(tmp_path) -> None:
+    _repo(tmp_path)
+    _plant(tmp_path, 'JobSystem.jlog')
+    out = io.StringIO()
+    payload = {'hook_event_name': 'PostToolUse', 'tool_name': 'Bash', 'cwd': str(tmp_path / 'scratch')}
+    (tmp_path / 'scratch').mkdir()
+    with contextlib.redirect_stdout(out):
+        assert main(['stray'], stdin=io.StringIO(json.dumps(payload))) == 0
+    decision = json.loads(out.getvalue())
+    assert decision['decision'] == 'block'
+    assert 'JobSystem.jlog' in decision['reason']
+    again = io.StringIO()
+    with contextlib.redirect_stdout(again):
+        main(['stray'], stdin=io.StringIO(json.dumps({'hook_event_name': 'Stop', 'stop_hook_active': True})))
+    assert again.getvalue() == ''
+
+
+def test_the_pre_commit_row_exits_non_zero_while_a_stray_exists(tmp_path, monkeypatch) -> None:
+    _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(['stray-check']) == 0
+    _plant(tmp_path, 'status.txt')
+    assert main(['stray-check']) == 1

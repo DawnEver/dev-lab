@@ -73,6 +73,13 @@ id = "trailing-whitespace"
 run = ["python", "-m", "lab_commons.dev.filechecks", "trailing-whitespace"]
 pass_files = true
 
+# STRAY-FILE-REFUSED: no commit while an untracked, non-ignored file sits outside the declared stray roots
+# ([tool.lab_commons.placement] stray_roots, plus scratch/), naming each one and its remedy (lab_commons.dev.codeplace).
+[[pre-commit]]
+id = "stray-files"
+run = ["python", "-m", "lab_commons.dev.codeplace", "stray-check"]
+always_run = true
+
 [[commit-msg]]
 id = "commitizen"
 run = ["cz", "check", "--allow-abort", "--commit-msg-file"]
