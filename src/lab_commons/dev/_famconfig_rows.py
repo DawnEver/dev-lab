@@ -143,7 +143,7 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
 #: re-inclusion would otherwise track. ORDER IS THE RULE here (last match wins), so this block is
 #: declared in :data:`ORDERED_SECTIONS`, rendered verbatim AFTER the sorted lines, and exempt from the
 #: order-free refusal that binds the sorted part. It covers `.claude/worktrees/` (WORKTREES-STAY-INSIDE)
-#: and `.claude/.rem-state.json` because `**/.claude/**` does and nothing re-includes them.
+#: and `<checkout>/.claude/.rem-state.json` because `**/.claude/**` does and nothing re-includes them.
 GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '**/.claude/**',
     '!**/.claude/settings.json',

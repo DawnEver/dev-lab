@@ -43,7 +43,7 @@ Each tick it:
 
 - `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
-  `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `~/.cache/lab-forge/serve.lock` elsewhere.
+  `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `<home>/.cache/lab-forge/serve.lock` elsewhere.
 - **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
   you, only while logged on, hidden), written by [the workstation deploy](#deploy-a-windows-workstation). Its
   action is the checkout's `pythonw.exe -m lab_commons.dev.workstation serve`, so NO console window opens:
@@ -76,7 +76,7 @@ Each tick it:
   An env, native build or cargo target is kept while an in-flight run or its repo's newest recorded run names it
   in `builds`; an unreadable reference keeps them all, an unreadable queue keeps every tree. A finished run's
   STATE goes when no origin branch tip can carry from it; finished `~/slurm-*.out` and oversized
-  `~/.cache/lab-forge-*.log` (rotated) go too. On a workstation it removes the stale `forge-*` trees of the
+  `<home>/.cache/lab-forge-<n>.log` (rotated) go too. On a workstation it removes the stale `forge-*` trees of the
   serving checkout. `git worktree prune` and `uv cache prune` follow a pass that deleted something; envs hardlink
   from the shared uv cache (`UV_LINK_MODE=hardlink`). Every deletion is one JSON line (path, bytes, files, rule).
   The file budget is the account's quota, the same reading admission uses as the `files` supply: at `pressure`
@@ -301,7 +301,7 @@ once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it l
 
 ## Records and the outbox
 
-- **Statuses wait in an outbox** (`output/forge/outbox/` of the main checkout) until the commit is on origin.
+- **Statuses wait in an outbox** (`<main-checkout>/output/forge/outbox/`) until the commit is on origin.
   `python -m lab_commons.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
 - **Run records are attachments** of one closed issue titled `run records`, never refs.
   `python -m lab_commons.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin
