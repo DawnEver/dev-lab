@@ -29,14 +29,17 @@ runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_byte
 
     [tool.lab_commons.review]
     # {range}: <merge base>..<head>; the command names its own method and model (no default model exists)
-    command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
+    # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
+    command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--method", "{capabilities.sharp_review.path}",
+               "--range", "{range}", "--model", "<id>"]
     max_diff_bytes = 200000   # a larger diff is not reviewed
     claim_stale = "1 h"       # the default: a claim older than this may be taken over
 
-BEFORE it runs the command, the host checks it can start it (:func:`can_start`: a missing interpreter or
-module is ``unsupported`` and posts nothing), then CLAIMS the head: a ``pending`` status
-``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is anything but a
-released (``released by``) or stale claim (:func:`claimable`), so N serving hosts review a head once.
+A host value the command names but this host's ``[capabilities]`` does not declare is ``unsupported`` and posts
+nothing, like a command it cannot start. BEFORE it runs the command, the host checks it can start it
+(:func:`can_start`: a missing interpreter or module is ``unsupported`` and posts nothing), then CLAIMS the head:
+a ``pending`` status ``claimed by <host> at <time>, reviewing``. Every other host skips a head whose review status is
+anything but a released (``released by``) or stale claim (:func:`claimable`), so N serving hosts review a head once.
 
 Undeclared, nothing is reviewed and the step says so. Exit :data:`REFUSED_EXIT` is the command's named refusal
 (:class:`ReviewRefused`): its stderr reason is the ``error`` status.
@@ -51,13 +54,16 @@ import re
 import shutil
 import subprocess
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.box.machine import provided
+from lab_commons.config import section
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from lab_commons.dev.forgereview_findings import (
     SEVERITIES,
@@ -77,6 +83,7 @@ if TYPE_CHECKING:
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
+    'HOST_FIELD',
     'RANGE_FIELD',
     'REFUSED_EXIT',
     'RETIRED_KEYS',
@@ -96,6 +103,9 @@ __all__ = [
 
 #: The placeholder the declared command carries; the reviewed ``<merge base>..<head>`` range replaces it.
 RANGE_FIELD: Final = '{range}'
+
+#: A placeholder for a value THIS host declares: ``{capabilities.<name>.<key>}`` (``~`` expanded).
+HOST_FIELD: Final = re.compile(r'\{capabilities\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
 
 #: The exit a review command REFUSES with (a bad method, version or range): empty stdout, the reason on stderr.
 REFUSED_EXIT: Final = 2
@@ -261,9 +271,21 @@ def run_command(argv: Sequence[str], root: Path) -> str:
     return done.stdout
 
 
-def command_for(review: Review, reviewed: str) -> list[str]:
-    """The declared command with every :data:`RANGE_FIELD` replaced by the *reviewed* ``a..b`` range."""
-    return [arg.replace(RANGE_FIELD, reviewed) for arg in review.command]
+def command_for(review: Review, reviewed: str, capabilities: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """The declared command: :data:`RANGE_FIELD` replaced by *reviewed*, each :data:`HOST_FIELD` by this host's value.
+
+    A host value *capabilities* (this host's ``[capabilities]``) does not declare is :class:`ReviewUnsupported`.
+    """
+
+    def host_value(field: re.Match[str]) -> str:
+        value = capabilities.get(field['name'], {}).get(field['key'])
+        if not isinstance(value, str) or not value:
+            where = f'[capabilities.{field["name"]}] {field["key"]}'
+            msg = f'unsupported: this host declares no {where} for the review command'
+            raise ReviewUnsupported(msg)
+        return str(Path(value).expanduser()) if value.startswith('~') else value
+
+    return [HOST_FIELD.sub(host_value, arg).replace(RANGE_FIELD, reviewed) for arg in review.command]
 
 
 def render(head: str, found: Findings) -> str:
@@ -317,6 +339,7 @@ def review_tick(
     run: Callable[[Sequence[str], Path], str] = run_command,
     ready: Callable[[Sequence[str], Path], str | None] = can_start,
     host: str,
+    capabilities: Mapping[str, Mapping[str, Any]] = MappingProxyType({}),  # this host's: none by default
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[str, ...]:
     """Review every open, non-draft PR into *base* whose head has no review status; the lines it says.
@@ -341,8 +364,12 @@ def review_tick(
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
         reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
-        argv = command_for(review, reviewed)
-        if (cannot := ready(argv, root)) is not None:  # checked first: a host that cannot review posts nothing
+        try:
+            argv = command_for(review, reviewed, capabilities)
+            cannot = ready(argv, root)
+        except ReviewUnsupported as unsupported:
+            cannot = str(unsupported)
+        if cannot is not None:  # checked first: a host that cannot review posts nothing
             lines.append(f'#{pull.number} {head[:12]}: {cannot}; nothing posted')
             break
         claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
@@ -387,7 +414,11 @@ def step(
         if not review.command:
             say(f'[serve] review: not run -- [tool.lab_commons.{_TABLE}] command is not declared')
             return
-        for line in review_tick(root, built, review, base=policy.integration, run=run, ready=ready, host=host):
+        here = provided(section('capabilities'))
+        lines = review_tick(
+            root, built, review, base=policy.integration, run=run, ready=ready, host=host, capabilities=here
+        )
+        for line in lines:
             say(f'[serve] review: {line}')
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError, subprocess.SubprocessError) as failed:
         say(f'[serve] the PR review did not run: {failed}')

@@ -107,6 +107,14 @@ integration = "integrate/main"
 merges_only_since = "c6ba73b78d56f7e0c3a4e95d208e752b9047bdf4"  # INTEGRATION-IS-MERGES-ONLY from here on
 pr_merges_since = "b97d2aa2871e09630863620bda713de750374ccb"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha
 
+# The advisory PR review (lab_commons.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
+# interpreter, the sharp-review method) is each reviewing host's [capabilities.*] in its machine file.
+[tool.lab_commons.review]
+command = [
+    "{capabilities.ai_lab.python}", "-m", "ai_lab.review",
+    "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--model", "claude-sonnet-5-5",
+]
+
 # This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
 # `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
 [[tool.lab_commons.hooks.pre-commit]]
