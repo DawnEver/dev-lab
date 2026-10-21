@@ -349,8 +349,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'PIN + FRESHNESS (user ruling 2026-10-17): the COMMITTED uv.lock is what an environment is, so '
             'every path that mutates one -- a bootstrap, a served venv, a host refresh -- is `uv sync --frozen` '
-            'from the lock of the commit, and the `lock` pre-push row refuses a lock that is not at the newest '
-            'resolution or that holds a requirement below the newest with no reason beside it. The paths that '
+            'from the lock of the commit; the `lock` pre-push row refuses a hold below the newest with no reason '
+            'and, on integration or trunk, a lock not at the newest (the forge relocks integration). The paths that '
             'mutate an environment are not the set named "install": a git hook spelled as a project run is an '
             'install door nobody declared, and it must replay the lock or not touch the environment at all. '
             'Which commands re-resolve is MEASURED per tool rather than read off a flag name, because two '

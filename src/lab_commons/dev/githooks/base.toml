@@ -115,9 +115,9 @@ id = "behind-push"
 run = ["python", "-m", "lab_commons.dev.behindpush"]
 always_run = true
 
-# PIN + FRESHNESS (user ruling 2026-10-17): a pushed commit commits uv.lock at the NEWEST resolution -- `uv lock
-# --upgrade` would change nothing -- and every hold below the newest declares its reason (lab_commons.dev.lockcheck).
-# The remedy is the door `python -m lab_commons.dev.dep --lock-upgrade [ROOT]`, then fix, test and commit.
+# PIN + FRESHNESS (user ruling 2026-10-17): a pushed commit commits uv.lock, and every hold below the newest
+# declares its reason; a push to integration or trunk is also at the NEWEST resolution -- `uv lock --upgrade` would
+# change nothing. A lane is not judged on freshness: the forge relocks integration (lab_commons.dev.relock).
 [[pre-push]]
 id = "lock"
 run = ["python", "-m", "lab_commons.dev.lockcheck"]
