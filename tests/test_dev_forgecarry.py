@@ -7,6 +7,7 @@ The planted control in each pair is the code-touching descendant: same history s
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -85,7 +86,7 @@ def test_a_non_descendant_never_carries(tmp_path: Path) -> None:
 def test_a_carried_part_names_its_source_and_still_admits() -> None:
     part = Part('base', 'full', Conclusion.PASS, 12, carried='a' * 12)
     text = part.description()
-    assert text.endswith(f'carried from {"a" * 12}: every outcome carried by footprint')
+    assert text.endswith(f'carried from {"a" * 12}: docs-only')
     parts, problems = parts_of([CommitStatus('tests/base', 'success', text, '')])
     assert problems == ()
     assert parts['base'] == part
@@ -159,7 +160,7 @@ def test_a_docs_only_descendant_keeps_the_local_run_and_gets_the_carried_status(
     assert not proc.killed, 'a reach-equivalent tip lets the run finish'
     (carried,) = forge.history(None, b)
     assert (carried.context, carried.state, carried.url) == ('tests/windows', 'success', 'https://f/record')
-    expected = f'scope=full ran=7 hands=- carried from {a[:12]}: every outcome carried by footprint'
+    expected = f'scope=full ran=7 hands=- carried from {a[:12]}: docs-only'
     assert carried.description == expected
 
 
@@ -214,3 +215,62 @@ def test_read_by_is_the_runs_own_then_its_nearest_ancestors(tmp_path: Path) -> N
         shas.append(git_out(tmp_path, 'rev-parse', 'HEAD'))
     assert forgecarry.read_by(tmp_path, shas[4], shas) == [shas[4], shas[3], shas[2], shas[1]]
     assert forgecarry.read_by(tmp_path, shas[4], shas[:4]) == [shas[3], shas[2], shas[1]], 'PLANTED CONTROL: no own run'
+
+
+_VERDICT = CommitStatus('tests/base', 'success', 'scope=full ran=7 hands=-', 'https://f/record', 1)
+
+
+def _stand(**by_sha: object) -> Callable[[str], object]:
+    return lambda sha: by_sha.get(sha, '')
+
+
+def test_a_docs_only_head_carries_the_previous_tested_heads_verdict_and_a_code_head_does_not(tmp_path: Path) -> None:
+    """DOCS-ONLY-CARRIES (user ruling 2026-10-21): memory written after the code commit costs no new test run.
+
+    PLANTED CONTROL: the same history shape with one path a test imports -- the head runs itself.
+    """
+    a = _repo(tmp_path)
+    docs = _commit(tmp_path, DOCS, 'docs')
+    carry = forgecarry.docs_only(tmp_path, docs, _stand(**{a: _VERDICT}))
+    assert carry is not None
+    assert (carry.source, carry.verdict) == (a, _VERDICT)
+    assert carry.hold == f'carried from {a[:12]}: docs-only'
+    code = _commit(tmp_path, {'src/a.py': 'x = 2\n'}, 'code')
+    assert forgecarry.docs_only(tmp_path, code, _stand(**{a: _VERDICT})) is None
+
+
+def test_a_docs_only_head_on_a_running_head_waits_for_its_result(tmp_path: Path) -> None:
+    a = _repo(tmp_path)
+    docs = _commit(tmp_path, DOCS, 'docs')
+    carry = forgecarry.docs_only(tmp_path, docs, _stand(**{a: forgecarry.RUNNING}))
+    assert carry is not None
+    assert (carry.source, carry.verdict) == (a, None)
+    assert carry.hold.startswith(f'waiting behind {a[:12]}')
+    assert forgecarry.docs_only(tmp_path, docs, _stand()) is None, 'PLANTED CONTROL: nothing tested before: it runs'
+
+
+def test_a_docs_only_head_reads_through_untested_docs_heads_but_never_past_untested_code(tmp_path: Path) -> None:
+    a = _repo(tmp_path)
+    _commit(tmp_path, {'notes.md': 'n\n'}, 'docs 1')
+    docs = _commit(tmp_path, DOCS, 'docs 2')
+    assert getattr(forgecarry.docs_only(tmp_path, docs, _stand(**{a: _VERDICT})), 'source', None) == a
+    run_git(tmp_path, 'checkout', '-q', '-b', 'other', a)
+    _commit(tmp_path, {'src/a.py': 'x = 3\n'}, 'untested code')
+    stacked = _commit(tmp_path, DOCS, 'docs on code')
+    assert forgecarry.docs_only(tmp_path, stacked, _stand(**{a: _VERDICT})) is None, 'the code change needs its run'
+
+
+def test_a_carried_verdict_names_its_first_origin_and_reads_back_as_a_part() -> None:
+    once = forgecarry.DocsOnly('a' * 40, _VERDICT).description('base')
+    assert once == f'scope=full ran=7 hands=- carried from {"a" * 12}: docs-only'
+    again = CommitStatus('tests/base', 'success', once, '', 2)
+    assert forgecarry.DocsOnly('b' * 40, again).description('base') == once, 'an outcome carried again keeps its origin'
+    parts, problems = parts_of([again])
+    assert (problems, parts['base'].carried) == ((), 'a' * 12)
+
+
+def test_a_part_carried_under_the_retired_spelling_still_reads_back() -> None:
+    old = f'scope=full ran=7 hands=- carried from {"a" * 12}: every outcome carried by footprint'
+    parts, problems = parts_of([CommitStatus('tests/base', 'success', old, '')])
+    assert (problems, parts['base'].carried) == ((), 'a' * 12)
+    assert parts['base'].description().endswith(': docs-only'), 'written back at the current spelling'

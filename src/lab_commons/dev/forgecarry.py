@@ -24,34 +24,50 @@ APPLIED AT TWO GRAINS, both from that one rule:
 
 A tip whose part is already settled (``success``/``failure``) is never overwritten: a real verdict on B
 outranks one carried to it.
+
+DOCS-ONLY-CARRIES (user ruling 2026-10-21) is the PER PART grain read from the HEAD's side (:func:`docs_only`):
+memory is written after the code commit, so a docs-only head is the ordinary case and costs no run. A head
+:func:`equivalent` to the nearest tested or running head of its first-parent history is never claimed -- the
+claim pass posts the settled verdict on it (:mod:`lab_commons.dev.forgetake`), or it waits while that run
+finishes, which is then never superseded for it (:mod:`lab_commons.dev.forgerun`) and carries on landing
+(:func:`publish`). The PR review reads the same rule (:mod:`lab_commons.dev.forgereview`).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import subprocess
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.footprint import Footprints, test_files
 from lab_commons.dev.forge import _GIT
+from lab_commons.dev.forgeclaim import CLAIMED, Claim, assess
+from lab_commons.dev.forgecoalesce import WAITING_BEHIND, earlier_tips
 from lab_commons.dev.forgeschedule import tip_of
-from lab_commons.dev.forgestatus import status_history
-from lab_commons.dev.platformparts import part_context, post
+from lab_commons.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, CommitStatus, status_history, status_post
+from lab_commons.dev.platformparts import part_context, parts_of, post
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
 
 __all__ = [
     'NEAREST',
+    'RUNNING',
     'SETTLED',
+    'DocsOnly',
     'carried',
     'carry_from',
     'carry_target',
     'changed_paths',
+    'docs_only',
     'equivalent',
     'nearest',
+    'part_standing',
     'publish',
     'read_by',
 ]
@@ -186,3 +202,72 @@ def publish(root: Path, record: Path, *, client: Client, ref: str, sha: str, pla
     if target := carry_target(root, client, ref=ref, sha=sha, platform=platform):
         lines += '\n' + post(root, record, onto=target)
     return lines
+
+
+#: A head's part waits on this standing of its nearest tested ancestor: a run in flight (:func:`docs_only`).
+RUNNING: Final = 'running'
+
+
+@dataclass(frozen=True)
+class DocsOnly:
+    """DOCS-ONLY-CARRIES: a head that runs nothing -- its part is *source*'s, settled as *verdict* or still running."""
+
+    source: str
+    verdict: CommitStatus | None = None
+
+    @property
+    def hold(self) -> str:
+        """Why the head is never claimed: carried from a settled source, else waiting behind its running one."""
+        if self.verdict is not None:
+            return f'{CARRIED_FROM} {self.source[:12]}: {DOCS_ONLY}'
+        return f'{WAITING_BEHIND} {self.source[:12]} ({DOCS_ONLY}: its result carries here)'
+
+    def description(self, platform: str) -> str:
+        """The verdict's description re-posted on the head, naming the sha it was FIRST judged at."""
+        if self.verdict is None:
+            msg = f'{self.source[:12]} has no verdict yet'
+            raise ValueError(msg)
+        part = parts_of([self.verdict])[0].get(platform)
+        if part is None:
+            return f'{self.verdict.description} {CARRIED_FROM} {self.source[:12]}: {DOCS_ONLY}'
+        return dataclasses.replace(part, carried=part.carried or self.source[:12]).description()
+
+    def post(self, client: Client, head: str, platform: str) -> CommitStatus:
+        """Post the carried verdict on *head*: the same state and record link, no claim, no run."""
+        description = self.description(platform)  # refuses a source with no verdict yet
+        verdict = self.verdict or CommitStatus('', '', '', '')
+        return status_post(client, head, context=verdict.context, state=verdict.state, description=description,
+                           target_url=verdict.url)  # fmt: skip
+
+
+def docs_only(root: Path, b: str, standing: Callable[[str], CommitStatus | str]) -> DocsOnly | None:
+    """DOCS-ONLY-CARRIES: what *b* takes instead of a run, ``None`` when *b* runs itself.
+
+    *standing* says where a sha's job stands: its settled verdict, :data:`RUNNING`, or ``''`` (never tested).
+    *b*'s first-parent history is read newest first to the nearest sha that is tested or running; *b* takes
+    it when :func:`equivalent` -- no collected test's footprint reaches the diff, the same rule every carry
+    uses -- else *b* runs. An untested head in between is read through: when it touched code, the diff from
+    the tested head holds that code, and *b* runs.
+    """
+    for sha in earlier_tips(root, b):
+        stood = standing(sha)
+        if stood:
+            if not equivalent(root, sha, b):
+                return None
+            return DocsOnly(sha, stood if isinstance(stood, CommitStatus) else None)
+    return None
+
+
+def part_standing(
+    history: Callable[[str], Sequence[CommitStatus]], context: str, now: datetime
+) -> Callable[[str], CommitStatus | str]:
+    """The :func:`docs_only` *standing* of a part in *context*: its settled post, a live claim, else nothing."""
+    nobody = Claim('', '', now)
+
+    def stood(sha: str) -> CommitStatus | str:
+        posts = [status for status in history(sha) if status.context == context]
+        if posts and posts[-1].state in SETTLED:
+            return posts[-1]
+        return RUNNING if assess(posts, context, me=nobody, now=now)[0] == CLAIMED else ''
+
+    return stood

@@ -30,4 +30,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ),
         ('tests/test_dev_pradmit.py',),
     ),
+    (
+        'DOCS-ONLY-CARRIES',
+        (
+            'A head whose diff from the nearest tested (or running) head of its first-parent history reaches no '
+            "collected test's footprint -- memory written after the code commit is the ordinary case -- runs "
+            'nothing: each part is posted carried from that head (`carried from <sha12>: docs-only`), with no claim '
+            'and no job; a run of that head in flight is never superseded or cancelled for it, and when it lands its '
+            'result carries; the PR review of such a head is carried too, no command run. One rule, one place: '
+            '`forgecarry.docs_only`, judged by the same footprint every carry uses.'
+        ),
+        (
+            'tests/test_dev_forgecarry.py',
+            'tests/test_dev_forgetick.py',
+            'tests/test_dev_forgerun.py',
+            'tests/test_dev_forgereview.py',
+        ),
+    ),
 )

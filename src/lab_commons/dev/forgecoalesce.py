@@ -24,7 +24,7 @@ from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import part_context
 
-__all__ = ['EARLIER_TIPS', 'PUBLISHING', 'WAITING_BEHIND', 'behind']
+__all__ = ['EARLIER_TIPS', 'PUBLISHING', 'WAITING_BEHIND', 'behind', 'earlier_tips']
 
 #: The prefix of :attr:`Ranked.blocked` for a coalesced tip waiting on its ref's run in flight.
 WAITING_BEHIND: Final = 'waiting behind'
@@ -48,7 +48,7 @@ def behind(
     if wanted.kind not in schedule.coalesce:
         return ''
     context, nobody = part_context(wanted.platform), Claim('', '', now)
-    for sha in _earlier_tips(root, wanted.sha):
+    for sha in earlier_tips(root, wanted.sha):
         state, holder = assess(history(sha), context, me=nobody, now=now)
         if state == CLAIMED and holder is not None:
             where = holder.hpc or holder.machine or holder.login
@@ -60,7 +60,7 @@ def behind(
     return ''
 
 
-def _earlier_tips(root: Path, tip: str) -> list[str]:
+def earlier_tips(root: Path, tip: str) -> list[str]:
     """*tip*'s first-parent history before it, newest first: the same on every host (module docstring)."""
     args = [_GIT, '-C', str(root), 'rev-list', '--first-parent', '-n', str(EARLIER_TIPS), f'{tip}~1', '--']
     done = _door.run(args, capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False)

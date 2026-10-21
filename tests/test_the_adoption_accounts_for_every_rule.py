@@ -168,6 +168,7 @@ _ENFORCED = {
     # Incident 2026-10-21: 28 open motronics PRs, one session spread over several, one stalled base holding a dozen.
     'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
+    'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),
     'ONE-BOX-ONE-LOCK': (
         guard('tests/test_box.py'),
         guard('tests/test_box_run_enforced.py'),
