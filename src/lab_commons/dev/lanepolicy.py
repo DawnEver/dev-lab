@@ -48,6 +48,11 @@ class Policy:
     auto_sync: bool = False
     #: A head committed more recently than this duration is not synced: a live author is not raced.
     auto_sync_quiet: str = '10 min'
+    #: FORGE NOTICES (:mod:`lab_commons.dev.forgenotice`): a notice whose head saw no new push this long after it
+    #: opened goes to the integrator.
+    notice_escalate: str = '2 h'
+    #: A PR head whose parts are still unsettled this long after its commit is a ``stall`` notice.
+    notice_stall: str = '6 h'
 
 
 def load_policy(root: Path) -> Policy:

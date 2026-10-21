@@ -42,18 +42,27 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
-from lab_commons.dev import forgeautosync
+from lab_commons.dev import forgeautosync, forgenotice
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
 from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgemerge import decide, merge
-from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
+from lab_commons.dev.forgepulls import (
+    ListingIncomplete,
+    Marker,
+    comment_list,
+    comment_upsert,
+    marker,
+    pr_list,
+    pr_retarget,
+)
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
 from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed, PullRequest, client_for
+from lab_commons.dev.labsession import sessions
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
@@ -276,10 +285,13 @@ def tick(
     with_pr = {child.branch for child in children}
     children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
     pulls = [forgeautosync.Open(c.pr, c.branch, c.head) for c in children if c.pr is not None]
-    now = clock(origin) if host and policy.auto_sync and pulls else None
+    now = clock(origin) if host and pulls else None
     for child in children:
         one = settle(root, child, policy, feedback(root, child, policy))
-        if now is not None and child.pr is not None and one.summary != _MERGED and one.state != 'success':
+        if (
+            now is not None and policy.auto_sync and child.pr is not None
+            and one.summary != _MERGED and one.state != 'success'
+        ):  # fmt: skip
             others = [pull for pull in pulls if pull.number != child.pr]
             line = forgeautosync.step(
                 root, origin, policy, branch=child.branch, number=child.pr, head=child.head, others=others,
@@ -287,10 +299,35 @@ def tick(
             )  # fmt: skip
             if line is not None:
                 one = dataclasses.replace(one, text=f'{one.text}\n- {line}', summary=f'{one.summary}; {line}')
+        if child.pr is not None:
+            one = dataclasses.replace(one, text=_noticed(root, child, policy, one, number=child.pr, now=now))
         said.append((child, one))
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
     return Ticked(tuple(lines), tuple(said))
+
+
+def _noticed(root: Path, child: Child, policy: Policy, said: Feedback, *, number: int, now: datetime | None) -> str:
+    """*said*'s text with the PR's notices (:mod:`lab_commons.dev.forgenotice`); carried unchanged without a host."""
+    line = marker(Marker.INTEGRATION)
+    prior = next((c.body for c in comment_list(child.client, number) if line in c.body), '')
+    block = forgenotice.read(prior)
+    if now is not None:
+        statuses = status_list(child.client, child.head)
+        result = standing(statuses, head=child.head).result
+        committed = int(_git(root, 'show', '-s', '--format=%ct', child.head).strip() or now.timestamp())
+        found = forgenotice.kinds(
+            statuses, conflicts=said.conflicts, settled=result in {Conclusion.PASS, Conclusion.FAIL},
+            age=now - datetime.fromtimestamp(committed, UTC),
+            stall=forgenotice.duration('notice_stall', policy.notice_stall),
+        )  # fmt: skip
+        block = forgenotice.update(
+            block, pr=number, branch=child.branch, head=child.head, found=found,
+            sessions=sorted(sessions(root, f'{_TRACKING}{policy.integration}', child.head)),
+            green=said.summary == _MERGED or said.state == 'success' or result is Conclusion.PASS, now=now,
+        )  # fmt: skip
+    rendered = forgenotice.render(block)
+    return f'{said.text}\n{rendered}' if rendered else said.text
 
 
 def _retarget(client: Client, pr: PullRequest, policy: Policy) -> PullRequest:

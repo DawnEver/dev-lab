@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
+from lab_commons.dev.forgenotice import duration
 from lab_commons.dev.forgestatus import status_list, status_post
 from lab_commons.dev.labsession import machine_env
 from lab_commons.dev.lockcheck import LOCK, mount_submodules, stale
@@ -53,7 +54,6 @@ from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.relock import door_upgrade
 from lab_commons.dev.sessionbranch import MERGED_BRANCH
 from lab_commons.dev.trialmerge import contains, shares_unmerged, trial
-from lab_commons.units import Q_
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgestatus import CommitStatus
@@ -114,15 +114,7 @@ class Plan:
 
 def quiet_after(policy: Policy) -> timedelta:
     """*policy*'s ``auto_sync_quiet`` as a :class:`timedelta`; a bare number or a non-duration is refused naming it."""
-    try:
-        quantity = Q_(policy.auto_sync_quiet)
-    except Exception as bad:
-        msg = f'auto_sync_quiet {policy.auto_sync_quiet!r} is not a duration; write one such as "10 min"'
-        raise ValueError(msg) from bad
-    if not isinstance(quantity, Q_) or not quantity.check('[time]'):
-        msg = f'auto_sync_quiet {policy.auto_sync_quiet!r} is not a duration (it needs a unit); write "10 min"'
-        raise ValueError(msg)
-    return timedelta(seconds=float(quantity.m_as('s')))
+    return duration('auto_sync_quiet', policy.auto_sync_quiet)
 
 
 def merge_message(policy: Policy, branch: str, tip: str) -> str:

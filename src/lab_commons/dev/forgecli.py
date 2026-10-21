@@ -5,7 +5,8 @@ state and comment reads, ``auth`` for the token, ``publish`` for the status outb
 run records, ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` to drop a host card,
-``request <producer> --sha <sha>`` to publish a request; anything else is the issue/PR door. The verbs
+``request <producer> --sha <sha>`` to publish a request, ``notices`` for a session's PR notices; anything
+else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
 """
@@ -25,6 +26,7 @@ from lab_commons.dev import (
     forgehosts,
     forgeintegration,
     forgeissue,
+    forgenotice,
     forgeoutbox,
     forgepublish,
     forgequeue,
@@ -59,6 +61,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
+    'notices': forgenotice.main,
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,
     'request': forgepublish.main,
