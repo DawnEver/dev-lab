@@ -10,7 +10,7 @@ accessed: 2026-09-17
 # Plan — one source of truth for the family, and the config layer is the last tree nobody measured
 
 Measured 2026-09-17 across the four repos. `consumer-a` below always means the LANE worktree
-`.claude/worktrees/feat/consumer-c`, never the main checkout.
+`.claude/worktrees/<lane>` (a consumer-c lane, since disposed of), never the main checkout.
 
 ## Where the migration actually stands
 
@@ -130,7 +130,7 @@ Line counts are not evidence; these are set intersections.
     docs-src/dev        13           1         1         14
 
 `.gitignore` — CORRECTED 2026-09-17, and the correction is not cosmetic. The first reading here
-normalised trailing slashes away with `sed 's:/*$::'`. **A trailing slash matches a DIRECTORY ONLY,
+normalised trailing slashes away with a `sed` substitution stripping every trailing slash. **A trailing slash matches a DIRECTORY ONLY,
 so `**/__pycache__/` and `**/__pycache__` are different rules, not different spellings**, and
 consumer-a' own `.gitignore` carries a comment recording the incident that proves it: a `.pyc` under
 `.claude/memory/` was TRACKED, because gitignore is last-match-wins per path and

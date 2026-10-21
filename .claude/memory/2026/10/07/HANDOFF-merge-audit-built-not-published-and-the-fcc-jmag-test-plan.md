@@ -35,7 +35,7 @@ truth, no backward compatibility.
 
 ## State
 
-- lab-commons `lane/merge-audit` (worktree `.claude/worktrees/merge-audit`, own venv):
+- lab-commons `lane/merge-audit` (worktree `.claude/worktrees/<merge-audit>`, own venv):
   `8572185` feat, `3ecc8c9` noqa -> named constant, plus this handoff. NOT PUSHED.
 - Verify on `8572185`: 3085 passed, 3 failed. Two are NOT this increment and pre-date it:
   - `test_arch_text_subprocess_declares_encoding` names `tests/test_dev_branchset_push.py:216,231`;

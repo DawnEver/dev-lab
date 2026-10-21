@@ -37,7 +37,7 @@ Three facts, and together they dissolve it:
 2. **Its `NOT_WALKED` already excludes `.venv`** -- the installed-package path of consumer-a' second
    incident -- and `lib`, its untracked fixture tree.
 3. **Only consumer-a is exposed to the first incident at all.** This box's hooks confine every
-   `git worktree add` to `consumer-a/.claude/worktrees/`, so consumer-a is the one repo whose
+   `git worktree add` to consumer-a's own `.claude/worktrees/`, so consumer-a is the one repo whose
    tree can contain another checkout. consumer-b cannot hit it.
 
 ## The kit is not at fault either, and the reason is the doctrine

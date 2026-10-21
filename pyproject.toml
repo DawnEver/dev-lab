@@ -79,6 +79,16 @@ pruned_paths = ['.claude/worktrees']
 
 # How the cluster builds this repo's env, read at the commit being judged (lab_commons.hpc.builds).
 # It installs the project itself: the venv must import lab_commons.dev.envkey to report its env key.
+[tool.lab_commons.ephemeral_refs]
+# TRACKED-CITES-NO-EPHEMERAL escapes: count EQUALS ceiling, and the ceiling only goes down.
+ceiling = 4
+escapes = [
+    { file = "docs-src/dev/forge.md", token = "~/.cache/lab-forge/serve.lock", reason = "DEFINES the default --lock path of forge serve" },
+    { file = "docs-src/dev/forge.md", token = "~/.cache/lab-forge-*.log", reason = "DEFINES where the serve task logs" },
+    { file = "docs-src/dev/forge.md", token = "output/forge/outbox/", reason = "DEFINES where the forge status outbox lives" },
+    { file = "src/lab_commons/dev/_famconfig_rows.py", token = ".claude/.rem-state.json", reason = "names what the rendered ignore section ignores" },
+]
+
 [tool.lab_commons.hpc]
 install = "uv sync --frozen --all-extras"
 

@@ -479,6 +479,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # not a forked file.
     'venvpath': ('original',),
     'worktreeplace': ('original',),
+    'ephemeralrefs': ('original',),
     'famfiles': ('original',),
     # -- `lab_commons.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table': ('original',),

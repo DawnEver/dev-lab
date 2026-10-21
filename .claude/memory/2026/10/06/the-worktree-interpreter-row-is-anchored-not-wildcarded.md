@@ -46,7 +46,7 @@ KNOWN and the row opens with a literal:
     Bash(.claude/worktrees/*/.venv/Scripts/python.exe scripts/gate/dep_sync.py *)
 
 The `*` is the worktree's NAME and nothing else. What it does NOT admit: the same interpreter
-reached by an ABSOLUTE path (`D:/repo/.claude/worktrees/lane/.venv/...`) or a `..` route. No row
+reached by an ABSOLUTE path (`<drive>:/<repo>/.claude/worktrees/<lane>/.venv/<...>`) or a `..` route. No row
 that does not lead with `*` can — the command's first character is a drive or a root this file,
 TRACKED IN GIT, cannot know — and the price is one permission prompt for an agent that spells it
 that way. The road that stays prompt-free is the one `docs-src/dev/fanout.md` already spells: run

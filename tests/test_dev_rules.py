@@ -93,6 +93,7 @@ _IDS = frozenset(
         'SHARED-CHECKOUT',
         'SUBAGENT-NO-PUSH',
         'TOLERANCE-CARRIES-A-UNIT',
+        'TRACKED-CITES-NO-EPHEMERAL',
         'UNSUPPORTED-RAISES',
         'UNITS-GO-THROUGH-PINT',
         'VERDICT-AS-STATUS',
