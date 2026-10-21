@@ -17,7 +17,7 @@ truth), and each task gets its own AI API key.
   default by a helper that ignores the username filter.
 - `forgereview` reads `api_key('api.anthropic.com', task='pr-review')`; the invented host
   `pr-review.anthropic.lab-commons` is registered in `hpc/retired.py`.
-- The second key serves `optimization`: the motronics `turing` decider (Anthropic Haiku through
+- The second key serves `optimization`: the a consumer repo `turing` decider (Anthropic Haiku through
   `ai_lab.connect`), which the HPC AI-intervention campaign also runs. Wiring the decider to pass the task
-  is a motronics follow-up; `ai_lab.connect(spec, task=...)` carries it.
+  is a a consumer repo follow-up; `ai_lab.connect(spec, task=...)` carries it.
 - Stored by `python -m ai_lab.auth login anthropic --task <task>` (ai-lab lane `lane/task-api-keys`).

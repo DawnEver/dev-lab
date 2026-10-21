@@ -1617,9 +1617,9 @@ def test_the_build_facts_report_the_key_and_the_resolved_list_of_one_reading() -
 
 
 def test_each_repository_fetches_into_its_own_cache_whose_origin_is_that_repository() -> None:
-    url = 'https://github.com/pemc/numerics-lab.git'
+    url = 'https://github.com/family/numerics-lab.git'
     cache = cache_dir(url)
-    assert cache.startswith(f'{ROOT}/cache/pemc-numerics-lab-'), cache
+    assert cache.startswith(f'{ROOT}/cache/family-numerics-lab-'), cache
     assert cache.endswith('.git'), cache
     spec = RunSpec(sha=SHA, repo_url=url, builds=Builds(install='true', env_key='k1'))
     script = fetch_script(spec)
@@ -1632,7 +1632,7 @@ def test_each_repository_fetches_into_its_own_cache_whose_origin_is_that_reposit
 
 
 def test_two_repositories_never_share_a_cache() -> None:
-    urls = ('https://g/a/motronics-studio.git', 'https://g/a/numerics-lab.git', 'https://h/a/numerics-lab.git', 'u')
+    urls = ('https://g/a/consumer-studio.git', 'https://g/a/numerics-lab.git', 'https://h/a/numerics-lab.git', 'u')
     assert len({cache_dir(u) for u in urls}) == len(urls)
     assert cache_dir(urls[1]) == cache_dir(urls[1]), 'deterministic'
 

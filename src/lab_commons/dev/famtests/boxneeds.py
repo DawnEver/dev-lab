@@ -1,6 +1,6 @@
 """A BODY THAT JUDGES THE BOX CARRIES ITS NEED -- the test calling it must wear the resource marker.
 
-WHAT EARNED IT, MEASURED 2026-10-19 on optimi-lab's first Linux part. The cluster produces a part in
+WHAT EARNED IT, MEASURED 2026-10-19 on a consumer's first Linux part. The cluster produces a part in
 ``~/ci/trees/<sha>``: a detached worktree of a bare cache with no hooks installed, no session branches,
 no trunk checked out, and no ``node``. Every consumer test that ran a famtests body against ITS OWN
 checkout went red there -- hooks not installed, ``NotVisibleOnOrigin``, a worktree "outside", every
