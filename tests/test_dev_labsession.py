@@ -1,7 +1,8 @@
 """ONE-SESSION-ONE-PR's identity: the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
 
-PLANTED CONTROLS on each side: an agent with the env is stamped, an agent without it is refused, a human
-without it is untouched, and a trailer the agent wrote itself is replaced by the launcher's.
+PLANTED CONTROLS on each side: a commit with the env is stamped (and so judged), a commit without it -- agent
+or human -- passes untouched (and so is not judged), and a trailer the agent wrote itself is replaced by the
+launcher's.
 """
 
 from __future__ import annotations
@@ -34,18 +35,16 @@ def test_an_agent_commit_carries_the_launchers_session(tmp_path: Path) -> None:
     assert f'{labsession.TRAILER}: {_ID}' in text
 
 
-@pytest.mark.parametrize('marker', labsession.AGENT_MARKERS)
-def test_an_agent_commit_without_the_session_is_refused(tmp_path: Path, marker: str, capsys) -> None:
-    message = _message(tmp_path)
-    assert labsession.main([str(message)], env={marker: 'codex'}) == 1
-    assert labsession.ENV in capsys.readouterr().err
-    assert labsession.TRAILER not in message.read_text(encoding='utf-8')
-
-
-def test_a_human_commit_without_the_session_is_untouched(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    'env',
+    [{}, {'HARNESS_AGENT': 'codex'}, {'CLAUDECODE': '1'}],
+    ids=['human', 'agent-no-launcher', 'vscode-extension'],
+)
+def test_a_commit_without_the_session_passes_unstamped(tmp_path: Path, env: dict[str, str]) -> None:
+    """User ruling 2026-10-21: no id is never refused -- `codc` on a shared app-server must commit."""
     message = _message(tmp_path, 'feat: x\n\nClaude-Session: prose nothing reads\n')
     before = message.read_text(encoding='utf-8')
-    assert labsession.main([str(message)], env={}) == 0
+    assert labsession.main([str(message)], env=env) == 0
     assert message.read_text(encoding='utf-8') == before
 
 
@@ -55,9 +54,8 @@ def test_a_malformed_session_is_refused_rather_than_stamped(tmp_path: Path) -> N
     assert labsession.TRAILER not in message.read_text(encoding='utf-8')
 
 
-def test_machine_env_drops_the_session_and_the_agent_markers() -> None:
-    env = {labsession.ENV: _ID, 'HARNESS_AGENT': 'claude', 'CLAUDECODE': '1', 'PATH': 'p'}
-    assert labsession.machine_env(env) == {'PATH': 'p'}
+def test_machine_env_drops_the_session() -> None:
+    assert labsession.machine_env({labsession.ENV: _ID, 'PATH': 'p'}) == {'PATH': 'p'}
 
 
 def test_sessions_reads_the_trailers_between_two_commits(tmp_path: Path) -> None:

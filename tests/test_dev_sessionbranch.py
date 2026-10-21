@@ -398,4 +398,5 @@ def test_every_break_glass_commit_past_the_declared_start_is_one_notice_naming_i
     (one,) = notices(repo, load_policy(repo), 'o/r')
     assert glass[:12] in one.subject
     assert 'forge down since 09:00' in one.body
+    assert f'by {_git(repo, "log", "-1", "--format=%an")}' in one.body  # who, beside why
     assert one.kind == 'integration'

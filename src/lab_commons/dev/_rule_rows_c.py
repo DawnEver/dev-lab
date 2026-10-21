@@ -12,8 +12,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'One agent session is one PR per repo. The LAUNCHER issues the session id (`LAB_SESSION`, the same for '
             'Claude, codex and every other provider, inherited by every child); the commit-msg hook writes it as a '
-            '`Lab-Session:` trailer, and an agent commit without it is refused -- the agent never writes it, and '
-            '`Claude-Session:` is prose nothing reads. `forge pr create` and the pre-push of a NEW `pr/*` refuse a '
+            '`Lab-Session:` trailer the agent never writes. A commit without the id (a human, or a path no launcher '
+            'started) is never refused: it carries no trailer and is not judged. `Claude-Session:` is prose nothing '
+            'reads. `forge pr create` and the pre-push of a NEW `pr/*` refuse a '
             'head sharing a session with another open head, naming the branch it is on. A split is only a declared, '
             'reasoned entry of `pradmit.SPLITS`, under a pinned ceiling that only falls; there is no switch.'
         ),

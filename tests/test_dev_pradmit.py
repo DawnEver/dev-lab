@@ -78,6 +78,26 @@ def test_a_head_of_another_session_is_admitted(repo: Path) -> None:
     assert pradmit.refusal(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) is None
 
 
+def test_heads_whose_commits_carry_no_session_are_not_judged(repo: Path) -> None:
+    """User ruling 2026-10-21: a commit with no id is not judged; the planted control is the refusal above."""
+    first = _head(repo, 'pr/first', ('feat: a', ''))
+    second = _head(repo, 'pr/second', ('feat: b', ''))
+    assert pradmit.refusal(repo, head=second, tip=_TIP, others=[_open(7, 'pr/first', first)]) is None
+    _git(repo, 'checkout', '-q', '-B', 'pr/third', _TIP)
+    third = _commit(repo, 'feat: c')
+    assert pradmit.push_refusal(repo, lines=[_line('pr/third', third)], policy=Policy()) == (0, '')
+
+
+def test_the_integrators_back_door_merge_is_not_judged(repo: Path) -> None:
+    """The integrator's break-glass merge updates integration, not a new `pr/*`: neither rule judges it."""
+    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
+    stacked = _head(repo, 'pr/stacked', ('feat: b', 'session-one'), start='pr/first')
+    tip = _git(repo, 'rev-parse', _TIP)
+    line = f'refs/heads/integrate/main {stacked} refs/heads/integrate/main {tip}'
+    assert pradmit.refusal(repo, head=stacked, tip=_TIP, others=[_open(7, 'pr/first', first)]) is not None
+    assert pradmit.push_refusal(repo, lines=[line], policy=Policy()) == (0, '')
+
+
 def test_a_declared_split_admits_its_session(repo: Path, monkeypatch) -> None:
     first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
     second = _head(repo, 'pr/second', ('feat: b', 'session-one'))

@@ -211,9 +211,7 @@ def test_a_relock_commit_is_the_forges_and_carries_no_session(monkeypatch, tmp_p
         return subprocess.CompletedProcess(argv, 0, '', '')
 
     monkeypatch.setenv('LAB_SESSION', 'session-from-the-host-shell')
-    monkeypatch.setenv('HARNESS_AGENT', 'claude')
     monkeypatch.setattr(relock._door, 'run', fake)
     relock._git(tmp_path, 'status')
     assert 'LAB_SESSION' not in seen['env']
-    assert 'HARNESS_AGENT' not in seen['env']
     assert 'PATH' in {key.upper() for key in seen['env']}

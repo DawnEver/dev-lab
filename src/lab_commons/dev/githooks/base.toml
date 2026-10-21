@@ -89,7 +89,7 @@ id = "forge-host"
 run = ["python", "-m", "lab_commons.dev.forgeorigin"]
 
 # ONE-SESSION-ONE-PR's identity: the launcher's LAB_SESSION as a `Lab-Session:` trailer, replacing any the
-# agent wrote; an agent commit without it is refused, a human one untouched (lab_commons.dev.labsession).
+# agent wrote; a commit without it (agent or human) passes unstamped and is not judged (lab_commons.dev.labsession).
 [[commit-msg]]
 id = "lab-session"
 run = ["python", "-m", "lab_commons.dev.labsession"]
