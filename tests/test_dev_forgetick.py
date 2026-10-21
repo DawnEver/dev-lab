@@ -856,6 +856,34 @@ def test_a_retired_declaration_is_refused_once_on_its_own_commit_and_never_waits
     assert [item.candidate.ref for item in again.queue] == []
 
 
+def test_the_kit_declaring_a_table_its_server_does_not_know_is_refused_on_its_own_commit(
+    server, tmp_path: Path
+) -> None:
+    """PLANTED (live 2026-10-21, lab-commons #244): the KIT's unknown table is refused once on its own commit.
+
+    The kit's PR declared the table it adds; every host's older kit refused it as the host's defect, so the PR
+    waited UNCLAIMED fleet-wide with only host alarms. No host serving the kit can know a table before it merges.
+
+    PLANTED CONTROL: the test two above -- the same unknown table in a CONSUMER's declaration waits, unposted.
+    """
+    repo, tips = _origin(tmp_path)
+    bad = _declare(repo, tips, '[project]\nname = "lab-commons"\n' + PRODUCE + '[tool.lab_commons.tomorrow]\n')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', bad)
+    head = _declare(repo, tips, PRODUCE)
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', bad, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{bad}', (200, []))
+    answer('POST', f'{API}/statuses/{bad}', (201, {}))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server)
+    assert [w.ref for w in report.claimed] == ['integrate/main']
+    assert report.queue == ()
+    (settled,) = [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+    assert settled['body']['state'] == 'error'
+    assert 'drop [tool.lab_commons.tomorrow] until the kit merges' in settled['body']['description']
+
+
 def test_a_dry_run_routes_no_refusal(server, tmp_path: Path) -> None:
     """A dry run posts nothing: the commit-own refusal is shown waiting, with its reason."""
     repo, tips = _origin(tmp_path)
