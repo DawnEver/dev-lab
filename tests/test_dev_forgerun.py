@@ -661,9 +661,10 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
     run once the ref moved on is settled as superseded, which no host claims again.
     """
     for tip, open_again in ((SHA, True), ('d' * 40, False)):
-        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)  # submitted while it was the tip
         store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
         _submitted_run(home, store, slurm)
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
         slurm.recorded = []  # the part's state.json never existed: the ids were another part's
         assert _tick(store, slurm, alarms=alarms) is None
         assert forgerunstate.live('https://f/o/r.git') == ()
@@ -791,3 +792,32 @@ def test_untagged_counts_only_jobs_that_are_not_the_forges_own(tmp_path: Path, m
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
     return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)
+
+
+def test_a_run_not_yet_submitted_whose_ref_moved_on_is_released_superseded_without_a_submit(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-21: a superseded head kept "building" and retrying its submit, eating its grant's QOS quota.
+
+    A run that has submitted nothing has started nothing, so the 2026-10-19 ruling applies before the submit
+    too: released superseded, naming the tip, NO sbatch. PLANTED CONTROL: still the tip, it submits.
+    """
+    for tip, superseded in (('d' * 40, True), (SHA, False)):
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+        _start(home, store)
+        after = _tick(store, slurm, alarms=alarms)
+        if not superseded:
+            assert after is not None
+            assert slurm.submits == 1
+            continue
+        assert after is None
+        assert slurm.submits == 0, 'nothing is submitted for a sha that is no longer the tip'
+        assert forgerunstate.live('https://f/o/r.git') == ()
+        post = store.posts[-1]
+        assert post['status'] == 'error'
+        assert 'superseded' in post['description']
+        assert tip[:12] in post['description'], post['description']
+        released = CommitStatus(context=part_context('tests'), state='error', description=post['description'], url='')
+        assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] != OPEN
+        assert [a.kind for a in alarms] == [RUN]
