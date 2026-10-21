@@ -259,7 +259,10 @@ def test_a_card_and_the_queue_show_a_hosts_claim_restriction() -> None:
 
 
 def test_the_queue_explains_a_part_every_live_host_skips_by_its_restriction() -> None:
-    """``base`` with only G (restricted) live names G's rule; PLANTED CONTROL: an Ada card serving it is not skipped."""
+    """``base`` with only one restricted box live names that box's rule.
+
+    PLANTED CONTROL: an Ada card serving it is not skipped.
+    """
     wanted = Candidate('o/r', 'integrate/main', 'a' * 40, 'base', 'integration', NOW, FULL)
     g = _card('G', 'windows', NOW, serves='needs-a-resource')
     why = forgequeue._why(wanted, [g], NOW)

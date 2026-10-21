@@ -412,7 +412,7 @@ def init_submodules(root: Path, *, dry_run: bool = False) -> str | None:
 
     A path dependency may point INTO a submodule (a product's engine under ``components/``, plan C5), so a
     checkout whose submodules were never initialised cannot be resolved: ``uv`` reports the path as not
-    existing. MEASURED 2026-10-19 on a serve checkout of motronics-studio, which bootstrapped only after a
+    existing. MEASURED 2026-10-19 on a serve checkout of a consumer-studio, which bootstrapped only after a
     manual ``git submodule update --init``. Every sync, bootstrap and lock therefore does this first.
     """
     if not (root / '.gitmodules').is_file():

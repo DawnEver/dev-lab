@@ -1,6 +1,6 @@
 """An HPC job ships ONE file and leaves a few: one artifact per sha, one results file per job, a file budget.
 
-Plan 2026-10-17 (motronics ``PLAN-an-hpc-job-ships-one-file-not-a-checkout``): a campaign job reused the test
+Plan 2026-10-17 (a consumer ``PLAN-an-hpc-job-ships-one-file-not-a-checkout``): a campaign job reused the test
 layout -- a full checkout plus an unpacked venv per sha, a log and a results file per task -- and cost ~46 k
 files per sha against a 2 M file quota. Every rule here is checked against a planted control.
 """

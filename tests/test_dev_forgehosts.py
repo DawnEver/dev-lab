@@ -130,12 +130,12 @@ def test_a_card_written_before_a_field_was_renamed_reads_without_it() -> None:
 
 def test_retiring_a_host_removes_its_one_card_and_leaves_the_others() -> None:
     forge = StateForge()
-    publish(forge, _card('duip622037'))
+    publish(forge, _card('workstation-1'))
     publish(forge, _card('ada/alice'))
-    assert forgehosts.retire(forge, 'duip622037') == 'retired'
+    assert forgehosts.retire(forge, 'workstation-1') == 'retired'
     assert {card.host for card in read_cards(forge)} == {'ada/alice'}
-    assert forgehosts.retire(forge, 'duip622037') == 'absent', 'a second retire finds nothing and says so'
-    assert publish(forge, _card('duip622037', 5)) == 'created', 'the host rejoins by ticking again'
+    assert forgehosts.retire(forge, 'workstation-1') == 'absent', 'a second retire finds nothing and says so'
+    assert publish(forge, _card('workstation-1', 5)) == 'created', 'the host rejoins by ticking again'
 
 
 def test_planted_control_retiring_an_unknown_host_touches_no_card() -> None:
@@ -147,10 +147,10 @@ def test_planted_control_retiring_an_unknown_host_touches_no_card() -> None:
 
 def test_the_cli_retires_through_the_forge_door(monkeypatch, capsys) -> None:
     forge = StateForge()
-    publish(forge, _card('duip622037'))
+    publish(forge, _card('workstation-1'))
     monkeypatch.setattr(forgehosts, 'client_for', lambda _root: forge)
-    assert forgehosts.main(['retire', 'duip622037']) == 0
-    assert 'duip622037: retired' in capsys.readouterr().out
+    assert forgehosts.main(['retire', 'workstation-1']) == 0
+    assert 'workstation-1: retired' in capsys.readouterr().out
     assert read_cards(forge) == ()
 
 
