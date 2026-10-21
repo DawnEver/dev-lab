@@ -1,56 +1,70 @@
-"""A RELOCK ARRIVES AS A PULL REQUEST: the DECISION half -- which consumers are stale, and on which branch.
+"""THE FORGE RELOCKS INTEGRATION: a stale ``uv.lock`` on ``origin/<integration>`` becomes ONE pull request.
 
-W4 of the PR-only plan. When an upstream family repo's ``integrate/main`` moves, a consumer's ``uv.lock``
-stops being the newest resolution and the ``lock`` pre-push row refuses every push from that checkout. Today
-the steward relocks by hand, which is the same two commands every time and is exactly what a step should do:
+FRESHNESS IS ONE PARTY'S JOB (2026-10-21). The ``lock`` pre-push row used to judge every push on freshness, so
+whenever any dependency published, every lane carried a hand-made relock commit before each push and stacked
+branches repeated it. Now a lane is judged on its PIN alone (:mod:`lab_commons.dev.lockcheck`), and each
+``forge serve`` tick runs :func:`carry` (:func:`lab_commons.dev.forgeservesteps.relock`):
 
-* :func:`decision` reads one consumer's staleness through :func:`lab_commons.dev.lockcheck.stale` -- the SAME
-  reading the pre-push row makes, never a copy -- and answers ``None`` when the lock is newest, else the
-  branch to push and the pull request to open (or to update, when one is already open for that dist).
-* The branch is ``pr/relock-<dist>-<newest short sha>``: one open relock PR per (consumer, dist), and a moving
-  upstream moves the branch rather than adding a second PR.
+* an open pull request whose head is under :data:`PREFIX` is waited for -- nothing resolves, nothing is pushed;
+* else :func:`decision` reads ``origin/<integration>`` through :func:`lab_commons.dev.lockcheck.stale` -- the SAME
+  reading the pre-push row makes, never a copy -- in a detached worktree under the repository's git directory;
+* a stale lock is rewritten by the dependency door (``lab_commons.dev.dep --lock-upgrade``, the one writer of a
+  lock), committed alone on top of integration, pushed as ``pr/relock-<dist>-<integration short sha>`` and
+  opened as a pull request into integration, which merges like every other once its parts pass;
+* a lane takes the new lock with ``forge sync``.
 
-WHAT THIS MODULE DOES NOT DO, on purpose: it resolves nothing and pushes nothing. ``uv lock --upgrade`` is the
-dependency door's (:mod:`lab_commons.dev.dep`), and a push is the author's; a decision that ran them would be
-a second writer of the same fact.
+A step that cannot finish RAISES :class:`RelockFailed` naming why (no integration branch, the resolution could
+not run, the door failed or moved nothing, the push failed); the serve step alarms it and the next tick tries
+afresh.
 """
 
 from __future__ import annotations
 
-import argparse
+import contextlib
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
-from lab_commons.dev.lockcheck import stale
-from lab_commons.log import emit
+import lab_commons.launch as _door
+from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
+from lab_commons.dev.lockcheck import LOCK, mount_submodules, stale
+from lab_commons.dev.netverb import run_network_verb
 
-__all__ = ['Relock', 'branch_for', 'decision', 'dist_of', 'main']
+if TYPE_CHECKING:
+    from lab_commons.dev.forgework import PullRequest
+    from lab_commons.dev.lanepolicy import Policy
+    from lab_commons.dev.netverb import Report
 
-#: The prefix every relock branch carries: a declared ephemeral namespace in every consumer.
+__all__ = ['PREFIX', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'dist_of']
+
+#: The prefix every relock branch carries, inside the declared ephemeral ``pr/*`` namespace.
 PREFIX: Final = 'pr/relock'
 
 #: How much of a sha names a branch -- enough to be unique on one host, short enough to read.
 SHORT: Final = 12
+
+#: How long the dependency door may take: a cold cache resolving every source, then a frozen sync.
+DOOR_TIMEOUT_S: Final = 1800.0
 
 #: The verbs a resolution's change line opens with, and where the distribution sits after one.
 _VERBS: Final = frozenset({'Update', 'Add', 'Remove'})
 _NAME_INDEX: Final = 2
 
 
+class RelockFailed(OSError):
+    """A relock that could not be carried, with the reason; the next tick tries afresh."""
+
+
 @dataclass(frozen=True)
 class Relock:
-    """One consumer's relock: the dist that moved, the branch to push, and what the PR says."""
+    """One relock: the dist that moved, the branch to push, and what the pull request says."""
 
     dist: str
     branch: str
     title: str
     body: str
-    #: The four commands that carry it, in order: the door, the commit, the push, the pull request. Stated
-    #: rather than run, so the one who runs them is the author (a push) and the door (a resolution).
-    commands: tuple[str, ...] = ()
 
 
 def dist_of(change: str) -> str:
@@ -66,57 +80,110 @@ def dist_of(change: str) -> str:
 
 
 def branch_for(dist: str, sha: str) -> str:
-    """``pr/relock-<dist>-<short sha>``: one branch per (consumer, dist), moved rather than multiplied."""
+    """``pr/relock-<dist>-<short sha>``: named by the integration commit it relocks."""
     return f'{PREFIX}-{dist}-{sha[:SHORT]}'
 
 
-def decision(root: Path, sha: str, *, resolve: Callable[..., object] | None = None) -> Relock | None:
-    """The relock *root* needs for upstream *sha*, or ``None`` when its lock is already the newest.
+def decision(tree: Path, sha: str, *, resolve: Callable[[Path], Report] | None = None) -> Relock | None:
+    """The relock *tree* (a checkout of integration at *sha*) needs, or ``None`` when its lock is the newest.
 
-    *resolve* is the resolution :func:`stale` reads; left out it dry-runs the door, exactly as the pre-push
-    row does, so a decision can never disagree with the push that follows it.
+    *resolve* is the resolution :func:`stale` reads; left out it dry-runs ``uv lock --upgrade``, exactly as the
+    pre-push row does. A resolution that could not run RAISES rather than relocks.
     """
-    found = stale(root) if resolve is None else stale(root, resolve=resolve)  # type: ignore[arg-type]
+    found = stale(tree) if resolve is None else stale(tree, resolve=resolve)
     if not found:
         return None
+    if not all(line.startswith(f'{LOCK} is not the newest resolution') for line in found):
+        raise RelockFailed('; '.join(found))
     dist = dist_of(found[0])
-    changes = '\n'.join(f'- {line}' for line in found)
     branch = branch_for(dist, sha)
+    changes = '\n'.join(f'- {line}' for line in found)
     title = f'build(deps): relock {dist} to the newest resolution'
     body = (
-        f'{root.name} is behind the family on `{dist}`:\n\n{changes}\n\n'
-        f'The lock resolves through the one door (`lab_commons.dev.dep --lock-upgrade`), and this branch is '
-        f'`{branch}`: one open relock PR per (consumer, dist), moved when the upstream moves again.'
+        f'Integration at `{sha[:SHORT]}` is not at the newest resolution:\n\n{changes}\n\n'
+        f'Relocked by the forge through the dependency door (`lab_commons.dev.dep --lock-upgrade`) on '
+        f'`{branch}` (`lab_commons.dev.relock`). A lane takes it with `python -m lab_commons.dev.forge sync`.'
     )
-    commands = (
-        'python -m lab_commons.dev.dep --lock-upgrade .',
-        f'git add uv.lock && git commit -m "build(deps): relock {dist} to the newest resolution"',
-        f'git push origin {branch}',
-        f'python -m lab_commons.dev.forge pr create --head {branch} --base integrate/main --title "{title}"',
-    )
-    return Relock(dist, branch, title, body, commands)
+    return Relock(dist, branch, title, body)
 
 
-def main(
-    argv: Sequence[str] | None = None, *, cwd: Path | None = None, resolve: Callable[..., object] | None = None
-) -> int:
-    """``relock <upstream sha>``: print the relock this checkout needs, or say it needs none."""
-    parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.relock', description=__doc__.splitlines()[0])
-    parser.add_argument('sha', help='the upstream commit that moved (its short form names the branch)')
-    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = Path.cwd() if cwd is None else cwd
+def _git(root: Path, *argv: str) -> tuple[int, str]:
+    done = _door.run(
+        [_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
+        check=False, timeout=_GIT_TIMEOUT_S,
+    )  # fmt: skip
+    return done.returncode, (done.stdout + done.stderr).strip()
+
+
+def _must(root: Path, *argv: str) -> str:
+    code, out = _git(root, *argv)
+    if code != 0:
+        msg = f'git {" ".join(argv[:2])} failed in {root}: {out}'
+        raise RelockFailed(msg)
+    return out
+
+
+@contextlib.contextmanager
+def _worktree(root: Path, sha: str) -> Iterator[Path]:
+    """A detached worktree of *root* at *sha* under its git directory, with its submodules; removed after."""
+    common = Path(_must(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    tree = common / 'relock' / sha[:SHORT]
+    _git(root, 'worktree', 'remove', '--force', str(tree))
+    _must(root, 'worktree', 'add', '--detach', str(tree), sha)
     try:
-        found = decision(root, args.sha, resolve=resolve)
-    except OSError as why:
-        emit(f'[relock] {why}', err=True)
-        return 1
-    if found is None:
-        emit(f'[relock] {root.name}: the lock is the newest resolution for {args.sha[:SHORT]}')
-        return 0
-    emit(f'[relock] {root.name}: {found.dist} -> {found.branch}')
-    emit(f'[relock]   {found.title}')
-    return 0
+        mount_submodules(root, tree)
+        yield tree
+    finally:
+        _git(root, 'worktree', 'remove', '--force', str(tree))
 
 
-if __name__ == '__main__':
-    raise SystemExit(main())
+def _door_upgrade(tree: Path) -> int:
+    """The one writer of a lock: ``lab_commons.dev.dep --lock-upgrade <tree>``."""
+    argv = [sys.executable, '-m', 'lab_commons.dev.dep', '--lock-upgrade', str(tree)]
+    return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
+
+
+def _push(tree: Path, branch: str) -> None:
+    report = run_network_verb([_GIT, 'push', 'origin', f'HEAD:refs/heads/{branch}'], cwd=tree, timeout=300)
+    if not report.ok:
+        msg = f'the push of {branch} failed: {report.remedy}'
+        raise RelockFailed(msg)
+
+
+def carry(
+    root: Path,
+    policy: Policy,
+    *,
+    pulls: Callable[[], Sequence[PullRequest]],
+    create: Callable[..., PullRequest],
+    resolve: Callable[[Path], Report] | None = None,
+    upgrade: Callable[[Path], int] = _door_upgrade,
+    push: Callable[[Path, str], None] = _push,
+) -> str:
+    """Relock ``origin/<integration>`` of *root* through one pull request, if it needs one; the line said.
+
+    *pulls* lists the open pull requests and *create* opens one (``Client.pr_create``'s signature); *resolve*,
+    *upgrade* and *push* are the resolution, the door and the push, each a seam a test plants.
+    """
+    for pull in pulls():
+        if pull.head.startswith(f'{PREFIX}-'):
+            return f'a relock is already open: #{pull.number} {pull.head}'
+    base = f'origin/{policy.integration}'
+    code, sha = _git(root, 'rev-parse', '--verify', '--quiet', f'refs/remotes/{base}^{{commit}}')
+    if code != 0:
+        msg = f'there is no {base} in {root} to relock'
+        raise RelockFailed(msg)
+    with _worktree(root, sha) as tree:
+        found = decision(tree, sha, resolve=resolve)
+        if found is None:
+            return f'the lock of {policy.integration} at {sha[:SHORT]} is the newest resolution'
+        if (exited := upgrade(tree)) != 0:
+            msg = f'the dependency door exited {exited} relocking {found.dist} at {sha[:SHORT]}'
+            raise RelockFailed(msg)
+        if not _must(tree, 'status', '--porcelain', '--', LOCK):
+            msg = f'the dependency door left {LOCK} unchanged though the resolution moves {found.dist}'
+            raise RelockFailed(msg)
+        _must(tree, 'commit', '-q', '-m', found.title, '-m', found.body, '--', LOCK)
+        push(tree, found.branch)
+    opened = create(found.title, found.body, head=found.branch, base=policy.integration)
+    return f'relocked {found.dist} onto {found.branch}: {opened.url}'

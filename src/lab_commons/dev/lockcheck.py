@@ -50,8 +50,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 __all__ = [
-    'DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'published', 'pushed_refs', 'stale',
-    'unreasoned_holds',
+    'DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'mount_submodules', 'published', 'pushed_refs',
+    'stale', 'unreasoned_holds',
 ]  # fmt: skip
 
 #: The lockfile every family repo commits.
@@ -156,7 +156,7 @@ def _tree_at(root: Path, sha: str) -> Iterator[Path]:
         msg = f'cannot check out {sha[:12]} to resolve it'
         raise OSError(msg)
     try:
-        _mount_submodules(root, tree)
+        mount_submodules(root, tree)
     except OSError:
         _git(root, 'worktree', 'remove', '--force', str(tree))
         raise
@@ -166,7 +166,7 @@ def _tree_at(root: Path, sha: str) -> Iterator[Path]:
         _git(root, 'worktree', 'remove', '--force', str(tree))
 
 
-def _mount_submodules(root: Path, tree: Path) -> None:
+def mount_submodules(root: Path, tree: Path) -> None:
     """Give *tree* every submodule its commit records, each an INDEPENDENT clone of *root*'s checkout of it.
 
     A path dependency may point into a submodule (a product's engine crate, plan C5), so the tree resolved must

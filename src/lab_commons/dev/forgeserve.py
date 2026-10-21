@@ -131,7 +131,7 @@ from lab_commons.dev.forgeproduce import Produced, demote_unreachable, produce
 from lab_commons.dev.forgerecords import serve_prune as serve_records_prune
 from lab_commons.dev.forgerounds import Rounds, locked_fetch, reserve, supply_now
 from lab_commons.dev.forgeschedule import host_weights
-from lab_commons.dev.forgeservesteps import hygiene, prompt, retain_storage, starved, tidy_runs
+from lab_commons.dev.forgeservesteps import hygiene, prompt, relock, retain_storage, starved, tidy_runs
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url
@@ -251,6 +251,7 @@ def serve(
     starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
     prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
+    relock(root, repo, client(root), say=say, alarm=alarm)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
