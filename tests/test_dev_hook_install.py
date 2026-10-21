@@ -135,7 +135,9 @@ def test_a_linked_worktree_installs_into_its_own_git_dir(repo: Path, tmp_path: P
 
 
 def _config(repo: Path, key: str) -> str:
-    done = subprocess.run([_GIT, '-C', str(repo), 'config', '--get', key], capture_output=True, text=True, check=False)
+    done = subprocess.run(
+        [_GIT, '-C', str(repo), 'config', '--get', key], capture_output=True, text=True, encoding='utf-8', check=False
+    )
     return done.stdout.strip()
 
 
