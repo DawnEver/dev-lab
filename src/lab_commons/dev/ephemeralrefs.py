@@ -215,19 +215,23 @@ def judge(root: Path, tokens: Collection[str]) -> dict[str, str]:
             # `dir/` wrongly (measured: every `x/` matched a blank line of the ignore file).
             probes[f'{norm}{_PROBE}' if norm.endswith('/') else norm] = token
     ignored = _ignored(root, list(probes))
-    lived = _tracked_dirs(root) if any(probes[p].endswith('/') for p in ignored) else set()
+    tracked = tracked_files(root) if ignored else frozenset()
+    lived = _tracked_dirs(tracked)
     for probe in ignored:
         token = probes[probe]
-        parent = _normal(token).rstrip('/').rpartition('/')[0]
-        if not (token.endswith('/') and parent in lived):
+        path = _normal(token).rstrip('/')
+        # A path git TRACKS is durable whatever an ignore line says (a re-included lock file).
+        if path in tracked or path in lived:
+            continue
+        if not (token.endswith('/') and path.rpartition('/')[0] in lived):
             refused[token] = 'ignored path'
     return refused
 
 
-def _tracked_dirs(root: Path) -> set[str]:
+def _tracked_dirs(tracked: Collection[str]) -> set[str]:
     """Every directory holding a tracked file, ``''`` for the root."""
     found = {''}
-    for name in tracked_files(root):
+    for name in tracked:
         parts = name.split('/')[:-1]
         found.update('/'.join(parts[:depth]) for depth in range(1, len(parts) + 1))
     return found
