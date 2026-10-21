@@ -69,6 +69,11 @@ class Page(NamedTuple):
 #: all cite, and the verdict before the branch layers that spend it.
 PAGES: Final[tuple[Page, ...]] = (
     Page(
+        'onboarding',
+        'Onboarding a repo',
+        'The one call, every declaration a new repo supplies, and the order that matters',
+    ),
+    Page(
         'migrate',
         'Migrating a workstation',
         'Start here if you used to run the gate before a push: what to stop, and the five commands that replace it',
