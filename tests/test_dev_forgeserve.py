@@ -551,6 +551,24 @@ def test_inconclusive_and_unreachable_producers_are_released_never_red(monkeypat
         assert forge.posts[-1][2].startswith(reason)
 
 
+@pytest.mark.parametrize('kept', [('', ()), ('output/26/10/20/parts/x', ())])
+def test_an_inconclusive_part_without_its_record_names_the_missing_record(
+    monkeypatch, tmp_path: Path, kept: tuple
+) -> None:
+    """W1.4 (live on Ada): a part ending ``inconclusive (exit 3) -- no part`` gave its author nothing to act on.
+
+    PLANTED CONTROL: the same exit with its record written is released with the bare reason.
+    """
+    monkeypatch.setattr(forgeproduce, 'record_manifest', lambda _r, _s, _c: kept)
+    forge = _Forge()
+    forge.post(None, SHA, context='tests/windows', state='pending', description=ME.description())
+    local = Work('integrate/main', SHA, 'windows', 'mine', ME, argv=('verify',))
+    _serve(monkeypatch, tmp_path, _claimed(local), {'verify': _Proc(ProducerExit.INCONCLUSIVE)}, forge)
+    assert forge.posts[-1][1] == 'error'
+    assert forge.posts[-1][2].startswith(release_reason(ProducerExit.INCONCLUSIVE))
+    assert ('the run wrote no record' in forge.posts[-1][2]) is not kept[0]
+
+
 @pytest.mark.parametrize('code', [69, 137])
 def test_a_producer_exiting_a_former_box_sentinel_on_its_own_is_judged_by_its_code(
     monkeypatch, tmp_path: Path, code: int
