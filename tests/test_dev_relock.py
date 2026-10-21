@@ -11,10 +11,13 @@ import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
-from lab_commons.dev.forgework import PullRequest
+from lab_commons.dev import forgeservesteps
+from lab_commons.dev.forgealarm import Alarm
+from lab_commons.dev.forgework import Client, PullRequest
 from lab_commons.dev.lanepolicy import Policy
 from lab_commons.dev.relock import PREFIX, Relock, RelockFailed, branch_for, carry, decision, dist_of
 
@@ -177,10 +180,8 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only a repo declaring ``pr_merges_since`` lands a relock PR by itself; a failed relock is an alarm."""
-    from lab_commons.dev import forgeservesteps  # noqa: PLC0415 -- the step under test
-
     said: list[str] = []
-    raised: list[object] = []
+    raised: list[Alarm] = []
 
     def failing(*_a: object, **_k: object) -> str:
         msg = 'there is no origin/integrate/main here to relock'
@@ -188,14 +189,14 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
 
     monkeypatch.setattr(forgeservesteps, 'carry', failing)
     monkeypatch.setattr(forgeservesteps, 'pr_list', lambda _client: ())
-    forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)  # type: ignore[arg-type]
+    forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     assert (said, raised) == ([], []), 'CONTROL: no pr_merges_since, no relock'
     manifest = '[project]\nname = "x"\nversion = "0"\n[tool.lab_commons.integrator]\npr_merges_since = "abc"\n'
     (tmp_path / 'pyproject.toml').write_text(manifest, encoding='utf-8')
-    forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)  # type: ignore[arg-type]
+    forgeservesteps.relock(tmp_path, 'r', _CLIENT, say=said.append, alarm=raised.append)
     (alarm,) = raised
-    assert alarm.subject == 'the integrate/main lock could not be relocked'  # type: ignore[attr-defined]
-    assert 'no origin/integrate/main' in alarm.body  # type: ignore[attr-defined]
+    assert alarm.subject == 'the integrate/main lock could not be relocked'
+    assert 'no origin/integrate/main' in alarm.body
 
 
-_CLIENT = SimpleNamespace(pr_create=lambda *_a, **_k: None)
+_CLIENT = cast('Client', SimpleNamespace(pr_create=lambda *_a, **_k: None))
