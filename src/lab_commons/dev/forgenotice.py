@@ -92,6 +92,10 @@ class Notice:
         """``<pr>-<head12>-<kind>``: one per (head, kind)."""
         return f'{self.pr}-{self.head[:_SHORT]}-{self.kind}'
 
+    def brief(self) -> str:
+        """The hook line: id (PR, head, kind), first failing test, link."""
+        return ' '.join(x for x in (self.id, self.tests[0] if self.tests else '', self.link) if x)
+
     def line(self) -> str:
         """The notice in one line."""
         to = ', '.join(self.sessions) or 'unaddressed'

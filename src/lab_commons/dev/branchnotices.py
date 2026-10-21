@@ -49,7 +49,7 @@ DEADLINE_S: Final = 8.0
 CACHE_S: Final = 60.0
 #: The branches whose PR carries notices.
 PREFIX: Final = 'pr/'
-_HEADER: Final = '[pr-notices] the forge has open notices for this PR:'
+_TAG: Final = '[pr-notices]'
 
 
 def _cache_dir() -> Path:
@@ -62,7 +62,7 @@ def _from_forge(client: Client, branch: str, session: str) -> list[str]:
     out: list[str] = []
     for pull in pr_list(client):
         if pull.head == branch and (comment := integration_comment(client, pull.number)) is not None:
-            out += [n.line() for n in read(comment.body).notices if session in n.sessions and not n.acked]
+            out += [n.brief() for n in read(comment.body).notices if session in n.sessions and not n.acked]
     return out
 
 
@@ -131,7 +131,7 @@ def report(
         for branch in branches
         for line in lines_for(root, branch, session, client=client, deadline=deadline, clock=clock, cache_dir=cache_dir)
     ]
-    return '\n'.join([_HEADER, *(f'  {line}' for line in found)]) if found else ''
+    return '\n'.join(f'{_TAG} {line}' for line in found)
 
 
 def _current(root: Path) -> str:

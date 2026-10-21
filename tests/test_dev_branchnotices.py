@@ -28,8 +28,8 @@ def test_a_pr_branch_hears_its_open_notices_for_this_session(tmp_path: Path) -> 
     _part(forge, head, 'failure')
     _tick(work, forge, head)
     said = branchnotices.report(work, ['pr/x'], SESSION, client=forge, **_fresh(tmp_path / 'b'))
-    assert f'{number}-{head[:12]}-red' in said
-    assert 'tests/base' in said
+    assert said.startswith(f'[pr-notices] {number}-{head[:12]}-red tests/base')
+    assert len(said.splitlines()) == 1, 'one line per notice, no header'
 
 
 def test_another_session_another_branch_or_no_session_hears_nothing(tmp_path: Path) -> None:
