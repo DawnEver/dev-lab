@@ -211,6 +211,19 @@ def test_prune_deletes_only_the_merged_idle_branch_logs_it_and_alarms(tmp_path: 
     assert '72 h' in by_kind[STALE_BRANCH].body
 
 
+def test_the_stale_alarm_names_ahead_behind_and_the_two_next_commands(tmp_path: Path) -> None:
+    """Each stale row says how far it is from integration and what to run: open its PR, or abandon it."""
+    root, origin = _planted(tmp_path)
+    _, alarms, _ = _prune(root, BareForge(origin))
+    (stale,) = [a for a in alarms if a.kind == STALE_BRANCH]
+    behind = _git(root, 'rev-list', '--count', 'refs/remotes/origin/lane/unmerged..refs/remotes/origin/integrate/main')
+    assert f'1 ahead, {behind} behind integrate/main' in stale.body, stale.body
+    pr = 'python -m lab_commons.dev.forge pr create --head lane/unmerged --base integrate/main --title'
+    assert pr in stale.body, stale.body
+    assert 'git push origin --delete lane/unmerged' in stale.body, stale.body
+    assert 'lane/merged' not in stale.body, 'control: a merged branch is never offered for abandonment'
+
+
 def test_prune_off_deletes_nothing_and_still_alarms_the_stale_one(tmp_path: Path) -> None:
     root, origin = _planted(tmp_path)
     forge = BareForge(origin)

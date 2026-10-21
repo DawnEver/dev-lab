@@ -174,6 +174,18 @@ def _delete(client: Client, row: Row, say: Callable[[str], None]) -> bool:
     return True
 
 
+def _stale_entry(root: Path, row: Row, integration: str) -> str:
+    """One stale row: where it stands against integration, and the two decisions -- land it, or abandon it."""
+    counted = git_out(root, 'rev-list', '--left-right', '--count', f'{row.sha}...{_ORIGIN}{integration}')
+    ahead, behind = counted.split() if counted else ('?', '?')
+    return (
+        f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged: {ahead} ahead, {behind} behind {integration}\n'
+        f'  land it:   python -m lab_commons.dev.forge pr create --head {row.ref} --base {integration} '
+        f'--title "<what it does>"\n'
+        f'  abandon it (a human; its {ahead} commit(s) exist nowhere else): git push origin --delete {row.ref}'
+    )
+
+
 def prune(
     root: Path,
     client: Client,
@@ -194,7 +206,8 @@ def prune(
         alarm(Alarm(PRUNED, repo, f'{len(deleted)} merged branch(es) deleted from origin', body))
     stale = [row for row in rows if row.action == STALE]
     if stale:
-        body = '\n'.join(f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged' for row in stale)
+        integration = load_policy(root).integration
+        body = '\n'.join(_stale_entry(root, row, integration) for row in stale)
         alarm(Alarm(STALE_BRANCH, repo, f'{len(stale)} unmerged branch(es) idle on origin', body))
     return rows
 

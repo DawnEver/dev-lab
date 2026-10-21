@@ -84,7 +84,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 # waiver nothing uses.
 # RE-TAKEN 2026-10-11 AT 128 after the five-lane integration: floor 115.
 # Re-taken 2026-10-13 at 161 after the compute system, requests, retention and forge-audit modules: floor 145.
-KIT_FLOOR = 155  # re-taken 2026-10-19 at 171 with famtests.boxneeds
+KIT_FLOOR = 165  # re-taken 2026-10-21 at 181 with famtests.restatedrules and famtests.sizesplits
 KIT_HEADROOM = 25
 
 #: Both halves of the validation need a population or the separation is vacuous. MEASURED over the

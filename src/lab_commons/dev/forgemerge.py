@@ -78,8 +78,8 @@ def decide(
     message = merge_message(branch, number, policy)
     missing: list[str] = []
     if not lane_ready(statuses, head=head):
-        result = standing(statuses, head=head).result
-        missing.append(f'every `tests/<part>` part PASS on {head[:12]} (it stands {result.name})')
+        reading = standing(statuses, head=head).reading
+        missing.append(f'every `tests/<part>` part PASS on {head[:12]} (it stands {reading})')
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)

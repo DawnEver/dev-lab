@@ -118,3 +118,15 @@ def test_the_two_arms_are_not_one_arm_written_twice() -> None:
     # An UNMET floor is not a SLACK floor: the second arm must stay silent on it, or one broken
     # walk would be reported twice under two different diagnoses.
     assert_floor_still_binds(3, floor=180, headroom=200, what=WHAT)
+
+
+def test_growth_inside_the_ratio_never_reds_and_a_blinded_scan_still_does() -> None:
+    """GROWTH IS NOT THE DEFECT: parallel PRs adding tests must not red a floor that still binds.
+
+    The planted control: the same floor, read by a walk that went blind, is refused by the low arm.
+    """
+    assert_floor_still_binds(1400, floor=705, headroom=90, what=WHAT)  # 705 is still above half of 1400
+    with pytest.raises(SlackFloor):
+        assert_floor_still_binds(1411, floor=705, headroom=90, what=WHAT)
+    with pytest.raises(FloorUnmet):
+        assert_floor(40, floor=705, what=WHAT)
