@@ -210,7 +210,7 @@ def extended(path: Path) -> str:
 def remove_tree(path: Path) -> None:
     """Remove the directory *path* whatever it holds: a path past MAX_PATH, a read-only file; absent is done.
 
-    THE ONE REMOVAL PATH (WS2, 2026-10-21): a producer's tree held a ``.venv`` deeper than 260 characters,
+    THE ONE REMOVAL PATH (2026-10-21): a producer's tree held a ``.venv`` deeper than 260 characters,
     ``git worktree remove`` failed with ``Filename too long`` and left debris that blocked the next add. Through
     :func:`extended` no host setting (``LongPathsEnabled``, ``core.longpaths``) is needed.
     """

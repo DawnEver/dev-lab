@@ -142,7 +142,7 @@ def test_two_jobs_of_one_sha_each_own_a_tree(tmp_path: Path) -> None:
 
 
 def _plant_long_path(tree: Path) -> Path:
-    """A read-only file past MAX_PATH (260) inside *tree*, as a ``.venv`` leaves one (live on WS2, 2026-10-21)."""
+    """A read-only file past MAX_PATH (260) inside *tree*, as a ``.venv`` leaves one (live, 2026-10-21)."""
     deep = tree / '.venv' / 'Lib' / 'site-packages'
     while len(str(deep)) < 280:
         deep /= 'a-long-package-directory-name'
@@ -155,7 +155,7 @@ def _plant_long_path(tree: Path) -> Path:
 
 
 def test_a_tree_holding_a_path_past_max_path_is_removed(tmp_path: Path) -> None:
-    """PLANTED (WS2, 2026-10-21): ``Filename too long`` left the tree behind, and its debris blocked the next add."""
+    """PLANTED (2026-10-21): ``Filename too long`` left the tree behind, and its debris blocked the next add."""
     repo, claimed, _later = _two_commits(tmp_path)
     tree = open_tree(repo, claimed, 'tests/base', run=_bootstrap_fakes)
     _plant_long_path(tree.path)
