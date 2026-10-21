@@ -399,3 +399,24 @@ def test_every_break_glass_commit_past_the_declared_start_is_one_notice_naming_i
     assert glass[:12] in one.subject
     assert 'forge down since 09:00' in one.body
     assert one.kind == 'integration'
+
+
+@pytest.mark.parametrize('spec', ['lane/x:lane/y', 'HEAD:lane/y'])
+def test_any_branch_published_under_another_name_is_refused(repo: Path, spec: str) -> None:
+    """P2 covers EVERY branch: a lane tracking another name never lands there by a bare push."""
+    _git(repo, 'checkout', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
+    done = _push(repo, spec)
+    assert done.returncode != 0, done.stderr
+    assert P2 in done.stderr
+    assert _remote(repo, 'lane/y') == ''
+
+
+def test_a_branch_lands_under_its_own_name_and_a_detached_tip_under_any(repo: Path) -> None:
+    """PLANTED CONTROL: the same lane pushed as itself lands; a detached machine push (relock) is not a branch."""
+    _git(repo, 'checkout', 'lane/x')
+    _git(repo, 'commit', '--allow-empty', '-m', 'feat: x')
+    assert _push(repo, 'lane/x').returncode == 0
+    _git(repo, 'checkout', '--detach')
+    done = _push(repo, 'HEAD:refs/heads/relock/x')
+    assert done.returncode == 0, done.stderr

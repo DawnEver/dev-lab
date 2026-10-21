@@ -194,7 +194,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'A child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch; '
             'another child`s work reaches it once, through integration. The owner may opt in to watch named '
-            'refs, recorded in the checkout`s own git config (`branch.<child>.labUpstream`), never in a file. '
+            'refs, recorded in the checkout`s own git config (`branch.<child>.labSyncFrom`), never in a file. '
             '`forge sync` merges integration first, then the watched refs, and refuses any other ref by name.'
         ),
         ('tests/test_dev_branchflow.py',),
@@ -234,7 +234,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A push to `refs/heads/<X>` of a declared session branch or the trunk carries exactly the local '
             'branch `<X>`: its local ref, with `HEAD` resolved, is `refs/heads/<X>`. `HEAD:<X>` from another '
             'branch, `<Y>:<X>`, a bare sha and a detached HEAD are refused at pre-push. Any checkout may publish '
-            'it; none needs it checked out.'
+            'it; none needs it checked out. Every other local branch `<Y>` is published only as `<Y>`: `<Y>:<Z>` and a '
+            'bare push to the upstream git auto-tracked are refused; a detached machine push names no branch.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),
