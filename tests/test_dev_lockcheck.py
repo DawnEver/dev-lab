@@ -18,7 +18,7 @@ import pytest
 
 from lab_commons.dev import lockcheck
 from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_shas, unreasoned_holds
+from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_refs, unreasoned_holds
 
 _GIT = shutil.which('git') or 'git'
 _UV = shutil.which('uv') or 'uv'
@@ -149,7 +149,7 @@ def test_no_lock_is_refused_and_a_deletion_only_push_is_never_judged(tmp_path: P
         raise AssertionError(msg)
 
     deletion = f'(delete) {"0" * 40} refs/heads/x {bare}'
-    assert pushed_shas([deletion, f'refs/tags/t {bare} refs/tags/t {"0" * 40}']) == ()
+    assert pushed_refs([deletion, f'refs/tags/t {bare} refs/tags/t {"0" * 40}']) == ()
     assert main([str(root)], lines=[deletion], resolve=never) == 0, 'a deletion-only push is exempt'
     assert main([str(root)], lines=[f'refs/heads/x {bare} refs/heads/x {"0" * 40}'], resolve=never) == 1
     assert REMEDY in capsys.readouterr().err
@@ -258,3 +258,24 @@ def test_a_sha_already_on_a_remote_branch_is_not_judged_again(tmp_path: Path) ->
     assert main([str(root)], lines=[f'refs/heads/main {old} refs/heads/main {"0" * 40}'], resolve=never) == 0
     # Planted control: a sha no remote branch holds is still judged (it commits no lock -> refused).
     assert main([str(root)], lines=[f'refs/heads/main {new} refs/heads/main {old}'], resolve=never) == 1
+
+
+def test_a_lane_push_is_judged_on_its_pin_and_only_integration_and_trunk_on_freshness(
+    world: tuple[Path, Path, Path],
+) -> None:
+    """ONE writer of freshness: the forge relocks integration (lab_commons.dev.relock).
+
+    So a lane is never refused for a dependency that moved under it. Its PIN is still judged; integration and
+    trunk are judged on both.
+    """
+    root, kit, index = world
+    stale = _locked(root, _manifest(kit, index, '"dep",'))
+    _commit(kit, {'README': 'moved'})
+    zero = '0' * 40
+    lane = [f'refs/heads/pr/x {stale} refs/heads/pr/x {zero}']
+    assert main([str(root)], lines=lane) == 0, 'a lane is not refused for a dependency that moved'
+    for branch in ('integrate/main', 'main'):
+        line = [f'refs/heads/{branch} {stale} refs/heads/{branch} {zero}']
+        assert main([str(root)], lines=line) == 1, f'CONTROL: {branch} must be the newest resolution'
+    unheld = _locked(root, _manifest(kit, index, '"dep<2",'))
+    assert main([str(root)], lines=[f'refs/heads/pr/x {unheld} refs/heads/pr/x {zero}']) == 1, 'a lane keeps its PIN'
