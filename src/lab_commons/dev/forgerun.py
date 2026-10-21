@@ -88,7 +88,7 @@ from lab_commons.dev.forgerunstate import (
 from lab_commons.dev.forgeschedule import coalesced, tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import PartRefusal, part_context
+from lab_commons.dev.platformparts import PartRefusal, part_context, run_tag
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.run import NoRoom
@@ -131,7 +131,7 @@ def advance(
     alarm: Callable[[Alarm], None],
 ) -> Run | None:
     """Take *run* as far as it goes without waiting; the run as left, or ``None`` once released or stood down."""
-    tag = f'[{run.platform}] {run.sha[:12]}'
+    tag = run_tag(run.platform, run.sha)
     held, run = _hold(run, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
     if held != _ADVANCE:
         return run if held == _WAIT else None
@@ -238,7 +238,7 @@ def _settle(
         reason = f'released: superseded -- never submitted, and {run.ref} moved on'
     reason = reason[:_DESCRIPTION_MAX]
     alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', f'{why}; {reason}'))
-    say(f'[{run.platform}] {run.sha[:12]}: {why} -- {reason}')
+    say(f'{run_tag(run.platform, run.sha)}: {why} -- {reason}')
     _release(client, run, reason, say)
     drop(run)
 
@@ -283,7 +283,7 @@ def _report(client: Client, run: Run, progress: str, lease: timedelta, say: Call
     try:
         status_post(client, run.sha, context=context, state='pending', description=renewed.description())
     except ForgeCallFailed as failed:  # a missed progress post is not a dead run; the next tick posts it
-        say(f'[{run.platform}] {run.sha[:12]}: could not post progress: {failed}')
+        say(f'{run_tag(run.platform, run.sha)}: could not post progress: {failed}')
         return run
     return _step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
 
@@ -373,7 +373,7 @@ def _release(client: Client, run: Run, reason: str, say: Callable[[str], None]) 
     try:
         status_post(client, run.sha, context=part_context(run.platform), state='error', description=reason)
     except ForgeCallFailed as failed:
-        say(f'[{run.platform}] could not release: {failed}')
+        say(f'{run_tag(run.platform, run.sha)} could not release: {failed}')
 
 
 def _lost(run: Run, holder: Claim) -> Alarm:
