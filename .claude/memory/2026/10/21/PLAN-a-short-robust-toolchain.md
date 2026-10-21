@@ -90,7 +90,18 @@ guard is judged by its measured fire and false-positive rate; style guards becom
   (OMP/MKL/OPENBLAS). A guard refuses a pool started without a hold.
 - One execution profile per OS. Claims check capacity first; a capacity refusal releases, never discards
   finished work. Every host failure is a structured PR status; host logs ship to the forge.
-- `forge try <paths>`: an agent's tests run on the fleet on demand, replacing local measure.
+- `forge try <paths>` (user ruling 2026-10-21): runs on Linux (Ada) for anything Linux can run, and on a
+  Windows host only for `jmag` tests; it NEVER BLOCKS -- no capacity within its deadline returns "no room"
+  at once and the session keeps working. Local measure likewise never blocks development: refused room is
+  an answer, not a wait.
+- Reservations: a large share of the scarce Windows fleet can be RESERVED for one task (declared owner,
+  share, end time); the forge's claims respect it and normal parts wait behind it visibly.
+- Owner notice: a PR that turns red, conflicts or stalls notifies its owning session (by `Lab-Session`)
+  once per new head; with no live owner after a threshold the integrator takes it.
+- Integrator back door: the integrator may merge what the machine cannot, through the one named back door
+  (who, why, recorded on the PR); the one-PR and no-stack rules never block it.
+- Session ids (option b): a commit without an id is never refused and is not judged; `codc` and the IDE
+  hosts keep working; tighten once those hosts expose an id.
 - OS is a resource (`@pytest.mark.windows/linux`), never a platform skip. The Windows part runs on a PR only
   when its footprint is reached (carry otherwise) and after the resource parts; integration and main run it
   in full.
@@ -101,6 +112,7 @@ guard is judged by its measured fire and false-positive rate; style guards becom
   command, or "evidence no longer available").
 - Reference decks are provenance prose in cases/ only; a JMAG solve runs only on a deck our builder
   generated, from a content-keyed deck cache; build on miss; what the builder cannot generate refuses.
+- A head that touches only memory or docs never cancels a running run; the finished result carries to it.
 - Rules record their catches; a rule with none in 30 days is reviewed for deletion; rules pages cite IDs,
   never restate them; forge modules regroup by concept (claim, run, gather, merge, sync); hand registries
   (provenance, adoption, kit floor) become derived.
