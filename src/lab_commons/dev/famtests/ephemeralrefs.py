@@ -41,8 +41,8 @@ def assert_no_tracked_file_cites_ephemeral(*, root: Path, floor: int, headroom: 
         raise AssertionError(msg)
 
 
-#: Assembled from halves so the private-marker scan does not read a home path in this file.
-_WINDOWS_HOME = 'C:/' + 'Users/someone/x.txt'
+#: Assembled from pieces so neither the private-marker scan nor the foreign-path scan reads a path here.
+_WINDOWS_HOME = 'C:/' + 'Users/someone/' + 'x.txt'
 _POSIX_HOME = '/' + 'home/someone/x'
 _INTERPRETER = venvpath.venv_interpreter(os_name='nt')
 
