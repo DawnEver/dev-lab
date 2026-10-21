@@ -178,6 +178,7 @@ def _serve(
     children: tuple = (),
     present=lambda _root: {},
     clock=lambda: NOW,
+    reviewed: list | None = None,
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -220,6 +221,11 @@ def _serve(
 
     monkeypatch.setattr(forgeservesteps, 'observe', observe or (lambda *_a, **_k: []))
     monkeypatch.setattr(forgeservesteps, 'integration_tick', lambda *_a, **_k: Ticked((), tuple(children)))
+    monkeypatch.setattr(
+        forgeservesteps,
+        'review_step',
+        lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
+    )
     monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
@@ -366,6 +372,25 @@ def test_any_host_prompts_the_integrator_and_n_hosts_page_once(monkeypatch, tmp_
     rows[:] = []
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=observe, issues=forge)
     assert forge.open == {}
+
+
+def test_any_host_runs_the_advisory_review_inside_its_integration_step(monkeypatch, tmp_path: Path) -> None:
+    """The review host follows the integrator: no capability, the integration step's own policy.
+
+    PLANTED CONTROL: a tick whose integration queue cannot be derived reviews nothing.
+    """
+    reviewed: list = []
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), reviewed=reviewed)
+    ((given,),) = [tuple(one['policy'] for one in reviewed)]
+    assert given.integration == 'integrate/main'
+
+    def unreachable(*_a: object, **_k: object) -> list[Alarm]:
+        msg = 'the forge is down'
+        raise OSError(msg)
+
+    reviewed.clear()
+    _serve(monkeypatch, tmp_path, TickReport((), (), ()), observe=unreachable, reviewed=reviewed)
+    assert reviewed == []
 
 
 def test_every_tick_reports_behind_and_conflicts_and_alarms_past_the_bound(monkeypatch, tmp_path: Path) -> None:

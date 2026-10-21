@@ -15,7 +15,6 @@ and the partitions, quota and storage a host card publishes. An unreadable quota
 from __future__ import annotations
 
 import math
-import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -42,7 +41,7 @@ from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_cells, run_shas
-from lab_commons.hpc.run import NoRoom, job_name, load_state, submit_run
+from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
@@ -180,10 +179,7 @@ class SlurmCluster:
 
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
-        ids = sorted({*self.submitted(run), *run.job_ids, *self.orphans(run)})
-        if ids:
-            self.connect(self.machine.grants[0])(f'scancel {shlex.join(ids)}', None)
-        return ids
+        return cancel_run(run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases)
 
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""
