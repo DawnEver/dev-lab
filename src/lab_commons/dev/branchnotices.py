@@ -5,10 +5,10 @@ forge verbs every agent vendor shares, so this one reader serves each of them:
 
 * ``post-commit`` (``pr-notices`` row, the current branch) -- an agent commits often, even long before it pushes;
 * ``pre-push`` (``pr-notices`` row, the pushed ``pr/*`` refs);
-* ``forge pr create`` (:mod:`lab_commons.dev.forgecli`, the head branch);
-* a session's start, by the vendor's own launcher or hook (``forge notices --session``).
+* ``forge pr create`` (:mod:`lab_commons.dev.forgecli`, the head branch).
 
-It reads the notices :mod:`lab_commons.dev.forgenotice` keeps in the PR's integration comment, keeps those
+Nowhere else: no session-start or resume check and no per-turn poll in any vendor's harness (user ruling
+2026-10-21). It reads the notices :mod:`lab_commons.dev.forgenotice` keeps in the PR's integration comment, keeps those
 addressed to the session (``LAB_SESSION``, :mod:`lab_commons.dev.labsession`) and not acked, and prints them.
 There is no per-turn poll anywhere: a session gone idle is the integrator's (``forgenotice.escalated``).
 
