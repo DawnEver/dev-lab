@@ -273,15 +273,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PR-REVIEW-IS-ADVISORY',
         (
-            'The Claude PR reviewer runs only on a `forge serve` host declaring `[capabilities.pr_review]`, reads '
-            'ONE dedicated Anthropic key -- the `pr-review` task key of the one model-key scheme '
-            '(`api-key-pr-review` at `api.anthropic.com`), never the default key nor any other -- refusing by '
-            'that name when it is absent, and never logs it. It reviews each open, non-draft PR into '
-            'integration once per head sha against the rule files at integration, under a diff-size cap, and '
-            'posts a comment plus a `tests/review` status that is never a part: no merge, promotion or push '
-            'admission waits on it.'
+            'The PR review is the repo-declared command (`[tool.lab_commons.review] command`), run by the forge '
+            'inside its integration step on each open, non-draft PR into integration once per head sha, under a '
+            'diff-size cap; its stdout is read as the versioned findings JSON and an unknown `schema_version` is '
+            'refused by name. The forge holds no model client, prompt or key. It posts a comment plus a '
+            '`tests/review` status that is never a part: no merge, promotion or push admission waits on it.'
         ),
-        ('tests/test_dev_forgereview.py', 'tests/test_credentials.py'),
+        ('tests/test_dev_forgereview.py', 'tests/test_dev_forgeserve.py'),
     ),
     (
         'FORMATS-UPGRADE-ON-READ',
