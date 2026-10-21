@@ -52,7 +52,7 @@ round per tick period or per producer that ended. A producer STOPPED on purpose
 waited for, and serve exits -- what a stop means. However a round fails, every producer thread is joined
 before serve returns or raises, so no claim is left held by a thread nobody waits for.
 
-A LOCAL PRODUCER HOLDS ITS CLAIM: its output streams prefixed ``[platform]``, its
+A LOCAL PRODUCER HOLDS ITS CLAIM: its output streams prefixed ``[platform@sha8]``, its
 claim is renewed (the same claim, ``until`` = the forge's time plus the lease) every third of the
 lease while it lives, its host card is published every tick period while it lives (``holds <sha>
 <part> producing <minutes>m``, so a busy host never reads STALE), and when it ends with its context
@@ -134,7 +134,7 @@ from lab_commons.dev.forgeschedule import host_weights
 from lab_commons.dev.forgeservesteps import hygiene, prompt, relock, retain_storage, starved, tidy_runs
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.platformparts import origin_url
+from lab_commons.dev.platformparts import origin_url, run_tag
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
@@ -306,7 +306,7 @@ def _advance(
             )  # fmt: skip
         except (RuntimeError, OSError, ValueError) as stuck:  # Slurm or the build refused: the run waits
             alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} cannot advance', str(stuck)))
-            say(f'[{run.platform}] {run.sha[:12]}: cannot advance: {stuck}')
+            say(f'{run_tag(run.platform, run.sha)}: cannot advance: {stuck}')
             after = run
         if after is not None:
             left.append(after.sha)

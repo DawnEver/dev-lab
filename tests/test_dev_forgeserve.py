@@ -294,7 +294,7 @@ def test_a_claimed_local_part_is_produced_inline_and_published(monkeypatch, tmp_
     assert report.published == ('status: tests/windows=failure',)
     assert report.broken == ()
     assert 'tick: one line' in said
-    assert '[windows] collected 9' in said
+    assert f'[windows@{SHA[:8]}] collected 9' in said
 
 
 def test_the_producer_is_spawned_holding_its_claim_and_nothing_else_is(monkeypatch, tmp_path: Path) -> None:
@@ -482,7 +482,7 @@ def test_a_local_part_is_judged_in_its_own_tree_at_the_claimed_sha(monkeypatch, 
     ]
     assert (trees.opened, trees.closed) == ([SHA], [SHA])
     assert report.produced[0].argv == (str(tree / 'python'), 'verify', '--full')
-    assert f'[windows] tree {SHA[:12]}: removed' in said
+    assert f'[windows@{SHA[:8]}] tree {SHA[:12]}: removed' in said
 
 
 def test_a_tree_that_cannot_be_built_spawns_nothing_and_names_the_step(monkeypatch, tmp_path: Path) -> None:

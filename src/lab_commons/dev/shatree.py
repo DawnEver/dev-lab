@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.dev.diskusage import remove_tree
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.platformparts import UndeclaredPart, record_directory
 from lab_commons.dev.venvpath import checkout_interpreter, current_os_name
@@ -94,7 +95,9 @@ def open_tree(
 
     """
     tree = tree_path(root, sha, context)
-    if not (tree / '.git').exists():
+    if not (tree / '.git').exists():  # debris of an earlier run (half removed, still registered) blocks the add
+        remove_tree(tree)
+        _step(run, [_GIT, '-C', str(root), 'worktree', 'prune'], 'git worktree prune')
         _step(run, [_GIT, '-C', str(root), 'worktree', 'add', '--detach', str(tree), sha], 'git worktree add')
     if (tree / '.gitmodules').is_file():  # a commit's tree INCLUDES its submodules at their pinned commits
         _step(run, [_GIT, '-C', str(tree), 'submodule', 'update', '-q', '--init', '--recursive'], 'submodules')
@@ -142,7 +145,7 @@ def keep_record(root: Path, sha: str, context: str, *, log: str) -> str:
 
 
 def close_tree(root: Path, sha: str, context: str, *, log: str = '', run: Callable[..., Any] = _door.run) -> str:
-    """Keep the run record of *sha* in *root*, then remove its tree (``--force``: it is the producer's own).
+    """Keep the run record of *sha* in *root*, then remove its tree (:func:`~lab_commons.dev.diskusage.remove_tree`).
 
     *log* is the producer's streamed output; it is kept beside the record. One line says what happened.
     """
@@ -150,8 +153,12 @@ def close_tree(root: Path, sha: str, context: str, *, log: str = '', run: Callab
     if not tree.exists():
         return f'tree {tree.name}: none to remove'
     kept = keep_record(root, sha, context, log=log)
+    try:  # the contents first, long-path safe; then git forgets the tree (a `worktree remove` hits MAX_PATH)
+        remove_tree(tree)
+    except OSError as why:
+        return f'tree {tree.name}: NOT removed ({why}); remove it by hand; {kept}'
     done = run(
-        [_GIT, '-C', str(root), 'worktree', 'remove', '--force', str(tree)],
+        [_GIT, '-C', str(root), 'worktree', 'prune'],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -160,5 +167,5 @@ def close_tree(root: Path, sha: str, context: str, *, log: str = '', run: Callab
     )
     if done.returncode:
         why = (done.stderr or '').strip() or done.returncode
-        return f'tree {tree.name}: NOT removed ({why}); remove it by hand; {kept}'
+        return f'tree {tree.name}: removed, NOT pruned ({why}); {kept}'
     return f'tree {tree.name}: removed; {kept}'
