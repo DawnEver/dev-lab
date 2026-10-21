@@ -318,7 +318,7 @@ def main(
         report = tick(
             root,
             client=build,
-            machine=this_machine(seat),
+            machine=this_machine(),
             seat=seat,
             lease=timedelta(hours=args.lease_hours),
             dry_run=args.dry_run,

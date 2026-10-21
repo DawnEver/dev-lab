@@ -50,7 +50,6 @@ import dataclasses
 import hashlib
 import json
 import re
-import socket
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
@@ -312,8 +311,8 @@ def card_owners(cards: Sequence[HostCard]) -> dict[str, tuple[str, ...]]:
 
 
 def card_host(machine: str, seat: ClusterAccount | None) -> str:
-    """The name a host's card and its supply share: the seat, else the machine."""
-    return str(seat) if seat is not None else machine or socket.gethostname().split('.')[0]
+    """The name a host's card and its supply share: the seat, else the machine (:func:`this_machine`)."""
+    return str(seat) if seat is not None else machine
 
 
 def this_host() -> str:
@@ -323,7 +322,7 @@ def this_host() -> str:
     (:mod:`lab_commons.dev.forgeorigin`), so a job made here names the card it came from.
     """
     seat = this_seat()
-    return card_host(this_machine(seat), seat)
+    return card_host(this_machine(), seat)
 
 
 def recording(alarm: Callable[[Alarm], object], raised: list[Alarm]) -> Callable[[Alarm], object]:

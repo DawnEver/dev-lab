@@ -325,7 +325,7 @@ def test_the_cli_json_carries_each_claimed_producer_argv(server, tmp_path: Path,
     )
     repo, tips = _origin(tmp_path)
     sha = tips['integrate/main']
-    me = Claim(this_machine(None), 'alice', NOW + DEFAULT_LEASE)
+    me = Claim(this_machine(), 'alice', NOW + DEFAULT_LEASE)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     mine = {'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': me.description()}
     answer('GET', f'{API}/statuses/{sha}', (200, []), (200, [mine]))
