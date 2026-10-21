@@ -165,6 +165,53 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'permits': ('git commit -m "wip: scratch"', 'git diff --stat'),
     },
     {
+        'id': 'GIT-RESET',
+        'pattern': r'\bgit(?:\s+-C\s+\S+)*\s+reset(?:\s|$)',
+        'matches': 'command',
+        'hazard': '`git reset` moves HEAD or the index of a checkout another agent may be committing in.',
+        'remedy': (
+            'Unstage one path with git restore --staged <path>; undo a commit FORWARD with git revert <sha>; '
+            f'start over in a throwaway checkout: git worktree add --detach {WORKTREES_REL}/<name> <sha>'
+        ),
+        'needs': None,
+        'refuses': (
+            'git reset --hard origin/main',
+            'git reset HEAD~1',
+            'git reset',
+            'git -C .claude/worktrees/lane reset --soft HEAD~2',
+        ),
+        'permits': ('git restore --staged src/a.py', 'git revert --no-edit 4ad12b6', 'git commit -m "reset the cache"'),
+    },
+    {
+        'id': 'GIT-STAGE-EVERYTHING',
+        # Before the first quote only, so a message that MENTIONS `-a` is not a flag.
+        'pattern': (
+            r'\bgit(?:\s+-C\s+\S+)*\s+(?:commit\b[^\n"\x27]*?\s(?:-[A-Za-z]*a[A-Za-z]*|--all)(?=\s|$)'
+            r'|add\b[^\n"\x27]*?\s(?:-A|--all|-u|--update|\.|\S*/)(?=\s|$))'
+        ),
+        'matches': 'command',
+        'hazard': 'staging everything in a shared checkout commits whatever another agent left unstaged.',
+        'remedy': 'Stage the paths you mean, then check: git add <path> <path>; git diff --cached --stat',
+        'needs': None,
+        'refuses': (
+            'git commit -a -m "wip"',
+            'git commit -am "wip"',
+            'git commit --all',
+            'git add -A',
+            'git add --all',
+            'git add -u',
+            'git add .',
+            'git add src/',
+            'git -C .claude/worktrees/lane add -A',
+        ),
+        'permits': (
+            'git add src/a.py tests/test_a.py',
+            'git commit -m "stage -a and -A mentioned in prose"',
+            'git commit -F - -- src/thing.py',
+            'git diff --cached --stat',
+        ),
+    },
+    {
         'id': 'PUSH-FORCE',
         # `+<ref>` is the refspec spelling of the same force (MAIN-SESSION-PUBLISHES opened `push origin *`).
         'pattern': r'\bpush\b[^\n]*\s(?:--force\b|--force-with-lease\b|-f\b|\+\S)',

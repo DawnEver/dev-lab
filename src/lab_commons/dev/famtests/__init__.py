@@ -58,6 +58,8 @@ WHAT IS HERE, one module per shared body:
   ``<toplevel>/.claude/worktrees/``.
 * :mod:`lab_commons.dev.famtests.rulespages` -- the always-loaded pages, pinned per page AND
   in total, because a named set and a budget are each blind to what the other sees.
+* :mod:`lab_commons.dev.famtests.restatedrules` -- a rules page cites a registry rule by ID and never
+  restates its statement (shared word n-grams above a declared threshold red).
 * :mod:`lab_commons.dev.famtests.rostercensus` -- a placement roster is re-read against the kit,
   so a row's side cannot go stale after its subject lands upstream.
 * :mod:`lab_commons.dev.famtests.datedmemory` -- every memory entry sits under its own date, and

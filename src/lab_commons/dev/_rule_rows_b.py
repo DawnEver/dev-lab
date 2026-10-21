@@ -254,9 +254,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
             'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
             'passes -- the same judgement the commit-msg hook makes. Refused at pre-push; once `pr_merges_since` '
-            'stands, INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'
+            'stands, INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge. A rebase '
+            'never lands: it needs a force push, which the PUSH-FORCE deny row refuses.'
         ),
-        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py'),
+        ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py', 'tests/test_dev_hooks.py'),
     ),
     (
         'INTEGRATION-TAKES-ONLY-FORGE-MERGES',
