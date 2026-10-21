@@ -82,8 +82,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'A push to `refs/heads/<X>` of a declared session branch or the trunk carries exactly the local '
             'branch `<X>`: its local ref, with `HEAD` resolved, is `refs/heads/<X>`. `HEAD:<X>` from another '
             'branch, `<Y>:<X>`, a bare sha and a detached HEAD are refused at pre-push. Any checkout may publish '
-            'it; none needs it checked out. Every other local branch `<Y>` is published only as `<Y>`: `<Y>:<Z>` and a '
-            'bare push to the upstream git auto-tracked are refused; a detached machine push names no branch.'
+            'it; none needs it checked out. Every other local branch `<Y>` is published only as `<Y>`.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),
@@ -101,8 +100,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
             'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
             'passes -- the same judgement the commit-msg hook makes. Refused at pre-push; once `pr_merges_since` '
-            'stands, INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge. A rebase '
-            'never lands: it needs a force push, which the PUSH-FORCE deny row refuses.'
+            'stands, INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'
         ),
         ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py', 'tests/test_dev_hooks.py'),
     ),
