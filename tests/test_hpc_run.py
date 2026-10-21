@@ -1799,3 +1799,63 @@ def test_the_bands_of_a_round_share_one_qos_submit_room() -> None:
     room = FakeRunCluster(held='@@@ queued\n' + 'free\n' * 98)
     _submit(room, history=learned.learned('https://g/r.git'))
     assert len(_sbatched(room)) == 2
+
+
+class _RetryQosFull(FakeRunCluster):
+    """Every ``sbatch`` after round 0 is refused on the per-user QOS submit limit while :attr:`full` holds."""
+
+    full = False
+
+    def __call__(self, command: str, stdin: str | None = None) -> str:
+        if 'sbatch' in command and self.full:
+            self.calls.append((command, stdin))
+            msg = f'bash exited 1: sbatch: error: {SUBMIT_LIMIT} (Job violates accounting/QOS policy)'
+            raise RuntimeError(msg)
+        return super().__call__(command, stdin)
+
+
+def _gather_at(fake: FakeRunCluster, minute: float) -> dict | None:
+    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, now=lambda: 60.0 * minute)
+
+
+def test_a_retry_round_refused_on_the_qos_submit_limit_waits_in_flight_and_submits_when_the_room_returns() -> None:
+    """A QOS submit refusal at ANY round is capacity: a refused retry round leaves the run in flight.
+
+    Ada 2026-10-21 (motronics #4684): 42 items ran ~6 h, the retry round hit ``QOSMaxSubmitJobPerUserLimit``,
+    and the run settled "ended without a record".
+
+    PLANTED CONTROL: the same refusal lifted at the next tick submits the round and the record keeps every cell.
+    """
+    fake = _RetryQosFull(dies=frozenset({'tests/b.py'}))
+    _submit(fake)
+    fake.full = True
+    assert _gather_at(fake, 0) is None, 'a refused retry is pending, never a raise that settles the run'
+    state = json.loads(fake.state)
+    assert 'record' not in state
+    assert _words(state['cells'])['tests/b.py::t3'] == 'ok', 'what round 0 finished is kept'
+    assert _gather_at(fake, 1) is None, 'still no room: still waiting'
+    assert len(json.loads(fake.state)['rounds']) == 1
+    fake.full = False
+    assert _gather_at(fake, 2) is None, 'the room came back: round 1 is out'
+    assert len(json.loads(fake.state)['rounds']) == 2
+    record = _gather_at(fake, 3)
+    assert record is not None
+    assert set(_words(record['cells']).values()) == {'ok'}
+
+
+def test_a_retry_round_that_never_finds_room_settles_with_what_ran_and_names_the_unrun() -> None:
+    """Past ``policy.stall_minutes`` with no room, the record carries round 0's cells and the waiting ids as unrun.
+
+    PLANTED CONTROL: one minute short of the bound the run is still pending.
+    """
+    fake = _RetryQosFull(dies=frozenset({'tests/b.py'}))
+    _submit(fake)
+    fake.full = True
+    assert _gather_at(fake, 0) is None
+    assert _gather_at(fake, POLICY.stall_minutes - 1) is None
+    record = _gather_at(fake, POLICY.stall_minutes)
+    assert record is not None, 'a record of what DID run, never "no record"'
+    words = _words(record['cells'])
+    assert words['tests/b.py::t3'] == 'ok'
+    assert [words[f'tests/b.py::t{n}'] for n in (4, 5)] == ['infra', 'infra']
+    assert _whys(record['cells'])['tests/b.py::t4'].startswith('never ran: no submit room')
