@@ -5,11 +5,12 @@ streams prefixed ``[platform@sha8]`` (:func:`~lab_commons.dev.platformparts.run_
 the loop wakes every *beat_s* (the host's tick period) and calls
 *beat* with the time produced so far -- serve publishes its host card there, so a host busy for hours
 still ticks and ``forge queue``'s STALE keeps meaning down; the claim is renewed on the FORGE's clock
-every *renew_s* (counted in wakes) while the producer lives. A PART UNDER TEST IS NOT SUPERSEDED (user
-ruling 2026-10-13): a ref that moved on never stops it -- newer pushes queue behind it and are tested at the
-next tip -- and when the tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its part is also posted
-on that tip, naming the sha it was judged at; a claim it left ``pending`` is released as ``error`` with
-the reason the box's record names, else its exit code's
+every *renew_s* (counted in wakes) while the producer lives. A BOX RUN UNDER TEST IS NOT SUPERSEDED (user
+ruling 2026-10-13; a coalesced ref's CLUSTER run is, 2026-10-21, :mod:`lab_commons.dev.forgerun`): a ref
+that moved on never stops it -- newer pushes queue behind it and are tested at the next tip -- and when
+the tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its part is also posted on that tip,
+naming the sha it was judged at; a claim it left ``pending`` is released as ``error`` with the reason the
+box's record names, else its exit code's
 (:func:`~lab_commons.dev.producer.box_release_reason`) -- or ``stopped`` when :mod:`lab_commons.dev.stoprun`
 stopped it on purpose.
 
