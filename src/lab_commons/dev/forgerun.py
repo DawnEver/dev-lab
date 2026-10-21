@@ -45,15 +45,20 @@ guard, since ``flock`` on GPFS does not lock across hosts.
 PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``building``, ``queued 0/93``,
 ``running 40/93 done 12/93``, ``publishing`` -- the owner re-posts its pending claim with that progress
 (:class:`lab_commons.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
-status links the run record. A PART UNDER TEST IS NOT SUPERSEDED (user ruling 2026-10-13): a run whose
-ref moved on finishes and posts on its own sha, the newer pushes queue behind it, and when the tip is
-reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its record is posted on the tip too, as a part naming
-the sha it was judged at.
+status links the run record.
 
-A PART NOT YET UNDER TEST IS (user ruling 2026-10-19). A coalesced ref's run whose ref moved on and none of
-whose tasks has started (:meth:`~lab_commons.dev.forgerunstate.Cluster.started`) is cancelled and released
-as superseded, naming the tip -- its slot goes to the tip, which waited behind it (:mod:`forgecoalesce`).
-Measured 2026-10-19 (Ada): integrate/main's newest tip waited hours behind an older sha's array still pending.
+A COALESCED REF'S RUN IS SUPERSEDED THE TICK ITS REF MOVES ON, STARTED OR NOT (user ruling 2026-10-21). A run
+of a ``Schedule.coalesce`` class whose sha is no longer its ref's tip has every Slurm job its state records
+cancelled (every round and band, :func:`lab_commons.hpc.run.cancel_run`), is released as superseded naming
+the tip, and is dropped -- one alarm. Its slot goes to the tip, which waited behind it (:mod:`forgecoalesce`);
+the tip's run carries what the cancelled rounds finished (:mod:`lab_commons.dev.forgecarry`). Asked before a
+submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
+2026-10-21: a superseded pr head kept 70 array tasks running on alyyw103, eating the grant's QOS room.
+A ref of any OTHER class is tested at every pushed sha: its run finishes and posts on its own sha, and when
+the tip is reach-equivalent its record is posted on the tip too, as a part naming the sha it was judged at.
+
+A SUBMIT REFUSED ON THE QOS LIMIT IS NO ROOM (:data:`lab_commons.hpc.cluster.SUBMIT_LIMIT`): released RETRYABLE,
+so a grant with headroom claims the part, never a run alarming "cannot advance" every tick holding its claim.
 
 THE RUN STATE -- the file, its schema and the cluster protocol -- lives in :mod:`lab_commons.dev.forgerunstate`.
 """
@@ -72,6 +77,7 @@ from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgecarry import publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
+from lab_commons.dev.forgecoalesce import PUBLISHING
 from lab_commons.dev.forgeroute import pyproject_at, route
 from lab_commons.dev.forgerunstate import (
     CLAIMED_PHASE,
@@ -88,7 +94,7 @@ from lab_commons.dev.forgerunstate import (
 from lab_commons.dev.forgeschedule import coalesced, tip_of
 from lab_commons.dev.forgestatus import status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import PartRefusal, part_context
+from lab_commons.dev.platformparts import PartRefusal, part_context, run_tag
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc.records import read_record, write_record
 from lab_commons.hpc.run import NoRoom
@@ -131,12 +137,15 @@ def advance(
     alarm: Callable[[Alarm], None],
 ) -> Run | None:
     """Take *run* as far as it goes without waiting; the run as left, or ``None`` once released or stood down."""
-    tag = f'[{run.platform}] {run.sha[:12]}'
+    tag = run_tag(run.platform, run.sha)
     held, run = _hold(run, client=client, me=me, lease=lease, say=say, alarm=alarm, tag=tag)
     if held != _ADVANCE:
         return run if held == _WAIT else None
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
         if run.phase in {CLAIMED_PHASE, SUBMITTING}:
+            if tip := _superseding_tip(root, run):  # its ref moved on: no submit, the tip takes the slot
+                _supersede(client, run, tip, cluster=cluster, say=say, alarm=alarm, tag=tag)
+                return None
             submitted = _submit(run, client=client, lease=lease, cluster=cluster, say=say, alarm=alarm, tag=tag)
             if submitted is None:
                 return run
@@ -180,15 +189,8 @@ def _gather(
     if not ids and not cluster.orphans(run):  # no state and no job of this part: it never ran
         _settle(root, run, client=client, why='no job of this part was ever submitted', say=say, alarm=alarm, ran=False)
         return None
-    if (tip := _superseding_tip(root, run)) and not cluster.started(run):
-        cancelled = cluster.cancel(run)
-        reason = f'released: superseded -- not started when {run.ref} moved on to {tip[:12]}; its slot goes to the tip'
-        reason = reason[:_DESCRIPTION_MAX]
-        why = f'jobs {" ".join(cancelled) or "none"} cancelled'
-        alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded before it started', why))
-        say(f'{tag}: {why} -- {reason}')
-        _release(client, run, reason, say)
-        drop(run)
+    if tip := _superseding_tip(root, run):  # started or not (user ruling 2026-10-21)
+        _supersede(client, run, tip, cluster=cluster, say=say, alarm=alarm, tag=tag)
         return None
     try:
         record = cluster.gather(run)
@@ -202,16 +204,39 @@ def _gather(
         say(f'{tag}: running (job {run.job_ids[-1]}, round {len(run.job_ids)})')
         return _report(client, run, cluster.progress(run), lease, say)
     run = _step(run, phase=GATHERED, record=str(record))
-    return _report(client, run, 'publishing', lease, say)
+    return _report(client, run, PUBLISHING, lease, say)
 
 
 def _superseding_tip(root: Path, run: Run) -> str:
-    """The newer tip of *run*'s coalesced ref it would give its slot to; ``''`` when none (still the tip, a lane).
-
-    Asked BEFORE whether the run started, so a run that is still its ref's tip costs no squeue.
-    """
+    """The newer tip of *run*'s coalesced ref that supersedes it; ``''`` when none (still the tip, another class)."""
     tip = tip_of(root, run.ref)
     return tip if tip and tip != run.sha and coalesced(root, run.ref) else ''
+
+
+def _supersede(
+    client: Client,
+    run: Run,
+    tip: str,
+    *,
+    cluster: Cluster,
+    say: Callable[[str], None],
+    alarm: Callable[[Alarm], None],
+    tag: str,
+) -> None:
+    """Cancel EVERY job of *run* (each round and band, an interrupted submit's too), release it superseded by *tip*.
+
+    Then drop it: one alarm. Started or not (user ruling 2026-10-21).
+    """
+    cancelled = cluster.cancel(run)
+    reason = (
+        f'released: superseded -- {run.ref} moved on to {tip[:12]}; its jobs are cancelled, its slot goes to the tip'
+    )
+    reason = reason[:_DESCRIPTION_MAX]
+    why = f'jobs {" ".join(cancelled) or "none"} cancelled'
+    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}', why))
+    say(f'{tag}: {why} -- {reason}')
+    _release(client, run, reason, say)
+    drop(run)
 
 
 def _settle(
@@ -238,7 +263,7 @@ def _settle(
         reason = f'released: superseded -- never submitted, and {run.ref} moved on'
     reason = reason[:_DESCRIPTION_MAX]
     alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} settled', f'{why}; {reason}'))
-    say(f'[{run.platform}] {run.sha[:12]}: {why} -- {reason}')
+    say(f'{run_tag(run.platform, run.sha)}: {why} -- {reason}')
     _release(client, run, reason, say)
     drop(run)
 
@@ -283,7 +308,7 @@ def _report(client: Client, run: Run, progress: str, lease: timedelta, say: Call
     try:
         status_post(client, run.sha, context=context, state='pending', description=renewed.description())
     except ForgeCallFailed as failed:  # a missed progress post is not a dead run; the next tick posts it
-        say(f'[{run.platform}] {run.sha[:12]}: could not post progress: {failed}')
+        say(f'{run_tag(run.platform, run.sha)}: could not post progress: {failed}')
         return run
     return _step(run, owner=dataclasses.replace(renewed, progress='').description(), progress=progress)
 
@@ -373,7 +398,7 @@ def _release(client: Client, run: Run, reason: str, say: Callable[[str], None]) 
     try:
         status_post(client, run.sha, context=part_context(run.platform), state='error', description=reason)
     except ForgeCallFailed as failed:
-        say(f'[{run.platform}] could not release: {failed}')
+        say(f'{run_tag(run.platform, run.sha)} could not release: {failed}')
 
 
 def _lost(run: Run, holder: Claim) -> Alarm:

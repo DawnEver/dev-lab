@@ -119,6 +119,7 @@ __all__ = [
     'part_of',
     'parts_of',
     'producer_argv',
+    'run_tag',
     'select',
     'split',
     'standing',
@@ -134,6 +135,9 @@ REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
+
+#: How many hex digits of the sha a run's log prefix shows (:func:`run_tag`).
+_TAG_SHA: Final = 8
 
 #: How many ids a refusal names before eliding; the count is always given.
 _NAMED: Final = 5
@@ -169,6 +173,11 @@ class UndeclaredPart(ValueError):
 def part_context(part: str) -> str:
     """``tests/<part>`` -- the one status context a part (and a claim on it) uses."""
     return f'{CONTEXT_PREFIX}{part}'
+
+
+def run_tag(part: str, sha: str) -> str:
+    """``[<part>@<sha8>]`` -- the one prefix a run's log lines carry, so two runs of one part read apart."""
+    return f'[{part}@{sha[:_TAG_SHA]}]'
 
 
 def _text(table: Mapping[str, Any], name: str, key: str, example: str, *, required: bool) -> str:

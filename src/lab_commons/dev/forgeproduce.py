@@ -1,14 +1,16 @@
 """ONE LOCAL PART, PRODUCED INLINE: run the claimed argv, stream it, hold its claim, release what it left.
 
 Extracted from :mod:`lab_commons.dev.forgeserve` (its module docstring states the contract): the output
-streams prefixed ``[platform]``; the loop wakes every *beat_s* (the host's tick period) and calls
+streams prefixed ``[platform@sha8]`` (:func:`~lab_commons.dev.platformparts.run_tag`);
+the loop wakes every *beat_s* (the host's tick period) and calls
 *beat* with the time produced so far -- serve publishes its host card there, so a host busy for hours
 still ticks and ``forge queue``'s STALE keeps meaning down; the claim is renewed on the FORGE's clock
-every *renew_s* (counted in wakes) while the producer lives. A PART UNDER TEST IS NOT SUPERSEDED (user
-ruling 2026-10-13): a ref that moved on never stops it -- newer pushes queue behind it and are tested at the
-next tip -- and when the tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its part is also posted
-on that tip, naming the sha it was judged at; a claim it left ``pending`` is released as ``error`` with
-the reason the box's record names, else its exit code's
+every *renew_s* (counted in wakes) while the producer lives. A BOX RUN UNDER TEST IS NOT SUPERSEDED (user
+ruling 2026-10-13; a coalesced ref's CLUSTER run is, 2026-10-21, :mod:`lab_commons.dev.forgerun`): a ref
+that moved on never stops it -- newer pushes queue behind it and are tested at the next tip -- and when
+the tip is reach-equivalent (:mod:`lab_commons.dev.forgecarry`) its part is also posted on that tip,
+naming the sha it was judged at; a claim it left ``pending`` is released as ``error`` with the reason the
+box's record names, else its exit code's
 (:func:`~lab_commons.dev.producer.box_release_reason`) -- or ``stopped`` when :mod:`lab_commons.dev.stoprun`
 stopped it on purpose.
 
@@ -71,7 +73,7 @@ from lab_commons.dev.forgelabels import LabelMissing
 from lab_commons.dev.forgerequest import CONTEXT_PREFIX, result, settle
 from lab_commons.dev.forgestatus import CommitStatus, status_history, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.platformparts import origin_url, parts_of
+from lab_commons.dev.platformparts import origin_url, parts_of, run_tag
 from lab_commons.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
 from lab_commons.dev.servelock import was_stopped
 from lab_commons.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
@@ -163,10 +165,10 @@ def box_claim(item: Work, capacity: Capacity, *, root: Path | None = None) -> De
     return Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
 
 
-def _pump(stream: Iterable[str], platform: str, say: Callable[[str], None], heard: list[str]) -> None:
+def _pump(stream: Iterable[str], tag: str, say: Callable[[str], None], heard: list[str]) -> None:
     for line in stream:
         heard.append(line)
-        say(f'[{platform}] {line.rstrip()}')
+        say(f'{tag} {line.rstrip()}')
 
 
 def produce(
@@ -201,7 +203,7 @@ def produce(
             waits = not_admitted(str(failed))
             why = f'{RETRYABLE} -- the box did not admit its tree yet' if waits else 'released: no tree'
             _post(client(root), item, 'error', f'{why} at {item.sha[:12]} -- {failed}', say)
-            say(f'[{item.platform}] {close_tree(root, item.sha, item.context)}')
+            say(f'{run_tag(item.platform, item.sha)} {close_tree(root, item.sha, item.context)}')
             forget(root, item.sha, item.context)
             code = ProducerExit.UNREACHABLE if waits else ProducerExit.INCONCLUSIVE
             return Produced(item.ref, item.sha, item.platform, item.argv, code)
@@ -217,7 +219,7 @@ def produce(
                             beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
                             meter=meter)  # fmt: skip
         finally:
-            say(f'[{item.platform}] {close_tree(root, item.sha, item.context, log="".join(heard))}')
+            say(f'{run_tag(item.platform, item.sha)} {close_tree(root, item.sha, item.context, log="".join(heard))}')
         forget(root, item.sha, item.context)  # released: only a run that never got here is re-attached
         return produced
 
@@ -251,7 +253,7 @@ def _run(
     argv, held = argvs  # what the part runs, and that argv run through the box
     tree, record = where  # the run's tree, and where the box records how it ended
     context = item.context
-    say(f'[{item.platform}] start in {tree.name}: {" ".join(argv)}')
+    say(f'{run_tag(item.platform, item.sha)} start in {tree.name}: {" ".join(argv)}')
     proc = below_normal(
         spawn,
         held,
@@ -264,7 +266,7 @@ def _run(
         errors='replace',
     )
     journal(root, _intent(item, proc.pid or 0))  # the pid a restarted host re-attaches to
-    pump = threading.Thread(target=_pump, args=(proc.stdout, item.platform, say, heard), daemon=True)
+    pump = threading.Thread(target=_pump, args=(proc.stdout, run_tag(item.platform, item.sha), say, heard), daemon=True)
     pump.start()
     started = clock()
     wake_s = min(renew_s, beat_s)
@@ -282,7 +284,7 @@ def _run(
             if wakes % renew_every == 0:
                 _renew(client(root), item, lease, say)
     pump.join(timeout=5)
-    say(f'[{item.platform}] exit={returncode}')
+    say(f'{run_tag(item.platform, item.sha)} exit={returncode}')
     stopped = proc.pid is not None and was_stopped(proc.pid)  # by stoprun, on purpose
     ended = read_ended(record)
     record.unlink(missing_ok=True)
@@ -347,7 +349,7 @@ def _renew(client: Client, item: Work, lease: timedelta, say: Callable[[str], No
     try:
         renewed = dataclasses.replace(item.holder, until=forge_now(client) + lease)
     except (ForgeCallFailed, OSError) as failed:
-        say(f'[{item.platform}] could not read the forge clock to renew: {failed}')
+        say(f'{run_tag(item.platform, item.sha)} could not read the forge clock to renew: {failed}')
         return
     _post(client, item, 'pending', renewed.description(), say)
 
@@ -363,9 +365,10 @@ def _carry(root: Path, client: Client, item: Work, verdict: CommitStatus, say: C
         status_post(client, target, context=verdict.context, state=verdict.state, description=carried.description(),
                     target_url=verdict.url)  # fmt: skip
     except ForgeCallFailed as failed:
-        say(f'[{item.platform}] could not carry to {target[:12]}: {failed}')
+        say(f'{run_tag(item.platform, item.sha)} could not carry to {target[:12]}: {failed}')
     else:
-        say(f'[{item.platform}] carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
+        tag = run_tag(item.platform, item.sha)
+        say(f'{tag} carried {verdict.state} to {target[:12]}: no test footprint reaches the diff')
 
 
 def _named(description: str, returncode: int, record: tuple[str, tuple[tuple[str, str], ...]]) -> str:
@@ -396,7 +399,7 @@ def _settle(
         number = int(item.context.removeprefix(CONTEXT_PREFIX))
         settle(client, number, state, description, log=log, host=host, record=record)
     except (ForgeCallFailed, LabelMissing) as failed:
-        say(f'[{item.platform}] could not comment the result: {failed}')
+        say(f'{run_tag(item.platform, item.sha)} could not comment the result: {failed}')
     _post(client, item, state, description, say)
 
 
@@ -404,9 +407,9 @@ def _post(client: Client, item: Work, state: str, description: str, say: Callabl
     try:
         status_post(client, item.sha, context=item.context, state=state, description=description)
     except ForgeCallFailed as failed:  # a missed heartbeat is not a dead producer; say so and keep going
-        say(f'[{item.platform}] could not post {state}: {failed}')
+        say(f'{run_tag(item.platform, item.sha)} could not post {state}: {failed}')
     else:
-        say(f'[{item.platform}] {state}: {description}')
+        say(f'{run_tag(item.platform, item.sha)} {state}: {description}')
 
 
 #: The POSIX niceness a producer runs at: below normal, so an interactive run keeps the scheduler's favour.

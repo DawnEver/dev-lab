@@ -30,9 +30,10 @@ from lab_commons.dev.githooks import bash_executable
 from lab_commons.dev.platformparts import PartRefusal, part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
+from lab_commons.hpc import run as run_module
 from lab_commons.hpc import shell, watch
 from lab_commons.hpc.builds import Builds, cargo_target
-from lab_commons.hpc.cluster import Unreachable
+from lab_commons.hpc.cluster import SUBMIT_LIMIT, Unreachable
 from lab_commons.hpc.config import Config, Cost, Limits, Policy
 from lab_commons.hpc.gather import gather_run
 from lab_commons.hpc.grants import Grant, Machine, Session
@@ -1729,3 +1730,132 @@ def test_a_run_that_cannot_be_gathered_has_its_live_jobs_cancelled_before_it_is_
     monkeypatch.setattr(watch, 'where', lambda *_a, **_k: SimpleNamespace(describe=lambda: 'pending'))
     assert watch.settle(*args, part='base', sleep=None) == PENDING
     assert not any(command.startswith('scancel') for command in asked), asked
+
+
+def test_a_cancelled_run_scancels_every_band_of_every_round_it_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ada 2026-10-21: a superseded run leaves NO job -- every band of every round, the forge's ids, squeue's by name.
+
+    PLANTED CONTROL: a run with no state and nothing held by name runs no ``scancel`` at all.
+    """
+    asked: list[str] = []
+    held = ['9000\n']
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return held[0] if command.startswith('squeue') else ''
+
+    rounds = {'rounds': [{'job_ids': ['100', '101']}, {'job_ids': ['200', '201']}]}
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: (rounds, runner))
+    machine = Machine(session=None, grants=(GRANT,))
+    ids = run_module.cancel_run('a' * 40, 'base', machine, lambda _grant: runner, also=('300',))
+    assert ids == ['100', '101', '200', '201', '300', '9000']
+    assert f'scancel {" ".join(ids)}' in asked
+
+    asked.clear()
+    held[0] = ''
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: ({'rounds': []}, runner))
+    assert run_module.cancel_run('a' * 40, 'base', machine, lambda _grant: runner) == []
+    assert not any(command.startswith('scancel') for command in asked), asked
+
+
+class _QosFull(FakeRunCluster):
+    """The cluster refuses the SECOND ``sbatch`` of a round on the per-user QOS submit limit (Ada 2026-10-21)."""
+
+    def __call__(self, command: str, stdin: str | None = None) -> str:
+        if 'sbatch' in command and len(_sbatched(self)) == 1:
+            self.calls.append((command, stdin))
+            msg = f'bash exited 1: sbatch: error: {SUBMIT_LIMIT} (Job violates accounting/QOS policy)'
+            raise RuntimeError(msg)
+        return super().__call__(command, stdin)
+
+
+def test_a_first_round_refused_on_the_qos_submit_limit_is_no_room_and_its_queued_band_is_cancelled() -> None:
+    """A per-user QOS submit refusal is CAPACITY: :class:`NoRoom` (released open), never a stuck ``bash exited 1``.
+
+    Ada 2026-10-21: alyyw103's run hit the QOS submit limit and alarmed "cannot advance" every tick, holding
+    its claim while four other grants had headroom. The band already queued is cancelled, so the refused
+    round holds no submit slot. PLANTED CONTROL: :func:`test_each_memory_class_is_its_own_array_at_its_own_files_peak`
+    -- the same two bands with room submit both.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 20480.0, 'tests/b.py': 512.0})
+    fake = _QosFull()
+    with pytest.raises(NoRoom, match=SUBMIT_LIMIT):
+        _submit(fake, history=learned.learned('https://g/r.git'))
+    assert len(_sbatched(fake)) == 2
+    assert any(command.startswith('scancel') and '4243' in command for command, _ in fake.calls), fake.calls
+
+
+def test_the_bands_of_a_round_share_one_qos_submit_room() -> None:
+    """Each memory band was planned against the WHOLE submit room, so two bands asked more than the QOS takes.
+
+    Planted: 99 of the ``free`` QOS's 100 submits queued, two bands of one shard each. One fits, two do not:
+    the round is NoRoom before any ``sbatch``. PLANTED CONTROL: the same bands at 98 queued submit both.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 20480.0, 'tests/b.py': 512.0})
+    full = FakeRunCluster(held='@@@ queued\n' + 'free\n' * 99)
+    with pytest.raises(NoRoom):
+        _submit(full, history=learned.learned('https://g/r.git'))
+    assert _sbatched(full) == [], 'nothing queued past the limit'
+    room = FakeRunCluster(held='@@@ queued\n' + 'free\n' * 98)
+    _submit(room, history=learned.learned('https://g/r.git'))
+    assert len(_sbatched(room)) == 2
+
+
+class _RetryQosFull(FakeRunCluster):
+    """Every ``sbatch`` after round 0 is refused on the per-user QOS submit limit while :attr:`full` holds."""
+
+    full = False
+
+    def __call__(self, command: str, stdin: str | None = None) -> str:
+        if 'sbatch' in command and self.full:
+            self.calls.append((command, stdin))
+            msg = f'bash exited 1: sbatch: error: {SUBMIT_LIMIT} (Job violates accounting/QOS policy)'
+            raise RuntimeError(msg)
+        return super().__call__(command, stdin)
+
+
+def _gather_at(fake: FakeRunCluster, minute: float) -> dict | None:
+    return gather_run(SHA, BASE, MACHINE, lambda _g: fake, cost=COST, policy=POLICY, now=lambda: 60.0 * minute)
+
+
+def test_a_retry_round_refused_on_the_qos_submit_limit_waits_in_flight_and_submits_when_the_room_returns() -> None:
+    """A QOS submit refusal at ANY round is capacity: a refused retry round leaves the run in flight.
+
+    Ada 2026-10-21 (motronics #4684): 42 items ran ~6 h, the retry round hit ``QOSMaxSubmitJobPerUserLimit``,
+    and the run settled "ended without a record".
+
+    PLANTED CONTROL: the same refusal lifted at the next tick submits the round and the record keeps every cell.
+    """
+    fake = _RetryQosFull(dies=frozenset({'tests/b.py'}))
+    _submit(fake)
+    fake.full = True
+    assert _gather_at(fake, 0) is None, 'a refused retry is pending, never a raise that settles the run'
+    state = json.loads(fake.state)
+    assert 'record' not in state
+    assert _words(state['cells'])['tests/b.py::t3'] == 'ok', 'what round 0 finished is kept'
+    assert _gather_at(fake, 1) is None, 'still no room: still waiting'
+    assert len(json.loads(fake.state)['rounds']) == 1
+    fake.full = False
+    assert _gather_at(fake, 2) is None, 'the room came back: round 1 is out'
+    assert len(json.loads(fake.state)['rounds']) == 2
+    record = _gather_at(fake, 3)
+    assert record is not None
+    assert set(_words(record['cells']).values()) == {'ok'}
+
+
+def test_a_retry_round_that_never_finds_room_settles_with_what_ran_and_names_the_unrun() -> None:
+    """Past ``policy.stall_minutes`` with no room, the record carries round 0's cells and the waiting ids as unrun.
+
+    PLANTED CONTROL: one minute short of the bound the run is still pending.
+    """
+    fake = _RetryQosFull(dies=frozenset({'tests/b.py'}))
+    _submit(fake)
+    fake.full = True
+    assert _gather_at(fake, 0) is None
+    assert _gather_at(fake, POLICY.stall_minutes - 1) is None
+    record = _gather_at(fake, POLICY.stall_minutes)
+    assert record is not None, 'a record of what DID run, never "no record"'
+    words = _words(record['cells'])
+    assert words['tests/b.py::t3'] == 'ok'
+    assert [words[f'tests/b.py::t{n}'] for n in (4, 5)] == ['infra', 'infra']
+    assert _whys(record['cells'])['tests/b.py::t4'].startswith('never ran: no submit room')

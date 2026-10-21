@@ -99,10 +99,6 @@ class _Slurm:
         self.record = record
         self.phrase = 'queued 4/4'
         self.cancelled: list[str] = []
-        self.began = True
-
-    def started(self, _run: forgerunstate.Run) -> bool:
-        return self.began
 
     def submitted(self, _run: forgerunstate.Run) -> list[str]:
         return list(self.recorded)
@@ -661,9 +657,10 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
     run once the ref moved on is settled as superseded, which no host claims again.
     """
     for tip, open_again in ((SHA, True), ('d' * 40, False)):
-        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: SHA)  # submitted while it was the tip
         store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
         _submitted_run(home, store, slurm)
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
         slurm.recorded = []  # the part's state.json never existed: the ids were another part's
         assert _tick(store, slurm, alarms=alarms) is None
         assert forgerunstate.live('https://f/o/r.git') == ()
@@ -680,25 +677,28 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
     'case',
     [
         ('d' * 40, False, True, True),  # a newer sha queued, nothing of this run started: its slot goes to the tip
-        ('d' * 40, True, True, False),  # PLANTED CONTROL: a run already executing finishes; its verdict counts
-        (SHA, False, True, False),  # PLANTED CONTROL: still the tip, nothing supersedes it
+        ('d' * 40, True, True, True),  # STARTED too (user ruling 2026-10-21): cancelled and released for the tip
+        (SHA, True, True, False),  # PLANTED CONTROL: still the tip, nothing supersedes it
+        ('d' * 40, True, False, False),  # PLANTED CONTROL: a started run of a non-coalesced class is kept
         ('d' * 40, False, False, False),  # PLANTED CONTROL: a lane is tested at every pushed sha
     ],
 )
-def test_a_run_not_started_when_its_ref_moves_on_is_cancelled_for_the_tip(
+def test_a_run_whose_coalesced_ref_moves_on_is_cancelled_for_the_tip_started_or_not(
     home: Path, monkeypatch: pytest.MonkeyPatch, case: tuple[str, bool, bool, bool]
 ) -> None:
-    """SUPERSEDE (user ruling 2026-10-19): a coalesced ref's run of an older sha that has NOT STARTED is cancelled.
+    """SUPERSEDE (user ruling 2026-10-21): a coalesced ref's run of an older sha is cancelled, STARTED OR NOT.
 
-    Measured 2026-10-19 (Ada): integrate/main's newest tip waited hours behind an older sha's array that
-    was still pending. Released as superseded (DONE: the tip no longer waits behind it), one alarm saying so.
+    Measured 2026-10-19 (Ada): integrate/main's newest tip waited hours behind an older sha's pending array;
+    2026-10-21: superseded head 11b64e0d5c93 kept 70 array tasks running on alyyw103 and ate its QOS room.
+    Released as superseded (DONE: the tip no longer waits behind it), one alarm saying so. A class not in
+    ``Schedule.coalesce`` is tested at every pushed sha.
     """
     tip, began, coalesced, superseded = case
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
     _submitted_run(home, store, slurm)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: tip)
     monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: coalesced)
-    slurm.began = began
+    slurm.phrase = 'running 3/4 done 1/4' if began else 'queued 4/4'  # nothing reads whether it started
     after = _tick(store, slurm, alarms=alarms)
     if not superseded:
         assert after is not None
@@ -715,7 +715,7 @@ def test_a_run_not_started_when_its_ref_moves_on_is_cancelled_for_the_tip(
     assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] != OPEN
     [alarm] = alarms
     assert alarm.kind == RUN
-    assert 'superseded before it started' in alarm.subject
+    assert f'superseded by {tip[:12]}' in alarm.subject
 
 
 def test_a_submitted_run_with_jobs_of_its_name_still_queued_is_kept(home: Path) -> None:
@@ -791,3 +791,32 @@ def test_untagged_counts_only_jobs_that_are_not_the_forges_own(tmp_path: Path, m
 def _snapshot_untagged() -> Snapshot:
     quota = Quota(account='a', cpus=8, mem_mb=None, gpus=None, default_qos='q', qos_max_submit={}, queued={})
     return Snapshot(nodes=(Node('n1', ('defq',), 8, 8192, 0, schedulable=True),), partitions={}, quota=quota)
+
+
+def test_a_run_not_yet_submitted_whose_ref_moved_on_is_released_superseded_without_a_submit(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ada 2026-10-21: a superseded head kept "building" and retrying its submit, eating its grant's QOS quota.
+
+    A run that has submitted nothing has started nothing, so the 2026-10-19 ruling applies before the submit
+    too: released superseded, naming the tip, NO sbatch. PLANTED CONTROL: still the tip, it submits.
+    """
+    for tip, superseded in (('d' * 40, True), (SHA, False)):
+        monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref, tip=tip: tip)
+        store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+        _start(home, store)
+        after = _tick(store, slurm, alarms=alarms)
+        if not superseded:
+            assert after is not None
+            assert slurm.submits == 1
+            continue
+        assert after is None
+        assert slurm.submits == 0, 'nothing is submitted for a sha that is no longer the tip'
+        assert forgerunstate.live('https://f/o/r.git') == ()
+        post = store.posts[-1]
+        assert post['status'] == 'error'
+        assert 'superseded' in post['description']
+        assert tip[:12] in post['description'], post['description']
+        released = CommitStatus(context=part_context('tests'), state='error', description=post['description'], url='')
+        assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] != OPEN
+        assert [a.kind for a in alarms] == [RUN]
