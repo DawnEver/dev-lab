@@ -1,3 +1,12 @@
+---
+name: PLAN-a-short-robust-toolchain
+description: The user-approved toolchain plan -- lab-commons runtime, dev-lab development and execution, ai-lab model access; thin cc-market and cc-config; one session one PR, forge syncs, tests, reviews and merges.
+metadata:
+  type: project
+created: 2026-10-21
+accessed: 2026-10-21
+---
+
 # PLAN: a short, robust toolchain (user-approved 2026-10-21)
 
 Scope: lab-commons, dev-lab (new), ai-lab, cc-market, cc-config, and every consumer (motronics-studio,
