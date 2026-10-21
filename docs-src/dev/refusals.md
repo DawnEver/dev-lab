@@ -56,8 +56,8 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## PUSH-REMOTE-DELETE
 
-- **Why it is refused.** a main session may push without asking (MAIN-SESSION-PUBLISHES), and the allow row that opens the push is a glob -- it admits `--delete`, `-d`, `--prune`, `--mirror` and a `:<ref>` refspec exactly as readily as a plain push. Deleting a ref on origin is the one push nothing on the agent's side can undo: the local branch may already be gone, and another reader's verdict may cite the deleted tip. The user ruled on 2026-10-04 that remote deletions are never automatic, and the 2026-10-08 ruling that opened pushes kept that half.
-- **The exit.** Leave the remote branch in place and name it to the user, who deletes it. Local cleanup stays a door: `python -m lab_commons.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
+- **Why it is refused.** a main session may push without asking (MAIN-SESSION-PUBLISHES), and the allow row that opens the push is a glob -- it admits `--delete`, `-d`, `--prune`, `--mirror` and a `:<ref>` refspec exactly as readily as a plain push. Deleting a ref on origin is the one push nothing on the agent's side can undo: the local branch may already be gone, and another reader's verdict may cite the deleted tip. A raw delete checks nothing first; the 2026-10-21 ruling opened deletion only where it is PROVABLY lossless.
+- **The exit.** LOSSLESS-DELETE: `python -m lab_commons.dev.branchprune delete <branch>...` fetches, deletes only when every commit on the branch is on integration or on another live origin branch / open PR head (naming that container), and otherwise refuses naming the commits that would be lost. Local cleanup stays a door: `python -m lab_commons.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
 
 ## PUSH-NO-VERIFY
 

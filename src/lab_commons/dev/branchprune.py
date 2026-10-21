@@ -18,8 +18,12 @@ the trunk) and its tip has sat idle -- its committer date -- for at least ``grac
 * UNMERGED (:data:`UNMERGED`): anything else. ALARMED with its age (:data:`STALE`), NEVER deleted: its
   commits exist nowhere else.
 
-REMOTE DELETION STAYS A HUMAN DECISION, expressed as DATA: the opt-in is a reviewed edit of the repo's
-``[tool.lab_commons.branchset]``. An agent never deletes a remote ref by hand (``PUSH-REMOTE-DELETE``).
+THE SERVE TICK'S DELETION IS DATA: the opt-in is a reviewed edit of the repo's ``[tool.lab_commons.branchset]``.
+AN AGENT'S DELETION IS LOSSLESS-DELETE (user ruling 2026-10-21): never a raw push (``PUSH-REMOTE-DELETE``), only
+:data:`DOOR`, which after a fresh fetch deletes a branch only when every commit on it is on integration or on
+another live origin branch or open PR head (:func:`judge` names that container), and otherwise refuses naming the
+commits that would be lost. The delete is a lease on the judged sha through the network door, recorded as one
+:data:`DELETED_EVENT` line and a ``pruned`` alarm naming the ``Lab-Session`` and the container.
 
 EACH DELETION IS PINNED to the sha the survey judged: the live tip is read from the forge first, and a
 branch that moved is kept -- a new tip is somebody's new work. Each deletion is one structured line
@@ -30,9 +34,12 @@ unmerged stale one.
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import sys
 import urllib.parse
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,10 +47,14 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.checkout import git_out
-from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
+from lab_commons.dev.forge import _GIT, fetch_origin
+from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm, sound
 from lab_commons.dev.forgepulls import ListingIncomplete, pr_list
-from lab_commons.dev.forgework import ForgeCallFailed
+from lab_commons.dev.forgework import ForgeCallFailed, client_for
+from lab_commons.dev.labsession import ENV
 from lab_commons.dev.lanepolicy import Policy, load_policy
+from lab_commons.dev.netverb import run_network_verb
+from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgework import Client
@@ -51,13 +62,19 @@ if TYPE_CHECKING:
 __all__ = [
     'DELETABLE',
     'DELETE',
+    'DELETED_EVENT',
+    'DOOR',
     'EPHEMERAL',
     'EVENT',
     'MERGED',
     'STALE',
     'UNMERGED',
     'Row',
+    'Verdict',
+    'delete',
+    'judge',
     'listing',
+    'main',
     'prune',
     'serve_prune',
     'survey',
@@ -195,6 +212,7 @@ def prune(
     stale = [row for row in rows if row.action == STALE]
     if stale:
         body = '\n'.join(f'{row.ref} {row.sha[:12]} idle {row.idle_h:.0f} h, not merged' for row in stale)
+        body += f'\nan agent deletes one whose commits all live elsewhere: {DOOR}'
         alarm(Alarm(STALE_BRANCH, repo, f'{len(stale)} unmerged branch(es) idle on origin', body))
     return rows
 
@@ -213,3 +231,112 @@ def serve_prune(
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         alarm(Alarm(PRUNED, client.forge.repo, 'the origin branch prune failed', str(failed)))
         return ()
+
+
+#: The ``event`` of the one structured line each LOSSLESS-DELETE writes.
+DELETED_EVENT: Final = 'lab_commons.forge.branch-delete'
+#: The door an agent deletes a remote branch through (PUSH-REMOTE-DELETE's remedy names it).
+DOOR: Final = 'python -m lab_commons.dev.branchprune delete <branch>...'
+#: Its refusals, each said once, here.
+LOSSY: Final = '{branch}: refused -- {count} commit(s) exist on it alone: {commits}'
+PROTECTED: Final = '{branch}: refused -- it is {why}, never deleted'
+_FIRST: Final = 5
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """What LOSSLESS-DELETE judged of one branch: its tip, the container holding it, or why it is kept."""
+
+    branch: str
+    sha: str = ''
+    container: str = ''
+    lost: tuple[str, ...] = ()
+    refused: str = ''
+
+
+def judge(root: Path, policy: Policy, branch: str, *, open_heads: dict[str, int]) -> Verdict:
+    """Whether deleting origin's *branch* loses nothing; read from the fetched remote-tracking refs alone.
+
+    Lossless when every commit on it is on integration, or on another live origin branch or open PR head.
+    """
+    if branch in {policy.integration, policy.trunk}:
+        return Verdict(branch, refused=PROTECTED.format(branch=branch, why='the integration branch or the trunk'))
+    if branch in open_heads:
+        why = f'the head of open PR #{open_heads[branch]}'
+        return Verdict(branch, refused=PROTECTED.format(branch=branch, why=why))
+    sha = (git_out(root, 'rev-parse', '--verify', '--quiet', f'{_ORIGIN}{branch}^{{commit}}') or '').strip()
+    if not sha:
+        return Verdict(branch, refused=f'{branch}: not on origin (gone already)')
+    listed = (git_out(root, 'for-each-ref', '--format=%(refname)', _ORIGIN) or '').split()
+    others = [name for name in (ref.removeprefix(_ORIGIN) for ref in listed) if name not in {branch, 'HEAD'}]
+    others.sort(key=lambda name: (name != policy.integration, name not in open_heads, name))
+    for name in others:
+        if git_out(root, 'merge-base', '--is-ancestor', sha, f'{_ORIGIN}{name}') is not None:
+            label = f'open PR #{open_heads[name]} ({name})' if name in open_heads else name
+            return Verdict(branch, sha, container=label)
+    lost = (git_out(root, 'rev-list', sha, '--not', *(f'{_ORIGIN}{name}' for name in others)) or '').split()
+    if not lost:
+        return Verdict(branch, sha, container='the union of the other origin branches')
+    shown = ', '.join(one[:12] for one in lost[:_FIRST]) + (' ...' if len(lost) > _FIRST else '')
+    return Verdict(branch, sha, lost=tuple(lost), refused=LOSSY.format(branch=branch, count=len(lost), commits=shown))
+
+
+def _push_delete(root: Path, branch: str, sha: str) -> str:
+    """Delete origin's *branch* if still at *sha* (a lease), through the network door; ``''``, or why not."""
+    report = run_network_verb(
+        [_GIT, 'push', f'--force-with-lease=refs/heads/{branch}:{sha}', 'origin', '--delete', f'refs/heads/{branch}'],
+        cwd=root,
+        timeout=300,
+    )
+    return '' if report.ok else report.remedy
+
+
+def delete(
+    root: Path,
+    branches: Sequence[str],
+    *,
+    client: Client,
+    session: str,
+    fetch: Callable[[Path], None],
+    say: Callable[[str], None],
+    push: Callable[[Path, str, str], str] = _push_delete,
+    alarm: Callable[[Alarm], object] = sound,
+) -> int:
+    """LOSSLESS-DELETE each of *branches* after a fresh fetch; 0 when every one was deleted, else 1."""
+    fetch(root)
+    policy = load_policy(root)
+    heads = {pr.head: pr.number for pr in pr_list(client)}
+    failed = 0
+    for branch in branches:
+        found = judge(root, policy, branch, open_heads=heads)
+        why = found.refused or push(root, branch, found.sha)
+        if why:
+            say(why if found.refused else f'{branch}: the delete failed: {why}')
+            failed += 1
+            continue
+        record = {'event': DELETED_EVENT, 'ref': branch, 'sha': found.sha, 'container': found.container}
+        say(json.dumps(record | {'session': session or None}))
+        body = f'{branch} at {found.sha[:12]}, held by {found.container}; by session {session or "none"}'
+        alarm(Alarm(PRUNED, client.forge.repo, f'{branch} deleted (lossless)', body))
+        say(f'{branch}: deleted at {found.sha[:12]} -- every commit is on {found.container}')
+    return 1 if failed else 0
+
+
+def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:
+    """``python -m lab_commons.dev.branchprune delete <branch>...``: LOSSLESS-DELETE, an agent's remote delete."""
+    parser = argparse.ArgumentParser(prog='lab_commons.dev.branchprune', description=main.__doc__)
+    verbs = parser.add_subparsers(dest='verb', required=True)
+    verbs.add_parser('delete').add_argument('branches', nargs='+')
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    root = Path.cwd() if cwd is None else cwd
+    try:
+        client = client_for(root)
+        session = os.environ.get(ENV, '')
+        return delete(root, args.branches, client=client, session=session, fetch=fetch_origin, say=emit)
+    except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
+        emit(f'[branchprune] {failed}', err=True)
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
