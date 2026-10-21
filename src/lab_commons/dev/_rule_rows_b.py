@@ -52,7 +52,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'VERDICT-AS-STATUS',
         (
             'A verdict reaches the forge as a commit STATUS on the exact commit it judged, in a named context, '
-            'carrying the verdict line: PASS is success, FAIL is failure, and INCONCLUSIVE publishes nothing. A '
+            'carrying the verdict line: PASS is success, FAIL is failure, and INCONCLUSIVE publishes nothing; '
+            'a commit with no status at all is read UNCLAIMED, never INCONCLUSIVE. A '
             'verdict about a dirty or moving tree names no commit and is not posted, and a failed publish never '
             'changes the verdict or its exit code.'
         ),

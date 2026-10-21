@@ -355,3 +355,12 @@ def test_a_part_posts_the_state_its_conclusion_names_and_an_error_status_is_no_p
         assert platformparts.parts_of([_status(BASE, part.state)])[0][BASE].result is result
     parts, problems = platformparts.parts_of([_status(BASE, state_for(Conclusion.INCONCLUSIVE))])
     assert (parts, len(problems)) == ({}, 1), 'control: an INCONCLUSIVE (error) status is never a settled part'
+
+
+def test_a_sha_nobody_posted_on_reads_unclaimed_and_never_inconclusive() -> None:
+    """``UNCLAIMED`` is NOTHING posted; a posted claim or an unsettled part is INCONCLUSIVE (planted control)."""
+    assert platformparts.standing([], head=SHA).reading == platformparts.UNCLAIMED
+    claimed = CommitStatus('tests/base', 'pending', 'claim machine=G', '')
+    assert platformparts.standing([claimed], head=SHA).reading == Conclusion.INCONCLUSIVE.name
+    assert platformparts.standing([_status(BASE)], head=SHA).reading == Conclusion.PASS.name
+    assert platformparts.standing([_status(BASE, 'failure')], head=SHA).reading == Conclusion.FAIL.name

@@ -104,6 +104,7 @@ __all__ = [
     'CONTEXT_PREFIX',
     'PART_FIELD',
     'REVIEW_CONTEXT',
+    'UNCLAIMED',
     'ClusterPart',
     'Composition',
     'Part',
@@ -443,6 +444,11 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
+#: The reading of a commit with NO ``tests/<part>`` status at all: no producer has claimed it. Distinct from
+#: INCONCLUSIVE, which says a producer posted something that does not settle (a claim, an ``error``, a part missing).
+UNCLAIMED: Final = 'UNCLAIMED'
+
+
 @dataclass(frozen=True)
 class Standing:
     """A commit's result as its parts on the forge say it: PASS, FAIL, or INCONCLUSIVE while unsettled.
@@ -455,6 +461,12 @@ class Standing:
     result: Conclusion
     parts: tuple[Part, ...]
     problems: tuple[str, ...]
+    posted: bool = True
+
+    @property
+    def reading(self) -> str:
+        """The state to SAY: :data:`UNCLAIMED` when nothing is posted, else the result's name."""
+        return self.result.name if self.posted or self.result is not Conclusion.INCONCLUSIVE else UNCLAIMED
 
     def cited(self) -> str:
         """The parts it rests on, one ``part=RESULT/scope ran=N`` each."""
@@ -473,7 +485,10 @@ def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None =
             if part.result is not Conclusion.PASS or part.scope != scope
         ]
     failed = any(part.result is Conclusion.FAIL for part in composed.parts)
-    return Standing(result=_settled(failed=failed, problems=problems), parts=composed.parts, problems=tuple(problems))
+    posted = bool(parts or unsettled)
+    return Standing(
+        result=_settled(failed=failed, problems=problems), parts=composed.parts, problems=tuple(problems), posted=posted
+    )
 
 
 def _settled(*, failed: bool, problems: Sequence[str]) -> Conclusion:

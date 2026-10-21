@@ -74,6 +74,17 @@ def test_a_pr_whose_parts_are_not_all_pass_waits_naming_them(tmp_path: Path) -> 
         assert any('every `tests/<part>` part PASS' in why for why in found.missing), found.missing
 
 
+def test_a_pr_nobody_posted_on_says_unclaimed_and_a_claimed_one_inconclusive(tmp_path: Path) -> None:
+    """The two waits are told apart: nothing posted is UNCLAIMED, a pending claim is INCONCLUSIVE."""
+    work, head = _work(tmp_path)
+    pending = [{'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': 'claim machine=G'}]
+    nothing = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=()).missing[0]
+    claimed = decide(work, POLICY, branch='pr/x', number=4, head=head, statuses=_statuses(pending)).missing[0]
+    assert 'UNCLAIMED' in nothing, nothing
+    assert 'INCONCLUSIVE' not in nothing, nothing
+    assert 'INCONCLUSIVE' in claimed, claimed
+
+
 def test_a_conflicting_pr_waits_and_says_merge_integration_into_the_branch(tmp_path: Path) -> None:
     """PLANTED control: once integration is merged into the branch, the same PR is ready."""
     work = _tested(tmp_path)
