@@ -30,6 +30,7 @@ from lab_commons.dev.githooks import bash_executable
 from lab_commons.dev.platformparts import PartRefusal, part_of, parts_of
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
+from lab_commons.hpc import run as run_module
 from lab_commons.hpc import shell, watch
 from lab_commons.hpc.builds import Builds, cargo_target
 from lab_commons.hpc.cluster import SUBMIT_LIMIT, Unreachable
@@ -1728,6 +1729,32 @@ def test_a_run_that_cannot_be_gathered_has_its_live_jobs_cancelled_before_it_is_
     monkeypatch.setattr(watch, 'gather_run', lambda *_a, **_k: None)
     monkeypatch.setattr(watch, 'where', lambda *_a, **_k: SimpleNamespace(describe=lambda: 'pending'))
     assert watch.settle(*args, part='base', sleep=None) == PENDING
+    assert not any(command.startswith('scancel') for command in asked), asked
+
+
+def test_a_cancelled_run_scancels_every_band_of_every_round_it_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ada 2026-10-21: a superseded run leaves NO job -- every band of every round, the forge's ids, squeue's by name.
+
+    PLANTED CONTROL: a run with no state and nothing held by name runs no ``scancel`` at all.
+    """
+    asked: list[str] = []
+    held = ['9000\n']
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        return held[0] if command.startswith('squeue') else ''
+
+    rounds = {'rounds': [{'job_ids': ['100', '101']}, {'job_ids': ['200', '201']}]}
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: (rounds, runner))
+    machine = Machine(session=None, grants=(GRANT,))
+    ids = run_module.cancel_run('a' * 40, 'base', machine, lambda _grant: runner, also=('300',))
+    assert ids == ['100', '101', '200', '201', '300', '9000']
+    assert f'scancel {" ".join(ids)}' in asked
+
+    asked.clear()
+    held[0] = ''
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: ({'rounds': []}, runner))
+    assert run_module.cancel_run('a' * 40, 'base', machine, lambda _grant: runner) == []
     assert not any(command.startswith('scancel') for command in asked), asked
 
 
