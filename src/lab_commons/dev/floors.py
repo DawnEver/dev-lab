@@ -48,6 +48,7 @@ would be a declaration that lies.
 from __future__ import annotations
 
 __all__ = [
+    'BIND_RATIO',
     'FloorMisdeclared',
     'FloorUnmet',
     'SlackFloor',
@@ -55,6 +56,13 @@ __all__ = [
     'assert_floor_still_binds',
     'slack',
 ]
+
+#: THE PROPORTIONAL HALF OF THE BAND, measured from the failure it ends (2026-10-21): an absolute
+#: headroom alone reds on GROWTH, so every parallel PR that adds tests reddened the same floors and
+#: each re-took them, conflicting at merge. Growth is never the defect -- the blind scan is the
+#: reading DROPPING, and that is :func:`assert_floor`'s side. A floor still binds while it holds at
+#: least this fraction of the reading: past it, a walk could lose more than half its corpus and pass.
+BIND_RATIO = 0.5
 
 
 class FloorMisdeclared(AssertionError):
@@ -141,7 +149,9 @@ def assert_floor_still_binds(found: int, *, floor: int, headroom: int, what: str
     Raises:
         FloorMisdeclared: *headroom* is at or below zero. Zero pins the floor to the exact count, so
             the arm reds on the next file ADDED; that is the count-pin failure, not a tight guard.
-        SlackFloor: the floor has been outgrown by more than *headroom*.
+        SlackFloor: the floor has been outgrown by more than *headroom* AND sits below
+            :data:`BIND_RATIO` of the reading -- both, so ordinary growth between re-measurements
+            (parallel PRs each adding tests) never reds; only a floor that has stopped binding does.
 
     """
     if headroom <= 0:
@@ -152,11 +162,12 @@ def assert_floor_still_binds(found: int, *, floor: int, headroom: int, what: str
         )
         raise FloorMisdeclared(msg)
     margin = slack(found, floor=floor)
-    if margin > headroom:
+    if margin > headroom and floor < BIND_RATIO * found:
         msg = (
             f'the {what} scan read {found} against a floor of {floor} -- {margin} clear, past the '
-            f'{headroom} headroom. The floor was measured against a smaller tree and now refuses only '
-            f'a total collapse: a walk losing most of its corpus would still clear it. RE-MEASURE THE '
+            f'{headroom} headroom and below {BIND_RATIO:.0%} of the reading. The floor was measured '
+            f'against a smaller tree and now refuses only a total collapse: a walk losing '
+            f'most of its corpus would still clear it. RE-MEASURE THE '
             f'FLOOR against what is there today; raising the headroom is how the arm is kept while the '
             f'guard it stands for is given up.'
         )

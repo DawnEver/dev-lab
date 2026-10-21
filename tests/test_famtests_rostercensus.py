@@ -99,11 +99,20 @@ def test_the_reach_arm_now_has_the_side_both_labs_had_to_write_by_hand() -> None
     THE AXIS THIS CONTROL IS BLIND TO: it drives the arithmetic of the band, not what
     `kit_modules` counted. A resolver that reported 46 modules of the WRONG package clears every
     assertion below -- that claim belongs to `supersede`, which calls surface overlap a RULER.
+
+    Since 2026-10-21 a floor also binds while it holds half the reading (`floors.BIND_RATIO`), so
+    the plant reads 71 modules against 35: below half, and past a headroom of 35 by one.
     """
-    taken = census(claim('a.py', side=MOVES, grade=supersede.UNTOUCHED), modules_read=46)
-    assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=11)
+    taken = census(claim('a.py', side=MOVES, grade=supersede.UNTOUCHED), modules_read=71)
+    assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=36)
+    assert_reach(
+        census(claim('a.py', side=MOVES, grade=supersede.UNTOUCHED), modules_read=70),
+        rows_declared=1,
+        module_floor=35,
+        module_headroom=10,
+    )
     with pytest.raises(floors.SlackFloor, match='RE-MEASURE THE FLOOR'):
-        assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=10)
+        assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=35)
     with pytest.raises(floors.FloorMisdeclared, match='headroom'):
         assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=0)
 
