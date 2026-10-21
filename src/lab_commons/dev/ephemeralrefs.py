@@ -74,9 +74,11 @@ MACHINE_LOCAL: Final[re.Pattern[str]] = re.compile(
     r'|%TEMP%|%TMP%|%LOCALAPPDATA%/Temp|\$TMPDIR|\$CLAUDE_JOB_DIR|(?:.*/)?\.claude-evans/jobs/)'
 )
 
-#: The family's interpreter door: a fixed COMMAND spelling every bootstrap creates, not content in
+#: The family's interpreter door and venv activation: fixed COMMAND spellings every bootstrap creates, not content in
 #: the venv. Anything else under ``.venv/`` is judged like any ignored path.
-PORTABLE: Final = frozenset({'.venv/Scripts/python.exe', '.venv/bin/python'})
+PORTABLE: Final = frozenset({
+    '.venv/Scripts/python.exe', '.venv/bin/python', '.venv/Scripts/activate', '.venv/bin/activate',
+})  # fmt: skip
 
 #: Call names that READ their argument. A literal ignored path inside one of these calls is an input.
 READ_VERBS: Final = frozenset({
