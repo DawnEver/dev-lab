@@ -289,8 +289,8 @@ def main(
     try:
         fetch(root)
         origin, policy = client_for(root), load_policy(root)
-        lines = tick(root, origin, policy).lines
-        lines += [f'branch: {row.line()}' for row in listing(root, origin, now=datetime.now(UTC))]
+        branches = (f'branch: {row.line()}' for row in listing(root, origin, now=datetime.now(UTC)))
+        lines = [*tick(root, origin, policy).lines, *branches]
     except (BranchSetNotDeclared, ForgeCallFailed, ListingIncomplete) as failed:
         emit(f'[integration] {failed}', err=True)
         return 1
