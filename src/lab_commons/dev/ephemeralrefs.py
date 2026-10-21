@@ -67,6 +67,10 @@ __all__ = [
 ]
 
 RULE: Final = 'TRACKED-CITES-NO-EPHEMERAL'
+#: The one remedy every refusal prints.
+REMEDY: Final = (
+    'cite a durable source or a <placeholder> shape, or declare an escape in [tool.lab_commons.ephemeral_refs]'
+)
 
 #: Paths no ignore file can judge because they are not in the repo: a drive letter, a home or
 #: cluster root, a temp dir, the agent job tree. Matched at the START of a token.
@@ -348,11 +352,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for problem in problems:
         emit(f'[{RULE}] {problem}')
     if problems:
-        emit(
-            f'[{RULE}] cite the durable source (a memory entry, a module, a `uv run` command), write the '
-            f'SHAPE with a <placeholder>, state the measured number inline, or declare a reasoned escape '
-            f'in [tool.lab_commons.ephemeral_refs].\n'
-        )
+        emit(f'[{RULE}] {REMEDY}\n')
     return 1 if problems else 0
 
 

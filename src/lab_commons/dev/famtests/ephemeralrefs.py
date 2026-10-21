@@ -32,11 +32,7 @@ def assert_no_tracked_file_cites_ephemeral(*, root: Path, floor: int, headroom: 
     floors.assert_floor(read, floor=floor, what=ephemeralrefs.RULE)
     floors.assert_floor_still_binds(read, floor=floor, headroom=headroom, what=ephemeralrefs.RULE)
     if problems:
-        head = (
-            f'{ephemeralrefs.RULE}: {len(problems)} refusal(s). Cite the durable source (a memory entry, a '
-            f'module, a `uv run` command), write the SHAPE with a <placeholder>, state the measured number '
-            f'inline, or declare a reasoned escape in [tool.lab_commons.ephemeral_refs]:'
-        )
+        head = f'{ephemeralrefs.RULE}: {len(problems)} refusal(s); {ephemeralrefs.REMEDY}:'
         msg = '\n  '.join((head, *problems))
         raise AssertionError(msg)
 
