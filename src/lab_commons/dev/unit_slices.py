@@ -104,7 +104,7 @@ class _Exception(NamedTuple):
     reason: str
 
 
-#: The census's rulings (motronics HANDOFF 2026-10-19, "Legitimate exceptions"), as data. ``segment`` matches the
+#: The census's rulings (a consumer HANDOFF 2026-10-19, "Legitimate exceptions"), as data. ``segment`` matches the
 #: LAST segment, ``suffix``/``prefix`` the lower-cased name, ``bare`` a name with no separator at all.
 DECLARED_EXCEPTIONS: Final[tuple[_Exception, ...]] = (
     _Exception('suffix', '_bar', 'a THRESHOLD or a bus bar (`TORQUE_BAR`), never a pressure in this family.'),

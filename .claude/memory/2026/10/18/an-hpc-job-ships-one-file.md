@@ -8,7 +8,7 @@ metadata:
   type: project
 ---
 
-# An HPC job ships one file (plan from motronics, 2026-10-17)
+# An HPC job ships one file (plan from a consumer repo, 2026-10-17)
 
 Branch `feat/hpc-one-file-per-job`. Before: a campaign job reused the test layout (a checkout plus an unpacked
 venv per sha, ~46 k files) and wrote a Slurm log plus a results file per task.

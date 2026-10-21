@@ -6,7 +6,7 @@ created: 2026-10-18
 
 # A 401 is measured before it names the credential
 
-- Incident (motronics-studio, 2026-10-18): `forge status list` printed `forge-refused -- retrying cannot
+- Incident (a consumer repo, 2026-10-18): `forge status list` printed `forge-refused -- retrying cannot
   change this answer ... re-store it: auth login` on a 401; minutes later the same `git credential` token
   authenticated and `git push` had used it throughout. Later that evening `GET /user` itself refused 3/3
   for ~30 min and then cleared untouched -- even a reproduced refusal can be the server's for a while.
