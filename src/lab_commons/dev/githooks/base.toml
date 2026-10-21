@@ -122,3 +122,11 @@ always_run = true
 id = "lock"
 run = ["python", "-m", "lab_commons.dev.lockcheck"]
 always_run = true
+
+# CONFIG-SYNCS-BEFORE-PUSH (user ruling 2026-10-21): every family-rendered file (.gitignore, ruff.toml, ...) is the
+# render of the base at the INSTALLED -- locked -- lab-commons, so a lab-commons bump re-renders before it pushes.
+# Renders to memory and compares; the deltas module is [tool.lab_commons.famfiles] deltas (lab_commons.dev.famfiles).
+[[pre-push]]
+id = "famfiles"
+run = ["python", "-m", "lab_commons.dev.famfiles", "--check"]
+always_run = true

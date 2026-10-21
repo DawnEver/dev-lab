@@ -147,6 +147,7 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
 GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '**/.claude/**',
     '!**/.claude/settings.json',
+    '!**/.claude/sharp-review.json',
     *(
         line
         for directory in (

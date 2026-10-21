@@ -30,9 +30,11 @@ from lab_commons.dev.branchset_push import (
     refusal,
     undeclared,
 )
+from lab_commons.dev.famfiles import load_deltas, render_all
 from lab_commons.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
+_KIT = Path(__file__).resolve().parents[1]
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session', 'integrate/main'}))
 _ZERO = '0' * 40
 _HEAD = 'a' * 40
@@ -46,6 +48,9 @@ trunk = "main"
 sessions = ["feat/session", "integrate/main"]
 
 [tool.lab_commons.hooks]
+
+[tool.lab_commons.famfiles]
+deltas = "_famconfig_delta.py"
 """
 
 
@@ -62,7 +67,11 @@ def _planted(root: Path) -> Path:
         capture_output=True,
         timeout=300,
     )
-    subprocess.run([_GIT, 'add', 'pyproject.toml', 'uv.lock'], cwd=root, check=True, capture_output=True, timeout=60)
+    # ... and its family files are the render of the installed kit, or the base `famfiles` row refuses it.
+    shutil.copy(_KIT / 'tests' / '_famconfig_delta.py', root / '_famconfig_delta.py')
+    shutil.copy(_KIT / 'Makefile', root / 'Makefile')
+    render_all(root, load_deltas(root / '_famconfig_delta.py'), write=True)
+    subprocess.run([_GIT, 'add', '.'], cwd=root, check=True, capture_output=True, timeout=60)
     subprocess.run(
         [_GIT, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'c1'],
         cwd=root,

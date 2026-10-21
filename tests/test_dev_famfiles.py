@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Final
 
@@ -110,3 +111,40 @@ def test_a_rendered_file_is_lf_on_every_os(tmp_path: Path) -> None:
     render_all(tmp_path, rendered, write=True)
     for name in rendered:
         assert b'\r\n' not in (tmp_path / name).read_bytes(), name
+
+
+def test_the_deltas_are_read_from_the_pyproject_when_not_passed(repo: Path) -> None:
+    """``[tool.lab_commons.famfiles] deltas`` names the module, so the bare command is the one remedy."""
+    shutil.copy(DELTAS_FILE, repo / '_delta.py')
+    shutil.copy(ROOT / 'Makefile', repo / 'Makefile')
+    (repo / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\n\n[tool.lab_commons.famfiles]\ndeltas = "_delta.py"\n', encoding='utf-8'
+    )
+    assert main(['--repo', str(repo), '--check']) == 0
+
+
+def test_an_undeclared_deltas_module_is_refused_naming_the_key(repo: Path) -> None:
+    """No ``--deltas`` and no declaration: refused naming the table and key, never a guessed path."""
+    with pytest.raises(SystemExit, match=r'\[tool.lab_commons.famfiles\] deltas'):
+        main(['--repo', str(repo), '--check'])
+
+
+def test_a_drifted_check_names_the_one_remedy(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """PLANTED drift: the check exits 1 and its last line is the bare re-render command."""
+    shutil.copy(DELTAS_FILE, repo / '_delta.py')
+    shutil.copy(ROOT / 'Makefile', repo / 'Makefile')
+    (repo / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\n\n[tool.lab_commons.famfiles]\ndeltas = "_delta.py"\n', encoding='utf-8'
+    )
+    path = repo / '.gitignore'
+    path.write_text(path.read_text(encoding='utf-8').replace('scratch/\n', ''), encoding='utf-8')
+    assert main(['--repo', str(repo), '--check']) == 1
+    assert 'python -m lab_commons.dev.famfiles' in capsys.readouterr().out.strip().splitlines()[-1]
+
+
+def test_the_rendered_files_are_checked_before_every_push() -> None:
+    """The base pre-push stage carries the render check, run always: a lab-commons bump re-renders first."""
+    rows = tomllib.loads((ROOT / 'src/lab_commons/dev/githooks/base.toml').read_text(encoding='utf-8'))['pre-push']
+    row = next(one for one in rows if one['id'] == 'famfiles')
+    assert row['run'] == ['python', '-m', 'lab_commons.dev.famfiles', '--check']
+    assert row['always_run'] is True

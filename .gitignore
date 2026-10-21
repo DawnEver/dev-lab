@@ -29,6 +29,7 @@ output/
 scratch/
 **/.claude/**
 !**/.claude/settings.json
+!**/.claude/sharp-review.json
 !**/.claude/hooks/
 !**/.claude/hooks/**
 !**/.claude/agents/
