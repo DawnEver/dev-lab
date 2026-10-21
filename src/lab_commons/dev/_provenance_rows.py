@@ -138,6 +138,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'relock': ('original',),
     'forgerecords': ('original',),
     'forgetick': ('original',),
+    'forgeautosync': ('original',),
     'forgeintegration': ('original',),
     'forgemerge': ('original',),
     'forgereview': ('original',),

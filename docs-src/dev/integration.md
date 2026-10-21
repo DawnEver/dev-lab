@@ -37,6 +37,30 @@ ephemeral = ['pr/*']
 pr_merges_since = "<the integrate/main sha the rule starts after>"
 ```
 
+## Auto-sync: the forge syncs a behind PR head
+
+User ruling 2026-10-21: integration is automatic. Declared, each `forge serve` tick (the integration step,
+`lab_commons.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
+not contain `origin/<integration>`, and merges integration INTO the head in a worktree under the git directory:
+a merge commit (`Merged-Branch: <integration>`, first parent the head), never a rebase or a force, pushed under
+the head's own name. A lock left stale or conflicted by the merge is relocked inside the merge commit through
+the dependency door. The new head gets its parts by the normal path, then merges like any other PR.
+
+- Once per integration tip per head: each outcome is an `integration/sync` status on the head naming the tip,
+  and a serving host's `pending` claim keeps N hosts to one (a claim older than 1 h is presumed dead).
+- It never resolves a textual conflict outside `uv.lock`, never touches a head outside `ephemeral` or one
+  committed inside `auto_sync_quiet`, and never a head holding another open PR's unmerged head: that PR is
+  named as the one it waits behind, and the first tip after it merges syncs this one.
+- The merge passes the merge audit before it is committed, and the commit runs the repository's hooks.
+- Each refusal is said once, in the head's status and the PR's integration comment. `forge integration`
+  (no host) only reports.
+
+```toml
+[tool.lab_commons.integrator]
+auto_sync = true            # undeclared: off
+auto_sync_quiet = "10 min"  # the default
+```
+
 ## Roles
 
 | role | does | never |

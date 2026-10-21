@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from lab_commons.dev.lanepolicy import Policy
     from lab_commons.dev.netverb import Report
 
-__all__ = ['PREFIX', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'dist_of']
+__all__ = ['PREFIX', 'Relock', 'RelockFailed', 'branch_for', 'carry', 'decision', 'dist_of', 'door_upgrade']
 
 #: The prefix every relock branch carries, inside the declared ephemeral ``pr/*`` namespace.
 PREFIX: Final = 'pr/relock'
@@ -137,7 +137,7 @@ def _worktree(root: Path, sha: str) -> Iterator[Path]:
         _git(root, 'worktree', 'remove', '--force', str(tree))
 
 
-def _door_upgrade(tree: Path) -> int:
+def door_upgrade(tree: Path) -> int:
     """The one writer of a lock: ``lab_commons.dev.dep --lock-upgrade <tree>``."""
     argv = [sys.executable, '-m', 'lab_commons.dev.dep', '--lock-upgrade', str(tree)]
     return _door.run(argv, check=False, timeout=DOOR_TIMEOUT_S, cwd=tree).returncode
@@ -157,7 +157,7 @@ def carry(
     pulls: Callable[[], Sequence[PullRequest]],
     create: Callable[..., PullRequest],
     resolve: Callable[[Path], Report] | None = None,
-    upgrade: Callable[[Path], int] = _door_upgrade,
+    upgrade: Callable[[Path], int] = door_upgrade,
     push: Callable[[Path, str], None] = _push,
 ) -> str:
     """Relock ``origin/<integration>`` of *root* through one pull request, if it needs one; the line said.
