@@ -76,6 +76,8 @@ _IDS = frozenset(
         'VERDICTS-FROM-THE-FORGE',
         'ONE-BOX-ONE-LOCK',
         'FORMATS-UPGRADE-ON-READ',
+        'ONE-SESSION-ONE-PR',
+        'NO-STACKED-PRS',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',
         'MERGE-DEVIATIONS-NAMED',

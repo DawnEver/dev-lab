@@ -35,6 +35,7 @@ from lab_commons.dev import (
     forgesync,
     forgetick,
     forgetidy,
+    pradmit,
     servelock,
 )
 from lab_commons.dev.forge import Transport, https_transport
@@ -146,8 +147,14 @@ def issue_and_pr(
 ) -> int:
     """``python -m lab_commons.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    client = client_for(Path.cwd() if cwd is None else cwd, env=env, transport=transport)
+    root = Path.cwd() if cwd is None else cwd
+    client = client_for(root, env=env, transport=transport)
     try:
+        if (args.noun, args.verb) == ('pr', 'create') and (
+            why := pradmit.create_refusal(root, client, head=args.head, base=args.base)
+        ):
+            emit(f'[forge] pr create REFUSED -- {why}', err=True)
+            return 1
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)

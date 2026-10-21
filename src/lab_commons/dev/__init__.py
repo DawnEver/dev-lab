@@ -317,6 +317,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`lab_commons.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
+* :mod:`lab_commons.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
+* :mod:`lab_commons.dev.pradmit` -- PR admission: ONE-SESSION-ONE-PR and NO-STACKED-PRS at ``pr create`` and push.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.

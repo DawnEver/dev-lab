@@ -15,7 +15,7 @@ from typing import cast
 
 import pytest
 
-from lab_commons.dev import forgeservesteps
+from lab_commons.dev import forgeservesteps, relock
 from lab_commons.dev.forgealarm import Alarm
 from lab_commons.dev.forgework import Client, PullRequest
 from lab_commons.dev.lanepolicy import Policy
@@ -200,3 +200,20 @@ def test_the_serve_step_relocks_only_where_the_forge_merges_and_alarms_a_failure
 
 
 _CLIENT = cast('Client', SimpleNamespace(pr_create=lambda *_a, **_k: None))
+
+
+def test_a_relock_commit_is_the_forges_and_carries_no_session(monkeypatch, tmp_path: Path) -> None:
+    """ONE-SESSION-ONE-PR: a forge started inside a session must not stamp that session on its own commits."""
+    seen: dict = {}
+
+    def fake(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, '', '')
+
+    monkeypatch.setenv('LAB_SESSION', 'session-from-the-host-shell')
+    monkeypatch.setenv('HARNESS_AGENT', 'claude')
+    monkeypatch.setattr(relock._door, 'run', fake)
+    relock._git(tmp_path, 'status')
+    assert 'LAB_SESSION' not in seen['env']
+    assert 'HARNESS_AGENT' not in seen['env']
+    assert 'PATH' in {key.upper() for key in seen['env']}

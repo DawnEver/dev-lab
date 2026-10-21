@@ -166,6 +166,16 @@ python -m lab_commons.dev.forge sync --watch origin/<ref>  # opt in to one more 
 `PRS-TARGET-INTEGRATION`: every pull request targets integration; one opened against the trunk is retargeted
 with a comment saying why. Each child carries one PR at most.
 
+`ONE-SESSION-ONE-PR`: a launcher (`ccc`, `ccds`, `codc`; cc-config `scripts/shared/machine.mjs`) issues one
+`LAB_SESSION` per session, inherited by every child. The `lab-session` commit-msg row writes it as a
+`Lab-Session:` trailer (`lab_commons.dev.labsession`); an agent commit without it is refused, a human one is
+untouched, and `Claude-Session:` is prose nothing reads. `forge pr create`, and the `pr-admit` pre-push row for a
+NEW `pr/*` branch, refuse a head that shares a session with another open head and name that head's branch
+(`lab_commons.dev.pradmit`). A split is an entry of `pradmit.SPLITS` with its reason, under a pinned ceiling.
+
+`NO-STACKED-PRS`: `forge pr create` refuses a head holding a commit of another open PR's head that integration
+does not hold (`trialmerge.shares_unmerged`). Wait for that PR to merge, or fold the work into it.
+
 ## The integration tick
 
 ```

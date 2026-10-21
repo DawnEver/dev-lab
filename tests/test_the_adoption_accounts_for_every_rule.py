@@ -165,6 +165,9 @@ _ENFORCED = {
     # Incident 2026-10-17 (Ada): a redeploy from journal schema 1 to 2 under 17 live schema-1 runs, refused
     # by the reader, stopped every serve tick of four accounts.
     'FORMATS-UPGRADE-ON-READ': (guard('tests/test_arch_formats_upgrade_on_read.py'),),
+    # Incident 2026-10-21: 28 open motronics PRs, one session spread over several, one stalled base holding a dozen.
+    'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
+    'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
     'ONE-BOX-ONE-LOCK': (
         guard('tests/test_box.py'),
         guard('tests/test_box_run_enforced.py'),
