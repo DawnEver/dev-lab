@@ -40,7 +40,7 @@ from typing import Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path, section
-from lab_commons.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, writable
+from lab_commons.dev.diskusage import Usage, files_first, measure, pressure_text, read_usage, remove_tree
 from lab_commons.dev.forgerunstate import directory as run_files
 from lab_commons.dev.platformparts import origin_url
 from lab_commons.dev.retentionplan import (
@@ -87,7 +87,7 @@ def _remove(doomed: Doomed) -> None:
     if doomed.rotate:
         doomed.path.replace(doomed.path.with_name(doomed.path.name + '.1'))
     elif doomed.path.is_dir() and not doomed.path.is_symlink():
-        shutil.rmtree(doomed.path, onexc=writable)
+        remove_tree(doomed.path)
     else:
         doomed.path.unlink(missing_ok=True)
 

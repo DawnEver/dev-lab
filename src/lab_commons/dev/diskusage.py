@@ -33,12 +33,14 @@ __all__ = [
     'Usage',
     'consumers',
     'count_files',
+    'extended',
     'files_first',
     'measure',
     'parse_mmlsquota',
     'parse_quota',
     'pressure_text',
     'read_usage',
+    'remove_tree',
     'storage_text',
     'writable',
 ]
@@ -195,6 +197,26 @@ def files_first[T](items: Sequence[T], path: Callable[[T], Path]) -> list[T]:
         groups.setdefault(path(item).name, []).append(item)
     held = {name: sum(count_files(path(i)) for i in group if path(i).exists()) for name, group in groups.items()}
     return [item for name in sorted(groups, key=lambda name: -held[name]) for item in groups[name]]
+
+
+def extended(path: Path) -> str:
+    r"""*path* as the OS opens it past MAX_PATH: ``\\?\<absolute>`` on Windows, the plain absolute path elsewhere."""
+    full = str(Path(path).absolute())
+    if os.name != 'nt' or full.startswith('\\\\'):  # already extended, or a UNC share left as given
+        return full
+    return f'\\\\?\\{full}'
+
+
+def remove_tree(path: Path) -> None:
+    """Remove the directory *path* whatever it holds: a path past MAX_PATH, a read-only file; absent is done.
+
+    THE ONE REMOVAL PATH (WS2, 2026-10-21): a producer's tree held a ``.venv`` deeper than 260 characters,
+    ``git worktree remove`` failed with ``Filename too long`` and left debris that blocked the next add. Through
+    :func:`extended` no host setting (``LongPathsEnabled``, ``core.longpaths``) is needed.
+    """
+    target = extended(path)
+    if os.path.lexists(target):
+        shutil.rmtree(target, onexc=writable)
 
 
 def writable(func: Callable[..., Any], path: str, _exc: BaseException) -> None:
