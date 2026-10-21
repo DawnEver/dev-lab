@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.dev import venvpath
 from lab_commons.dev.rules import tracked_files
 from lab_commons.log import emit
 
@@ -75,10 +76,11 @@ MACHINE_LOCAL: Final[re.Pattern[str]] = re.compile(
 )
 
 #: The family's interpreter door and venv activation: fixed COMMAND spellings every bootstrap creates, not content in
-#: the venv. Anything else under ``.venv/`` is judged like any ignored path.
-PORTABLE: Final = frozenset({
-    '.venv/Scripts/python.exe', '.venv/bin/python', '.venv/Scripts/activate', '.venv/bin/activate',
-})  # fmt: skip
+#: the venv, derived from :data:`lab_commons.dev.venvpath.VENV_LAYOUTS` (the one place a layout is spelled). Anything
+#: else under ``.venv/`` is judged like any ignored path.
+PORTABLE: Final = frozenset(
+    '/'.join(parts) for layout in venvpath.VENV_LAYOUTS.values() for parts in (layout, (*layout[:-1], 'activate'))
+)
 
 #: Call names that READ their argument. A literal ignored path inside one of these calls is an input.
 READ_VERBS: Final = frozenset({
@@ -276,7 +278,7 @@ def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]
         pending.extend(
             (name, line, token, is_input)
             for line, piece, is_input in pieces
-            for token in _candidates_of(piece, is_input)
+            for token in _candidates_of(piece, is_input=is_input)
         )
     verdicts = judge(root, {token for _, _, token, _ in pending})
     found = [
@@ -287,7 +289,7 @@ def citations_in(root: Path, names: Iterable[str]) -> tuple[list[Citation], int]
     return found, read
 
 
-def _candidates_of(piece: str, is_input: bool) -> Iterable[str]:  # noqa: FBT001 -- private, positional by design
+def _candidates_of(piece: str, *, is_input: bool) -> Iterable[str]:
     return (
         [piece.strip()]
         if is_input and piece.strip() and not any(c.isspace() for c in piece.strip())

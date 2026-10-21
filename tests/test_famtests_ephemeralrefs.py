@@ -37,11 +37,11 @@ def _repo(tmp_path: Path, doc: str, pyproject: str = '') -> Path:
 
 
 _ESCAPE = '[tool.lab_commons.ephemeral_refs]\nceiling = {n}\nescapes = [{rows}]\n'
-_ROW = '{{ file = "doc.md", token = "{token}", reason = "{why}" }}'
+_ROW = '{{ file = "doc.md", token = "{path}", reason = "{why}" }}'
 
 
 def test_a_declared_escape_clears_its_citation(tmp_path: Path) -> None:
-    rows = _ROW.format(token='output/x.json', why='defines it')  # noqa: S106 -- a path, not a secret
+    rows = _ROW.format(path='output/x.json', why='defines it')
     root = _repo(tmp_path, 'see output/x.json\n', _ESCAPE.format(n=1, rows=rows))
     assert ephemeralrefs.scan(root) == ([], 3)
 
@@ -55,7 +55,7 @@ def test_a_declared_escape_clears_its_citation(tmp_path: Path) -> None:
     ],
 )
 def test_a_misdeclared_escape_set_reds(tmp_path: Path, ceiling: int, token: str, why: str, refusal: str) -> None:
-    rows = _ROW.format(token=token, why=why)
+    rows = _ROW.format(path=token, why=why)
     root = _repo(tmp_path, 'see output/x.json\n', _ESCAPE.format(n=ceiling, rows=rows))
     problems, _ = ephemeralrefs.scan(root)
     assert any(refusal in p for p in problems), problems

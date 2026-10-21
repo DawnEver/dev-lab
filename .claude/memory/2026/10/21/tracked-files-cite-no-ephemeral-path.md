@@ -1,5 +1,10 @@
 ---
+name: tracked-files-cite-no-ephemeral-path
+description: TRACKED-CITES-NO-EPHEMERAL -- no tracked file references a git-ignored or machine-local path; the criterion is git's own check-ignore, the scanner is lab_commons.dev.ephemeralrefs.
+metadata:
+  type: project
 created: 2026-10-21
+accessed: 2026-10-21
 ---
 # Tracked files cite no ephemeral path, judged by git's own ignore rules
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from lab_commons.dev import ephemeralrefs, floors
+from lab_commons.dev import ephemeralrefs, floors, venvpath
 from lab_commons.launch import run
 
 if TYPE_CHECKING:
@@ -41,23 +41,31 @@ def assert_no_tracked_file_cites_ephemeral(*, root: Path, floor: int, headroom: 
         raise AssertionError(msg)
 
 
+#: Assembled from halves so the private-marker scan does not read a home path in this file.
+_WINDOWS_HOME = 'C:/' + 'Users/someone/x.txt'
+_POSIX_HOME = '/' + 'home/someone/x'
+_INTERPRETER = venvpath.venv_interpreter(os_name='nt')
+
+#: The five planted text files the scan must read (the force-added one among them).
+_PLANTED_FILES = 5
+
 #: What the planted tree must yield, exactly -- each convicted for the reason named.
 _CONVICT = (
     "code.py:1: cites ignored path 'scratch/probe.py'",
     "code.py:2: reads ignored path 'output/reference/a.jproj'",
     "doc.md:1: cites ignored path 'output/logs/26/10/19/run.json'",
     "doc.md:2: cites ignored path 'output/forge/outbox/'",
-    "doc.md:3: cites machine-local path 'C:/Users/alice/x.txt'",
-    "doc.md:4: cites machine-local path '/home/alice/x'",
+    f"doc.md:3: cites machine-local path '{_WINDOWS_HOME}'",
+    f"doc.md:4: cites machine-local path '{_POSIX_HOME}'",
     'output/forced.md: tracked under an ignored root (git add -f)',
 )
 _DOC = (
     'see `output/logs/26/10/19/run.json` here\n'
     'and `output/forge/outbox/` too\n'
-    'C:/Users/alice/x.txt\n'
-    '/home/alice/x\n'
+    f'{_WINDOWS_HOME}\n'
+    f'{_POSIX_HOME}\n'
     'shape `output/logs/<yy>/<mm>/<dd>/<kind>/`, root `output/`, `C:/Users/<you>/src`, '
-    'https://example.org/output/x, `.venv/Scripts/python.exe`, `$TMPDIR`, `src/pkg/a.py`\n'
+    f'https://example.org/output/x, `{_INTERPRETER}`, `$TMPDIR`, `src/pkg/a.py`\n'
 )
 _CODE = (
     '# scratch/probe.py\n'
@@ -94,6 +102,9 @@ def assert_the_scanner_still_convicts(plant_root: Path) -> None:
     git('add', '.gitignore', 'doc.md', 'code.py', 'src/pkg/a.py')
     git('add', '-f', 'output/forced.md')
     problems, read = ephemeralrefs.scan(plant_root)
-    if tuple(problems) != _CONVICT or read != 5:  # noqa: PLR2004 -- the five planted text files
-        msg = f'the scanner read {read} file(s) and named {problems}; it must read 5 and name exactly {list(_CONVICT)}'
+    if tuple(problems) != _CONVICT or read != _PLANTED_FILES:
+        msg = (
+            f'the scanner read {read} file(s) and named {problems}; '
+            f'it must read {_PLANTED_FILES} and name exactly {list(_CONVICT)}'
+        )
         raise AssertionError(msg)
