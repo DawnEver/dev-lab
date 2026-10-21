@@ -136,3 +136,18 @@ id = "pr-admit"
 run = ["python", "-m", "lab_commons.dev.pradmit"]
 always_run = true
 refs = '^refs/heads/pr/'
+
+# FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push, and every commit on a pr/*
+# branch, print that PR's open notices for this LAB_SESSION (lab_commons.dev.branchnotices: one reader, cached 60 s,
+# short deadline, read-only, silent when none, exit 0 always). git verbs are the decision points every vendor shares.
+[[pre-push]]
+id = "pr-notices"
+run = ["python", "-m", "lab_commons.dev.branchnotices", "--push"]
+always_run = true
+refs = '^refs/heads/pr/'
+
+# post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
+[[post-commit]]
+id = "pr-notices"
+run = ["python", "-m", "lab_commons.dev.branchnotices"]
+always_run = true

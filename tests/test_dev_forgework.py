@@ -28,7 +28,7 @@ from _forge_fake import credential_env, serve
 from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
-from lab_commons.dev import pradmit
+from lab_commons.dev import branchnotices, pradmit
 from lab_commons.dev.forge import Forge, NoCredential
 from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgecli import issue_and_pr
@@ -414,3 +414,22 @@ def test_pr_create_asks_the_admission_first_and_a_refusal_writes_nothing(
     _answer('POST', '/api/v1/repos/o/r/pulls', (201, _PR))
     assert issue_and_pr(argv, cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 0
     assert _Recorder.received
+
+
+def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_path: Path, capsys, monkeypatch) -> None:
+    """FORGE NOTICES at ``pr create`` (branchnotices). PLANTED CONTROL: no notice, nothing printed; exit 0 both."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    argv = ['pr', 'create', '--title', 't', '--head', 'pr/b', '--base', 'integrate/main']
+    env = credential_env(tmp_path) | {'LAB_SESSION': 's1'}
+    asked: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(pradmit, 'create_refusal', lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        branchnotices, 'report', lambda _r, heads, session, **_k: asked.append((heads, session)) or 'NOTICE-LINE'
+    )
+    _answer('POST', '/api/v1/repos/o/r/pulls', (201, _PR))
+    assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert asked == [(['pr/b'], 's1')]
+    assert 'NOTICE-LINE' in capsys.readouterr().err
+    monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: '')
+    assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
+    assert 'NOTICE-LINE' not in capsys.readouterr().err

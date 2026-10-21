@@ -43,8 +43,8 @@ if TYPE_CHECKING:
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
-    'CONFLICT', 'RED', 'STALL', 'Block', 'Notice', 'duration', 'escalated', 'kinds', 'main', 'read', 'render',
-    'update', 'write',
+    'CONFLICT', 'RED', 'STALL', 'Block', 'Notice', 'duration', 'escalated', 'integration_comment', 'kinds', 'main',
+    'read', 'render', 'update', 'write',
 ]  # fmt: skip
 
 RED: Final = 'red'
@@ -188,15 +188,22 @@ def escalated(notice: Notice, block: Block, now: datetime, escalate: timedelta) 
     return notice.head == block.head and now - datetime.fromisoformat(notice.opened) > escalate
 
 
-def _blocks(client: Client, policy: Policy) -> list[tuple[int, Block, Any]]:
-    from lab_commons.dev.forgepulls import Marker, comment_list, marker, pr_list  # noqa: PLC0415 (a leaf at import)
+def integration_comment(client: Client, number: int) -> Any | None:  # noqa: ANN401 -- a forgepulls Comment
+    """PR *number*'s one integration comment (where its notices live), or ``None`` when it has none."""
+    from lab_commons.dev.forgepulls import Marker, comment_list, marker  # noqa: PLC0415 (a leaf at import)
 
     line = marker(Marker.INTEGRATION)
+    return next((c for c in comment_list(client, number) if line in c.body), None)
+
+
+def _blocks(client: Client, policy: Policy) -> list[tuple[int, Block, Any]]:
+    from lab_commons.dev.forgepulls import pr_list  # noqa: PLC0415 (a leaf at import)
+
     found = []
     for pr in pr_list(client):
         if pr.base != policy.integration:
             continue
-        comment = next((c for c in comment_list(client, pr.number) if line in c.body), None)
+        comment = integration_comment(client, pr.number)
         if comment is not None and (block := read(comment.body)).notices:
             found.append((pr.number, block, comment))
     return found

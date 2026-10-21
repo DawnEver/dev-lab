@@ -338,6 +338,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
 * :mod:`lab_commons.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's
   ``behind_max`` commits behind ``origin/<integration>`` is refused, naming ``forge sync``.
+* :mod:`lab_commons.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
+  ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin

@@ -16,12 +16,14 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lab_commons.dev import (
+    branchnotices,
     forgeauth,
     forgehosts,
     forgeintegration,
@@ -42,6 +44,7 @@ from lab_commons.dev import (
 )
 from lab_commons.dev.forge import Transport, https_transport
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, Issue, PullRequest, client_for
+from lab_commons.dev.labsession import ENV
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
@@ -170,4 +173,10 @@ def issue_and_pr(
     else:
         for item in items:
             emit(_render(item))
+    if (args.noun, args.verb) == ('pr', 'create') and (
+        said := branchnotices.report(
+            root, [args.head], (os.environ if env is None else env).get(ENV, ''), client=client
+        )
+    ):
+        emit(said, err=True)
     return 0

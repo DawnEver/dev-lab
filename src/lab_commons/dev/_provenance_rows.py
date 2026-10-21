@@ -134,6 +134,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgepublish': ('original',),
     'forgeintent': ('original',),
     'behindpush': ('original',),
+    'forgenotice': ('original',),
+    'branchnotices': ('original',),
     'lockcheck': ('original',),
     'relock': ('original',),
     'forgerecords': ('original',),

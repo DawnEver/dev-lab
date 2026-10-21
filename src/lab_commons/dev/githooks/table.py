@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Final
 
 __all__ = [
+    'ADVISORY',
     'BASE_PATH',
     'STAGES',
     'Hook',
@@ -35,7 +36,9 @@ __all__ = [
 ]
 
 #: The git hook types the family runs, in the order a commit then a push meets them.
-STAGES: Final[tuple[str, ...]] = ('pre-commit', 'commit-msg', 'pre-push')
+STAGES: Final[tuple[str, ...]] = ('pre-commit', 'commit-msg', 'post-commit', 'pre-push')
+#: Stages that run after git has done the act: a row there only speaks, and never changes the exit status.
+ADVISORY: Final = frozenset({'post-commit'})
 
 #: The family base, as data.
 BASE_PATH: Final = Path(__file__).resolve().parent / 'base.toml'
