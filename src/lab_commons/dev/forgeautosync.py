@@ -46,12 +46,13 @@ import lab_commons.launch as _door
 from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgestatus import status_list, status_post
+from lab_commons.dev.labsession import machine_env
 from lab_commons.dev.lockcheck import LOCK, mount_submodules, stale
 from lab_commons.dev.mergeaudit import MergeAuditError, judge
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.relock import door_upgrade
 from lab_commons.dev.sessionbranch import MERGED_BRANCH
-from lab_commons.dev.trialmerge import contains, trial
+from lab_commons.dev.trialmerge import contains, shares_unmerged, trial
 from lab_commons.units import Q_
 
 if TYPE_CHECKING:
@@ -159,7 +160,7 @@ def claim(host: str, tip: str, now: datetime) -> str:
 def _git(root: Path, *argv: str) -> tuple[int, str]:
     done = _door.run(
         [_GIT, '-C', str(root), *argv], capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False, timeout=_GIT_TIMEOUT_S,
+        check=False, timeout=_GIT_TIMEOUT_S, env=machine_env(),  # a machine merge is the forge's, no session's
     )  # fmt: skip
     return done.returncode, (done.stdout + done.stderr).strip()
 
@@ -204,7 +205,7 @@ def _refusal(
     if not ephemeral:
         return NOT_EPHEMERAL.format(branch=branch)
     for other in others:
-        if other.head != head and contains(root, head, other.head) and not contains(root, tip, other.head):
+        if other.head != head and shares_unmerged(root, head, other.head, tip):
             return STACKED.format(number=other.number, branch=other.branch)
     conflicts = [path for path in trial(root, tip, head).conflicts if path != LOCK]
     if conflicts:

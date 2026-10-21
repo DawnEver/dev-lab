@@ -23,6 +23,13 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    commit past `pr_merges_since`, naming the commit and its reason (`lab_commons.dev.breakglass`). Put only
    the emergency fix through it, follow up with a PR for anything else, and close the notice by moving
    `pr_merges_since` past the commit in that PR.
+
+   The same door is the INTEGRATOR'S BACK DOOR (user ruling 2026-10-21): the integrator may merge a PR the
+   forge cannot auto-merge. Merge its head into `integrate/main` locally (`git merge --no-ff`, never a rebase),
+   write `Break-Glass: <named reason>` in the merge message beside any `Merge-Audit:` lines, and push. The
+   notice records WHO (the commit author) and WHY (the reason). `ONE-SESSION-ONE-PR` and `NO-STACKED-PRS` do
+   not stand in its way: they judge only the birth of a PR (`forge pr create`, a NEW `pr/*` at pre-push), and
+   this push updates integration (`tests/test_dev_pradmit.py::test_the_integrators_back_door_merge_is_not_judged`).
 4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
 
 All maintenance happens on gitea (user ruling 2026-10-19): PRs are opened, judged and merged there, and
@@ -189,6 +196,18 @@ python -m lab_commons.dev.forge sync --watch origin/<ref>  # opt in to one more 
 
 `PRS-TARGET-INTEGRATION`: every pull request targets integration; one opened against the trunk is retargeted
 with a comment saying why. Each child carries one PR at most.
+
+`ONE-SESSION-ONE-PR`: a launcher (`ccc`, `ccds`, `codc`; cc-config `scripts/shared/machine.mjs`) issues one
+`LAB_SESSION` per session, inherited by every child. The `lab-session` commit-msg row writes it as a
+`Lab-Session:` trailer (`lab_commons.dev.labsession`). A commit without `LAB_SESSION` is never refused, agent or
+human (user ruling 2026-10-21): it carries no trailer and the rule does not judge it, so a path no launcher
+starts (the VS Code Claude extension, the codex desktop app, `codc` attached to a shared app-server) keeps
+committing. Only a session that has an id is judged. `Claude-Session:` is prose nothing reads. `forge pr create`, and the `pr-admit` pre-push row for a
+NEW `pr/*` branch, refuse a head that shares a session with another open head and name that head's branch
+(`lab_commons.dev.pradmit`). A split is an entry of `pradmit.SPLITS` with its reason, under a pinned ceiling.
+
+`NO-STACKED-PRS`: `forge pr create` refuses a head holding a commit of another open PR's head that integration
+does not hold (`trialmerge.shares_unmerged`). Wait for that PR to merge, or fold the work into it.
 
 ## The integration tick
 

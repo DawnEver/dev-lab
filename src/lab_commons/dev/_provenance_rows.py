@@ -147,6 +147,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgepulls': ('original',),
     'forgesync': ('original',),
     'trialmerge': ('original',),
+    'labsession': ('original',),
+    'pradmit': ('original',),
     'forgerun': ('original',),
     'forgerunstate': ('original',),
     'components': ('original',),
