@@ -485,8 +485,9 @@ SPELLING_HEADROOM = 3
 #: reports a full green over the other two, which is the shape that let this defect live twice.
 # RE-MEASURED 2026-09-19 at 207 (69 modules x 3 spellings), 7 past the old ceiling of 110 + 90.
 # Re-taken 2026-10-17 at 497: the launch door (one more spelling per module, 2026-10-16) and dev.forgedemand (D4).
-# Re-taken 2026-10-20 at 531 with famtests.onboarding, 91 past the floor of 440.
-CASE_FLOOR = 470
+# Re-taken 2026-10-20 at 531 by both famtests.onboarding (#181) and the declared review command (#177);
+# the tighter of the two floors stands.
+CASE_FLOOR = 474
 CASE_HEADROOM = 90
 
 #: The sub-packages of the kit under measurement, read from the same walk `kit_modules` does.

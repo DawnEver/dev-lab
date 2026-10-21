@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import gzip
 import json
 import sys
 import time
@@ -38,8 +39,9 @@ import lab_commons.launch as _door
 from lab_commons.dev._forge_journal import Durable, Probe
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, https_transport
 from lab_commons.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
+from lab_commons.hpc.testcells import TestCell
 from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
+from lab_commons.outcomes import Conclusion, Status
 
 __all__ = [
     'DESCRIPTION_LIMIT',
@@ -51,6 +53,7 @@ __all__ = [
     'status_history',
     'status_list',
     'status_post',
+    'status_show',
     'verdict_commit',
 ]
 
@@ -59,6 +62,9 @@ STATES: Final = ('success', 'failure', 'error', 'pending')
 
 #: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
 DESCRIPTION_LIMIT: Final = 140
+
+#: How many failing node ids ``status show`` prints before it says how many it left out.
+FAILING_LIMIT: Final = 20
 
 _STATE_FOR: Final[dict[Conclusion, str]] = {
     Conclusion.PASS: 'success',
@@ -179,6 +185,41 @@ def verdict_commit(
     return head_before
 
 
+def _red_lines(status: CommitStatus, client: Client) -> tuple[str, ...]:
+    """Every test the record behind *status* does not call ``ok``, with its own word, or why it cannot say."""
+    if not status.url:
+        return ('  no record is attached to this part',)
+    try:
+        record = json.loads(gzip.decompress(client.download(status.url)).decode('utf-8'))
+    except (ForgeCallFailed, OSError, ValueError) as failed:
+        return (f'  the record at {status.url} could not be read ({failed}); open it by hand',)
+    cells = record.get('cells') or {}
+    not_ok = sorted(
+        (node, TestCell.from_plain(plain))
+        for node, plain in cells.items()
+        if isinstance(plain, Mapping) and TestCell.from_plain(plain).status is not Status.OK
+    )
+    shown = [f'  - {node}  {cell.word()}' for node, cell in not_ok[:FAILING_LIMIT]]
+    more = [f'  ... and {len(not_ok) - FAILING_LIMIT} more'] if len(not_ok) > FAILING_LIMIT else []
+    return (f'  not ok: {len(not_ok)} of {len(cells)} test(s)', *shown, *more, f'  record: {status.url}')
+
+
+def status_show(client: Client, sha: str, *, part: str = '') -> tuple[str, ...]:
+    """``forge status show``: each part's verdict, and WHICH tests failed in it.
+
+    A verdict line answers "is it green"; the reason it is red is in the record the status carries as its
+    target URL (:mod:`lab_commons.dev.forgerecords`), one cell per test. *part* narrows the answer to one.
+    """
+    lines: list[str] = []
+    for status in status_list(client, sha):
+        if part and status.context != part:
+            continue
+        lines.append(f'{status.context}  {status.state}  {status.description}')
+        if status.state != 'success':
+            lines += list(_red_lines(status, client))
+    return tuple(lines or (f'{sha[:12]} carries no {part or "tests/<part>"} status',))
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='lab_commons.dev.forge status', description='commit statuses')
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -189,7 +230,10 @@ def _parser() -> argparse.ArgumentParser:
     post.add_argument('--description', default='')
     listing = verbs.add_parser('list')
     listing.add_argument('sha')
-    for sub in (post, listing):
+    showing = verbs.add_parser('show')
+    showing.add_argument('sha')
+    showing.add_argument('--part', default='', help='one context, e.g. tests/base; every part by default')
+    for sub in (post, listing, showing):
         sub.add_argument('--json', action='store_true', help='print the normalized result as JSON')
     return parser
 
@@ -209,6 +253,13 @@ def main(
             found: tuple[CommitStatus, ...] = (
                 status_post(client, args.sha, context=args.context, state=args.state, description=args.description),
             )
+        elif args.verb == 'show':
+            lines = status_show(client, args.sha, part=args.part)
+            for line in lines if not args.json else ():
+                emit(line)
+            if args.json:
+                emit(json.dumps({'sha': args.sha, 'part': args.part, 'lines': list(lines)}, indent=2))
+            return 0
         else:
             found = status_list(client, args.sha)
     except ForgeCallFailed as failed:

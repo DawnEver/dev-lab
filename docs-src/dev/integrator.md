@@ -44,36 +44,42 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 
 ## The PR reviewer is advisory
 
-`PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`, user ruling 2026-10-19). Each open, non-draft PR into
-`integrate/main` on gitea is reviewed by Claude ONCE per head sha: the prompt is the repo's own rule files
-(`AGENTS.md`, `.claude/rules/*.md`, read at `origin/integrate/main`, never the PR's copy) plus the PR's diff, and
-the answer is one PR comment of findings as `path:line` and a `tests/review` commit status. **It gates
-nothing**: `tests/review` is never a part, so the forge's auto-merge, `integrate promote` and push admission
-never wait on it, whatever it says. A second tick on the same head asks nothing and posts nothing; a new head
-is reviewed afresh. A diff over the cap is never sent (`tests/review` says so); a failed model call posts
-`error` and is not retried on that head.
+`PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
+into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
+`<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 1, read by
+`lab_commons.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
+of the findings and a `tests/review` commit status. **It gates nothing**: `tests/review` is never a part, so
+the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second
+tick on the same head runs nothing and posts nothing; a new head is reviewed afresh. A diff over the cap is
+never reviewed (`tests/review` says so); a failed command posts `error` and is not retried on that head.
+When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
+`takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
+through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
 
-It runs as a `forge serve` step only on a host whose machine file declares the capability, so only that host
-holds the key:
-
-```toml
-[capabilities.pr_review]      # the machine file (lab_commons.config) of the ONE reviewing host
-```
-
-The key is ONE dedicated Anthropic API key used for nothing else: the `pr-review` TASK key of the one
-model-key scheme -- host `api.anthropic.com`, username `api-key-pr-review` in the git credential store, read by
-`lab_commons.credentials.api_key`, stored by `python -m ai_lab.auth login anthropic --task pr-review` (its
-slot 1: one call per head, no fall-over to a `-s 2` backup). Never the host's default `api-key` and no
-other task's key is ever read; with it absent the step refuses by that name and
-raises an `auth` alarm. Never printed or logged. Per repo, optionally:
+It runs inside the integration step of `forge serve` (`forgeservesteps.prompt`): the review host follows the
+integrator, so no machine-file capability selects it. The forge holds no model client, prompt or key -- the
+command reads its own (`ai_lab`, the `pr-review` task key). Per repo:
 
 ```toml
 [tool.lab_commons.review]
-model = "claude-opus-5-5"                       # the default: the latest Claude
-max_diff_bytes = 200000                         # a larger diff is not sent
-max_tokens = 8192
-rules = ["AGENTS.md", ".claude/rules/*.md"]     # fnmatch over tracked paths; `*` crosses `/`
+# {range}: <merge base>..<head>; the command names its method and its model (the catalogue has no default)
+command = ["python", "-m", "ai_lab.review", "--method", "<dir>", "--range", "{range}", "--model", "<id>"]
+max_diff_bytes = 200000   # a larger diff is not reviewed
+claim_stale = "1 h"       # the default
 ```
+
+Every serve host may review (usually one host acts as integrator); a CLAIM keeps it to one. Before running the
+command a host checks it can start it -- a missing interpreter or module is `unsupported` and posts nothing --
+then posts `tests/review` = `pending`, `claimed by <host> at <time>, reviewing`, and replaces it with the final
+status. Any other host skips a head whose `tests/review` carries any status, pending included, unless it is a
+released claim (`released by ...`) or a claim older than `claim_stale` (default `"1 h"`, above the command's
+own 30 min timeout): a host that died mid-review never blocks a head for good.
+
+Undeclared, nothing is reviewed. Exit 2 is the command's named refusal (bad method, version or range): its
+stderr reason is the `error` status.
+
+The in-process reviewer's keys (`model`, `max_tokens`, `rules`) and its machine-file capability are retired
+and refused by name (`lab_commons.hpc.retired`).
 
 ## The branch flow
 
