@@ -32,7 +32,7 @@ from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc import shell, watch
 from lab_commons.hpc.builds import Builds, cargo_target
-from lab_commons.hpc.cluster import Unreachable
+from lab_commons.hpc.cluster import SUBMIT_LIMIT, Unreachable
 from lab_commons.hpc.config import Config, Cost, Limits, Policy
 from lab_commons.hpc.gather import gather_run
 from lab_commons.hpc.grants import Grant, Machine, Session
@@ -1729,3 +1729,46 @@ def test_a_run_that_cannot_be_gathered_has_its_live_jobs_cancelled_before_it_is_
     monkeypatch.setattr(watch, 'where', lambda *_a, **_k: SimpleNamespace(describe=lambda: 'pending'))
     assert watch.settle(*args, part='base', sleep=None) == PENDING
     assert not any(command.startswith('scancel') for command in asked), asked
+
+
+class _QosFull(FakeRunCluster):
+    """The cluster refuses the SECOND ``sbatch`` of a round on the per-user QOS submit limit (Ada 2026-10-21)."""
+
+    def __call__(self, command: str, stdin: str | None = None) -> str:
+        if 'sbatch' in command and len(_sbatched(self)) == 1:
+            self.calls.append((command, stdin))
+            msg = f'bash exited 1: sbatch: error: {SUBMIT_LIMIT} (Job violates accounting/QOS policy)'
+            raise RuntimeError(msg)
+        return super().__call__(command, stdin)
+
+
+def test_a_first_round_refused_on_the_qos_submit_limit_is_no_room_and_its_queued_band_is_cancelled() -> None:
+    """A per-user QOS submit refusal is CAPACITY: :class:`NoRoom` (released open), never a stuck ``bash exited 1``.
+
+    Ada 2026-10-21: alyyw103's run hit the QOS submit limit and alarmed "cannot advance" every tick, holding
+    its claim while four other grants had headroom. The band already queued is cancelled, so the refused
+    round holds no submit slot. PLANTED CONTROL: :func:`test_each_memory_class_is_its_own_array_at_its_own_files_peak`
+    -- the same two bands with room submit both.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 20480.0, 'tests/b.py': 512.0})
+    fake = _QosFull()
+    with pytest.raises(NoRoom, match=SUBMIT_LIMIT):
+        _submit(fake, history=learned.learned('https://g/r.git'))
+    assert len(_sbatched(fake)) == 2
+    assert any(command.startswith('scancel') and '4243' in command for command, _ in fake.calls), fake.calls
+
+
+def test_the_bands_of_a_round_share_one_qos_submit_room() -> None:
+    """Each memory band was planned against the WHOLE submit room, so two bands asked more than the QOS takes.
+
+    Planted: 99 of the ``free`` QOS's 100 submits queued, two bands of one shard each. One fits, two do not:
+    the round is NoRoom before any ``sbatch``. PLANTED CONTROL: the same bands at 98 queued submit both.
+    """
+    learned.learn_peaks('https://g/r.git', {'tests/a.py': 20480.0, 'tests/b.py': 512.0})
+    full = FakeRunCluster(held='@@@ queued\n' + 'free\n' * 99)
+    with pytest.raises(NoRoom):
+        _submit(full, history=learned.learned('https://g/r.git'))
+    assert _sbatched(full) == [], 'nothing queued past the limit'
+    room = FakeRunCluster(held='@@@ queued\n' + 'free\n' * 98)
+    _submit(room, history=learned.learned('https://g/r.git'))
+    assert len(_sbatched(room)) == 2
