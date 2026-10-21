@@ -189,11 +189,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'PUSH-REMOTE-DELETE',
         'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
         'matches': 'argument',
-        'hazard': 'a raw remote delete is unrecoverable from the agent`s side: nothing checks that the '
-        'branch`s commits live anywhere else first.',
-        'remedy': 'Delete it through LOSSLESS-DELETE: `python -m lab_commons.dev.branchprune delete <branch>` '
-        'fetches, deletes only when every commit is on integration or another live branch / open PR head, and '
-        'refuses naming the commits that would be lost. Local cleanup: `python -m lab_commons.dev.branchset --apply`.',
+        'hazard': 'a raw remote delete can lose commits held nowhere else.',
+        'remedy': '`python -m lab_commons.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
         'needs': None,
         'refuses': (
             'git push origin --delete lane/x',

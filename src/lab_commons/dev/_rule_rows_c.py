@@ -10,35 +10,24 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-SESSION-ONE-PR',
         (
-            'One agent session is one PR per repo. The LAUNCHER issues the session id (`LAB_SESSION`, the same for '
-            'Claude, codex and every other provider, inherited by every child); the commit-msg hook writes it as a '
-            '`Lab-Session:` trailer the agent never writes. A commit without the id (a human, or a path no launcher '
-            'started) is never refused: it carries no trailer and is not judged. `Claude-Session:` is prose nothing '
-            'reads. `forge pr create` and the pre-push of a NEW `pr/*` refuse a '
-            'head sharing a session with another open head, naming the branch it is on. A split is only a declared, '
-            'reasoned entry of `pradmit.SPLITS`, under a pinned ceiling that only falls; there is no switch.'
+            'One agent session (`LAB_SESSION`, stamped as a `Lab-Session:` trailer) is one open PR per repo; '
+            '`forge pr create` and a new `pr/*` push refuse a second, and a split is a declared `pradmit.SPLITS` entry.'
         ),
         ('tests/test_dev_labsession.py', 'tests/test_dev_pradmit.py', 'tests/test_dev_forgework.py'),
     ),
     (
         'NO-STACKED-PRS',
         (
-            'Every PR is cut from and targets the integration branch: `forge pr create` refuses a head holding a '
-            'commit of the head of another open PR that integration does not hold, so one stalled base never holds a '
-            'dozen PRs behind it. The remedy is to wait for that PR to merge, or fold the work into it. The stack '
-            'question has one owner, `trialmerge.shares_unmerged`.'
+            'Every PR is cut from and targets integration: `forge pr create` refuses a head holding another open '
+            "PR's unmerged commits."
         ),
         ('tests/test_dev_pradmit.py',),
     ),
     (
         'DOCS-ONLY-CARRIES',
         (
-            'A head whose diff from the nearest tested (or running) head of its first-parent history reaches no '
-            "collected test's footprint -- memory written after the code commit is the ordinary case -- runs "
-            'nothing: each part is posted carried from that head (`carried from <sha12>: docs-only`), with no claim '
-            'and no job; a run of that head in flight is never superseded or cancelled for it, and when it lands its '
-            'result carries; the PR review of such a head is carried too, no command run. One rule, one place: '
-            '`forgecarry.docs_only`, judged by the same footprint every carry uses.'
+            'A head whose diff from its nearest tested ancestor reaches no test footprint runs nothing: its parts and '
+            'review are carried from that ancestor (`forgecarry.docs_only`).'
         ),
         (
             'tests/test_dev_forgecarry.py',
