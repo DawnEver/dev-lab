@@ -50,6 +50,7 @@ scratch/
 !**/.claude/docs/**
 **/.claude/rules/MEMORY.md
 **/_meta.json
+!**/attic/**
 **/.claude/**/__pycache__/
 **/.claude/**/*.py[cod]
 

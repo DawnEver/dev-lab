@@ -165,6 +165,9 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     ),
     '**/.claude/rules/MEMORY.md',
     '**/_meta.json',
+    # An ARCHIVE is frozen source (user ruling 2026-10-21): nothing generates into `attic/`, so its index
+    # pages, `_meta.json` and `.claude/meta/` copies are tracked as archived. Above the cache lines.
+    '!**/attic/**',
     '**/.claude/**/__pycache__/',
     '**/.claude/**/*.py[cod]',
 )
