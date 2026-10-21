@@ -5,11 +5,12 @@ a description naming who and until when (:class:`Claim`)::
 
     claim machine=G login=alice until=2026-10-10T18:00:00Z hpc=ada/alice -- running 40/93 done 12/93
 
-``machine`` is ``$HARNESS_MACHINE``, else on a cluster the login host's name, else ``-`` (a teammate
-without the harness); ``login`` the forge account the person's own credential authenticates as -- no
-machine accounts. ``hpc`` names ``<cluster>/<account>`` when the part runs on a cluster -- read from
-Slurm and the login (:mod:`lab_commons.hpc.account`), never typed -- ``-`` otherwise. The OWNER of a
-claim is all three: two login hosts of one account are two claimants, so one account cannot win a
+``machine`` is ``$HARNESS_MACHINE``, else the box's short hostname (:func:`this_machine`) -- never
+``-``, so two workstations on one login are two owners; ``login`` the forge account the person's own
+credential authenticates as -- no machine accounts. ``hpc`` names ``<cluster>/<account>`` when the part
+runs on a cluster -- read from Slurm and the login (:mod:`lab_commons.hpc.account`), never typed --
+``-`` otherwise. The OWNER of a claim is all three: two login hosts of one account are two claimants,
+so one account cannot win a
 race against itself. What follows `` -- `` is the run's PROGRESS, readable from any machine; it never
 identifies the owner.
 
@@ -190,10 +191,13 @@ def this_seat() -> ClusterAccount | None:
     return cluster_account(local_runner)
 
 
-def this_machine(seat: ClusterAccount | None) -> str:
-    """``$HARNESS_MACHINE``; else on a cluster the login host (one account, two hosts: two owners); else ``''``."""
-    named = os.environ.get('HARNESS_MACHINE', '').strip()
-    return named or (socket.gethostname().split('.')[0] if seat is not None else '')
+def this_machine() -> str:
+    """``$HARNESS_MACHINE``, else this box's short hostname: a claim's ``machine`` and a card's host off a cluster.
+
+    Never ``''``, so two workstations on one forge login are two owners, as two login hosts of one
+    cluster account are; :func:`lab_commons.dev.forgehosts.card_host` names a cluster seat's card instead.
+    """
+    return os.environ.get('HARNESS_MACHINE', '').strip() or socket.gethostname().split('.')[0]
 
 
 def assess(history: Sequence[CommitStatus], context: str, *, me: Claim, now: datetime) -> tuple[str, Claim | None]:

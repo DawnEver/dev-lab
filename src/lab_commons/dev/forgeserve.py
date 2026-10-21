@@ -331,7 +331,7 @@ def main(
         return client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)
 
     seat = seat_of()
-    machine = this_machine(seat)
+    machine = this_machine()
     try:
         report = serve(
             root,
