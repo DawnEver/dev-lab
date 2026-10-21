@@ -364,3 +364,9 @@ def test_a_sha_nobody_posted_on_reads_unclaimed_and_never_inconclusive() -> None
     assert platformparts.standing([claimed], head=SHA).reading == Conclusion.INCONCLUSIVE.name
     assert platformparts.standing([_status(BASE)], head=SHA).reading == Conclusion.PASS.name
     assert platformparts.standing([_status(BASE, 'failure')], head=SHA).reading == Conclusion.FAIL.name
+
+
+def test_a_runs_log_prefix_names_its_part_and_its_short_sha() -> None:
+    """Two runs of one part at once write to one serve.log: the prefix tells their lines apart by sha."""
+    assert platformparts.run_tag('base', '46754ff8' + '0' * 32) == '[base@46754ff8]'
+    assert platformparts.run_tag('base', 'a' * 40) != platformparts.run_tag('base', 'b' * 40)

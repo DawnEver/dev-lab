@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import stat
 import subprocess
 from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, make_repo, run_git
 
+from lab_commons.dev.diskusage import extended
 from lab_commons.dev.platformparts import record_directory
 from lab_commons.dev.shatree import TREE_PREFIX, TreeFailed, close_tree, open_tree, record_manifest, tree_path
 from lab_commons.dev.venvpath import current_os_name, venv_interpreter
@@ -137,3 +139,38 @@ def test_two_jobs_of_one_sha_each_own_a_tree(tmp_path: Path) -> None:
     close_tree(repo, claimed, 'tests/base')
     assert request.path.exists()
     close_tree(repo, claimed, 'request/9')
+
+
+def _plant_long_path(tree: Path) -> Path:
+    """A read-only file past MAX_PATH (260) inside *tree*, as a ``.venv`` leaves one (live, 2026-10-21)."""
+    deep = tree / '.venv' / 'Lib' / 'site-packages'
+    while len(str(deep)) < 280:
+        deep /= 'a-long-package-directory-name'
+    Path(extended(deep)).mkdir(parents=True)
+    leaf = deep / 'module.py'
+    Path(extended(leaf)).write_text('', encoding='utf-8')
+    Path(extended(leaf)).chmod(stat.S_IREAD)
+    assert len(str(leaf)) > 260
+    return leaf
+
+
+def test_a_tree_holding_a_path_past_max_path_is_removed(tmp_path: Path) -> None:
+    """PLANTED (2026-10-21): ``Filename too long`` left the tree behind, and its debris blocked the next add."""
+    repo, claimed, _later = _two_commits(tmp_path)
+    tree = open_tree(repo, claimed, 'tests/base', run=_bootstrap_fakes)
+    _plant_long_path(tree.path)
+    said = close_tree(repo, claimed, 'tests/base')
+    assert ': removed; ' in said, said
+    assert not Path(extended(tree.path)).exists()
+    assert str(tree.path.resolve()) not in git_out(repo, 'worktree', 'list')
+
+
+def test_stale_debris_of_an_earlier_run_does_not_block_a_new_tree(tmp_path: Path) -> None:
+    """A half-removed tree (its ``.git`` gone, a long path left, still registered) is cleared, then added afresh."""
+    repo, claimed, _later = _two_commits(tmp_path)
+    tree = open_tree(repo, claimed, 'tests/base', run=_bootstrap_fakes)
+    _plant_long_path(tree.path)
+    (tree.path / '.git').unlink()
+    reopened = open_tree(repo, claimed, 'tests/base', run=_bootstrap_fakes)
+    assert git_out(reopened.path, 'rev-parse', 'HEAD') == claimed
+    assert not (reopened.path / '.venv' / 'Lib' / 'site-packages' / 'a-long-package-directory-name').exists()
