@@ -1,31 +1,32 @@
-# The three participants
+# The participants
 
-Every repo here is worked by a human, by agents writing code concurrently, and by one integrator session that
-absorbs their work; producer hosts prove it. A box may play several roles: capability decides, not identity.
-Find your role below and do only what it says. Origin and the forge are the only shared media: a chat message is
-a hint, never a trigger.
+Every repo here is worked by a human, by agents writing code concurrently, and by one steward session that
+keeps the pipeline flowing; producer hosts prove it. A box may play several roles: capability decides, not
+identity. Find your role below and do only what it says. Origin and the forge are the only shared media: a
+chat message is a hint, never a trigger.
 
 ## The roles
 
 | role | does | never |
 |---|---|---|
 | human | sets goals, reviews, accepts; decides forge settings and remote deletions | accepts "done" from an agent without its tests |
-| author (any box, the weakest included) | edits in a worktree on its session branch, measures what it touched, commits, pushes | runs a full suite; merges another child's branch |
+| author (any box, the weakest included) | cuts `pr/<topic>`, measures what it touched, commits, pushes, opens a PR | runs a full suite; merges another branch |
 | producer (a box with capacity, or a cluster) | runs `forge serve`: claims a sha lacking its part, runs it, posts `tests/<part>` | produces a part it did not claim |
-| integrator (the integration branch's session) | `forge integration`, `integrate merge`, `integrate promote`, pushes | runs tests; writes a child branch |
-| owner (per area) | fixes the reds in its `area:<name>` issue on its own branch | is interrupted by another area's reds |
+| forge | merges a PR whose every part stands PASS into integration, server side | merges a PR lacking a part |
+| steward | `forge integration`, `forge queue`, routes stuck PRs to their authors, `integrate promote` | hand merges; direct pushes to integration; runs tests |
+| owner (per area) | fixes the reds in its `area:<name>` issue on its own PR | is interrupted by another area's reds |
 
-- A **subagent** is an author that never publishes: it commits on its lane and hands the SHA back to its main
-  session (`SUBAGENT-NO-PUSH`), which pushes.
+- A **subagent** is an author that never publishes: it commits on its branch and hands the SHA back to its main
+  session (`SUBAGENT-NO-PUSH`), which pushes the `pr/*` branch and opens the PR.
 - A task is done when its own tests pass, never when an agent says so.
 
 ## One change, end to end
 
-1. The author commits on its branch and pushes. Seconds.
-2. `forge sync` keeps that branch current with integration ([the integrator](integrator.md)).
+1. The author cuts `pr/<topic>` from `origin/integrate/main`, commits, and pushes. Seconds.
+2. `forge sync` keeps that branch current with integration ([the integration branch](integration.md)).
 3. A producer claims the pushed sha and posts its parts ([the forge](forge.md)).
 4. `forge route` files the reds as `area:*` issues for their owners ([issues](issues.md)).
-5. The integrator merges children whose parts stand PASS, pushes integration, and producers prove that tip.
+5. The forge merges the PR once its parts stand PASS, its head merges cleanly and its merge passes the audit.
 6. When every part of an integration commit is a full PASS, `integrate promote` fast-forwards `main`.
 7. A merged branch is deleted ([one branch per session](branch-set.md)).
 

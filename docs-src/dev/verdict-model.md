@@ -33,13 +33,13 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 | destination | the bar |
 |---|---|
 | a child branch | none: push; the forge produces its parts afterwards |
-| the integration branch | none: the integrator merges on the children's parts |
+| the integration branch | none: the forge merges on the children's parts |
 | `main` | every `tests/<part>` part of HEAD a PASS at scope `full`, read from the forge |
 
 - **The bar is the increment, not the tree** (`VERDICT-BAR-IS-THE-INCREMENT`): a red your change did not cause
   is inventory, routed to its `area:*` issue, never your blocker.
 - No push hook runs a test. The merge audit runs at commit time on every destination
-  ([the integrator](integrator.md#the-merge-audit)).
+  ([the integration branch](integration.md#the-merge-audit)).
 - The one implementation of these bars is `lab_commons.dev.pushgate`; a consumer copy is refused
   (`famtests.localadmission`).
 

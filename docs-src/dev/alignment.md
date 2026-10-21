@@ -2,7 +2,7 @@
 
 The framework every branch develops against, so that merging N branches conflicts on CODE and never on
 bookkeeping. Before you add a shared count, a waiver or a registry row, check it against the stages below: a
-number every branch must touch has to stop being a number any branch writes. The integrator's measure of success
+number every branch must touch has to stop being a number any branch writes. The measure of success
 is a merge whose conflict set holds no pin, no count and no waiver table.
 
 ## The diagnosis
@@ -72,7 +72,7 @@ These catch defects invisible on any single branch; each is an architecture test
 - **A capability that lands must not take its refusal test with it.** When a refused option becomes routable,
   re-plant the refusal half keyed off the declaration, not the literal value.
 - **A branch prices its own timeouts**: a per-test timeout with no measurement near it cannot be priced by the
-  integrator.
+  branch that lands it.
 
 ## What "aligned" is measured by
 

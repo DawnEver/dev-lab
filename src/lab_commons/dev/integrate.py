@@ -1,22 +1,17 @@
-"""INTEGRATION NEEDS NO WORKING TREE: merge a branch into the integration branch, or promote the trunk, by refs alone.
+"""PROMOTING THE TRUNK NEEDS NO WORKING TREE: fast-forward the trunk ref to an integration commit.
 
-The integration branch is one more session branch (:mod:`lab_commons.dev.sessionbranch`): what makes a
-commit on it legitimate is that it is a merge that passes the audit and lands by fast-forward, not which
-directory it was made in. So neither verb checks anything out, and neither pushes -- the session publishes
-with a plain ``git push origin <branch>``, which the pre-push guard judges.
+The trunk is one more session branch (:mod:`lab_commons.dev.sessionbranch`): what makes it legitimate is that
+it lands by fast-forward on an integration commit whose every part stands PASS, not which directory it was
+moved in. So the verb checks nothing out and pushes nothing -- the session publishes with a plain
+``git push origin <branch>``, which the pre-push guard judges.
 
-* ``merge <branch>`` -- ``git merge-tree --write-tree`` of the local integration branch and *branch*;
-  refused on a conflict, naming the files. The message carries ``Merged-Branch: <branch>`` and any
-  ``--audit`` lines; it passes through the repo's OWN ``commit-msg`` hook stage
-  (:func:`lab_commons.dev.githooks.runner.run_stage`, the rows every commit runs) and the merge audit
-  (:func:`lab_commons.dev.mergeaudit.judge`) -- the same functions, never a copy. Then ``commit-tree`` and
-  ``update-ref`` with the old tip as compare-and-swap.
 * ``promote <sha>`` -- fast-forward the LOCAL trunk ref to *sha*, an integration commit on origin whose
   every derived ``tests/<part>`` stands PASS at scope full (:func:`decide`, the same standing push
   admission reads). Never a merge onto the trunk.
 
-A ref that is checked out in some worktree is refused: moving it under that tree would leave the tree
-showing the reverse of the merge as local changes.
+The integration branch is moved by the FORGE alone, server side, when it merges a green pull request
+(:mod:`lab_commons.dev.forgemerge`). A client has no verb for that, and this one is not a bypass: a ref that
+is checked out in some worktree is refused, and a trunk that cannot fast-forward is refused rather than merged.
 """
 
 from __future__ import annotations
@@ -24,7 +19,6 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,28 +29,20 @@ from lab_commons.dev.checkout import worktrees
 from lab_commons.dev.forge import fetch_origin
 from lab_commons.dev.forgestatus import status_list
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.dev.githooks.runner import run_stage
-from lab_commons.dev.githooks.table import hook_table_from
 from lab_commons.dev.lanepolicy import Policy, policy_at
-from lab_commons.dev.mergeaudit import TRAILER, MergeAuditError, judge
 from lab_commons.dev.platformparts import standing
-from lab_commons.dev.sessionbranch import MERGED_BRANCH
 from lab_commons.dev.trialmerge import contains, rev
-from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.shell import FULL
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-__all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'merge', 'promote']
+__all__ = ['IntegrateRefused', 'Promotion', 'decide', 'main', 'promote']
 
 _GIT: Final = shutil.which('git') or 'git'
-_CONFLICTED: Final = 1
-#: The top-level files a commit-msg row may read its configuration from: the manifest and commitizen's own.
-_MANIFESTS: Final = frozenset({'pyproject.toml', '.cz.toml', 'cz.toml', '.cz.json', 'cz.json', '.cz.yaml', 'cz.yaml'})
 
 
 class IntegrateRefused(RuntimeError):
-    """The merge or promotion was refused; the message names why and the remedy."""
+    """The promotion was refused; the message names why and the remedy."""
 
 
 @dataclass(frozen=True)
@@ -88,88 +74,12 @@ def _move(root: Path, branch: str, new: str, old: str | None) -> None:
         raise IntegrateRefused(msg)
 
 
-def merge(root: Path, branch: str, *, audit: Sequence[str] = ()) -> str:
-    """Merge *branch* into the local integration branch with no working tree; the new tip (or the old, if merged).
-
-    The declaration is read from COMMITS, never the working tree: the integration branch's name from
-    *branch*'s tip (the commit arriving), then the whole policy from the MERGED tree -- the commit being made
-    declares the policy it lands under -- which must name the same integration branch.
-    """
-    target = _policy(root, branch).integration
-    _unchecked_out(root, target)
-    if (_git(root, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).returncode == 0:
-        msg = f'{root} is in the middle of a merge; finish or abort it first (its commit-msg rows would judge it)'
-        raise IntegrateRefused(msg)
-    tip, other = rev(root, f'refs/heads/{target}'), rev(root, branch)
-    if tip is None or other is None:
-        msg = f'cannot resolve {target if tip is None else branch} in {root}'
-        raise IntegrateRefused(msg)
-    if contains(root, tip, other):
-        return tip
-    tried = _git(root, 'merge-tree', '--write-tree', '--name-only', '--no-messages', tip, other)
-    if tried.returncode == _CONFLICTED:
-        files = ', '.join(line for line in tried.stdout.splitlines()[1:] if line.strip())
-        msg = f'merging {branch} into {target} conflicts in: {files}. Resolve it on {branch} (merge {target} there)'
-        raise IntegrateRefused(msg)
-    if tried.returncode != 0:
-        msg = f'git merge-tree failed: {tried.stderr.strip()}'
-        raise IntegrateRefused(msg)
-    tree = tried.stdout.splitlines()[0].strip()
-    policy = _policy(root, tree)
-    if policy.integration != target:
-        msg = f'the merged tree declares integration {policy.integration!r}, but {branch} declares {target!r}'
-        raise IntegrateRefused(msg)
-    ledger = ''.join(f'{TRAILER}: {line}\n' for line in audit)
-    text = f'chore(merge): {branch} into {target}\n\n{MERGED_BRANCH}: {branch}\n{ledger}'
-    message = _checked_message(root, tree, text)
-    try:
-        problems = judge(root, [tip, other], tree, message, roots=policy.test_roots, label=f'{branch} into {target}')
-    except MergeAuditError as error:
-        problems = (str(error),)
-    if problems:
-        msg = 'merge-audit: ' + '; '.join(problems) + ' -- pass each as --audit "<KIND> <test> -- <reason>"'
-        raise IntegrateRefused(msg)
-    made = _git(root, 'commit-tree', tree, '-p', tip, '-p', other, '-m', message)
-    if made.returncode != 0:
-        msg = f'git commit-tree failed: {made.stderr.strip()}'
-        raise IntegrateRefused(msg)
-    sha = made.stdout.strip()
-    _move(root, target, sha, tip)
-    return sha
-
-
 def _policy(root: Path, at: str) -> Policy:
     try:
         return policy_at(root, at)
     except (ValueError, subprocess.CalledProcessError) as exc:
         msg = f'the declaration at {at} cannot be read: {exc}'
         raise IntegrateRefused(msg) from exc
-
-
-def _checked_message(root: Path, tree: str, message: str) -> str:
-    """*message* after the commit-msg rows *tree* declares (which may append a trailer); refused when one fails.
-
-    The rows run with *tree*'s top-level manifests as their working tree -- a scratch directory holding
-    them, with ``GIT_DIR`` still the repository -- so every row, a tool's own config read (commitizen)
-    included, judges the commit being made and never whatever the checkout happens to hold. The
-    merge-audit row finds no merge in progress there and reads nothing; :func:`merge` audits *tree* itself
-    through :func:`lab_commons.dev.mergeaudit.judge`, the same function.
-    """
-    rows = hook_table_from(pyproject_at(root, tree), f'{tree}:pyproject.toml').get('commit-msg', ())
-    git_dir = _git(root, 'rev-parse', '--absolute-git-dir').stdout.strip()
-    with tempfile.TemporaryDirectory() as scratch:
-        work = Path(scratch) / 'tree'
-        work.mkdir()
-        for name in _git(root, 'ls-tree', '--name-only', tree).stdout.split():
-            if name in _MANIFESTS:
-                (work / name).write_text(_git(root, 'show', f'{tree}:{name}').stdout, encoding='utf-8')
-        path = Path(scratch) / 'COMMIT_EDITMSG'
-        path.write_text(message, encoding='utf-8')
-        env = {'GIT_DIR': git_dir, 'GIT_WORK_TREE': str(work)}
-        if run_stage('commit-msg', [str(path)], root=work, hooks=rows, env=env):
-            msg = 'the commit-msg hook stage refused the merge message (its rows are printed above)'
-            raise IntegrateRefused(msg)
-        return path.read_text(encoding='utf-8')
 
 
 def decide(root: Path, client: Client, policy: Policy, sha: str) -> Promotion:
@@ -210,21 +120,13 @@ def main(
     client: Client | None = None,
     fetch: Callable[[Path], None] = fetch_origin,
 ) -> int:
-    """``merge <branch> [--audit L]...`` or ``promote <sha>``: exit 0 done, 2 refused, 1 on a failure."""
+    """``promote <sha>``: exit 0 done, 2 refused, 1 on a failure."""
     parser = argparse.ArgumentParser(prog='python -m lab_commons.dev.integrate', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
-    merging = verbs.add_parser('merge')
-    merging.add_argument('branch')
-    merging.add_argument('--audit', action='append', default=[], help='<KIND> <test> -- <reason>')
     verbs.add_parser('promote').add_argument('sha')
     args = parser.parse_args(argv)
     root = Path.cwd() if cwd is None else cwd
     try:
-        if args.verb == 'merge':
-            sha = merge(root, args.branch, audit=args.audit)
-            target = _policy(root, sha).integration
-            emit(f'[integrate] {target} at {sha}; publish it: git push origin {target}')
-            return 0
         fetch(root)
         found = promote(root, client or client_for(root), args.sha)
         trunk = _policy(root, args.sha).trunk

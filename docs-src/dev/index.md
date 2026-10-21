@@ -14,7 +14,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | page | what it covers |
 |---|---|
 | [Migrating a workstation](./migrate.md) | Start here if you used to run the gate before a push: what to stop, and the five commands that replace it |
-| [The three participants](./the-three-participants.md) | Who does what: the human, the authors, the producers and the integrator |
+| [The three participants](./the-three-participants.md) | Who does what: the human, the authors, the producers, the forge and the steward |
 | [The verdict model](./verdict-model.md) | What a verdict is, the tiers, and which destination needs which forge parts |
 | [Testing discipline](./testing-discipline.md) | The lightweight/heavy partition, xfail never skip, one test session per box |
 | [Branch layers](./branch-layers.md) | Trunk, integration and child branches: what each proves and the one verb that moves it |
@@ -24,7 +24,7 @@ How the family's repositories are developed: who writes code, who proves it, and
 | [Killed runs and orphans](./orphans.md) | What survives a stopped run, why a lock judges liveness, and how to reap |
 | [Box resources](./box-resources.md) | What one workstation rations, and the broker every run declares its cost to |
 | [The forge](./forge.md) | Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict |
-| [The integrator](./integrator.md) | The integration tick, PRs into integration, `forge sync`, `integrate`, the merge audit, session-branch leases |
+| [The integration branch](./integration.md) | The path of one change, the roles, the integration tick, `forge sync`, `integrate promote`, the merge audit |
 | [Components](./components.md) | A product mounts its engines as submodules: the table, the derived-file check, the bump loop |
 | [Issues](./issues.md) | An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments |
 | [HPC clusters](./hpc.md) | A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records |

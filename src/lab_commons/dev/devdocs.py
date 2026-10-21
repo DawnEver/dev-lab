@@ -76,7 +76,7 @@ PAGES: Final[tuple[Page, ...]] = (
     Page(
         'the-three-participants',
         'The three participants',
-        'Who does what: the human, the authors, the producers and the integrator',
+        'Who does what: the human, the authors, the producers, the forge and the steward',
     ),
     Page(
         'verdict-model',
@@ -110,9 +110,9 @@ PAGES: Final[tuple[Page, ...]] = (
         'forge', 'The forge', 'Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict'
     ),
     Page(
-        'integrator',
-        'The integrator',
-        'The integration tick, PRs into integration, `forge sync`, `integrate`, the merge audit, session-branch leases',
+        'integration',
+        'The integration branch',
+        'The path of one change, the roles, the integration tick, `forge sync`, `integrate promote`, the merge audit',
     ),
     Page(
         'issues',

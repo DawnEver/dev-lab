@@ -65,6 +65,6 @@ forge's job, not yours.
 - Each lane: implement, measure, commit on its branch, push (or hand the SHA back), report SHAs, the
   measurement and every file touched.
 - Keep the branch current with `forge sync`; open a PR into integration when it should be taken.
-- The integrator merges children whose parts stand PASS ([the integrator](integrator.md)).
+- The forge merges a PR whose parts stand PASS ([the integration branch](integration.md)).
 - Once merged, delete the worktree, its output directory and the branch, tree clean first
   ([one branch per session](branch-set.md)).
