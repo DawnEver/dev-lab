@@ -253,7 +253,9 @@ def test_a_docs_only_head_reads_through_untested_docs_heads_but_never_past_untes
     a = _repo(tmp_path)
     _commit(tmp_path, {'notes.md': 'n\n'}, 'docs 1')
     docs = _commit(tmp_path, DOCS, 'docs 2')
-    assert getattr(forgecarry.docs_only(tmp_path, docs, _stand(**{a: _VERDICT})), 'source', None) == a
+    through = forgecarry.docs_only(tmp_path, docs, _stand(**{a: _VERDICT}))
+    assert through is not None
+    assert through.source == a
     run_git(tmp_path, 'checkout', '-q', '-b', 'other', a)
     _commit(tmp_path, {'src/a.py': 'x = 3\n'}, 'untested code')
     stacked = _commit(tmp_path, DOCS, 'docs on code')
