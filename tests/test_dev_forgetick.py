@@ -983,6 +983,8 @@ def _history(**by_sha: list[CommitStatus]) -> object:
 
 
 BOB = Claim('H', 'bob', LATER, 'ada/bob')
+#: What the queue says of a tip waiting behind BOB's run: its holder supersedes it (user ruling 2026-10-21).
+_SUPERSEDED = '(held on ada/bob: superseded at its next tick)'
 
 
 def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_does(tmp_path: Path) -> None:
@@ -996,12 +998,15 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     new = _push(repo, tips, 'integrate/main')
     schedule = load_schedule(repo)
     tip = _candidate('integrate/main', new, INTEGRATION)
-    running = _history(**{old: [_pending(BOB, 1)]})
-    assert behind(repo, tip, schedule, running, NOW) == f'{WAITING_BEHIND} {old[:12]} (in flight on ada/bob)'
-    queued = _history(**{old: [_pending(dataclasses.replace(BOB, progress='queued 0/12'), 1)]})
-    assert behind(repo, tip, schedule, queued, NOW) == (
-        f'{WAITING_BEHIND} {old[:12]} (not started on ada/bob: superseded at its next tick)'
-    ), 'the queue says a run that has not started gives its slot to the tip (user ruling 2026-10-19)'
+    for progress in ('', 'queued 0/12', 'running 40/93 done 12/93'):
+        held = _history(**{old: [_pending(dataclasses.replace(BOB, progress=progress), 1)]})
+        assert behind(repo, tip, schedule, held, NOW) == f'{WAITING_BEHIND} {old[:12]} {_SUPERSEDED}', (
+            f'started or not ({progress!r}), the queue says its holder gives the slot to the tip (ruling 2026-10-21)'
+        )
+    publishing = _history(**{old: [_pending(dataclasses.replace(BOB, progress='publishing'), 1)]})
+    assert behind(repo, tip, schedule, publishing, NOW) == f'{WAITING_BEHIND} {old[:12]} (publishing on ada/bob)', (
+        'PLANTED CONTROL: a run whose record is gathered is posting it, never superseded'
+    )
     settled = _history(**{old: [_pending(BOB, 1), CommitStatus('tests/base', 'success', 'ok', '', 2, 'bob')]})
     assert behind(repo, tip, schedule, settled, NOW) == ''
     assert behind(repo, tip, schedule, _history(), NOW) == ''
@@ -1035,9 +1040,7 @@ def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_r
     report = _tick(repo, server)
     assert report.claimed == ()
     assert [r for r in Recorder.received if r['method'] == 'POST'] == [], 'a running run is never cancelled'
-    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} (in flight on ada/bob)' in (
-        report.lines
-    )
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_SUPERSEDED}' in (report.lines)
     Recorder.received.clear()
     settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -1057,9 +1060,7 @@ def test_a_tip_another_host_claimed_that_this_host_never_fetched_still_blocks(tm
     assert unseen not in reflog, 'the claimed tip was never fetched here'
     tip = _candidate('integrate/main', new, INTEGRATION)
     running = _history(**{unseen: [_pending(BOB, 1)]})
-    assert (
-        behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} (in flight on ada/bob)'
-    )
+    assert behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} {_SUPERSEDED}'
 
 
 def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(server, tmp_path: Path) -> None:
@@ -1071,7 +1072,7 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
     held = _tick(repo, server, dry_run=True)
-    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} (in flight on ada/bob)' in held.lines
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_SUPERSEDED}' in held.lines
     assert new not in {w.sha for w in held.pending}, 'waiting behind is a fleet hold, not this host idle'
     Recorder.received.clear()
     settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
