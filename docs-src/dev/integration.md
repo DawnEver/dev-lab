@@ -108,7 +108,7 @@ A steward runs no test, merges no branch by hand, and pushes nothing to `integra
 
 `PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
 into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
-`<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 1, read by
+`<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 2, read by
 `lab_commons.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
 of the findings and a `tests/review` commit status. **It gates nothing**: `tests/review` is never a part, so
 the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second

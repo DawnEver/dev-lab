@@ -18,6 +18,9 @@ WHAT A STAGE HANDS A HOOK IS GIT'S OWN CONTRACT, read here once:
   whatever its rows do.
 
 Every hook runs; the stage fails when any hook failed (an advisory stage never). Exit codes are each hook's own.
+
+QUIET BY DEFAULT: a hook's output is captured, and a passing or skipped hook prints nothing. A failing
+hook's own output is replayed, then one summary line. ``LAB_HOOKS_VERBOSE=1`` also reports passes and skips.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -57,6 +61,12 @@ _GIT_TIMEOUT_S: Final = 120
 
 #: How many characters of path arguments one invocation carries -- under Windows' 32k command line.
 _ARG_BUDGET: Final = 24_000
+
+#: Set to ``1`` to report every pass and skip as well as the failures.
+VERBOSE_ENV: Final = 'LAB_HOOKS_VERBOSE'
+
+#: Set by a hook shim running the stage under the interpreter recorded at install, not the checkout's venv.
+FOREIGN_INTERPRETER_ENV: Final = 'LAB_COMMONS_HOOK_FOREIGN_INTERPRETER'
 
 
 @dataclass(frozen=True)
@@ -145,6 +155,11 @@ def resolve(run: Sequence[str], python: str = sys.executable) -> list[str]:
     return [found or first, *rest]
 
 
+def needs_only_lab_commons(hook: Hook) -> bool:
+    """Whether *hook* runs under any lab_commons interpreter: ``python -m lab_commons...`` and nothing else."""
+    return ' '.join(hook.run).startswith('python -m lab_commons')
+
+
 def _chunks(paths: Sequence[str]) -> list[list[str]]:
     out: list[list[str]] = [[]]
     size = 0
@@ -157,13 +172,24 @@ def _chunks(paths: Sequence[str]) -> list[list[str]]:
     return out
 
 
-Runner = Callable[[list[str], Path, str | None, Mapping[str, str]], int]
+#: Runs ``(argv, cwd, stdin, env)`` and returns ``(exit code, combined output)``.
+Runner = Callable[[list[str], Path, str | None, Mapping[str, str]], tuple[int, str]]
 
 
-def _subprocess_runner(argv: list[str], cwd: Path, stdin: str | None, env: Mapping[str, str]) -> int:
-    return _door.run(
-        argv, cwd=cwd, input=stdin, text=True, encoding='utf-8', check=False, env={**os.environ, **env}
-    ).returncode
+def _subprocess_runner(argv: list[str], cwd: Path, stdin: str | None, env: Mapping[str, str]) -> tuple[int, str]:
+    done = _door.run(
+        argv,
+        cwd=cwd,
+        input=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+        env={**os.environ, **env},
+    )
+    return done.returncode, done.stdout or ''
 
 
 def _argvs(hook: Hook, stage: str, git_args: Sequence[str], chosen: Sequence[str]) -> list[list[str]]:
@@ -177,16 +203,25 @@ def _argvs(hook: Hook, stage: str, git_args: Sequence[str], chosen: Sequence[str
 
 def _run_hook(
     hook: Hook, argvs: list[list[str]], root: Path, stdin: str | None, runner: Runner, *, env: Mapping[str, str]
-) -> int:
+) -> tuple[int, str]:
     """Each argv in turn, stopping at the first failure; at pre-commit a rewrite of the tree fails too."""
     before = worktree_diff(root) if hook.stage == 'pre-commit' else ''
+    output = ''
     for argv in argvs:
-        if code := runner(argv, root, stdin, {**env, **hook.env}):
-            return code
+        code, out = runner(argv, root, stdin, {**env, **hook.env})
+        output += out
+        if code:
+            return code, output
     if hook.stage == 'pre-commit' and worktree_diff(root) != before:
-        emit(f'[githooks] pre-commit {hook.id}: it changed the working tree; review, stage, commit again')
-        return 1
-    return 0
+        rewrote = f'[githooks] pre-commit {hook.id}: it changed the working tree; review, stage, commit again'
+        return 1, f'{output}{rewrote}\n'
+    return 0, output
+
+
+def _note(line: str) -> None:
+    """A pass or a skip: shown only under :data:`VERBOSE_ENV`."""
+    if os.environ.get(VERBOSE_ENV) == '1':
+        emit(line)
 
 
 def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequence[PushLine]) -> tuple[Hook, ...]:
@@ -196,9 +231,24 @@ def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequen
     landed) still runs pre-push, with no ref line. It publishes nothing, so nothing is judged.
     """
     if stage == 'pre-push' and not push:
-        emit('[githooks] pre-push: no ref line on stdin -- this push publishes nothing, so nothing is judged')
+        _note('[githooks] pre-push: no ref line on stdin -- this push publishes nothing, so nothing is judged')
         return ()
-    return tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
+    chosen = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
+    if os.environ.get(FOREIGN_INTERPRETER_ENV) != '1':
+        return chosen
+    for hook in chosen:
+        if not needs_only_lab_commons(hook):
+            _note(f'[githooks] {stage} {hook.id}: skipped -- needs the repo venv, which this checkout lacks')
+    return tuple(hook for hook in chosen if needs_only_lab_commons(hook))
+
+
+def _report(stage: str, hook_id: str, code: int, output: str) -> int:
+    """*code*, after showing a failure's own output -- a pass is shown only under :data:`VERBOSE_ENV`."""
+    if not code:
+        _note(f'[githooks] {stage} {hook_id}: passed')
+    elif output.strip():
+        emit(output.rstrip(), err=True)
+    return code
 
 
 def run_stage(
@@ -219,7 +269,7 @@ def run_stage(
         root: the checkout's top level; every hook runs there.
         stdin: what git wrote on the hook's stdin (pre-push: the ref lines).
         hooks: the hooks to run; the merged table of *root* when omitted.
-        runner: runs ``(argv, cwd, stdin, env)`` and returns the exit code; injected for tests only.
+        runner: runs ``(argv, cwd, stdin, env)`` and returns ``(exit code, output)``; injected for tests only.
         env: variables every hook of the stage runs with (beneath its own ``env``): ``integrate`` points git at
             the repository while *root* holds the merged tree's manifest.
 
@@ -238,18 +288,17 @@ def run_stage(
         if hook.refs is not None:
             lines = tuple(line for line in push if not line.deleted and re.search(hook.refs, line.remote_ref))
             if not lines:
-                emit(f'[githooks] {stage} {hook.id}: skipped -- no pushed ref matches {hook.refs!r}')
+                _note(f'[githooks] {stage} {hook.id}: skipped -- no pushed ref matches {hook.refs!r}')
                 continue
         if stage == 'pre-push':
             paths = pushed_paths(root, lines, git_args[0] if git_args else '')
         chosen = [path for path in paths if hook.selects(path)]
         if stage != 'commit-msg' and not chosen and not hook.always_run:
-            emit(f'[githooks] {stage} {hook.id}: skipped -- no path selected')
+            _note(f'[githooks] {stage} {hook.id}: skipped -- no path selected')
             continue
         hook_stdin = ''.join(f'{line.line}\n' for line in lines) if stage == 'pre-push' else None
-        code = _run_hook(hook, _argvs(hook, stage, git_args, chosen), root, hook_stdin, runner, env=env or {})
-        emit(f'[githooks] {stage} {hook.id}: {"passed" if code == 0 else f"FAILED (exit {code})"}')
-        if code:
+        argvs = _argvs(hook, stage, git_args, chosen)
+        if _report(stage, hook.id, *_run_hook(hook, argvs, root, hook_stdin, runner, env=env or {})):
             failed.append(hook.id)
     return _verdict(stage, failed)
 

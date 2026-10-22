@@ -152,8 +152,8 @@ are too unqualified to survive being flattened into a namespace this wide.
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`lab_commons.dev.test_outcomes` -- the pytest plugin writing a Record of per-test cells
   (:mod:`lab_commons.outcomes`) per process, so a local run posts the same kind of part a cluster run does.
-* :mod:`lab_commons.dev.lockcheck` -- the ``lock`` pre-push row (PIN + FRESHNESS): a pushed commit commits
-  ``uv.lock`` and every hold below the newest declares its reason; integration and trunk are at the NEWEST.
+* :mod:`lab_commons.dev.lockcheck` -- the ``lock`` pre-push row (the PIN half of PIN + FRESHNESS): a pushed
+  commit commits ``uv.lock`` and every hold below the newest declares its reason; freshness is the forge relock's.
 * :mod:`lab_commons.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
 * :mod:`lab_commons.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.

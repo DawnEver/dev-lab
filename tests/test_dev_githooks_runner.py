@@ -44,10 +44,10 @@ class _Recorder:
         self.calls: list[tuple[list[str], str | None]] = []
         self.code = code
 
-    def __call__(self, argv: list[str], cwd: Path, stdin: str | None, env: dict | None = None) -> int:
+    def __call__(self, argv: list[str], cwd: Path, stdin: str | None, env: dict | None = None) -> tuple[int, str]:
         self.calls.append((argv, stdin))
         self.env = env
-        return self.code
+        return self.code, f'output of {argv[0]}\n'
 
 
 # ------------------------------------------------------------------------------------------- table
@@ -154,9 +154,9 @@ def test_a_hook_that_rewrites_the_working_tree_fails_the_commit(repo: Path) -> N
     (repo / 'a.py').write_text('x = 2\n', encoding='utf-8')
     _git(repo, 'add', 'a.py')
 
-    def rewrite(_argv: list[str], cwd: Path, _stdin: str | None, _env: object) -> int:
+    def rewrite(_argv: list[str], cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
         (cwd / 'a.py').write_text('x = 3\n', encoding='utf-8')
-        return 0
+        return 0, ''
 
     fmt = Hook(stage='pre-commit', id='fmt', run=('tool',), pass_files=True)
     assert run_stage('pre-commit', root=repo, hooks=(fmt,), runner=rewrite) == 1
@@ -264,3 +264,41 @@ def test_the_base_runs_the_pr_notices_reader_after_a_commit_and_before_a_pr_push
     assert [r['run'] for r in rows['post-commit']] == [['python', '-m', 'lab_commons.dev.branchnotices']]
     assert [r['run'] for r in rows['pre-push']] == [['python', '-m', 'lab_commons.dev.branchnotices', '--push']]
     assert rows['pre-push'][0]['refs'] == '^refs/heads/pr/'
+
+
+# ------------------------------------------------------------------------------------------- quiet
+
+
+def test_a_stage_whose_every_hook_passes_or_skips_prints_nothing(repo: Path, capsys, monkeypatch) -> None:
+    """A passing hook's own output and every pass/skip line stay off the agent's screen."""
+    monkeypatch.delenv('LAB_HOOKS_VERBOSE', raising=False)
+    (repo / 'a.py').write_text('x = 1\n', encoding='utf-8')
+    _git(repo, 'add', 'a.py')
+    ran = Hook(stage='pre-commit', id='ran', run=('tool',), pass_files=True)
+    skipped = Hook(stage='pre-commit', id='skipped', run=('tool',), files=r'\.rs$', pass_files=True)
+    assert run_stage('pre-commit', root=repo, hooks=(ran, skipped), runner=_Recorder()) == 0
+    out = capsys.readouterr()
+    assert out.out + out.err == ''
+
+
+def test_a_failing_hook_prints_only_its_own_output_and_one_summary(repo: Path, capsys, monkeypatch) -> None:
+    """PLANTED CONTROL: the quiet runner must still show a refusal -- its text, then one summary line."""
+    monkeypatch.delenv('LAB_HOOKS_VERBOSE', raising=False)
+    quiet = Hook(stage='commit-msg', id='quiet', run=('ok',))
+    loud = Hook(stage='commit-msg', id='loud', run=('refuser',))
+
+    def runner(argv: list[str], _cwd: Path, _stdin: str | None, _env: object) -> tuple[int, str]:
+        return (1, 'REFUSED: planted\nRemedy: fix it\n') if argv[0].endswith('refuser') else (0, 'noise\n')
+
+    assert run_stage('commit-msg', ['m'], root=repo, hooks=(quiet, loud), runner=runner) == 1
+    out = capsys.readouterr()
+    assert out.out == ''
+    summary = '[githooks] commit-msg: 1 hook(s) failed: loud'
+    assert out.err.splitlines() == ['REFUSED: planted', 'Remedy: fix it', summary]
+
+
+def test_the_verbose_env_shows_the_passes(repo: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv('LAB_HOOKS_VERBOSE', '1')
+    hook = Hook(stage='commit-msg', id='cz', run=('tool',))
+    assert run_stage('commit-msg', ['m'], root=repo, hooks=(hook,), runner=_Recorder()) == 0
+    assert '[githooks] commit-msg cz: passed' in capsys.readouterr().out

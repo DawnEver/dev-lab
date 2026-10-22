@@ -27,7 +27,7 @@ __all__ = [
 ]  # fmt: skip
 
 #: The ``schema_version`` values this reader knows.
-SCHEMA_VERSIONS: Final = frozenset({1})
+SCHEMA_VERSIONS: Final = frozenset({2})
 
 #: A reviewer's status: ``ok`` contributed findings; the rest name why it did not.
 REVIEWER_STATUSES: Final = frozenset(
@@ -64,7 +64,7 @@ class Reviewer:
 
 @dataclass(frozen=True)
 class Finding:
-    """One deduplicated finding, and the reviewers (``name@provider``) that reported it."""
+    """One deduplicated finding, the reviewers (``name@provider``) that reported it, the principle ids tagged."""
 
     id: str
     severity: str
@@ -75,6 +75,7 @@ class Finding:
     detail: str
     confidence: str
     reviewers: tuple[str, ...]
+    principles: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ def _finding(row: object, at: int) -> Finding:
     return Finding(
         str(got['id']), _one_of(got['severity'], SEVERITIES, f'findings[{at}].severity'), str(got['file']),
         str(got['summary']), str(got['category']), str(got['suggestion']), str(got['detail']),
-        str(got['confidence']), by,
+        str(got['confidence']), by, tuple(map(str, got.get('principles', ()))),
     )  # fmt: skip
 
 

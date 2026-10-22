@@ -35,9 +35,8 @@ building a base for it here would put two renderers on one artefact while that s
 The absence is NAMED rather than silent, which is the whole point of writing it down.
 
 WHY `uv.lock` IS BANNED FROM EVERY `.gitignore` (PIN + FRESHNESS, user ruling 2026-10-17): every family repo
-COMMITS its lock, so a host builds a commit's environment with `uv sync --frozen`; "the latest" is the `lock`
-pre-push row refusing a lock that is not at the newest resolution (lab_commons.dev.lockcheck), never an
-untracked file resolved on the day.
+COMMITS its lock, so a host builds a commit's environment with `uv sync --frozen`; "the latest" is the forge's
+relock pull request (lab_commons.dev.relock), never an untracked file resolved on the day.
 """
 
 from __future__ import annotations

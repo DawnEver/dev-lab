@@ -30,8 +30,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'DECLARATION-LIES',
         (
-            'A declaration that lies is the dominant defect: a docstring, a name, a type hint or a status '
-            'asserting a property the code does not enforce. Prefer a declaration the code MUST consult, and '
+            'A declaration that lies is the dominant defect -- a docstring, a name, a type hint or a status '
+            'asserting a property the code does not enforce -- so prefer a declaration the code MUST consult, and '
             'prefer changing the CODE to match the declaration.'
         ),
         (
@@ -43,8 +43,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PLANTED-CONTROL',
         (
-            'A scope claim needs its own test -- one that PLANTS the thing in the region and calls the REAL '
-            'guard. To check a fix: revert the fix, keep the prose, run the suite.'
+            'A scope claim needs its own test that PLANTS the thing in the region and calls the REAL guard, and a '
+            'fix is checked by reverting the fix, keeping the prose and running the suite.'
         ),
         (
             'tests/architecture/meta/test_a_scan_style_guard_binds_a_floor.py',
@@ -55,9 +55,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'FLOOR-ON-EVERY-SCAN',
         (
-            'Give every scan a floor: finding NOTHING is vacuous rather than green, so an assertion that '
-            'cannot distinguish a clean tree from an unread one is not evidence. If a miss falls back, remove '
-            'the FALLBACK -- a claim no test could have failed is worse than no claim.'
+            'Give every scan a floor, because finding NOTHING is vacuous rather than green and an assertion that '
+            'cannot distinguish a clean tree from an unread one is not evidence; if a miss falls back, remove the '
+            'FALLBACK, since a claim no test could have failed is worse than no claim.'
         ),
         (
             'tests/population_floor.py',
@@ -68,8 +68,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ESCAPE-HATCH-CEILING',
         (
-            'An escape hatch needs a CEILING, not just a reason: pin the RATIO between two operating points, never the '
-            'value at one. A waiver that no one must justify is how a check reaches zero without anything being fixed.'
+            'An escape hatch needs a CEILING, not just a reason -- pin the RATIO between two operating points, '
+            'never the value at one -- because a waiver no one must justify is how a check reaches zero without '
+            'anything being fixed.'
         ),
         (
             'tests/architecture/ratchets/test_suppression_ratchet.py',
@@ -81,8 +82,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'RATCHET-TWO-SIDES',
         (
-            'A ratchet has two sides: a capability that disappears, or a waiver nothing uses, is as wrong as '
-            'its opposite. A budget freed by a shrink is paid back in the same commit, never banked as slack '
+            'A ratchet has two sides -- a capability that disappears, or a waiver nothing uses, is as wrong as its '
+            'opposite -- and a budget freed by a shrink is paid back in the same commit, never banked as slack '
             'for the next arrival.'
         ),
         (
@@ -107,8 +108,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'FIX-THE-CAUSE',
         (
-            'Fix the CAUSE at the source, at EVERY site -- a patched symptom stops advertising its cause. No '
-            '`_legacy`/`_compat` wrappers, no deprecation aliases, no dual entry points; callers and tests '
+            'Fix the CAUSE at the source, at EVERY site, since a patched symptom stops advertising its cause: no '
+            '`_legacy`/`_compat` wrappers, no deprecation aliases, no dual entry points, and callers and tests '
             'move WITH the code.'
         ),
         (
@@ -146,11 +147,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'IMPLEMENT-EVERYTHING',
         (
-            'Every combination that CAN run goes through the same path, and no capability guard keeps a '
-            'working-but-imprecise one out: return the result plus a machine-readable accuracy tag carrying '
-            'the MEASURED deviation, and never fabricate a number. What physically cannot run degrades to a '
-            'working path, or RAISES. A warning on an unchanged success return is the forbidden shape -- the '
-            'test is whether the CALLER can tell.'
+            'Every combination that CAN run goes through the same path with no capability guard keeping a '
+            'working-but-imprecise one out -- it returns the result plus a machine-readable accuracy tag carrying '
+            'the MEASURED deviation, never a fabricated number -- while what physically cannot run degrades to a '
+            'working path or RAISES, and a warning on an unchanged success return is the forbidden shape, because '
+            'the CALLER must be able to tell.'
         ),
         (
             'tests/architecture/declarations/test_every_capability_row_is_reachable.py',
@@ -184,9 +185,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'BAR-IS-A-CONSTANT',
         (
-            'Every bar is a constant naming its statistic, with no per-case override path: a case writes '
-            'results, reference values and failure reasons -- never the bar it is judged by. A cell below the '
-            'bar is a failure ON RECORD with its residual, never a loosened band, a skip, or a bypass.'
+            'Every bar is a constant naming its statistic with no per-case override path -- a case writes results, '
+            'reference values and failure reasons, never the bar it is judged by -- and a cell below the bar is a '
+            'failure ON RECORD with its residual, never a loosened band, a skip, or a bypass.'
         ),
         (
             'tests/integration/acceptance/test_case_declarations.py',
@@ -196,9 +197,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'DOCS-SPLIT',
         (
-            'The always-loaded rules files are HARD CONSTRAINTS ONLY and are read on every turn; MECHANISM '
-            'lives in a docs tree and a line ratchet keeps the two from merging. A hazard already refused is '
-            'recorded as a row naming its live mechanism, never re-argued in prose.'
+            'The always-loaded rules files are HARD CONSTRAINTS ONLY, read on every turn, while MECHANISM lives in '
+            'a docs tree kept apart from them by a line ratchet, and a hazard already refused is recorded as a '
+            'row naming its live mechanism, never re-argued in prose.'
         ),
         (
             'tests/architecture/ratchets/test_rules_line_ratchet.py',
@@ -210,11 +211,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MEMORY-SHAPE',
         (
-            'Memory keeps as much as possible and removes redundancy by MERGING, never by deleting: an entry '
-            'leaves only by being folded into a live entry that names it in `merged_from`, keeping its '
-            'measurements and refuted hypotheses. A memory entry lives under a dated YYYY/MM/DD path with '
-            'frontmatter, the index is generated from what is there rather than curated beside it, and a task '
-            'lands its state file with the commit that completes it.'
+            'Memory keeps as much as possible and removes redundancy by MERGING, never deleting -- an entry leaves '
+            'only by being folded into a live entry that names it in `merged_from`, keeping its measurements and '
+            'refuted hypotheses -- and each entry lives under a dated YYYY/MM/DD path with frontmatter, the index '
+            'is generated from what is there rather than curated beside it, and a task lands its state file with '
+            'the commit that completes it.'
         ),
         (
             'tests/architecture/repo/test_memory_lives_in_dated_directories.py',
@@ -237,17 +238,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'MODULE-SIZE-ALARM',
         (
-            'A module past the size band MUST be refactored -- a new one, one that GROWS, or a pin for one '
-            'that was already fixed. The band is repo data; that there IS one is not.'
+            'A module past the size band MUST be refactored -- a new one, one that GROWS, or a pin for one that '
+            'was already fixed -- and while the band is repo data, that there IS one is not.'
         ),
         ('tests/architecture/ratchets/test_module_alarm.py',),
     ),
     (
         'LATEST-DEPENDENCIES',
         (
-            'A third-party dependency moves to the LATEST, aggressively: a floor is a statement and an upper '
-            'bound is a ceiling nobody re-argued. The environment a verdict was measured in is part of the '
-            'verdict, so a package moving underneath one invalidates it rather than ageing it.'
+            'A third-party dependency moves to the LATEST, aggressively -- a floor is a statement and an upper '
+            'bound is a ceiling nobody re-argued -- and since the environment a verdict was measured in is part of '
+            'the verdict, a package moving underneath one invalidates it rather than ageing it.'
         ),
         (
             'tests/architecture/repo/test_no_rust_dependency_carries_an_undeclared_upper_bound.py',
@@ -275,10 +276,11 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'VERDICT-BAR-IS-THE-INCREMENT',
         (
-            'A verdict answers for the INCREMENT that produced it, not the tree: a red it did not cause is inventory. '
-            'Lane and integration pushes are admitted with no result -- parts are produced FROM pushed shas; the '
-            'trunk needs every tests/<part> part of HEAD on the forge a PASS of scope full. Refused: a part '
-            'missing, unsettled, failing or incremental, or the forge unreadable -- there is no local fallback.'
+            'A verdict answers for the INCREMENT that produced it, not the tree, so a red it did not cause is '
+            'inventory; lane and integration pushes are admitted with no result (parts are produced FROM pushed '
+            'shas), while the trunk needs every tests/<part> part of HEAD on the forge a PASS of scope full and is '
+            'refused, with no local fallback, when a part is missing, unsettled, failing or incremental, or the '
+            'forge is unreadable.'
         ),
         (
             'src/lab_commons/dev/pushgate.py',
@@ -289,9 +291,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'REFUSAL-NAMES-THE-REMEDY',
         (
-            'Take the remedy a refusal NAMES. Bound every wait, because a budget is a ceiling on the WAIT -- '
-            'split or parallelise, never raise it -- and kill a process TREE by its ROOT pid, since stopping a '
-            'wrapper leaves its children running.'
+            'Take the remedy a refusal NAMES, bound every wait because a budget is a ceiling on the WAIT (split or '
+            'parallelise, never raise it), and kill a process TREE by its ROOT pid, since stopping a wrapper '
+            'leaves its children running.'
         ),
         (
             # The bounded wait, the width the refusal must consult before it names a remedy, and
@@ -315,9 +317,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PRODUCTION-ENTRY-POINT',
         (
-            'Reproduce a behaviour through the PRODUCTION entry point, never an ad-hoc script handed out '
-            'beside it; if a behaviour is not reachable from there, that is a gap to FIX. The boundary is the '
-            'SUBJECT, not the tree the code happens to live in.'
+            'Reproduce a behaviour through the PRODUCTION entry point, never an ad-hoc script handed out beside '
+            'it, and treat a behaviour not reachable from there as a gap to FIX, the boundary being the SUBJECT, '
+            'not the tree the code happens to live in.'
         ),
         (
             'src/lab_commons/dev/famtests/placement.py',
@@ -347,14 +349,14 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'INSTALL-DOOR-DELIVERS-THE-DECLARATION',
         (
-            'PIN + FRESHNESS (user ruling 2026-10-17): the COMMITTED uv.lock is what an environment is, so '
-            'every path that mutates one -- a bootstrap, a served venv, a host refresh -- is `uv sync --frozen` '
-            'from the lock of the commit; the `lock` pre-push row refuses a hold below the newest with no reason '
-            'and, on integration or trunk, a lock not at the newest (the forge relocks integration). The paths that '
-            'mutate an environment are not the set named "install": a git hook spelled as a project run is an '
-            'install door nobody declared, and it must replay the lock or not touch the environment at all. '
-            'Which commands re-resolve is MEASURED per tool rather than read off a flag name, because two '
-            'doors that differ by one flag differ by a whole environment, and that is how the defect hides.'
+            # Why: the paths that mutate an environment are not the set named install, and two doors that differ by
+            # one flag differ by a whole environment, which is how the defect hides.
+            'PIN + FRESHNESS (user ruling 2026-10-17): the COMMITTED uv.lock is what an environment is, so every '
+            'path that mutates one -- a bootstrap, a served venv, a host refresh, or a git hook spelled as a '
+            'project run, an install door nobody declared -- is `uv sync --frozen` from the lock of the commit or '
+            'does not touch the environment at all; the `lock` pre-push row refuses a hold below the newest with '
+            'no reason and, on integration or trunk, a lock not at the newest (the forge relocks integration); and '
+            'which commands re-resolve is MEASURED per tool, never read off a flag name.'
         ),
         ('tests/test_dev_installdoor.py', 'tests/test_dev_lockcheck.py'),
     ),
@@ -373,23 +375,21 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'TOLERANCE-CARRIES-A-UNIT',
         (
-            'A relative tolerance is free and an absolute one is not: `epsilon = 1e-10 * L` is a statement '
-            'about the unit its inputs are in, so the same call in metres tightens a test by 1000x. Sweep for '
-            'absolute tolerances BEFORE a rewrite, state the unit a golden was generated in, and never write a '
-            '`rel=` without the `abs=` floor it is combined with.'
+            'A relative tolerance is free and an absolute one is not (`epsilon = 1e-10 * L` is a statement about '
+            'the unit its inputs are in, so the same call in metres tightens a test by 1000x): sweep for absolute '
+            'tolerances BEFORE a rewrite, state the unit a golden was generated in, and never write a `rel=` '
+            'without the `abs=` floor it is combined with.'
         ),
         ('tests/architecture/ratchets/test_approx_rel_requires_abs.py',),
     ),
     (
         'UNITS-GO-THROUGH-PINT',
         (
-            'A unit is never spelled into a NAME; it lives in the VALUE, as a pint Quantity. The two halves are '
-            'one rule rather than two, because the naming ban is what makes the conversion boundary '
-            'non-optional: once a name cannot carry a unit, the value must, so `--slot-pitch-mm=12.5` typed as '
-            'a bare float has nowhere left to keep its unit but pint. Renaming such a flag without typing it '
-            'DELETES the unit instead of moving it, which is worse than leaving it, so a name whose value IS '
-            'already a Quantity is not a violation -- there the unit is in the value and the name merely '
-            'repeats it.'
+            'A unit is never spelled into a NAME but lives in the VALUE as a pint Quantity -- one rule, because '
+            'once a name cannot carry a unit the value must, so `--slot-pitch-mm=12.5` typed as a bare float has '
+            'nowhere left to keep its unit but pint -- and renaming such a flag without typing it DELETES the '
+            'unit, which is worse than leaving it, while a name whose value IS already a Quantity is not a '
+            'violation, since there the name merely repeats the unit.'
         ),
         (
             'tests/test_dev_units.py',
@@ -406,21 +406,20 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'NO-CJK-IN-TRACKED-SOURCE',
         (
             'No tracked content may contain a CJK character, except under `.claude/memory/`, `attic/`, the '
-            'repo-root `archived/`, and a `<stem>.zh.md` beside its English `<stem>.md` (an orphaned '
-            'translation is refused by name). A population too large for one commit is a RATCHET, not a '
-            'loosened rule: a repo declares its files still carrying CJK as a NAMED SET that may only shrink, '
-            'and a declared file with no CJK left is an ORPHANED waiver, refused like an undeclared one.'
+            'repo-root `archived/`, and a `<stem>.zh.md` beside its English `<stem>.md` (an orphaned translation '
+            'is refused by name), and a population too large for one commit is a RATCHET, not a loosened rule: a '
+            'repo declares its files still carrying CJK as a NAMED SET that may only shrink, where a declared file '
+            'with no CJK left is an ORPHANED waiver, refused like an undeclared one.'
         ),
         ('tests/test_dev_cjk.py',),
     ),
     (
         'INJECTED-DOC-WIDTH-CEILING',
         (
-            'A line-COUNT ratchet over always-loaded agent docs is blind to how long each line is, and a '
-            'rewrite can double a page width while lowering its line count and read as an improvement. Every '
-            'document injected into an agent -- `AGENTS.md`/`CLAUDE.md`, `.claude/rules/**` -- is also capped '
-            'per LINE at 120 columns, the same ceiling the family already uses for code, declared as the same '
-            'shrink-only named set the CJK ratchet uses.'
+            'Every document injected into an agent -- `AGENTS.md`/`CLAUDE.md`, `.claude/rules/**` -- is capped per '
+            'LINE at 120 columns, the ceiling the family already uses for code, declared as the same shrink-only '
+            'named set the CJK ratchet uses, because a line-COUNT ratchet is blind to line length and a rewrite '
+            'can double a page width while lowering its line count and read as an improvement.'
         ),
         ('tests/test_dev_docwidth.py',),
     ),
@@ -428,29 +427,30 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'ENV-MUTATION-THROUGH-THE-DOOR',
         (
             'No verdict may cite an environment it did not run in, so a dependency mutation goes through the '
-            'shared door and is decided by STATE -- which target environment will be mutated, and '
-            'whether a verdict is in flight for THAT environment -- never by matching command TEXT. A '
-            'mutation DURING a run is PREVENTED by exclusion; mutation BETWEEN runs is DETECTED by the key '
-            'and remedied by RETIRING the verdict anchors. Each worktree owns its environment; agents may '
-            'bootstrap and sync their own through the door without human approval, never mutate main from '
-            'a lane. The box ledger stays machine-wide, independently of environment exclusion. A repo that '
-            'declares no verdict anchors has that gap RENDERED, never silently skipped.'
+            'shared door and is decided by STATE (which target environment is mutated, and whether a verdict is in '
+            'flight for THAT environment), never by matching command TEXT: a mutation DURING a run is PREVENTED '
+            'by exclusion, one BETWEEN runs is DETECTED by the key and remedied by RETIRING the verdict anchors, '
+            'each worktree owns its environment (agents bootstrap and sync their own through the door without '
+            'human approval, never mutating main from a lane), the box ledger stays machine-wide independently of '
+            'environment exclusion, and a repo declaring no verdict anchors has that gap RENDERED, never silently '
+            'skipped.'
         ),
         ('tests/test_dev_dep.py', 'tests/test_dev_dep_target.py'),
     ),
     (
         'ONE-BOX-ONE-LOCK',
         (
-            'Every run on a machine DECLARES its demand -- cores, memory, a wall and tool seats -- on the ONE box '
-            'ledger every repo and session on it reaches (lab_commons.box, a machine-wide path, never a lock named '
-            'in one tree), is admitted by the one rule on the MEASURED room -- free now, less what held claims have '
-            'not taken yet, less its [reserve] margins -- and '
-            'runs INSIDE a kernel limit sized to that claim: killed past its memory or wall, so a claim is never '
-            'idle-but-held and never exceeded. A waiter holds nothing and gives up at its own queue ceiling, '
-            'refused naming the dimension short and every holder with its deadline -- starting anyway is the harm, '
-            'blocking forever a crash rendered as a hang. A recorded holder is identified by more than its pid, '
-            'because a reused pid makes a dead holder immortal. Nothing is reserved, lent or preempted (user '
-            'ruling 2026-10-14): priority orders, it never claims.'
+            # Why: a claim inside a kernel limit is never idle-but-held and never exceeded; a waiter starting anyway
+            # is the harm, and blocking forever is a crash rendered as a hang; a reused pid would make a dead holder
+            # immortal.
+            'Every run on a machine DECLARES its demand -- cores, memory, a wall and tool seats -- on the ONE '
+            'machine-wide box ledger every repo and session reaches (lab_commons.box, never a lock named in one '
+            'tree), is admitted by the one rule on the MEASURED room (free now, less what held claims have not '
+            'taken yet, less its [reserve] margins), and runs INSIDE a kernel limit sized to that claim that kills '
+            'it past its memory or wall; a waiter holds nothing and gives up at its own queue ceiling, refused '
+            'naming the dimension short and every holder with its deadline; a recorded holder is identified by '
+            'more than its pid; and nothing is reserved, lent or preempted (user ruling 2026-10-14), priority '
+            'ordering but never claiming.'
         ),
         (
             'tests/test_box.py',

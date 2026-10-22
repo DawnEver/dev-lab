@@ -183,7 +183,7 @@ def test_the_floors_second_side_refuses_a_number_the_tree_has_outgrown() -> None
     """A floor of 1 against 4000 entries refuses only a total collapse -- re-measure it, do not keep it."""
     grown = MemoryScan(trees=('.claude/memory',), entries_read=4000, undated=(), silent=(), disagreements={})
     assert_every_entry_is_dated(grown, floor=3500, headroom=1000)
-    with pytest.raises(floors.SlackFloor, match='RE-MEASURE THE FLOOR'):
+    with pytest.raises(floors.SlackFloor, match='Re-measure the floor'):
         assert_every_entry_is_dated(grown, floor=1, headroom=1000)
 
 

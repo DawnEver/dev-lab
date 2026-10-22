@@ -165,10 +165,7 @@ def assert_floor_still_binds(found: int, *, floor: int, headroom: int, what: str
     if margin > headroom and floor < BIND_RATIO * found:
         msg = (
             f'the {what} scan read {found} against a floor of {floor} -- {margin} clear, past the '
-            f'{headroom} headroom and below {BIND_RATIO:.0%} of the reading. The floor was measured '
-            f'against a smaller tree and now refuses only a total collapse: a walk losing '
-            f'most of its corpus would still clear it. RE-MEASURE THE '
-            f'FLOOR against what is there today; raising the headroom is how the arm is kept while the '
-            f'guard it stands for is given up.'
+            f'{headroom} headroom and below {BIND_RATIO:.0%} of the reading, so it no longer binds. '
+            f'Re-measure the floor; do not raise the headroom.'
         )
         raise SlackFloor(msg)

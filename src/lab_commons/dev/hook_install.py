@@ -30,12 +30,15 @@ record that as its upstream. ``PUBLISH-IS-THE-LOCAL-REF`` refuses at pre-push wh
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final
 
 import lab_commons.launch as _door
+from lab_commons.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
 from lab_commons.dev.githooks.table import hook_table
 from lab_commons.dev.reports import StepReport
 from lab_commons.dev.venvpath import CANDIDATE_RELATIVE_PATHS
@@ -175,9 +178,24 @@ def declared_stages(repo: Path) -> dict[str, tuple[str, ...]]:
     return {stage: tuple(hook.id for hook in hooks) for stage, hooks in hook_table(repo).items()}
 
 
-def shim(stage: str) -> str:
-    """The ``.git/hooks/<stage>`` file: find this checkout's venv, run the stage's declared hooks there."""
+_FALLBACK_LINE: Final = re.compile(r"^fallback='.*'$", re.MULTILINE)
+
+
+def _sh_quote(text: str) -> str:
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def shim(stage: str, fallback: str | None = None) -> str:
+    """The ``.git/hooks/<stage>`` file: this checkout's venv, else the installer's interpreter, else PASS.
+
+    A hook never blocks a commit or push because the checkout has no venv (user ruling 2026-10-22):
+    the shim falls back to *fallback* (default: the interpreter running the install, recorded in the
+    file) when it can import lab_commons, and runs only the rows that need nothing of the repo's own
+    environment. With no lab_commons interpreter anywhere it says so in one line and exits 0; the
+    forge runs every row anyway.
+    """
     candidates = ' '.join('/'.join(parts) for parts in CANDIDATE_RELATIVE_PATHS)
+    recorded = Path(fallback if fallback is not None else sys.executable).as_posix()
     return (
         '#!/bin/sh\n'
         f'{SHIM_MARKER} -- installed by `{INSTALL_COMMAND}`; the hooks are declared in TOML\n'
@@ -188,18 +206,26 @@ def shim(stage: str) -> str:
         f'    exec "$top/$rel" -m lab_commons.dev.githooks run {stage} "$@"\n'
         '  fi\n'
         'done\n'
-        f'echo "[githooks] {stage}: no venv interpreter in $top ({candidates}); this checkout ran no hook." >&2\n'
-        'echo "[githooks]   Remedy: build the venv (python -m lab_commons.dev.dep --bootstrap <checkout>), '
-        'then commit or push again." >&2\n'
-        'exit 1\n'
+        f'fallback={_sh_quote(recorded)}\n'
+        'if [ -x "$fallback" ] && "$fallback" -c "import lab_commons.dev.githooks" >/dev/null 2>&1; then\n'
+        f'  {FOREIGN_INTERPRETER_ENV}=1 exec "$fallback" -m lab_commons.dev.githooks run {stage} "$@"\n'
+        'fi\n'
+        f'echo "[githooks] {stage}: no venv in $top, no lab_commons interpreter; '
+        'hooks skipped (the forge runs them)." >&2\n'
+        'exit 0\n'
     )
+
+
+def _same_shim(text: str, stage: str) -> bool:
+    """*text* is the current shim of *stage*, whichever interpreter the install recorded."""
+    return _FALLBACK_LINE.sub('', text) == _FALLBACK_LINE.sub('', shim(stage))
 
 
 def _inspect(path: Path, stage: str) -> tuple[str, str]:
     if not path.exists():
         return ABSENT, 'no file at this path -- never installed, or removed'
     text = path.read_text(encoding='utf-8', errors='ignore')
-    if text == shim(stage):
+    if _same_shim(text, stage):
         return INSTALLED, f'the lab_commons shim for {stage}'
     if SHIM_MARKER in text:
         return STALE, 'a lab_commons shim, but not the current one for this slot'

@@ -324,6 +324,26 @@ def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: 
     assert not [c for c in box.calls()[again:] if c.startswith('bootstrap')], 'the stamp makes a second tick quiet'
 
 
+def test_serve_reinstalls_the_serving_checkouts_own_hooks_after_it_updates_itself(box: Box, tmp_path: Path) -> None:
+    """PLAN R1: a host's shims are kept current by the machine, never by hand (2026-10-22, #273).
+
+    The serving lab-commons checkout moved to a kit whose shim differs from the installed one: the tick
+    re-installs ITS hooks before serving. A repo checkout's hooks are not the serving kit's and are left alone.
+    PLANTED CONTROL: hooks already live are only read, never re-written.
+    """
+    _serving(box)
+    kit, alpha = box.root / 'lab-commons', box.root / 'alpha'
+    (kit / '.git' / 'HOOKED').unlink()
+    (alpha / '.git' / 'HOOKED').unlink()
+    seen = len(box.calls())
+    assert _serve(box, tmp_path)[0] == 0
+    installs = [call for call in box.calls()[seen:] if '--install' in call.split()]
+    assert installs == [f'python -m lab_commons.dev.hook_install --repo {kit} --install']
+    again = len(box.calls())
+    assert _serve(box, tmp_path)[0] == 0
+    assert not [call for call in box.calls()[again:] if '--install' in call.split()], 'live hooks are only read'
+
+
 def test_a_failed_sync_is_retried_by_the_next_tick(box: Box, tmp_path: Path) -> None:
     _serving(box)
     (box.root / 'alpha' / '.venv' / '.lab-host-env').unlink()

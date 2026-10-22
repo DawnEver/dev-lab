@@ -114,10 +114,18 @@ def state_for(outcome: Conclusion) -> str:
     return _STATE_FOR[outcome]
 
 
+def _commit(sha: str) -> None:
+    """Refuse an empty *sha*: formatted into a URL it reads ``statuses/``, which the forge refuses."""
+    if not sha:
+        msg = 'no commit sha: a status is read or posted on a commit'
+        raise ValueError(msg)
+
+
 def status_post(
     client: Client, sha: str, *, context: str, state: str, description: str, target_url: str = ''
 ) -> CommitStatus:
     """Post one status on *sha*. The description is cut to :data:`DESCRIPTION_LIMIT`, never sent long."""
+    _commit(sha)
     if state not in STATES:
         msg = f'a status state is one of {STATES}, not {state!r}'
         raise ValueError(msg)
@@ -139,6 +147,7 @@ def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     GitHub's combined endpoint already answers latest-per-context; Gitea's list carries every post,
     so the newest (highest ``id``) per context is kept.
     """
+    _commit(sha)
     if client.backend is GITHUB:
         raw = client.call('GET', f'{client.repo}/commits/{sha}/status')['statuses']
     else:
@@ -152,6 +161,7 @@ def status_list(client: Client, sha: str) -> tuple[CommitStatus, ...]:
 
 def status_history(client: Client, sha: str) -> tuple[CommitStatus, ...]:
     """EVERY status posted on *sha*, oldest first -- what a claim race is decided on (``id`` order)."""
+    _commit(sha)
     path = f'{client.repo}/commits/{sha}/statuses' if client.backend is GITHUB else f'{client.repo}/statuses/{sha}'
     return tuple(sorted((_status(item) for item in client.call('GET', path)), key=lambda status: status.id))
 

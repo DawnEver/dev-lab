@@ -170,6 +170,21 @@ def test_history_is_every_post_oldest_first_with_its_creator(server, forge, path
     assert [(s.id, s.creator) for s in history] == [(4, 'alice'), (9, 'bob')]
 
 
+@pytest.mark.parametrize(
+    'call',
+    [
+        lambda built: status_history(built, ''),
+        lambda built: status_list(built, ''),
+        lambda built: status_post(built, '', context='tests/linux', state='pending', description='d'),
+    ],
+)
+def test_an_empty_sha_is_refused_before_any_url_is_formatted(server, call) -> None:
+    """``statuses/`` with no sha is a request the forge refuses -- and one such read exited a whole tick."""
+    with pytest.raises(ValueError, match='no commit sha'):
+        call(client(Forge('forge.example.org', 'o', 'r'), Loopback(server)))
+    assert Recorder.received == [], 'refused before the forge was asked'
+
+
 # --------------------------------------------------------------------------------------------
 # the CLI
 

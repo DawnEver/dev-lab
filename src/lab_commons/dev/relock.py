@@ -2,12 +2,13 @@
 
 FRESHNESS IS ONE PARTY'S JOB (2026-10-21). The ``lock`` pre-push row used to judge every push on freshness, so
 whenever any dependency published, every lane carried a hand-made relock commit before each push and stacked
-branches repeated it. Now a lane is judged on its PIN alone (:mod:`lab_commons.dev.lockcheck`), and each
+branches repeated it. Now every push is judged on its PIN alone (:mod:`lab_commons.dev.lockcheck`; lanes
+2026-10-21, every branch 2026-10-22), and each
 ``forge serve`` tick runs :func:`carry` (:func:`lab_commons.dev.forgeservesteps.relock`):
 
 * an open pull request whose head is under :data:`PREFIX` is waited for -- nothing resolves, nothing is pushed;
-* else :func:`decision` reads ``origin/<integration>`` through :func:`lab_commons.dev.lockcheck.stale` -- the SAME
-  reading the pre-push row makes, never a copy -- in a detached worktree under the repository's git directory;
+* else :func:`decision` reads ``origin/<integration>`` through :func:`lab_commons.dev.lockcheck.stale` -- the ONE
+  staleness reading -- in a detached worktree under the repository's git directory;
 * a stale lock is rewritten by the dependency door (``lab_commons.dev.dep --lock-upgrade``, the one writer of a
   lock), committed alone on top of integration, pushed as ``pr/relock-<dist>-<integration short sha>`` and
   opened as a pull request into integration, which merges like every other once its parts pass;

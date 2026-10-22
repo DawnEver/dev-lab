@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,24 @@ def test_an_older_shim_of_ours_is_stale_and_replaced(repo: Path) -> None:
     assert {stage.status for stage in hook_installation(repo).stages} == {INSTALLED}
 
 
+def test_a_stale_shim_of_ours_is_live_for_the_property_and_still_reported_to_a_person(repo: Path, capsys) -> None:
+    """A PR that changes the shim template met a host whose shims came from ITS serving checkout (2026-10-22, #273).
+
+    A stale shim of ours still runs the stages, so the installed-hooks PROPERTY holds -- else a PR changing
+    the shim could pass on no host. ``hook_install`` (no ``--install``) still names it stale for a person.
+    PLANTED CONTROL: a FOREIGN file in a slot still fails the property.
+    """
+    install(repo)
+    stale = hooks_dir(repo) / 'pre-commit'
+    stale.write_text(f'#!/bin/sh\n{SHIM_MARKER}\nold\n', encoding='utf-8')
+    assert_declared_hooks_are_installed(root=repo)
+    assert report_installation(['--repo', str(repo)]) == 1
+    assert STALE in capsys.readouterr().out
+    stale.write_text('#!/bin/sh\necho mine\n', encoding='utf-8')
+    with pytest.raises(AssertionError, match=FOREIGN):
+        assert_declared_hooks_are_installed(root=repo)
+
+
 def test_somebody_elses_hook_is_refused_and_left_alone(repo: Path) -> None:
     directory = hooks_dir(repo)
     directory.mkdir(parents=True, exist_ok=True)
@@ -158,3 +177,62 @@ def test_install_stops_git_tracking_another_branch_and_pushes_each_under_its_own
         'push.default': 'current',
         'push.autoSetupRemote': 'true',
     }
+
+
+def _commit(repo: Path) -> subprocess.CompletedProcess[str]:
+    (repo / 'a.txt').write_text('a\n', encoding='utf-8')
+    subprocess.run([_GIT, '-C', str(repo), 'add', 'a.txt'], check=True, capture_output=True)
+    return subprocess.run(
+        [_GIT, '-C', str(repo), '-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-qm', 'feat: a'],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+    )
+
+
+def _install_with(repo: Path, fallback: str) -> None:
+    install(repo)
+    directory = hooks_dir(repo)
+    for stage in ('pre-commit', 'commit-msg', 'pre-push'):
+        (directory / stage).write_text(shim(stage, fallback), encoding='utf-8', newline='\n')
+
+
+_REPO_ROW = '[[tool.lab_commons.hooks.commit-msg]]\nid = "repo-only"\nrun = ["python", "-m", "no_such_repo_module"]\n'
+
+
+def test_no_venv_commits_through_the_recorded_interpreter_and_skips_repo_rows(repo: Path) -> None:
+    """A row needing the repo's own env would fail here; under the recorded interpreter it is skipped."""
+    (repo / 'pyproject.toml').write_text(_REPO_ROW, encoding='utf-8')
+    _install_with(repo, sys.executable)
+    done = _commit(repo)
+    assert done.returncode == 0, done.stderr
+    assert 'no_such_repo_module' not in done.stderr
+
+
+def test_no_interpreter_anywhere_still_commits_with_one_line(repo: Path, tmp_path: Path) -> None:
+    _install_with(repo, (tmp_path / 'gone' / 'python').as_posix())
+    done = _commit(repo)
+    assert done.returncode == 0, done.stderr
+    lines = [line for line in done.stderr.splitlines() if '[githooks]' in line]
+    assert len(lines) == 2  # pre-commit and commit-msg: one line each
+    assert all('no lab_commons interpreter' in line for line in lines)
+
+
+def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path) -> None:
+    """PLANTED CONTROL: the checkout's own venv wins over the fallback, and a failing hook still refuses."""
+    venv = repo / '.venv' / 'bin'
+    venv.mkdir(parents=True)
+    fake = venv / 'python'
+    fake.write_text('#!/bin/sh\necho venv-ran >&2\nexit 1\n', encoding='utf-8', newline='\n')
+    fake.chmod(0o755)
+    _install_with(repo, sys.executable)
+    done = _commit(repo)
+    assert done.returncode != 0
+    assert 'venv-ran' in done.stderr
+
+
+def test_a_shim_recording_another_interpreter_is_still_installed(repo: Path) -> None:
+    _install_with(repo, '/elsewhere/python')
+    assert {stage.status for stage in hook_installation(repo).stages} == {INSTALLED}

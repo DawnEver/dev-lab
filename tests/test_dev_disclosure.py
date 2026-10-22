@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks, disclosure
+from lab_commons.dev import agenthooks, disclosure, rules
 from lab_commons.dev.famtests import injectedtext
 from lab_commons.dev.hook_adoption import HookAdoption, render
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy
@@ -90,3 +90,13 @@ def test_every_budget_is_positive(surface: str) -> None:
     budget = disclosure.BUDGETS[surface]
     assert budget.max_lines > 0
     assert budget.max_line_chars > 0
+
+
+def test_every_rule_row_and_deny_row_is_one_short_sentence() -> None:
+    """Rows are injected every turn: one sentence under the ceiling, or named debt that may only shrink."""
+    injectedtext.assert_rows_fit(rules.RULES, DENY_RULES)
+
+
+def test_the_row_ceilings_still_convict() -> None:
+    """PLANTED CONTROL: an over-long two-sentence row reds on both counts; a short one passes."""
+    injectedtext.assert_the_row_ceilings_still_convict()

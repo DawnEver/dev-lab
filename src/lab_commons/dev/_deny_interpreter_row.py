@@ -24,9 +24,9 @@ _POSIX = '/'.join(VENV_LAYOUTS['posix'])
 
 #: Each checkout owns its interpreter; bootstrap a missing environment rather than borrowing main.
 INTERPRETER_REMEDY = (
-    f"Use {_NT} ({_POSIX} POSIX). Each worktree owns .venv; main's is main-only. Missing? "
-    f'Existing checkout interpreter: -m lab_commons.dev.dep --bootstrap <worktree>. '
-    f'Checked dependency doors are agent-allowed, not arbitrary installers. Allowed: {INTERPRETER_ALLOW_ENTRY}.'
+    f"Use {_NT} ({_POSIX} POSIX), each worktree's own (main's is main-only); bootstrap a missing one "
+    f'with <any checkout interpreter> -m lab_commons.dev.dep --bootstrap <worktree> (checked doors are '
+    f'agent-allowed; allowed: {INTERPRETER_ALLOW_ENTRY}).'
 )
 
 BARE_INTERPRETER: dict[str, object] = {

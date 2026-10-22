@@ -547,7 +547,7 @@ def test_every_host_names_every_class_one_candidate_per_ref(server, tmp_path: Pa
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'], 'priority:user')]))
     request = {
         'number': 9,
-        'body': 'producer = "femm_goldens"\n',
+        'body': f'producer = "femm_goldens"\nsha = "{tips["integrate/main"]}"\n',
         'created_at': '2026-10-10T00:00:00Z',
         'labels': [{'name': 'forge:request'}],
     }
@@ -564,7 +564,7 @@ def test_every_host_names_every_class_one_candidate_per_ref(server, tmp_path: Pa
         ('topic/a', tips['topic/a'], PR, ('priority:user',)),
         ('wip/b', tips['wip/b'], FEATURE, ()),
         ('other', tips['other'], 'branch', ()),
-        ('issue/9', '', REQUEST, ('forge:request',)),
+        ('issue/9', tips['integrate/main'], REQUEST, ('forge:request',)),
     }, 'topic/a is a PR head, so it is served once, as pr'
 
 
@@ -581,7 +581,8 @@ def test_a_feature_branch_sha_is_never_a_candidate_for_a_full_part_its_refs_excl
     refs = '[tool.lab_commons.parts.refs.windows]\nfull = ["integrate/main", "main"]\n'
     (repo / 'pyproject.toml').write_text(PRODUCE + refs + _RULE, 'utf-8')
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', tips['topic/a'])]))
-    request = {'number': 9, 'body': 'producer = "femm_goldens"\n', 'labels': [{'name': 'forge:request'}]}
+    body = f'producer = "femm_goldens"\nsha = "{tips["integrate/main"]}"\n'
+    request = {'number': 9, 'body': body, 'labels': [{'name': 'forge:request'}]}
     answer('GET', f'{API}/issues', (200, [request]))
     notes: list[str] = []
     found = candidates(
@@ -689,6 +690,33 @@ def test_a_repo_with_pull_requests_disabled_has_no_pr_candidates(server, tmp_pat
     assert ('integrate/main', INTEGRATION) in _integrate(server, tmp_path / 'on', notes)
     assert len(notes) == 1, notes
     assert 'pull requests' in notes[0]
+
+
+def test_a_request_naming_no_full_sha_is_skipped_and_said_never_served(server, tmp_path: Path) -> None:
+    """A FLEET OUTAGE (2026-10-22): motronics-studio issue #4727 named ``sha = "3d27380859"`` -- ten hex digits.
+
+    It became a candidate at sha ``''``, its statuses were read at ``GET .../statuses/`` (refused), and every
+    host's tick of the repository exited 1. The one unreadable request is now SKIPPED and SAID, one line
+    naming the issue; the rest of the queue is served. PLANTED CONTROL: the same body with the full sha is a
+    candidate (:func:`test_every_host_names_every_class_one_candidate_per_ref`).
+    """
+    repo, _tips = _origin(tmp_path)
+    (repo / 'pyproject.toml').write_text(PRODUCE, 'utf-8')
+    body = 'producer = "tests"\nsha = "3d27380859"\n'
+    answer('GET', f'{API}/issues', (200, [{'number': 4727, 'body': body, 'labels': [{'name': 'forge:request'}]}]))
+    notes: list[str] = []
+    found = candidates(
+        repo, client(Forge('forge.example.org', 'o', 'r'), Loopback(server)), repo='o/r',
+        parts=lambda _sha: (BASE,), schedule=load_schedule(repo), policy=Policy(), now=NOW, say=notes.append,
+    )  # fmt: skip
+    assert [c.ref for c in found] == ['integrate/main']
+    assert notes == ['[serve] skipped request issue #4727: its body names no 40-hex `sha` (got "3d27380859")']
+
+
+def test_a_candidate_without_a_sha_is_refused_at_construction() -> None:
+    """An empty sha is never carried: it would be formatted into ``statuses/<sha>`` as ``statuses/``."""
+    with pytest.raises(ValueError, match=r'issue/9 .*no commit sha'):
+        Candidate('o/r', 'issue/9', '', '', REQUEST, NOW, 'full')
 
 
 def test_a_failed_optional_listing_never_hides_the_integration_head(server, tmp_path: Path) -> None:

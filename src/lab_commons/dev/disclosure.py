@@ -19,12 +19,15 @@ __all__ = [
     'BUDGETS',
     'DETAILS_PREFIX',
     'REFUSALS_DOC',
+    'ROW_CEILINGS',
     'Budget',
     'InjectedTextOverBudget',
     'anchors',
     'details_for',
     'pointer',
     'problems',
+    'row_problems',
+    'sentences',
     'unresolved_pointers',
 ]
 
@@ -44,6 +47,14 @@ BUDGETS: Final[dict[str, Budget]] = {
     'refusal': Budget(max_lines=3, max_line_chars=320, needs_details=True),
     'cross-repo-refusal': Budget(max_lines=4, max_line_chars=320, needs_details=False),
 }
+
+#: The most characters one ROW field may carry: a rule's ``statement``, a deny row's ``hazard`` and
+#: ``remedy``. Each is the current maximum and may only go DOWN; a row that grows past it moves its
+#: reasoning into the docs instead.
+ROW_CEILINGS: Final[dict[str, int]] = {'statement': 717, 'hazard': 162, 'remedy': 268}
+
+#: A sentence ends at terminal punctuation followed by whitespace and a capital, backtick or bracket.
+_SENTENCE_END: Final = re.compile(r'[.!?]\s+(?=[A-Z`*(])')
 
 #: The page that holds every universal refusal's full text, relative to the lab-commons root.
 REFUSALS_DOC: Final = 'docs-src/dev/refusals.md'
@@ -80,6 +91,21 @@ def problems(text: str, surface: str) -> list[str]:
     )
     if budget.needs_details and pointer(text) is None:
         found.append(f'no closing "{DETAILS_PREFIX}<page>.md#<anchor>" line')
+    return found
+
+
+def sentences(text: str) -> int:
+    """How many sentences *text* holds, by :data:`_SENTENCE_END`."""
+    return len(_SENTENCE_END.findall(text.strip())) + 1
+
+
+def row_problems(field: str, row_id: str, text: str) -> list[str]:
+    """Every way one row field breaks :data:`ROW_CEILINGS` or the one-sentence shape; empty when it fits."""
+    found = []
+    if len(text) > ROW_CEILINGS[field]:
+        found.append(f'{field}:{row_id} is {len(text)} chars > {ROW_CEILINGS[field]}')
+    if sentences(text) > 1:
+        found.append(f'{field}:{row_id} is {sentences(text)} sentences > 1')
     return found
 
 

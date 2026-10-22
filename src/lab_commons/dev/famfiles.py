@@ -89,7 +89,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
         _m('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),
         _m('.github/workflows/ci.yml', 'ciworkflows RENDERED from TOML: ci_base.toml plus [tool.lab_commons.ci]'),
-        _m('uv.lock', 'lockcheck (base pre-push row `lock`): committed at the newest resolution, PIN + FRESHNESS'),
+        _m('uv.lock', 'lockcheck (pre-push row `lock`) pins it; the forge relock keeps it newest (PIN + FRESHNESS)'),
         _o('LICENSE', 'the licence is the repo`s: MIT, Apache-2.0 and LGPL-3.0 are all in use, one repo has none'),
         _o('README.md', 'its subject is the repo'),
         _o(
