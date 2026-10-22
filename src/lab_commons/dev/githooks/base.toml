@@ -87,6 +87,13 @@ id = "stray-files"
 run = ["python", "-m", "lab_commons.dev.codeplace", "stray-check"]
 always_run = true
 
+# SCRATCH-IS-NEVER-COMMITTED: a staged path under the declared scratch other than its README is refused,
+# naming the two exits (promote into src/ with tests, or delete); the forge body holds the tracked set.
+[[pre-commit]]
+id = "scratch-commit"
+run = ["python", "-m", "lab_commons.dev.scratch", "check"]
+pass_files = true
+
 [[commit-msg]]
 id = "commitizen"
 run = ["cz", "check", "--allow-abort", "--commit-msg-file"]

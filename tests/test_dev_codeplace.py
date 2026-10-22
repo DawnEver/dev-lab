@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import datetime as dt
 import io
 import json
 import os
@@ -19,15 +18,12 @@ from lab_commons.dev.codeplace import (
     FAMILY_STRAY_ROOTS,
     PlacementNotDeclared,
     StrayCensusUnreadable,
-    archive_scratch,
     declared_misplaced,
     declared_placement,
     declared_strays,
     is_archived,
     main,
     misplaced_code,
-    overdue_scratch,
-    pending_scratch,
     refuse_write,
     stray_files,
     stray_refusal,
@@ -82,50 +78,6 @@ def test_the_cluster_run_directories_in_a_judged_tree_are_not_walked(tmp_path) -
 def test_an_empty_allow_list_is_REFUSED_rather_than_refusing_everything(tmp_path) -> None:
     with pytest.raises(ValueError, match='code roots'):
         misplaced_code(tmp_path, code_roots=())
-
-
-def test_only_a_file_older_than_the_limit_is_overdue(tmp_path) -> None:
-    _plant(tmp_path, 'scratch/fresh.py', age_days=0.5)
-    _plant(tmp_path, 'scratch/sub/old.py', age_days=4.0)
-    scratch = tmp_path / 'scratch'
-    assert overdue_scratch(scratch, root=tmp_path, max_age_days=3.0) == ['scratch/sub/old.py']
-    assert [p for p, _ in pending_scratch(scratch, root=tmp_path)] == ['scratch/sub/old.py', 'scratch/fresh.py']
-    assert pending_scratch(tmp_path / 'absent', root=tmp_path) == []
-
-
-def test_an_archive_lands_beside_that_days_memory_and_records_why(tmp_path) -> None:
-    _plant(tmp_path, 'scratch/probe.py')
-    memory = tmp_path / '.claude' / 'memory'
-    dest = archive_scratch(
-        tmp_path / 'scratch/probe.py', why='read the card back', root=tmp_path, memory=memory,
-        day=dt.date(2026, 9, 25),
-    )  # fmt: skip
-    assert dest == memory / '2026/09/25/attachments/probe.py'
-    assert not (tmp_path / 'scratch/probe.py').exists()
-    assert '`probe.py` -- read the card back (from `scratch/probe.py`)' in (dest.parent / 'INDEX.md').read_text(
-        encoding='utf-8'
-    )
-
-
-def test_an_archive_without_a_reason_is_REFUSED_and_moves_nothing(tmp_path) -> None:
-    _plant(tmp_path, 'scratch/probe.py')
-    with pytest.raises(ValueError, match='WHY'):
-        archive_scratch(tmp_path / 'scratch/probe.py', why=' ', root=tmp_path, memory=tmp_path / 'm')
-    assert (tmp_path / 'scratch/probe.py').exists()
-
-
-def test_an_archive_never_overwrites(tmp_path) -> None:
-    day = dt.date(2026, 9, 25)
-    _plant(tmp_path, 'scratch/a/probe.py')
-    _plant(tmp_path, 'scratch/b/probe.py')
-    memory = tmp_path / 'm'
-    archive_scratch(tmp_path / 'scratch/a/probe.py', why='first', root=tmp_path, memory=memory, day=day)
-    with pytest.raises(ValueError, match='already exists'):
-        archive_scratch(tmp_path / 'scratch/b/probe.py', why='second', root=tmp_path, memory=memory, day=day)
-    dest = archive_scratch(
-        tmp_path / 'scratch/b/probe.py', why='second', root=tmp_path, memory=memory, day=day, name='b__probe.py'
-    )
-    assert dest.name == 'b__probe.py'
 
 
 # --- the declared placement, and the Write/Edit hook that reads the SAME declaration -------------
