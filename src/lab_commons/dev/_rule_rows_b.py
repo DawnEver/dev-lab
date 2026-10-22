@@ -136,8 +136,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'INJECTED-TEXT-IS-PROGRESSIVE',
         (
             'Text injected into an agent`s context -- a hook refusal, a door, a rule summary -- is the short '
-            'essential within a declared budget, ending in a pointer to the doc that holds the reasoning and '
-            'history, and before any injected text is shortened its full wording moves into that doc.'
+            'essential within a declared budget of TOTAL LINES and MAX CHARACTERS PER LINE measured on the text as '
+            'injected, ending in a pointer to the doc that holds the reasoning and history; a surface may declare a '
+            'larger budget only WITH A REASON, and before any injected text is shortened its full wording moves '
+            'into that doc.'
         ),
         ('tests/test_dev_disclosure.py',),
     ),

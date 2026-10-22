@@ -92,11 +92,31 @@ def test_every_budget_is_positive(surface: str) -> None:
     assert budget.max_line_chars > 0
 
 
-def test_every_rule_row_and_deny_row_is_one_short_sentence() -> None:
-    """Rows are injected every turn: one sentence under the ceiling, or named debt that may only shrink."""
+def test_every_rule_row_and_deny_row_fits_its_surface_budget() -> None:
+    """Rows are injected text: each fits its surface's (lines, chars per line), and no budget is slack."""
     injectedtext.assert_rows_fit(rules.RULES, DENY_RULES)
 
 
-def test_the_row_ceilings_still_convict() -> None:
-    """PLANTED CONTROL: an over-long two-sentence row reds on both counts; a short one passes."""
-    injectedtext.assert_the_row_ceilings_still_convict()
+def test_the_row_budgets_still_convict() -> None:
+    """PLANTED CONTROL: a row over both limits reds on both; a fitting multi-sentence row passes."""
+    injectedtext.assert_the_row_budgets_still_convict()
+
+
+def test_a_row_may_hold_several_sentences() -> None:
+    """The budget is lines and width; a sentence count was a proxy that shrank nothing, so it is gone."""
+    assert disclosure.problems('One. Two. Three.', 'deny-hazard') == []
+
+
+@pytest.mark.parametrize('surface', sorted(disclosure.BUDGETS))
+def test_a_budget_above_the_default_names_its_reason(surface: str) -> None:
+    """A relaxation is allowed only WITH A REASON visible in the declaration; no silent waiver."""
+    assert disclosure.unreasoned_relaxations({surface: disclosure.BUDGETS[surface]}) == []
+
+
+def test_an_unreasoned_relaxation_is_refused() -> None:
+    """PLANTED CONTROL: a budget wider than the default with an empty reason is named; with one it passes."""
+    wide = disclosure.DEFAULT_BUDGET.max_line_chars + 1
+    bare = disclosure.Budget(max_lines=1, max_line_chars=wide)
+    assert disclosure.unreasoned_relaxations({'planted': bare}) == ['planted']
+    reasoned = disclosure.Budget(max_lines=1, max_line_chars=wide, reason='planted')
+    assert disclosure.unreasoned_relaxations({'planted': reasoned}) == []
