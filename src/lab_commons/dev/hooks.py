@@ -257,7 +257,7 @@ def _compiled(pattern: str | None, what: str) -> re.Pattern[str] | None:
         raise ValueError(msg) from exc
 
 
-#: A Windows drive-qualified path. Spelled out because ``Path('C:/x').is_absolute()`` is FALSE on
+#: A Windows drive-qualified path. Spelled out because ``Path('C:/<dir>').is_absolute()`` is FALSE on
 #: posix, so the obvious check would let a one-box path through on exactly the machines that do NOT
 #: have that box -- which is every machine that would have to act on the refusal.
 _DRIVE: Final = re.compile(r'^[A-Za-z]:[\\/]')

@@ -15,7 +15,7 @@ the published tree — while the fix it covers was in `src/`.
 ## Why nobody saw it
 
 `git status` in this repo printed eight lines, and seven of them were the rem plugin's own
-bookkeeping: `.claude/rules/MEMORY.md` (which declares itself gitignored in its own generated header
+bookkeeping: the generated memory index under `.claude/rules/` (which declares itself gitignored in its own generated header
 and was not), `.claude/meta/`, five `_meta.json` files, and `.claude/worktrees/`. A real source file
 in that list reads exactly like the noise around it.
 

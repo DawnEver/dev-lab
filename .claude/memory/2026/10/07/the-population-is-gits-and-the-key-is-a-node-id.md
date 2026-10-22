@@ -43,8 +43,8 @@ retirement commit holding nothing but a `__pycache__/`. A directory git knows no
 box that had run things, and the row could not be reproduced.
 
 **AND THE WALK IS NOT THE ONLY ONE THAT WOULD HAVE BEEN WRONG, WHICH IS WHY THE FIX IS A SOURCE AND
-NOT A LONGER LIST.** `.pytest_cache/v/cache/`, `lib/` (a gitignored sibling clone) and
-`output/logs/26/09/14/design/3Ph-48/wdg/` each supplied `cache`, `lib`, `design` and `wdg` the same
+NOT A LONGER LIST.** `.pytest_cache/<v>/<cache>/`, `lib/` (a gitignored sibling clone) and
+`output/logs/<yy>/<mm>/<dd>/<design>/<case>/<wdg>/` each supplied `cache`, `lib`, `design` and `wdg` the same
 way. Adding those seven names to `SKIP_DIRS` fixes today and predicts nothing about tomorrow.
 
 `SKIP_DIRS` is DELETED rather than kept as a filter over git's listing. `-c` plus `-o` minus the

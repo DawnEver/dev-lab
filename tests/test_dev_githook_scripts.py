@@ -39,7 +39,7 @@ assert GIT is not None, 'no git on this box; nothing in this family can be verif
 BASH = githooks.bash_executable()
 
 
-#: A path as bash must see it. `dirname "C:\a\b"` eats the backslashes as escapes, and every script
+#: A path as bash must see it. `dirname "<drive>:\<dir>\<file>"` eats the backslashes as escapes, and every script
 #: here resolves its own directory through `BASH_SOURCE`, so the separator is load-bearing.
 def sh(path: Path | str) -> str:
     """*path* with forward slashes -- the only spelling bash's word splitting survives."""

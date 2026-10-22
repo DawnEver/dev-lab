@@ -61,7 +61,7 @@ REPOS: tuple[str, ...] = ('lab-commons', 'consumer-b', 'consumer-c', 'consumer-a
 
 #: Where each consumer is checked out, RELATIVE TO LAB-COMMONS' PARENT: the PRIMARY checkout, by the
 #: same sibling convention `lab-commons/` itself sits under. Until 2026-09-30 the consumer-a entry named
-#: a lane worktree (`.claude/worktrees/feat/consumer-c`) that had since been disposed of, so every
+#: a lane worktree (`.claude/worktrees/<lane>`) that had since been disposed of, so every
 #: census here silently measured three repos while saying four. A census only READS, and only at
 #: HEAD (`read_at_head`), so reading the integrator's checkout touches nothing in it.
 #: consumer-b is NOT a direct sibling: the family root groups it under an org directory, and until

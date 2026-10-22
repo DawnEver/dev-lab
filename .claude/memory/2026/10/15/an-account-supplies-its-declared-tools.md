@@ -14,7 +14,7 @@ created: 2026-10-15
   seats (also used by `Capacity.read`).
 - `TOOL_PROBES['femm'] = femm_found`: the FEMM 5 headless binary (`femm_headless` on linux,
   `femm_headlessw.exe` on windows) in `FEMM_DIR` or `FEMM_DIR/bin`, else the default install
-  (`~/.local/opt/femm-qt/bin`, `C:/femm-qt/bin`). FEMM 4.2 has no probe (retiring). A declared femm the
+  (`~/.local/opt/femm-qt/bin`, `<drive>:/femm-qt/bin`). FEMM 4.2 has no probe (retiring). A declared femm the
   probe misses is ABSENT, so admission refuses femm parts naming it -- the existing declared-tool rule.
 - Tests: `tests/test_compute_probe.py` (account tools with fakes + planted controls, femm probe per OS,
   default install via HOME).

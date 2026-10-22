@@ -65,9 +65,9 @@ rather than argued in a docstring.
 
 `make verify` from lab-commons with the ambient `python` runs
 `<home>/consumer-a\.venv\Scripts\python.exe` and imports
-`consumer-a\.venv\Lib\site-packages\lab_commons\` -- a FROZEN INSTALLED COPY, not the working
+consumer-a's `.venv/<site-packages>/lab_commons/` -- a FROZEN INSTALLED COPY, not the working
 tree. `make adoption` done that way reported 5 passed against code that had not changed. Prefix the
-invocation with lab-commons' own `.venv/Scripts` (or call
+invocation with lab-commons' own `.venv/Scripts/python.exe` (or call
 `.venv/Scripts/python.exe -m lab_commons.dev.verify` directly) or every verdict this repo produces
 is about somebody else's tree.
 
@@ -85,7 +85,7 @@ Three reds came back attributable to this lane, all in the KIT'S OWN TESTS and n
   arriving on `also` reds it the same way.
 
 The other thirteen reds are PRE-EXISTING, and that was MEASURED rather than assumed: every one
-appears in `.verify/verify-20260921T132855Z.log`, taken against tree `sha256:83c8ca1b1c47e288`
+appears in that verify log (evidence no longer available; the tree hash below identifies the run), taken against tree `sha256:83c8ca1b1c47e288`
 before this lane touched anything. After the fixes the red set is **identical 14-for-14** and the
 new-red set is empty. A lane that says "pre-existing" without naming the earlier run it read has
 said nothing, and this repo keeps those logs precisely so that sentence can be checked.
