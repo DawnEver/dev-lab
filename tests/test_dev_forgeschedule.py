@@ -45,7 +45,7 @@ def test_a_cheap_lower_value_job_beats_an_expensive_higher_one() -> None:
 
 
 def test_aging_eventually_lifts_a_waiting_job() -> None:
-    """PLANTED CONTROL: fresh, the request is outranked by a feature; after a day it is not."""
+    """PLANTED CONTROL: fresh, a feature ranks above the request; after a day it does not."""
     feature = _cand('feat/x', 'feature')
     schedules = {'o/r': FAMILY}
     fresh = _cand('issue/1', 'request')

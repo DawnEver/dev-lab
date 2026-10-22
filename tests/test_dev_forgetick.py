@@ -1022,8 +1022,14 @@ def test_a_producer_only_the_other_host_kind_can_build_is_never_refused_on_the_c
     assert report.pending == ()
 
 
-def _push(repo: Path, tips: dict[str, str], ref: str) -> str:
-    """A new tip of *ref* fetched on top of its old one: the tracking ref's reflog holds both."""
+def _push(repo: Path, tips: dict[str, str], ref: str, *, code: bool = False) -> str:
+    """A new tip of *ref* fetched on top of its old one: the tracking ref's reflog holds both.
+
+    *code*: the tip touches a Python file, so its diff is never data-only and one-run-per-ref is what holds it.
+    """
+    if code:
+        (repo / f'{ref.replace("/", "_")}.py').write_text('x = 1\n', encoding='utf-8')
+        run_git(repo, 'add', '.')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', f'{ref} again')
     tips[ref] = git_out(repo, 'rev-parse', 'HEAD')
     run_git(repo, 'update-ref', f'refs/remotes/origin/{ref}', tips[ref])
@@ -1111,7 +1117,7 @@ def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_r
 ) -> None:
     repo, tips = _origin(tmp_path)
     old = tips['integrate/main']
-    new = _push(repo, tips, 'integrate/main')
+    new = _push(repo, tips, 'integrate/main', code=True)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
@@ -1145,7 +1151,7 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     """The idle alarm reads ``pending``: a tip held by one-run-per-ref is no work any host could claim."""
     repo, tips = _origin(tmp_path)
     old = tips['integrate/main']
-    new = _push(repo, tips, 'integrate/main')
+    new = _push(repo, tips, 'integrate/main', code=True)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
