@@ -44,8 +44,10 @@ serve log (:func:`lab_commons.dev.servetask.open_log`).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -59,6 +61,9 @@ from lab_commons.config import config_path, section
 from lab_commons.dev import servetask
 from lab_commons.dev._machinefile import diff, merged
 from lab_commons.dev.forgealarm import RUN, Alarm, sound
+from lab_commons.dev.forgeclaim import DEFAULT_LEASE
+from lab_commons.dev.forgeintent import journaled, reattach
+from lab_commons.dev.forgework import client_for
 from lab_commons.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
 from lab_commons.dev.servelock import default_lock, held
 from lab_commons.hpc.deploy_spec import LAB_COMMONS, host_serve_argv
@@ -69,7 +74,19 @@ from lab_commons.log import emit
 if sys.platform == 'win32':
     import winreg
 
-__all__ = ['JMAG_PROGIDS', 'WORKSTATION', 'Programs', 'com_server', 'deploy', 'main', 'serve']
+__all__ = [
+    'FORGE_ROLE',
+    'JMAG_PROGIDS',
+    'REGISTRY_TABLE',
+    'WORKSTATION',
+    'NoRegistry',
+    'Programs',
+    'com_server',
+    'deploy',
+    'forge_refusal',
+    'main',
+    'serve',
+]
 
 #: The resource a developer workstation provides: the live checkout and the agent tooling its guards run on.
 #: ONE resource, not three: every host carrying the checkout, ``node`` or ``codex`` carries all of them, and the
@@ -115,6 +132,59 @@ def _own_python(checkout: Path) -> tuple[str, ...]:
     return (str(venv_python(checkout)),)
 
 
+#: The machine-file table naming the synced workstation registry: ``[workstation] registry = "<hosts.json>"``.
+REGISTRY_TABLE: Final = 'workstation'
+#: The registry role that makes a workstation a ``forge serve`` host (user ruling 2026-10-22: G alone).
+FORGE_ROLE: Final = 'forge'
+
+
+class NoRegistry(ValueError):
+    """No workstation registry is declared here, so whether this machine serves the forge is undeclared."""
+
+
+def _computer() -> str:
+    return os.environ.get('COMPUTERNAME') or socket.gethostname()
+
+
+def forge_refusal(computer: str) -> str | None:
+    """``None`` when the registry gives *computer* the ``forge`` role; else why it may not serve.
+
+    ONE PLACE says which workstation serves the forge: the synced registry's ``roles``. This machine's entry
+    is the one whose ``computer`` (the OS name, ``COMPUTERNAME``) equals *computer*, case-insensitively, else
+    the one whose ``name`` does -- ``computer`` first because it is read off the machine, ``name`` a label.
+    No ``[workstation] registry`` raises :class:`NoRegistry`: a workstation never serves by omission.
+    """
+    declared = section(REGISTRY_TABLE).get('registry')
+    if not isinstance(declared, str) or not declared:
+        msg = (
+            f'no [{REGISTRY_TABLE}] registry in {config_path()}: declare the synced hosts.json there; '
+            f'only a host whose entry carries role "{FORGE_ROLE}" serves the forge'
+        )
+        raise NoRegistry(msg)
+    registry = Path(declared).expanduser()
+    try:
+        hosts = json.loads(registry.read_text(encoding='utf-8-sig'))['hosts']
+    except (OSError, ValueError, KeyError, TypeError) as bad:
+        return f'registry {registry} unreadable ({bad}); not serving until it reads'
+    key = computer.casefold()
+    entry = next((h for h in hosts if str(h.get('computer', '')).casefold() == key), None) or next(
+        (h for h in hosts if str(h.get('name', '')).casefold() == key), None
+    )
+    if entry is None:
+        return f'no entry for computer {computer!r} in {registry}; add one with role "{FORGE_ROLE}" to serve'
+    roles = list(entry.get('roles') or [])
+    if FORGE_ROLE in roles:
+        return None
+    return f'{registry} roles of {entry.get("name")}: {roles}; add "{FORGE_ROLE}" to serve'
+
+
+def _release(checkout: Path) -> list[str]:
+    """Release every run a dead serve left journaled in *checkout* -- the forge serve's own re-attach path."""
+    if not journaled(checkout):  # nothing to release: no forge client is built
+        return []
+    return reattach(checkout, client_for(checkout), lease=DEFAULT_LEASE, say=emit)
+
+
 @dataclass(frozen=True)
 class Programs:
     """Every program and probe the deploy uses; a test swaps in fakes."""
@@ -128,6 +198,8 @@ class Programs:
     windows: bool = os.name == 'nt'
     home: Path = field(default_factory=servetask.home)
     alarm: Callable[[Alarm], object] = sound
+    computer: str = field(default_factory=_computer)
+    release: Callable[[Path], list[str]] = _release
 
 
 def _capabilities(text: str) -> dict[str, dict[str, Any]]:
@@ -257,6 +329,8 @@ def _preflight(args: argparse.Namespace, tools: Programs, checkouts: Mapping[str
     """Every read-only refusal before anything changes; the clone url of each repo when none applies."""
     if not tools.windows:
         return 'a workstation serves from a Windows Scheduled Task; a POSIX host serves from cron'
+    if why := forge_refusal(tools.computer):
+        return f'not a forge host: {why}'
     if missing := _probe(tools, args.capabilities):
         for line in missing:
             emit(f'  {line}', err=True)
@@ -315,6 +389,15 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     return rc or (2 if refused else 0)
 
 
+def _stand_down(tools: Programs, root: Path, repos: Sequence[str], why: str) -> int:
+    """A host without the ``forge`` role claims nothing; a run a dead serve journaled is released, never abandoned."""
+    emit(f'[serve] not a forge host ({why})', flush=True)
+    for name in repos:
+        for line in tools.release(root / name):
+            emit(f'[serve] {name} {line}')
+    return 0
+
+
 def serve(
     *,
     run: Callable[..., Any] = _door.run,
@@ -335,11 +418,18 @@ def serve(
         emit(f'[serve] refused: no [serve] repos and root in {config_path()}; run `workstation deploy`', err=True)
         return 2
     tools = programs or Programs()
+    try:
+        why = forge_refusal(tools.computer)
+    except NoRegistry as undeclared:
+        emit(f'[serve] refused: {undeclared}', err=True)
+        return 2
     step = Step(Tools(git=tools.git), dry=False)
     with held(lock or default_lock()) as mine:
         if not mine:
             emit('[serve] another forge serve holds the lock; this one does nothing', err=True)
             return 0
+        if why:
+            return _stand_down(tools, Path(root), repos, why)
         worst = 0
         for name in sorted(repos, key=lambda repo: repo != LAB_COMMONS):
             checkout = Path(root) / name

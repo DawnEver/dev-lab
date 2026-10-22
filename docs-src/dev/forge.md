@@ -150,6 +150,21 @@ A second run changes nothing. In order, it:
 
 A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
 
+**Which workstation serves is declared in ONE place**: the synced workstation registry `hosts.json`
+(`{"hosts": [{"name", "computer", "roles": [...], ...}]}`), named per machine by
+`[workstation] registry = "<path>"` in `~/.config/lab-commons/config.toml`. A host serves only when its entry
+carries role `"forge"`. Its entry is the one whose `computer` equals `COMPUTERNAME` (case-insensitive), else the
+one whose `name` does. Each `workstation serve` tick checks the role first:
+
+- no `[workstation] registry` declared: refused by name, exit 2 -- a workstation never serves by omission;
+- an entry without `"forge"`, or no entry: it claims nothing and refreshes nothing, logs
+  `[serve] not a forge host (...)` naming the roles, releases any run a dead serve left journaled (the forge
+  serve's own re-attach path, `forgeintent.reattach`), and exits 0;
+- `"forge"` present: it serves as above.
+
+`workstation deploy` refuses on a host without the role, naming the registry and the role to add. The cluster
+serve (`lab_commons.hpc`) does not read the registry.
+
 ## Claims
 
 - A claim is a `pending` status: `claim machine=<m> login=<forge login> until=<UTC> hpc=<cluster>/<account>|-`.
