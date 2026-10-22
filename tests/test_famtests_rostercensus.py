@@ -111,7 +111,7 @@ def test_the_reach_arm_now_has_the_side_both_labs_had_to_write_by_hand() -> None
         module_floor=35,
         module_headroom=10,
     )
-    with pytest.raises(floors.SlackFloor, match='RE-MEASURE THE FLOOR'):
+    with pytest.raises(floors.SlackFloor, match='Re-measure the floor'):
         assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=35)
     with pytest.raises(floors.FloorMisdeclared, match='headroom'):
         assert_reach(taken, rows_declared=1, module_floor=35, module_headroom=0)
