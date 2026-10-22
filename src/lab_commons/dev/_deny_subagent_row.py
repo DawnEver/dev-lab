@@ -35,8 +35,8 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
     'matches': 'command',
     'scope': 'subagent',
     'hazard': 'publishing is the main session`s, and a skipped hook publishes what nobody checked.',
-    'remedy': 'Commit on your lane and hand the commit SHA back to the main session; it merges and pushes, '
-    'and the forge produces the verdict. A targeted measure of the tests you touched is yours.',
+    'remedy': 'Commit on your lane and hand the commit SHA back to the main session, which merges and pushes; '
+    'a targeted measure of the tests you touched is yours.',
     'needs': None,
     'refuses': (
         'git push origin HEAD',

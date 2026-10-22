@@ -260,8 +260,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'matches': 'argument',
         'hazard': '`--no-verify` skips the pre-push hooks (admission, the trunk proof), so the push publishes what '
         'no hook checked.',
-        'remedy': 'Push without the flag: no hook runs a test, and the forge produces the part after the push. '
-        'To check a change first, measure what you touched: {remedy}',
+        'remedy': 'Push without the flag (no hook runs a test; the forge produces the part after the push), '
+        'and to check a change first measure what you touched: {remedy}',
         'needs': 'verdict-entry-point',
         'refuses': ('git push --no-verify origin HEAD', 'sh scripts/hooks/with-retry.sh push origin HEAD --no-verify'),
         'permits': (
