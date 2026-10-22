@@ -206,6 +206,11 @@ serve (`lab_commons.hpc`) does not read the registry.
     `waiting behind <sha12> (docs-only: ...)`, that run is never superseded for it, and its result carries when it
     lands. An untested code head in between makes the diff reach a test, so the head runs. The PR review of such a
     head is carried the same way: the earlier head's review stands and no command runs.
+  - DATA-ONLY WAITS (2026-10-22, `forgecarry.data_only`): a head whose diff holds no Python, no `ALWAYS` path and
+    no `everywhere` glob but that a whole-tree read (`reads = ["*"]`) still reaches is not equivalent -- it WAITS
+    while its source runs, then runs carrying every outcome its diff cannot reach, instead of running beside it
+    and carrying nothing. Measured: motronics `a3b326d0a829` (docs(memory), 2026-10-20) ran beside its running
+    parent with `carried 0`; 427 of 5124 test files there reach a memory path through declared `"*"` reads.
 
 ## Scheduling
 

@@ -249,6 +249,41 @@ def test_a_docs_only_head_on_a_running_head_waits_for_its_result(tmp_path: Path)
     assert forgecarry.docs_only(tmp_path, docs, _stand()) is None, 'PLANTED CONTROL: nothing tested before: it runs'
 
 
+def test_a_data_only_head_a_whole_tree_scan_reaches_waits_for_the_running_head_instead_of_running_beside_it(
+    tmp_path: Path,
+) -> None:
+    """The cause of docs(memory) heads running full suites (motronics a3b326d0a829, 2026-10-20).
+
+    A test that reads the whole tree (``reads = ["*"]``) reaches a memory diff, so the head is not equivalent
+    -- and it ran BESIDE its running parent, so nothing could be carried and every outcome ran again. Now a head
+    whose diff holds no Python, no ``ALWAYS`` path and no ``everywhere`` glob waits for the running head; once
+    that settles the head runs, carrying every outcome its diff cannot reach (:func:`forgecarry.carry_from`).
+
+    PLANTED CONTROLS: the same head on a SETTLED parent runs (no verdict is carried); a code head never waits.
+    """
+    run_git(tmp_path, 'init', '-q')
+    scan = 'from pathlib import Path\n\n\ndef test_scan():\n    assert Path(__file__).parent.exists()\n'
+    a = _commit(
+        tmp_path,
+        {
+            'pyproject.toml': PYPROJECT + '[tool.lab_commons.carry.reads]\n"tests/test_scan.py" = ["*"]\n',
+            'src/a.py': 'x = 1\n',
+            'tests/test_a.py': TEST,
+            'tests/test_scan.py': scan,
+        },
+        'a',
+    )
+    docs = _commit(tmp_path, DOCS, 'docs')
+    assert not forgecarry.equivalent(tmp_path, a, docs), 'the whole-tree scan reaches the memory diff'
+    waits = forgecarry.docs_only(tmp_path, docs, _stand(**{a: forgecarry.RUNNING}))
+    assert waits is not None
+    assert (waits.source, waits.verdict) == (a, None)
+    assert waits.hold.startswith(f'waiting behind {a[:12]} (data-only')
+    assert forgecarry.docs_only(tmp_path, docs, _stand(**{a: _VERDICT})) is None, 'settled: it runs, carrying'
+    code = _commit(tmp_path, {'src/a.py': 'x = 2\n'}, 'code')
+    assert forgecarry.docs_only(tmp_path, code, _stand(**{docs: forgecarry.RUNNING})) is None
+
+
 def test_a_docs_only_head_reads_through_untested_docs_heads_but_never_past_untested_code(tmp_path: Path) -> None:
     a = _repo(tmp_path)
     _commit(tmp_path, {'notes.md': 'n\n'}, 'docs 1')

@@ -269,7 +269,7 @@ def _passed(root: Path, client: Client, head: str, now: datetime, stale: timedel
     latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
     if not claimable(latest, now, stale):
         return ''
-    carry = docs_only(root, head, _standing(client, now, stale))
+    carry = docs_only(root, head, _standing(client, now, stale), data_waits=False)
     if carry is not None and carry.verdict is not None:
         why = f'{carry.hold}: the review of {carry.source[:12]} stands'[:_DESCRIPTION]
         status_post(client, head, context=REVIEW_CONTEXT, state=carry.verdict.state, description=why,
