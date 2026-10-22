@@ -7,8 +7,10 @@ tip and its STARTED ones drain (``draining``) -- never cancelled -- so the tip c
 user ruling 2026-10-22, :mod:`lab_commons.dev.forgerun`); one already ``publishing`` its gathered
 record finishes. A ref of any other class is tested at every pushed sha. The run in
 flight is read from the claims already on the forge (:mod:`lab_commons.dev.forgeclaim`), on the tip's
-first-parent history: the same on every host, unlike a host's reflog. Both the claim pass
-(:mod:`lab_commons.dev.forgetake`) and the queue (:mod:`lab_commons.dev.forgequeue`) ask :func:`behind`.
+first-parent history: the same on every host, unlike a host's reflog -- for a child of integration (a PR, a
+feature) only ITS OWN commits, never the integration commits it branched from, whose run is another ref's.
+Both the claim pass (:mod:`lab_commons.dev.forgetake`) and the queue (:mod:`lab_commons.dev.forgequeue`) ask
+:func:`behind`.
 """
 
 from __future__ import annotations
@@ -19,10 +21,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from lab_commons.compute.model import Candidate, Schedule
+from lab_commons.compute.model import INTEGRATION, Candidate, Schedule
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess
 from lab_commons.dev.forgestatus import CommitStatus
+from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.platformparts import part_context
 
 __all__ = ['DRAINING', 'EARLIER_TIPS', 'PUBLISHING', 'WAITING_BEHIND', 'behind', 'earlier_tips']
@@ -51,7 +54,8 @@ def behind(
     if wanted.kind not in schedule.coalesce:
         return ''
     context, nobody = part_context(wanted.platform), Claim('', '', now)
-    for sha in earlier_tips(root, wanted.sha):
+    since = '' if wanted.kind == INTEGRATION else f'refs/remotes/origin/{load_policy(root).integration}'
+    for sha in earlier_tips(root, wanted.sha, since=since):
         state, holder = assess(history(sha), context, me=nobody, now=now)
         if state == CLAIMED and holder is not None:
             where = holder.hpc or holder.machine or holder.login
@@ -65,9 +69,19 @@ def behind(
     return ''
 
 
-def earlier_tips(root: Path, tip: str) -> list[str]:
-    """*tip*'s first-parent history before it, newest first: the same on every host (module docstring)."""
-    args = [_GIT, '-C', str(root), 'rev-list', '--first-parent', '-n', str(EARLIER_TIPS), f'{tip}~1', '--']
+def earlier_tips(root: Path, tip: str, *, since: str = '') -> list[str]:
+    """*tip*'s first-parent history before it, newest first: the same on every host (module docstring).
+
+    *since* names a ref whose commits are left out (a child's own commits only); one git cannot read leaves none out.
+    """
+    exclude = [f'^{since}'] if since and _resolves(root, since) else []
+    args = [_GIT, '-C', str(root), 'rev-list', '--first-parent', '-n', str(EARLIER_TIPS), f'{tip}~1', *exclude, '--']
     done = _door.run(args, capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False)
     listed = done.stdout if done.returncode == 0 else ''  # a root commit has no history before it
     return [sha for sha in listed.splitlines() if sha]
+
+
+def _resolves(root: Path, ref: str) -> bool:
+    done = _door.run([_GIT, '-C', str(root), 'rev-parse', '--verify', '-q', ref], capture_output=True, text=True,
+                     timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
+    return done.returncode == 0

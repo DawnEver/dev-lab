@@ -230,6 +230,12 @@ newest commit lacks, or a request issue.
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
   `weight[repo] * value / expected_cost` (weighted shortest job first). Aging grows without bound, so no
   class starves forever.
+- **Order on a scarce host** (user ruling 2026-10-22, `compute.model.rank`): a host's `[priority]` first, then
+  a candidate the user boosted, then the `served_first` classes strictly in their order (`integration`, then
+  `pr`), then every other class by score. Within an `oldest_first` class (`pr`) the OLDEST sha goes first, not
+  the cheapest -- G is the only Windows forge host, so a PR never waits behind a lane or a newer PR. A `pr` head
+  is coalesced (`Schedule.coalesce`): one PR session holds at most one run per part in flight, and a child's
+  coalescing reads only ITS OWN commits, never the integration run it branched from.
 - **Cost** is the repo's last measured run (`lab_commons.compute.learned`), in core-hours on a cluster and
   wall-hours on a box; unmeasured work costs `prior_cost_h`.
 - **Priority is a forge label** on the PR or issue: `priority:user` adds the declared boost, `priority:<n>`
@@ -252,6 +258,9 @@ starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, reque
 daily_budget_core_h = {}                           # class -> core-hours one ref may use per 24 h
 boosts = {"priority:user" = 1000}                  # label -> value; `priority:<n>` adds n
 classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered, first match
+coalesce = ["integration", "feature", "pr"]       # one run per (ref, part) in flight; the tip waits behind it
+served_first = ["integration", "pr"]              # served strictly before every other class, in this order
+oldest_first = ["pr"]                             # ordered by age, not score
 request_label = "forge:request"
 prior_cost_h = 4.0
 ```

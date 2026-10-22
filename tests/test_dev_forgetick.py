@@ -1076,6 +1076,24 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     assert behind(repo, lane, schedule, _history(**{lane_old: [_pending(BOB, 1)]}), NOW) == ''
 
 
+def test_a_pr_tip_waits_behind_its_own_earlier_run_never_behind_the_integration_run_it_branched_from(
+    tmp_path: Path,
+) -> None:
+    """At most one PR per session in flight (user ruling 2026-10-22): a PR head is coalesced on ITS OWN commits.
+
+    The integration run in flight on the commit the PR branched from is another ref's run: the PR never
+    waits behind it. PLANTED CONTROL: the same claim on the PR's own earlier tip holds it.
+    """
+    repo, tips = _origin(tmp_path)
+    own_old = tips['other']
+    tip = _candidate('other', _push(repo, tips, 'other'), PR)
+    schedule = load_schedule(repo)
+    integration_run = _history(**{tips['integrate/main']: [_pending(BOB, 1)]})
+    assert behind(repo, tip, schedule, integration_run, NOW) == ''
+    own_run = _history(**{own_old: [_pending(BOB, 1)]})
+    assert behind(repo, tip, schedule, own_run, NOW) == f'{WAITING_BEHIND} {own_old[:12]} {_SUPERSEDED}'
+
+
 def test_two_shas_of_one_ref_only_the_newest_is_a_candidate(server, tmp_path: Path) -> None:
     repo, tips = _origin(tmp_path)
     old = tips['integrate/main']
