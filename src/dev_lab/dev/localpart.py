@@ -28,6 +28,12 @@ from lab_commons.box.machine import provided
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
+from lab_commons.envkey import env_record
+from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
+from lab_commons.hpc.records import write_record
+from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
+from lab_commons.hpc.testcells import TestCell
+
 from dev_lab.dev.forgeoutbox import PostFailed
 from dev_lab.dev.forgestatus import verdict_commit
 from dev_lab.dev.platformparts import (
@@ -38,11 +44,6 @@ from dev_lab.dev.platformparts import (
     this_platform,
 )
 from dev_lab.dev.test_outcomes import outcomes_dir, read_cells
-from lab_commons.envkey import env_record
-from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
-from lab_commons.hpc.records import write_record
-from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
-from lab_commons.hpc.testcells import TestCell
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence

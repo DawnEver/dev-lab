@@ -19,6 +19,7 @@ import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out
 from _forge_state import StateForge
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgemerge import decide
 from dev_lab.dev.forgepulls import Marker, marker
@@ -46,7 +47,6 @@ from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_finding
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.platformparts import standing
-from lab_commons.outcomes import Conclusion
 
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'

@@ -24,10 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol, runtime_checkable
 
-from dev_lab.dev.durations import PluginConfig
 from lab_commons.hpc.pytest_item import NOT_APPLICABLE_LINE, badness, declared_resources, judged
 from lab_commons.hpc.testcells import FLAKY, TestCell, merged
 from lab_commons.outcomes import OUTCOME, Event, FinalityError, Record
+
+from dev_lab.dev.durations import PluginConfig
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

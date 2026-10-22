@@ -11,8 +11,8 @@ import threading
 from pathlib import Path
 
 import pytest
-
 from lab_commons.box import Demand, hold, holdings
+
 from dev_lab.dev.inflight import RunKey, leader_run, run_once, seat
 
 KEY = RunKey(tree='t1', env='e1', selector='verify tests/a.py')

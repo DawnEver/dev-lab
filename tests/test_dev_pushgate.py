@@ -14,12 +14,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import mergeaudit, pushgate
 from dev_lab.dev.forge import NoCredential
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.platformparts import Part, part_context
-from lab_commons.outcomes import Conclusion
 
 _GIT = shutil.which('git') or 'git'
 HEAD = 'abc1234' + 'd' * 33

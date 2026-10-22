@@ -59,9 +59,10 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
-from lab_commons.log import emit
 
 __all__ = [
     'CODEX_RULES_REL',

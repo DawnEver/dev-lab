@@ -45,7 +45,7 @@ VERIFY = Remedy('verdict-entry-point', './.venv/Scripts/python.exe -m dev_lab.de
 NETVERB = Remedy(
     'retry-wrapper',
     './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- <verb>',
-    allow=r'lab_commons\.dev\.netverb\b',
+    allow=r'dev_lab.dev\.netverb\b',
 )
 
 #: consumer-a' process-tree killer, as its own `deny-rules.json` reason spells the command.

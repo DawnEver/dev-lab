@@ -54,6 +54,9 @@ import lab_commons.launch as _door
 from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.compute.model import REQUEST
 from lab_commons.config import section
+from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
+from lab_commons.hpc.needsets import part_name
+
 from dev_lab.dev._forgesource import (
     LOCK_FILE,
     git_sources,
@@ -68,14 +71,13 @@ from dev_lab.dev.platformparts import origin_url
 from dev_lab.dev.producer import ProducerExit, release_reason
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verifybox import SELECTION_CPU, SELECTION_WALL_S, selection_files, selection_mem_gb
-from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
-from lab_commons.hpc.needsets import part_name
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
     from pathlib import Path
 
     from lab_commons.compute.model import Ranked
+
     from dev_lab.dev.forgework import Client
 
 __all__ = [

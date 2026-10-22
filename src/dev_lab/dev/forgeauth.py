@@ -29,6 +29,8 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import (
     Forge,
     NoCredential,
@@ -40,7 +42,6 @@ from dev_lab.dev.forge import (
     store_credential,
 )
 from dev_lab.dev.forgework import Client, ForgeCallFailed
-from lab_commons.log import emit
 
 __all__ = ['TICK_SCOPES', 'login', 'main', 'status', 'tick_refusal']
 

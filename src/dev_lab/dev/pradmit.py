@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.branchset_push import pushed_refs
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgepulls import pr_list
@@ -27,7 +29,6 @@ from dev_lab.dev.forgework import PullRequest
 from dev_lab.dev.labsession import TRAILER, sessions
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.trialmerge import contains, rev, shares_unmerged
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client

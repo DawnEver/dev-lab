@@ -20,13 +20,9 @@ from types import ModuleType, SimpleNamespace
 from typing import ClassVar, Final
 
 import pytest
-
 from lab_commons.compute import learned
 from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
-from dev_lab.dev.forgestatus import CommitStatus
-from dev_lab.dev.githooks import bash_executable
-from dev_lab.dev.platformparts import PartRefusal, part_of, parts_of
 from lab_commons.envkey import env_key
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
@@ -77,11 +73,15 @@ from lab_commons.hpc.tree import build_run
 from lab_commons.hpc.watch import PENDING
 from lab_commons.outcomes import Conclusion
 
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.githooks import bash_executable
+from dev_lab.dev.platformparts import PartRefusal, part_of, parts_of
+
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
 GRANT = Grant(user='me', hosts=('login.example',), slurm_account='acct-free', partitions=('shortq', 'defq'))
 SHA = 'a' * 40
-SOURCE = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'pytest_item.py'
+SOURCE = Path(run_module.__file__).with_name('pytest_item.py')  # lab-commons' installed hpc package
 
 
 @pytest.fixture(autouse=True)

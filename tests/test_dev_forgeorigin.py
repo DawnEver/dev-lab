@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dev_lab.dev import forgehosts, forgeorigin
 from lab_commons.hpc.account import ClusterAccount
+
+from dev_lab.dev import forgehosts, forgeorigin
 
 
 def test_the_stamp_appends_the_host_trailer_and_replaces_an_earlier_one(tmp_path: Path) -> None:

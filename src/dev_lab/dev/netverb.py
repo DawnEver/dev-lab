@@ -57,9 +57,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev._netverb_rows import ROWS
 from dev_lab.dev.bounded import run_bounded
-from lab_commons.log import emit
 
 __all__ = [
     'DEFAULT_ATTEMPTS',

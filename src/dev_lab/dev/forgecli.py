@@ -23,6 +23,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from lab_commons.hpc.retired import refusal
+from lab_commons.log import emit
+
 from dev_lab.dev import (
     branchnotices,
     forgeauth,
@@ -47,8 +50,6 @@ from dev_lab.dev import (
 from dev_lab.dev.forge import Transport, https_transport
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, Issue, PullRequest, client_for
 from dev_lab.dev.labsession import ENV
-from lab_commons.hpc.retired import refusal
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

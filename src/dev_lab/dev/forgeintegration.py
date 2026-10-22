@@ -42,6 +42,9 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
+from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev import forgeautosync, forgenotice
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
@@ -68,8 +71,6 @@ from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import CONTEXT_PREFIX, UNCLAIMED, standing
 from dev_lab.dev.trialmerge import contains, merged_at, rev, trial
-from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
 
 __all__ = ['CONTEXT', 'Child', 'Feedback', 'Ticked', 'alarms', 'feedback', 'main', 'retarget_note', 'settle', 'tick']
 

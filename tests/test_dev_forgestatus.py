@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, make_repo, run_git, serve
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgestatus import (
@@ -29,7 +30,6 @@ from dev_lab.dev.forgestatus import (
 from dev_lab.dev.logref import LogRef
 from dev_lab.dev.treedirt import status_paths
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
-from lab_commons.outcomes import Conclusion
 
 
 @pytest.fixture

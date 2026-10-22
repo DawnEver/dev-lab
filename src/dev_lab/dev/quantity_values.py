@@ -58,9 +58,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from pint import Quantity
-
 from lab_commons.units import Q_, ureg
+from pint import Quantity
 
 __all__ = [
     'DIMENSIONLESS',

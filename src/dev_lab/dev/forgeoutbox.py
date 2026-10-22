@@ -51,6 +51,8 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.compute.durable import durable_write
+from lab_commons.log import emit
+
 from dev_lab.dev._forge_journal import OUTBOX_REL, Journal, journal_for, outbox_dir
 from dev_lab.dev.forge import (
     NoCredential,
@@ -63,7 +65,6 @@ from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
 from dev_lab.dev.forgerecords import attach
 from dev_lab.dev.forgestatus import STATES, CommitStatus, status_history, status_post
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
-from lab_commons.log import emit
 
 __all__ = [
     'OUTBOX_REL',

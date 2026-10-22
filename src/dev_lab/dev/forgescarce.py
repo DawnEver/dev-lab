@@ -1,6 +1,6 @@
 """SCARCE-PARTS-BY-REACH -- a PR needs a scarce part only where its diff reaches that part's tests.
 
-User ruling 2026-10-22 ("统一全部"): Windows capacity is scarce (G is the only Windows forge host), so a PR must
+User ruling 2026-10-22 ("unify all of it"): Windows capacity is scarce (G is the only Windows forge host), so a PR must
 not wait on it for tests its change cannot affect. A part is SCARCE when its need-set holds a resource the
 repository declares scarce -- ONE table, data, at the judged commit::
 
@@ -32,14 +32,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev.footprint import Footprints
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgecarry import changed_paths
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import BASE, derived, part_context, parts_of
-from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
-from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from pathlib import Path

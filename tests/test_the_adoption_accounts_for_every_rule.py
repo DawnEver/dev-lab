@@ -1,4 +1,4 @@
-"""lab-commons ADOPTS the shared registry -- the repo that AUTHORS it, held to it.
+"""dev-lab ADOPTS the shared registry -- the repo that AUTHORS it, held to it.
 
 WHY THIS FILE MATTERS MORE THAN IT LOOKS. The registry was authored here, so every mechanism it
 first carried was a path in ANOTHER repo's tree, and the module promised that "a second adopter
@@ -54,8 +54,8 @@ from dev_lab.dev.rules import RULES, Adoption, assert_adopted, guard, lint, unad
 _ROOT = Path(__file__).resolve().parents[1]
 
 _PROFILE = RepoProfile(
-    app_name='lab-commons',
-    package='lab_commons',
+    app_name='dev-lab',
+    package='dev_lab',
     root=_ROOT,
     lint_config='pyproject.toml',
 )
@@ -171,14 +171,8 @@ _ENFORCED = {
     'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
     'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),
-    'ONE-BOX-ONE-LOCK': (
-        guard('tests/test_box.py'),
-        guard('tests/test_box_run_enforced.py'),
-        guard('tests/test_liveness.py'),
-    ),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (
-        guard('tests/test_box.py'),
         # The rule's OTHER two halves, added 2026-09-16 with `dev.bounded`: a wall that terminates
         # the process TREE rather than the direct child, and a refusal that must consult the WIDTH
         # before it may name a tier as the remedy. The box guard covers only the admission refusal.
@@ -209,6 +203,11 @@ _ENFORCED = {
 #: a bare set: an exemption with no recorded reason is indistinguishable from a hole somebody widened
 #: during a red suite, and a reason makes that repair a sentence somebody has to write.
 _ABSENT_REASONS = {
+    'ONE-BOX-ONE-LOCK': (
+        'MOVED, not dropped: the box ledger (`lab_commons.box`) and its guards (`tests/test_box.py`, '
+        '`tests/test_box_run_enforced.py`, `tests/test_liveness.py`) stayed in lab-commons, the runtime, at the '
+        '2026-10-22 split. dev-lab claims the box through verify and holds no ledger of its own to refuse.'
+    ),
     'AGENT-GUARD': (
         'HALF-CLOSED 2026-09-16, and the remaining half is NAMED rather than deferred. The rule says '
         'the refusal is IDENTICAL in every repo that adopts it, and the shared half of that now '
@@ -246,11 +245,13 @@ _ABSENT = frozenset(_ABSENT_REASONS)
 #: its reason ("nothing here calls a network verb") was true of this tree until ``dev.dep_observe``
 #: gave the kit a refresher that calls two, so the rule moved into ``_ENFORCED`` and the ceiling came
 #: down in the same edit. The number has never gone up, and neither has the reason for it.
-_ABSENT_CEILING = 8
+#: 8 -> 9 on 2026-10-22, and it is a MOVE rather than a widening: ONE-BOX-ONE-LOCK is enforced where the
+#: box lives (lab-commons), and this repo, split out of it, has no box to enforce it over.
+_ABSENT_CEILING = 9
 
 
 def _adoption() -> Adoption:
-    return Adoption(app_name='lab-commons', mechanisms=_ENFORCED, declared_absent=_ABSENT)
+    return Adoption(app_name='dev-lab', mechanisms=_ENFORCED, declared_absent=_ABSENT)
 
 
 def test_the_adoption_accounts_for_every_rule() -> None:

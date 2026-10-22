@@ -24,6 +24,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev import branchprune
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
@@ -32,7 +34,6 @@ from dev_lab.dev.forgealarm import PRUNED, Alarm, sound
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from dev_lab.dev.forgework import ForgeCallFailed, client_for
 from dev_lab.dev.labsession import ENV
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client, PullRequest

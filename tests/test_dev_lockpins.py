@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev import lockpins, verify
 from dev_lab.dev.lockpins import (
@@ -21,7 +22,6 @@ from dev_lab.dev.lockpins import (
 )
 from dev_lab.dev.platformparts import BASE, part_context
 from dev_lab.dev.producer import PRODUCING_VAR
-from lab_commons.outcomes import Conclusion
 
 _X, _Y = 'a' * 40, 'b' * 40
 _URL = 'https://gitea.example.org/Team/lab-commons.git'

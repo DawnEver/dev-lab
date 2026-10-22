@@ -31,8 +31,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from dev_lab.dev.testfacts import VacuousScanError
 from lab_commons.outcomes import Conclusion
+
+from dev_lab.dev.testfacts import VacuousScanError
 
 __all__ = ['Composed', 'Row', 'compose', 'member_costs', 'pack', 'partition', 'population']
 

@@ -32,7 +32,7 @@ from dev_lab.dev.foreign import (
     scan,
 )
 
-SOURCE = ROOT / 'src' / 'lab_commons'
+SOURCE = ROOT / 'src' / 'dev_lab'
 
 
 def test_every_foreign_datum_is_gone_or_evicted_by_design() -> None:

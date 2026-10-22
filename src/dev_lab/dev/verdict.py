@@ -35,8 +35,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple, Self
 
-from dev_lab.dev.logref import LogRef, stamp_line
 from lab_commons.outcomes import Conclusion
+
+from dev_lab.dev.logref import LogRef, stamp_line
 
 __all__ = ['IncompleteRun', 'Proof', 'Result', 'Selector', 'Verdict']
 

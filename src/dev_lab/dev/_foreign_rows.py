@@ -51,7 +51,7 @@ SIBLINGS: Final[tuple[str, ...]] = ('consumer-a', 'consumer-b', 'consumer-c')
 SELF: Final[tuple[str, ...]] = ('src/dev_lab/dev/_foreign_rows.py',)
 
 #: The scan is vacuous below this. MEASURED 2026-09-19: 117 tracked modules under
-#: ``src/lab_commons/``. The floor sits well under it on purpose -- a floor refuses an UNREAD tree,
+#: ``src/dev_lab/``. The floor sits well under it on purpose -- a floor refuses an UNREAD tree,
 #: it is not a second pin on the count, and a floor pinned to the measurement reds on every file
 #: added, which is how a floor gets deleted.
 SCAN_FLOOR: Final = 80
@@ -71,7 +71,8 @@ SCAN_FLOOR: Final = 80
 #: the other two kinds are being emptied.
 #: RE-MEASURED 2026-10-08 at **167** after the root-capability split removed one sibling mention.
 #: RE-MEASURED 2026-10-15 at **162** after box P3 deleted the lease/seat prose.
-PROSE_CEILING: Final = 161
+#: RE-MEASURED 2026-10-22 at **141** over src/dev_lab after the split (the scan root moved off src/lab_commons).
+PROSE_CEILING: Final = 141
 
 #: ``'<repo-relative module>::<kind>' -> why the deletion is not in this pass``. One handle per
 #: module per kind, so a new module or a new kind cannot arrive under an existing waiver.

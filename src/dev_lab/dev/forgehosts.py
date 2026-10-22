@@ -60,6 +60,9 @@ from typing import Any, Final
 from lab_commons.compute.model import Candidate, Ranked, Supply
 from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import EVERY, Serves
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.log import emit
+
 from dev_lab.dev import forgerunstate
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.forgeclaim import Work, forge_now, serving, this_machine, this_seat
@@ -74,8 +77,6 @@ from dev_lab.dev.forgepulls import (
 )
 from dev_lab.dev.forgework import Client, Comment, ForgeCallFailed, client_for
 from dev_lab.dev.platformparts import origin_url, this_platform
-from lab_commons.hpc.account import ClusterAccount
-from lab_commons.log import emit
 
 __all__ = [
     'HOSTS_MARKER',

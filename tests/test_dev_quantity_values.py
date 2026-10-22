@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from lab_commons.units import Q_
 
 from dev_lab.dev.quantity_values import (
     QuantitySite,
@@ -23,7 +24,6 @@ from dev_lab.dev.quantity_values import (
     value_ratchet,
     value_remedy,
 )
-from lab_commons.units import Q_
 
 #: The registry shape a consumer hands in: key -> the unit its value must convert to.
 _DECLARED = {'intra_slot_pitch': 'deg', 'stack_length': 'mm', 'phase_resistance': 'ohm'}

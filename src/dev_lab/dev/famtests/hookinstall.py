@@ -26,6 +26,7 @@ import shutil
 from pathlib import Path
 
 import lab_commons.launch as _door
+
 from dev_lab.dev.hook_install import (
     FOREIGN,
     INSTALL_COMMAND,

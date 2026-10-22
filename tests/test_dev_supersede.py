@@ -424,14 +424,14 @@ def test_a_python_row_that_will_not_parse_still_raises(tmp_path: Path) -> None:
 
 
 def test_a_package_that_resolves_onto_nothing_is_refused(tmp_path: Path) -> None:
-    """THE PLANT. `package='lab_commons'` resolves every kit import to `'dev'` and reports 0 CONSULTS."""
+    """THE PLANT. `package='dev_lab'` resolves every kit import to `'dev'` and reports 0 CONSULTS."""
     kit_dir, root = _plant(tmp_path, {'bounded.py': _SILENT_KIT}, {'scripts/gate/runner.py': _ADOPTER})
     with pytest.raises(PackageMismatch, match='wrong depth'):
         take_census(
             {'scripts/gate/runner.py': 'stays'},
             kit_modules(kit_dir),
             root=root,
-            package='lab_commons',
+            package='dev_lab',
             row_floor=1,
             module_floor=1,
         )
@@ -590,7 +590,7 @@ def test_every_published_kit_module_is_named_by_every_import_spelling(case: tupl
 def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tuple[Path, str]) -> None:
     """THE PLANT, over the same cross product, and it is the real bug rather than an imitation of it.
 
-    `package='lab_commons'` is one level short of the kit. Under it every module resolves one segment
+    `package='dev_lab'` is one level short of the kit. Under it every module resolves one segment
     deeper than it is, and the repair that would make the arm above pass by reading EVERY segment is
     exactly the repair that makes `dev_lab.dev.bounded` answer `bounded` here -- at which point
     `_refuse_mismatch` sees a match, the wrong depth stops being refusable, and the fix has switched
@@ -602,7 +602,7 @@ def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tu
     plant the arm above would be asserting a property of the strings rather than of the resolver.
     """
     path, spelling = case
-    named = imported_kit_modules(ast.parse(_spelled(path, spelling)), package='lab_commons', subpackages=SUBPACKAGES)
+    named = imported_kit_modules(ast.parse(_spelled(path, spelling)), package='dev_lab', subpackages=SUBPACKAGES)
     assert named == frozenset({'dev'}), (
         f'a resolver one level short of the kit answered {sorted(named)} for '
         f'`{_spelled(path, spelling).strip()}`; it must reach no further than `dev`. Anything else '
@@ -611,9 +611,7 @@ def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tu
     )
 
 
-@pytest.mark.parametrize(
-    'spelling', ['from dev_lab.dev.bounded import run_bounded', 'import dev_lab.dev.bounded']
-)
+@pytest.mark.parametrize('spelling', ['from dev_lab.dev.bounded import run_bounded', 'import dev_lab.dev.bounded'])
 def test_the_short_package_is_refused_in_either_spelling(tmp_path: Path, spelling: str) -> None:
     """THE PLANT AT THE OTHER DEPTH, driven through the REAL census, in BOTH spellings of one import.
 
@@ -628,7 +626,7 @@ def test_the_short_package_is_refused_in_either_spelling(tmp_path: Path, spellin
             {'scripts/gate/runner.py': 'stays'},
             kit_modules(kit_dir),
             root=root,
-            package='lab_commons',
+            package='dev_lab',
             row_floor=1,
             module_floor=1,
         )

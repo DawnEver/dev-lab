@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from lab_commons.compute.durable import durable_write
+
 from dev_lab.dev.worktreeplace import main_checkout
 
 __all__ = [

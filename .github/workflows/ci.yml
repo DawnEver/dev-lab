@@ -24,7 +24,7 @@
       "with": {
         "python-versions": "[\"3.12\", \"3.13\"]",
         "runner-os": "[\"ubuntu-latest\", \"windows-latest\", \"macos-latest\"]",
-        "extras": "dev viz-mpl viz-bokeh",
+        "extras": "",
         "guard-targets": "adoption"
       }
     }

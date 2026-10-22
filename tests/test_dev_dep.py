@@ -21,8 +21,8 @@ from typing import Final
 
 import pytest
 from _box_fake import quiet
-
 from lab_commons.box import BOX_ENV, GB, Capacity, Demand, NotAdmitted, hold, not_admitted
+
 from dev_lab.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,

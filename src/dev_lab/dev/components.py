@@ -103,6 +103,7 @@ def components_of(pyproject: str) -> tuple[Component, ...]:
         raise ComponentRefused(msg)
     return tuple(_row(name, raw) for name, raw in table.items())
 
+
 #: The family kits: the runtime (lab-commons) and the development system (dev-lab); `dev-lab` matches <x>-lab.
 _NEVER_COMPONENTS: Final = frozenset({'lab-commons', 'dev-lab'})
 

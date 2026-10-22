@@ -15,12 +15,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from lab_commons.box.demand import Demand
 from lab_commons.compute.execute import OFFERED, LocalExecutor, Where
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.store import Nondeterministic, Record, ResultStore, result_hash
 from lab_commons.compute.unit import Engine, Unit, environment_here
+
 from dev_lab.dev import forgeunit
 from dev_lab.dev.artefacts import Config, FolderStore
 from dev_lab.dev.artefactstores import Ref

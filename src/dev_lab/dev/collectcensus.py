@@ -81,12 +81,13 @@ class CollectRow:
     why: str
 
     def __post_init__(self) -> None:
-        """Refuse a row that cannot be true before any tree is read."""
+        """Refuse a row that cannot be true before any tree is read.
+
+        An EMPTY selection is a real one (2026-10-22): `uv sync` with no extra prunes to the base install,
+        and dev-lab, whose base install IS its toolchain, makes exactly that selection in its CI.
+        """
         if len(self.why) < WHY_FLOOR:
             msg = f'{self.key}: reason is {len(self.why)} characters, below the floor of {WHY_FLOOR}'
-            raise CollectRowError(msg)
-        if not self.selected:
-            msg = f'{self.key}: a row exists where a selection is MADE, and this one names no extra'
             raise CollectRowError(msg)
 
     @property

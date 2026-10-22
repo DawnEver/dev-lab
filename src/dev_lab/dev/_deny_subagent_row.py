@@ -27,7 +27,7 @@ SUBAGENT_NO_PUSH: dict[str, object] = {
         r'(?:git(?:\.exe)?(?:\s+-C\s+\S+)*\s+push\b'
         r'|(?:sh\s+)?\S*with-retry\.sh\s+push\b'
         # The family retry verb is a push road too (MAIN-SESSION-PUBLISHES admits it for a main session).
-        rf'|{_INTERPRETER}-m\s+lab_commons\.dev\.netverb\b[^\n]*\spush\b'
+        rf'|{_INTERPRETER}-m\s+dev_lab.dev\.netverb\b[^\n]*\spush\b'
         r'|git(?:\.exe)?\b[^\n]*\s--no-verify\b'
         # PowerShell spells the same skip as an environment assignment.
         r"""|SKIP=|\$env:SKIP\s*=)"""

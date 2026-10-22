@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dev_lab.dev import ephemeralrefs, floors, venvpath
 from lab_commons.launch import run
+
+from dev_lab.dev import ephemeralrefs, floors, venvpath
 
 if TYPE_CHECKING:
     from pathlib import Path

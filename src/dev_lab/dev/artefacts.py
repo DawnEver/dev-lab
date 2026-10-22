@@ -50,6 +50,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 from lab_commons.config import config_path, section
+from lab_commons.hpc.rclone import probe
+
 from dev_lab.dev.artefactstores import (
     ARCHIVE,
     ATTACHMENT_LIMIT_MB,
@@ -78,7 +80,6 @@ from dev_lab.dev.artefactstores import (
 )
 from dev_lab.dev.forgepulls import pages, pulls_off
 from dev_lab.dev.forgework import Client, ForgeCallFailed, is_pull, pull_of
-from lab_commons.hpc.rclone import probe
 
 __all__ = [
     'ARCHIVE',

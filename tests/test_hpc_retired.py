@@ -7,11 +7,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from lab_commons.hpc import __main__ as hpc_main
+from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys, retired_in
 
 from dev_lab.dev import forgecli, platformparts, pushgate, verify, workstation
 from dev_lab.dev.lanepolicy import policy_from
-from lab_commons.hpc import __main__ as hpc_main
-from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys, retired_in
 
 ROOT = Path(__file__).resolve().parents[1]
 

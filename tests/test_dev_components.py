@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from _forge_fake import run_git
+from lab_commons.hpc.declared import KNOWN_TABLES
 
 from dev_lab.dev.components import (
     Component,
@@ -26,7 +27,6 @@ from dev_lab.dev.components import (
     main,
     submodules,
 )
-from lab_commons.hpc.declared import KNOWN_TABLES
 
 _ROW = """
 [tool.lab_commons.components.numerics-lab]

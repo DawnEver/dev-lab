@@ -23,8 +23,9 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from lab_commons.log import emit
+
+from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 
 __all__ = ['ENV', 'TRAILER', 'machine_env', 'main', 'sessions', 'stamp']
 

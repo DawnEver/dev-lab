@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-
 from lab_commons.config import CONFIG_ENV
+from lab_commons.hpc.deploy_spec import host_serve_argv
+
 from dev_lab.dev import hostrefresh, servetask, workstation
 from dev_lab.dev.forgealarm import Alarm
 from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpath import venv_interpreter
-from lab_commons.hpc.deploy_spec import host_serve_argv
 
 FORGE: Final = 'https://forge.example/team'
 REPOS: Final = 'lab-commons,alpha,beta'

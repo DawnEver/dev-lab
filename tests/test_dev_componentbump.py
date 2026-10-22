@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.componentbump import (
     HELD,
@@ -32,7 +33,6 @@ from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgestatus import CommitStatus, state_for
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import Part
-from lab_commons.outcomes import Conclusion
 
 NUM = Component('numerics-lab', 'https://f/o/numerics-lab.git', 'main', ('base', 'linux'))
 OPT = Component('solver-lab', 'https://f/o/solver-lab.git', 'main', ('base',))

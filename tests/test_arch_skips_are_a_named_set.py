@@ -19,9 +19,7 @@ from pathlib import Path
 from _arch_corpus import TEST_FLOOR, assert_floor, parse, rel, suite_modules
 
 #: Test modules permitted to skip, each with the reason. EMPTY, measured 2026-09-15.
-ALLOWED_SKIPS: dict[str, str] = {
-    'tests/test_launch.py': 'measures a console WINDOW, which exists only on Windows',
-}
+ALLOWED_SKIPS: dict[str, str] = {}
 
 
 def skip_sites(paths: tuple[Path, ...]) -> tuple[str, ...]:

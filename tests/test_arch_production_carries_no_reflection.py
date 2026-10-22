@@ -7,7 +7,6 @@ floor, and plants the controls the body must convict.
 
 from __future__ import annotations
 
-import ast
 import shutil
 import subprocess
 from pathlib import Path
@@ -30,34 +29,11 @@ _ALLOWED = {
         'rebind/restore_all rebind a name handed in as DATA (a Seam path) on an arbitrary owner and put '
         'the original back; the attribute name is not known to any type, so setattr is the operation'
     ),
-    'src/lab_commons/structured.py': (
-        'stdlib LogRecord has no extras mapping API; _record_fields reads arbitrary caller data '
-        'so secret redaction retains every key. The companion guard permits exactly this one read.'
-    ),
 }
 
 
 def test_this_tree_carries_no_reflection() -> None:
     assert_no_reflection(root=_ROOT, allowed=_ALLOWED, floor=_FLOOR)
-
-
-def test_log_record_data_has_one_read_only_namespace_boundary() -> None:
-    path = _ROOT / 'src/lab_commons/structured.py'
-    source = path.read_text(encoding='utf-8')
-    tree = ast.parse(source)
-    boundary = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == '_record_fields')
-    reads = [
-        node
-        for node in ast.walk(boundary)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'vars'
-    ]
-    assert len(reads) == 1
-    assert reflection_sites(source, str(path)) == [reads[0].lineno]
-    assert isinstance(reads[0].args[0], ast.Name)
-    assert reads[0].args[0].id == 'record'
-    returned = next(node for node in boundary.body if isinstance(node, ast.Return))
-    assert isinstance(returned.value, ast.Call)
-    assert ast.unparse(returned.value.func) == 'MappingProxyType'
 
 
 def test_every_banned_form_is_found() -> None:

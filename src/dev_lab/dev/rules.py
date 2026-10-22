@@ -56,13 +56,14 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.file_io import read_toml
+
 from dev_lab.dev._rule_rows import ROWS
 from dev_lab.dev._rule_rows_b import ROWS as _ROWS_B
 from dev_lab.dev._rule_rows_branches import ROWS as _ROWS_BRANCHES
 from dev_lab.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
 from dev_lab.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
 from dev_lab.dev.profile import RepoProfile
-from lab_commons.file_io import read_toml
 
 __all__ = [
     'RULES',

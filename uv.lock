@@ -212,6 +212,7 @@ dependencies = [
     { name = "lab-commons", extra = ["io", "paths", "structured", "units"] },
     { name = "pytest" },
     { name = "pytest-mock" },
+    { name = "rtoml" },
     { name = "ruff" },
 ]
 
@@ -221,6 +222,7 @@ requires-dist = [
     { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git?branch=integrate%2Fmain" },
     { name = "pytest" },
     { name = "pytest-mock" },
+    { name = "rtoml" },
     { name = "ruff" },
 ]
 

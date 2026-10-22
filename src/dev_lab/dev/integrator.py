@@ -40,6 +40,10 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
+from lab_commons.hpc.shell import FULL
+from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 from dev_lab.dev.forgeschedule import load_schedule
@@ -47,9 +51,6 @@ from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import standing
-from lab_commons.hpc.shell import FULL
-from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'BLOCKED',

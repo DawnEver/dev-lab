@@ -48,11 +48,12 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.branchset import BranchSetNotDeclared, branchset_at
 from dev_lab.dev.breakglass import BREAK_GLASS, reason
 from dev_lab.dev.lanepolicy import Policy, policy_at
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
-from lab_commons.log import emit
 
 __all__ = [
     'MERGED_BRANCH',

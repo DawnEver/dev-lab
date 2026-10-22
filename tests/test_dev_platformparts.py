@@ -7,11 +7,6 @@ from typing import NoReturn
 
 import pytest
 from _forge_fake import git_out, make_repo, run_git
-
-from dev_lab.dev import localpart, platformparts
-from dev_lab.dev.forgeoutbox import PostFailed
-from dev_lab.dev.forgestatus import CommitStatus, state_for
-from dev_lab.dev.producer import ProducerExit
 from lab_commons.envkey import env_record
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
@@ -20,6 +15,11 @@ from lab_commons.hpc.records import write_record
 from lab_commons.hpc.testcells import TestCell
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Status
+
+from dev_lab.dev import localpart, platformparts
+from dev_lab.dev.forgeoutbox import PostFailed
+from dev_lab.dev.forgestatus import CommitStatus, state_for
+from dev_lab.dev.producer import ProducerExit
 
 SHA = 'a' * 40
 

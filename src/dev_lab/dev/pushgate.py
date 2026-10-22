@@ -44,6 +44,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.hpc.retired import refusal
+from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev.forge import _GIT, NoCredential, UnreadableRemote
 from dev_lab.dev.forgeoutbox import unprompted_client
 from dev_lab.dev.forgestatus import CommitStatus, status_list
@@ -52,9 +56,6 @@ from dev_lab.dev.githooks.runner import parse_push_lines
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.logref import MARKER
 from dev_lab.dev.platformparts import standing
-from lab_commons.hpc.retired import refusal
-from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

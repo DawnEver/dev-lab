@@ -64,7 +64,7 @@ BUDGETS: Final[dict[str, Budget]] = {
         reason='a statement is the whole universal rule, cited by ID everywhere else; cutting it loses the rule',
     ),
     'deny-hazard': Budget(max_lines=1, max_line_chars=162),
-    'deny-remedy': Budget(max_lines=1, max_line_chars=302),
+    'deny-remedy': Budget(max_lines=1, max_line_chars=298),
 }
 
 #: The row field each row surface measures.

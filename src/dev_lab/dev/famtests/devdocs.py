@@ -63,7 +63,7 @@ LINK_WINDOW: Final = 5
 UPSTREAM_SHINGLE_FLOOR: Final = 50
 
 _WORD: Final = re.compile(r'[a-z0-9_]+')
-_FAMILY_MODULE: Final = re.compile(r'\blab_commons\.dev(?:\.[A-Za-z_][A-Za-z0-9_]*)+')
+_FAMILY_MODULE: Final = re.compile(r'\bdev_lab.dev(?:\.[A-Za-z_][A-Za-z0-9_]*)+')
 
 
 def shingles(text: str, words: int = SHINGLE_WORDS) -> frozenset[tuple[str, ...]]:

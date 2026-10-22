@@ -10,7 +10,6 @@ import time
 
 import pytest
 
-from lab_commons import launch
 from dev_lab.dev.codeplace import (
     ARCHIVED_SEGMENTS,
     FAMILY_CODE_ROOTS,
@@ -29,6 +28,7 @@ from dev_lab.dev.codeplace import (
     stray_refusal,
 )
 from dev_lab.dev.famtests import noreflection
+from lab_commons import launch
 
 _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 _DAY = 86400.0

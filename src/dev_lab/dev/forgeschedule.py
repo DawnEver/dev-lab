@@ -76,6 +76,10 @@ from lab_commons.compute.model import (
     Schedule,
     starved,
 )
+from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
+from lab_commons.hpc.retired import RETIRED
+from lab_commons.hpc.shell import FULL
+
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgealarm import STARVED, Alarm
 from dev_lab.dev.forgecoalesce import WAITING_BEHIND
@@ -86,9 +90,6 @@ from dev_lab.dev.forgestatus import CARRIED_FROM
 from dev_lab.dev.forgework import Client, ForgeCallFailed, is_pull
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.platformparts import part_refs
-from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
-from lab_commons.hpc.retired import RETIRED
-from lab_commons.hpc.shell import FULL
 
 __all__ = [
     'NOT_ADMITTED',

@@ -25,8 +25,9 @@ from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from dev_lab.dev.checkout import git_out, orphan_directories, worktrees
 from lab_commons.log import emit
+
+from dev_lab.dev.checkout import git_out, orphan_directories, worktrees
 
 __all__ = ['REGENERABLE', 'blockers', 'main', 'prune', 'regenerable']
 

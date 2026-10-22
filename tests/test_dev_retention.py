@@ -14,6 +14,7 @@ from typing import Final
 
 import pytest
 from _forge_fake import git_out, run_git
+from lab_commons.hpc.slurm import parse_workdirs
 
 from dev_lab.dev import retention, retentionplan
 from dev_lab.dev.diskusage import Usage, parse_mmlsquota
@@ -29,7 +30,6 @@ from dev_lab.dev.retentionplan import (
     runs,
     workstation_plan,
 )
-from lab_commons.hpc.slurm import parse_workdirs
 
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
 OLD = NOW - timedelta(days=10)

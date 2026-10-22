@@ -52,11 +52,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, NamedTuple
 
+from lab_commons.log import emit
+
 from dev_lab.dev._unit_tokens import UNIT_TOKENS
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.rules import tracked_files
 from dev_lab.dev.units import _exempt_annotation, _exempt_assignment, trailing_token
-from lab_commons.log import emit
 
 __all__ = [
     'DECLARED_EXCEPTIONS',

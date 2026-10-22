@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, make_repo, run_git
-
 from lab_commons.compute.model import Schedule
+
 from dev_lab.dev.forgealarm import INTEGRATION
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.integrator import (

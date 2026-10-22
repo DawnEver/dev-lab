@@ -58,6 +58,11 @@ from typing import IO, Any, Final
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.config import config_path, section
+from lab_commons.hpc.deploy_spec import LAB_COMMONS, host_serve_argv
+from lab_commons.hpc.deploy_steps import Step, Tools
+from lab_commons.hpc.retired import refusal
+from lab_commons.log import emit
+
 from dev_lab.dev import servetask
 from dev_lab.dev._machinefile import diff, merged
 from dev_lab.dev.forgealarm import RUN, Alarm, sound
@@ -66,10 +71,6 @@ from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
 from dev_lab.dev.servelock import default_lock, held
-from lab_commons.hpc.deploy_spec import LAB_COMMONS, host_serve_argv
-from lab_commons.hpc.deploy_steps import Step, Tools
-from lab_commons.hpc.retired import refusal
-from lab_commons.log import emit
 
 if sys.platform == 'win32':
     import winreg

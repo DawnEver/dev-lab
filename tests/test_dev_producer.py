@@ -6,8 +6,8 @@ import argparse
 
 import pytest
 from _box_fake import ended
-
 from lab_commons.box import Refused
+
 from dev_lab.dev import verify
 from dev_lab.dev.producer import (
     PRODUCING_VAR,

@@ -30,10 +30,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.trialmerge import Trial, rev, trial
-from lab_commons.log import emit
 
 __all__ = ['CONFIG_KEY', 'Plan', 'main', 'plan', 'refused', 'sync', 'unwatch', 'upstreams', 'watch']
 

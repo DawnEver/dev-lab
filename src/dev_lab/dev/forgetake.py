@@ -29,6 +29,9 @@ from lab_commons.box import release
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.compute.serves import Serves
+from lab_commons.hpc.declared import OutdatedKit
+from lab_commons.hpc.needsets import declared_at, needs_of
+
 from dev_lab.dev.forgecarry import docs_only, part_standing
 from dev_lab.dev.forgeclaim import (
     CLAIMABLE,
@@ -57,8 +60,6 @@ from dev_lab.dev.forgeschedule import NO_HOST, NOT_ADMITTED, held, over_budget
 from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client
 from dev_lab.dev.platformparts import UndeclaredPart, cluster_part, part_context, producer_argv
-from lab_commons.hpc.declared import OutdatedKit
-from lab_commons.hpc.needsets import declared_at, needs_of
 
 __all__ = ['ClaimPass']
 

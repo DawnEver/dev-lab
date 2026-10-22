@@ -6,7 +6,6 @@ import itertools
 from pathlib import Path
 
 import pytest
-
 from lab_commons.hpc.declared import RetiredTable
 from lab_commons.hpc.needsets import (
     BASE,

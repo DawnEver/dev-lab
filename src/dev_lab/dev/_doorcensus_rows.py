@@ -31,7 +31,7 @@ __all__ = [
 #: 30, both green.
 DOORS: tuple[DoorRow, ...] = (
     DoorRow(
-        repo='lab-commons',
+        repo='dev-lab',
         path='Makefile',
         commands=14,
         deliveries=frozenset({'INERT'}),
@@ -45,7 +45,7 @@ DOORS: tuple[DoorRow, ...] = (
         ),
     ),
     DoorRow(
-        repo='lab-commons',
+        repo='dev-lab',
         path='pyproject.toml',
         commands=4,
         deliveries=frozenset({'INERT'}),
@@ -67,9 +67,9 @@ DOORS: tuple[DoorRow, ...] = (
 #: There is one today, and finding it is what this table was added for.
 SHARED: tuple[SharedDoor, ...] = (
     SharedDoor(
-        repo='lab-commons',
+        repo='dev-lab',
         path='pyproject.toml',
-        caller_floats=('lab-commons',),
+        caller_floats=('dev-lab',),
         deliveries=frozenset({'INERT', 'UNLOCKED'}),
         why=(
             'THE FINDING. This reusable workflow holds `uv sync --python X $extra_flags` and three '

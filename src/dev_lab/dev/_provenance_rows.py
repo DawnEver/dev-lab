@@ -187,6 +187,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgedemand': ('original',),
     'forgeissue': ('original',),
     'forgeroute': ('original',),
+    # ORIGINAL: both are forge mechanisms of 2026-10-22 with no consumer file before them.
+    'forgescarce': ('original',),
+    'prlanded': ('original',),
     'issueref': ('original',),
     # ORIGINAL: the merge queue is derived from origin refs and gate statuses; no consumer held one.
     'integrator': ('original',),

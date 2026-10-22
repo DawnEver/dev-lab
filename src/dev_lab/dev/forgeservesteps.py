@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from lab_commons.hpc.account import ClusterAccount
+
 from dev_lab.dev import forgeship, retention
 from dev_lab.dev.breakglass import notices as break_glass
 from dev_lab.dev.forgealarm import INTEGRATION, ISSUE_KINDS, RUN, STARVED, STORAGE, Alarm
@@ -29,7 +31,6 @@ from dev_lab.dev.forgework import Client, ForgeCallFailed
 from dev_lab.dev.integrator import observe
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.relock import carry
-from lab_commons.hpc.account import ClusterAccount
 
 __all__ = ['hygiene', 'prompt', 'raise_once', 'relock', 'retain_storage', 'starved', 'tidy_runs']
 

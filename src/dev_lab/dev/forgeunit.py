@@ -41,6 +41,8 @@ from lab_commons.compute.presence import cached
 from lab_commons.compute.store import Nondeterministic, Result, ResultStore
 from lab_commons.compute.unit import Engine, Environment, Unit, environment_here
 from lab_commons.config import config_path
+from lab_commons.log import emit
+
 from dev_lab.dev.artefacts import load_config, pack, resolve, store_for, unpack
 from dev_lab.dev.artefactstores import ARCHIVE, Ref, run_id
 from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm, sound
@@ -49,7 +51,6 @@ from dev_lab.dev.forgerecords import UNIT_RESULT, attach, listing
 from dev_lab.dev.forgerequest import UNIT, Declared, UndeclaredRequest
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client, client_for
-from lab_commons.log import emit
 
 __all__ = ['ForgeResults', 'UnitJob', 'main', 'offering', 'result_name', 'unit_request']
 

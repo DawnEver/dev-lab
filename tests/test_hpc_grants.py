@@ -11,7 +11,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from lab_commons.config import CONFIG_ENV
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
@@ -316,7 +315,7 @@ def test_a_file_that_fails_to_collect_is_an_error_outcome_not_an_aborted_run() -
     """One unimportable file must not hide the rest of the tree: it is recorded, the run goes on."""
     spec = RunSpec(sha='a' * 40, repo_url='https://g/r.git', builds=Builds(install='true', env_key='k1'))
     assert '--continue-on-collection-errors' in collect_command(replace(spec, collect='-x tests')), 'the plain path'
-    collector = Path(__file__).parents[1] / 'src' / 'lab_commons' / 'hpc' / 'collect.py'
+    collector = Path(cluster_module.__file__).with_name('collect.py')  # lab-commons' installed hpc package
     assert '--continue-on-collection-errors' in collector.read_text(encoding='utf-8'), 'the per-file collector'
     text = (
         'tests/a.py::t1\n'

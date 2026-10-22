@@ -12,13 +12,13 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
-
 from lab_commons.compute.model import Candidate
+from lab_commons.hpc.shell import FULL
+
 from dev_lab.dev import forgequeue
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import Claim
 from dev_lab.dev.forgehosts import HOSTS_TITLE, HostCard, card_owners, publish, read_cards
-from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 NOW_HTTP = 'Sun, 11 Oct 2026 12:00:00 GMT'

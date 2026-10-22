@@ -34,9 +34,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.netverb import Report, run_network_verb
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence

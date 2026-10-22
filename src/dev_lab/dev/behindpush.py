@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.branchset_push import pushed_refs
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.lanepolicy import Policy, load_policy
-from lab_commons.log import emit
 
 __all__ = ['ALLOWED', 'COULD_NOT_JUDGE', 'REFUSED', 'REMEDY', 'behind', 'main', 'refusal']
 

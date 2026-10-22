@@ -9,10 +9,10 @@ would be a fixed point nobody could compute.
 import re
 
 import pytest
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.logref import _STAMPED, MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
 from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
-from lab_commons.outcomes import Conclusion
 
 SELECTOR = Selector('gate:integrate/main', ('t/a.py::test_one',))
 

@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+
 from dev_lab.dev._docsite_portal import render_portal
 
 __all__ = [

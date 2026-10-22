@@ -35,6 +35,9 @@ from pathlib import Path
 from typing import Final, Protocol
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev.components import Component, components_of
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgepulls import issues
@@ -43,8 +46,6 @@ from dev_lab.dev.forgework import Client, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.platformparts import standing
-from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'HELD',

@@ -141,8 +141,7 @@ def assert_no_local_admission(scan: AdmissionScan, *, floor: int) -> None:
     if scan.offenders:
         msg = (
             'push admission has ONE implementation, dev_lab.dev.pushgate (library and CLI '
-            '`python -m dev_lab.dev.pushgate`). Delete the local copy and delegate:\n  '
-            + '\n  '.join(scan.offenders)
+            '`python -m dev_lab.dev.pushgate`). Delete the local copy and delegate:\n  ' + '\n  '.join(scan.offenders)
         )
         raise LocalAdmission(msg)
 

@@ -84,7 +84,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-10-11 AT 248 (branch-flow plus the cluster tick): floor 220.
 #: RE-TAKEN 2026-10-12 AT 262 (the forge owners, issue routing and hygiene modules): floor 230.
 #: RE-TAKEN 2026-10-18 AT 328 (outcomes, compute, forge coalesce/unit): floor 317.
-FILE_FLOOR = 349  # re-taken 2026-10-22 at 360: forge notices/autosync, labsession, pradmit joined the kit
+FILE_FLOOR = 215  # re-taken 2026-10-22 at 241 after the split left lab-commons' trees behind
 
 
 def _tree() -> dict[str, str]:
@@ -94,7 +94,7 @@ def _tree() -> dict[str, str]:
 
 def test_only_the_resolver_spells_a_venv_interpreter() -> None:
     """THE PROPERTY. No file outside the sanctioned set spells a concrete venv interpreter."""
-    assert_only_the_resolver_spells_a_venv_interpreter(files=_tree(), floor=FILE_FLOOR, what='lab-commons kit module')
+    assert_only_the_resolver_spells_a_venv_interpreter(files=_tree(), floor=FILE_FLOOR, what='dev-lab kit module')
 
 
 def test_the_reader_convicts_a_planted_recipe_and_spares_the_narrative() -> None:
@@ -110,7 +110,7 @@ def test_the_resolver_is_still_consulted() -> None:
 def test_the_scan_has_a_floor_that_a_lost_root_trips() -> None:
     """A SCAN THAT READ NOTHING IS NOT A CLEAN SCAN -- the floor refuses, rather than passing."""
     with pytest.raises(FloorUnmet):
-        assert_only_the_resolver_spells_a_venv_interpreter(files={}, floor=FILE_FLOOR, what='lab-commons kit module')
+        assert_only_the_resolver_spells_a_venv_interpreter(files={}, floor=FILE_FLOOR, what='dev-lab kit module')
 
 
 def test_the_floor_still_binds_on_the_tree_it_was_measured_against() -> None:

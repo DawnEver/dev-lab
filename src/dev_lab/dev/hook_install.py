@@ -38,11 +38,12 @@ from pathlib import Path
 from typing import IO, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.githooks.runner import FOREIGN_INTERPRETER_ENV
 from dev_lab.dev.githooks.table import hook_table
 from dev_lab.dev.reports import StepReport
 from dev_lab.dev.venvpath import CANDIDATE_RELATIVE_PATHS
-from lab_commons.log import emit
 
 __all__ = [
     'ABSENT',

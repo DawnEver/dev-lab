@@ -70,7 +70,5 @@ def test_a_case_conflict_with_a_tracked_path_is_a_finding(tmp_path: Path, monkey
 
 
 def test_every_check_the_base_names_exists() -> None:
-    named = {
-        row['run'][3] for row in base_rows()['pre-commit'] if row['run'][1:3] == ['-m', 'dev_lab.dev.filechecks']
-    }
+    named = {row['run'][3] for row in base_rows()['pre-commit'] if row['run'][1:3] == ['-m', 'dev_lab.dev.filechecks']}
     assert named == set(CHECKS)

@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.config import SHARED_KEYS, USER_TABLE, User
+
 from dev_lab.dev.floors import assert_floor
 
 __all__ = [

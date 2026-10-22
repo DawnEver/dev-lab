@@ -19,12 +19,12 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, git_out, make_repo, run_git, serve
+from lab_commons.config import CONFIG_ENV
 from test_dev_forgeintent import _claimed as _intent_claimed
 from test_dev_forgeintent import _Forge, _reattach
 from test_dev_forgerun import SHA as RUN_SHA
 from test_dev_forgerun import _CrashAtSbatch, _Slurm, _start, _Store, _tick
 
-from lab_commons.config import CONFIG_ENV
 from dev_lab.dev import forgeintent, forgerun, forgerunstate
 from dev_lab.dev._forge_journal import Journal, journal_for
 from dev_lab.dev.forge import Forge

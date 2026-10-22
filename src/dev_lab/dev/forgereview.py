@@ -64,6 +64,8 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.config import section
+from lab_commons.units import Q_
+
 from dev_lab.dev.forgecarry import RUNNING, docs_only
 from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from dev_lab.dev.forgereview_findings import (
@@ -76,7 +78,6 @@ from dev_lab.dev.forgereview_findings import (
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import REVIEW_CONTEXT
-from lab_commons.units import Q_
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus

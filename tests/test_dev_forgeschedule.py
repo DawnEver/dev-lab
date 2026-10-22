@@ -7,12 +7,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from lab_commons.compute.model import Candidate, Ranked, Schedule, boost_of, expected_cost, rank, starved, value
+from lab_commons.hpc.shell import FULL
+
 from dev_lab.dev.forgehosts import host_id
 from dev_lab.dev.forgeorigin import vouched
 from dev_lab.dev.forgeschedule import host_weights, load_schedule, parse_usage
-from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 FAMILY = Schedule()

@@ -30,13 +30,14 @@ from pathlib import Path
 from typing import Final
 
 from lab_commons.compute.durable import durable_write
+from lab_commons.proc import pid_alive
+
 from dev_lab.dev.forgeclaim import Claim, forge_now
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.forgework import Client, ForgeCallFailed
 from dev_lab.dev.producer import RETRYABLE
 from dev_lab.dev.shatree import close_tree
 from dev_lab.dev.worktreeplace import main_checkout
-from lab_commons.proc import pid_alive
 
 __all__ = ['RUNS_REL', 'Intent', 'forget', 'journal', 'journaled', 'reattach']
 

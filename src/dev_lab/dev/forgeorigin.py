@@ -21,10 +21,11 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.model import REQUEST, Candidate
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgehosts import host_id, this_host
 from dev_lab.dev.forgework import GITHUB, Client, ForgeCallFailed
-from lab_commons.log import emit
 
 __all__ = ['ORIGIN_HOST', 'head_login', 'main', 'origin_host_of', 'stamp', 'vouched']
 

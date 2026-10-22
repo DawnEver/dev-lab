@@ -52,10 +52,11 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev.breakglass import BREAK_GLASS, empty_reason
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.lanepolicy import policy_at
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence

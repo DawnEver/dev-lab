@@ -16,6 +16,8 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from lab_commons.log import emit
+
 from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
 from dev_lab.dev.forgelabels import add_label, ensure_labels
 from dev_lab.dev.forgerequest import (
@@ -28,7 +30,6 @@ from dev_lab.dev.forgerequest import (
 )
 from dev_lab.dev.forgeschedule import load_schedule
 from dev_lab.dev.forgework import Client, ForgeCallFailed, Issue, client_for
-from lab_commons.log import emit
 
 __all__ = ['RequestRefused', 'main', 'publish']
 

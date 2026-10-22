@@ -82,11 +82,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from lab_commons.compute.probe import os_name
-from dev_lab.dev.datedlog import dated_log
-from dev_lab.dev.forge import forge_from_remote
-from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
-from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
-from dev_lab.dev.producer import ProducerExit
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
 from lab_commons.hpc.records import cells_of, read_record
@@ -94,6 +89,12 @@ from lab_commons.hpc.retired import refusal
 from lab_commons.hpc.testcells import conclude
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
+
+from dev_lab.dev.datedlog import dated_log
+from dev_lab.dev.forge import forge_from_remote
+from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush
+from dev_lab.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
+from dev_lab.dev.producer import ProducerExit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -522,9 +523,7 @@ def post(root: Path, path: Path, onto: str = '') -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """``post <run-record>``: queue and post the part a run record proves."""
-    parser = argparse.ArgumentParser(
-        prog='python -m dev_lab.dev.platformparts', description=__doc__.splitlines()[0]
-    )
+    parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.platformparts', description=__doc__.splitlines()[0])
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and (refused := refusal('platformparts', argv[0])):
         parser.error(refused)

@@ -11,7 +11,6 @@ import logging
 import sys
 
 import pytest
-
 from lab_commons.log import emit, get_logger, log
 
 

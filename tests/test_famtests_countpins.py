@@ -343,7 +343,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-18 AT 738 after the outcomes, compute and forge coalesce/unit modules: 672 keeps 66.
 #: RE-MEASURED 2026-10-18 AT 771 after the test-cell cutover (testcells, test_outcomes, the merge): 705 keeps 66.
 #: RE-MEASURED 2026-10-21 after the PR auto-sync and the PR admission (labsession, pradmit).
-CONSTANT_FLOOR = 733
+#: RE-MEASURED 2026-10-22 AT 708 after the split left lab-commons' trees behind: 640 keeps 68.
+CONSTANT_FLOOR = 640
 CONSTANT_HEADROOM = 90
 
 

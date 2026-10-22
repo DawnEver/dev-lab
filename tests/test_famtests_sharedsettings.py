@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from lab_commons.config import SHARED_KEYS, User
+
 from dev_lab.dev.famtests.sharedsettings import (
     DEFAULT_LITERALS,
     assert_a_planted_redefinition_is_convicted,

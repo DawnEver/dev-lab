@@ -7,10 +7,10 @@ declaration the constructor does not enforce.
 """
 
 import pytest
+from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.logref import LogRef, UnverifiableLog
 from dev_lab.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
-from lab_commons.outcomes import Conclusion
 
 
 @pytest.fixture

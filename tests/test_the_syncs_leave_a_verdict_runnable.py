@@ -30,7 +30,7 @@ _ROOT: Final = Path(__file__).resolve().parents[1]
 _BASE: Final = _ROOT.parent
 
 #: The repo under verification, read from its WORKING TREE.
-_HERE: Final = 'lab-commons'
+_HERE: Final = 'dev-lab'
 
 _PATHS: Final[dict[str, str]] = {_HERE: _ROOT.name}
 
@@ -129,8 +129,8 @@ def test_a_pruning_command_planted_into_a_real_door_is_found() -> None:
     home = _ROOT / 'pyproject.toml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
-    planted = {('lab-commons', 'planted'): text.replace('uv run --no-sync', 'uv run')}
-    (command,) = [command for repo, path, command in SITES if (repo, path) == ('lab-commons', 'pyproject.toml')]
-    assert ('lab-commons', 'planted', command) in pruning_sites(planted)
+    planted = {('dev-lab', 'planted'): text.replace('uv run --no-sync', 'uv run')}
+    (command,) = [command for repo, path, command in SITES if (repo, path) == ('dev-lab', 'pyproject.toml')]
+    assert ('dev-lab', 'planted', command) in pruning_sites(planted)
     assert len(pruning_sites(planted)) > 1, 'removing the remedy surfaced no further pruning command'
-    assert pruning_sites({('lab-commons', 'planted'): text}) == (('lab-commons', 'planted', command),)
+    assert pruning_sites({('dev-lab', 'planted'): text}) == (('dev-lab', 'planted', command),)

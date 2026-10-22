@@ -22,6 +22,7 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.model import INTEGRATION, Candidate, Schedule
+
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgeclaim import CLAIMED, DONE, Claim, assess
 from dev_lab.dev.forgestatus import CommitStatus
@@ -83,5 +84,5 @@ def earlier_tips(root: Path, tip: str, *, since: str = '') -> list[str]:
 
 def _resolves(root: Path, ref: str) -> bool:
     done = _door.run([_GIT, '-C', str(root), 'rev-parse', '--verify', '-q', ref], capture_output=True, text=True,
-                     timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
+                     encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False)  # fmt: skip
     return done.returncode == 0

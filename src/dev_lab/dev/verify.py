@@ -48,6 +48,12 @@ from typing import IO, Final
 
 import lab_commons.launch as _door
 from lab_commons.box import POLL_S, Refused
+from lab_commons.envkey import env_key, env_manifest
+from lab_commons.hpc.needsets import BASE
+from lab_commons.hpc.retired import refusal
+from lab_commons.log import emit
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev import durations
 from dev_lab.dev._logdistil import distil_log
 from dev_lab.dev.content import content_address
@@ -84,11 +90,6 @@ from dev_lab.dev.verifybox import (
     ended_in_the_box,
     learn_ended,
 )
-from lab_commons.envkey import env_key, env_manifest
-from lab_commons.hpc.needsets import BASE
-from lab_commons.hpc.retired import refusal
-from lab_commons.log import emit
-from lab_commons.outcomes import Conclusion
 
 __all__ = [
     'EXIT_CODES',

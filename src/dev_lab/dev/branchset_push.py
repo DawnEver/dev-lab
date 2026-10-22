@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev.branchset import (
     BranchSet,
     BranchSetKeyRetired,
@@ -43,7 +45,6 @@ from dev_lab.dev.branchset import (
     KitOlderThanCheckout,
     branchset_at,
 )
-from lab_commons.log import emit
 
 __all__ = [
     'ALLOWED',

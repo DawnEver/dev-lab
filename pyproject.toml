@@ -17,6 +17,9 @@ dependencies = [
     "pytest-mock",
     "ruff",
     "commitizen",
+    # Imported directly (dev.dep_observe, the suppression guard), so declared directly: lab-commons[io]
+    # supplies it today, and a direct import riding on another package's extra is a declaration that lies.
+    "rtoml",
 ]
 
 [project.urls]

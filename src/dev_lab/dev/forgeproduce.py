@@ -65,6 +65,10 @@ from lab_commons.box import Claim as BoxClaim
 from lab_commons.compute.learned import Run, box_demand, record_run
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
+from lab_commons.hpc.needsets import needs_of
+from lab_commons.proc import process_tree, working_set_bytes
+from lab_commons.proccpu import TreeCpu
+
 from dev_lab.dev.forge import fetch_origin
 from dev_lab.dev.forgecarry import SETTLED, carry_target
 from dev_lab.dev.forgeclaim import Work, forge_now
@@ -77,9 +81,6 @@ from dev_lab.dev.platformparts import origin_url, parts_of, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, box_release_reason, producing, release_reason
 from dev_lab.dev.servelock import was_stopped
 from dev_lab.dev.shatree import TreeFailed, close_tree, open_tree, record_manifest
-from lab_commons.hpc.needsets import needs_of
-from lab_commons.proc import process_tree, working_set_bytes
-from lab_commons.proccpu import TreeCpu
 
 __all__ = ['BOX_QUEUE_S', 'Produced', 'box_claim', 'boxed', 'demote_unreachable', 'produce']
 

@@ -15,7 +15,7 @@ from dev_lab.dev import floors
 from dev_lab.dev.famtests import localadmission
 
 ROOT: Final = Path(__file__).resolve().parents[1]
-ROOTS: Final = (('src/lab_commons', '*.py'), ('tests', '*.py'))
+ROOTS: Final = (('src/dev_lab', '*.py'), ('tests', '*.py'))
 
 #: The single source itself, and this scanner, whose planted control carries the shape as data.
 EXEMPT: Final = ('src/dev_lab/dev/pushgate.py', 'src/dev_lab/dev/famtests/localadmission.py')

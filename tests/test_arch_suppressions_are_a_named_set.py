@@ -65,66 +65,10 @@ Site = tuple[str, str, str]
 #: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
     (
-        'src/lab_commons/supervise/deploy.py',
-        'S108',
-        "CANDIDATE: Final = '/var/tmp/lab-supervise-candidate'",
-    ): 'under /var/tmp ON PURPOSE rather than /tmp, which is what the rule is about. A candidate is '
-    'built and started beside the live service; a build in progress swept by a reboot temp cleanup '
-    'would leave a half-built tree that no later cycle knows about. The path is also overridable by '
-    'config, so a target that keeps its scratch elsewhere does not use this default at all',
-    (
-        'src/lab_commons/supervise/components/resources.py',
-        'PLC0415',
-        'import psutil',
-    ): 'psutil is an OPTIONAL extra, not a tier-1 dependency. Importing it at module scope would '
-    'make the whole resources family unimportable wherever it is absent -- including the HTTP-only '
-    'deployment that needs none of it. Imported where it is used, and its absence is reported as '
-    'an anomaly rather than raised, because a monitor that cannot measure is a fact worth knowing',
-    (
-        'src/lab_commons/supervise/components/resources.py',
-        'BLE001',
-        'except Exception:',
-    ): 'a process that exited between the table being read and this call is ordinary rather than '
-    'exceptional -- the box is running -- and psutil raises several unrelated types for it. The '
-    'read returns None and the caller skips that process',
-    (
-        'src/lab_commons/hpc/worker.py',
-        'PLC0415',
-        'import msvcrt',
-    ): 'the platform lock module exists on one OS only; importing it at module scope breaks the other',
-    (
-        'src/lab_commons/hpc/worker.py',
-        'PLC0415',
-        'import fcntl',
-    ): 'the platform lock module exists on one OS only; importing it at module scope breaks the other',
-    (
         'tests/test_dev_forgetick.py',
         'FBT001',
         'claimed: bool,',
     ): 'a parametrized case argument: pytest passes it by name, so the positional-bool hazard cannot occur',
-    (
-        'src/lab_commons/hpc/worker.py',
-        'BLE001',
-        'except Exception:',
-    ): "the entry point is the PROJECT's own code, so what it raises is not enumerable here. One "
-    "item's failure is recorded against that item and the shard carries on; propagating it would "
-    'cost every neighbour in the shard its result for one bad design',
-    (
-        'src/lab_commons/compute/execute.py',
-        'BLE001',
-        'except Exception as failed:',
-    ): "a unit's entry is the CALLER's code, so what it raises is not enumerable here. A failed unit "
-    'fails BY NAME with what it raised, and only its dependants stop; propagating it would cost every '
-    'independent unit of the graph its run for one bad one',
-    (
-        'src/lab_commons/compute/execute.py',
-        'BLE001',
-        'except BaseException as stopped:',
-    ): 'a TRANSPORT, not a swallow: a unit runs on a daemon worker thread, and whatever escapes it -- '
-    'an executor defect, an interrupt delivered there -- must reach run(), which re-raises it in the '
-    'caller. A narrower catch would let the thread die silently and leave run() waiting forever on a '
-    'unit that never reports. A pool future would carry it without a catch, but pool threads are '
-    'joined at interpreter exit, so one hung foreign entry would block exit; a daemon thread does not',
     (
         'src/dev_lab/dev/forgerequest.py',
         'PLC0415',
@@ -132,27 +76,6 @@ ALLOWED: Final[dict[Site, str]] = {
     ): 'forgeunit publishes a Job THROUGH this module (forgepublish -> forgerequest), so a module-scope '
     'import here is a cycle that fails at import time. The built-in unit producer is resolved where '
     'it is called, once per request read',
-    (
-        'src/lab_commons/hpc/config.py',
-        'ANN401',
-        'def _section(name: str, raw: dict[str, Any]) -> Any:',
-    ): 'returns one of the five section dataclasses chosen by NAME from a table; the caller unpacks '
-    'them into Config by keyword, so a union return would only be cast back at that one call site',
-    (
-        'src/lab_commons/supervise/remedy.py',
-        'BLE001',
-        'except Exception as exc:',
-    ): "a component implements its action in the PROJECT's own code, so what it raises is not "
-    'enumerable here. Catching narrowly would let one handler take down the supervision cycle it was '
-    "running as a step of, losing every other component's result to report one failure. The "
-    "exception becomes the attempt's detail, which is where a reader looks for it",
-    (
-        'src/lab_commons/supervise/loop.py',
-        'BLE001',
-        'except Exception as exc:',
-    ): "the same reason one level up: a component's check is project code, and a probe that raises "
-    'must become a critical anomaly -- a probe that cannot run is worse than one reporting a '
-    'problem, because nothing is watching -- rather than unwinding the whole cycle',
     (
         'src/dev_lab/dev/forgework.py',
         'ANN401',
@@ -194,21 +117,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
     ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
     (
-        'src/lab_commons/log.py',
-        'PLW0603',
-        'global _active_logger',
-    ): 'one-shot process-wide logging configuration: the module-level flag IS the idempotence',
-    (
-        'src/lab_commons/paths.py',
-        'PLW0603',
-        'global _run_stamp',
-    ): 'the per-run timestamp is memoized once per process so every artifact shares one run folder',
-    (
-        'src/lab_commons/paths.py',
-        'PLW0603',
-        'global _run_date',
-    ): 'the per-run date is memoized the same way, so a run straddling midnight keeps one folder',
-    (
         'src/dev_lab/dev/forgerecords.py',
         'PLC0415',
         'from dev_lab.dev.retentionplan import load_policy as retention',
@@ -224,47 +132,10 @@ ALLOWED: Final[dict[Site, str]] = {
         'import fcntl',
     ): 'the POSIX lock primitive: fcntl exists only on POSIX, so a top-level import breaks Windows',
     (
-        'src/lab_commons/structured.py',
-        'ARG001',
-        'def redact_secrets_processor(logger: object, method_name: str, event_dict: dict) -> dict:',
-    ): 'structlog fixes the processor signature; the unused parameters are the protocol, not dead code',
-    (
-        'src/lab_commons/structured.py',
-        'PLW0603',
-        'global _structlog_configured',
-    ): 'one-shot process-wide structured-logging configuration, the same idempotence flag as log.py',
-    (
-        'src/lab_commons/viz/mpl.py',
-        'BLE001',
-        'except Exception:',
-    ): 'the GUI-backend probe. What a backend raises when it cannot be used is NOT one type and is '
-    'not the same type on two platforms: a toolkit that is absent raises ImportError, one that is '
-    'present but cannot reach a display raises its own (TclError, RuntimeError, a Qt C-extension '
-    'failure). Both mean the same thing to the loop -- try the next -- and catching narrowly would '
-    'let a headless box crash here instead of degrading to saving figures, which is the behaviour '
-    'the function exists to provide',
-    (
-        'src/lab_commons/viz/mpl.py',
-        'S112',
-        'except Exception:',
-    ): 'the same line and the same reason: the next iteration of the backend list IS the handling, '
-    'and there is nothing to log -- a GUI being unavailable is an ordinary outcome on the boxes this '
-    'library runs on, not an anomaly',
-    (
         'tests/test_dev_githooks.py',
         'PLC0415',
         'import os',
     ): 'one helper needs the AMBIENT environment; a module-level import reads a monkeypatched one',
-    (
-        'tests/test_em.py',
-        'F401',
-        'import lab_commons.units',
-    ): 'the import IS the measurement -- it runs after a sys.modules pop, and binds a name nothing uses',
-    (
-        'tests/test_em.py',
-        'PLC0415',
-        'import lab_commons.units',
-    ): 'the same line: the measurement only means anything if the import happens inside the test body',
     (
         'tests/test_dev_doorcensus.py',
         'arg-type',
@@ -300,31 +171,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'arg-type',
         'assert_no_undeclared_upper_bound(scan, **(kwargs | over))',
     ): 'the same overridable dict[str, object] keyword set as injectedwidth, for the same reason',
-    (
-        'tests/test_outcomes_cell.py',
-        'arg-type',
-        "Cell('ok', values={})",
-    ): 'the planted wrong type IS the input under test: a status that is not a Status must raise TypeError',
-    (
-        'tests/test_outcomes_cell.py',
-        'index',
-        "cell.values['a'] = 2.0",
-    ): 'the refused write IS the assertion: a cell is immutable, so assigning into its values must raise',
-    (
-        'tests/test_structured.py',
-        'TRY301',
-        'raise ValueError(boom)',
-    ): 'an intentional raise inside try, to populate the exc_info the test then reads off the record',
-    (
-        'tests/test_units.py',
-        'F401',
-        'import lab_commons.units',
-    ): 'the import IS the measurement, run after a sys.modules pop; the name is deliberately unused',
-    (
-        'tests/test_units.py',
-        'PLC0415',
-        'import lab_commons.units',
-    ): 'the same line: a module-level import would measure collection time instead of the call',
     (
         'pyproject.toml',
         'ANN001',
@@ -421,71 +267,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'def _read_rust(path: str, text: str, tokens: Collection[str], out: _Collector) -> None:',
     ): "a lexer's state machine: comment, string and code states in one loop, which is what a lexer is",
     (
-        'src/lab_commons/outcomes/conclusion.py',
-        'S105',
-        "PASS = 'pass'",
-    ): 'a conclusion name, not a credential: S105 matches the word PASS in an enum member',
-    (
-        'src/lab_commons/em.py',
-        'N802',
-        'def Q_list2array(',
-    ): "pint's own Q_ spelling, and consumer-b imports this name; a rename is a cross-repo move",
-    (
-        'src/lab_commons/em.py',
-        'N802',
-        'def array2list_2Dpoint(',
-    ): 'the same: 2D is the domain spelling and consumer-b imports this name',
-    (
-        'src/lab_commons/em.py',
-        'N802',
-        'def is_equal_2DPoint(',
-    ): 'the same: 2DPoint is the domain spelling and consumer-b imports this name',
-    (
-        'src/lab_commons/em.py',
-        'N803',
-        'Q_list: list[PintQuantityType],',
-    ): "pint's Q_ prefix on a parameter that carries a quantity rather than a number",
-    (
-        'src/lab_commons/em.py',
-        'N803',
-        'Q_unit: str | Unit,',
-    ): 'the same prefix on the unit that goes with it',
-    (
-        'src/lab_commons/paths.py',
-        'DTZ005',
-        "return dt.datetime.now().strftime(r'%H-%M-%S')",
-    ): 'a run folder is read by a human on the box that wrote it, so LOCAL wall clock is the right reading',
-    (
-        'src/lab_commons/paths.py',
-        'DTZ005',
-        'now = dt.datetime.now()',
-    ): 'the date half of the same stamp, for the same reason',
-    (
-        'src/lab_commons/proc.py',
-        'FBT003',
-        'handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)',
-    ): 'bInheritHandle is positional in the Win32 signature; ctypes cannot take it by keyword',
-    (
-        'src/lab_commons/proc.py',
-        'FBT003',
-        'handle = kernel32.OpenProcess(_PROCESS_TERMINATE, False, pid)',
-    ): 'the same Win32 signature, called with the terminate right',
-    (
-        'src/lab_commons/proc.py',
-        'N801',
-        'class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):',
-    ): 'the name MIRRORS the psapi struct, so a reader can find it in the Win32 documentation',
-    (
-        'src/lab_commons/proc.py',
-        'PLR0911',
-        'def pid_alive(pid: int) -> bool:',
-    ): 'one return per platform branch, each naming its own answer rather than falling through',
-    (
-        'src/lab_commons/units.py',
-        'N801',
-        'class BaseModel_with_q(BaseModel):',
-    ): 'imported BY NAME in consumer-b; a rename is a cross-repo move, not a lint fix',
-    (
         'tests/test_dev_shadow_build.py',
         'ARG001',
         'def _fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:',
@@ -501,31 +282,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'def _fake_time_once(probe, shadow, **kwargs: object) -> float:',
     ): 'the ORDER of the arms is the whole subject; the timing arguments are deliberately ignored',
     (
-        'tests/test_em.py',
-        'N806',
-        "Q_0m = Q_(0, 'm')",
-    ): "pint's Q_<magnitude><unit> spelling for a quantity literal, which consumer-b also imports by name",
-    (
-        'tests/test_em.py',
-        'N806',
-        "Q_1m = Q_(1, 'm')",
-    ): 'the same spelling, one metre',
-    (
-        'tests/test_em.py',
-        'N806',
-        "Q_1000mm = Q_(1000, 'mm')",
-    ): 'the same spelling, the millimetre twin it is compared against',
-    (
-        'tests/test_em.py',
-        'N806',
-        "Q_180deg = Q_(180, 'deg')",
-    ): 'the same spelling, in degrees',
-    (
-        'tests/test_em.py',
-        'N806',
-        "Q_pi_rad = Q_(np.pi, 'rad')",
-    ): 'the same spelling, in radians',
-    (
         'tests/test_dev_rules.py',
         'S607',
         "['git', '-C', str(tmp_path), 'init'],",
@@ -540,21 +296,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'S607',
         "['git', '-C', str(root), *arguments],",
     ): 'git through PATH building the scratch checkouts the local-name reader is then asked to read',
-    (
-        'src/lab_commons/launch.py',
-        'ANN401',
-        'def run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:',
-    ): "the launch door forwards subprocess.run's own arguments unchanged; its one job is the window flag",
-    (
-        'src/lab_commons/launch.py',
-        'ANN401',
-        'def popen(*args: Any, **kwargs: Any) -> subprocess.Popen[Any]:',
-    ): "the launch door forwards Popen's own arguments unchanged; its one job is the window flag",
-    (
-        'src/lab_commons/launch.py',
-        'PLW1510',
-        'return subprocess.run(*args, **_windowless(kwargs))',
-    ): 'the door forwards check as each caller passes it; every caller already decides it',
     (
         'src/dev_lab/dev/branchnotices.py',
         'PLC0415',

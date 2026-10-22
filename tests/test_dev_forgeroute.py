@@ -8,6 +8,9 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, git_out, make_repo, run_git, serve
+from lab_commons.hpc.records import write_record
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Reason, Status
 
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeroute import (
@@ -23,9 +26,6 @@ from dev_lab.dev.forgeroute import (
     route,
     still_red,
 )
-from lab_commons.hpc.records import write_record
-from lab_commons.hpc.testcells import TestCell
-from lab_commons.outcomes import Cell, Reason, Status
 
 _FORGE = Forge('forge.example.org', 'o', 'r')
 _ROOT = '/api/v1/repos/o/r'

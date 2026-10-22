@@ -17,12 +17,14 @@ from types import SimpleNamespace
 import pytest
 from _box_fake import ended, quiet, record
 from _forge_fake import git_out, run_git
-
 from lab_commons.box import GB, Capacity, Holding, ProcessEnd, Refused
 from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.shell import FULL
+
 from dev_lab.dev import (
     forgehosts,
     forgeproduce,
@@ -46,8 +48,6 @@ from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from dev_lab.dev.platformparts import ClusterPart
 from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
 from dev_lab.dev.shatree import Tree, TreeFailed
-from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.shell import FULL
 
 SHA = 'a' * 40
 BOX = Capacity(cpu=3.0, mem_bytes=24 * GB, seats={})

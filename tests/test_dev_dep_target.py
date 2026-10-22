@@ -13,8 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from lab_commons.box import Refused
+
 from dev_lab.dev import _dep_project, dep
 from dev_lab.dev.envseat import EnvironmentSeat
 

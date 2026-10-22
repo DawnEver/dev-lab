@@ -113,6 +113,10 @@ from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.probe import inventory
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.retired import refuse_retired_keys
+from lab_commons.log import emit
+
 from dev_lab.dev import forgerun, forgerunstate, retention
 from dev_lab.dev.branchprune import serve_prune
 from dev_lab.dev.forge import NoCredential, Transport, fetch_origin, https_transport
@@ -138,9 +142,6 @@ from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
-from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.retired import refuse_retired_keys
-from lab_commons.log import emit
 
 __all__ = ['ServeReport', 'main', 'serve']
 

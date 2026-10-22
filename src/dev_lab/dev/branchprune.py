@@ -45,6 +45,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.log import emit
+
 from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.checkout import git_out
 from dev_lab.dev.forge import _GIT, fetch_origin
@@ -54,7 +56,6 @@ from dev_lab.dev.forgework import ForgeCallFailed, client_for
 from dev_lab.dev.labsession import ENV
 from dev_lab.dev.lanepolicy import Policy, load_policy
 from dev_lab.dev.netverb import run_network_verb
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client

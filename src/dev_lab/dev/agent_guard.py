@@ -37,8 +37,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from dev_lab.dev.agenthooks import STAMP, engine_source
 from lab_commons.log import emit
+
+from dev_lab.dev.agenthooks import STAMP, engine_source
 
 __all__ = [
     'ABSENT',

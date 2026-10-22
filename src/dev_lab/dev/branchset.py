@@ -36,10 +36,11 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.log import emit
+
+from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 
 __all__ = [
     'ARCHIVE_PREFIX',

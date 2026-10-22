@@ -31,6 +31,10 @@ from lab_commons.compute.model import REQUEST, Candidate, Ranked, Schedule, expe
 from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import EVERY, Serves
 from lab_commons.config import section
+from lab_commons.hpc.declared import OutdatedKit
+from lab_commons.hpc.needsets import declared_at, needs_of
+from lab_commons.log import emit
+
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared
 from dev_lab.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
@@ -53,9 +57,6 @@ from dev_lab.dev.forgestatus import CommitStatus, status_history
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import derived, origin_url, part_context
-from lab_commons.hpc.declared import OutdatedKit
-from lab_commons.hpc.needsets import declared_at, needs_of
-from lab_commons.log import emit
 
 #: How a stale card reads: the host stopped publishing, and these are why a host stops.
 _STALE = '  STALE (no tick published: host down, cron line gone, or its forge credential refused -- see its cron log)'

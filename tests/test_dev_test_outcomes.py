@@ -10,9 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from lab_commons.outcomes import Status
 
 from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, RetiredOutcomes, read_cells
-from lab_commons.outcomes import Status
 
 
 def _report(nodeid: str, when: str, outcome: str, longrepr: object = None, **extra: object) -> SimpleNamespace:

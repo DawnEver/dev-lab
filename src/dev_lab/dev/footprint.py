@@ -39,6 +39,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+
 from dev_lab.dev.forge import _GIT
 
 if TYPE_CHECKING:

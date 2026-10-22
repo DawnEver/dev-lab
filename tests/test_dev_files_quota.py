@@ -17,11 +17,12 @@ from lab_commons.compute import learned
 from lab_commons.compute.admission import admit
 from lab_commons.compute.model import Job, Supply
 from lab_commons.compute.probe import account
+from lab_commons.hpc.slurm import Node, Quota, Snapshot
+
 from dev_lab.dev import forgeslurm, retention
 from dev_lab.dev.diskusage import Usage, consumers, parse_mmlsquota, parse_quota, pressure_text, storage_text
 from dev_lab.dev.retention import apply
 from dev_lab.dev.retentionplan import Doomed, Plan, Policy
-from lab_commons.hpc.slurm import Node, Quota, Snapshot
 
 NOW = datetime(2026, 10, 14, 9, tzinfo=UTC)
 REPO = 'https://g/files.git'

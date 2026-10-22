@@ -43,7 +43,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 MODULE_FLOOR = 15
 
 #: How the docstring names a module: a Sphinx role over the fully-qualified path.
-_BULLET = re.compile(r':mod:`lab_commons\.dev\.([A-Za-z_][A-Za-z0-9_]*)`')
+_BULLET = re.compile(r':mod:`dev_lab.dev\.([A-Za-z_][A-Za-z0-9_]*)`')
 
 
 def public_modules(directory: Path) -> tuple[str, ...]:

@@ -35,26 +35,21 @@ __all__ = [
 #: longer strands -- a ratchet with one side is a capability that can only be lowered.
 ROWS: tuple[ScopeRow, ...] = (
     ScopeRow(
-        repo='lab-commons',
+        repo='dev-lab',
         path='pyproject.toml',
-        evidence='extras = "dev viz-mpl viz-bokeh"',
-        selected=('dev', 'viz-mpl', 'viz-bokeh'),
+        evidence='extras = ""',
+        selected=(),
         scope='COMPLETE',
         stranded=frozenset(),
         why=(
             'THE CALLER SIDE OF THE SHARED WORKFLOW. This line is the whole input to the `for extra '
             'in ...` loop that builds `$extra_flags`, so it decides what the reusable workflow syncs '
-            'in THIS repo. `dev` here is pytest, pytest-mock, ruff and commitizen -- the extra that '
-            'gates `dev_lab.dev` -- and this manifest names no pytest plugin in `addopts`, so '
-            'the verdict set is pytest and ruff and both arrive. Dropping `dev` from this one line '
-            'would leave CI green-looking and unable to run a single test. '
-            'The selection grew on 2026-10-06 to name both `viz-` extras, because an adapter whose '
-            'extra is absent degrades: `matplotlib` and `bokeh` arrive with it, no test module imports '
-            'either unguarded, so the scope stays COMPLETE and nothing is stranded. Read where it is '
-            'made: the workflow is rendered from `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml.'
-            ' The row carries no line number: six hand repoints (32 -> 48 -> 51 -> 242 -> 253 -> 254 '
-            '-> 253 -> 257) each re-typed a position nothing had changed the meaning of, and the '
-            'seventh went unmade and redded base on 2026-10-15. The position is now derived from the text.'
+            'in THIS repo. It selects NOTHING on purpose: dev-lab IS the development system, so pytest, '
+            'pytest-mock, ruff and commitizen are its BASE install (what lab-commons shipped as its `dev` '
+            'extra until the 2026-10-22 split), and this manifest names no pytest plugin in `addopts`, so '
+            'the verdict set is pytest and ruff and both arrive with the base sync. Read where it is made: '
+            'the workflow is rendered from `[tool.lab_commons.ci."ci.yml"]` in pyproject.toml. The row '
+            'carries no line number: the position is derived from the text.'
         ),
     ),
 )
@@ -64,7 +59,7 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, str], str] = {
-    ('lab-commons', 'pyproject.toml', 'uv sync --python ${{ matrix.python-version }} $extra_flags'): (
+    ('dev-lab', 'pyproject.toml', 'uv sync --python ${{ matrix.python-version }} $extra_flags'): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '

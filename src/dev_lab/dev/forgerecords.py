@@ -36,12 +36,13 @@ from typing import Any, Final, cast
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path, section
+from lab_commons.log import emit
+
 from dev_lab.dev._forge_journal import Durable, Probe
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, Transport, fetch_origin, https_transport
 from dev_lab.dev.forgealarm import STORAGE, Alarm
 from dev_lab.dev.forgework import GITHUB, Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
-from lab_commons.log import emit
 
 __all__ = [
     'DEFAULT_KEEP_TRUNK',

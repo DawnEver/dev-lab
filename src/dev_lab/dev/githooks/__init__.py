@@ -50,10 +50,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from dev_lab.dev.githooks import runner
-from dev_lab.dev.githooks.table import STAGES
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
+
+from dev_lab.dev.githooks import runner
+from dev_lab.dev.githooks.table import STAGES
 
 __all__ = [
     'FRAGMENT',

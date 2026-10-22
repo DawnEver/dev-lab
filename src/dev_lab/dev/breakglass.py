@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+
 from dev_lab.dev.forgealarm import INTEGRATION, Alarm
 
 if TYPE_CHECKING:

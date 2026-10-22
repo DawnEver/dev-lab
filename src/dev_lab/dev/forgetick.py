@@ -72,6 +72,10 @@ from lab_commons.compute.model import (
 from lab_commons.compute.priority import PRIORITY_TABLE, Priority
 from lab_commons.compute.serves import SERVE_TABLE, Serves
 from lab_commons.config import section
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.config import Cost
+from lab_commons.log import emit
+
 from dev_lab.dev.artefacts import remote_problem
 from dev_lab.dev.forge import (
     NoCredential,
@@ -99,9 +103,6 @@ from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import derived, origin_url, parts_of, this_platform
-from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.config import Cost
-from lab_commons.log import emit
 
 __all__ = ['TickReport', 'main', 'tick']
 

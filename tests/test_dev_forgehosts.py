@@ -13,11 +13,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from lab_commons.hpc.account import ClusterAccount
 
 from dev_lab.dev import forgeclaim, forgehosts
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
 from dev_lab.dev.forgework import ForgeCallFailed, is_pull
-from lab_commons.hpc.account import ClusterAccount
 from tests._forge_state import StateForge
 
 if TYPE_CHECKING:

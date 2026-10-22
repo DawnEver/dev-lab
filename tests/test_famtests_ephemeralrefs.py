@@ -76,4 +76,5 @@ def test_an_unread_tree_reds_on_the_floor(tmp_path: Path) -> None:
 
 
 def test_this_repo_cites_no_ephemeral_path() -> None:
-    assert_no_tracked_file_cites_ephemeral(root=_REPO, floor=740, headroom=60)
+    # Floor re-taken 2026-10-22 at 594 after the split left lab-commons' trees behind.
+    assert_no_tracked_file_cites_ephemeral(root=_REPO, floor=540, headroom=60)

@@ -70,11 +70,11 @@ from typing import Final
 from urllib.parse import quote
 
 import rtoml
+from lab_commons.log import emit
 
 from dev_lab.dev import depversions
 from dev_lab.dev.depversions import KINDS, Observation, Observed, UnreadableState
 from dev_lab.dev.netverb import run_network_verb
-from lab_commons.log import emit
 
 __all__ = [
     'TRANSPORT_WALL_S',

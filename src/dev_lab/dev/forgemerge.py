@@ -30,12 +30,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+from lab_commons.outcomes import Conclusion
+
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
 from dev_lab.dev.platformparts import standing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
-from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from pathlib import Path

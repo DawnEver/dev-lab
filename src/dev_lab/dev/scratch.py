@@ -38,14 +38,15 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TextIO
 
-from lab_commons import launch
+from lab_commons.log import emit
+
 from dev_lab.dev.codeplace import (
     PRUNED_NAMES,
     PlacementNotDeclared,
     checkout_root,
     declared_placement,
 )
-from lab_commons.log import emit
+from lab_commons import launch
 
 __all__ = [
     'SCRATCH_README',
@@ -122,7 +123,11 @@ def assert_scratch_never_committed(root: Path) -> None:
     """
     scratch = declared_placement(root).scratch
     done = launch.run(
-        ['git', '-C', str(root), 'ls-files', '-z', '--', scratch], capture_output=True, text=True, check=True
+        ['git', '-C', str(root), 'ls-files', '-z', '--', scratch],
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        check=True,
     )
     tracked = set(filter(None, done.stdout.split('\0')))
     readme = f'{scratch}{SCRATCH_README}'

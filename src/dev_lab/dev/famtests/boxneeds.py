@@ -38,8 +38,9 @@ import ast
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from dev_lab.dev.workstation import WORKSTATION
 from lab_commons.hpc.needsets import read_vocabulary
+
+from dev_lab.dev.workstation import WORKSTATION
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping

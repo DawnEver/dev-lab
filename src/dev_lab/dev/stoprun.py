@@ -42,10 +42,11 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from dev_lab.dev.checkout import git_out
-from dev_lab.dev.servelock import note_stopped
 from lab_commons.log import emit
 from lab_commons.proc import pid_alive
+
+from dev_lab.dev.checkout import git_out
+from dev_lab.dev.servelock import note_stopped
 
 __all__ = [
     'RUN_SIGNATURES',
@@ -65,19 +66,19 @@ __all__ = [
 _TABLE = '[tool.lab_commons.stoprun]'
 
 #: A ``forge serve``: stopped producers first, then given a grace to release its claim.
-SERVE: Final = re.compile(r'-m\s+lab_commons\.dev\.forge\s+serve\b')
+SERVE: Final = re.compile(r'-m\s+dev_lab.dev\.forge\s+serve\b')
 
 #: How long a serve whose producers were stopped may take to release its claim and exit, in seconds.
 SERVE_GRACE_S: Final = 60.0
 
 #: A command line that is one of these is a run this door may stop. Anything else is refused.
 RUN_SIGNATURES: Final = (
-    re.compile(r'-m\s+lab_commons\.dev\.verify\b'),
+    re.compile(r'-m\s+dev_lab.dev\.verify\b'),
     re.compile(r'scripts[/\\]gate[/\\]runner\.py\b'),
     re.compile(r'-m\s+pytest\b'),
     re.compile(r'(?:^|[/\\\s])pytest(?:\.exe)?(?:\s|$)'),
     # A PUSH MUST NEVER BLOCK: a pre-push hook that hangs is a run this door must be able to stop.
-    re.compile(r'lab_commons\.dev\.githooks run pre-push\b'),
+    re.compile(r'dev_lab.dev\.githooks run pre-push\b'),
     re.compile(r'scripts[/\\]gate[/\\]prepush_gate\.py\b'),
     SERVE,
 )

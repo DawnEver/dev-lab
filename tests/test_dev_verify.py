@@ -35,11 +35,15 @@ from typing import Final
 
 import pytest
 from _box_fake import ended
-
-from lab_commons import box
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
+from lab_commons.hpc.needsets import BASE, Vocabulary
+from lab_commons.hpc.records import read_record
+from lab_commons.hpc.retired import RETIRED
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Conclusion, Record, Status
+
 from dev_lab.dev import forgerequest, localpart, platformparts, verify, verifybox
 from dev_lab.dev.inflight import RunKey, seat
 from dev_lab.dev.lockwait import lock_wait
@@ -59,11 +63,7 @@ from dev_lab.dev.runcache import CachedRun, record, runs
 from dev_lab.dev.verdict import Verdict
 from dev_lab.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from dev_lab.dev.verify import _tee as tee_step
-from lab_commons.hpc.needsets import BASE, Vocabulary
-from lab_commons.hpc.records import read_record
-from lab_commons.hpc.retired import RETIRED
-from lab_commons.hpc.testcells import TestCell
-from lab_commons.outcomes import Cell, Conclusion, Record, Status
+from lab_commons import box
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'

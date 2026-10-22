@@ -19,6 +19,7 @@ import sys
 import time
 
 import pytest
+from lab_commons.proc import process_tree
 
 from dev_lab.dev.bounded import (
     BLAS_THREAD_VARS,
@@ -30,7 +31,6 @@ from dev_lab.dev.bounded import (
     run_bounded,
     wall_reason,
 )
-from lab_commons.proc import process_tree
 
 #: A parent that spawns a LONG-LIVED grandchild inheriting its stdout, then sleeps past the wall.
 #: The grandchild is what keeps the pipe open, which is the whole defect.

@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 from _box_fake import quiet
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
-
 from lab_commons.box import BOX_ENV, GB, Capacity, holdings
 from lab_commons.compute import probe as compute_probe
 from lab_commons.compute.model import (
@@ -33,6 +32,10 @@ from lab_commons.compute.model import (
 )
 from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import SKIPPED_HERE, Serves
+from lab_commons.hpc.account import ClusterAccount
+from lab_commons.hpc.needsets import BASE
+from lab_commons.hpc.retired import RETIRED
+
 from dev_lab.dev import forgeproduce, forgerounds, forgetick
 from dev_lab.dev.forge import Forge
 from dev_lab.dev.forgeclaim import (
@@ -57,9 +60,6 @@ from dev_lab.dev.forgetick import tick
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.lanepolicy import Policy
 from dev_lab.dev.producer import ProducerExit, release_reason
-from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.needsets import BASE
-from lab_commons.hpc.retired import RETIRED
 
 SLURM = frozenset({'cpu', 'mem_gb', 'submits'})
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)

@@ -74,6 +74,8 @@ import time
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.proc import process_tree
+
 from dev_lab.dev import bounded
 from dev_lab.dev.famtests._boundedremedy_readings import (
     CHILD_LIFETIME_SECONDS,
@@ -85,7 +87,6 @@ from dev_lab.dev.famtests._boundedremedy_readings import (
     separation_verdict,
     spawn_overhead,
 )
-from lab_commons.proc import process_tree
 
 __all__ = [
     'CHILD_LIFETIME_SECONDS',

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from _arch_corpus import assert_floor, parse, rel, source_modules
 
-from lab_commons import launch
 from dev_lab.dev import servetask, workstation
+from lab_commons import launch
 
 #: The creation flags that give a child a console of its OWN instead of the inherited windowless one.
 _DETACHING = frozenset({'DETACHED_PROCESS', 'CREATE_NEW_CONSOLE'})

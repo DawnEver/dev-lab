@@ -45,9 +45,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
+
 from dev_lab.dev import venvpath
 from dev_lab.dev.rules import tracked_files
-from lab_commons.log import emit
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping, Sequence

@@ -70,8 +70,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from dev_lab.dev.pytestout import collected_count, markers_in, summary_counts
 from lab_commons.file_io import read_toml
+
+from dev_lab.dev.pytestout import collected_count, markers_in, summary_counts
 
 __all__ = [
     'SKIP_CEILING',

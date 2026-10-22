@@ -26,9 +26,10 @@ from typing import Final, Protocol
 from lab_commons.compute.durable import durable_write
 from lab_commons.compute.model import Supply
 from lab_commons.config import config_path
-from dev_lab.dev.forgeclaim import Claim
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.shell import FULL
+
+from dev_lab.dev.forgeclaim import Claim
 
 __all__ = [
     'CLAIMED_PHASE',

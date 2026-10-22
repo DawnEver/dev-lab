@@ -50,7 +50,7 @@ from dev_lab.dev.venvpath import current_os_name, venv_interpreter
 _VERIFY = Remedy(
     kind='verdict-entry-point',
     command=f'{venv_interpreter(os_name=current_os_name())} -m dev_lab.dev.verify',
-    allow=r'\blab_commons\.dev\.verify\b',
+    allow=r'\bdev_lab.dev\.verify\b',
     path='src/dev_lab/dev/verify.py',
 )
 

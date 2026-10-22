@@ -21,7 +21,6 @@ from __future__ import annotations
 import re
 
 from _arch_corpus import ROOT
-
 from lab_commons.file_io import read_toml
 
 #: The tier-1 runtime dependencies, BY NAME. Two-sided: an arrival reds, and so does a removal that
@@ -30,7 +29,12 @@ from lab_commons.file_io import read_toml
 #: NOTHING on 2026-10-09, when numpy followed the only three modules that import it (`units`, `em`,
 #: `viz`) into their extras. The base install is the standard library --
 #: `tests/test_the_base_install_is_the_standard_library.py` imports every ungated module to prove it.
-RUNTIME_DEPENDENCIES: frozenset[str] = frozenset()
+#: SPLIT 2026-10-22: dev-lab IS the development system, so what lab-commons shipped as its `dev` extra --
+#: the tools it drives (pytest, pytest-mock, ruff, commitizen) -- is this package's base install, over the
+#: lab-commons runtime it is built on.
+RUNTIME_DEPENDENCIES: frozenset[str] = frozenset(
+    {'commitizen', 'lab-commons', 'pytest', 'pytest-mock', 'rtoml', 'ruff'}
+)
 
 #: The name-boundary of a PEP 508 requirement: everything before the first comparator or marker.
 _NAME = re.compile(r'^[A-Za-z0-9._-]+')
@@ -52,7 +56,7 @@ def upper_bounded(requirements: tuple[str, ...]) -> tuple[str, ...]:
 def test_no_runtime_dependency_carries_an_upper_bound() -> None:
     """THE CHECK. A floor is a statement; a ceiling is inherited by every consumer."""
     requirements = _declared()
-    extras = read_toml(ROOT / 'pyproject.toml')['project']['optional-dependencies']
+    extras = read_toml(ROOT / 'pyproject.toml')['project'].get('optional-dependencies', {})
     requirements += tuple(req for reqs in extras.values() for req in reqs if not req.startswith('lab-commons'))
     assert requirements, 'no requirement read at all -- an unread pyproject is not a clean one'
     bounded = upper_bounded(requirements)
