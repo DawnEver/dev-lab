@@ -88,6 +88,24 @@ def test_an_older_shim_of_ours_is_stale_and_replaced(repo: Path) -> None:
     assert {stage.status for stage in hook_installation(repo).stages} == {INSTALLED}
 
 
+def test_a_stale_shim_of_ours_is_live_for_the_property_and_still_reported_to_a_person(repo: Path, capsys) -> None:
+    """A PR that changes the shim template met a host whose shims came from ITS serving checkout (2026-10-22, #273).
+
+    A stale shim of ours still runs the stages, so the installed-hooks PROPERTY holds -- else a PR changing
+    the shim could pass on no host. ``hook_install`` (no ``--install``) still names it stale for a person.
+    PLANTED CONTROL: a FOREIGN file in a slot still fails the property.
+    """
+    install(repo)
+    stale = hooks_dir(repo) / 'pre-commit'
+    stale.write_text(f'#!/bin/sh\n{SHIM_MARKER}\nold\n', encoding='utf-8')
+    assert_declared_hooks_are_installed(root=repo)
+    assert report_installation(['--repo', str(repo)]) == 1
+    assert STALE in capsys.readouterr().out
+    stale.write_text('#!/bin/sh\necho mine\n', encoding='utf-8')
+    with pytest.raises(AssertionError, match=FOREIGN):
+        assert_declared_hooks_are_installed(root=repo)
+
+
 def test_somebody_elses_hook_is_refused_and_left_alone(repo: Path) -> None:
     directory = hooks_dir(repo)
     directory.mkdir(parents=True, exist_ok=True)

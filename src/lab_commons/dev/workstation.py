@@ -326,6 +326,7 @@ def serve(
 
     lab-commons is refreshed first, then each repo in order (:func:`lab_commons.dev.hostrefresh.refresh`):
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
+    The serving lab-commons checkout's own hooks are re-installed whenever they are not live (stale after a move).
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
     table = section('serve')
@@ -347,6 +348,9 @@ def serve(
                 emit(f'[serve] {name} released, not served this tick: {why}', err=True)
                 worst = max(worst, 2)
                 continue
+            # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
+            if name == LAB_COMMONS and (rc := _hooks(step, tools, checkout, name)):
+                emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
             rc = run(host_serve_argv(), cwd=checkout, check=False, **streams).returncode
             if rc:

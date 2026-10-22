@@ -30,6 +30,7 @@ from lab_commons.dev.hook_install import (
     FOREIGN,
     INSTALL_COMMAND,
     PROTECTED,
+    STALE,
     hook_installation,
     hooks_dir,
     install,
@@ -63,13 +64,19 @@ def assert_stages_are_declared(*, root: Path, declared_stages: frozenset[str]) -
 
 
 def assert_declared_hooks_are_installed(*, root: Path) -> None:
-    """THE PROPERTY. Green means the commits and pushes through this checkout run the declared hooks."""
+    """THE PROPERTY. Green means the commits and pushes through this checkout run the declared hooks.
+
+    A STALE shim is an older shim of OURS: it still runs every stage, so it is live here. A forge host's
+    shims come from ITS serving checkout, and a PR head changing the shim template would otherwise fail on
+    every host; ``hook_install`` without ``--install`` still names a stale shim for a person.
+    """
     report = hook_installation(root)
-    if report.verdict == PROTECTED:
+    failing = [stage for stage in report.failing if stage.status != STALE]
+    if report.verdict == PROTECTED or (report.stages and not failing):
         return
-    listing = '\n  '.join(f'{stage.stage:<12} {stage.status:<22} {stage.detail}' for stage in report.failing)
+    listing = '\n  '.join(f'{stage.stage:<12} {stage.status:<22} {stage.detail}' for stage in failing)
     msg = (
-        f'{len(report.failing)} of {len(report.stages)} declared stage(s) are not live in '
+        f'{len(failing)} of {len(report.stages)} declared stage(s) are not live in '
         f'{report.hooks_dir}:\n  {listing}\n\n'
         f'Every commit through this checkout ran none of them. The hooks directory is shared by every '
         f'worktree on this box, so installing is a deliberate act:\n  {INSTALL_COMMAND}\n'
