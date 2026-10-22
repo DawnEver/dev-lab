@@ -19,6 +19,12 @@ read-only; installing is the explicit ``--install`` act, idempotent. In a LINKED
 first points a worktree-scoped ``core.hooksPath`` at that worktree's OWN git dir
 (``.git/worktrees/<name>/hooks``): per-worktree, outside the working tree, so it needs no ignore or
 allowlist entry and never touches the shared config. The main checkout keeps git's default.
+
+THE INSTALL ALSO SETS HOW A BRANCH IS PUBLISHED (:data:`BRANCH_DEFAULTS`, the repository's own config). Git's
+``branch.autoSetupMerge`` makes a lane cut from ``origin/<integration>`` TRACK integration, so a bare push
+aims there; with it off no creation path -- ``worktree add -b``, ``switch -c``, a human's -- tracks another
+branch, and ``push.default=current`` + ``push.autoSetupRemote`` publish each branch under its own name and
+record that as its upstream. ``PUBLISH-IS-THE-LOCAL-REF`` refuses at pre-push whatever is still mis-tracked.
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ from lab_commons.log import emit
 
 __all__ = [
     'ABSENT',
+    'BRANCH_DEFAULTS',
     'FOREIGN',
     'HOOKS_STEP',
     'INSTALLED',
@@ -150,6 +157,19 @@ def _scope_linked_worktree(repo: Path) -> None:
     _git(repo, 'config', '--worktree', 'core.hooksPath', (git_dir / 'hooks').as_posix())
 
 
+#: git config every install sets in the repository: no branch tracks another; a push publishes it as itself.
+BRANCH_DEFAULTS: Final = {
+    'branch.autoSetupMerge': 'false',
+    'push.default': 'current',
+    'push.autoSetupRemote': 'true',
+}
+
+
+def _publish_under_own_name(repo: Path) -> None:
+    for key, value in BRANCH_DEFAULTS.items():
+        _git(repo, 'config', '--local', key, value)
+
+
 def declared_stages(repo: Path) -> dict[str, tuple[str, ...]]:
     """Map git hook type -> the hook ids *repo*'s merged table declares for it."""
     return {stage: tuple(hook.id for hook in hooks) for stage, hooks in hook_table(repo).items()}
@@ -208,6 +228,7 @@ def install(repo: Path) -> InstallReport:
 
     """
     _scope_linked_worktree(repo)
+    _publish_under_own_name(repo)
     before = hook_installation(repo)
     if before.verdict != UNPROTECTED:
         return before

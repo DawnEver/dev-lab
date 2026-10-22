@@ -143,7 +143,10 @@ def test_a_reader_that_went_silent_reds_on_the_low_side_and_a_stale_floor_on_the
         assert_floor(0, floor=KIT_WAIVER_FLOOR, what=what)
     with pytest.raises(SlackFloor):
         assert_floor_still_binds(
-            KIT_WAIVER_FLOOR + KIT_WAIVER_HEADROOM + 1, floor=KIT_WAIVER_FLOOR, headroom=KIT_WAIVER_HEADROOM, what=what
+            max(KIT_WAIVER_FLOOR + KIT_WAIVER_HEADROOM, 2 * KIT_WAIVER_FLOOR) + 1,
+            floor=KIT_WAIVER_FLOOR,
+            headroom=KIT_WAIVER_HEADROOM,
+            what=what,
         )
     assert_floor(KIT_WAIVER_FLOOR, floor=KIT_WAIVER_FLOOR, what=what)
 

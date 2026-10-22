@@ -65,7 +65,7 @@ from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed, PullReques
 from lab_commons.dev.labsession import sessions
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
-from lab_commons.dev.platformparts import CONTEXT_PREFIX, standing
+from lab_commons.dev.platformparts import CONTEXT_PREFIX, UNCLAIMED, standing
 from lab_commons.dev.trialmerge import contains, merged_at, rev, trial
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
@@ -140,7 +140,8 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     """The integration text for *child*, from the object store and the forge; writes nothing."""
     base, trunk = f'{_TRACKING}{policy.integration}', f'{_TRACKING}{policy.trunk}'
     statuses = status_list(child.client, child.head)
-    result = standing(statuses, head=child.head).result
+    standing_now = standing(statuses, head=child.head)
+    result = standing_now.result
     merge = merged_at(root, base, child.head)
     tried = trial(root, base, child.head)
     if merge is not None:
@@ -151,8 +152,10 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
         state, verdict = 'failure', 'deferred: a `tests/<part>` part FAILED'
     elif result is Conclusion.PASS:
         state, verdict = 'pending', 'ready: clean and every part PASS; waiting for the integrator to merge'
+    elif standing_now.reading == UNCLAIMED:
+        state, verdict = 'pending', 'deferred: UNCLAIMED -- no producer has posted a `tests/<part>` status yet'
     else:
-        state, verdict = 'pending', 'deferred: the `tests/<part>` parts are not settled yet'
+        state, verdict = 'pending', 'deferred: INCONCLUSIVE -- the posted `tests/<part>` statuses do not settle yet'
     position = 'clean' if tried.clean else 'conflicts in ' + ', '.join(f'`{f}`' for f in tried.conflicts)
     promoted = (
         f'promoted to `{policy.trunk}` (it holds {merge})'
@@ -167,7 +170,7 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
             f'- {verdict}',
             f'- behind `{policy.integration}` by {tried.behind}; {position}',
             f'- syncs from: {watched}',
-            f'- parts (standing {result.name}):',
+            f'- parts (standing {standing_now.reading}):',
             *_line(statuses),
             f'- area issues: {", ".join(areas) if areas else "none cite this head"}',
             f'- {promoted}',

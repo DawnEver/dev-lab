@@ -190,7 +190,7 @@ python -m lab_commons.dev.forge sync --watch origin/<ref>  # opt in to one more 
 - A push of a child more than `[tool.lab_commons.integrator] behind_max` commits behind integration is refused
   at pre-push (`behind-push`, naming this command); `forge serve` runs the behind/conflict report every tick and
   raises an `integration` alarm for each child past the bound or conflicting.
-- The watched set is the checkout's git config `branch.<child>.labUpstream`, never a committed file.
+- The watched set is the checkout's git config `branch.<child>.labSyncFrom`, never a committed file.
 
 ## Pull requests target integration
 
