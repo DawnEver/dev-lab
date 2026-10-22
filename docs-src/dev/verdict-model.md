@@ -59,7 +59,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 ## The verdict itself
 
 - A verdict is a tree, an environment, a selector, a result and a log. A different tree or a different
-  environment means the verdict does not exist (`lab_commons.dev.verdict`, `content`, `envkey`).
+  environment means the verdict does not exist (`lab_commons.dev.verdict`, `content`, and `lab_commons.envkey`).
 - **It starts INCONCLUSIVE** and is promoted only when every proof holds: a clean tree, inside the wall, no
   truncation, a non-empty selection, at least one test executed, a census that reconciles with the summary, a
   real runner exit, and collection arithmetic that accounts for every collected test. A new way of running

@@ -28,7 +28,6 @@ from lab_commons.box.machine import provided
 from lab_commons.compute.presence import cached, declared_versions, measured, refresh
 from lab_commons.compute.probe import tools
 from lab_commons.config import section
-from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import verdict_commit
 from lab_commons.dev.platformparts import (
@@ -39,6 +38,7 @@ from lab_commons.dev.platformparts import (
     this_platform,
 )
 from lab_commons.dev.test_outcomes import outcomes_dir, read_cells
+from lab_commons.envkey import env_record
 from lab_commons.hpc.needsets import BASE, need_sets, needs_of, read_vocabulary, selecting, vocabulary_at
 from lab_commons.hpc.records import write_record
 from lab_commons.hpc.shell import FULL, INCREMENTAL, parse_ids
@@ -87,7 +87,7 @@ def local_record(
     An id of *part* the run reported carries its test cell (and is ``flaky`` when the run decided it both
     ways); every other id of *owned* (id -> part) is handed off to the part it belongs to.
     It states the environment it ran against
-    (:func:`lab_commons.dev.envkey.env_record`) and the vendor tool versions this host's presence probe READ
+    (:func:`lab_commons.envkey.env_record`) and the vendor tool versions this host's presence probe READ
     (*tools*, default :func:`lab_commons.compute.presence.measured` over the cached reading): nothing is
     pinned, so the record is the reproducibility.
     """

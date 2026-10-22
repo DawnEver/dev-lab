@@ -20,8 +20,7 @@ NOT RE-EXPORTED says one thing, stated once here instead of at each site: that m
 are too unqualified to survive being flattened into a namespace this wide.
 
 * :mod:`lab_commons.dev.content` — a CONTENT address over the measured paths, the half of a verdict
-  that a ``HEAD``-shaped stamp cannot supply.
-* :mod:`lab_commons.dev.envkey` — a key over the resolved dependency set, the other half.
+  that a ``HEAD``-shaped stamp cannot supply; :mod:`lab_commons.envkey` keys the environment, the other half.
 * :mod:`lab_commons.dev.logref` — the log a verdict carries, and the reader that re-derives it.
 * :mod:`lab_commons.dev.verdict` — the algebra: ``(tree, env, selector, result, log)``.
 * :mod:`lab_commons.dev.pytestout` — READING one test runner's stdout and nothing more: the escape
@@ -413,7 +412,6 @@ from lab_commons.dev.docwidth import (
     width_ratchet,
     width_remedy,
 )
-from lab_commons.dev.envkey import UNREADABLE, env_key, env_manifest, interpreter_identity
 from lab_commons.dev.hook_adoption import HookAdoption, assert_shippable, deny_rules, render, unremedied
 from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, denies, fires
 from lab_commons.dev.logref import MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
@@ -440,7 +438,6 @@ __all__ = [
     'MARKER',
     'SCANNED_SUFFIXES',
     'UNIT_TOKENS',
-    'UNREADABLE',
     'WIDTH_CEILING',
     'CJKOccurrence',
     'CJKScan',
@@ -470,12 +467,9 @@ __all__ = [
     'content_address',
     'denies',
     'deny_rules',
-    'env_key',
-    'env_manifest',
     'file_digest',
     'fires',
     'injected_docs',
-    'interpreter_identity',
     'is_injected_doc',
     'line_widths',
     'render',

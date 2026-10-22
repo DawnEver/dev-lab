@@ -17,7 +17,7 @@ uses is exactly as wrong as an undeclared one: it asserts a constraint on code t
 THE ANCHOR IS THE SUPPRESSED SOURCE TEXT, NOT A LINE NUMBER. A line number churns on every unrelated
 edit above it, and a pin that reds for an unrelated reason is a pin that gets deleted. The code on
 the line -- comment stripped -- does not move when something above it does, it distinguishes two
-suppressions of the SAME rule inside one function (``multiprocess.py`` has exactly that pair), and it
+suppressions of the SAME rule inside one function, and it
 lets a reader of the pin see what is being waived without opening the file.
 
 THE REASON LIVES IN THE DECLARATION, not on the source line. Two reasons for that call: a per-file
@@ -198,16 +198,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLW0603',
         'global _active_logger',
     ): 'one-shot process-wide logging configuration: the module-level flag IS the idempotence',
-    (
-        'src/lab_commons/multiprocess.py',
-        'PLC0415',
-        'from pint import set_application_registry',
-    ): 'runs in a freshly spawned worker; the registry installed must be the one THAT process imports',
-    (
-        'src/lab_commons/multiprocess.py',
-        'PLC0415',
-        'from lab_commons.units import ureg',
-    ): 'same process boundary: a top-level import would bind the parent module objects at spawn time',
     (
         'src/lab_commons/paths.py',
         'PLW0603',
@@ -460,31 +450,6 @@ ALLOWED: Final[dict[Site, str]] = {
         'N803',
         'Q_unit: str | Unit,',
     ): 'the same prefix on the unit that goes with it',
-    (
-        'src/lab_commons/multiprocess.py',
-        'BLE001',
-        'except Exception as e:',
-    ): 'a worker may raise anything; tagging it ERROR is the report this path exists to produce',
-    (
-        'src/lab_commons/multiprocess.py',
-        'C901',
-        'def __init__(',
-    ): 'a flat chain of "if this knob is None take the declared default", one branch per knob',
-    (
-        'src/lab_commons/multiprocess.py',
-        'PLR0912',
-        'def __init__(',
-    ): 'the same chain counted as branches; merging them would hide which knob defaulted',
-    (
-        'src/lab_commons/multiprocess.py',
-        'C901',
-        'def run(self) -> list[dict]:',
-    ): 'one branch per pool-task outcome (ok / timeout / error / retry), each naming its own report',
-    (
-        'src/lab_commons/multiprocess.py',
-        'PLR0912',
-        'def run(self) -> list[dict]:',
-    ): 'the same outcomes counted as branches',
     (
         'src/lab_commons/paths.py',
         'DTZ005',

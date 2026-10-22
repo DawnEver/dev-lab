@@ -23,9 +23,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Protocol
 
+from lab_commons.compute.durable import durable_write
 from lab_commons.compute.model import Supply
 from lab_commons.config import config_path
-from lab_commons.dev._forge_journal import durable_write
 from lab_commons.dev.forgeclaim import Claim
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.shell import FULL

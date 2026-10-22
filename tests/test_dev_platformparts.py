@@ -9,10 +9,10 @@ import pytest
 from _forge_fake import git_out, make_repo, run_git
 
 from lab_commons.dev import localpart, platformparts
-from lab_commons.dev.envkey import env_record
 from lab_commons.dev.forgeoutbox import PostFailed
 from lab_commons.dev.forgestatus import CommitStatus, state_for
 from lab_commons.dev.producer import ProducerExit
+from lab_commons.envkey import env_record
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
 from lab_commons.hpc.needsets import BASE, Vocabulary, read_vocabulary
