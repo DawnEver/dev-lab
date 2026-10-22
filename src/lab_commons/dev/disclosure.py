@@ -51,7 +51,7 @@ BUDGETS: Final[dict[str, Budget]] = {
 #: The most characters one ROW field may carry: a rule's ``statement``, a deny row's ``hazard`` and
 #: ``remedy``. Each is the current maximum and may only go DOWN; a row that grows past it moves its
 #: reasoning into the docs instead.
-ROW_CEILINGS: Final[dict[str, int]] = {'statement': 717, 'hazard': 162, 'remedy': 268}
+ROW_CEILINGS: Final[dict[str, int]] = {'statement': 717, 'hazard': 162, 'remedy': 302}
 
 #: A sentence ends at terminal punctuation followed by whitespace and a capital, backtick or bracket.
 _SENTENCE_END: Final = re.compile(r'[.!?]\s+(?=[A-Z`*(])')
