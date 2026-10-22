@@ -273,6 +273,7 @@ def labelled_issues(client: Client, label: str) -> tuple[dict[str, Any], ...]:
 ISSUE_PAGE: Final = 50
 
 
+_REQUEST_SHA: Final = re.compile(r'^\s*sha\s*=\s*["\'](?P<sha>[^"\'\n]*)["\']', re.MULTILINE)
 _REQUEST_HOST: Final = re.compile(r'^\s*host\s*=\s*["\'](?P<host>[\w./-]+)["\']', re.MULTILINE)
 
 
@@ -311,14 +312,22 @@ def _part_refs(
     return refs
 
 
-def _requests(root: Path, client: Client, repo: str, schedule: Schedule, now: datetime) -> list[Candidate]:
+def _requests(
+    root: Path, client: Client, repo: str, schedule: Schedule, now: datetime, *, say: Callable[[str], None]
+) -> list[Candidate]:
     """Every request issue as a job: its producer and sha from the body, its need-set as that sha declares it.
 
     A request whose producer is undeclared is still listed (part ``''``): the claim pass refuses it by name.
+    One naming no full sha is work at no commit: it is SKIPPED and said, one line naming the issue.
     """
     found = []
     for raw in labelled_issues(client, schedule.request_label):
         producer, sha = parse_body(raw.get('body') or '')
+        if not sha:
+            named = _REQUEST_SHA.search(raw.get('body') or '')
+            got = f' (got "{named["sha"]}")' if named else ''
+            say(f'[serve] skipped request issue #{raw["number"]}: its body names no 40-hex `sha`{got}')
+            continue
         paths = parse_paths(raw.get('body') or '')
         created = raw.get('created_at') or ''
         since = datetime.fromisoformat(created).astimezone(UTC) if created else now
@@ -391,7 +400,7 @@ def candidates(
             )
             for platform in needed
         ]
-    found += optional('request issues', lambda: _requests(root, client, repo, schedule, now), say)
+    found += optional('request issues', lambda: _requests(root, client, repo, schedule, now, say=say), say)
     return tuple(one for one in found if _ref_served(root, one, say))
 
 
