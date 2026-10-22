@@ -31,12 +31,22 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
     ),
     (
-        'SCRATCH-ARCHIVED-OR-PROMOTED',
+        'SCRATCH-IS-NEVER-COMMITTED',
         (
-            'A one-off script lives in scratch for a bounded time and then leaves it, PROMOTED into the function '
-            'that owns its behaviour with tests, or ARCHIVED as evidence beside the memory of the day it served '
-            'with the finding it produced recorded, and a scratch file past its time is refused, never left to '
-            'rot.'
+            'Scratch is the one place an agent may leave a one-off, visible to git status but never committed '
+            'beyond its README, and each one-off leaves by promotion into src with tests or by deletion, its '
+            'finding recorded in memory as numbers, never by a move into scripts.'
+        ),
+        ('tests/test_arch_code_placement.py', 'tests/test_dev_scratch.py'),
+    ),
+    (
+        'STRAY-FILE-REFUSED',
+        (
+            'An untracked, non-ignored file outside the declared stray roots (scratch, plus what the repo '
+            'declares) is a defect found the moment it appears, not at review: a file somebody meant is staged, '
+            'an artefact a program wrote goes to the dated output tree and the program is fixed to write there, '
+            'a one-off goes to scratch, and the census runs after every shell command and at the end of a turn '
+            'and refuses a commit while one exists.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
     ),
@@ -126,8 +136,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'INJECTED-TEXT-IS-PROGRESSIVE',
         (
             'Text injected into an agent`s context -- a hook refusal, a door, a rule summary -- is the short '
-            'essential within a declared budget, ending in a pointer to the doc that holds the reasoning and '
-            'history, and before any injected text is shortened its full wording moves into that doc.'
+            'essential within a declared budget of TOTAL LINES and MAX CHARACTERS PER LINE measured on the text as '
+            'injected, ending in a pointer to the doc that holds the reasoning and history; a surface may declare a '
+            'larger budget only WITH A REASON, and before any injected text is shortened its full wording moves '
+            'into that doc.'
         ),
         ('tests/test_dev_disclosure.py',),
     ),

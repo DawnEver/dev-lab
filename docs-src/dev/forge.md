@@ -119,6 +119,9 @@ Each tick it:
 - **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
+  A box with no room for the producer is capacity, never a verdict: it exits `4`, so the claim goes back to
+  claimable naming the holder; an exit-3 release already posted stays settled (it cannot tell no room from
+  a run that wrote nothing), so such a head waits for its ref's next push or a human re-run.
 - **A full tier runs only inside this producer.** Anywhere else it refuses and names the remedy: push.
 
 ### Deploy a Windows workstation
@@ -150,6 +153,21 @@ A second run changes nothing. In order, it:
 
 A workstation declares no `[deploy]`: nothing moves its checkouts between deploys except the user.
 
+**Which workstation serves is declared in ONE place**: the synced workstation registry `hosts.json`
+(`{"hosts": [{"name", "computer", "roles": [...], ...}]}`), named per machine by
+`[workstation] registry = "<path>"` in `~/.config/lab-commons/config.toml`. A host serves only when its entry
+carries role `"forge"`. Its entry is the one whose `computer` equals `COMPUTERNAME` (case-insensitive), else the
+one whose `name` does. Each `workstation serve` tick checks the role first:
+
+- no `[workstation] registry` declared: refused by name, exit 2 -- a workstation never serves by omission;
+- an entry without `"forge"`, or no entry: it claims nothing and refreshes nothing, logs
+  `[serve] not a forge host (...)` naming the roles, releases any run a dead serve left journaled (the forge
+  serve's own re-attach path, `forgeintent.reattach`), and exits 0;
+- `"forge"` present: it serves as above.
+
+`workstation deploy` refuses on a host without the role, naming the registry and the role to add. The cluster
+serve (`lab_commons.hpc`) does not read the registry.
+
 ## Claims
 
 - A claim is a `pending` status: `claim machine=<m> login=<forge login> until=<UTC> hpc=<cluster>/<account>|-`.
@@ -160,10 +178,12 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
   that admits the part.
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
-- **A coalesced ref's run is superseded the tick its ref moves on, started or not** (user ruling 2026-10-21,
-  `lab_commons.dev.forgerun`). For a class in `Schedule.coalesce`, a run whose sha is no longer its ref's tip has
-  every Slurm job its state records cancelled (every round and band), is released as superseded naming the tip,
-  and is dropped with one alarm; the tip's run carries what its finished rounds hold. Only a run already
+- **NEWEST-HEAD-ONLY: a coalesced ref's run loses its pending tasks the tick its ref moves on, never a started one**
+  (user ruling 2026-10-22, `lab_commons.dev.forgerun`). For a class in `Schedule.coalesce`, a run whose sha is no
+  longer its ref's tip has every not-yet-started task withdrawn (`scancel --state=PENDING`); its started tasks run
+  to the end under a ` -- draining` claim, the tip waits behind it, and the tip's run carries what they finished.
+  Then it is released as superseded naming the tip, with one alarm. Only a deliberate stop (`hpc.run.cancel_run`)
+  kills a started task. Only a run already
   `publishing` its gathered record finishes. A ref of any other class is tested at every pushed sha: its run
   finishes and posts on its own sha, and the newer pushes are tested after it.
 - **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test
@@ -186,6 +206,11 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
     `waiting behind <sha12> (docs-only: ...)`, that run is never superseded for it, and its result carries when it
     lands. An untested code head in between makes the diff reach a test, so the head runs. The PR review of such a
     head is carried the same way: the earlier head's review stands and no command runs.
+  - DATA-ONLY WAITS (2026-10-22, `forgecarry.data_only`): a head whose diff holds no Python, no `ALWAYS` path and
+    no `everywhere` glob but that a whole-tree read (`reads = ["*"]`) still reaches is not equivalent -- it WAITS
+    while its source runs, then runs carrying every outcome its diff cannot reach, instead of running beside it
+    and carrying nothing. Measured: motronics `a3b326d0a829` (docs(memory), 2026-10-20) ran beside its running
+    parent with `carried 0`; 427 of 5124 test files there reach a memory path through declared `"*"` reads.
 
 ## Scheduling
 
@@ -210,6 +235,12 @@ newest commit lacks, or a request issue.
 - **Value** is `base[class] + boost + aging_rate * wait_hours`; a claimer takes the highest
   `weight[repo] * value / expected_cost` (weighted shortest job first). Aging grows without bound, so no
   class starves forever.
+- **Order on a scarce host** (user ruling 2026-10-22, `compute.model.rank`): a host's `[priority]` first, then
+  a candidate the user boosted, then the `served_first` classes strictly in their order (`integration`, then
+  `pr`), then every other class by score. Within an `oldest_first` class (`pr`) the OLDEST sha goes first, not
+  the cheapest -- G is the only Windows forge host, so a PR never waits behind a lane or a newer PR. A `pr` head
+  is coalesced (`Schedule.coalesce`): one PR session holds at most one run per part in flight, and a child's
+  coalescing reads only ITS OWN commits, never the integration run it branched from.
 - **Cost** is the repo's last measured run (`lab_commons.compute.learned`), in core-hours on a cluster and
   wall-hours on a box; unmeasured work costs `prior_cost_h`.
 - **Priority is a forge label** on the PR or issue: `priority:user` adds the declared boost, `priority:<n>`
@@ -232,6 +263,9 @@ starve_after_hours = {integration = 6, pr = 12, feature = 18, branch = 24, reque
 daily_budget_core_h = {}                           # class -> core-hours one ref may use per 24 h
 boosts = {"priority:user" = 1000}                  # label -> value; `priority:<n>` adds n
 classes_by_ref = {"feat/*" = "feature", "fix/*" = "feature", "lane/*" = "branch"}  # ordered, first match
+coalesce = ["integration", "feature", "pr"]       # one run per (ref, part) in flight; the tip waits behind it
+served_first = ["integration", "pr"]              # served strictly before every other class, in this order
+oldest_first = ["pr"]                             # ordered by age, not score
 request_label = "forge:request"
 prior_cost_h = 4.0
 ```

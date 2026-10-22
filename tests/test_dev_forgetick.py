@@ -1022,8 +1022,14 @@ def test_a_producer_only_the_other_host_kind_can_build_is_never_refused_on_the_c
     assert report.pending == ()
 
 
-def _push(repo: Path, tips: dict[str, str], ref: str) -> str:
-    """A new tip of *ref* fetched on top of its old one: the tracking ref's reflog holds both."""
+def _push(repo: Path, tips: dict[str, str], ref: str, *, code: bool = False) -> str:
+    """A new tip of *ref* fetched on top of its old one: the tracking ref's reflog holds both.
+
+    *code*: the tip touches a Python file, so its diff is never data-only and one-run-per-ref is what holds it.
+    """
+    if code:
+        (repo / f'{ref.replace("/", "_")}.py').write_text('x = 1\n', encoding='utf-8')
+        run_git(repo, 'add', '.')
     run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', f'{ref} again')
     tips[ref] = git_out(repo, 'rev-parse', 'HEAD')
     run_git(repo, 'update-ref', f'refs/remotes/origin/{ref}', tips[ref])
@@ -1039,8 +1045,8 @@ def _history(**by_sha: list[CommitStatus]) -> object:
 
 
 BOB = Claim('H', 'bob', LATER, 'ada/bob')
-#: What the queue says of a tip waiting behind BOB's run: its holder supersedes it (user ruling 2026-10-21).
-_SUPERSEDED = '(held on ada/bob: superseded at its next tick)'
+#: What the queue says of a tip waiting behind BOB's run: its holder withdraws its pending tasks (ruling 2026-10-22).
+_SUPERSEDED = '(held on ada/bob: its pending tasks withdrawn at its next tick)'
 
 
 def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_does(tmp_path: Path) -> None:
@@ -1057,8 +1063,12 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     for progress in ('', 'queued 0/12', 'running 40/93 done 12/93'):
         held = _history(**{old: [_pending(dataclasses.replace(BOB, progress=progress), 1)]})
         assert behind(repo, tip, schedule, held, NOW) == f'{WAITING_BEHIND} {old[:12]} {_SUPERSEDED}', (
-            f'started or not ({progress!r}), the queue says its holder gives the slot to the tip (ruling 2026-10-21)'
+            f'({progress!r}) the queue says its holder withdraws its pending tasks for the tip (ruling 2026-10-22)'
         )
+    draining = _history(**{old: [_pending(dataclasses.replace(BOB, progress='draining 2 started job(s)'), 1)]})
+    assert behind(repo, tip, schedule, draining, NOW) == (
+        f'{WAITING_BEHIND} {old[:12]} (draining 2 started job(s) on ada/bob)'
+    ), 'its started tasks drain and the tip waits to carry them (NEWEST-HEAD-ONLY, ruling 2026-10-22)'
     publishing = _history(**{old: [_pending(dataclasses.replace(BOB, progress='publishing'), 1)]})
     assert behind(repo, tip, schedule, publishing, NOW) == f'{WAITING_BEHIND} {old[:12]} (publishing on ada/bob)', (
         'PLANTED CONTROL: a run whose record is gathered is posting it, never superseded'
@@ -1070,6 +1080,24 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     lane_new = _push(repo, tips, 'other')
     lane = _candidate('other', lane_new, BRANCH)
     assert behind(repo, lane, schedule, _history(**{lane_old: [_pending(BOB, 1)]}), NOW) == ''
+
+
+def test_a_pr_tip_waits_behind_its_own_earlier_run_never_behind_the_integration_run_it_branched_from(
+    tmp_path: Path,
+) -> None:
+    """At most one PR per session in flight (user ruling 2026-10-22): a PR head is coalesced on ITS OWN commits.
+
+    The integration run in flight on the commit the PR branched from is another ref's run: the PR never
+    waits behind it. PLANTED CONTROL: the same claim on the PR's own earlier tip holds it.
+    """
+    repo, tips = _origin(tmp_path)
+    own_old = tips['other']
+    tip = _candidate('other', _push(repo, tips, 'other'), PR)
+    schedule = load_schedule(repo)
+    integration_run = _history(**{tips['integrate/main']: [_pending(BOB, 1)]})
+    assert behind(repo, tip, schedule, integration_run, NOW) == ''
+    own_run = _history(**{own_old: [_pending(BOB, 1)]})
+    assert behind(repo, tip, schedule, own_run, NOW) == f'{WAITING_BEHIND} {own_old[:12]} {_SUPERSEDED}'
 
 
 def test_two_shas_of_one_ref_only_the_newest_is_a_candidate(server, tmp_path: Path) -> None:
@@ -1089,7 +1117,7 @@ def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_r
 ) -> None:
     repo, tips = _origin(tmp_path)
     old = tips['integrate/main']
-    new = _push(repo, tips, 'integrate/main')
+    new = _push(repo, tips, 'integrate/main', code=True)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
@@ -1123,7 +1151,7 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     """The idle alarm reads ``pending``: a tip held by one-run-per-ref is no work any host could claim."""
     repo, tips = _origin(tmp_path)
     old = tips['integrate/main']
-    new = _push(repo, tips, 'integrate/main')
+    new = _push(repo, tips, 'integrate/main', code=True)
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))

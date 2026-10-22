@@ -28,10 +28,11 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import forgeintent, forgerun, forgerunstate
 from lab_commons.dev._forge_journal import Journal, journal_for
 from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeclaim import OPEN, Claim, assess
+from lab_commons.dev.forgeclaim import DONE, OPEN, Claim, assess
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush, queued, replay
-from lab_commons.dev.forgestatus import status_post
+from lab_commons.dev.forgestatus import CommitStatus, status_post
 from lab_commons.dev.forgework import Client, ForgeCallFailed
+from lab_commons.dev.producer import ProducerExit, release_reason
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'
@@ -224,3 +225,20 @@ def test_login_node_restart_resumes_the_cluster_run_without_a_human(tmp_path: Pa
     resumed = _tick(store, slurm)
     assert resumed is not None
     assert (resumed.phase, slurm.submits, slurm.cancelled) == (forgerunstate.SUBMITTED, 1, ['555'])
+
+
+@pytest.mark.parametrize(
+    ('code', 'state'),
+    [(ProducerExit.UNREACHABLE, OPEN), (ProducerExit.INCONCLUSIVE, DONE)],
+    ids=['capacity', 'CONTROL'],
+)
+def test_a_capacity_release_is_claimable_and_a_posted_inconclusive_stays_settled(code: int, state: str) -> None:
+    """The box's no-room exit releases RETRYABLE (open); an exit-3 release already on the forge stays DONE.
+
+    Decided 2026-10-22: a posted ``released: inconclusive (exit 3) -- no part`` cannot say whether the box
+    had no room or the run ran and wrote nothing, so the predicate does not re-open it -- re-opening every
+    genuine inconclusive would re-run it every tick. A head stuck that way (67d955f) is superseded by its
+    ref's next push, or re-run by a human; from now on a capacity refusal never posts it.
+    """
+    posts = [CommitStatus('tests/base', 'error', release_reason(code), '')]
+    assert assess(posts, 'tests/base', me=Claim('G', 'alice', NOW + LEASE), now=NOW)[0] == state

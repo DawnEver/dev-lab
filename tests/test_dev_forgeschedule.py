@@ -37,21 +37,21 @@ def test_an_undeclared_class_is_refused_by_name() -> None:
 
 
 def test_a_cheap_lower_value_job_beats_an_expensive_higher_one() -> None:
-    """Value per cost. PLANTED CONTROL: at equal cost the higher value wins."""
-    cheap, dear = _cand('cheap', 'branch', repo='o/cheap'), _cand('dear', 'pr', repo='o/dear')
+    """Value per cost, among classes served by score. PLANTED CONTROL: at equal cost the higher value wins."""
+    cheap, dear = _cand('cheap', 'branch', repo='o/cheap'), _cand('dear', 'feature', repo='o/dear')
     schedules = {'o/cheap': FAMILY, 'o/dear': FAMILY}
     assert _order(rank([dear, cheap], schedules, NOW, cost_h={'o/cheap': 1.0, 'o/dear': 4.0})) == ['cheap', 'dear']
     assert _order(rank([cheap, dear], schedules, NOW, cost_h={'o/cheap': 4.0, 'o/dear': 4.0})) == ['dear', 'cheap']
 
 
 def test_aging_eventually_lifts_a_waiting_job() -> None:
-    """PLANTED CONTROL: fresh, the request is outranked; after a day it is not."""
-    integration = _cand('integrate/main', 'integration')
+    """PLANTED CONTROL: fresh, a feature ranks above the request; after a day it does not."""
+    feature = _cand('feat/x', 'feature')
     schedules = {'o/r': FAMILY}
     fresh = _cand('issue/1', 'request')
-    assert _order(rank([fresh, integration], schedules, NOW, cost_h={}))[0] == 'integrate/main'
+    assert _order(rank([fresh, feature], schedules, NOW, cost_h={}))[0] == 'feat/x'
     old = _cand('issue/1', 'request', waited_h=24)
-    assert _order(rank([integration, old], schedules, NOW, cost_h={}))[0] == 'issue/1'
+    assert _order(rank([feature, old], schedules, NOW, cost_h={}))[0] == 'issue/1'
 
 
 def test_a_user_boost_jumps_the_queue() -> None:
@@ -64,8 +64,8 @@ def test_a_user_boost_jumps_the_queue() -> None:
 
 
 def test_a_repo_override_changes_the_order(tmp_path: Path) -> None:
-    """PLANTED CONTROL: the family default puts the PR first; the override, key by key, puts the branch first."""
-    pr, branch = _cand('feat/x', 'pr'), _cand('exp/y', 'branch')
+    """PLANTED CONTROL: the family default puts the feature first; the override, key by key, the branch."""
+    pr, branch = _cand('feat/x', 'feature'), _cand('exp/y', 'branch')
     assert _order(rank([branch, pr], {'o/r': FAMILY}, NOW, cost_h={}))[0] == 'feat/x'
     (tmp_path / 'pyproject.toml').write_text(
         '[tool.lab_commons.schedule]\nclasses = {branch = 90}\nclasses_by_ref = {"exp/*" = "branch"}\n',
@@ -164,3 +164,29 @@ def test_a_public_repos_opaque_card_vouches_the_raw_trailer_and_vouches_no_other
     assert vouched([claimed], owners) == (claimed,)
     other = dataclasses.replace(claimed, origin_host='ada/eve')
     assert vouched([other], owners)[0].origin_host == ''
+
+
+def test_on_a_scarce_host_integration_then_prs_oldest_first_precede_every_other_class() -> None:
+    """QUEUE ORDER (user ruling 2026-10-22): integration, then PRs OLDEST FIRST, then the rest by score.
+
+    A cheaper (higher-score) newer PR in another repo and a branch aged past every PR still follow. PLANTED
+    CONTROL: a schedule declaring no strict order and no oldest-first class ranks the same four by score.
+    """
+    integration = _cand('integrate/main', 'integration', repo='o/dear')
+    old_pr, new_pr = _cand('pr/old', 'pr', repo='o/dear', waited_h=3), _cand('pr/new', 'pr', repo='o/cheap')
+    aged = _cand('lane/aged', 'branch', repo='o/cheap', waited_h=100)
+    cost = {'o/dear': 8.0, 'o/cheap': 1.0}
+    found = rank([aged, new_pr, old_pr, integration], {'o/dear': FAMILY, 'o/cheap': FAMILY}, NOW, cost_h=cost)
+    assert _order(found) == ['integrate/main', 'pr/old', 'pr/new', 'lane/aged']
+    loose = Schedule(served_first=(), oldest_first=())
+    scored = rank([integration, old_pr, new_pr, aged], {'o/dear': loose, 'o/cheap': loose}, NOW, cost_h=cost)
+    assert _order(scored) == ['lane/aged', 'pr/new', 'integrate/main', 'pr/old']
+
+
+def test_a_pr_head_is_coalesced_so_one_pr_session_holds_at_most_one_run_per_part() -> None:
+    """At most one PR per session in flight: a PR head is a COALESCED class (its newer tip waits behind its run).
+
+    PLANTED CONTROL: a lane ``branch`` is still tested at every pushed sha.
+    """
+    assert 'pr' in FAMILY.coalesce
+    assert 'branch' not in FAMILY.coalesce

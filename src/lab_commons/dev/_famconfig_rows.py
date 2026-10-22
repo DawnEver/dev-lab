@@ -129,7 +129,6 @@ GITIGNORE_FAMILY_LINES: Final[dict[str, str]] = {
     'htmlcov/': 'coverage`s HTML report -- `.coverage*` is already base; its report belongs with it.',
     'output/': 'the dated artefact tree (lab_commons.dev.datedlog) every repo writes under output/.',
     '**/.DS_Store': 'macOS Finder state; a platform artefact with no repo to belong to.',
-    'scratch/': 'THE one temporary-script directory of the family (user ruling 2026-10-03); no other name.',
     '/config/': 'the dev-mode in-repo config root two consumers generate from packaged defaults.',
     '/dumps/': 'profiler and core dumps -- the reference repos both ignore them.',
     '/report/': 'test and coverage reports -- the reference repos both ignore them.',
@@ -176,6 +175,9 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
 #: a per-tool cache pointer suffix is one repo's tool leaking into its ignore file.
 GITIGNORE_BANNED: Final[dict[str, str]] = {
     r'(?:^|/)(?:_scratch|\.scratch|scratchpad)(?:/|$)': '`scratch/` is the one temporary-script directory',
+    r'^/?(?:\*\*/)?scratch(?:/\**)?$': (
+        '`scratch/` stays VISIBLE to git so a one-off shows in git status (SCRATCH-IS-NEVER-COMMITTED, 2026-10-22)'
+    ),
     r'^\*\.[\w-]+-cache$': 'a tool-specific cache pointer suffix is not ignored family-wide (ruling 2026-10-03)',
     r'(?:^|/)uv\.lock$': 'every repo commits its uv.lock at the newest resolution (PIN + FRESHNESS, 2026-10-17)',
 }

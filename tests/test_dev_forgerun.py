@@ -25,6 +25,7 @@ from lab_commons.config import CONFIG_ENV
 from lab_commons.dev import artefacts, forgecarry, forgerun, forgerunstate, forgeship, forgeslurm
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
+from lab_commons.dev.forgecoalesce import DRAINING
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.forgework import GITEA, ForgeCallFailed
 from lab_commons.dev.netverb import Attempt, Diagnosis, Report
@@ -99,6 +100,8 @@ class _Slurm:
         self.record = record
         self.phrase = 'queued 4/4'
         self.cancelled: list[str] = []
+        self.withdrawn: list[str] = []
+        self.started: list[str] = []
 
     def submitted(self, _run: forgerunstate.Run) -> list[str]:
         return list(self.recorded)
@@ -120,6 +123,10 @@ class _Slurm:
     def cancel(self, run: forgerunstate.Run) -> list[str]:
         self.cancelled += run.job_ids
         return list(run.job_ids)
+
+    def withdraw(self, run: forgerunstate.Run) -> list[str]:
+        self.withdrawn += run.job_ids
+        return list(self.started)
 
     def tree(self, _run: forgerunstate.Run) -> Path:
         return self.record.parent / 'tree'
@@ -677,35 +684,47 @@ def test_a_run_whose_part_was_never_submitted_is_released_claimable_while_its_sh
     'case',
     [
         ('d' * 40, False, True, True),  # a newer sha queued, nothing of this run started: its slot goes to the tip
-        ('d' * 40, True, True, True),  # STARTED too (user ruling 2026-10-21): cancelled and released for the tip
+        ('d' * 40, True, True, True),  # STARTED: pending withdrawn, the started task drains (ruling 2026-10-22)
         (SHA, True, True, False),  # PLANTED CONTROL: still the tip, nothing supersedes it
         ('d' * 40, True, False, False),  # PLANTED CONTROL: a started run of a non-coalesced class is kept
         ('d' * 40, False, False, False),  # PLANTED CONTROL: a lane is tested at every pushed sha
     ],
 )
-def test_a_run_whose_coalesced_ref_moves_on_is_cancelled_for_the_tip_started_or_not(
+def test_a_run_whose_coalesced_ref_moves_on_withdraws_its_pending_tasks_and_drains_its_started_ones(
     home: Path, monkeypatch: pytest.MonkeyPatch, case: tuple[str, bool, bool, bool]
 ) -> None:
-    """SUPERSEDE (user ruling 2026-10-21): a coalesced ref's run of an older sha is cancelled, STARTED OR NOT.
+    """NEWEST-HEAD-ONLY (user ruling 2026-10-22): two heads pushed in a row -- the older head's pending tasks go.
 
-    Measured 2026-10-19 (Ada): integrate/main's newest tip waited hours behind an older sha's pending array;
-    2026-10-21: superseded head 11b64e0d5c93 kept 70 array tasks running on alyyw103 and ate its QOS room.
-    Released as superseded (DONE: the tip no longer waits behind it), one alarm saying so. A class not in
-    ``Schedule.coalesce`` is tested at every pushed sha.
+    Ada, 7 days to 2026-10-22: 44.3% of 9,727 forge core-h was cancelled WHILE RUNNING, 34.4 points of it for
+    supersession. A started task is never cancelled for it: the run keeps its claim as ``draining`` -- so the
+    tip waits behind it and carries what it finishes (:func:`lab_commons.hpc.records.held_cells`) -- and is
+    released as superseded once nothing runs: one alarm. A class not in ``Schedule.coalesce`` is tested at
+    every pushed sha.
     """
     tip, began, coalesced, superseded = case
     store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
     _submitted_run(home, store, slurm)
     monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: tip)
     monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: coalesced)
-    slurm.phrase = 'running 3/4 done 1/4' if began else 'queued 4/4'  # nothing reads whether it started
+    slurm.started = ['4242'] if began else []
     after = _tick(store, slurm, alarms=alarms)
+    assert slurm.cancelled == [], 'supersession never kills a job: only a deliberate stop does'
     if not superseded:
         assert after is not None
-        assert (slurm.cancelled, alarms) == ([], [])
+        assert (slurm.withdrawn, alarms) == ([], [])
         return
+    assert slurm.withdrawn[-1:] == ['4242'], 'its pending tasks are withdrawn'
+    if began:
+        assert after is not None, 'a started task drains: the run is kept'
+        assert (store.posts[-1]['status'], alarms) == ('pending', [])
+        holder = Claim.parse(store.posts[-1]['description'])
+        assert holder is not None
+        assert holder.progress.startswith(DRAINING), 'the tip waits behind it, so it carries what drains'
+        assert tip[:12] in holder.progress
+        slurm.started = []  # the started task ended; its streamed cells stay on the cluster
+        after = _tick(store, slurm, alarms=alarms)
+        assert slurm.cancelled == []
     assert after is None
-    assert slurm.cancelled == ['4242']
     assert forgerunstate.live('https://f/o/r.git') == ()
     post = store.posts[-1]
     assert post['status'] == 'error'
@@ -838,4 +857,5 @@ def test_a_run_whose_ref_moved_on_to_a_docs_only_tip_is_never_cancelled(
     slurm.phrase = 'running 3/4 done 1/4'
     after = _tick(store, slurm, alarms=alarms)
     assert (after is not None) is docs_only
-    assert slurm.cancelled == ([] if docs_only else ['4242'])
+    assert slurm.withdrawn == ([] if docs_only else ['4242'])
+    assert slurm.cancelled == []

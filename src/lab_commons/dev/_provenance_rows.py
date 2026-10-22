@@ -85,10 +85,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     ),
     'cjk': ('original',),
     'content': ('original',),
-    'codeplace': (
+    'codeplace': ('supersedes', 'tests/architecture/repo/test_code_lives_only_where_code_belongs.py'),
+    'scratch': (
         'supersedes',
-        'tests/architecture/repo/test_code_lives_only_where_code_belongs.py',
         'scripts/clean/scratch.py',
+        'tests/architecture/repo/test_scratch_is_archived_or_promoted.py',
     ),
     'datedlog': ('supersedes', 'scripts/gate/_dated.py'),
     'dep': ('supersedes', 'scripts/gate/native_install.py'),
@@ -112,7 +113,6 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # file and an adoption of nothing: the consumer deletes its `scripts/durations.py` and keeps its
     # own bars. Checked before writing: that path is live in consumer-b today.
     'durations': ('supersedes', 'scripts/durations.py'),
-    'envkey': ('original',),
     'famconfig': ('original',),
     # The floor refusal was written EIGHT times across this family and no two copies agreed -- four
     # standalone bodies raising four different exception types, three of them here in `src/`; three

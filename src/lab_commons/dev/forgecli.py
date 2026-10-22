@@ -5,7 +5,8 @@ state and comment reads, ``auth`` for the token, ``publish`` for the status outb
 run records, ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` to drop a host card,
-``request <producer> --sha <sha>`` to publish a request, ``notices`` for a session's PR notices; anything
+``request <producer> --sha <sha>`` to publish a request,
+``pr close-landed [N...]`` to close landed PRs, ``notices`` for a session's PR notices; anything
 else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
@@ -40,6 +41,7 @@ from lab_commons.dev import (
     forgetick,
     forgetidy,
     pradmit,
+    prlanded,
     servelock,
 )
 from lab_commons.dev.forge import Transport, https_transport
@@ -85,6 +87,8 @@ def main(argv: Sequence[str]) -> int:
             emit(refused, err=True)
             return 2
         return NOUNS[args[0]](args[1:])
+    if args[:2] == ['pr', 'close-landed']:
+        return prlanded.main(args[2:])
     if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
         return forgeissue.main(args[1:])
     return issue_and_pr(args)
@@ -100,7 +104,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='lab_commons.dev.forge',
         description='issue and PR verbs on the forge',
-        epilog='also: issue claim|status N, status post|list SHA; token: auth login|status',
+        epilog='also: pr close-landed [N...], issue claim|status N, status post|list SHA; token: auth login|status',
     )
     nouns = parser.add_subparsers(dest='noun', required=True)
     issue = nouns.add_parser('issue').add_subparsers(dest='verb', required=True)

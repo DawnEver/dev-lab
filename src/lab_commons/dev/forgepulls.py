@@ -82,6 +82,7 @@ class Marker(StrEnum):
     INTEGRATION = 'integration'  #: a child PR's one integration comment (:mod:`lab_commons.dev.forgeintegration`)
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`lab_commons.dev.forgetidy`)
     REVIEW = 'review'  #: one advisory review per PR head, keyed by the sha (:mod:`lab_commons.dev.forgereview`)
+    LANDED = 'landed'  #: a landed PR's one closing comment, keyed by the head sha (:mod:`lab_commons.dev.prlanded`)
 
 
 def marker(kind: Marker, key: str = '') -> str:

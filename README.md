@@ -21,7 +21,7 @@ The base installation is the standard library alone. Select capabilities explici
 
 | Extra | Modules | Additional dependencies |
 |---|---|---|
-| `units` | `units`, `em`, `multiprocess` | NumPy, Pint, Pydantic |
+| `units` | `units`, `em` | NumPy, Pint, Pydantic |
 | `paths` | `paths` | platformdirs |
 | `io` | `file_io` | rtoml |
 | `structured` | `structured` | structlog, colorama on Windows |

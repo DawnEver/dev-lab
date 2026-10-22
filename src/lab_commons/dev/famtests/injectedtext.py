@@ -21,7 +21,7 @@ __all__ = [
     'assert_refusals_fit',
     'assert_rows_fit',
     'assert_the_budget_still_convicts',
-    'assert_the_row_ceilings_still_convict',
+    'assert_the_row_budgets_still_convict',
     'row_fields',
 ]
 
@@ -72,28 +72,38 @@ def row_fields(rules: Iterable[Rule], deny_rules: Iterable[DenyRule]) -> list[tu
 
 
 def assert_rows_fit(rules: Iterable[Rule], deny_rules: Iterable[DenyRule]) -> None:
-    """Raise unless every row field fits its ceiling and is one sentence.
+    """Raise unless every row field fits its surface's budget, and no row budget is slack.
 
-    Both sides of the ratchet: a ceiling above the current maximum reds too, so each may only go down.
+    Slack is a budget above the longest row it measures: lowering it is a declaration edit, never a
+    rewrite, so freed room is not banked for the next arrival.
     """
     fields = row_fields(rules, deny_rules)
-    over = [problem for field, row_id, text in fields for problem in disclosure.row_problems(field, row_id, text)]
-    for field, ceiling in disclosure.ROW_CEILINGS.items():
-        longest = max(len(text) for name, _, text in fields if name == field)
-        if longest < ceiling:
-            over.append(f'{field} ceiling {ceiling} > the longest row {longest}; lower it')
+    over = [
+        f'{field}:{row_id}: {problem}'
+        for field, row_id, text in fields
+        for problem in disclosure.problems(text, disclosure.ROW_SURFACES[field])
+    ]
+    for field, surface in disclosure.ROW_SURFACES.items():
+        budget = disclosure.BUDGETS[surface]
+        rows = [text.split('\n') for name, _, text in fields if name == field]
+        lines = max(len(row) for row in rows)
+        width = max(len(line) for row in rows for line in row)
+        if lines < budget.max_lines or width < budget.max_line_chars:
+            used = f'({lines}, {width})'
+            over.append(f'{surface} budget ({budget.max_lines}, {budget.max_line_chars}) > used {used}; lower it')
     if over:
         msg = 'rows over the budget:\n  ' + '\n  '.join(over)
         raise InjectedTextOverBudget(msg)
 
 
-def assert_the_row_ceilings_still_convict() -> None:
-    """PLANTED CONTROL: an over-long, two-sentence row must be convicted on both counts."""
-    ceiling = disclosure.ROW_CEILINGS['hazard']
-    found = disclosure.row_problems('hazard', 'PLANTED', 'It is planted. X' + 'x' * ceiling)
-    if not (any('chars >' in p for p in found) and any('sentences >' in p for p in found)):
-        msg = f'the row ceilings no longer convict a planted row: {found}'
+def assert_the_row_budgets_still_convict() -> None:
+    """PLANTED CONTROL: a row over both limits is convicted on both; a fitting multi-sentence row passes."""
+    budget = disclosure.BUDGETS['deny-hazard']
+    planted = '\n'.join(['x' * (budget.max_line_chars + 1)] * (budget.max_lines + 1))
+    found = disclosure.problems(planted, 'deny-hazard')
+    if not (any('lines >' in p for p in found) and any('chars >' in p for p in found)):
+        msg = f'the row budgets no longer convict a planted row: {found}'
         raise InjectedTextOverBudget(msg)
-    if disclosure.row_problems('hazard', 'PLANTED', 'it is planted, e.g. here.'):
-        msg = 'the row ceilings convict a one-sentence row that fits; they would refuse everything.'
+    if disclosure.problems('It is planted. It fits.', 'deny-hazard'):
+        msg = 'the row budgets convict a row that fits; they would refuse everything.'
         raise InjectedTextOverBudget(msg)

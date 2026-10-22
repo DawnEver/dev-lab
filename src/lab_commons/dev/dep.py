@@ -74,10 +74,10 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons.box import Refused
 from lab_commons.dev import _dep_project
-from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.lockcheck import unreasoned_holds
 from lab_commons.dev.netverb import run_network_verb
+from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 __all__ = [
@@ -354,7 +354,7 @@ def _snapshot(python: str | None) -> tuple[str, str]:
         'print(json.dumps([sys.prefix,m["env_key"](m["env_manifest"]())]))'
     )
     completed = _door.run(
-        [python, '-I', '-c', script, str(Path(__file__).with_name('envkey.py'))],
+        [python, '-I', '-c', script, str(Path(__file__).parents[1] / 'envkey.py')],
         check=True,
         capture_output=True,
         text=True,

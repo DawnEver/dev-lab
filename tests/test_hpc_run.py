@@ -24,10 +24,10 @@ import pytest
 from lab_commons.compute import learned
 from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev.envkey import env_key
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.githooks import bash_executable
 from lab_commons.dev.platformparts import PartRefusal, part_of, parts_of
+from lab_commons.envkey import env_key
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
 from lab_commons.hpc import run as run_module
@@ -1767,6 +1767,35 @@ class _QosFull(FakeRunCluster):
             msg = f'bash exited 1: sbatch: error: {SUBMIT_LIMIT} (Job violates accounting/QOS policy)'
             raise RuntimeError(msg)
         return super().__call__(command, stdin)
+
+
+def test_withdrawing_a_superseded_run_scancels_only_its_pending_tasks_and_names_the_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NEWEST-HEAD-ONLY (user ruling 2026-10-22): ``scancel --state=PENDING``, never a bare ``scancel``.
+
+    PLANTED CONTROL: a run with no state and nothing held by name runs no ``scancel`` and reports nothing started.
+    """
+    asked: list[str] = []
+    held = {'squeue -h --me -n run-aaaaaaaaaaaa-base -o %F': '9000\n'}
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        if ' -t ' in command:
+            return '100\n' if held else ''
+        return held.get(command, '')
+
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: ({'rounds': [{'job_ids': ['100']}]}, runner))
+    machine = Machine(session=None, grants=(GRANT,))
+    assert run_module.withdraw_pending('a' * 40, 'base', machine, lambda _grant: runner) == ['100']
+    scancels = [command for command in asked if command.startswith('scancel')]
+    assert scancels == ['scancel --state=PENDING 100 9000'], 'a started task is never cancelled for supersession'
+
+    asked.clear()
+    held.clear()
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: ({'rounds': []}, runner))
+    assert run_module.withdraw_pending('a' * 40, 'base', machine, lambda _grant: runner) == []
+    assert not any(command.startswith('scancel') for command in asked), asked
 
 
 def test_a_first_round_refused_on_the_qos_submit_limit_is_no_room_and_its_queued_band_is_cancelled() -> None:

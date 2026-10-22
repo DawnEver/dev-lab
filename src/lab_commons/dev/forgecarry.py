@@ -31,6 +31,12 @@ memory is written after the code commit, so a docs-only head is the ordinary cas
 claim pass posts the settled verdict on it (:mod:`lab_commons.dev.forgetake`), or it waits while that run
 finishes, which is then never superseded for it (:mod:`lab_commons.dev.forgerun`) and carries on landing
 (:func:`publish`). The PR review reads the same rule (:mod:`lab_commons.dev.forgereview`).
+
+A DATA-ONLY head that is NOT equivalent -- its diff holds no Python, no :data:`~lab_commons.dev.footprint.ALWAYS`
+path and no ``everywhere`` glob, but a test reads the tree by path (``reads = ["*"]``) -- also WAITS while its
+source runs, then runs itself carrying every outcome its diff cannot reach (:func:`carry_from`). Measured
+2026-10-22: motronics docs(memory) heads ran their full suite BESIDE their running parent, so nothing could
+carry (``carried 0`` of 55k cells); 427 of 5124 test files reach a memory path there by a declared whole-tree read.
 """
 
 from __future__ import annotations
@@ -40,11 +46,12 @@ import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import lab_commons.launch as _door
-from lab_commons.dev.footprint import Footprints, test_files
+from lab_commons.dev.footprint import ALWAYS, Footprints, declared, test_files
 from lab_commons.dev.forge import _GIT
 from lab_commons.dev.forgeclaim import CLAIMED, Claim, assess
 from lab_commons.dev.forgecoalesce import WAITING_BEHIND, earlier_tips
@@ -64,6 +71,7 @@ __all__ = [
     'carry_from',
     'carry_target',
     'changed_paths',
+    'data_only',
     'docs_only',
     'equivalent',
     'nearest',
@@ -214,12 +222,15 @@ class DocsOnly:
 
     source: str
     verdict: CommitStatus | None = None
+    carries: bool = True  # False: a data-only head waits, then runs carrying what its diff cannot reach
 
     @property
     def hold(self) -> str:
         """Why the head is never claimed: carried from a settled source, else waiting behind its running one."""
         if self.verdict is not None:
             return f'{CARRIED_FROM} {self.source[:12]}: {DOCS_ONLY}'
+        if not self.carries:
+            return f'{WAITING_BEHIND} {self.source[:12]} (data-only: its run carries what this diff cannot reach)'
         return f'{WAITING_BEHIND} {self.source[:12]} ({DOCS_ONLY}: its result carries here)'
 
     def description(self, platform: str) -> str:
@@ -240,22 +251,41 @@ class DocsOnly:
                            target_url=verdict.url)  # fmt: skip
 
 
-def docs_only(root: Path, b: str, standing: Callable[[str], CommitStatus | str]) -> DocsOnly | None:
+def docs_only(
+    root: Path, b: str, standing: Callable[[str], CommitStatus | str], *, data_waits: bool = True
+) -> DocsOnly | None:
     """DOCS-ONLY-CARRIES: what *b* takes instead of a run, ``None`` when *b* runs itself.
 
     *standing* says where a sha's job stands: its settled verdict, :data:`RUNNING`, or ``''`` (never tested).
     *b*'s first-parent history is read newest first to the nearest sha that is tested or running; *b* takes
     it when :func:`equivalent` -- no collected test's footprint reaches the diff, the same rule every carry
-    uses -- else *b* runs. An untested head in between is read through: when it touched code, the diff from
-    the tested head holds that code, and *b* runs.
+    uses -- else *b* runs, except that a :func:`data_only` diff from a RUNNING source waits for it (module
+    docstring) -- a test part's rule only: a review (*data_waits* off) carries nothing per outcome.
+    An untested head in between is read through: when it touched code, the diff from the tested
+    head holds that code, and *b* runs.
     """
     for sha in earlier_tips(root, b):
         stood = standing(sha)
         if stood:
-            if not equivalent(root, sha, b):
-                return None
-            return DocsOnly(sha, stood if isinstance(stood, CommitStatus) else None)
+            if equivalent(root, sha, b):
+                return DocsOnly(sha, stood if isinstance(stood, CommitStatus) else None)
+            waits = data_waits and stood == RUNNING and data_only(root, sha, b)
+            return DocsOnly(sha, None, carries=False) if waits else None
     return None
+
+
+def data_only(root: Path, a: str, b: str) -> bool:
+    """Whether ``a..b`` changes no Python file, no ``ALWAYS`` path and no declared ``everywhere`` glob."""
+    changed = changed_paths(root, a, b)
+    shown = _git(root, 'show', f'{b}:pyproject.toml')
+    try:
+        everywhere, _ = declared(shown.stdout if shown.returncode == 0 else '')
+    except ValueError:
+        return False
+    return bool(changed) and not any(
+        path.endswith('.py') or path in ALWAYS or any(fnmatchcase(path, glob) for glob in everywhere)
+        for path in changed or ()
+    )
 
 
 def part_standing(

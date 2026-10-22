@@ -47,11 +47,14 @@ PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``buildi
 (:class:`lab_commons.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
 status links the run record.
 
-A COALESCED REF'S RUN IS SUPERSEDED THE TICK ITS REF MOVES ON, STARTED OR NOT (user ruling 2026-10-21). A run
-of a ``Schedule.coalesce`` class whose sha is no longer its ref's tip has every Slurm job its state records
-cancelled (every round and band, :func:`lab_commons.hpc.run.cancel_run`), is released as superseded naming
-the tip, and is dropped -- one alarm. Its slot goes to the tip, which waited behind it (:mod:`forgecoalesce`);
-the tip's run carries what the cancelled rounds finished (:mod:`lab_commons.dev.forgecarry`). A DOCS-ONLY tip
+NEWEST-HEAD-ONLY: A COALESCED REF'S RUN LOSES ITS PENDING TASKS THE TICK ITS REF MOVES ON, AND NO STARTED TASK
+(user ruling 2026-10-22). A run of a ``Schedule.coalesce`` class whose sha is no longer its ref's tip has every
+NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a STARTED task is never cancelled
+for supersession -- the run keeps its claim as ``draining`` until the last one ends, then is released as
+superseded naming the tip and dropped -- one alarm. The tip waits behind it (:mod:`forgecoalesce`), so its run
+carries every outcome the drained tasks finished (:mod:`lab_commons.dev.forgecarry`). Only a deliberate stop
+(:func:`lab_commons.hpc.run.cancel_run`) kills a started task. Ada 2026-10-22: 44% of a week's forge core-h was
+cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
 2026-10-21: a superseded pr head kept 70 array tasks running on alyyw103, eating the grant's QOS room.
@@ -78,7 +81,7 @@ from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
 from lab_commons.dev.forgecarry import equivalent, publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
-from lab_commons.dev.forgecoalesce import PUBLISHING
+from lab_commons.dev.forgecoalesce import DRAINING, PUBLISHING
 from lab_commons.dev.forgeroute import pyproject_at, route
 from lab_commons.dev.forgerunstate import (
     CLAIMED_PHASE,
@@ -145,8 +148,7 @@ def advance(
     try:  # a build that submitted nothing, like an inconclusive record, ran no test: released, never red
         if run.phase in {CLAIMED_PHASE, SUBMITTING}:
             if tip := _superseding_tip(root, run):  # its ref moved on: no submit, the tip takes the slot
-                _supersede(client, run, tip, cluster=cluster, say=say, alarm=alarm, tag=tag)
-                return None
+                return _supersede(client, run, tip, cluster=cluster, lease=lease, say=say, alarm=alarm, tag=tag)
             submitted = _submit(run, client=client, lease=lease, cluster=cluster, say=say, alarm=alarm, tag=tag)
             if submitted is None:
                 return run
@@ -190,9 +192,8 @@ def _gather(
     if not ids and not cluster.orphans(run):  # no state and no job of this part: it never ran
         _settle(root, run, client=client, why='no job of this part was ever submitted', say=say, alarm=alarm, ran=False)
         return None
-    if tip := _superseding_tip(root, run):  # started or not (user ruling 2026-10-21)
-        _supersede(client, run, tip, cluster=cluster, say=say, alarm=alarm, tag=tag)
-        return None
+    if tip := _superseding_tip(root, run):  # its pending tasks go, its started ones drain (ruling 2026-10-22)
+        return _supersede(client, run, tip, cluster=cluster, lease=lease, say=say, alarm=alarm, tag=tag)
     try:
         record = cluster.gather(run)
     except Unrecorded as why:
@@ -225,24 +226,30 @@ def _supersede(
     tip: str,
     *,
     cluster: Cluster,
+    lease: timedelta,
     say: Callable[[str], None],
     alarm: Callable[[Alarm], None],
     tag: str,
-) -> None:
-    """Cancel EVERY job of *run* (each round and band, an interrupted submit's too), release it superseded by *tip*.
+) -> Run | None:
+    """Withdraw *run*'s NOT-YET-STARTED tasks; drain its started ones; then release it superseded by *tip*.
 
-    Then drop it: one alarm. Started or not (user ruling 2026-10-21).
+    NEWEST-HEAD-ONLY (user ruling 2026-10-22): a started task is never cancelled for supersession. While one
+    runs, the run keeps its claim -- so the tip waits behind it (:mod:`lab_commons.dev.forgecoalesce`) and its
+    run carries what the drained tasks finished (:mod:`lab_commons.dev.forgecarry`) -- and is returned. Once
+    none runs it is released and dropped: one alarm.
     """
-    cancelled = cluster.cancel(run)
-    reason = (
-        f'released: superseded -- {run.ref} moved on to {tip[:12]}; its jobs are cancelled, its slot goes to the tip'
-    )
+    started = cluster.withdraw(run)
+    if started:
+        say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')
+        return _report(client, run, f'{DRAINING} {len(started)} started job(s) for {tip[:12]}', lease, say)
+    reason = f'released: superseded -- {run.ref} moved on to {tip[:12]}; its slot goes to the tip'
     reason = reason[:_DESCRIPTION_MAX]
-    why = f'jobs {" ".join(cancelled) or "none"} cancelled'
+    why = 'pending tasks withdrawn, no started task cancelled'
     alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}', why))
     say(f'{tag}: {why} -- {reason}')
     _release(client, run, reason, say)
     drop(run)
+    return None
 
 
 def _settle(

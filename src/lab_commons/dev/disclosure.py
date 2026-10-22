@@ -1,6 +1,10 @@
 """INJECTED-TEXT-IS-PROGRESSIVE: what the family injects into an agent is short and points at the rest.
 
-The BUDGETS are declared data, one row per injected surface, and this module is their one source.
+The BUDGETS are declared data, one row per injected surface, and this module is their one source. A
+budget is the rendered text's TOTAL LINES and MAX CHARACTERS PER LINE (user ruling 2026-10-22: the
+goal is to stop the per-turn injected text exploding). A surface may declare more than
+:data:`DEFAULT_BUDGET` when its content needs it, but only WITH A REASON in the declaration, so the
+budget is never a reason to delete needed content and never a silent waiver.
 A refusal is three lines -- what was refused and why, the door, a ``details:`` pointer -- and the
 history behind it lives in ``docs-src/dev/refusals.md``, one hop away. Reasoning:
 ``docs-src/dev/refusals.md#the-shape-of-a-refusal``.
@@ -17,44 +21,58 @@ if TYPE_CHECKING:
 
 __all__ = [
     'BUDGETS',
+    'DEFAULT_BUDGET',
     'DETAILS_PREFIX',
     'REFUSALS_DOC',
-    'ROW_CEILINGS',
+    'ROW_SURFACES',
     'Budget',
     'InjectedTextOverBudget',
     'anchors',
     'details_for',
     'pointer',
     'problems',
-    'row_problems',
-    'sentences',
+    'unreasoned_relaxations',
     'unresolved_pointers',
 ]
 
 
 @dataclass(frozen=True, slots=True)
 class Budget:
-    """The most an injected text may carry: physical lines, characters per line, and a required pointer."""
+    """The most an injected text may carry: total lines, characters per line, a required pointer, and why."""
 
     max_lines: int
     max_line_chars: int
-    needs_details: bool
+    needs_details: bool = False
+    reason: str = ''
 
 
-#: One row per injected surface. ``refusal`` is a deny reason as rendered; ``cross-repo-refusal`` is
-#: the same with the engine's one header line naming the targeted repo.
+#: What any injected surface may carry without saying why.
+DEFAULT_BUDGET: Final = Budget(max_lines=3, max_line_chars=320)
+
+#: One row per injected surface, measured on the text as it is injected. ``refusal`` is a deny reason
+#: as rendered; ``cross-repo-refusal`` adds the engine's header line; the ``rule-``/``deny-`` rows are
+#: the row fields every turn or every refusal carries. A row-field budget above its longest row is
+#: slack and is lowered in the edit that freed it.
 BUDGETS: Final[dict[str, Budget]] = {
     'refusal': Budget(max_lines=3, max_line_chars=320, needs_details=True),
-    'cross-repo-refusal': Budget(max_lines=4, max_line_chars=320, needs_details=False),
+    'cross-repo-refusal': Budget(
+        max_lines=4, max_line_chars=320, reason='the engine adds one header line naming the targeted repo'
+    ),
+    'rule-statement': Budget(
+        max_lines=1,
+        max_line_chars=717,
+        reason='a statement is the whole universal rule, cited by ID everywhere else; cutting it loses the rule',
+    ),
+    'deny-hazard': Budget(max_lines=1, max_line_chars=162),
+    'deny-remedy': Budget(max_lines=1, max_line_chars=302),
 }
 
-#: The most characters one ROW field may carry: a rule's ``statement``, a deny row's ``hazard`` and
-#: ``remedy``. Each is the current maximum and may only go DOWN; a row that grows past it moves its
-#: reasoning into the docs instead.
-ROW_CEILINGS: Final[dict[str, int]] = {'statement': 717, 'hazard': 162, 'remedy': 268}
-
-#: A sentence ends at terminal punctuation followed by whitespace and a capital, backtick or bracket.
-_SENTENCE_END: Final = re.compile(r'[.!?]\s+(?=[A-Z`*(])')
+#: The row field each row surface measures.
+ROW_SURFACES: Final[dict[str, str]] = {
+    'statement': 'rule-statement',
+    'hazard': 'deny-hazard',
+    'remedy': 'deny-remedy',
+}
 
 #: The page that holds every universal refusal's full text, relative to the lab-commons root.
 REFUSALS_DOC: Final = 'docs-src/dev/refusals.md'
@@ -94,19 +112,14 @@ def problems(text: str, surface: str) -> list[str]:
     return found
 
 
-def sentences(text: str) -> int:
-    """How many sentences *text* holds, by :data:`_SENTENCE_END`."""
-    return len(_SENTENCE_END.findall(text.strip())) + 1
-
-
-def row_problems(field: str, row_id: str, text: str) -> list[str]:
-    """Every way one row field breaks :data:`ROW_CEILINGS` or the one-sentence shape; empty when it fits."""
-    found = []
-    if len(text) > ROW_CEILINGS[field]:
-        found.append(f'{field}:{row_id} is {len(text)} chars > {ROW_CEILINGS[field]}')
-    if sentences(text) > 1:
-        found.append(f'{field}:{row_id} is {sentences(text)} sentences > 1')
-    return found
+def unreasoned_relaxations(budgets: dict[str, Budget]) -> list[str]:
+    """The surfaces of *budgets* above :data:`DEFAULT_BUDGET` on either limit with no stated reason."""
+    return sorted(
+        surface
+        for surface, budget in budgets.items()
+        if not budget.reason.strip()
+        and (budget.max_lines > DEFAULT_BUDGET.max_lines or budget.max_line_chars > DEFAULT_BUDGET.max_line_chars)
+    )
 
 
 def anchors(markdown: str) -> set[str]:

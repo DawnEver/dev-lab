@@ -41,7 +41,7 @@ from lab_commons.hpc.grants import Grant, Machine, Session, load_grants
 from lab_commons.hpc.needsets import needs_of, vocabulary_at
 from lab_commons.hpc.progress import Progress, held_by_a_limit, where
 from lab_commons.hpc.records import held_cells, run_shas
-from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run
+from lab_commons.hpc.run import NoRoom, cancel_run, job_name, load_state, submit_run, withdraw_pending
 from lab_commons.hpc.shell import RunSpec
 from lab_commons.hpc.slurm import FORGE_SESSION
 from lab_commons.hpc.watch import PENDING, settle
@@ -172,6 +172,12 @@ class SlurmCluster:
     def cancel(self, run: Run) -> list[str]:
         """``scancel`` every recorded round of *run* and any job of its name Slurm still holds."""
         return cancel_run(run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases)
+
+    def withdraw(self, run: Run) -> list[str]:
+        """Withdraw *run*'s pending tasks, keep its started ones; the ids still started."""
+        return withdraw_pending(
+            run.sha, run.platform, self.machine, self.connect, also=run.job_ids, aliases=run.job_aliases
+        )
 
     def standing(self) -> Standing:
         """Probe EVERY grant locally into one supply; the last day's use and the first grant's partitions and quota."""

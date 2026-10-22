@@ -51,7 +51,6 @@ from lab_commons.box import POLL_S, Refused
 from lab_commons.dev import durations
 from lab_commons.dev._logdistil import distil_log
 from lab_commons.dev.content import content_address
-from lab_commons.dev.envkey import env_key, env_manifest
 from lab_commons.dev.envseat import EnvironmentSeat
 from lab_commons.dev.forgerequest import offer_line
 from lab_commons.dev.forgestatus import head_sha, verdict_commit
@@ -85,6 +84,7 @@ from lab_commons.dev.verifybox import (
     ended_in_the_box,
     learn_ended,
 )
+from lab_commons.envkey import env_key, env_manifest
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -542,13 +542,14 @@ def _judge(
         verdict = run_verify(root, arguments, wait_s=wait_s)
     except MalformedAllowance as exc:
         return _inconclusive(f'verify refuses to run: {exc}')
-    except Refused as exc:
-        return _inconclusive(
+    except Refused as exc:  # CAPACITY, never a verdict: a producer's claim goes back to claimable (UNREACHABLE)
+        code, lines = _inconclusive(
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: {exc}. '
             f'Wait for it, or stop that holder, then re-run; '
             f'--lock-wait "<duration>" raises or drops the {wait_s:.0f} s ceiling on the wait. '
             f'{offer_line(root, head, arguments)}'
         )
+        return (ProducerExit.UNREACHABLE if post is not None else code), lines
     except UnverifiableLog as exc:
         return _inconclusive(
             f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'

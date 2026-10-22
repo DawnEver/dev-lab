@@ -434,16 +434,16 @@ class Composition:
     problems: tuple[str, ...]
 
 
-def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
-    """Compose *parts* by the rule in the module docstring."""
-    ordered = tuple(parts[name] for name in sorted(parts))
+def compose(parts: Mapping[str, Part], *, head: str, waived: frozenset[str] = frozenset()) -> Composition:
+    """Compose *parts* by the rule in the module docstring; a *waived* part is neither read nor required."""
+    ordered = tuple(parts[name] for name in sorted(parts) if name not in waived)
     result = Conclusion.FAIL if any(part.result is not Conclusion.PASS for part in ordered) else Conclusion.PASS
     problems: list[str] = []
     if BASE not in parts:
         problems.append(f'no {part_context(BASE)} part is posted for {head}; {_PRODUCE}')
     for name in sorted({name for part in ordered for name in part.hands}):
         handing = {part.platform: part.hands[name] for part in ordered if part.hands.get(name)}
-        if handing and name not in parts:
+        if handing and name not in parts and name not in waived:
             by = ', '.join(f'{owner} hands {count}' for owner, count in sorted(handing.items()))
             problems.append(f'missing the {name} part ({by}); {_PRODUCE}')
     return Composition(parts=ordered, result=result, problems=tuple(problems))
@@ -474,10 +474,17 @@ class Standing:
         return ', '.join(f'{part.platform}={part.result.name}/{part.scope} ran={part.ran}' for part in self.parts)
 
 
-def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None = None) -> Standing:
-    """The :class:`Standing` of commit *head* from its latest statuses; *scope* requires every part at it."""
+def standing(
+    statuses: Sequence[CommitStatus], *, head: str, scope: str | None = None, waived: frozenset[str] = frozenset()
+) -> Standing:
+    """The :class:`Standing` of commit *head* from its latest statuses; *scope* requires every part at it.
+
+    A *waived* part -- a scarce part a PR's diff does not reach (:mod:`lab_commons.dev.forgescarce`) -- is neither
+    read nor required, and an unsettled status of it is no problem.
+    """
     parts, unsettled = parts_of(statuses)
-    composed = compose(parts, head=head)
+    unsettled = tuple(one for one in unsettled if not any(one.startswith(part_context(n) + ' ') for n in waived))
+    composed = compose(parts, head=head, waived=waived)
     problems = [*unsettled, *composed.problems]
     if scope is not None:
         problems += [

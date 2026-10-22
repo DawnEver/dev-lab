@@ -8,10 +8,11 @@ producer's mind, only its exit code, so every code means ONE thing:
 * ``1`` FAIL -- the part was judged FAIL and the failures are named (posted likewise). A red part.
 * ``2`` USAGE -- the producer REFUSED ITS ARGV. argparse's own code, kept so a renamed flag needs no
   extra code to be caught: serve calls it a broken contract and fails loudly.
-* ``3`` INCONCLUSIVE -- it ran and cannot say (over the wall, truncated log, box held). No part; the
+* ``3`` INCONCLUSIVE -- it ran and cannot say (over the wall, truncated log). No part; the
   claim is released naming it, and the commit is NOT re-claimed by itself -- a human decides.
-* ``4`` UNREACHABLE -- infrastructure it needs did not answer (no login host, no forge). It says
-  nothing about the code: the claim is released as retryable and the next tick claims it again.
+* ``4`` UNREACHABLE -- infrastructure it needs did not answer (no login host, no forge), or the box had
+  no room for it (capacity, never a verdict). It says nothing about the code: the claim is released as
+  retryable and the next tick claims it again.
 
 Any other code is a CRASH. Live finding 2026-10-11: a consumer runner returned ``2`` for INCONCLUSIVE
 and serve reported "the producer refused its argv" -- two meanings sharing one code is the bug.

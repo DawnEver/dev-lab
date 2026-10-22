@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import errno
 import functools
 import json
 import os
@@ -31,8 +32,9 @@ from lab_commons.dev import (
     forgeserve,
     forgeservesteps,
     forgeship,
+    prlanded,
 )
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, RUN, STARVED, UNTAGGED, Alarm
+from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, PRUNED, RUN, STARVED, UNTAGGED, Alarm
 from lab_commons.dev.forgeclaim import OPEN, Claim, Work
 from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
 from lab_commons.dev.forgeproduce import Produced
@@ -49,6 +51,7 @@ from lab_commons.hpc.shell import FULL
 
 SHA = 'a' * 40
 BOX = Capacity(cpu=3.0, mem_bytes=24 * GB, seats={})
+UNREACHABLE = 'forge unreachable'
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
 FORGE_NOW = NOW + timedelta(minutes=7)  # the forge's clock, deliberately not the host's
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))
@@ -172,6 +175,7 @@ def _serve(
     observe=None,
     issues: _Issues | None = None,
     prune=lambda _root, _client, **_kw: (),
+    close_landed=lambda *_a, **_k: None,
     records_prune=lambda _root, _client, **_kw: (),
     starving: tuple = (),
     issue_tidy=lambda _client, _hygiene: [],
@@ -227,6 +231,7 @@ def _serve(
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
     monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
+    monkeypatch.setattr(forgeserve, 'serve_close_landed', close_landed)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
@@ -260,6 +265,8 @@ class _Slurm:
 
     def __init__(self) -> None:
         self.cancelled: list[str] = []
+        self.withdrawn: list[str] = []
+        self.started: list[str] = []
 
     def standing(self) -> forgerunstate.Standing:
         return forgerunstate.Standing(
@@ -269,6 +276,10 @@ class _Slurm:
     def cancel(self, run: forgerunstate.Run) -> list[str]:
         self.cancelled += run.job_ids
         return list(run.job_ids)
+
+    def withdraw(self, run: forgerunstate.Run) -> list[str]:
+        self.withdrawn += run.job_ids
+        return list(self.started)
 
 
 def _claimed(*work: Work) -> TickReport:
@@ -918,6 +929,33 @@ def test_every_tick_runs_the_branch_prune_on_any_host(monkeypatch, tmp_path: Pat
 
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), prune=prune)
     assert offered == [tmp_path]
+
+
+def test_every_tick_closes_landed_prs_before_the_prune_and_a_failure_only_alarms(monkeypatch, tmp_path: Path) -> None:
+    """A landed PR is closed before its branch is pruned; a failed close alarms and the tick still prunes."""
+    order: list[str] = []
+
+    def failing(*_a: object, **_k: object) -> int:
+        order.append('close')
+        raise ConnectionError(errno.ECONNREFUSED, UNREACHABLE)
+
+    monkeypatch.setattr(prlanded, 'close_landed', failing)
+    forge_client = SimpleNamespace(forge=SimpleNamespace(repo='o/r'))
+
+    def close(root: Path, _client: object, **kwargs: object) -> None:
+        prlanded.serve_close_landed(root, forge_client, **kwargs)
+
+    _report, _said, alarms = _serve(
+        monkeypatch,
+        tmp_path,
+        TickReport((), (), ()),
+        close_landed=close,
+        prune=lambda _root, _c, **_k: order.append('prune') or (),
+    )
+    assert order == ['close', 'prune']
+    (raised,) = alarms
+    assert (raised.kind, raised.repo) == (PRUNED, 'o/r')
+    assert UNREACHABLE in raised.body
 
 
 def test_every_tick_offers_the_records_prune_its_rate_limit_decides(monkeypatch, tmp_path: Path) -> None:

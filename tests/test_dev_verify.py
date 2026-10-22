@@ -41,11 +41,11 @@ from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, 
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
 from lab_commons.dev import forgerequest, localpart, platformparts, verify, verifybox
-from lab_commons.dev.inflight import seat
+from lab_commons.dev.inflight import RunKey, seat
 from lab_commons.dev.lockwait import lock_wait
 from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
 from lab_commons.dev.platformparts import part_context, part_of
-from lab_commons.dev.producer import PRODUCING_VAR, ProducerExit, producing
+from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, producing, release_reason
 from lab_commons.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
@@ -1134,7 +1134,8 @@ def test_every_inconclusive_path_exits_3_through_the_producer_contract(
     _planted_steps(monkeypatch, tmp_path, pytest_text=pytest_text, pytest_code=pytest_code)
     if plant is not None:
         monkeypatch.setattr(verify, *plant)
-    assert verify.main(['--rerun']) == ProducerExit.INCONCLUSIVE, path
+    held = path == 'box refused'  # inside a producer the box's no-room is capacity: 4, re-queued (test below)
+    assert verify.main(['--rerun']) == (ProducerExit.UNREACHABLE if held else ProducerExit.INCONCLUSIVE), path
 
 
 def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_path: Path) -> None:
@@ -1452,3 +1453,30 @@ def test_the_lock_wait_is_a_duration_quantity(capsys: pytest.CaptureFixture[str]
     retired = next(word for word in RETIRED if word.startswith('--lock-wait'))
     assert verify.main([retired, '0']) == ProducerExit.USAGE
     assert '--lock-wait "<duration>"' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('producer', [True, False], ids=['producer', 'CONTROL-developer'])
+def test_a_box_with_no_room_releases_a_producers_claim_claimable(
+    monkeypatch, tmp_path: Path, *, producer: bool
+) -> None:
+    """A capacity refusal is no verdict: inside a producer it exits UNREACHABLE, so serve releases the claim RETRYABLE.
+
+    Live 2026-10-22: head 67d955f's tests/base read ``released: inconclusive (exit 3) -- no part`` after
+    the box on G had no room; exit 3 settles the part, so nothing re-claimed it. A developer's run keeps
+    INCONCLUSIVE (the control): nothing re-queues a developer, and the code tells them nothing was measured.
+    """
+
+    def held(*_a: object, **_k: object) -> Verdict:
+        why = 'not admitted: planted-holder holds every core'
+        raise Refused(why)
+
+    monkeypatch.setattr(verify, 'run_verify', held)
+    monkeypatch.setattr(verify, 'head_sha', lambda _root: 'a' * 40)
+    monkeypatch.setattr(verify, 'status_paths', lambda _root: ())
+    monkeypatch.setattr(verify, 'offer_line', lambda *_a: '')
+    post = (lambda *_a, **_k: pytest.fail('a refusal posted a part')) if producer else None
+    key = RunKey(tree='t', env='e', selector='verify')
+    code, lines = verify._judge(tmp_path, (), key, tmp_path / 'runs.jsonl', wait_s=0.0, post=post)
+    assert code == (ProducerExit.UNREACHABLE if producer else ProducerExit.INCONCLUSIVE)
+    assert release_reason(code).startswith(RETRYABLE) is producer, 'serve re-queues exactly the capacity release'
+    assert 'planted-holder' in lines[0], 'the one line names the capacity reason'

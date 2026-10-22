@@ -7,6 +7,7 @@ callables. No test touches this box's machine file, Scheduled Task or credential
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -103,6 +104,7 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
     log, task = tmp_path / 'calls.log', tmp_path / 'task.xml'
     machine = tmp_path / 'config' / 'config.toml'
     monkeypatch.setenv(CONFIG_ENV, str(machine))
+    _registry(tmp_path, machine, ['client', 'node', 'forge'])
     monkeypatch.delenv('FAKE_GIT_DENY', raising=False)
     py = sys.executable
     programs = workstation.Programs(
@@ -114,8 +116,26 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Box:
         com=lambda _progid: Path('designer.exe'),
         windows=True,
         home=tmp_path / 'home',
+        computer='BOX',
+        release=lambda checkout: [f'released {checkout.name}'],
     )
     return Box(tmp_path / 'src', machine, task, log, programs)
+
+
+def _registry(tmp_path: Path, machine: Path, roles: list[str] | None, *, computer: str = 'BOX') -> Path:
+    """Plant a synced hosts.json (BOM-prefixed, as PowerShell writes it) and declare it in the machine file.
+
+    *roles* ``None`` plants a registry with no entry for *computer*.
+    """
+    hosts = [{'name': 'WS9', 'computer': 'OTHER', 'roles': ['client', 'node']}]
+    if roles is not None:
+        hosts.append({'name': 'G', 'computer': computer, 'roles': roles})
+    registry = tmp_path / 'sync' / 'hosts.json'
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(json.dumps({'hosts': hosts}), encoding='utf-8-sig')
+    machine.parent.mkdir(parents=True, exist_ok=True)
+    machine.write_text(f'[workstation]\nregistry = {json.dumps(str(registry))}\n', encoding='utf-8')
+    return registry
 
 
 def _changes(calls: list[str]) -> list[str]:
@@ -146,10 +166,11 @@ def test_a_second_run_changes_nothing(box: Box) -> None:
 
 
 def test_a_dry_run_reads_but_touches_nothing_and_prints_the_diff(box: Box, capsys: pytest.CaptureFixture[str]) -> None:
+    declared = box.machine.read_text(encoding='utf-8')
     assert box.deploy('--dry-run') == 0
     assert _changes(box.calls()) == []
     assert not box.root.exists()
-    assert not box.machine.exists()
+    assert box.machine.read_text(encoding='utf-8') == declared
     assert not box.task.exists()
     out = capsys.readouterr().out
     assert '[dry-run] lab-commons: git clone' in out
@@ -161,11 +182,11 @@ def test_a_dry_run_reads_but_touches_nothing_and_prints_the_diff(box: Box, capsy
 
 def test_unrelated_tables_and_comments_are_kept(box: Box) -> None:
     hand = '# this box\n[[hpc.grant]]\nuser = "me"  # mine\n\n[reserve]\ncpu_margin = 2  # ruled\n'
-    box.machine.parent.mkdir(parents=True)
+    hand = box.machine.read_text(encoding='utf-8') + hand
     box.machine.write_text(hand, encoding='utf-8')
     assert box.deploy() == 0
     text = box.machine.read_text(encoding='utf-8')
-    assert text.startswith('# this box\n[[hpc.grant]]\nuser = "me"  # mine\n')
+    assert text.startswith(hand.split('# this box')[0] + '# this box\n[[hpc.grant]]\nuser = "me"  # mine\n')
     assert 'cpu_margin = 2  # ruled' in text, 'an unrelated table keeps its line'
 
 
@@ -383,6 +404,63 @@ def test_serve_does_nothing_while_another_serve_holds_the_lock(box: Box, tmp_pat
 def test_serve_without_a_declaration_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'absent.toml'))
     assert workstation.serve(lock=tmp_path / 'serve.lock') == 2
+
+
+@pytest.mark.parametrize(
+    ('roles', 'named'),
+    [(['client', 'node'], "['client', 'node']"), (None, "no entry for computer 'BOX'")],
+    ids=['forge-role-absent', 'no-entry'],
+)
+def test_a_host_the_registry_gives_no_forge_role_claims_nothing_and_releases_its_journaled_runs(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str], roles: list[str] | None, named: str
+) -> None:
+    _serving(box)
+    serve = tomllib.loads(box.machine.read_text(encoding='utf-8'))['serve']
+    _registry(tmp_path, box.machine, roles)
+    box.machine.write_text(
+        box.machine.read_text(encoding='utf-8') + f'\n[serve]\nrepos = {json.dumps(serve["repos"])}\n'
+        f'root = {json.dumps(serve["root"])}\n',
+        encoding='utf-8',
+    )
+    seen = len(box.calls())
+    worst, ran = _serve(box, tmp_path)
+    assert (worst, ran) == (0, []), 'no forge serve runs, so nothing is claimed'
+    assert box.calls()[seen:] == [], 'nothing is refreshed either'
+    out = capsys.readouterr().out
+    assert '[serve] not a forge host (' in out
+    assert named in out
+    assert [line for line in out.splitlines() if 'released ' in line] == [
+        f'[serve] {name} released {name}' for name in ('lab-commons', 'alpha', 'beta')
+    ]
+
+
+def test_the_registry_entry_is_matched_by_computer_before_name(box: Box, tmp_path: Path) -> None:
+    _registry(tmp_path, box.machine, ['forge'], computer='box')
+    assert workstation.forge_refusal('BOX') is None, 'COMPUTERNAME matches case-insensitively'
+    assert workstation.forge_refusal('G') is None, 'the label matches when no computer does'
+    assert 'roles of WS9' in (workstation.forge_refusal('OTHER') or '')
+
+
+def test_serve_with_no_registry_declared_is_refused_by_name(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _serving(box)
+    text = box.machine.read_text(encoding='utf-8')
+    box.machine.write_text(text.replace('[workstation]', '[workstation_retired]'), encoding='utf-8')
+    worst, ran = _serve(box, tmp_path)
+    assert (worst, ran) == (2, [])
+    assert 'no [workstation] registry' in capsys.readouterr().err
+
+
+def test_deploy_is_refused_on_a_host_without_the_forge_role(
+    box: Box, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    registry = _registry(tmp_path, box.machine, ['client', 'node'])
+    assert box.deploy() == 2
+    err = capsys.readouterr().err
+    assert str(registry) in err
+    assert 'add "forge"' in err
+    assert box.calls() == []
 
 
 def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(

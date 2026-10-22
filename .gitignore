@@ -26,7 +26,6 @@
 /report/
 htmlcov/
 output/
-scratch/
 **/.claude/**
 !**/.claude/settings.json
 !**/.claude/sharp-review.json

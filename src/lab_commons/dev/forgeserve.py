@@ -15,7 +15,8 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`lab_commons.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`lab_commons.dev.forgeship.tidy`);
-on any host, prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`),
+on any host, close open PRs whose head is on their base (:func:`lab_commons.dev.prlanded.serve_close_landed`),
+prune merged idle origin branches (idempotent) (:func:`lab_commons.dev.branchprune.serve_prune`),
 prune the records home -- dead shas' records, unit results over budget -- once per interval
 (:func:`lab_commons.dev.forgerecords.serve_prune`)
 and tidy the repo's issues (``forge tidy``, :func:`lab_commons.dev.forgetidy.tidy`) -- every served repo, every tick;
@@ -69,7 +70,7 @@ is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`lab_commons.dev.forgeschedule`). Before the tick a cluster host
 reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
-other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released); on ANY host,
+other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained); on ANY host,
 a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
 read across every host card; and this host's CARD is published on the forge
 (:mod:`lab_commons.dev.forgehosts`):
@@ -135,6 +136,7 @@ from lab_commons.dev.forgeservesteps import hygiene, prompt, relock, retain_stor
 from lab_commons.dev.forgeslurm import slurm_cluster, standing_of
 from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
 from lab_commons.dev.platformparts import origin_url, run_tag
+from lab_commons.dev.prlanded import serve_close_landed
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.retired import refuse_retired_keys
@@ -241,6 +243,7 @@ def serve(
     )  # fmt: skip
     tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
+    serve_close_landed(root, client(root), say=say, alarm=alarm)
     serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
     hygiene(root, client(root), say=say)

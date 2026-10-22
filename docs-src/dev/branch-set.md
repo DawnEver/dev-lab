@@ -98,6 +98,18 @@ deletes anything. Undeclared branches whose tip has been idle for at least `grac
 - **Idle means the tip's committer date.** A branch nobody has committed to for `grace_hours` is idle, whenever
   it was pushed.
 
+### Landed pull requests close
+
+An open PR holds its head branch against every delete, so a PR whose head reached its base some other way (a
+break-glass or containment merge) would hold it forever. Each `forge serve` tick, before the prune, closes every
+OPEN PR whose head sha is an ancestor of `origin/<base>` (`merge-base --is-ancestor`, the only criterion): one
+comment `landed: head <sha12> is on <base> (merged by <sha12>)`, close, then the head branch through
+LOSSLESS-DELETE when the branch set allows it (an `ephemeral` namespace, or `prune_merged` for an undeclared
+branch). A PR not contained is never touched; a closed PR is not listed again. Each close is one
+`{"event": "lab_commons.forge.pr-close-landed", "pr", "head", "sha", "base", "merged_by"}` line. A person or
+agent runs the same: `python -m lab_commons.dev.forge pr close-landed [<n>...]` (no number: every open PR),
+which refuses a named PR whose head is not contained (`lab_commons.dev.prlanded`).
+
 ### Mirrors
 
 A gitea push mirror runs a mirror push, which PRUNES: a branch deleted on gitea is deleted on the mirror at its

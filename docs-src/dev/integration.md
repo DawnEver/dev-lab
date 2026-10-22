@@ -14,6 +14,16 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    merge audit is MERGED BY THE FORGE: a merge commit carrying `Merged-Branch: <head>` and `Forge-Pull: <N>`
    (`lab_commons.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
    what is missing -- on a conflict, "merge `integrate/main` into the branch".
+
+   SCARCE PARTS BY REACH (user ruling 2026-10-22, `lab_commons.dev.forgescarce`). A part whose need-set holds a
+   resource the repo declares scarce -- ONE table, `[tool.lab_commons.tests] scarce = ["femm", "jmag", ...]`, a
+   subset of `resources` -- is required of a PR only when a path of `merge-base..head` reaches one of its test
+   files (the carry's footprint rule; the files are read off the `handed` map of the record the head's
+   `tests/base` links). An unreached scarce part is WAIVED: never produced for the PR, never read for its
+   merge, and named in its integration comment. A reached one is required and is produced for the PR whatever
+   `[tool.lab_commons.parts.refs]` says. Any doubt (no record, no merge-base) waives nothing. The full scarce
+   parts run on `integrate/main` after the merge; a red one there keeps ONE `integration` issue naming every
+   merge since its last green and the sessions (`Lab-Session`/`Claude-Session` trailers) that merge brought.
 3. `integrate/main` takes nothing else: with `pr_merges_since` declared, a client push adding a commit to it is
    refused at pre-push (`INTEGRATION-TAKES-ONLY-FORGE-MERGES`). The one exception is the emergency
    BREAK-GLASS (user ruling 2026-10-19), for when the forge itself is down or its auto-merge is broken, so
@@ -101,6 +111,8 @@ Each tick, and nothing else:
 4. `integrate promote <sha>` when an integration commit's every part stands PASS at scope `full`.
 5. Break-glass notices: read the `integration` issue each break-glass commit opened, and close it with the PR
    that moves `pr_merges_since` past the commit.
+6. A PR left open after its head landed is closed by the forge's tick; to do it now:
+   `python -m lab_commons.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
 
 A steward runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 

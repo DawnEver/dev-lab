@@ -38,8 +38,9 @@ family default and a repository overrides key by key (a table key by table key):
 
 ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
 of a part in flight across the fleet; its current tip waits behind that run
-(:mod:`lab_commons.dev.forgecoalesce`) and is tested next as one batch -- its holder cancels that
-run for the tip at its next tick, STARTED OR NOT (user ruling 2026-10-21, :mod:`lab_commons.dev.forgerun`). An
+(:mod:`lab_commons.dev.forgecoalesce`) and is tested next as one batch -- its holder withdraws that
+run's pending tasks for the tip at its next tick and lets its started ones drain (NEWEST-HEAD-ONLY, user ruling
+2026-10-22, :mod:`lab_commons.dev.forgerun`). An
 earlier tip never claimed is never a candidate. A lane is tested at every pushed sha.
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's
@@ -56,6 +57,7 @@ from __future__ import annotations
 import dataclasses
 import fnmatch
 import re
+import subprocess
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
@@ -84,6 +86,7 @@ from lab_commons.dev.forgestatus import CARRIED_FROM
 from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import part_refs
+from lab_commons.hpc.needsets import scarce_parts, vocabulary_at
 from lab_commons.hpc.retired import RETIRED
 from lab_commons.hpc.shell import FULL
 
@@ -368,10 +371,14 @@ def candidates(
     policy: Policy,
     now: datetime,
     say: Callable[[str], None] = lambda _: None,
+    waived: Callable[[str], frozenset[str]] = lambda _: frozenset(),
 ) -> tuple[Candidate, ...]:
     """Every candidate, ONE per ref and part: the ref's newest sha (coalesced). Fetches nothing.
 
     *parts* names the parts a sha needs (:func:`lab_commons.dev.platformparts.derived` over its statuses).
+    *waived* names, for a PR head sha, the scarce parts its diff does not reach
+    (:func:`lab_commons.dev.forgescarce.unreached`): never a candidate. Every OTHER scarce part of a PR head is
+    reached, so it is offered whatever its part's ref filter says.
 
     The integration branch, every open PR into it (labels from the PR), every branch ``classes_by_ref``
     classes, and every request issue -- each kept only where its part's ref filter admits its ref
@@ -379,9 +386,13 @@ def candidates(
     :func:`optional`, a failure said through *say*. A PR's origin is its author; any other head's is the
     login the forge resolves for its commit (:func:`~lab_commons.dev.forgeorigin.head_login`), ``''`` when none.
     """
-    found = []
+    found, reached = [], set()
     for ref, sha, kind, labels, number, pr_author in _part_refs(root, client, schedule, policy, say=say):
         needed = parts(sha)
+        if kind == PR:
+            skipped = waived(sha)
+            needed = [part for part in needed if part not in skipped]
+            reached |= {(ref, sha, part) for part in scarce_parts(needed, _scarce(root, sha))}
         by = (pr_author or head_login(client, sha)) if needed else ''
         found += [
             Candidate(
@@ -401,7 +412,15 @@ def candidates(
             for platform in needed
         ]
     found += optional('request issues', lambda: _requests(root, client, repo, schedule, now, say=say), say)
-    return tuple(one for one in found if _ref_served(root, one, say))
+    return tuple(one for one in found if (one.ref, one.sha, one.platform) in reached or _ref_served(root, one, say))
+
+
+def _scarce(root: Path, sha: str) -> frozenset[str]:
+    """The scarce resources commit *sha* declares (:mod:`lab_commons.dev.forgescarce`); none when unreadable."""
+    try:
+        return frozenset(vocabulary_at(root, sha).scarce)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return frozenset()
 
 
 def _ref_served(root: Path, wanted: Candidate, say: Callable[[str], None]) -> bool:

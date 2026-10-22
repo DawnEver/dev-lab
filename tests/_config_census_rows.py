@@ -366,7 +366,7 @@ ROWS_LAB_COMMONS: dict[str, Placement] = {
         'RENDERED SINCE 2026-10-03, on the user ruling that every project-level file has one source in '
         'this package. It had been declined: ten patterns, a subset of no consumer in either direction. '
         'What closed it was the BASE moving rather than this file: the family-mandated lines '
-        '(`.verify/`, `**/__version__.py`, `/build/`, `/dist/`, `scratch/`, `htmlcov/`, `output/`, '
+        '(`.verify/`, `**/__version__.py`, `/build/`, `/dist/`, `htmlcov/`, `output/`, '
         '`**/.DS_Store` and the ordered Claude project-state section) joined the fourteen-pattern '
         'consumer core, after which this tree`s file is the base plus ONE delta line, `*.py[cod]`. '
         'THE SEAM is the base: every pattern a family mechanism writes. What BREAKS if the one delta line moved: a '

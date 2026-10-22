@@ -23,9 +23,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Protocol
 
+from lab_commons.compute.durable import durable_write
 from lab_commons.compute.model import Supply
 from lab_commons.config import config_path
-from lab_commons.dev._forge_journal import durable_write
 from lab_commons.dev.forgeclaim import Claim
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.shell import FULL
@@ -99,7 +99,10 @@ class Cluster(Protocol):
         """Where *run*'s jobs stand, one short phrase (:func:`lab_commons.dev.forgeslurm.progress_text`)."""
 
     def cancel(self, run: Run) -> list[str]:
-        """``scancel`` every job of *run*; the ids cancelled."""
+        """``scancel`` every job of *run*, started or not; the ids cancelled. Never for supersession."""
+
+    def withdraw(self, run: Run) -> list[str]:
+        """Withdraw *run*'s NOT-YET-STARTED tasks; the job ids still started (``[]``: nothing left running)."""
 
     def standing(self) -> Standing:
         """The account's supply, core-hours used per run in the last day, and the partitions and quota."""

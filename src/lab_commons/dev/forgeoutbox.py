@@ -50,7 +50,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev._forge_journal import OUTBOX_REL, Journal, durable_write, journal_for, outbox_dir
+from lab_commons.compute.durable import durable_write
+from lab_commons.dev._forge_journal import OUTBOX_REL, Journal, journal_for, outbox_dir
 from lab_commons.dev.forge import (
     NoCredential,
     Transport,
