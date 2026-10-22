@@ -72,6 +72,7 @@ _ENFORCED = {
         guard('tests/test_arch_rules_pages.py'),
     ),
     'DOCS-SPLIT': (guard('tests/test_arch_rules_pages.py'),),
+    'SPLIT-BY-CONCEPT': (guard('tests/test_arch_modules_split_by_concept.py'),),
     'ESCAPE-HATCH-CEILING': (
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_the_adoption_accounts_for_every_rule.py'),

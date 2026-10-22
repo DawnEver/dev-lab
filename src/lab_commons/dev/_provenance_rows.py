@@ -481,6 +481,11 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'worktreeplace': ('original',),
     'ephemeralrefs': ('original',),
     'famfiles': ('original',),
+    # ORIGINAL: an audit (2026-10-21) found consumer pages restating registry rules, and no consumer
+    # file refused the copy -- there is nothing to supersede.
+    'restatedrules': ('original',),
+    # ORIGINAL: SPLIT-BY-CONCEPT was prose until this body; no consumer guard read module names.
+    'sizesplits': ('original',),
     # -- `lab_commons.dev.githooks`: the TOML hook table and its runner, and the per-file checks.
     'table': ('original',),
     'runner': ('original',),

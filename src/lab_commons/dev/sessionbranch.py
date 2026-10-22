@@ -14,7 +14,10 @@ The invariants refused here by name, with NO network call beyond the push itself
 
 * ``PUBLISH-IS-THE-LOCAL-REF`` (P2) -- a push to ``refs/heads/X`` carries the local branch ``X``: its local
   ref, with ``HEAD`` resolved, IS ``refs/heads/X``. ``HEAD:X`` from another branch, ``Y:X`` and a bare sha
-  are refused. Any checkout may publish ``X`` -- none needs it checked out.
+  are refused. Any checkout may publish ``X`` -- none needs it checked out. And EVERY local branch ``Y`` is
+  published only as ``Y``: ``Y:Z`` and a bare push whose git upstream names another branch are refused, so a
+  lane cut from ``origin/<integration>`` never lands there by accident. A detached tip names no branch, so a
+  machine push of one (:mod:`lab_commons.dev.relock`) to a branch no session declares is admitted.
 * ``SESSION-HISTORY-ONLY-GROWS`` (P3) -- the old remote tip git hands the hook is an ancestor of the new
   one; a forced non-fast-forward and a deletion are refused. ONE place: no other hook judges this.
 * ``INTEGRATION-IS-MERGES-ONLY`` (P4) -- every new first-parent commit of the integration branch is a
@@ -215,6 +218,12 @@ def refusals(root: Path, lines: str) -> list[str]:
             continue
         if fields[2] in {f'{_HEADS}{name}' for name in declared.sessions | {declared.trunk}}:
             found += _judge_ref(root, policy, fields)
+        elif (named := _local(root, fields[0])).startswith(_HEADS) and named != fields[2]:
+            branch = named[len(_HEADS) :]
+            found.append(
+                f'{P2}: the local branch {branch} is published only as {branch}, not {fields[2][len(_HEADS) :]}; '
+                f'push `git push origin {branch}`'
+            )
     return found
 
 

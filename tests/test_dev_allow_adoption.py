@@ -324,7 +324,7 @@ def test_the_block_is_bound_on_both_sides_and_neither_number_has_a_default() -> 
     with pytest.raises(FloorUnmet):
         assert_allow_is_adoptable(allow, [], floor=9 + doors, headroom=2)
     with pytest.raises(SlackFloor):
-        assert_allow_is_adoptable(allow, [], floor=1 + doors, headroom=1)
+        assert_allow_is_adoptable(allow, [], floor=1, headroom=1)
     with pytest.raises(FloorMisdeclared):
         assert_allow_is_adoptable(allow, [], floor=2, headroom=0)
 
