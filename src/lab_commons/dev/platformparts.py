@@ -76,6 +76,7 @@ import argparse
 import dataclasses
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -104,6 +105,7 @@ __all__ = [
     'CONTEXT_PREFIX',
     'PART_FIELD',
     'REVIEW_CONTEXT',
+    'UNCLAIMED',
     'ClusterPart',
     'Composition',
     'Part',
@@ -119,6 +121,7 @@ __all__ = [
     'part_of',
     'parts_of',
     'producer_argv',
+    'run_tag',
     'select',
     'split',
     'standing',
@@ -134,6 +137,9 @@ REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'
+
+#: How many hex digits of the sha a run's log prefix shows (:func:`run_tag`).
+_TAG_SHA: Final = 8
 
 #: How many ids a refusal names before eliding; the count is always given.
 _NAMED: Final = 5
@@ -169,6 +175,11 @@ class UndeclaredPart(ValueError):
 def part_context(part: str) -> str:
     """``tests/<part>`` -- the one status context a part (and a claim on it) uses."""
     return f'{CONTEXT_PREFIX}{part}'
+
+
+def run_tag(part: str, sha: str) -> str:
+    """``[<part>@<sha8>]`` -- the one prefix a run's log lines carry, so two runs of one part read apart."""
+    return f'[{part}@{sha[:_TAG_SHA]}]'
 
 
 def _text(table: Mapping[str, Any], name: str, key: str, example: str, *, required: bool) -> str:
@@ -343,13 +354,8 @@ def part_of(record: Mapping[str, Any]) -> Part:
     if unowned:
         msg = f'the {platform} record for {sha} hands {len(unowned)} test(s) to no part: {_elided(unowned)}'
         raise PartRefusal(msg)
-    hands: dict[str, int] = {}
-    for owner in handed.values():
-        hands[owner] = hands.get(owner, 0) + 1
-    kept: dict[str, int] = {}
-    for node, origin in record.get('carried', {}).items():
-        if node in covered:
-            kept[origin[:12]] = kept.get(origin[:12], 0) + 1
+    hands = dict(Counter(handed.values()))
+    kept = dict(Counter(origin[:12] for node, origin in record.get('carried', {}).items() if node in covered))
     return Part(
         platform=platform,
         scope=scope,
@@ -443,6 +449,11 @@ def compose(parts: Mapping[str, Part], *, head: str) -> Composition:
     return Composition(parts=ordered, result=result, problems=tuple(problems))
 
 
+#: The reading of a commit with NO ``tests/<part>`` status at all: no producer has claimed it. Distinct from
+#: INCONCLUSIVE, which says a producer posted something that does not settle (a claim, an ``error``, a part missing).
+UNCLAIMED: Final = 'UNCLAIMED'
+
+
 @dataclass(frozen=True)
 class Standing:
     """A commit's result as its parts on the forge say it: PASS, FAIL, or INCONCLUSIVE while unsettled.
@@ -455,6 +466,8 @@ class Standing:
     result: Conclusion
     parts: tuple[Part, ...]
     problems: tuple[str, ...]
+    #: The state to SAY: :data:`UNCLAIMED` when nothing is posted, else the result's name.
+    reading: str
 
     def cited(self) -> str:
         """The parts it rests on, one ``part=RESULT/scope ran=N`` each."""
@@ -473,7 +486,9 @@ def standing(statuses: Sequence[CommitStatus], *, head: str, scope: str | None =
             if part.result is not Conclusion.PASS or part.scope != scope
         ]
     failed = any(part.result is Conclusion.FAIL for part in composed.parts)
-    return Standing(result=_settled(failed=failed, problems=problems), parts=composed.parts, problems=tuple(problems))
+    result = _settled(failed=failed, problems=problems)
+    reading = UNCLAIMED if result is Conclusion.INCONCLUSIVE and not (parts or unsettled) else result.name
+    return Standing(result=result, parts=composed.parts, problems=tuple(problems), reading=reading)
 
 
 def _settled(*, failed: bool, problems: Sequence[str]) -> Conclusion:

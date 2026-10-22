@@ -4,7 +4,7 @@ THE PRINCIPLE (``DOWNSTREAM-SYNCS-INTEGRATION``, user ruling 2026-10-11). A chil
 ``feat/*``, a PR head) merges ONLY the integration branch. It never pulls another child's work in
 sideways: that work reaches it once, through integration, after the integrator merged it. The owner
 may opt in to watch specific additional refs, and the opt-in lives in ONE place, local to the
-checkout and native to git -- the multi-valued ``branch.<child>.labUpstream`` config -- managed by
+checkout and native to git -- the multi-valued ``branch.<child>.labSyncFrom`` config -- managed by
 ``--watch``/``--unwatch``/``--list``. No file, nothing committed: it is one person's choice about one
 checkout. A ref outside that set is REFUSED by name (:func:`refused`).
 
@@ -37,8 +37,8 @@ from lab_commons.log import emit
 
 __all__ = ['CONFIG_KEY', 'Plan', 'main', 'plan', 'refused', 'sync', 'unwatch', 'upstreams', 'watch']
 
-#: The per-branch git config key holding the opt-in refs (``branch.<child>.labUpstream``).
-CONFIG_KEY: Final = 'labUpstream'
+#: The per-branch git config key holding the opt-in refs (``branch.<child>.labSyncFrom``).
+CONFIG_KEY: Final = 'labSyncFrom'
 
 _ORIGIN: Final = 'origin/'
 

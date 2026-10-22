@@ -234,3 +234,21 @@ def test_main_session_publishes_and_a_subagent_is_still_refused(command: str) ->
 def test_a_main_session_force_push_or_remote_delete_stays_refused(command: str, rule: str) -> None:
     """The planted control: an allow row admits the glob, the deny row still decides first."""
     assert denies(DENY_RULES, command) == rule
+
+
+@pytest.mark.parametrize(
+    ('command', 'rule'),
+    [
+        ('git reset --hard origin/main', 'GIT-RESET'),
+        ('git -C .claude/worktrees/lane reset HEAD~1', 'GIT-RESET'),
+        ('git commit -am "wip"', 'GIT-STAGE-EVERYTHING'),
+        ('git add -A', 'GIT-STAGE-EVERYTHING'),
+        ('git add -u src/', 'GIT-STAGE-EVERYTHING'),
+        ('git stash', 'GIT-STASH'),
+        ('git commit --amend', 'GIT-COMMIT-AMEND'),
+    ],
+)
+def test_the_shared_checkout_rewrites_are_each_refused_by_a_row(command: str, rule: str) -> None:
+    """SHARED-CHECKOUT's `never reset/amend/stash/-a/-A/-u` is a mechanism, not prose; staging a PATH is the control."""
+    assert denies(DENY_RULES, command, _REMEDIES) == rule
+    assert denies(DENY_RULES, 'git add src/a.py tests/test_a.py', _REMEDIES) is None

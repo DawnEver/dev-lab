@@ -21,6 +21,7 @@ import pytest
 from _forge_fake import Loopback, Recorder, answer, git_out, make_repo, run_git, serve
 from test_dev_forgeintent import _claimed as _intent_claimed
 from test_dev_forgeintent import _Forge, _reattach
+from test_dev_forgerun import SHA as RUN_SHA
 from test_dev_forgerun import _CrashAtSbatch, _Slurm, _start, _Store, _tick
 
 from lab_commons.config import CONFIG_ENV
@@ -212,6 +213,8 @@ def test_login_node_restart_resumes_the_cluster_run_without_a_human(tmp_path: Pa
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     monkeypatch.setattr(forgerun, 'pyproject_at', lambda _root, _sha: '')
     monkeypatch.setattr(forgerun, 'route', lambda *_a: ())
+    monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: RUN_SHA)  # the ref has not moved on
+    monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: True)
     store, crashing = _Store(), _CrashAtSbatch(tmp_path / 'r')
     _start(tmp_path, store)
     with pytest.raises(ConnectionResetError):

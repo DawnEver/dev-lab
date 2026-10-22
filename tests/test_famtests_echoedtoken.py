@@ -88,7 +88,7 @@ def test_a_walk_that_reached_nothing_is_refused_rather_than_reported_clean() -> 
 
 def test_a_floor_that_has_stopped_binding_is_refused_too() -> None:
     """THE OTHER SIDE OF THE RATCHET: a floor the population outgrew is a waiver nothing uses."""
-    grown = echoedtoken.EchoScan(functions_read=FUNCTION_FLOOR + HEADROOM + 1, offenders=())
+    grown = echoedtoken.EchoScan(functions_read=max(FUNCTION_FLOOR + HEADROOM, 2 * FUNCTION_FLOOR) + 1, offenders=())
     with pytest.raises(floors.SlackFloor):
         echoedtoken.assert_no_clause_checks_its_own_echo(grown, floor=FUNCTION_FLOOR, headroom=HEADROOM)
 

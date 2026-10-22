@@ -132,3 +132,27 @@ def test_a_linked_worktree_installs_into_its_own_git_dir(repo: Path, tmp_path: P
     assert shared.returncode == 1  # the shared config is untouched
     assert hook_install.hook_installation(repo).verdict == UNPROTECTED  # so is the main checkout
     assert install(lane).hooks_dir == done.hooks_dir
+
+
+def _config(repo: Path, key: str) -> str:
+    done = subprocess.run(
+        [_GIT, '-C', str(repo), 'config', '--get', key], capture_output=True, text=True, encoding='utf-8', check=False
+    )
+    return done.stdout.strip()
+
+
+def test_install_stops_git_tracking_another_branch_and_pushes_each_under_its_own_name(repo: Path) -> None:
+    """A lane cut from a remote branch tracks NOTHING, and its first bare push sets its OWN upstream.
+
+    PLANTED CONTROL: before the install git's defaults are in force (nothing set).
+    """
+    assert {key: _config(repo, key) for key in hook_install.BRANCH_DEFAULTS} == dict.fromkeys(
+        hook_install.BRANCH_DEFAULTS, ''
+    )
+    install(repo)
+    assert {key: _config(repo, key) for key in hook_install.BRANCH_DEFAULTS} == hook_install.BRANCH_DEFAULTS
+    assert hook_install.BRANCH_DEFAULTS == {
+        'branch.autoSetupMerge': 'false',
+        'push.default': 'current',
+        'push.autoSetupRemote': 'true',
+    }

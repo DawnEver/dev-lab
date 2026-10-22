@@ -856,6 +856,34 @@ def test_a_retired_declaration_is_refused_once_on_its_own_commit_and_never_waits
     assert [item.candidate.ref for item in again.queue] == []
 
 
+def test_the_kit_declaring_a_table_its_server_does_not_know_is_refused_on_its_own_commit(
+    server, tmp_path: Path
+) -> None:
+    """PLANTED (live 2026-10-21, lab-commons #244): the KIT's unknown table is refused once on its own commit.
+
+    The kit's PR declared the table it adds; every host's older kit refused it as the host's defect, so the PR
+    waited UNCLAIMED fleet-wide with only host alarms. No host serving the kit can know a table before it merges.
+
+    PLANTED CONTROL: the test two above -- the same unknown table in a CONSUMER's declaration waits, unposted.
+    """
+    repo, tips = _origin(tmp_path)
+    bad = _declare(repo, tips, '[project]\nname = "lab-commons"\n' + PRODUCE + '[tool.lab_commons.tomorrow]\n')
+    run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', bad)
+    head = _declare(repo, tips, PRODUCE)
+    answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', bad, 'priority:user')]))
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{bad}', (200, []))
+    answer('POST', f'{API}/statuses/{bad}', (201, {}))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(1, ME)]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server)
+    assert [w.ref for w in report.claimed] == ['integrate/main']
+    assert report.queue == ()
+    (settled,) = [r for r in Recorder.received if r['method'] == 'POST' and bad in r['path']]
+    assert settled['body']['state'] == 'error'
+    assert 'drop [tool.lab_commons.tomorrow] until the kit merges' in settled['body']['description']
+
+
 def test_a_dry_run_routes_no_refusal(server, tmp_path: Path) -> None:
     """A dry run posts nothing: the commit-own refusal is shown waiting, with its reason."""
     repo, tips = _origin(tmp_path)
@@ -983,6 +1011,8 @@ def _history(**by_sha: list[CommitStatus]) -> object:
 
 
 BOB = Claim('H', 'bob', LATER, 'ada/bob')
+#: What the queue says of a tip waiting behind BOB's run: its holder supersedes it (user ruling 2026-10-21).
+_SUPERSEDED = '(held on ada/bob: superseded at its next tick)'
 
 
 def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_does(tmp_path: Path) -> None:
@@ -996,12 +1026,15 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     new = _push(repo, tips, 'integrate/main')
     schedule = load_schedule(repo)
     tip = _candidate('integrate/main', new, INTEGRATION)
-    running = _history(**{old: [_pending(BOB, 1)]})
-    assert behind(repo, tip, schedule, running, NOW) == f'{WAITING_BEHIND} {old[:12]} (in flight on ada/bob)'
-    queued = _history(**{old: [_pending(dataclasses.replace(BOB, progress='queued 0/12'), 1)]})
-    assert behind(repo, tip, schedule, queued, NOW) == (
-        f'{WAITING_BEHIND} {old[:12]} (not started on ada/bob: superseded at its next tick)'
-    ), 'the queue says a run that has not started gives its slot to the tip (user ruling 2026-10-19)'
+    for progress in ('', 'queued 0/12', 'running 40/93 done 12/93'):
+        held = _history(**{old: [_pending(dataclasses.replace(BOB, progress=progress), 1)]})
+        assert behind(repo, tip, schedule, held, NOW) == f'{WAITING_BEHIND} {old[:12]} {_SUPERSEDED}', (
+            f'started or not ({progress!r}), the queue says its holder gives the slot to the tip (ruling 2026-10-21)'
+        )
+    publishing = _history(**{old: [_pending(dataclasses.replace(BOB, progress='publishing'), 1)]})
+    assert behind(repo, tip, schedule, publishing, NOW) == f'{WAITING_BEHIND} {old[:12]} (publishing on ada/bob)', (
+        'PLANTED CONTROL: a run whose record is gathered is posting it, never superseded'
+    )
     settled = _history(**{old: [_pending(BOB, 1), CommitStatus('tests/base', 'success', 'ok', '', 2, 'bob')]})
     assert behind(repo, tip, schedule, settled, NOW) == ''
     assert behind(repo, tip, schedule, _history(), NOW) == ''
@@ -1035,9 +1068,7 @@ def test_a_tick_claims_no_tip_whose_ref_runs_elsewhere_and_claims_it_once_that_r
     report = _tick(repo, server)
     assert report.claimed == ()
     assert [r for r in Recorder.received if r['method'] == 'POST'] == [], 'a running run is never cancelled'
-    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} (in flight on ada/bob)' in (
-        report.lines
-    )
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_SUPERSEDED}' in (report.lines)
     Recorder.received.clear()
     settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}
     answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
@@ -1057,9 +1088,7 @@ def test_a_tip_another_host_claimed_that_this_host_never_fetched_still_blocks(tm
     assert unseen not in reflog, 'the claimed tip was never fetched here'
     tip = _candidate('integrate/main', new, INTEGRATION)
     running = _history(**{unseen: [_pending(BOB, 1)]})
-    assert (
-        behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} (in flight on ada/bob)'
-    )
+    assert behind(repo, tip, load_schedule(repo), running, NOW) == f'{WAITING_BEHIND} {unseen[:12]} {_SUPERSEDED}'
 
 
 def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(server, tmp_path: Path) -> None:
@@ -1071,7 +1100,7 @@ def test_a_tip_waiting_behind_its_refs_run_is_not_work_this_host_left_idle(serve
     answer('GET', f'{API}/statuses/{new}', (200, []))
     answer('GET', f'{API}/statuses/{old}', (200, [_post(1, BOB)]))
     held = _tick(repo, server, dry_run=True)
-    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} (in flight on ada/bob)' in held.lines
+    assert f'waiting integrate/main@{new[:12]}:base: {WAITING_BEHIND} {old[:12]} {_SUPERSEDED}' in held.lines
     assert new not in {w.sha for w in held.pending}, 'waiting behind is a fleet hold, not this host idle'
     Recorder.received.clear()
     settled = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'ok'}

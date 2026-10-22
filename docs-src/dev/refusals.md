@@ -49,6 +49,16 @@ When a command targets another repo, the engine adds one header line naming that
 - **Why it is refused.** `refs/stash` is REPO-WIDE. It is one ref per repository, not per worktree, so a stash taken in one checkout is popped by whoever pops next -- in a family whose premise is a shared, possibly concurrent checkout, that is another agent losing work it never knew existed.
 - **The exit.** Keep the work where its owner can see it. Either commit it on your own lane branch (a scratch commit is cheap and is named), or take a throwaway checkout: git worktree add --detach .claude/worktrees/<name> <sha>
 
+## GIT-RESET
+
+- **Why it is refused.** every form of `git reset` moves HEAD, the index or the working tree of a checkout, and in a shared checkout another agent may be committing there at that moment: `--hard` discards their edits, `--soft`/`--mixed` silently re-stage or un-stage what they meant to commit. SHARED-CHECKOUT said "never `git reset`" in prose and nothing refused it.
+- **The exit.** Name the narrower act: unstage one path with `git restore --staged <path>`; undo a commit FORWARD with `git revert <sha>`; to start over, take a throwaway checkout: git worktree add --detach .claude/worktrees/<name> <sha>
+
+## GIT-STAGE-EVERYTHING
+
+- **Why it is refused.** `git commit -a`, `git add -A`/`--all`, `-u`/`--update`, `.` and a directory stage whatever is modified, including what another agent in the same checkout left unstaged -- an unstaged edit is not storage, and a wide stage turns it into somebody else's commit. The pattern reads only up to the first quote, so a message that mentions a flag is not one.
+- **The exit.** Stage the paths you mean and check what is staged: `git add <path> <path>`, then `git diff --cached --stat`.
+
 ## PUSH-FORCE
 
 - **Why it is refused.** every branch here is read by someone else, and rewriting a ref silently invalidates any verdict already taken against the old tree -- the verdict still cites a `tree=` address, and the tree it names no longer exists. `--force-with-lease` is refused with the rest: it protects against a ref that MOVED, not against a reader who already judged the ref as it was.
