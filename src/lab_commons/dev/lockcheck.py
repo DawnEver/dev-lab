@@ -1,4 +1,4 @@
-"""PIN + FRESHNESS -- the pre-push check that a pushed commit's lock is committed AND at the newest resolution.
+"""PIN -- the pre-push check that a pushed commit COMMITS its lock and holds nothing below the newest unreasoned.
 
 User ruling 2026-10-17, superseding the same day's "dependencies float": floating broke a consumer with no
 commit of its own (lab-commons renamed a module, and every venv that resolved the new tip broke), and a host's
@@ -6,33 +6,26 @@ queue refused a declaration its newer kit did not know. So every family repo COM
 install is ``uv sync --frozen`` from it (:mod:`lab_commons.dev.dep`, the served venvs): a commit's code and its
 exact dependencies are tested together and identical on every host. The lock is the reproducibility.
 
-What keeps a pin from rotting is THIS row, the shape of the behind-push refusal: a PUSHED COMMIT IS REFUSED
-(:func:`lock_problems`, judged at the pushed sha, never a dirty working tree) when
+A PUSHED COMMIT IS REFUSED (:func:`lock_problems`, judged at the pushed sha, never a dirty working tree) when
 
 * it commits no ``uv.lock``;
 * it HOLDS a requirement below the newest -- an upper bound (``<``, ``<=``), an exact pin (``==``, ``===``,
   ``~=``) or a git requirement at a ref -- with no reason: a comment on its line or the comment line above
-  (:func:`unreasoned_holds`). A reasoned range is the one way to stay below latest (e.g. ``<3.14``: pyo3 ABI);
-* it is pushed to the integration or trunk branch (``[tool.lab_commons.integrator]``) and ``uv lock --upgrade
-  --dry-run`` at that sha would change the lock (:func:`stale`): an in-house git dependency behind the tip of its
-  declared ref, a PyPI dependency below the newest its declared ranges admit;
-* that resolution cannot run -- the network is down, a source is unreachable: refused with its diagnosis
-  (:func:`lab_commons.dev.netverb.run_network_verb`, retried, then reported), never admitted unjudged.
+  (:func:`unreasoned_holds`). A reasoned range is the one way to stay below latest (e.g. ``<3.14``: pyo3 ABI).
 
-FRESHNESS IS ONE PARTY'S JOB, the forge's (2026-10-21): every pull request merges into integration, and a lane
-judged on freshness had to relock by hand before EVERY push whenever any dependency published, stacked branches
-once each. So a lane push is judged on its PIN alone, and the serve tick keeps integration at the newest
-resolution itself through a relock pull request (:mod:`lab_commons.dev.relock`); a lane takes it with
-``forge sync``. A push to integration or trunk is still judged on both, naming :data:`DOOR` (:data:`REMEDY`).
-Exit codes: ``0``
-allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carries no content and is allowed, and a
-sha a remote branch already holds was judged when it was first pushed (:func:`published`) -- a promotion is not
-re-resolved.
+Both read git objects only: the row costs milliseconds and never touches the network.
+
+FRESHNESS IS THE FORGE'S ALONE (2026-10-21 for lanes; user ruling 2026-10-22 for every branch): a hook keeps
+only irreversible-harm and second-scale checks, and a resolution is neither -- it is minutes of network that
+refused a push whenever any dependency published. The serve tick keeps integration at the newest resolution
+itself through a relock pull request (:mod:`lab_commons.dev.relock`), reading :func:`stale` -- the one
+staleness reading -- and a lane takes it with ``forge sync``.
+Exit codes: ``0`` allowed, ``1`` refused. Only ``refs/heads/**`` lines are judged; a deletion carries no content
+and is allowed, and a sha a remote branch already holds was judged when it was first pushed (:func:`published`).
 """
 
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import shutil
@@ -42,12 +35,11 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.forge import _GIT
-from lab_commons.dev.lanepolicy import load_policy
 from lab_commons.dev.netverb import Report, run_network_verb
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 __all__ = [
     'DOOR', 'LOCK', 'REMEDY', 'lock_problems', 'main', 'mount_submodules', 'published', 'pushed_refs',
@@ -137,35 +129,6 @@ def unreasoned_holds(manifest: str) -> tuple[str, ...]:
     return tuple(found)
 
 
-@contextlib.contextmanager
-def _tree_at(root: Path, sha: str) -> Iterator[Path]:
-    """A directory holding commit *sha*: the checkout itself when its HEAD is *sha* and its lock inputs are clean.
-
-    Else a detached worktree under the repository's own git directory, removed afterwards -- never outside it.
-    """
-    _, head = _git(root, 'rev-parse', 'HEAD')
-    _, dirty = _git(root, 'status', '--porcelain', '--', 'pyproject.toml', LOCK)
-    if head.strip() == sha and not dirty.strip():
-        yield root
-        return
-    _, common = _git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    tree = Path(common.strip()) / 'lockcheck' / sha[:12]
-    _git(root, 'worktree', 'remove', '--force', str(tree))
-    code, _ = _git(root, 'worktree', 'add', '--detach', str(tree), sha)
-    if code != 0:
-        msg = f'cannot check out {sha[:12]} to resolve it'
-        raise OSError(msg)
-    try:
-        mount_submodules(root, tree)
-    except OSError:
-        _git(root, 'worktree', 'remove', '--force', str(tree))
-        raise
-    try:
-        yield tree
-    finally:
-        _git(root, 'worktree', 'remove', '--force', str(tree))
-
-
 def mount_submodules(root: Path, tree: Path) -> None:
     """Give *tree* every submodule its commit records, each an INDEPENDENT clone of *root*'s checkout of it.
 
@@ -215,25 +178,12 @@ def stale(tree: Path, *, resolve: Callable[[Path], Report] = _dry_run) -> tuple[
     return tuple(f'{LOCK} is not the newest resolution: {change.strip()}' for change in _CHANGE.findall(output))
 
 
-def lock_problems(
-    root: Path, sha: str, *, resolve: Callable[[Path], Report] = _dry_run, fresh: bool = True
-) -> tuple[str, ...]:
-    """Why commit *sha* of *root* may not be pushed, one sentence each; empty when its lock is pinned (and newest).
-
-    *fresh* judges FRESHNESS too -- a push to integration or trunk; a lane push is judged on its PIN alone.
-    """
+def lock_problems(root: Path, sha: str) -> tuple[str, ...]:
+    """Why commit *sha* of *root* may not be pushed, one sentence each; empty when its lock is pinned."""
     if _git(root, 'cat-file', '-e', f'{sha}:{LOCK}')[0] != 0:
         return (f'{sha[:12]} commits no {LOCK}: its environment would be whatever resolves on the day',)
     _, manifest = _git(root, 'show', f'{sha}:pyproject.toml')
-    out = [f'{hold} holds a requirement below the newest with no reason' for hold in unreasoned_holds(manifest)]
-    if not fresh:
-        return tuple(out)
-    try:
-        with _tree_at(root, sha) as tree:
-            out.extend(stale(tree, resolve=resolve))
-    except OSError as why:
-        out.append(f'the newest resolution could not run: {why}')
-    return tuple(out)
+    return tuple(f'{hold} holds a requirement below the newest with no reason' for hold in unreasoned_holds(manifest))
 
 
 def pushed_refs(lines: Iterable[str]) -> tuple[tuple[str, str], ...]:
@@ -256,28 +206,14 @@ def published(root: Path, sha: str) -> bool:
     return code == 0 and bool(held.strip())
 
 
-def main(
-    argv: Sequence[str] | None = None,
-    *,
-    lines: Iterable[str] | None = None,
-    resolve: Callable[[Path], Report] = _dry_run,
-) -> int:
+def main(argv: Sequence[str] | None = None, *, lines: Iterable[str] | None = None) -> int:
     """``python -m lab_commons.dev.lockcheck [ROOT]`` -- the pre-push entry: refspec lines on stdin."""
     args = list(sys.argv[1:] if argv is None else argv)
     root = Path(args[0]) if args else Path.cwd()
     if lines is None:
         lines = () if sys.stdin.isatty() else sys.stdin.read().splitlines()
-    policy = load_policy(root)
-    newest = {policy.integration, policy.trunk}  # the only branches judged on FRESHNESS: the forge relocks them
-    judged: dict[str, bool] = {}
-    for sha, branch in pushed_refs(lines):
-        if not published(root, sha):
-            judged[sha] = judged.get(sha, False) or branch in newest
-    refused = [
-        f'{sha[:12]}: {why}'
-        for sha, fresh in judged.items()
-        for why in lock_problems(root, sha, resolve=resolve, fresh=fresh)
-    ]
+    shas = dict.fromkeys(sha for sha, _ in pushed_refs(lines) if not published(root, sha))
+    refused = [f'{sha[:12]}: {why}' for sha in shas for why in lock_problems(root, sha)]
     if not refused:
         return 0
     emit('[lock] REFUSED -- ' + '\n[lock]   '.join(refused) + f'\n[lock]   REMEDY: {REMEDY}.', err=True)

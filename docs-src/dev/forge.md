@@ -96,12 +96,10 @@ Each tick it:
   hash keys the served venv. So a RUN judges its environment against the checkout's own lock and nothing
   else: `verify` refuses as STALE only when a git-installed package's commit differs from the one `uv.lock` at
   HEAD pins (`lab_commons.dev.lockpins`) -- never against a dependency's remote tip, which would leave every
-  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a commit pushed
-  to the integration or trunk branch whose lock is not at the NEWEST resolution -- `uv lock --upgrade --dry-run`, run at the pushed sha, would
-  change something: an in-house git dependency behind the tip of its declared ref, a PyPI dependency below its
-  latest -- or that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
+  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
+  that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
   pin, a git rev) with no reason on its line or the comment line above. A reasoned range is the only way to
-  stay below latest. A LANE push is judged on its pin alone: freshness is ONE party's job, the forge's --
+  stay below latest. Every push is judged on its pin alone (user ruling 2026-10-22): freshness is ONE party's job, the forge's --
   each serve tick relocks `origin/<integration>` itself through one `pr/relock-<dist>-<sha>` pull request
   (`lab_commons.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. By hand, one
   upgrades through the door `<venv python> -m lab_commons.dev.dep --lock-upgrade

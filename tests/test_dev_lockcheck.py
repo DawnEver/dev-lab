@@ -1,8 +1,9 @@
-"""PIN + FRESHNESS (user ruling 2026-10-17): a pushed commit commits ``uv.lock`` at the NEWEST resolution.
+"""PIN at push (user ruling 2026-10-17); FRESHNESS is the forge's alone (user ruling 2026-10-22).
 
-Driven on REAL planted repositories with the REAL ``uv``, read at the pushed sha and offline: the in-house git
-dependency is a local repository, and the PyPI-shaped one a find-links directory of planted wheels. Each
-refusal has a planted control that passes.
+The pre-push row judges a pushed commit's PIN: it commits ``uv.lock`` and holds nothing below the newest unreasoned.
+The staleness reading :func:`stale` is the forge relock's (lab_commons.dev.relock), driven here on REAL planted
+repositories with the REAL ``uv``, offline: the in-house git dependency is a local repository, and the PyPI-shaped
+one a find-links directory of planted wheels. Each refusal has a planted control that passes.
 """
 
 from __future__ import annotations
@@ -16,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import lockcheck
 from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_refs, unreasoned_holds
+from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_refs, stale, unreasoned_holds
+from lab_commons.dev.relock import _worktree
 
 _GIT = shutil.which('git') or 'git'
 _UV = shutil.which('uv') or 'uv'
@@ -93,22 +94,24 @@ def _locked(root: Path, manifest: str, *, upgrade: bool = False) -> str:
 def test_a_stale_in_house_pin_is_refused_and_the_newest_admitted(world: tuple[Path, Path, Path]) -> None:
     """PLANTED: the kit moves after the lock pinned it -- refused naming it; `uv lock --upgrade` admits."""
     root, kit, index = world
-    pinned = _locked(root, _manifest(kit, index, '"dep",'))
-    assert lock_problems(root, pinned) == (), 'CONTROL: a lock at the newest resolution is admitted'
+    _locked(root, _manifest(kit, index, '"dep",'))
+    assert stale(root) == (), 'CONTROL: a lock at the newest resolution is admitted'
     _commit(kit, {'README': 'moved'})
-    (why,) = lock_problems(root, pinned)
+    (why,) = stale(root)
     assert why.startswith('uv.lock is not the newest resolution: Update kit'), why
-    assert lock_problems(root, _locked(root, _manifest(kit, index, '"dep",'), upgrade=True)) == ()
+    _locked(root, _manifest(kit, index, '"dep",'), upgrade=True)
+    assert stale(root) == ()
 
 
 def test_pypi_is_held_at_latest_unless_a_declared_range_says_why(world: tuple[Path, Path, Path]) -> None:
     """PLANTED: dep 2.0 is published. Unheld -> refused; a reasoned `<2` -> admitted; an unreasoned one -> refused."""
     root, kit, index = world
-    old = _locked(root, _manifest(kit, index, '"dep",'))
+    _locked(root, _manifest(kit, index, '"dep",'))
     _wheel(index, '2.0')
-    (why,) = lock_problems(root, old)
+    (why,) = stale(root)
     assert 'Update dep' in why, why
     reasoned = _locked(root, _manifest(kit, index, '"dep<2",  # planted: 2.0 breaks the ABI'))
+    assert stale(root) == (), 'a reasoned range resolves at the newest it admits'
     assert lock_problems(root, reasoned) == (), 'a reasoned range is admitted below latest'
     bare = _locked(root, _manifest(kit, index, '"dep<2",'))
     (why,) = lock_problems(root, bare)
@@ -118,21 +121,11 @@ def test_pypi_is_held_at_latest_unless_a_declared_range_says_why(world: tuple[Pa
 def test_a_resolution_that_cannot_reach_its_source_refuses_with_its_diagnosis(world: tuple[Path, Path, Path]) -> None:
     """PLANTED: the in-house source vanishes (the network is down) -- refused, never admitted unjudged."""
     root, kit, index = world
-    sha = _locked(root, _manifest(kit, index, '"dep",'))
+    _locked(root, _manifest(kit, index, '"dep",'))
     shutil.rmtree(kit, onexc=lambda func, path, _: (Path(path).chmod(0o700), func(path)))
-    (why,) = lock_problems(root, sha)
+    (why,) = stale(root)
     assert why.startswith('the newest resolution could not run ('), why
     assert 'REFUSED' in why or 'gave up' in why, 'the netverb diagnosis is carried'
-
-
-def test_a_pushed_sha_other_than_head_is_judged_at_that_sha(world: tuple[Path, Path, Path]) -> None:
-    root, kit, index = world
-    stale = _locked(root, _manifest(kit, index, '"dep",'))
-    _commit(kit, {'README': 'moved'})
-    fresh = _locked(root, _manifest(kit, index, '"dep",'), upgrade=True)
-    _git(root, 'checkout', '-q', stale)
-    assert lock_problems(root, fresh) == (), 'judged in a worktree at the pushed sha, not the checkout'
-    assert not (Path(_git(root, 'rev-parse', '--git-common-dir')) / 'lockcheck' / fresh[:12]).exists()
 
 
 def test_no_lock_is_refused_and_a_deletion_only_push_is_never_judged(tmp_path: Path, capsys) -> None:
@@ -144,14 +137,10 @@ def test_no_lock_is_refused_and_a_deletion_only_push_is_never_judged(tmp_path: P
         f'{bare[:12]} commits no uv.lock: its environment would be whatever resolves on the day',
     )
 
-    def never(_tree: Path) -> object:
-        msg = 'a deletion must not resolve anything'
-        raise AssertionError(msg)
-
     deletion = f'(delete) {"0" * 40} refs/heads/x {bare}'
     assert pushed_refs([deletion, f'refs/tags/t {bare} refs/tags/t {"0" * 40}']) == ()
-    assert main([str(root)], lines=[deletion], resolve=never) == 0, 'a deletion-only push is exempt'
-    assert main([str(root)], lines=[f'refs/heads/x {bare} refs/heads/x {"0" * 40}'], resolve=never) == 1
+    assert main([str(root)], lines=[deletion]) == 0, 'a deletion-only push is exempt'
+    assert main([str(root)], lines=[f'refs/heads/x {bare} refs/heads/x {"0" * 40}']) == 1
     assert REMEDY in capsys.readouterr().err
     assert REMEDY.count('uv lock --upgrade') == 1
 
@@ -229,7 +218,7 @@ def test_the_resolved_tree_carries_its_submodules(tmp_path: Path, monkeypatch: p
     before = (Path(repo / 'components' / 'engine') / shared / 'config').read_text(encoding='utf-8')
     # A pre-push hook runs with GIT_DIR naming the repository pushing: the mount must not inherit it.
     monkeypatch.setenv('GIT_DIR', _git_ok(repo, 'rev-parse', '--absolute-git-dir'))
-    with lockcheck._tree_at(repo, mounted) as tree:
+    with _worktree(repo, mounted) as tree:
         assert tree != repo, 'the control: HEAD moved on, so a separate tree is built'
         assert (tree / 'components' / 'engine' / 'crate.txt').is_file()
     monkeypatch.delenv('GIT_DIR')  # the checks below are the repository's own, outside the hook
@@ -251,31 +240,23 @@ def test_a_sha_already_on_a_remote_branch_is_not_judged_again(tmp_path: Path) ->
     _git(root, 'update-ref', 'refs/remotes/origin/integrate/main', old)
     new = _commit(root, {'pyproject.toml': '[project]\nname = "x"\nversion = "1"\n'})
 
-    def never(_tree: Path) -> object:
-        msg = 'a published sha must not be resolved again'
-        raise AssertionError(msg)
-
-    assert main([str(root)], lines=[f'refs/heads/main {old} refs/heads/main {"0" * 40}'], resolve=never) == 0
+    assert main([str(root)], lines=[f'refs/heads/main {old} refs/heads/main {"0" * 40}']) == 0
     # Planted control: a sha no remote branch holds is still judged (it commits no lock -> refused).
-    assert main([str(root)], lines=[f'refs/heads/main {new} refs/heads/main {old}'], resolve=never) == 1
+    assert main([str(root)], lines=[f'refs/heads/main {new} refs/heads/main {old}']) == 1
 
 
-def test_a_lane_push_is_judged_on_its_pin_and_only_integration_and_trunk_on_freshness(
-    world: tuple[Path, Path, Path],
-) -> None:
-    """ONE writer of freshness: the forge relocks integration (lab_commons.dev.relock).
+def test_no_push_is_judged_on_freshness_and_every_push_keeps_its_pin(world: tuple[Path, Path, Path]) -> None:
+    """FRESHNESS is the forge's alone (user ruling 2026-10-22): its relock keeps integration at the newest.
 
-    So a lane is never refused for a dependency that moved under it. Its PIN is still judged; integration and
-    trunk are judged on both.
+    A push to any branch -- lane, integration or trunk -- is never refused for a dependency that moved under it,
+    so the hook never resolves. PLANTED CONTROL: an unreasoned hold is still refused on every branch.
     """
     root, kit, index = world
-    stale = _locked(root, _manifest(kit, index, '"dep",'))
+    old = _locked(root, _manifest(kit, index, '"dep",'))
     _commit(kit, {'README': 'moved'})
+    assert stale(root), 'CONTROL: the lock really is behind its kit'
     zero = '0' * 40
-    lane = [f'refs/heads/pr/x {stale} refs/heads/pr/x {zero}']
-    assert main([str(root)], lines=lane) == 0, 'a lane is not refused for a dependency that moved'
-    for branch in ('integrate/main', 'main'):
-        line = [f'refs/heads/{branch} {stale} refs/heads/{branch} {zero}']
-        assert main([str(root)], lines=line) == 1, f'CONTROL: {branch} must be the newest resolution'
     unheld = _locked(root, _manifest(kit, index, '"dep<2",'))
-    assert main([str(root)], lines=[f'refs/heads/pr/x {unheld} refs/heads/pr/x {zero}']) == 1, 'a lane keeps its PIN'
+    for branch in ('pr/x', 'integrate/main', 'main'):
+        assert main([str(root)], lines=[f'refs/heads/{branch} {old} refs/heads/{branch} {zero}']) == 0, branch
+        assert main([str(root)], lines=[f'refs/heads/{branch} {unheld} refs/heads/{branch} {zero}']) == 1, branch

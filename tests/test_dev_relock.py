@@ -1,6 +1,6 @@
 """The forge relocks integration: a stale lock becomes ONE pull request, a fresh one nothing, an open one waits.
 
-The staleness reading is ``lockcheck.stale`` -- the same one the pre-push ``lock`` row makes -- so these cases
+The staleness reading is ``lockcheck.stale`` -- the one staleness reading -- so these cases
 plant that reading (and the door's rewrite of the lock) and run everything else for real: a bare ``origin``, a
 clone fetching ``origin/integrate/main``, a worktree, a commit and a push.
 """
