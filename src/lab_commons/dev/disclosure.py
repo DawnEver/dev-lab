@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 __all__ = [
     'BUDGETS',
     'DETAILS_PREFIX',
-    'MULTI_SENTENCE_CEILING',
-    'MULTI_SENTENCE_ROWS',
     'REFUSALS_DOC',
     'ROW_CEILINGS',
     'Budget',
@@ -53,69 +51,7 @@ BUDGETS: Final[dict[str, Budget]] = {
 #: The most characters one ROW field may carry: a rule's ``statement``, a deny row's ``hazard`` and
 #: ``remedy``. Each is the current maximum and may only go DOWN; a row that grows past it moves its
 #: reasoning into the docs instead.
-ROW_CEILINGS: Final[dict[str, int]] = {'statement': 901, 'hazard': 162, 'remedy': 292}
-
-#: Rows whose field is still more than ONE sentence, keyed ``<field>:<id>`` -- the named debt. The
-#: set may only shrink: an entry whose row now fits is stale, and the count may not grow.
-MULTI_SENTENCE_ROWS: Final = frozenset(
-    {
-        *(
-            f'statement:{rule_id}'
-            for rule_id in (
-                'AUTO-MODE-RUNS-THE-DOORS',
-                'BAR-IS-A-CONSTANT',
-                'CODE-IN-CODE-ROOTS',
-                'DECLARATION-LIES',
-                'DOCS-SPLIT',
-                'DOWNSTREAM-SYNCS-INTEGRATION',
-                'ENV-MUTATION-THROUGH-THE-DOOR',
-                'ESCAPE-HATCH-CEILING',
-                'FIX-THE-CAUSE',
-                'FLOOR-ON-EVERY-SCAN',
-                'FORGE-THROUGH-THE-DOOR',
-                'FORMATS-UPGRADE-ON-READ',
-                'IMPLEMENT-EVERYTHING',
-                'INJECTED-DOC-WIDTH-CEILING',
-                'INJECTED-TEXT-IS-PROGRESSIVE',
-                'INSTALL-DOOR-DELIVERS-THE-DECLARATION',
-                'INTEGRATION-IS-MERGES-ONLY',
-                'INTEGRATION-TAKES-ONLY-FORGE-MERGES',
-                'ISSUE-IS-INTENT',
-                'LATEST-DEPENDENCIES',
-                'MAIN-SESSION-PUBLISHES',
-                'MEMORY-SHAPE',
-                'MERGE-DEVIATIONS-NAMED',
-                'MERGE-OR-DELETE',
-                'MODULE-SIZE-ALARM',
-                'NO-CJK-IN-TRACKED-SOURCE',
-                'NO-REFLECTION',
-                'ONE-BOX-ONE-LOCK',
-                'ONE-BRANCH-PER-SESSION',
-                'PLANTED-CONTROL',
-                'PR-REVIEW-IS-ADVISORY',
-                'PRODUCTION-ENTRY-POINT',
-                'PROJECT-FILES-HAVE-ONE-SOURCE',
-                'PRS-TARGET-INTEGRATION',
-                'PUBLISH-IS-THE-LOCAL-REF',
-                'RATCHET-TWO-SIDES',
-                'REFUSAL-NAMES-THE-REMEDY',
-                'REPORTS-LIVE-IN-MEMORY',
-                'SCRATCH-ARCHIVED-OR-PROMOTED',
-                'SUBAGENT-NO-PUSH',
-                'TOLERANCE-CARRIES-A-UNIT',
-                'UNITS-GO-THROUGH-PINT',
-                'VERDICT-AS-STATUS',
-                'VERDICT-BAR-IS-THE-INCREMENT',
-                'VERDICTS-FROM-THE-FORGE',
-                'WORKTREES-STAY-INSIDE',
-            )
-        ),
-        'remedy:BARE-INTERPRETER',
-    }
-)
-
-#: The ceiling on :data:`MULTI_SENTENCE_ROWS`; lower it with every row trimmed to one sentence.
-MULTI_SENTENCE_CEILING: Final = 47
+ROW_CEILINGS: Final[dict[str, int]] = {'statement': 717, 'hazard': 162, 'remedy': 268}
 
 #: A sentence ends at terminal punctuation followed by whitespace and a capital, backtick or bracket.
 _SENTENCE_END: Final = re.compile(r'[.!?]\s+(?=[A-Z`*(])')
@@ -168,7 +104,7 @@ def row_problems(field: str, row_id: str, text: str) -> list[str]:
     found = []
     if len(text) > ROW_CEILINGS[field]:
         found.append(f'{field}:{row_id} is {len(text)} chars > {ROW_CEILINGS[field]}')
-    if sentences(text) > 1 and f'{field}:{row_id}' not in MULTI_SENTENCE_ROWS:
+    if sentences(text) > 1:
         found.append(f'{field}:{row_id} is {sentences(text)} sentences > 1')
     return found
 

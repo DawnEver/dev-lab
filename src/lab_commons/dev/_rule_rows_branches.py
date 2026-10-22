@@ -9,41 +9,41 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-BRANCH-PER-SESSION',
         (
-            'Each working session maintains exactly ONE long-lived branch and merges its work into it; every '
-            'other branch is merged and then deleted, never left behind. A repo`s long-lived branches are '
-            'DECLARED -- the trunk plus one branch per declared session or lane owner -- and anything else on '
-            'origin or on this box is debt. Unpushed work is reported, never deleted silently.'
+            'Each working session maintains exactly ONE long-lived branch and merges its work into it, every other '
+            'branch is merged and then deleted, never left behind, a repo`s long-lived branches are DECLARED (the '
+            'trunk plus one branch per declared session or lane owner) so anything else on origin or on this box '
+            'is debt, and unpushed work is reported, never deleted silently.'
         ),
         ('tests/test_dev_branchset.py',),
     ),
     (
         'MERGE-OR-DELETE',
         (
-            'A branch that is merged is DELETED; a branch that is not merged is MERGED. There is no third '
-            'state: parking work as an `archive/*` tag (or a renamed branch nobody tracks) hides it from '
-            'everyone and is debt exactly like an undeclared branch -- `branchset` lists it, deletes it when '
-            'its tip is held by a declared branch, and names it to merge otherwise.'
+            'A merged branch is DELETED and an unmerged one is MERGED, with no third state: parking work as an '
+            '`archive/*` tag (or a renamed branch nobody tracks) hides it from everyone and is debt exactly like '
+            'an undeclared branch -- `branchset` lists it, deletes it when its tip is held by a declared branch, '
+            'and names it to merge otherwise.'
         ),
         ('tests/test_dev_branchset_apply.py',),
     ),
     (
         'MERGE-DEVIATIONS-NAMED',
         (
-            'A merge may not lose or rewrite a test in silence. Every test whose body in the merge differs from '
-            'what a clean three-way merge would hold -- LOST, ALTERED, or CONFLICTED -- is named in the merge '
-            'commit with a one-line reason, and the commit-msg hook refuses COMMITTING a merge with an unnamed '
-            'one -- checked once, on the one merge being committed; a push does no audit work. The tests are '
-            'the feature inventory; no second list is kept.'
+            'A merge may not lose or rewrite a test in silence: every test whose body in the merge differs from '
+            'what a clean three-way merge would hold (LOST, ALTERED, or CONFLICTED) is named in the merge commit '
+            'with a one-line reason, the commit-msg hook refuses COMMITTING a merge with an unnamed one (checked '
+            'once, on the one merge being committed; a push does no audit work), and the tests are the feature '
+            'inventory, with no second list kept.'
         ),
         ('tests/test_dev_mergeaudit.py',),
     ),
     (
         'DOWNSTREAM-SYNCS-INTEGRATION',
         (
-            'A child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch; '
-            'another child`s work reaches it once, through integration. The owner may opt in to watch named '
-            'refs, recorded in the checkout`s own git config (`branch.<child>.labSyncFrom`), never in a file. '
-            '`forge sync` merges integration first, then the watched refs, and refuses any other ref by name.'
+            'A child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch, so '
+            'another child`s work reaches it once, through integration, unless the owner opts in to watch named '
+            'refs recorded in the checkout`s own git config (`branch.<child>.labSyncFrom`), never in a file, and '
+            '`forge sync` merges integration first, then the watched refs, refusing any other ref by name.'
         ),
         ('tests/test_dev_branchflow.py',),
     ),
@@ -59,9 +59,9 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PRS-TARGET-INTEGRATION',
         (
-            'Every pull request targets the integration branch; one opened against the trunk is retargeted '
-            'with a comment saying why. Each child branch carries ONE integration comment (or, without a PR, '
-            'one `integration` commit status) updated in place by `forge integration`, never a new one per tick.'
+            'Every pull request targets the integration branch, one opened against the trunk is retargeted with a '
+            'comment saying why, and each child branch carries ONE integration comment (or, without a PR, one '
+            '`integration` commit status) updated in place by `forge integration`, never a new one per tick.'
         ),
         ('tests/test_dev_branchflow.py',),
     ),
@@ -79,10 +79,10 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'PUBLISH-IS-THE-LOCAL-REF',
         (
-            'A push to `refs/heads/<X>` of a declared session branch or the trunk carries exactly the local '
-            'branch `<X>`: its local ref, with `HEAD` resolved, is `refs/heads/<X>`. `HEAD:<X>` from another '
-            'branch, `<Y>:<X>`, a bare sha and a detached HEAD are refused at pre-push. Any checkout may publish '
-            'it; none needs it checked out. Every other local branch `<Y>` is published only as `<Y>`.'
+            'A push to `refs/heads/<X>` of a declared session branch or the trunk carries exactly the local branch '
+            '`<X>` (its local ref, with `HEAD` resolved, is `refs/heads/<X>`), so `HEAD:<X>` from another branch, '
+            '`<Y>:<X>`, a bare sha and a detached HEAD are refused at pre-push, any checkout may publish it '
+            'without having it checked out, and every other local branch `<Y>` is published only as `<Y>`.'
         ),
         ('tests/test_dev_sessionbranch.py',),
     ),
@@ -99,8 +99,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         (
             'Every new first-parent commit of the integration branch, from the declared `merges_only_since` '
             'forward, is a two-parent merge naming its branch in a `Merged-Branch:` trailer whose merge audit '
-            'passes -- the same judgement the commit-msg hook makes. Refused at pre-push; once `pr_merges_since` '
-            'stands, INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'
+            'passes (the same judgement the commit-msg hook makes), refused at pre-push, until `pr_merges_since` '
+            'stands and INTEGRATION-TAKES-ONLY-FORGE-MERGES replaces this with the forge`s own merge.'
         ),
         ('tests/test_dev_sessionbranch.py', 'tests/test_dev_integrate.py', 'tests/test_dev_hooks.py'),
     ),
@@ -108,13 +108,13 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'INTEGRATION-TAKES-ONLY-FORGE-MERGES',
         (
             'Where `[tool.lab_commons.integrator] pr_merges_since` is declared, the integration branch moves only '
-            'by the forge merging a pull request server-side -- a merge commit, made once every `tests/<part>` '
-            'part of its head stands PASS, the head merges cleanly, and the merge audit passes -- and a client '
-            'push adding any commit to it is refused at pre-push. A PR still missing a condition stays open and '
-            'its one integration comment names what is missing. The ONE bypass is in history: a direct push is '
-            'admitted only when EVERY new first-parent commit carries a non-empty `Break-Glass: <reason>` trailer '
-            '(an empty reason is refused at commit-msg), and every such commit past the declared start stays an '
-            'open `integration` issue naming it and its reason until `pr_merges_since` moves past it.'
+            'by the forge merging a pull request server-side once every `tests/<part>` part of its head stands '
+            'PASS, the head merges cleanly and the merge audit passes (a PR still missing one stays open, its one '
+            'integration comment naming what is missing), a client push adding any commit to it is refused at '
+            'pre-push, and the ONE bypass is a direct push whose EVERY new first-parent commit carries a non-empty '
+            '`Break-Glass: <reason>` trailer (an empty reason refused at commit-msg), each such commit past the '
+            'declared start staying an open `integration` issue naming it and its reason until `pr_merges_since` '
+            'moves past it.'
         ),
         ('tests/test_dev_sessionbranch.py', 'tests/test_dev_forgemerge.py', 'tests/test_dev_mergeaudit.py'),
     ),

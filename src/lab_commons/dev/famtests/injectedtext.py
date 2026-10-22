@@ -72,10 +72,9 @@ def row_fields(rules: Iterable[Rule], deny_rules: Iterable[DenyRule]) -> list[tu
 
 
 def assert_rows_fit(rules: Iterable[Rule], deny_rules: Iterable[DenyRule]) -> None:
-    """Raise unless every row field fits its ceiling and is one sentence -- or is named, still over, debt.
+    """Raise unless every row field fits its ceiling and is one sentence.
 
-    Both sides of the ratchet: a ceiling above the current maximum, a stale exception, or more exceptions
-    than :data:`~lab_commons.dev.disclosure.MULTI_SENTENCE_CEILING` all red, so each may only go down.
+    Both sides of the ratchet: a ceiling above the current maximum reds too, so each may only go down.
     """
     fields = row_fields(rules, deny_rules)
     over = [problem for field, row_id, text in fields for problem in disclosure.row_problems(field, row_id, text)]
@@ -83,12 +82,6 @@ def assert_rows_fit(rules: Iterable[Rule], deny_rules: Iterable[DenyRule]) -> No
         longest = max(len(text) for name, _, text in fields if name == field)
         if longest < ceiling:
             over.append(f'{field} ceiling {ceiling} > the longest row {longest}; lower it')
-    multi = {f'{field}:{row_id}' for field, row_id, text in fields if disclosure.sentences(text) > 1}
-    over += [f'{key} is named as debt but now fits; drop it' for key in sorted(disclosure.MULTI_SENTENCE_ROWS - multi)]
-    if len(disclosure.MULTI_SENTENCE_ROWS) != disclosure.MULTI_SENTENCE_CEILING:
-        over.append(
-            f'{len(disclosure.MULTI_SENTENCE_ROWS)} multi-sentence rows != ceiling {disclosure.MULTI_SENTENCE_CEILING}'
-        )
     if over:
         msg = 'rows over the budget:\n  ' + '\n  '.join(over)
         raise InjectedTextOverBudget(msg)
