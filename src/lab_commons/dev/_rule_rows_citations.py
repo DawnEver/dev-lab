@@ -1,6 +1,6 @@
-"""The rules registry, THIRD half -- pure DATA, the same row shape as ``_rule_rows.py``.
+"""The rules registry, CITATIONS part -- pure DATA, the same row shape as ``_rule_rows.py``.
 
-A third file because ``_rule_rows_b.py`` reached the module-size band (`tests/test_arch_module_size_alarm.py`).
+The rows about what a tracked file may cite. A module named for its concept, not a size split.
 """
 
 from __future__ import annotations

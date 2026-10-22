@@ -10,7 +10,7 @@ accessed: 2026-10-21
 
 User ruling 2026-10-21: content from the output tree, temp dirs and similar never enters tracked
 files, and no tracked file references them. Rule `TRACKED-CITES-NO-EPHEMERAL`
-(`lab_commons.dev._rule_rows_c`), scanner `lab_commons.dev.ephemeralrefs`, full-tree body
+(`lab_commons.dev._rule_rows_citations`), scanner `lab_commons.dev.ephemeralrefs`, full-tree body
 `lab_commons.dev.famtests.ephemeralrefs`, staged check the base pre-commit row `ephemeral-refs`.
 
 - The criterion is DERIVED: `git check-ignore --no-index --stdin -z -v`. Measured quirk: a bare `dir/`
