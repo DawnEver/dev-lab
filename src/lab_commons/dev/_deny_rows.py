@@ -236,10 +236,8 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         'id': 'PUSH-REMOTE-DELETE',
         'pattern': r'\bpush\b[^\n]*\s(?:--delete\b|-d\b|--prune\b|--mirror\b|:\S)',
         'matches': 'argument',
-        'hazard': 'deleting a ref on origin is unrecoverable from the agent`s side; a main session may push '
-        '(MAIN-SESSION-PUBLISHES) but remote deletions stay with a human.',
-        'remedy': 'Leave the remote branch and name it to the user; local cleanup is '
-        '`python -m lab_commons.dev.branchset --apply`, which deletes merged LOCAL branches only.',
+        'hazard': 'a raw remote delete can lose commits held nowhere else.',
+        'remedy': '`python -m lab_commons.dev.branchprune delete <branch>` (LOSSLESS-DELETE).',
         'needs': None,
         'refuses': (
             'git push origin --delete lane/x',
@@ -252,6 +250,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'sh scripts/hooks/with-retry.sh push origin HEAD:refs/heads/lane/x',
             'sh scripts/hooks/with-retry.sh push origin main',
             'git branch -d lane/x',
+            f'{VENV_PYTHONS[0]} -m lab_commons.dev.branchprune delete lane/x',
         ),
     },
     {

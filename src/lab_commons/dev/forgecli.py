@@ -5,7 +5,8 @@ state and comment reads, ``auth`` for the token, ``publish`` for the status outb
 run records, ``tick`` for requests and claims, ``queue`` for the read-only status view, ``route <record>``
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` to drop a host card,
-``request <producer> --sha <sha>`` to publish a request; anything else is the issue/PR door. The verbs
+``request <producer> --sha <sha>`` to publish a request, ``notices`` for a session's PR notices; anything
+else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
 """
@@ -15,16 +16,19 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from lab_commons.dev import (
+    branchnotices,
     forgeauth,
     forgehosts,
     forgeintegration,
     forgeissue,
+    forgenotice,
     forgeoutbox,
     forgepublish,
     forgequeue,
@@ -35,10 +39,12 @@ from lab_commons.dev import (
     forgesync,
     forgetick,
     forgetidy,
+    pradmit,
     servelock,
 )
 from lab_commons.dev.forge import Transport, https_transport
 from lab_commons.dev.forgework import Client, Comment, ForgeCallFailed, Issue, PullRequest, client_for
+from lab_commons.dev.labsession import ENV
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
@@ -58,6 +64,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'queue': forgequeue.main,
     'sync': forgesync.main,
     'integration': forgeintegration.main,
+    'notices': forgenotice.main,
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,
     'request': forgepublish.main,
@@ -146,8 +153,14 @@ def issue_and_pr(
 ) -> int:
     """``python -m lab_commons.dev.forge issue|pr <verb> ...`` (:mod:`forgework`); exit 1 with netverb's remedy."""
     args = _parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    client = client_for(Path.cwd() if cwd is None else cwd, env=env, transport=transport)
+    root = Path.cwd() if cwd is None else cwd
+    client = client_for(root, env=env, transport=transport)
     try:
+        if (args.noun, args.verb) == ('pr', 'create') and (
+            why := pradmit.create_refusal(root, client, head=args.head, base=args.base)
+        ):
+            emit(f'[forge] pr create REFUSED -- {why}', err=True)
+            return 1
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
@@ -160,4 +173,10 @@ def issue_and_pr(
     else:
         for item in items:
             emit(_render(item))
+    if (args.noun, args.verb) == ('pr', 'create') and (
+        said := branchnotices.report(
+            root, [args.head], (os.environ if env is None else env).get(ENV, ''), client=client
+        )
+    ):
+        emit(said, err=True)
     return 0

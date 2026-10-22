@@ -134,10 +134,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgepublish': ('original',),
     'forgeintent': ('original',),
     'behindpush': ('original',),
+    'forgenotice': ('original',),
+    'branchnotices': ('original',),
     'lockcheck': ('original',),
     'relock': ('original',),
     'forgerecords': ('original',),
     'forgetick': ('original',),
+    'forgeautosync': ('original',),
     'forgeintegration': ('original',),
     'forgemerge': ('original',),
     'forgereview': ('original',),
@@ -146,6 +149,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'forgepulls': ('original',),
     'forgesync': ('original',),
     'trialmerge': ('original',),
+    'labsession': ('original',),
+    'pradmit': ('original',),
     'forgerun': ('original',),
     'forgerunstate': ('original',),
     'components': ('original',),
@@ -386,6 +391,9 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # ORIGINAL: no consumer file asserted onboarding as one statement; the five repos each failed on a
     # different missing piece (2026-10-20), so there was no local copy for this body to supersede.
     'onboarding': ('original',),
+    # ORIGINAL: no consumer file refused a platform skip; the need arose when an OS became a resource a host
+    # supplies by itself (2026-10-21) and a skipped Windows path was found to run on no host at all.
+    'platformskips': ('original',),
     'boundedremedy': ('supersedes', 'tests/architecture/test_a_bounded_wait_names_its_remedy.py'),
     # ORIGINAL, and it is the only kind it could honestly be: no consumer file asserts this, because
     # nobody had a word for the shape until `boundedremedy`'s own `wider_tier in text` clause was

@@ -51,7 +51,8 @@ A COALESCED REF'S RUN IS SUPERSEDED THE TICK ITS REF MOVES ON, STARTED OR NOT (u
 of a ``Schedule.coalesce`` class whose sha is no longer its ref's tip has every Slurm job its state records
 cancelled (every round and band, :func:`lab_commons.hpc.run.cancel_run`), is released as superseded naming
 the tip, and is dropped -- one alarm. Its slot goes to the tip, which waited behind it (:mod:`forgecoalesce`);
-the tip's run carries what the cancelled rounds finished (:mod:`lab_commons.dev.forgecarry`). Asked before a
+the tip's run carries what the cancelled rounds finished (:mod:`lab_commons.dev.forgecarry`). A DOCS-ONLY tip
+never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
 2026-10-21: a superseded pr head kept 70 array tasks running on alyyw103, eating the grant's QOS room.
 A ref of any OTHER class is tested at every pushed sha: its run finishes and posts on its own sha, and when
@@ -75,7 +76,7 @@ from typing import Final
 from lab_commons.dev import forgeship
 from lab_commons.dev.artefacts import MissingOutput, run_id
 from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
-from lab_commons.dev.forgecarry import publish
+from lab_commons.dev.forgecarry import equivalent, publish
 from lab_commons.dev.forgeclaim import DONE, MINE, Claim, Work, assess, claim, forge_now
 from lab_commons.dev.forgecoalesce import PUBLISHING
 from lab_commons.dev.forgeroute import pyproject_at, route
@@ -208,9 +209,14 @@ def _gather(
 
 
 def _superseding_tip(root: Path, run: Run) -> str:
-    """The newer tip of *run*'s coalesced ref that supersedes it; ``''`` when none (still the tip, another class)."""
+    """The newer tip of *run*'s coalesced ref that supersedes it; ``''`` when none (still the tip, another class).
+
+    A DOCS-ONLY tip never supersedes (DOCS-ONLY-CARRIES, :func:`lab_commons.dev.forgecarry.docs_only`): no test's
+    footprint reaches its diff, so its part IS this run's result, posted on it too when it lands (:func:`publish`).
+    """
     tip = tip_of(root, run.ref)
-    return tip if tip and tip != run.sha and coalesced(root, run.ref) else ''
+    moved = tip and tip != run.sha and coalesced(root, run.ref)
+    return tip if moved and not equivalent(root, run.sha, tip) else ''
 
 
 def _supersede(

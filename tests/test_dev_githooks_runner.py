@@ -55,12 +55,21 @@ class _Recorder:
 
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
-    assert set(table) == {'pre-commit', 'commit-msg', 'pre-push'}
-    assert {hook.id for hook in table['pre-push']} == {'session-branch', 'branchset-push', 'behind-push', 'lock'}
+    assert set(table) == {'pre-commit', 'commit-msg', 'pre-push', 'post-commit'}
+    assert {hook.id for hook in table['post-commit']} == {'pr-notices'}
+    assert {hook.id for hook in table['pre-push']} == {
+        'session-branch',
+        'branchset-push',
+        'behind-push',
+        'lock',
+        'pr-admit',
+        'pr-notices',
+    }
     assert {hook.id for hook in table['commit-msg']} == {
         'commitizen',
         'forge-host',
         'issue-ref',
+        'lab-session',
         'merge-audit',
     }
     assert len(table['pre-commit']) >= 8, 'a floor: a base that lost its file checks would read as clean'
@@ -108,7 +117,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         encoding='utf-8',
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
-    assert pre_push == ['session-branch', 'branchset-push', 'behind-push', 'lock', 'pushgate']
+    assert pre_push == ['session-branch', 'branchset-push', 'behind-push', 'lock', 'pr-admit', 'pr-notices', 'pushgate']
 
 
 def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:
@@ -234,6 +243,27 @@ def test_a_hook_s_env_table_reaches_its_command(repo: Path) -> None:
     seen = _Recorder()
     run_stage('commit-msg', ['m'], root=repo, hooks=(hook,), runner=seen)
     assert seen.env == {'LAB_CZ_BASE_REF': 'origin/main'}
+
+
+def test_a_post_commit_hook_never_changes_the_commits_exit_status(repo: Path) -> None:
+    """post-commit is ADVISORY: the commit exists already, so a failing row still exits 0.
+
+    PLANTED CONTROL: the same failing row at pre-push turns that stage's exit non-zero.
+    """
+    seen = _Recorder(code=3)
+    loud = Hook(stage='post-commit', id='pr-notices', run=('tool',), always_run=True)
+    assert run_stage('post-commit', root=repo, hooks=(loud,), runner=seen) == 0
+    assert seen.calls, 'the row ran'
+    stdin = _push_line(repo, 'refs/heads/main')
+    gate = Hook(stage='pre-push', id='pr-notices', run=('tool',), always_run=True)
+    assert run_stage('pre-push', ['origin', 'url'], root=repo, stdin=stdin, hooks=(gate,), runner=seen) == 1
+
+
+def test_the_base_runs_the_pr_notices_reader_after_a_commit_and_before_a_pr_push() -> None:
+    rows = {stage: [r for r in base_rows()[stage] if r['id'] == 'pr-notices'] for stage in ('post-commit', 'pre-push')}
+    assert [r['run'] for r in rows['post-commit']] == [['python', '-m', 'lab_commons.dev.branchnotices']]
+    assert [r['run'] for r in rows['pre-push']] == [['python', '-m', 'lab_commons.dev.branchnotices', '--push']]
+    assert rows['pre-push'][0]['refs'] == '^refs/heads/pr/'
 
 
 # ------------------------------------------------------------------------------------------- quiet

@@ -178,8 +178,14 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
     rest. The record's `carried` maps each id to the sha it RAN at; the part reads
     `scope=full ran=<run here> ... kept=<sha12>:<n>`, never counting a carried outcome as run.
   - PER PART (a class tested at every sha): every test file at A carries and no test file is added -- the run
-    finishes and its part is also posted on the tip as `... carried from <sha12>: every outcome carried by footprint`.
+    finishes and its part is also posted on the tip as `... carried from <sha12>: docs-only`.
     No ancestry, a malformed declaration, or a tip already settled: no carry.
+  - DOCS-ONLY-CARRIES (user ruling 2026-10-21; `forgecarry.docs_only`): a head PER PART-equivalent to the nearest
+    tested or running head of its first-parent history -- memory written after the code commit -- is never claimed.
+    Settled there: the verdict is posted on it `carried from <sha12>: docs-only`, no job. Running there: it waits
+    `waiting behind <sha12> (docs-only: ...)`, that run is never superseded for it, and its result carries when it
+    lands. An untested code head in between makes the diff reach a test, so the head runs. The PR review of such a
+    head is carried the same way: the earlier head's review stands and no command runs.
 
 ## Scheduling
 

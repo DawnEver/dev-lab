@@ -1146,3 +1146,64 @@ def test_a_part_is_sized_at_the_ids_the_commits_parts_hand_it() -> None:
     assert forgetick.handed(statuses, 'workstation') == 6
     assert forgetick.handed(statuses, 'jmag') == 2
     assert forgetick.handed(statuses, 'base') is None
+
+
+def _stacked(repo: Path, tips: dict[str, str], change: dict[str, str]) -> tuple[str, str]:
+    """integrate/main: a TESTED head whose test imports ``src/a.py``, then a head making *change*; both shas."""
+    for files in (
+        {'src/a.py': 'x = 1\n', 'tests/test_a.py': 'from a import x\n\n\ndef test_x():\n    assert x\n'},
+        change,
+    ):
+        for name, text in files.items():
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_text(text, encoding='utf-8')
+        run_git(repo, 'add', '.')
+        run_git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'step')
+    tested, head = git_out(repo, 'rev-parse', 'HEAD~1'), git_out(repo, 'rev-parse', 'HEAD')
+    tips['integrate/main'] = head
+    run_git(repo, 'update-ref', 'refs/remotes/origin/integrate/main', head)
+    return tested, head
+
+
+_MEMORY = {'.claude/memory/2026/10/21/after-the-commit.md': 'rem pass\n'}
+_VERDICT = {'id': 2, 'context': 'tests/base', 'status': 'success', 'description': 'scope=full ran=7 hands=-',
+            'target_url': 'https://f/record'}  # fmt: skip
+
+
+@pytest.mark.parametrize('change', ['docs', 'code'])
+def test_a_docs_only_head_gets_its_tested_parents_part_carried_with_no_claim_and_no_run(
+    server, tmp_path: Path, change: str
+) -> None:
+    """DOCS-ONLY-CARRIES (user ruling 2026-10-21): a memory push after the code commit costs no test run.
+
+    PLANTED CONTROL: the same stack whose second head touches a path the test imports -- it is claimed.
+    """
+    repo, tips = _origin(tmp_path)
+    tested, head = _stacked(repo, tips, _MEMORY if change == 'docs' else {'src/a.py': 'x = 2\n'})
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []), (200, [_post(3, ME)]))
+    answer('GET', f'{API}/statuses/{tested}', (200, [_post(1, BOB), _VERDICT]))
+    answer('POST', f'{API}/statuses/{head}', (201, {}))
+    report = _tick(repo, server)
+    posts = [r['body'] for r in Recorder.received if r['method'] == 'POST']
+    if change == 'code':
+        assert [(w.sha, w.state) for w in report.claimed] == [(head, MINE)]
+        return
+    assert report.claimed == ()
+    (carried,) = posts
+    assert carried['state'] == 'success'
+    assert carried['description'] == f'scope=full ran=7 hands=- carried from {tested[:12]}: docs-only'
+    assert carried['target_url'] == 'https://f/record'
+
+
+def test_a_docs_only_head_on_a_running_head_waits_for_it_and_is_no_idle_work(server, tmp_path: Path) -> None:
+    repo, tips = _origin(tmp_path)
+    tested, head = _stacked(repo, tips, _MEMORY)
+    answer('GET', '/api/v1/user', (200, {'login': 'alice'}))
+    answer('GET', f'{API}/statuses/{head}', (200, []))
+    answer('GET', f'{API}/statuses/{tested}', (200, [_post(1, BOB)]))
+    report = _tick(repo, server)
+    assert (report.claimed, [r for r in Recorder.received if r['method'] == 'POST']) == ((), [])
+    hold = f'{WAITING_BEHIND} {tested[:12]} (docs-only: its result carries here)'
+    assert f'waiting integrate/main@{head[:12]}:base: {hold}' in report.lines
+    assert head not in {w.sha for w in report.pending}

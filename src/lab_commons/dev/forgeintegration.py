@@ -42,16 +42,27 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.compute.model import Schedule
+from lab_commons.dev import forgeautosync, forgenotice
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared, declared_branchset
 from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
 from lab_commons.dev.forgealarm import INTEGRATION, Alarm
+from lab_commons.dev.forgeclaim import forge_now
 from lab_commons.dev.forgemerge import decide, merge
-from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list, pr_retarget
+from lab_commons.dev.forgepulls import (
+    ListingIncomplete,
+    Marker,
+    comment_list,
+    comment_upsert,
+    marker,
+    pr_list,
+    pr_retarget,
+)
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
 from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed, PullRequest, client_for
+from lab_commons.dev.labsession import sessions
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.netverb import run_network_verb
 from lab_commons.dev.platformparts import CONTEXT_PREFIX, UNCLAIMED, standing
@@ -66,6 +77,8 @@ CONTEXT: Final = 'integration'
 
 _TRACKING: Final = 'refs/remotes/origin/'
 _PULLS: Final = 'refs/lab-commons/pulls/'
+#: The summary of a PR the forge merged this tick.
+_MERGED: Final = 'merged by the forge'
 
 
 @dataclass(frozen=True)
@@ -240,7 +253,7 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     if found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)
-        line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', 'merged by the forge'
+        line, summary = f'merged by the forge into `{policy.integration}` (a merge commit)', _MERGED
     else:
         line = 'the forge merges it once it has: ' + '; '.join(found.missing)
         summary = f'{said.summary}; auto-merge waits'
@@ -253,8 +266,15 @@ def tick(
     policy: Policy,
     *,
     fetch_pull: Callable[[Path, str, int], str] = _fetch_pull,
+    host: str = '',
+    clock: Callable[[Client], datetime] = forge_now,
+    sync: Callable[..., str] = forgeautosync.sync,
 ) -> Ticked:
-    """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes."""
+    """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes.
+
+    Given the serving *host* and ``auto_sync`` declared, a PR the forge did not merge is auto-synced
+    (:mod:`lab_commons.dev.forgeautosync`); ``forge integration`` passes no host and only reports.
+    """
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
     children: list[Child] = []
@@ -267,12 +287,50 @@ def tick(
         children.append(Child(pr.head, fetch_pull(root, 'origin', pr.number), origin, pr.number))
     with_pr = {child.branch for child in children}
     children += [Child(b, sha, origin) for b, sha in _lanes(root, policy, load_schedule(root)) if b not in with_pr]
+    pulls = [forgeautosync.Open(c.pr, c.branch, c.head) for c in children if c.pr is not None]
+    now = clock(origin) if host and pulls else None
     for child in children:
         one = settle(root, child, policy, feedback(root, child, policy))
+        if (
+            now is not None and policy.auto_sync and child.pr is not None
+            and one.summary != _MERGED and one.state != 'success'
+        ):  # fmt: skip
+            others = [pull for pull in pulls if pull.number != child.pr]
+            line = forgeautosync.step(
+                root, origin, policy, branch=child.branch, number=child.pr, head=child.head, others=others,
+                host=host, now=now, run=sync,
+            )  # fmt: skip
+            if line is not None:
+                one = dataclasses.replace(one, text=f'{one.text}\n- {line}', summary=f'{one.summary}; {line}')
+        if child.pr is not None:
+            one = dataclasses.replace(one, text=_noticed(root, child, policy, one, number=child.pr, now=now))
         said.append((child, one))
         where = f'#{child.pr}' if child.pr is not None else child.head[:12]
         lines.append(f'{child.branch} {where}: {one.summary} -- {_publish(child, one)}')
     return Ticked(tuple(lines), tuple(said))
+
+
+def _noticed(root: Path, child: Child, policy: Policy, said: Feedback, *, number: int, now: datetime | None) -> str:
+    """*said*'s text with the PR's notices (:mod:`lab_commons.dev.forgenotice`); carried unchanged without a host."""
+    line = marker(Marker.INTEGRATION)
+    prior = next((c.body for c in comment_list(child.client, number) if line in c.body), '')
+    block = forgenotice.read(prior)
+    if now is not None:
+        statuses = status_list(child.client, child.head)
+        result = standing(statuses, head=child.head).result
+        committed = int(_git(root, 'show', '-s', '--format=%ct', child.head).strip() or now.timestamp())
+        found = forgenotice.kinds(
+            statuses, conflicts=said.conflicts, settled=result in {Conclusion.PASS, Conclusion.FAIL},
+            age=now - datetime.fromtimestamp(committed, UTC),
+            stall=forgenotice.duration('notice_stall', policy.notice_stall),
+        )  # fmt: skip
+        block = forgenotice.update(
+            block, pr=number, branch=child.branch, head=child.head, found=found,
+            sessions=sorted(sessions(root, f'{_TRACKING}{policy.integration}', child.head)),
+            green=said.summary == _MERGED or said.state == 'success' or result is Conclusion.PASS, now=now,
+        )  # fmt: skip
+    rendered = forgenotice.render(block)
+    return f'{said.text}\n{rendered}' if rendered else said.text
 
 
 def _retarget(client: Client, pr: PullRequest, policy: Policy) -> PullRequest:

@@ -85,13 +85,13 @@ def prompt(
     try:
         found = observe(root, repo, statuses=lambda sha: status_list(built, sha))
         policy = load_policy(root)
-        ticked = integration_tick(root, built, policy)
+        ticked = integration_tick(root, built, policy, host=host)  # the host claims each auto-sync
         for line in ticked.lines:
             say(f'[serve] integration: {line}')
         review_step(root, built, policy=policy, say=say, host=host)  # advisory: the review host follows the integrator
         glass = break_glass(root, policy, repo)
         raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass], alarm=alarm)
-    except (ForgeCallFailed, ListingIncomplete, OSError) as failed:
+    except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 
 

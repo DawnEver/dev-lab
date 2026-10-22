@@ -29,7 +29,19 @@ from lab_commons.box import release
 from lab_commons.compute.admission import Admission, admit
 from lab_commons.compute.model import REQUEST, Candidate, Job, Ranked, Resources, Schedule, Supply
 from lab_commons.compute.serves import Serves
-from lab_commons.dev.forgeclaim import CLAIMABLE, MINE, REFUSED_AT_COMMIT, Claim, Serving, Work, assess, claim, refuse
+from lab_commons.dev.forgecarry import docs_only, part_standing
+from lab_commons.dev.forgeclaim import (
+    CLAIMABLE,
+    DONE,
+    MINE,
+    REFUSED_AT_COMMIT,
+    Claim,
+    Serving,
+    Work,
+    assess,
+    claim,
+    refuse,
+)
 from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgerequest import (
     Declared,
@@ -92,7 +104,9 @@ class ClaimPass:
         state, holder = assess(self.history(wanted.sha), context, me=self.me, now=self.now)
         one = Work(wanted.ref, wanted.sha, wanted.platform, state, holder, request=context)
         blocked, needed = '', frozenset[str]()
-        if state in CLAIMABLE:
+        if state in CLAIMABLE and wanted.kind != REQUEST:  # DOCS-ONLY-CARRIES: no claim, no run
+            one, blocked = self._carried(one, context)
+        if one.state in CLAIMABLE and not blocked:
             try:
                 one, blocked = self._own(one, wanted)
             except OutdatedKit as why:  # this host's defect: the sha waits for a kit that reads it
@@ -102,9 +116,9 @@ class ClaimPass:
                 return
             if not blocked:
                 blocked, needed = self._blocked(wanted)
-        if state in CLAIMABLE and not blocked and self.dry_run:
+        if one.state in CLAIMABLE and not blocked and self.dry_run:
             self._took(wanted, needed)
-        elif state in CLAIMABLE and not blocked:
+        elif one.state in CLAIMABLE and not blocked:
             one, blocked = self._take(one, wanted, needed)
         self.work.append(one)
         if one.state in CLAIMABLE:
@@ -112,6 +126,19 @@ class ClaimPass:
             skipped = wanted.kind != REQUEST and self.serves.skips(needs_of(wanted.platform))
             if not held(blocked) and not skipped and wanted.key not in self.unservable and self._servable(wanted):
                 self.pending.append(one)
+
+    def _carried(self, one: Work, context: str) -> tuple[Work, str]:
+        """DOCS-ONLY-CARRIES: *one* and why it is never claimed (``''``: it runs itself).
+
+        A settled source's verdict is posted on *one* (outside a dry run), which comes back settled (``DONE``).
+        """
+        carry = docs_only(self.root, one.sha, part_standing(self.history, context, self.now))
+        if carry is None:
+            return one, ''
+        if carry.verdict is not None and not self.dry_run:
+            carry.post(self.client, one.sha, one.platform)
+            one = dataclasses.replace(one, state=DONE)
+        return one, carry.hold
 
     def _servable(self, wanted: Candidate) -> bool:
         """Whether every need of *wanted* is present on this host (an unreadable request declaration: no)."""

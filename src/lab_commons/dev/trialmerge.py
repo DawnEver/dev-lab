@@ -24,7 +24,7 @@ from lab_commons.dev.forge import _GIT, _GIT_TIMEOUT_S
 if TYPE_CHECKING:
     from pathlib import Path
 
-__all__ = ['Trial', 'contains', 'merged_at', 'rev', 'trial']
+__all__ = ['Trial', 'contains', 'merged_at', 'rev', 'shares_unmerged', 'trial']
 
 #: ``git merge-tree --write-tree`` exits 1 for a merge with conflicts; anything else non-zero is an error.
 _CONFLICTED: Final = 1
@@ -83,6 +83,16 @@ def trial(root: Path, base: str, head: str) -> Trial:
 def contains(root: Path, target: str, tip: str) -> bool:
     """Whether *tip* is an ancestor of (or equal to) *target*."""
     return _git(root, 'merge-base', '--is-ancestor', tip, target).returncode == 0
+
+
+def shares_unmerged(root: Path, head: str, other: str, tip: str) -> bool:
+    """Whether *head* holds a commit of *other* that *tip* does not: *head* is STACKED on *other*.
+
+    Read off the merge bases, so it holds however far either side moved after the cut. The one owner of
+    the stack question: the PR admission (:mod:`lab_commons.dev.pradmit`) and the forge's auto-sync ask it.
+    """
+    bases = _git(root, 'merge-base', '--all', head, other).stdout.split()
+    return any(not contains(root, tip, base) for base in bases)
 
 
 def merged_at(root: Path, target: str, tip: str) -> str | None:
