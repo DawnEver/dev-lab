@@ -64,6 +64,7 @@ from typing import TYPE_CHECKING, Any, Final
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.config import section
+from lab_commons.dev.forgecarry import RUNNING, docs_only
 from lab_commons.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
 from lab_commons.dev.forgereview_findings import (
     SEVERITIES,
@@ -248,6 +249,34 @@ def claimable(status: CommitStatus | None, now: datetime, stale: timedelta) -> b
     return now - at >= stale
 
 
+def _standing(client: Client, now: datetime, stale: timedelta) -> Callable[[str], CommitStatus | str]:
+    """A sha's review as :func:`lab_commons.dev.forgecarry.docs_only` reads it: posted, live claim, else none."""
+
+    def stood(sha: str) -> CommitStatus | str:
+        latest = next((one for one in status_list(client, sha) if one.context == REVIEW_CONTEXT), None)
+        if latest is not None and latest.state == 'success':
+            return latest
+        return RUNNING if latest is not None and latest.state == 'pending' and not claimable(latest, now, stale) else ''
+
+    return stood
+
+
+def _passed(root: Path, client: Client, head: str, now: datetime, stale: timedelta) -> str | None:
+    """Why *head* is not reviewed now: ``''`` its own review is posted or held, else what carries; ``None``: review it.
+
+    DOCS-ONLY-CARRIES: an earlier head's review stands (posted on *head*, no command run) or is still running.
+    """
+    latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
+    if not claimable(latest, now, stale):
+        return ''
+    carry = docs_only(root, head, _standing(client, now, stale))
+    if carry is not None and carry.verdict is not None:
+        why = f'{carry.hold}: the review of {carry.source[:12]} stands'[:_DESCRIPTION]
+        status_post(client, head, context=REVIEW_CONTEXT, state=carry.verdict.state, description=why,
+                    target_url=carry.verdict.url)  # fmt: skip
+    return None if carry is None else carry.hold
+
+
 def run_command(argv: Sequence[str], root: Path) -> str:
     """The stdout of the declared command run in *root*; :class:`ReviewRefused` or :class:`OSError` on a failure."""
     try:
@@ -354,8 +383,8 @@ def review_tick(
         head = pull.head_sha
         if pull.base != base or pull.draft or not head:
             continue
-        latest = next((one for one in status_list(client, head) if one.context == REVIEW_CONTEXT), None)
-        if not claimable(latest, clock(), review.stale):
+        if (passed := _passed(root, client, head, clock(), review.stale)) is not None:
+            lines.extend([f'#{pull.number} {head[:12]}: {passed}'] if passed else [])
             continue
         size = len(_git(root, 'diff', f'{target}...{head}').encode())
         if size > review.max_diff_bytes:

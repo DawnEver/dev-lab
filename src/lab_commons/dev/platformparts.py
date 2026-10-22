@@ -20,7 +20,7 @@ judged like any outcome and never counted in ``ran``.
 ``hands`` is, per OTHER part, how many collected ids belong to it. That is how a commit's parts are
 DISCOVERED (:func:`derived`): ``base`` is always wanted, and so is every part a posted part hands to. A
 part CARRIED to a reach-equivalent descendant (:mod:`lab_commons.dev.forgecarry`) ends ``carried from
-<sha12>: every outcome carried by footprint`` and is a part like any other: the sha it was judged at is named,
+<sha12>: docs-only`` and is a part like any other: the sha it was judged at is named,
 never hidden. The full per-id outcome stays in the run record, attached on the forge and linked as the
 status's ``target_url`` (:mod:`lab_commons.dev.forgerecords`). A ``pending`` status in the same context
 is a CLAIM on the part (:mod:`lab_commons.dev.forgetick`), not a part.
@@ -85,7 +85,7 @@ from lab_commons.compute.probe import os_name
 from lab_commons.dev.datedlog import dated_log
 from lab_commons.dev.forge import forge_from_remote
 from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush
-from lab_commons.dev.forgestatus import state_for
+from lab_commons.dev.forgestatus import CARRIED_FROM, DOCS_ONLY, state_for
 from lab_commons.dev.producer import ProducerExit
 from lab_commons.hpc.declared import kit_tables, pyproject_at
 from lab_commons.hpc.needsets import BASE, PART_NAME, need_sets, needs_of, selecting, vocabulary_at
@@ -151,7 +151,7 @@ _DESCRIPTION: Final = re.compile(
     r'^scope=(?P<scope>\w+) ran=(?P<ran>\d+) '
     r'hands=(?P<hands>-|[a-z0-9_+]+:\d+(?:,[a-z0-9_+]+:\d+)*)'
     r'(?: kept=(?P<kept>[0-9a-f]{12}:\d+(?:,[0-9a-f]{12}:\d+)*))?'
-    r'(?: carried from (?P<carried>[0-9a-f]{12}): every outcome carried by footprint)?$'
+    r'(?: carried from (?P<carried>[0-9a-f]{12}): (?:docs-only|every outcome carried by footprint))?$'
 )
 
 #: The remedy a missing part names: a host whose resources admit it claims it and runs :func:`producer_argv`.
@@ -319,7 +319,7 @@ class Part:
         """The status description: ``scope= ran= hands=`` (module docstring)."""
         hands = ','.join(f'{name}:{count}' for name, count in sorted(self.hands.items())) or '-'
         kept = ' kept=' + ','.join(f'{sha}:{count}' for sha, count in sorted(self.kept.items())) if self.kept else ''
-        carried = f' carried from {self.carried}: every outcome carried by footprint' if self.carried else ''
+        carried = f' {CARRIED_FROM} {self.carried}: {DOCS_ONLY}' if self.carried else ''
         return f'scope={self.scope} ran={self.ran} hands={hands}{kept}{carried}'
 
 

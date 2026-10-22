@@ -316,9 +316,13 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgesync` -- ``forge sync``: a child merges integration, plus only the refs it watches.
 * :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`lab_commons.dev.forgemerge` -- the forge's server-side merge of a green PR into integration.
+* :mod:`lab_commons.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
+* :mod:`lab_commons.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`lab_commons.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`lab_commons.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.
+* :mod:`lab_commons.dev.labsession` -- the launcher's ``LAB_SESSION`` stamped as ``Lab-Session`` at commit-msg.
+* :mod:`lab_commons.dev.pradmit` -- PR admission: ONE-SESSION-ONE-PR and NO-STACKED-PRS at ``pr create`` and push.
 * :mod:`lab_commons.dev.issueref` -- the commit-msg check: WARNS on a malformed ``Refs #N``, never blocks.
 * :mod:`lab_commons.dev.forgecli` -- the ``python -m lab_commons.dev.forge`` noun dispatch over the ``forge*`` doors.
 * :mod:`lab_commons.dev.forgeauth` -- ``auth login|status``: a token VERIFIED, then stored by ``git credential``.
@@ -337,6 +341,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
 * :mod:`lab_commons.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's
   ``behind_max`` commits behind ``origin/<integration>`` is refused, naming ``forge sync``.
+* :mod:`lab_commons.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
+  ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`lab_commons.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin

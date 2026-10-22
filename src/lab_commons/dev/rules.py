@@ -60,6 +60,7 @@ from lab_commons.dev._rule_rows import ROWS
 from lab_commons.dev._rule_rows_b import ROWS as _ROWS_B
 from lab_commons.dev._rule_rows_branches import ROWS as _ROWS_BRANCHES
 from lab_commons.dev._rule_rows_citations import ROWS as _ROWS_CITATIONS
+from lab_commons.dev._rule_rows_pr_flow import ROWS as _ROWS_PR_FLOW
 from lab_commons.dev.profile import RepoProfile
 from lab_commons.file_io import read_toml
 
@@ -291,7 +292,7 @@ def _build(rows: Iterable[tuple[str, str, tuple[str | tuple[str, str], ...]]]) -
 #: reason: a table edited through the module that checks it drifts away from what it describes.
 #: Rows are the number -- nothing here states a count, because a count is blind to which row moved
 #: and the honest repair when it disagrees is to edit the digit.
-RULES: Final[tuple[Rule, ...]] = _build(ROWS + _ROWS_B + _ROWS_CITATIONS + _ROWS_BRANCHES)
+RULES: Final[tuple[Rule, ...]] = _build(ROWS + _ROWS_B + _ROWS_CITATIONS + _ROWS_PR_FLOW + _ROWS_BRANCHES)
 
 
 def tracked_files(root: Path) -> frozenset[str]:

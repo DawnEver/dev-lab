@@ -34,6 +34,7 @@ from lab_commons.config import section
 from lab_commons.dev.branchprune import listing
 from lab_commons.dev.branchset import BranchSetNotDeclared
 from lab_commons.dev.forge import NoCredential, Transport, UnreadableRemote, fetch_origin, https_transport
+from lab_commons.dev.forgecarry import docs_only, part_standing
 from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess, forge_now
 from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgehosts import HostCard, read_cards
@@ -141,11 +142,19 @@ def forge_queue(
             read[one.sha] = _refused(lambda: declared_at(root, one.sha)[1] if one.sha else '')
         return read[one.sha]
 
+    def carried_hold(one: Candidate) -> str:
+        """Why *one* is never claimed: its part carries from a docs-only ancestor (DOCS-ONLY-CARRIES)."""
+        if one.kind == REQUEST:
+            return ''
+        carry = docs_only(root, one.sha, part_standing(history, part_context(one.platform), now))
+        return carry.hold if carry is not None else ''
+
     weights = host_weights(section('schedule'))
     ranked = [
         dataclasses.replace(
             item,
             blocked=refused(item.candidate)
+            or carried_hold(item.candidate)
             or behind(root, item.candidate, schedule, history, now)
             or _why(item.candidate, cards, now),
         )

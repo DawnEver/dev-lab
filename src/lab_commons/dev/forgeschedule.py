@@ -80,6 +80,7 @@ from lab_commons.dev.forgecoalesce import WAITING_BEHIND
 from lab_commons.dev.forgeorigin import head_login, origin_host_of
 from lab_commons.dev.forgepulls import pr_list
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, parse_body, parse_paths
+from lab_commons.dev.forgestatus import CARRIED_FROM
 from lab_commons.dev.forgework import Client, ForgeCallFailed, is_pull
 from lab_commons.dev.lanepolicy import Policy, load_policy
 from lab_commons.dev.platformparts import part_refs
@@ -174,12 +175,12 @@ def starved_alarms(queue: Sequence[Ranked], schedule: Schedule, repo: str) -> li
 
 
 def held(blocked: str) -> bool:
-    """Whether *blocked* is a fleet POLICY hold -- its ref's run in flight, or its ref's budget spent.
+    """Whether *blocked* is a fleet POLICY hold -- its ref's run in flight, its ref's budget spent, or carried.
 
     A held candidate is no work any host could claim now, so it never makes a host idle with work pending;
     only a block THIS host could have admitted past -- nothing, or its own capacity -- does.
     """
-    return blocked.startswith((WAITING_BEHIND, OVER_BUDGET))
+    return blocked.startswith((WAITING_BEHIND, OVER_BUDGET, CARRIED_FROM))
 
 
 def over_budget(root: Path, wanted: Candidate, schedule: Schedule, usage: Mapping[str, float] | None) -> str:
