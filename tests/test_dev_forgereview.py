@@ -57,7 +57,7 @@ _MANIFEST = (
 
 
 def _output(*, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),), **top: object) -> str:
-    """A findings-output v1 document: one HIGH finding on ``x.txt`` when any reviewer is ok."""
+    """A findings-output v2 document: one HIGH finding on ``x.txt``, principle-tagged, when any reviewer is ok."""
     rows = [
         {'name': name, 'provider': 'anthropic', 'status': status, 'dropped_findings': 0} for name, status in reviewers
     ]
@@ -65,10 +65,10 @@ def _output(*, reviewers: tuple[tuple[str, str], ...] = (('correctness', 'ok'),)
     finding = {
         'id': 'SR-20261020-001', 'severity': 'HIGH', 'file': 'x.txt:1', 'summary': 'adds x, which NEVER-DO-X forbids',
         'category': 'Bug', 'status': 'OPEN', 'suggestion': 'drop x', 'detail': 'x is forbidden', 'confidence': 'single',
-        'reviewers': ok,
+        'reviewers': ok, 'principles': ['never-do-x'],
     }  # fmt: skip
     document = {
-        'schema_version': 1, 'range': 'a..b', 'profiles': [row['name'] for row in rows], 'reviewers': rows,
+        'schema_version': 2, 'range': 'a..b', 'profiles': [row['name'] for row in rows], 'reviewers': rows,
         'findings': [finding] if ok else [],
     } | top  # fmt: skip
     return json.dumps(document)
@@ -125,6 +125,7 @@ def test_the_declared_command_reviews_the_merge_base_range_and_its_findings_are_
     assert '**HIGH** `x.txt:1`' in comment['body']
     assert 'SR-20261020-001' in comment['body']
     assert 'correctness@anthropic' in comment['body']
+    assert 'principles: never-do-x' in comment['body']
     (status,) = [s for s in status_list(forge, head) if s.context == REVIEW_CONTEXT]
     assert status.state == 'success'
     assert '1 finding(s), 1 HIGH' in status.description
@@ -322,9 +323,9 @@ def _die() -> str:
     raise _Died
 
 
-@pytest.mark.parametrize('version', [2, 0, '1'])
+@pytest.mark.parametrize('version', [1, 0, '2'])
 def test_an_unknown_schema_version_is_refused_by_name_and_nothing_is_commented(tmp_path: Path, version: object) -> None:
-    """PLANTED control: the same document at version 1 is posted (the first test)."""
+    """PLANTED control: the same document at version 2 is posted; v1 has no producer left (the first test)."""
     work, head = _work(tmp_path)
     forge, number = _forge(head)
     _tick(work, forge, FakeCommand(_output(schema_version=version)))
@@ -332,12 +333,12 @@ def test_an_unknown_schema_version_is_refused_by_name_and_nothing_is_commented(t
     assert status.state == 'error'
     assert f'schema_version {version!r}' in status.description
     assert forge.comments[number] == []
-    with pytest.raises(UnknownSchemaVersion, match='schema_version 2'):
-        parse_findings(_output(schema_version=2))
+    with pytest.raises(UnknownSchemaVersion, match='schema_version 1'):
+        parse_findings(_output(schema_version=1))
 
 
 @pytest.mark.parametrize(
-    'out', ['not json', '{"schema_version": 1}', _output(reviewers=(('c', 'bored'),)), _output()[:-1]]
+    'out', ['not json', '{"schema_version": 2}', _output(reviewers=(('c', 'bored'),)), _output()[:-1]]
 )
 def test_output_that_is_not_the_findings_json_posts_an_error_naming_the_failure(tmp_path: Path, out: str) -> None:
     work, head = _work(tmp_path)

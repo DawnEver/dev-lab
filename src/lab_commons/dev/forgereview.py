@@ -323,7 +323,9 @@ def render(head: str, found: Findings) -> str:
     rows = sorted(found.findings, key=lambda one: SEVERITIES.index(one.severity))
     lines = [
         f'- **{one.severity}** `{one.file}` -- {one.summary} ({one.id}, {one.category}, {one.confidence}; '
-        f'by {", ".join(one.reviewers)})' + (f'\n  - suggestion: {one.suggestion}' if one.suggestion else '')
+        f'by {", ".join(one.reviewers)})'
+        + (f'\n  - principles: {", ".join(one.principles)}' if one.principles else '')
+        + (f'\n  - suggestion: {one.suggestion}' if one.suggestion else '')
         for one in rows
     ]
     body = '\n'.join(lines) or 'No findings.'
