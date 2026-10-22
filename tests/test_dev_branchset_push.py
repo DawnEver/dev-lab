@@ -141,7 +141,7 @@ def test_every_ref_in_a_multi_ref_push_is_judged() -> None:
 
 
 def test_stdin_carries_the_refspec_and_the_deletion_flag() -> None:
-    """Git's own protocol: four fields per line, and an all-zero local sha means DELETE."""
+    """Git's own protocol: four fields per line; an all-zero local sha means DELETE, an all-zero remote one CREATE."""
     lines = [
         f'HEAD {_HEAD} refs/heads/feat/session {_ZERO}',
         f'(delete) {_ZERO} refs/heads/work/foo {_HEAD}',
@@ -149,9 +149,9 @@ def test_stdin_carries_the_refspec_and_the_deletion_flag() -> None:
         'malformed line with three fields',  # skipped, not crashed on
     ]
     assert pushed_refs(lines) == (
-        PushedRef('refs/heads/feat/session', local_sha=_HEAD),
+        PushedRef('refs/heads/feat/session', local_sha=_HEAD, created=True),
         PushedRef('refs/heads/work/foo', deleted=True, local_sha=_ZERO),
-        PushedRef('refs/tags/v1', local_sha=_HEAD),
+        PushedRef('refs/tags/v1', local_sha=_HEAD, created=True),
     )
 
 

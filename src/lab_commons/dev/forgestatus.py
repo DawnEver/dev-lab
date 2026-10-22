@@ -44,7 +44,9 @@ from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion, Status
 
 __all__ = [
+    'CARRIED_FROM',
     'DESCRIPTION_LIMIT',
+    'DOCS_ONLY',
     'STATES',
     'CommitStatus',
     'head_sha',
@@ -59,6 +61,11 @@ __all__ = [
 
 #: The states this door writes; ``error`` carries an INCONCLUSIVE verdict, ``pending`` a claim.
 STATES: Final = ('success', 'failure', 'error', 'pending')
+
+#: A carried status ends ``carried from <sha12>: docs-only`` -- DOCS-ONLY-CARRIES (lab_commons.dev.forgecarry);
+#: a part posted under the retired ``every outcome carried by footprint`` still READS (FORMATS-UPGRADE-ON-READ).
+CARRIED_FROM: Final = 'carried from'
+DOCS_ONLY: Final = 'docs-only'
 
 #: GitHub's description limit, the tighter of the two forges; a longer one is cut, never sent.
 DESCRIPTION_LIMIT: Final = 140

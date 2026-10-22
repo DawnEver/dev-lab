@@ -514,3 +514,31 @@ def test_the_steps_claim_names_the_serve_host_not_the_box(tmp_path: Path) -> Non
     posted = [one['description'] for one in forge.statuses[head]]
     assert posted[0].startswith(f'{CLAIMED} cluster/acct at ')
     assert socket.gethostname() not in posted[0]
+
+
+@pytest.mark.parametrize('change', ['docs', 'code'])
+def test_a_docs_only_head_carries_the_previous_heads_review_and_runs_no_command(tmp_path: Path, change: str) -> None:
+    """DOCS-ONLY-CARRIES (user ruling 2026-10-21): the rem pass's memory push after a reviewed head costs nothing.
+
+    PLANTED CONTROL: the next head touches a path a test reads -- the command reviews it.
+    """
+    work, _ = _work(tmp_path)
+    (work / 'tests').mkdir(exist_ok=True)  # pr/x starts from main, which holds neither directory
+    head = advance(work, 'pr/x', 'tests/test_a.py', 'def test_a():\n    assert True\n')
+    forge, number = _forge(head)
+    _tick(work, forge, FakeCommand())
+    path = '.claude/memory/after.md' if change == 'docs' else 'tests/test_a.py'
+    (work / path).parent.mkdir(parents=True, exist_ok=True)
+    after = advance(work, 'pr/x', path, 'def test_b():\n    assert True\n')
+    forge.pulls[number]['head']['sha'] = after
+    command = FakeCommand()
+    lines = _tick(work, forge, command)
+    if change == 'code':
+        assert len(command.ran) == 1
+        return
+    assert command.ran == []
+    (status,) = [s for s in status_list(forge, after) if s.context == REVIEW_CONTEXT]
+    assert status.state == 'success'
+    assert status.description.startswith(f'carried from {head[:12]}: docs-only')
+    assert len(forge.comments[number]) == 1, 'the earlier head s comment stands; nothing new is posted'
+    assert lines == (f'#{number} {after[:12]}: carried from {head[:12]}: docs-only',)

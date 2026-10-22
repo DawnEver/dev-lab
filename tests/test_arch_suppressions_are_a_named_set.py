@@ -590,6 +590,60 @@ ALLOWED: Final[dict[Site, str]] = {
         'PLW1510',
         'return subprocess.run(*args, **_windowless(kwargs))',
     ): 'the door forwards check as each caller passes it; every caller already decides it',
+    (
+        'src/lab_commons/dev/branchnotices.py',
+        'PLC0415',
+        'from lab_commons.dev.forgepulls import pr_list',
+    ): 'branchnotices runs inside git hooks on every commit and push; the forge client is read only on a '
+    'cache miss, so the network leaf is imported there and a cache hit costs no import',
+    (
+        'src/lab_commons/dev/branchnotices.py',
+        'PLC0415',
+        'from lab_commons.dev.forgework import client_for',
+    ): 'the same hook-latency reason: the client is built only on a cache miss, inside the bounded reader thread',
+    (
+        'src/lab_commons/dev/branchnotices.py',
+        'BLE001',
+        'except Exception:',
+    ): 'the forge read runs in a daemon thread under a deadline beside a git verb; a notice must never fail '
+    'the verb, and the forge client raises several unrelated types (network, JSON, auth)',
+    (
+        'src/lab_commons/dev/branchnotices.py',
+        'S110',
+        'except Exception:',
+    ): 'the same thread: the failure is silent ON PURPOSE -- no notice is shown, and the next verb asks again',
+    (
+        'src/lab_commons/dev/branchnotices.py',
+        'BLE001',
+        'except (Exception, SystemExit):',
+    ): 'the hook entry point: whatever the report raises, including argparse SystemExit on a bad flag, the '
+    'hook exits 0, because a notice must never fail a git verb (test_main_exits_zero_whatever_happens)',
+    (
+        'src/lab_commons/dev/branchnotices.py',
+        'S110',
+        'except (Exception, SystemExit):',
+    ): 'the same entry point: nothing is printed on failure because the hook line is informational only',
+    (
+        'src/lab_commons/dev/forgenotice.py',
+        'PLC0415',
+        'from lab_commons.dev.forgepulls import Marker, comment_list, marker',
+    ): 'forgenotice is imported by the hook-path branchnotices and must stay a leaf at import; the forge '
+    'modules load only when a notice is actually read from a PR comment',
+    (
+        'src/lab_commons/dev/forgenotice.py',
+        'PLC0415',
+        'from lab_commons.dev.forgepulls import pr_list',
+    ): 'the same leaf-at-import reason: the PR list is read only by the CLI path that needs it',
+    (
+        'src/lab_commons/dev/forgenotice.py',
+        'PLC0415',
+        'from lab_commons.dev.forgework import ForgeCallFailed, client_for',
+    ): 'the same leaf-at-import reason: the client is built only by the CLI entry point',
+    (
+        'src/lab_commons/dev/forgenotice.py',
+        'PLC0415',
+        'from lab_commons.dev.lanepolicy import load_policy',
+    ): 'the same leaf-at-import reason: the lane policy is read only by the CLI entry point',
 }
 
 _NOQA = re.compile(r'\bnoqa\b\s*:?\s*([^#]*)')

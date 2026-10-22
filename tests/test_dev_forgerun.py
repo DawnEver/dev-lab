@@ -820,3 +820,22 @@ def test_a_run_not_yet_submitted_whose_ref_moved_on_is_released_superseded_witho
         released = CommitStatus(context=part_context('tests'), state='error', description=post['description'], url='')
         assert assess([released], part_context('tests'), me=HERE, now=NOW)[0] != OPEN
         assert [a.kind for a in alarms] == [RUN]
+
+
+@pytest.mark.parametrize('change', ['docs', 'code'])
+def test_a_run_whose_ref_moved_on_to_a_docs_only_tip_is_never_cancelled(
+    home: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    """DOCS-ONLY-CARRIES (user ruling 2026-10-21): the tip's part IS this run's result, carried when it lands.
+
+    PLANTED CONTROL: the same moved tip with a change a test reaches -- the run is superseded for it.
+    """
+    docs_only = change == 'docs'
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    _submitted_run(home, store, slurm)
+    monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40)
+    monkeypatch.setattr(forgerun, 'equivalent', lambda _root, a, b: docs_only and (a, b) == (SHA, 'd' * 40))
+    slurm.phrase = 'running 3/4 done 1/4'
+    after = _tick(store, slurm, alarms=alarms)
+    assert (after is not None) is docs_only
+    assert slurm.cancelled == ([] if docs_only else ['4242'])

@@ -55,7 +55,7 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
     if not policy.pr_merges_since:
         return []
     done = _door.run(
-        [_GIT, '-C', str(root), 'log', '--first-parent', f'--format=%H%n%B{_RECORD}',
+        [_GIT, '-C', str(root), 'log', '--first-parent', f'--format=%H%n%an%n%B{_RECORD}',
          f'refs/remotes/origin/{policy.integration}', f'^{policy.pr_merges_since}'],
         capture_output=True, text=True, encoding='utf-8', check=False, timeout=120,
     )  # fmt: skip
@@ -64,11 +64,12 @@ def notices(root: Path, policy: Policy, repo: str) -> list[Alarm]:
         raise OSError(msg)
     found = []
     for entry in filter(str.strip, done.stdout.split(_RECORD)):
-        sha, _, message = entry.strip().partition('\n')
+        sha, _, rest = entry.strip().partition('\n')
+        author, _, message = rest.partition('\n')
         if why := reason(message):
             subject = f'{policy.integration} took break-glass commit {sha[:12]}'
             body = (
-                f'{sha} was pushed directly to {policy.integration}, past the forge merge flow: {why}. '
+                f'{sha} was pushed directly to {policy.integration} by {author}, past the forge merge flow: {why}. '
                 f'Follow up with a pull request for anything beyond the emergency fix, then move '
                 f'[tool.lab_commons.integrator] pr_merges_since past it to close this notice.'
             )

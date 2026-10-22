@@ -14,8 +14,10 @@ WHAT A STAGE HANDS A HOOK IS GIT'S OWN CONTRACT, read here once:
 * ``pre-push`` -- git's ref lines (``<local ref> <local sha> <remote ref> <remote sha>``) read from
   stdin ONCE and piped to every hook's stdin; a hook with ``refs`` runs only when a pushed remote ref
   matches and sees only those lines. Paths are the ones the pushed commits change, selected as above.
+* ``post-commit`` -- no input; ADVISORY (``table.ADVISORY``): the commit is made, so the stage exits 0
+  whatever its rows do.
 
-Every hook runs; the stage fails when any hook failed. Exit codes are each hook's own.
+Every hook runs; the stage fails when any hook failed (an advisory stage never). Exit codes are each hook's own.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from lab_commons.dev.githooks.table import STAGES, Hook, hook_table
+from lab_commons.dev.githooks.table import ADVISORY, STAGES, Hook, hook_table
 from lab_commons.log import emit
 
 __all__ = [
@@ -249,6 +251,14 @@ def run_stage(
         emit(f'[githooks] {stage} {hook.id}: {"passed" if code == 0 else f"FAILED (exit {code})"}')
         if code:
             failed.append(hook.id)
+    return _verdict(stage, failed)
+
+
+def _verdict(stage: str, failed: Sequence[str]) -> int:
+    """The stage's exit: ``1`` when a hook failed, except at an ADVISORY stage, whose act is already done."""
+    if failed and stage in ADVISORY:
+        emit(f'[githooks] {stage}: {", ".join(failed)} failed; the act is done, so this is not a refusal', err=True)
+        return 0
     if failed:
         emit(f'[githooks] {stage}: {len(failed)} hook(s) failed: {", ".join(failed)}', err=True)
         return 1
