@@ -250,7 +250,7 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
             'sh scripts/hooks/with-retry.sh push origin HEAD:refs/heads/lane/x',
             'sh scripts/hooks/with-retry.sh push origin main',
             'git branch -d lane/x',
-            '.venv/Scripts/python.exe -m lab_commons.dev.branchprune delete lane/x',
+            f'{VENV_PYTHONS[0]} -m lab_commons.dev.branchprune delete lane/x',
         ),
     },
     {

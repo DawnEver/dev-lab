@@ -61,14 +61,17 @@ def _tick(work: Path, forge: StateForge, head: str, *, now: datetime = _NOW, hos
 
 def _notices(work: Path, forge: StateForge, *argv: str, now: datetime = _NOW) -> tuple[int, str]:
     out: list[str] = []
-    import lab_commons.dev.forgenotice as module  # noqa: PLC0415
 
-    real = module.emit
-    module.emit = lambda line, **_k: out.append(line)  # type: ignore[assignment]
+    def capture(text: object = '', *, err: bool = False, flush: bool = False) -> None:
+        del err, flush
+        out.append(str(text))
+
+    real = forgenotice.emit
+    forgenotice.emit = capture
     try:
         code = forgenotice.main(list(argv), cwd=work, client=forge, clock=lambda: now)
     finally:
-        module.emit = real
+        forgenotice.emit = real
     return code, '\n'.join(out)
 
 

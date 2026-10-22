@@ -39,7 +39,7 @@ from lab_commons.units import Q_
 
 if TYPE_CHECKING:
     from lab_commons.dev.forgestatus import CommitStatus
-    from lab_commons.dev.forgework import Client
+    from lab_commons.dev.forgework import Client, Comment
     from lab_commons.dev.lanepolicy import Policy
 
 __all__ = [
@@ -192,7 +192,7 @@ def escalated(notice: Notice, block: Block, now: datetime, escalate: timedelta) 
     return notice.head == block.head and now - datetime.fromisoformat(notice.opened) > escalate
 
 
-def integration_comment(client: Client, number: int) -> Any | None:  # noqa: ANN401 -- a forgepulls Comment
+def integration_comment(client: Client, number: int) -> Comment | None:
     """PR *number*'s one integration comment (where its notices live), or ``None`` when it has none."""
     from lab_commons.dev.forgepulls import Marker, comment_list, marker  # noqa: PLC0415 (a leaf at import)
 

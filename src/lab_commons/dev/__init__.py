@@ -315,6 +315,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`lab_commons.dev.forgeintegration` -- ``forge integration``: per child branch, one comment or status.
 * :mod:`lab_commons.dev.forgemerge` -- the forge's server-side merge of a green PR into integration.
 * :mod:`lab_commons.dev.forgeautosync` -- the serve tick merges integration into a behind ``pr/*`` PR head.
+* :mod:`lab_commons.dev.forgenotice` -- ``forge notices``: a red, conflicting or stalled PR head, told to its sessions.
 * :mod:`lab_commons.dev.forgereview` -- the ADVISORY review of each open PR head by the repo's declared command.
 * :mod:`lab_commons.dev.forgereview_findings` -- the findings JSON that command prints, read at a known version only.
 * :mod:`lab_commons.dev.mergeaudit` -- a merge may not lose or rewrite a test in silence: the three-way audit at commit.

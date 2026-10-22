@@ -9,10 +9,15 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import pytest
 from test_dev_forgenotice import SESSION, _part, _tick, _world
 
 from lab_commons.dev import branchnotices
+
+if TYPE_CHECKING:
+    from lab_commons.dev.forgework import Client
 
 _ZERO = '0' * 40
 
@@ -51,7 +56,9 @@ def test_a_push_names_its_pr_branches_and_a_deletion_names_none() -> None:
     assert branchnotices.pushed([f'refs/heads/l {"a" * 40} refs/heads/lane/x {"1" * 40}']) == []
 
 
-def test_a_run_of_commits_costs_one_forge_read_per_cache_window(tmp_path: Path, monkeypatch: object) -> None:
+def test_a_run_of_commits_costs_one_forge_read_per_cache_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """PLANTED control: past the window the forge is asked again."""
     work, forge, _, head = _world(tmp_path)
     _part(forge, head, 'failure')
@@ -59,11 +66,11 @@ def test_a_run_of_commits_costs_one_forge_read_per_cache_window(tmp_path: Path, 
     real = branchnotices._from_forge
     calls: list[str] = []
 
-    def counting(client: object, branch: str, session: str) -> list[str]:
+    def counting(client: Client, branch: str, session: str) -> list[str]:
         calls.append(branch)
-        return real(client, branch, session)  # type: ignore[arg-type]
+        return real(client, branch, session)
 
-    monkeypatch.setattr(branchnotices, '_from_forge', counting)  # type: ignore[attr-defined]
+    monkeypatch.setattr(branchnotices, '_from_forge', counting)
     seams = {'client': forge, **_fresh(tmp_path)}
     first = branchnotices.lines_for(work, 'pr/x', SESSION, clock=lambda: 1000.0, **seams)
     assert first
@@ -96,14 +103,14 @@ def test_a_failing_or_hanging_forge_is_silent_and_bounded(tmp_path: Path) -> Non
     gate.set()
 
 
-def test_main_exits_zero_whatever_happens(tmp_path: Path, monkeypatch: object) -> None:
+def test_main_exits_zero_whatever_happens(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PLANTED control: a report that speaks, and one that raises, both exit 0 -- the row never fails a git verb."""
-    monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: 'something')  # type: ignore[attr-defined]
+    monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: 'something')
     assert branchnotices.main([str(tmp_path)]) == 0
 
     def boom(*_a: object, **_k: object) -> str:
         raise RuntimeError
 
-    monkeypatch.setattr(branchnotices, 'report', boom)  # type: ignore[attr-defined]
+    monkeypatch.setattr(branchnotices, 'report', boom)
     assert branchnotices.main([str(tmp_path)]) == 0
     assert branchnotices.main(['--no-such-flag']) == 0
