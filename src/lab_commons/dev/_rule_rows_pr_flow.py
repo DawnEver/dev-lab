@@ -1,7 +1,6 @@
-"""The rules registry, THIRD part -- pure DATA, the same row shape as ``_rule_rows.py``.
+"""The rules registry, PR-FLOW part -- pure DATA, the same row shape as ``_rule_rows.py``.
 
-The rows of the PR flow (who may open a PR, and onto what). A part of its own rather than a size split:
-``_rule_rows_b.py`` sits at its band (`tests/test_arch_module_size_alarm.py`).
+The rows of the PR flow (who may open a PR, and onto what). A module named for its concept, not a size split.
 """
 
 from __future__ import annotations
