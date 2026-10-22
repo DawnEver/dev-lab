@@ -103,7 +103,7 @@ feature branches, lanes, requests -- from one queue ([scheduling](forge.md#sched
 is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
 
 - **A cluster account's machine file**: delete the `serve` key from `[deploy]` (on Ada it named the
-  integration mode), then re-run `python -m lab_commons.hpc deploy` so the crontab lines become plain
+  integration mode), then re-run `python -m dev_lab.dev.hpchost deploy` so the crontab lines become plain
   `forge serve`. A `[deploy]` still carrying the key is refused.
 - **A workstation**: re-run `python -m dev_lab.dev.workstation deploy ...` without the mode flag; it
   rewrites the `lab-forge-serve` Task, whose old action is refused until then.

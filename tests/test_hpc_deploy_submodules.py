@@ -11,8 +11,9 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
-from lab_commons.hpc.deploy_spec import Deployment, Repo, checkout_of
-from lab_commons.hpc.deploy_steps import Step, Tools, update
+
+from dev_lab.dev.hpchost.spec import Deployment, Repo, checkout_of
+from dev_lab.dev.hpchost.steps import Step, Tools, update
 
 _ALLOW_FILE = ('-c', 'protocol.file.allow=always')
 
