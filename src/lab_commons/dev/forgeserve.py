@@ -69,7 +69,7 @@ is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`lab_commons.dev.forgeschedule`). Before the tick a cluster host
 reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
-other waits. After it, a run whose ref moved on is SUPERSEDED (cancelled and released); on ANY host,
+other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained); on ANY host,
 a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
 read across every host card; and this host's CARD is published on the forge
 (:mod:`lab_commons.dev.forgehosts`):

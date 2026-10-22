@@ -2,8 +2,9 @@
 
 A ref of a ``coalesce`` class (:attr:`lab_commons.compute.model.Schedule.coalesce`) has at most one run of
 a part in flight across the fleet: its current tip waits behind that run and is tested next as one batch --
-per-test carry makes it cheap. That run, STARTED OR NOT, is cancelled for the tip by its holder at its next
-tick (user ruling 2026-10-21, :mod:`lab_commons.dev.forgerun`); only one already ``publishing`` its gathered
+per-test carry makes it cheap. At its holder's next tick that run's NOT-YET-STARTED tasks are withdrawn for the
+tip and its STARTED ones drain (``draining``) -- never cancelled -- so the tip carries them (NEWEST-HEAD-ONLY,
+user ruling 2026-10-22, :mod:`lab_commons.dev.forgerun`); one already ``publishing`` its gathered
 record finishes. A ref of any other class is tested at every pushed sha. The run in
 flight is read from the claims already on the forge (:mod:`lab_commons.dev.forgeclaim`), on the tip's
 first-parent history: the same on every host, unlike a host's reflog. Both the claim pass
@@ -24,7 +25,7 @@ from lab_commons.dev.forgeclaim import CLAIMED, DONE, Claim, assess
 from lab_commons.dev.forgestatus import CommitStatus
 from lab_commons.dev.platformparts import part_context
 
-__all__ = ['EARLIER_TIPS', 'PUBLISHING', 'WAITING_BEHIND', 'behind', 'earlier_tips']
+__all__ = ['DRAINING', 'EARLIER_TIPS', 'PUBLISHING', 'WAITING_BEHIND', 'behind', 'earlier_tips']
 
 #: The prefix of :attr:`Ranked.blocked` for a coalesced tip waiting on its ref's run in flight.
 WAITING_BEHIND: Final = 'waiting behind'
@@ -32,6 +33,8 @@ WAITING_BEHIND: Final = 'waiting behind'
 EARLIER_TIPS: Final = 16
 #: The claim progress of a run posting its gathered record (:mod:`lab_commons.dev.forgerun`): never superseded.
 PUBLISHING: Final = 'publishing'
+#: The claim progress of a superseded run whose started tasks finish (:mod:`lab_commons.dev.forgerun`).
+DRAINING: Final = 'draining'
 
 
 def behind(
@@ -42,7 +45,7 @@ def behind(
     A COALESCED class (:attr:`Schedule.coalesce`) holds at most one run per (ref, part) across the fleet: the
     claims already live on the forge, on the tip's first-parent HISTORY -- the same on every host, unlike a
     host's reflog -- newest first, until one whose part is settled. A live claim there blocks the current
-    tip until its holder cancels it for the tip at its next tick, started or not; one ``publishing`` finishes.
+    tip until its holder withdraws its pending tasks and its started ones drain; one ``publishing`` finishes.
     An earlier tip nobody claimed is never a candidate at all (:func:`candidates` names only the tip).
     """
     if wanted.kind not in schedule.coalesce:
@@ -52,9 +55,11 @@ def behind(
         state, holder = assess(history(sha), context, me=nobody, now=now)
         if state == CLAIMED and holder is not None:
             where = holder.hpc or holder.machine or holder.login
+            if holder.progress.startswith(DRAINING):
+                return f'{WAITING_BEHIND} {sha[:12]} ({holder.progress} on {where})'
             if holder.progress.startswith(PUBLISHING):
                 return f'{WAITING_BEHIND} {sha[:12]} ({PUBLISHING} on {where})'
-            return f'{WAITING_BEHIND} {sha[:12]} (held on {where}: superseded at its next tick)'
+            return f'{WAITING_BEHIND} {sha[:12]} (held on {where}: its pending tasks withdrawn at its next tick)'
         if state == DONE:
             return ''
     return ''

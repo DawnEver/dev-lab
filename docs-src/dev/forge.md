@@ -160,10 +160,12 @@ A workstation declares no `[deploy]`: nothing moves its checkouts between deploy
   that admits the part.
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
-- **A coalesced ref's run is superseded the tick its ref moves on, started or not** (user ruling 2026-10-21,
-  `lab_commons.dev.forgerun`). For a class in `Schedule.coalesce`, a run whose sha is no longer its ref's tip has
-  every Slurm job its state records cancelled (every round and band), is released as superseded naming the tip,
-  and is dropped with one alarm; the tip's run carries what its finished rounds hold. Only a run already
+- **NEWEST-HEAD-ONLY: a coalesced ref's run loses its pending tasks the tick its ref moves on, never a started one**
+  (user ruling 2026-10-22, `lab_commons.dev.forgerun`). For a class in `Schedule.coalesce`, a run whose sha is no
+  longer its ref's tip has every not-yet-started task withdrawn (`scancel --state=PENDING`); its started tasks run
+  to the end under a ` -- draining` claim, the tip waits behind it, and the tip's run carries what they finished.
+  Then it is released as superseded naming the tip, with one alarm. Only a deliberate stop (`hpc.run.cancel_run`)
+  kills a started task. Only a run already
   `publishing` its gathered record finishes. A ref of any other class is tested at every pushed sha: its run
   finishes and posts on its own sha, and the newer pushes are tested after it.
 - **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test

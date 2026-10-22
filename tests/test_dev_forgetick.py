@@ -1039,8 +1039,8 @@ def _history(**by_sha: list[CommitStatus]) -> object:
 
 
 BOB = Claim('H', 'bob', LATER, 'ada/bob')
-#: What the queue says of a tip waiting behind BOB's run: its holder supersedes it (user ruling 2026-10-21).
-_SUPERSEDED = '(held on ada/bob: superseded at its next tick)'
+#: What the queue says of a tip waiting behind BOB's run: its holder withdraws its pending tasks (ruling 2026-10-22).
+_SUPERSEDED = '(held on ada/bob: its pending tasks withdrawn at its next tick)'
 
 
 def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_does(tmp_path: Path) -> None:
@@ -1057,8 +1057,12 @@ def test_a_coalesced_tip_waits_behind_its_refs_run_in_flight_and_a_lane_never_do
     for progress in ('', 'queued 0/12', 'running 40/93 done 12/93'):
         held = _history(**{old: [_pending(dataclasses.replace(BOB, progress=progress), 1)]})
         assert behind(repo, tip, schedule, held, NOW) == f'{WAITING_BEHIND} {old[:12]} {_SUPERSEDED}', (
-            f'started or not ({progress!r}), the queue says its holder gives the slot to the tip (ruling 2026-10-21)'
+            f'({progress!r}) the queue says its holder withdraws its pending tasks for the tip (ruling 2026-10-22)'
         )
+    draining = _history(**{old: [_pending(dataclasses.replace(BOB, progress='draining 2 started job(s)'), 1)]})
+    assert behind(repo, tip, schedule, draining, NOW) == (
+        f'{WAITING_BEHIND} {old[:12]} (draining 2 started job(s) on ada/bob)'
+    ), 'its started tasks drain and the tip waits to carry them (NEWEST-HEAD-ONLY, ruling 2026-10-22)'
     publishing = _history(**{old: [_pending(dataclasses.replace(BOB, progress='publishing'), 1)]})
     assert behind(repo, tip, schedule, publishing, NOW) == f'{WAITING_BEHIND} {old[:12]} (publishing on ada/bob)', (
         'PLANTED CONTROL: a run whose record is gathered is posting it, never superseded'

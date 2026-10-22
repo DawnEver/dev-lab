@@ -38,8 +38,9 @@ family default and a repository overrides key by key (a table key by table key):
 
 ONE RUN PER REF AND PART (D6, user ruling 2026-10-17). A ref of a ``coalesce`` class has at most one run
 of a part in flight across the fleet; its current tip waits behind that run
-(:mod:`lab_commons.dev.forgecoalesce`) and is tested next as one batch -- its holder cancels that
-run for the tip at its next tick, STARTED OR NOT (user ruling 2026-10-21, :mod:`lab_commons.dev.forgerun`). An
+(:mod:`lab_commons.dev.forgecoalesce`) and is tested next as one batch -- its holder withdraws that
+run's pending tasks for the tip at its next tick and lets its started ones drain (NEWEST-HEAD-ONLY, user ruling
+2026-10-22, :mod:`lab_commons.dev.forgerun`). An
 earlier tip never claimed is never a candidate. A lane is tested at every pushed sha.
 
 WHY A CANDIDATE IS NOT CLAIMED is always named (:class:`Ranked`.``blocked``): waiting behind its ref's

@@ -1769,6 +1769,35 @@ class _QosFull(FakeRunCluster):
         return super().__call__(command, stdin)
 
 
+def test_withdrawing_a_superseded_run_scancels_only_its_pending_tasks_and_names_the_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NEWEST-HEAD-ONLY (user ruling 2026-10-22): ``scancel --state=PENDING``, never a bare ``scancel``.
+
+    PLANTED CONTROL: a run with no state and nothing held by name runs no ``scancel`` and reports nothing started.
+    """
+    asked: list[str] = []
+    held = {'squeue -h --me -n run-aaaaaaaaaaaa-base -o %F': '9000\n'}
+
+    def runner(command: str, _stdin: object) -> str:
+        asked.append(command)
+        if ' -t ' in command:
+            return '100\n' if held else ''
+        return held.get(command, '')
+
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: ({'rounds': [{'job_ids': ['100']}]}, runner))
+    machine = Machine(session=None, grants=(GRANT,))
+    assert run_module.withdraw_pending('a' * 40, 'base', machine, lambda _grant: runner) == ['100']
+    scancels = [command for command in asked if command.startswith('scancel')]
+    assert scancels == ['scancel --state=PENDING 100 9000'], 'a started task is never cancelled for supersession'
+
+    asked.clear()
+    held.clear()
+    monkeypatch.setattr(run_module, 'load_state', lambda *_a, **_k: ({'rounds': []}, runner))
+    assert run_module.withdraw_pending('a' * 40, 'base', machine, lambda _grant: runner) == []
+    assert not any(command.startswith('scancel') for command in asked), asked
+
+
 def test_a_first_round_refused_on_the_qos_submit_limit_is_no_room_and_its_queued_band_is_cancelled() -> None:
     """A per-user QOS submit refusal is CAPACITY: :class:`NoRoom` (released open), never a stuck ``bash exited 1``.
 

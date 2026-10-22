@@ -260,6 +260,8 @@ class _Slurm:
 
     def __init__(self) -> None:
         self.cancelled: list[str] = []
+        self.withdrawn: list[str] = []
+        self.started: list[str] = []
 
     def standing(self) -> forgerunstate.Standing:
         return forgerunstate.Standing(
@@ -269,6 +271,10 @@ class _Slurm:
     def cancel(self, run: forgerunstate.Run) -> list[str]:
         self.cancelled += run.job_ids
         return list(run.job_ids)
+
+    def withdraw(self, run: forgerunstate.Run) -> list[str]:
+        self.withdrawn += run.job_ids
+        return list(self.started)
 
 
 def _claimed(*work: Work) -> TickReport:
