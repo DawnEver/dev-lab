@@ -58,6 +58,7 @@ from lab_commons.dev.forgepulls import (
     pr_list,
     pr_retarget,
 )
+from lab_commons.dev.forgescarce import unreached
 from lab_commons.dev.forgeschedule import load_schedule
 from lab_commons.dev.forgestatus import CommitStatus, status_list, status_post
 from lab_commons.dev.forgesync import upstreams
@@ -140,7 +141,8 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
     """The integration text for *child*, from the object store and the forge; writes nothing."""
     base, trunk = f'{_TRACKING}{policy.integration}', f'{_TRACKING}{policy.trunk}'
     statuses = status_list(child.client, child.head)
-    standing_now = standing(statuses, head=child.head)
+    waived = unreached(root, child.client, policy.integration, child.head, statuses) if child.pr else frozenset()
+    standing_now = standing(statuses, head=child.head, waived=waived)
     result = standing_now.result
     merge = merged_at(root, base, child.head)
     tried = trial(root, base, child.head)
@@ -172,6 +174,11 @@ def feedback(root: Path, child: Child, policy: Policy) -> Feedback:
             f'- syncs from: {watched}',
             f'- parts (standing {standing_now.reading}):',
             *_line(statuses),
+            *(
+                [f'- waived, unreached by this diff (run on `{policy.integration}` after the merge): {sorted(waived)}']
+                if waived
+                else []
+            ),
             f'- area issues: {", ".join(areas) if areas else "none cite this head"}',
             f'- {promoted}',
         ]
@@ -249,7 +256,10 @@ def settle(root: Path, child: Child, policy: Policy, said: Feedback) -> Feedback
     if child.pr is None or not policy.pr_merges_since or child.client.backend is not GITEA or said.state == 'success':
         return said
     statuses = status_list(child.client, child.head)
-    found = decide(root, policy, branch=child.branch, number=child.pr, head=child.head, statuses=statuses)
+    waived = unreached(root, child.client, policy.integration, child.head, statuses)
+    found = decide(
+        root, policy, branch=child.branch, number=child.pr, head=child.head, statuses=statuses, waived=waived
+    )
     if found.ready:
         ephemeral = declared_branchset(root).is_ephemeral(child.branch)
         merge(child.client, child.pr, head=child.head, message=found.message, delete_branch=ephemeral)

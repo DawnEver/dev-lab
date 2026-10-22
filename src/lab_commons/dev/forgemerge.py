@@ -9,8 +9,9 @@ branch is refused at pre-push (:mod:`lab_commons.dev.sessionbranch`, P5).
 
 A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 
-* every ``tests/<part>`` part of its head stands PASS (:func:`lab_commons.dev.integrator.lane_ready`, the one
-  ready predicate);
+* every ``tests/<part>`` part of its head stands PASS (:func:`lab_commons.dev.platformparts.standing`), except a
+  scarce part its diff does not reach -- WAIVED, run on integration after the merge
+  (:mod:`lab_commons.dev.forgescarce`, user ruling 2026-10-22);
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`lab_commons.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -30,11 +31,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.dev.forgework import GITEA
-from lab_commons.dev.integrator import lane_ready
 from lab_commons.dev.mergeaudit import MergeAuditError, judge
 from lab_commons.dev.platformparts import standing
 from lab_commons.dev.sessionbranch import MERGED_BRANCH
 from lab_commons.dev.trialmerge import trial
+from lab_commons.outcomes import Conclusion
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,15 +72,26 @@ def merge_message(branch: str, number: int, policy: Policy) -> str:
 
 
 def decide(
-    root: Path, policy: Policy, *, branch: str, number: int, head: str, statuses: Sequence[CommitStatus]
+    root: Path,
+    policy: Policy,
+    *,
+    branch: str,
+    number: int,
+    head: str,
+    statuses: Sequence[CommitStatus],
+    waived: frozenset[str] = frozenset(),
 ) -> Decision:
-    """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing."""
+    """What PR *number* (*branch* at *head*) lacks to be merged into ``origin/<integration>``; writes nothing.
+
+    *waived* are the scarce parts its diff does not reach (:func:`lab_commons.dev.forgescarce.unreached`).
+    """
     base = f'refs/remotes/origin/{policy.integration}'
     message = merge_message(branch, number, policy)
     missing: list[str] = []
-    if not lane_ready(statuses, head=head):
-        reading = standing(statuses, head=head).reading
-        missing.append(f'every `tests/<part>` part PASS on {head[:12]} (it stands {reading})')
+    stood = standing(statuses, head=head, waived=waived)
+    if stood.result is not Conclusion.PASS:
+        but = f' but the unreached scarce {", ".join(sorted(waived))}' if waived else ''
+        missing.append(f'every `tests/<part>` part{but} PASS on {head[:12]} (it stands {stood.reading})')
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)

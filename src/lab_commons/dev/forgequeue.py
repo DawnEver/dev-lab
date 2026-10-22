@@ -40,6 +40,7 @@ from lab_commons.dev.forgecoalesce import behind
 from lab_commons.dev.forgehosts import HostCard, read_cards
 from lab_commons.dev.forgeprovides import present, unserved
 from lab_commons.dev.forgerequest import UndeclaredRequest, declared_request, request_context
+from lab_commons.dev.forgescarce import unreached
 from lab_commons.dev.forgeschedule import (
     NO_HOST,
     NOT_ADMITTED,
@@ -126,9 +127,10 @@ def forge_queue(
             histories[sha] = status_history(client, sha) if sha else ()
         return histories[sha]
 
+    policy = load_policy(root)
     found = candidates(
-        root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule,
-        policy=load_policy(root), now=now,
+        root, client, repo=repo, parts=lambda sha: derived(history(sha)), schedule=schedule, policy=policy, now=now,
+        waived=lambda sha: unreached(root, client, policy.integration, sha, history(sha)),
     )  # fmt: skip
     waiting, in_flight = _standing(found, history, now)
     cost = expected_cost(learned(origin_url(root)), schedule.prior_cost_h)

@@ -20,6 +20,7 @@ from lab_commons.dev.forgepulls import ListingIncomplete, pr_list
 from lab_commons.dev.forgequeue import forge_queue, unadmitted
 from lab_commons.dev.forgereview import step as review_step
 from lab_commons.dev.forgeroute import reconcile
+from lab_commons.dev.forgescarce import red_alarms as scarce_red
 from lab_commons.dev.forgeschedule import load_schedule, starved_alarms
 from lab_commons.dev.forgestatus import status_list
 from lab_commons.dev.forgetidy import load_hygiene
@@ -77,7 +78,7 @@ def prompt(
     alarm: Callable[[Alarm], object],
     host: str,
 ) -> None:
-    """The integrator's prompts and every child's behind/conflict report, one issue per row.
+    """The integrator's prompts, every child's behind/conflict report and a red scarce part, one issue per row.
 
     A forge or fetch failure is said, not raised -- and then NO row is reconciled, so a partial derivation
     never closes an issue it merely failed to see.
@@ -90,7 +91,8 @@ def prompt(
             say(f'[serve] integration: {line}')
         review_step(root, built, policy=policy, say=say, host=host)  # advisory: the review host follows the integrator
         glass = break_glass(root, policy, repo)
-        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass], alarm=alarm)
+        red = scarce_red(root, policy.integration, repo, lambda sha: status_list(built, sha))
+        raise_once(built, INTEGRATION, [*found, *sync_alarms(ticked.said, policy, repo), *glass, *red], alarm=alarm)
     except (ForgeCallFailed, ListingIncomplete, OSError, ValueError) as failed:
         say(f'[serve] the integration queue was not derived: {failed}')
 

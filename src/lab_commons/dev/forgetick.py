@@ -92,6 +92,7 @@ from lab_commons.dev.forgeclaim import (
 from lab_commons.dev.forgeorigin import vouched
 from lab_commons.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from lab_commons.dev.forgerequest import declared_request, remind, request_authors
+from lab_commons.dev.forgescarce import unreached
 from lab_commons.dev.forgeschedule import candidates, load_schedule, repo_name
 from lab_commons.dev.forgestatus import CommitStatus, status_history
 from lab_commons.dev.forgetake import ClaimPass
@@ -196,6 +197,7 @@ def tick(
             policy=policy,
             now=now,
             say=lines.append,
+            waived=lambda sha: unreached(root, built, policy.integration, sha, history(sha)),
         ),
         owners or {},
     )
