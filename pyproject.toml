@@ -107,9 +107,6 @@ integration = "integrate/main"
 merges_only_since = "c6ba73b78d56f7e0c3a4e95d208e752b9047bdf4"  # INTEGRATION-IS-MERGES-ONLY from here on
 pr_merges_since = "b97d2aa2871e09630863620bda713de750374ccb"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha
 
-[tool.lab_commons.famfiles]
-deltas = "tests/_famconfig_delta.py"   # the DELTAS the pre-push render check reads (lab_commons.dev.famfiles)
-
 # The advisory PR review (lab_commons.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
 # interpreter, the sharp-review method) is each reviewing host's [capabilities.*] in its machine file.
 [tool.lab_commons.review]

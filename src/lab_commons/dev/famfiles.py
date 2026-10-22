@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING, Final
 
 import lab_commons.launch as _door
 from lab_commons.dev.famconfig import BASES, INSTALLED, RENDERED, artefact_base, inspect_file, render
-from lab_commons.hpc.declared import kit_tables
 from lab_commons.log import emit
 
 if TYPE_CHECKING:
@@ -42,9 +41,7 @@ __all__ = [
     'MANAGED',
     'OWNED',
     'PROJECT_FILES',
-    'REMEDY',
     'ProjectFile',
-    'declared_deltas',
     'load_deltas',
     'main',
     'project_files_on_disk',
@@ -177,45 +174,19 @@ def render_all(root: Path, deltas: Mapping[str, Delta], *, write: bool) -> tuple
     return tuple(out)
 
 
-#: The one re-render command a drifted check names; the deltas module is the repo's declaration.
-REMEDY: Final = 'python -m lab_commons.dev.famfiles'
-
-
-def declared_deltas(root: Path) -> Path:
-    """The deltas module ``[tool.lab_commons.famfiles] deltas`` names, relative to *root*; absent is refused."""
-    text = (root / 'pyproject.toml').read_text(encoding='utf-8') if (root / 'pyproject.toml').is_file() else ''
-    value = kit_tables(text).get('famfiles', {}).get('deltas')
-    if not isinstance(value, str) or not value:
-        msg = (
-            f'{root}: declare [tool.lab_commons.famfiles] deltas = "<the module file holding DELTAS>" in '
-            f'pyproject.toml, or pass --deltas'
-        )
-        raise SystemExit(msg)
-    return root / value
-
-
 def main(argv: list[str] | None = None) -> int:
-    """CLI. Exit 0 when every declared artefact is current (after writing, unless --check), else 1.
-
-    The base pre-push row runs ``--check``: a rendered file that is not the render of the base at the
-    INSTALLED (locked) lab-commons refuses the push, naming :data:`REMEDY`.
-    """
+    """CLI. Exit 0 when every declared artefact is current (after writing, unless --check), else 1."""
     parser = argparse.ArgumentParser(description='Render every family-managed project file from base + delta.')
     parser.add_argument('--repo', type=Path, default=Path.cwd())
-    parser.add_argument('--deltas', type=Path, help='the DELTAS module; default [tool.lab_commons.famfiles] deltas')
+    parser.add_argument('--deltas', type=Path, required=True, help='the module file holding this repo`s DELTAS')
     parser.add_argument('--check', action='store_true', help='write nothing; report what would change')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
-    deltas = args.deltas.resolve() if args.deltas else declared_deltas(root)
-    lines = render_all(root, load_deltas(deltas), write=not args.check)
+    lines = render_all(root, load_deltas(args.deltas.resolve()), write=not args.check)
     for line in lines:
         emit(f'[famfiles] {line}')
     settled = ('current', 'rendered')
-    if all(line.split(': ', 1)[1].startswith(settled) for line in lines):
-        return 0
-    if args.check:
-        emit(f'[famfiles] the family files are not the render of the installed lab-commons; run: {REMEDY}')
-    return 1
+    return 0 if all(line.split(': ', 1)[1].startswith(settled) for line in lines) else 1
 
 
 if __name__ == '__main__':
