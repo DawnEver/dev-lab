@@ -63,6 +63,9 @@ _ARG_BUDGET: Final = 24_000
 #: Set to ``1`` to report every pass and skip as well as the failures.
 VERBOSE_ENV: Final = 'LAB_HOOKS_VERBOSE'
 
+#: Set by a hook shim running the stage under the interpreter recorded at install, not the checkout's venv.
+FOREIGN_INTERPRETER_ENV: Final = 'LAB_COMMONS_HOOK_FOREIGN_INTERPRETER'
+
 
 @dataclass(frozen=True)
 class PushLine:
@@ -150,6 +153,11 @@ def resolve(run: Sequence[str], python: str = sys.executable) -> list[str]:
     return [found or first, *rest]
 
 
+def needs_only_lab_commons(hook: Hook) -> bool:
+    """Whether *hook* runs under any lab_commons interpreter: ``python -m lab_commons...`` and nothing else."""
+    return ' '.join(hook.run).startswith('python -m lab_commons')
+
+
 def _chunks(paths: Sequence[str]) -> list[list[str]]:
     out: list[list[str]] = [[]]
     size = 0
@@ -223,7 +231,13 @@ def _selected(stage: str, root: Path, hooks: Sequence[Hook] | None, push: Sequen
     if stage == 'pre-push' and not push:
         _note('[githooks] pre-push: no ref line on stdin -- this push publishes nothing, so nothing is judged')
         return ()
-    return tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
+    chosen = tuple(hook_table(root).get(stage, ()) if hooks is None else hooks)
+    if os.environ.get(FOREIGN_INTERPRETER_ENV) != '1':
+        return chosen
+    for hook in chosen:
+        if not needs_only_lab_commons(hook):
+            _note(f'[githooks] {stage} {hook.id}: skipped -- needs the repo venv, which this checkout lacks')
+    return tuple(hook for hook in chosen if needs_only_lab_commons(hook))
 
 
 def _report(stage: str, hook_id: str, code: int, output: str) -> int:
