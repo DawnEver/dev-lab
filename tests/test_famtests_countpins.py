@@ -1,12 +1,12 @@
-"""``lab_commons.dev.famtests.countpins`` -- every arm driven GREEN and, where reachable, driven RED.
+"""``dev_lab.dev.famtests.countpins`` -- every arm driven GREEN and, where reachable, driven RED.
 
 WHICH RED IS NOT PLANTABLE, SAID HERE RATHER THAN LEFT TO BE NOTICED.
-:func:`~lab_commons.dev.famtests.countpins.assert_the_grader_still_convicts` computes its expected
+:func:`~dev_lab.dev.famtests.countpins.assert_the_grader_still_convicts` computes its expected
 offender set FROM the vocabulary it is handed, so no argument a caller can pass makes it fail -- by
 construction, and deliberately, because a control a caller can aim is a control a caller can aim
 somewhere harmless. Its red is "the grader stopped grading", which cannot be planted without
 replacing the thing under test. What IS driven here instead is the layer under it:
-:func:`~lab_commons.dev.famtests.countpins.count_pins` is called directly with EQUALITY on all seven
+:func:`~dev_lab.dev.famtests.countpins.count_pins` is called directly with EQUALITY on all seven
 planted shapes and under two different vocabularies, which is the same claim without a stub in it.
 ``venvspelling`` set that precedent in this package.
 
@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.countpins import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.countpins import (
     Pin,
     PinScan,
     assert_no_constant_is_a_count_pin,
@@ -343,7 +343,8 @@ _MEASURING_SUFFIXES = _SUFFIXES
 #: RE-MEASURED 2026-10-18 AT 738 after the outcomes, compute and forge coalesce/unit modules: 672 keeps 66.
 #: RE-MEASURED 2026-10-18 AT 771 after the test-cell cutover (testcells, test_outcomes, the merge): 705 keeps 66.
 #: RE-MEASURED 2026-10-21 after the PR auto-sync and the PR admission (labsession, pradmit).
-CONSTANT_FLOOR = 733
+#: RE-MEASURED 2026-10-22 AT 708 after the split left lab-commons' trees behind: 640 keeps 68.
+CONSTANT_FLOOR = 640
 CONSTANT_HEADROOM = 90
 
 

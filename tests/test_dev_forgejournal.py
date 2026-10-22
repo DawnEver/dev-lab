@@ -17,11 +17,11 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, credential_env, make_repo, serve
 
-from lab_commons.dev._forge_journal import Journal, Probe, Write, journal_for, outbox_dir
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeoutbox import replay
-from lab_commons.dev.forgestatus import status_post
-from lab_commons.dev.forgework import Client, ForgeCallFailed, client_for
+from dev_lab.dev._forge_journal import Journal, Probe, Write, journal_for, outbox_dir
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeoutbox import replay
+from dev_lab.dev.forgestatus import status_post
+from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'

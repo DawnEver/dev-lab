@@ -1,4 +1,4 @@
-"""``lab_commons.dev.forgework`` -- issue/PR verbs against a REAL loopback server and REAL git repos.
+"""``dev_lab.dev.forgework`` -- issue/PR verbs against a REAL loopback server and REAL git repos.
 
 THE SAME DISCIPLINE AS ``test_dev_forge.py``: the evidence is what the SERVER recorded (method, path,
 headers, decoded body), never the arguments the test passed. The one substitution is the transport,
@@ -28,11 +28,11 @@ from _forge_fake import credential_env, serve
 from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
-from lab_commons.dev import branchnotices, pradmit
-from lab_commons.dev.forge import Forge, NoCredential
-from lab_commons.dev.forgeclaim import forge_now
-from lab_commons.dev.forgecli import issue_and_pr
-from lab_commons.dev.forgework import (
+from dev_lab.dev import branchnotices, pradmit
+from dev_lab.dev.forge import Forge, NoCredential
+from dev_lab.dev.forgeclaim import forge_now
+from dev_lab.dev.forgecli import issue_and_pr
+from dev_lab.dev.forgework import (
     GITEA,
     GITHUB,
     Comment,
@@ -43,7 +43,7 @@ from lab_commons.dev.forgework import (
     client_for,
     provenance,
 )
-from lab_commons.dev.netverb import Diagnosis, Disposition
+from dev_lab.dev.netverb import Diagnosis, Disposition
 
 
 @pytest.fixture
@@ -361,9 +361,9 @@ def test_the_cli_reports_a_refusal_and_exits_nonzero(server, tmp_path: Path, cap
 
 
 def test_the_forge_module_is_the_cli_door() -> None:
-    """``python -m lab_commons.dev.forge`` reaches these verbs, in a fresh interpreter."""
+    """``python -m dev_lab.dev.forge`` reaches these verbs, in a fresh interpreter."""
     done = subprocess.run(
-        [sys.executable, '-m', 'lab_commons.dev.forge', 'issue', '--help'],
+        [sys.executable, '-m', 'dev_lab.dev.forge', 'issue', '--help'],
         capture_output=True,
         text=True,
         encoding='utf-8',

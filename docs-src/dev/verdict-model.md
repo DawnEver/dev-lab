@@ -13,7 +13,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 | gate | the increment's reach; lightweight only; 30-minute wall | the forge's producer only |
 | heavy | everything, including the local live engines the repo declares | the forge's producer only |
 
-- The family entry is `python -m lab_commons.dev.verify -- <paths>`; a repo may add its own driver (consumer-a:
+- The family entry is `python -m dev_lab.dev.verify -- <paths>`; a repo may add its own driver (consumer-a:
   `python scripts/gate/runner.py measure <paths>`). Exit codes: `0` pass, `1` fail, `2` refused argv,
   `3` inconclusive.
 - **A full tier refuses outside the producer** (`VERDICTS-FROM-THE-FORGE`) and names the remedy: push.
@@ -40,14 +40,14 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
   is inventory, routed to its `area:*` issue, never your blocker.
 - No push hook runs a test. The merge audit runs at commit time on every destination
   ([the integration branch](integration.md#the-merge-audit)).
-- The one implementation of these bars is `lab_commons.dev.pushgate`; a consumer copy is refused
+- The one implementation of these bars is `dev_lab.dev.pushgate`; a consumer copy is refused
   (`famtests.localadmission`).
 
 ## A duplicate request never runs twice
 
 - A request with the same `(tree, env, selector)` as a run in flight attaches to it and receives its answer
-  (`lab_commons.dev.inflight`).
-- A key the run cache already holds is cited without running (`lab_commons.dev.runcache`); `--rerun` overrides.
+  (`dev_lab.dev.inflight`).
+- A key the run cache already holds is cited without running (`dev_lab.dev.runcache`); `--rerun` overrides.
 - A measure waits at most `verifybox.MEASURE_WAIT_S` for the box and then refuses naming the holder.
 - A measure's pytest step runs in the box at its declared claim (`verifybox.selection_demand`: one core per
   worker its `-n` runs, from `verifybox.selection_workers` -- one when serial, else `compute.learned.fit_width` of
@@ -59,7 +59,7 @@ measurement of the tests you touched. Run it through the repo's entry point, nev
 ## The verdict itself
 
 - A verdict is a tree, an environment, a selector, a result and a log. A different tree or a different
-  environment means the verdict does not exist (`lab_commons.dev.verdict`, `content`, and `lab_commons.envkey`).
+  environment means the verdict does not exist (`dev_lab.dev.verdict`, `content`, and `lab_commons.envkey`).
 - **It starts INCONCLUSIVE** and is promoted only when every proof holds: a clean tree, inside the wall, no
   truncation, a non-empty selection, at least one test executed, a census that reconciles with the summary, a
   real runner exit, and collection arithmetic that accounts for every collected test. A new way of running

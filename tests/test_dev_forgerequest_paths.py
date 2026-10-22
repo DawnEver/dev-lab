@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.dev.forgerequest import (
+from dev_lab.dev.forgerequest import (
     TESTS,
     UndeclaredRequest,
     declared_request,
@@ -23,7 +23,7 @@ from lab_commons.dev.forgerequest import (
 
 _PYPROJECT = """
 [tool.lab_commons.tests]
-produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
+produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -47,7 +47,7 @@ def repo(tmp_path: Path) -> tuple[Path, str]:
 def test_a_valid_selection_runs_the_declared_door_over_exactly_its_files(repo: tuple[Path, str]) -> None:
     root, sha = repo
     declared = declared_request(root, sha, TESTS, ('tests/test_a.py',))
-    assert declared.argv == ('-m', 'lab_commons.dev.verify', '--', 'tests/test_a.py')
+    assert declared.argv == ('-m', 'dev_lab.dev.verify', '--', 'tests/test_a.py')
     assert declared.cpu > 0
     assert declared.mem_gb > 0
     assert declared.wall_h > 0

@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks, disclosure, rules
-from lab_commons.dev.famtests import injectedtext
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import DENY_RULES, DenyRule, Remedy
+from dev_lab.dev import agenthooks, disclosure, rules
+from dev_lab.dev.famtests import injectedtext
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy
 
 ROOT = Path(__file__).resolve().parents[1]
-DOOR = '.venv/Scripts/python.exe -m lab_commons.dev.verify'
+DOOR = '.venv/Scripts/python.exe -m dev_lab.dev.verify'
 REMEDIES = {rule.id: Remedy(rule.needs, DOOR) for rule in DENY_RULES if rule.needs}
 
 

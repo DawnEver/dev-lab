@@ -1,4 +1,4 @@
-"""``lab_commons.dev.verify`` and ``.reports`` — the parser that must not read an interrupted run as a pass.
+"""``dev_lab.dev.verify`` and ``.reports`` — the parser that must not read an interrupted run as a pass.
 
 ONE SUITE FOR TWO MODULES, because they are one mechanism split at a seam rather than two features:
 ``reports`` decides what a step's output MEANS and ``verify`` runs the processes that produce it,
@@ -14,7 +14,7 @@ a run that executed nothing has nobody to blame.
 THE FIXTURES ARE STRING CONSTANTS, not live subprocesses. The subject here is the READING of
 pytest's output, and a live run would test this box's pytest instead: the interrupted case in
 particular cannot be produced on demand, which is exactly why it went unnoticed in the first place.
-The steps that DO shell out (:func:`~lab_commons.dev.verify.project_root`, ``_tee``) are covered
+The steps that DO shell out (:func:`~dev_lab.dev.verify.project_root`, ``_tee``) are covered
 against this checkout rather than against a double.
 """
 
@@ -35,18 +35,22 @@ from typing import Final
 
 import pytest
 from _box_fake import ended
-
-from lab_commons import box
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
-from lab_commons.dev import forgerequest, localpart, platformparts, verify, verifybox
-from lab_commons.dev.inflight import RunKey, seat
-from lab_commons.dev.lockwait import lock_wait
-from lab_commons.dev.logref import LogRef, UnverifiableLog, verify_log
-from lab_commons.dev.platformparts import part_context, part_of
-from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, producing, release_reason
-from lab_commons.dev.reports import (
+from lab_commons.hpc.needsets import BASE, Vocabulary
+from lab_commons.hpc.records import read_record
+from lab_commons.hpc.retired import RETIRED
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Conclusion, Record, Status
+
+from dev_lab.dev import forgerequest, localpart, platformparts, verify, verifybox
+from dev_lab.dev.inflight import RunKey, seat
+from dev_lab.dev.lockwait import lock_wait
+from dev_lab.dev.logref import LogRef, UnverifiableLog, verify_log
+from dev_lab.dev.platformparts import part_context, part_of
+from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, producing, release_reason
+from dev_lab.dev.reports import (
     SKIP_CEILING,
     MalformedAllowance,
     StepReport,
@@ -55,15 +59,11 @@ from lab_commons.dev.reports import (
     read_ruff,
     stale_declarations,
 )
-from lab_commons.dev.runcache import CachedRun, record, runs
-from lab_commons.dev.verdict import Verdict
-from lab_commons.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
-from lab_commons.dev.verify import _tee as tee_step
-from lab_commons.hpc.needsets import BASE, Vocabulary
-from lab_commons.hpc.records import read_record
-from lab_commons.hpc.retired import RETIRED
-from lab_commons.hpc.testcells import TestCell
-from lab_commons.outcomes import Cell, Conclusion, Record, Status
+from dev_lab.dev.runcache import CachedRun, record, runs
+from dev_lab.dev.verdict import Verdict
+from dev_lab.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
+from dev_lab.dev.verify import _tee as tee_step
+from lab_commons import box
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'
@@ -941,7 +941,7 @@ def test_a_dirty_tree_queues_nothing_and_keeps_the_exit_code(monkeypatch, tmp_pa
 
 def test_every_verify_run_loads_the_durations_ledger_plugin() -> None:
     """A targeted run records too: the ledger is a plugin verify passes, not a conftest binding."""
-    assert LEDGER_PLUGIN == ('-p', 'lab_commons.dev.durations')
+    assert LEDGER_PLUGIN == ('-p', 'dev_lab.dev.durations')
 
 
 def test_a_duplicate_verify_attaches_to_the_run_in_flight_and_never_runs(monkeypatch, tmp_path: Path) -> None:
@@ -1148,7 +1148,7 @@ def test_a_planted_clean_run_through_the_same_harness_exits_0(monkeypatch, tmp_p
 def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
     """THE SHELL'S VIEW of the lock-wait path: ``verify && push`` must stop, so the PROCESS exits 3.
 
-    A child holds every core of a PRIVATE box ledger, and a second ``python -m lab_commons.dev.verify
+    A child holds every core of a PRIVATE box ledger, and a second ``python -m dev_lab.dev.verify
     --lock-wait "0 s"`` runs against that ledger: its pytest step is refused by the box. Its selection is its
     own, so the run key differs from any enclosing verify and it cannot attach to it.
     """
@@ -1168,7 +1168,7 @@ def test_a_held_box_exits_3_from_a_real_process(tmp_path: Path) -> None:
             [
                 sys.executable,
                 '-m',
-                'lab_commons.dev.verify',
+                'dev_lab.dev.verify',
                 '--rerun',
                 '--lock-wait',
                 '0 s',
@@ -1401,7 +1401,7 @@ def test_a_refused_selection_names_the_offer_to_another_host(tmp_path: Path, mon
     (tmp_path / 'tests' / 'test_a.py').write_text('', encoding='utf-8')
     monkeypatch.setattr(forgerequest, 'status_paths', lambda _root: ())
     offer = forgerequest.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',))
-    assert f'python -m lab_commons.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
+    assert f'python -m dev_lab.dev.forge request tests --sha {"b" * 40} --paths tests/test_a.py' in offer
     monkeypatch.setattr(forgerequest, 'status_paths', lambda _root: ('tests/test_a.py',))
     assert 'cannot be offered' in forgerequest.offer_line(tmp_path, 'b' * 40, ('tests/test_a.py',)), 'PLANTED: dirty'
 

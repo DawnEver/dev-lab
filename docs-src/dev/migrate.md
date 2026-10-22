@@ -21,17 +21,17 @@ commit, push, and read the queue. Upgrade lab-commons, then use the five command
 ## Set up once
 
 1. Bootstrap your worktree's own environment:
-   `<any venv python> -m lab_commons.dev.dep --bootstrap <worktree> --sync` ([fan-out](fanout.md)).
-2. Install the hooks: `.venv/Scripts/python.exe -m lab_commons.dev.hook_install --install --repo .`
+   `<any venv python> -m dev_lab.dev.dep --bootstrap <worktree> --sync` ([fan-out](fanout.md)).
+2. Install the hooks: `.venv/Scripts/python.exe -m dev_lab.dev.hook_install --install --repo .`
    (POSIX: `.venv/bin/python`).
-3. Store your own forge token: `python -m lab_commons.dev.forge auth login` ([the forge](forge.md#credentials)).
+3. Store your own forge token: `python -m dev_lab.dev.forge auth login` ([the forge](forge.md#credentials)).
 
 ## The five commands
 
 ### 1. `forge sync` -- take integration into your branch
 
 ```
-python -m lab_commons.dev.forge sync
+python -m dev_lab.dev.forge sync
 ```
 
 Trial-merges `integrate/main` (and any ref you opted in with `--watch`) and merges only when every merge is
@@ -41,7 +41,7 @@ Details: [the integration branch](integration.md#child-branches-sync-from-integr
 ### 2. `verify -- <paths>` -- measure what you touched
 
 ```
-python -m lab_commons.dev.verify -- tests/test_the_thing_you_changed.py
+python -m dev_lab.dev.verify -- tests/test_the_thing_you_changed.py
 ```
 
 Targeted, seconds to minutes, never blocks, and posts nothing: only the producer `forge serve` spawns posts a
@@ -61,7 +61,7 @@ once its parts stand PASS. A subagent never pushes; it hands its SHA to the main
 ### 4. `forge queue` -- read where everything stands
 
 ```
-python -m lab_commons.dev.forge queue
+python -m dev_lab.dev.forge queue
 ```
 
 The one status command: every candidate with its score and why it waits, every run in flight with its owner
@@ -78,7 +78,7 @@ commit's parts. Details: [the forge](forge.md#the-queue).
 | `keep` | a PR or issue | pins its sha's artefacts past retention |
 | `area:<name>` | an issue, written by `forge route` | one open list of reds per area; fix them on your branch |
 
-Write issues and comments only through `python -m lab_commons.dev.forge issue ...`. Details: [issues](issues.md).
+Write issues and comments only through `python -m dev_lab.dev.forge issue ...`. Details: [issues](issues.md).
 
 ## Where things moved
 
@@ -92,7 +92,7 @@ Write issues and comments only through `python -m lab_commons.dev.forge issue ..
 | submit a cluster job from your box | nothing; the cluster's `forge serve` claims it ([HPC clusters](hpc.md)) |
 | write a findings file under `output/` | a dated `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` entry |
 | define your own `Outcome`/`Status`/`Conclusion` | import them from `lab_commons.outcomes`, the one place they are defined |
-| a retired outcome spelling (every old -> new is a row of `lab_commons.hpc.retired.RETIRED`, plan A1) | `lab_commons.dev.test_outcomes` (`CellRecorder`, `read_cells(directory) -> (cells, flaky)`), `compute.execute.Settled`, `dev.retention.Freed`, `box.ProcessEnd`, `supervise.deploy.PhaseResult`, `dev.forgestatus.CommitStatus`, `hpc.records.held_cells` |
+| a retired outcome spelling (every old -> new is a row of `lab_commons.hpc.retired.RETIRED`, plan A1) | `dev_lab.dev.test_outcomes` (`CellRecorder`, `read_cells(directory) -> (cells, flaky)`), `compute.execute.Settled`, `dev.retention.Freed`, `box.ProcessEnd`, `supervise.deploy.PhaseResult`, `dev.forgestatus.CommitStatus`, `hpc.records.held_cells` |
 | read a run record's per-test words | `lab_commons.hpc.records.cells_of(record)` (id -> `TestCell`); a part's verdict is `lab_commons.hpc.testcells.conclude(cells, flaky)` |
 | `pytest.skip` / `skipif` a test that cannot run here | a declared resource marker when it needs a tool or host fact (`[tool.lab_commons.tests] resources`, e.g. `codex`); `@pytest.mark.not_applicable` only when the question does not exist on this platform; any other skip is refused (XFAIL-NOT-SKIP) |
 
@@ -105,7 +105,7 @@ is refused by name with its remedy (`lab_commons.hpc.retired`). To migrate:
 - **A cluster account's machine file**: delete the `serve` key from `[deploy]` (on Ada it named the
   integration mode), then re-run `python -m lab_commons.hpc deploy` so the crontab lines become plain
   `forge serve`. A `[deploy]` still carrying the key is refused.
-- **A workstation**: re-run `python -m lab_commons.dev.workstation deploy ...` without the mode flag; it
+- **A workstation**: re-run `python -m dev_lab.dev.workstation deploy ...` without the mode flag; it
   rewrites the `lab-forge-serve` Task, whose old action is refused until then.
 - **A host that should take no foreign work**: do not run `forge serve` on it; to have it take its own
   work first, name it in the machine file's `[priority]` (ordering only -- nothing is reserved).
@@ -134,7 +134,7 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
    ```toml
    [tool.lab_commons.tests]
    resources = ["<marker>", ...]
-   produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]   # or the repo's own door, "{part}" in it
+   produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]   # or the repo's own door, "{part}" in it
    ```
 
    A marker belongs in `resources` when some host may lack what it names. A marker whose tests run on every
@@ -181,7 +181,7 @@ replacement. Migrate in ONE commit, in the same window as the lab-commons that r
 
 - Declares no part tables today, so step 1 is empty. To have a box produce its parts (not only the cluster's
   `base` from `[tool.lab_commons.hpc]`), add `[tool.lab_commons.parts] output` and
-  `[tool.lab_commons.tests] produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]`; add `resources`
+  `[tool.lab_commons.tests] produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]`; add `resources`
   only for markers naming something a host may lack.
 
 ## Branch hygiene: lanes stay local, origin is pruned
@@ -206,7 +206,7 @@ grace_hours = 24
 merges_only_since = '<the integration tip sha when you adopt>'
 ```
 
-Before setting `prune_merged`, run `python -m lab_commons.dev.forge queue` and read its `origin branches`
+Before setting `prune_merged`, run `python -m dev_lab.dev.forge queue` and read its `origin branches`
 section: every `deletable` row there is deleted on the next serve tick of any host. See
 [pruning origin](branch-set.md#pruning-origin).
 

@@ -1,4 +1,4 @@
-"""``lab_commons.dev.ab_bench`` -- driven over REAL callables, a REAL clock and REAL exceptions.
+"""``dev_lab.dev.ab_bench`` -- driven over REAL callables, a REAL clock and REAL exceptions.
 
 NOTHING HERE IS MOCKED, including the thing that is hardest not to mock: time. The arms below do
 actual work -- a busy loop of a chosen duration -- and the assertions about ordering are made with
@@ -19,7 +19,7 @@ from collections.abc import Callable
 
 import pytest
 
-from lab_commons.dev.ab_bench import (
+from dev_lab.dev.ab_bench import (
     MIN_CROSSOVER_POINTS,
     ArmSamples,
     Trials,

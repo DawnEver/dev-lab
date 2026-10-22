@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests import echoedtoken
+from dev_lab.dev import floors
+from dev_lab.dev.famtests import echoedtoken
 
 if TYPE_CHECKING:
     from collections.abc import Collection
@@ -30,10 +30,10 @@ if TYPE_CHECKING:
 ROOT: Final = Path(__file__).resolve().parents[1]
 
 #: The trees this repo keeps assertion bodies and tests in, and what a file in each is called.
-ROOTS: Final[tuple[tuple[str, str], ...]] = (('src/lab_commons', '*.py'), ('tests', '*.py'))
+ROOTS: Final[tuple[tuple[str, str], ...]] = (('src/dev_lab', '*.py'), ('tests', '*.py'))
 
 #: The scanner's own module carries the shape as DATA, in the planted source its control writes.
-EXEMPT: Final[tuple[str, ...]] = ('src/lab_commons/dev/famtests/echoedtoken.py',)
+EXEMPT: Final[tuple[str, ...]] = ('src/dev_lab/dev/famtests/echoedtoken.py',)
 
 #: MEASURED 2026-09-18 over :data:`ROOTS`: 2338 function bodies; RE-MEASURED 2026-10-01 at 3228 when
 #: the forge status/issue doors outgrew the headroom. Set below the population with room, and
@@ -51,7 +51,9 @@ EXEMPT: Final[tuple[str, ...]] = ('src/lab_commons/dev/famtests/echoedtoken.py',
 #: the same ~90%: 6366.
 #: RE-MEASURED 2026-10-19 at 7569, after the gather/sacct/origin splits and the integration break-glass;
 #: re-priced on the same ~90%: 6812.
-FUNCTION_FLOOR: Final = 6812
+#: RE-MEASURED 2026-10-22 at 5885, after the split left lab-commons' runtime and execution trees behind;
+#: re-priced on the same ~90%: 5300.
+FUNCTION_FLOOR: Final = 5300
 
 #: How far past the floor the population may grow before the floor is re-measured.
 HEADROOM: Final = 1200

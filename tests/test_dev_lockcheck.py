@@ -1,7 +1,7 @@
 """PIN at push (user ruling 2026-10-17); FRESHNESS is the forge's alone (user ruling 2026-10-22).
 
 The pre-push row judges a pushed commit's PIN: it commits ``uv.lock`` and holds nothing below the newest unreasoned.
-The staleness reading :func:`stale` is the forge relock's (lab_commons.dev.relock), driven here on REAL planted
+The staleness reading :func:`stale` is the forge relock's (dev_lab.dev.relock), driven here on REAL planted
 repositories with the REAL ``uv``, offline: the in-house git dependency is a local repository, and the PyPI-shaped
 one a find-links directory of planted wheels. Each refusal has a planted control that passes.
 """
@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_refs, stale, unreasoned_holds
-from lab_commons.dev.relock import _worktree
+from dev_lab.dev.githooks.table import base_rows
+from dev_lab.dev.lockcheck import DOOR, REMEDY, lock_problems, main, pushed_refs, stale, unreasoned_holds
+from dev_lab.dev.relock import _worktree
 
 _GIT = shutil.which('git') or 'git'
 _UV = shutil.which('uv') or 'uv'
@@ -151,7 +151,7 @@ def test_the_remedy_names_a_door_an_agent_guard_admits() -> None:
     PLANTED CONTROL: the bare spelling the remedy used to name is what a guard row refuses.
     """
     assert DOOR in REMEDY
-    assert DOOR.split()[2:5] == ['-m', 'lab_commons.dev.dep', '--lock-upgrade']
+    assert DOOR.split()[2:5] == ['-m', 'dev_lab.dev.dep', '--lock-upgrade']
     bare_uv_mutation = re.compile(r'(?:^|\s)uv\s+(?:add|remove|sync|lock)\b')
     assert not bare_uv_mutation.search(DOOR)
     assert bare_uv_mutation.search('uv lock --upgrade')
@@ -177,7 +177,7 @@ def test_a_hold_names_its_reason_on_its_line_or_the_line_above() -> None:
 
 def test_the_family_hook_base_runs_the_lock_check_at_push() -> None:
     rows = {row['id']: row for row in base_rows()['pre-push']}
-    assert rows['lock']['run'] == ['python', '-m', 'lab_commons.dev.lockcheck']
+    assert rows['lock']['run'] == ['python', '-m', 'dev_lab.dev.lockcheck']
 
 
 _GIT_EXE = shutil.which('git') or 'git'

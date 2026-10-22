@@ -42,8 +42,8 @@ How the family's repositories are developed: who writes code, who proves it, and
 ## How a consuming repo uses these pages
 
 - These pages exist once, here. A consuming repo's dev index renders the table above with
-  `lab_commons.dev.devdocs.pointer_table(base)`, where `base` is its path to this directory.
+  `dev_lab.dev.devdocs.pointer_table(base)`, where `base` is its path to this directory.
 - A local page under the same name holds only that repo's delta and links the family page in its first lines
-  (`lab_commons.dev.famtests.devdocs`).
+  (`dev_lab.dev.famtests.devdocs`).
 - The test for where a page belongs: does its subject change when you change repos? The box, git, the forge
   and the process are the family's; a repo's domain stays home.

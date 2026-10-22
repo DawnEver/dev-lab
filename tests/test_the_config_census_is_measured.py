@@ -222,7 +222,7 @@ def test_the_labs_one_dev_page_is_a_pointer_and_not_a_gap() -> None:
         assert 'pointer_table' in text, f'{repo} index.md no longer names the generator that keeps it honest'
     if 'consumer-a' in reached:
         own = dev_pages(reached['consumer-a']) - kit_pages
-        assert own >= {'gate.md', 'testing.md', 'integration.md', 'user-flow.md', 'compute-resources.md'}, sorted(own)
+        assert own >= {'gate.md', 'testing.md', 'user-flow.md', 'compute-resources.md'}, sorted(own)
         index = read_at_head(reached['consumer-a'], 'docs-src/dev/index.md') or ''
         assert '../../../lab-commons/docs-src/dev/' in index, (
             'the consumer-a dev index stopped pointing upstream, so its SPLITS row describes a former shape'

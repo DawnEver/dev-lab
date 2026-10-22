@@ -1,4 +1,4 @@
-"""VERDICT-AS-STATUS: ``lab_commons.dev.forgestatus`` against a REAL loopback server and REAL git repos.
+"""VERDICT-AS-STATUS: ``dev_lab.dev.forgestatus`` against a REAL loopback server and REAL git repos.
 
 The evidence is what the server RECORDED. Both forges are one table of cases, because the claim is
 one normalized ``CommitStatus`` whichever forge answered; only the request shape differs.
@@ -13,9 +13,10 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, make_repo, run_git, serve
+from lab_commons.outcomes import Conclusion
 
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgestatus import (
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgestatus import (
     DESCRIPTION_LIMIT,
     CommitStatus,
     head_sha,
@@ -26,10 +27,9 @@ from lab_commons.dev.forgestatus import (
     status_post,
     verdict_commit,
 )
-from lab_commons.dev.logref import LogRef
-from lab_commons.dev.treedirt import status_paths
-from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
-from lab_commons.outcomes import Conclusion
+from dev_lab.dev.logref import LogRef
+from dev_lab.dev.treedirt import status_paths
+from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 
 
 @pytest.fixture

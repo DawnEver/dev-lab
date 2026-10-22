@@ -7,11 +7,6 @@ from typing import NoReturn
 
 import pytest
 from _forge_fake import git_out, make_repo, run_git
-
-from lab_commons.dev import localpart, platformparts
-from lab_commons.dev.forgeoutbox import PostFailed
-from lab_commons.dev.forgestatus import CommitStatus, state_for
-from lab_commons.dev.producer import ProducerExit
 from lab_commons.envkey import env_record
 from lab_commons.hpc import __main__ as hpc_cli
 from lab_commons.hpc.grants import Machine
@@ -20,6 +15,11 @@ from lab_commons.hpc.records import write_record
 from lab_commons.hpc.testcells import TestCell
 from lab_commons.hpc.tree import NotSubmitted
 from lab_commons.outcomes import Cell, Conclusion, Expectation, Reason, Status
+
+from dev_lab.dev import localpart, platformparts
+from dev_lab.dev.forgeoutbox import PostFailed
+from dev_lab.dev.forgestatus import CommitStatus, state_for
+from dev_lab.dev.producer import ProducerExit
 
 SHA = 'a' * 40
 
@@ -208,7 +208,7 @@ def test_every_part_runs_the_one_declared_producer_told_its_part(tmp_path: Path,
     ('produce', 'named'),
     [
         ('', r'\[tool\.lab_commons\.tests\] produce as a non-empty array'),
-        ('produce = ["-m", "lab_commons.dev.verify"]\n', r'must carry \{part\}'),
+        ('produce = ["-m", "dev_lab.dev.verify"]\n', r'must carry \{part\}'),
     ],
 )
 def test_a_producer_never_told_its_part_is_refused(tmp_path: Path, produce: str, named: str) -> None:

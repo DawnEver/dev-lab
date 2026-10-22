@@ -1,4 +1,4 @@
-"""`lab_commons.dev.supersede`: every plant, both floors, and the fifteen rows it has to reproduce.
+"""`dev_lab.dev.supersede`: every plant, both floors, and the fifteen rows it has to reproduce.
 
 THE TEST THAT DECIDES WHETHER THIS MODULE WAS WORTH WRITING is `test_the_hand_measurement_is_
 reproduced`. Three tranches read a placement roster by hand on 2026-09-17 and corrected 17 declared
@@ -16,13 +16,13 @@ The third is this family's dominant defect inside the instrument built to find i
 the same defect one level down, and it is the one that cost six true positives their corroboration.
 
 THE FOURTH WAS CLOSED TWICE, and the second closing is why this file's round trip is a CROSS PRODUCT.
-`1aa2738` fixed `from lab_commons.dev.famtests import allowguard` and shipped an arm holding
+`1aa2738` fixed `from dev_lab.dev.famtests import allowguard` and shipped an arm holding
 `kit_modules` and `imported_kit_modules` to one agreement -- driven with the two spellings that fix
-had just taught the reader. `from lab_commons.dev.famtests.citedtests import take_scan` was a third
+had just taught the reader. `from dev_lab.dev.famtests.citedtests import take_scan` was a third
 spelling nobody had written down, it stayed unresolved, and the arm stayed green: a module can be
 imported in more than one way, so parametrising over MODULES alone measures the resolver against
 itself. The spellings are now DATA in the kit (`IMPORT_SPELLINGS`) and the corpus is modules x
-spellings, floored on both sides through `lab_commons.dev.floors` because an empty parametrisation
+spellings, floored on both sides through `dev_lab.dev.floors` because an empty parametrisation
 collects nothing and reports what a full green reports.
 
 BOTH DIRECTIONS ARE PLANTED, because only the second one makes this a census rather than a name
@@ -40,10 +40,10 @@ from pathlib import Path
 import pytest
 from _supersede_rows import ALREADY_IN_THE_KIT, DISAGREEMENTS, MEASURED_ROWS, ROW_FLOOR, STILL_LOCAL
 
-import lab_commons.dev as dev_pkg
-from lab_commons.dev import supersede
-from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
-from lab_commons.dev.supersede import (
+import dev_lab.dev as dev_pkg
+from dev_lab.dev import supersede
+from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
+from dev_lab.dev.supersede import (
     CONSULTS,
     IMPORT,
     IMPORT_SPELLINGS,
@@ -94,7 +94,7 @@ KIT_HEADROOM = 25
 FLAGGED_FLOOR = 4
 LOCAL_FLOOR = 6
 
-PACKAGE = 'lab_commons.dev'
+PACKAGE = 'dev_lab.dev'
 
 
 def _plant(tmp_path: Path, kit: dict[str, str], consumers: dict[str, str]) -> tuple[Path, Path]:
@@ -135,7 +135,7 @@ def main(): ...
 
 _ADOPTER = '''"""A consumer that delegates."""
 
-from lab_commons.dev.bounded import run_bounded
+from dev_lab.dev.bounded import run_bounded
 
 def worker_count(): ...
 '''
@@ -424,14 +424,14 @@ def test_a_python_row_that_will_not_parse_still_raises(tmp_path: Path) -> None:
 
 
 def test_a_package_that_resolves_onto_nothing_is_refused(tmp_path: Path) -> None:
-    """THE PLANT. `package='lab_commons'` resolves every kit import to `'dev'` and reports 0 CONSULTS."""
+    """THE PLANT. `package='dev_lab'` resolves every kit import to `'dev'` and reports 0 CONSULTS."""
     kit_dir, root = _plant(tmp_path, {'bounded.py': _SILENT_KIT}, {'scripts/gate/runner.py': _ADOPTER})
     with pytest.raises(PackageMismatch, match='wrong depth'):
         take_census(
             {'scripts/gate/runner.py': 'stays'},
             kit_modules(kit_dir),
             root=root,
-            package='lab_commons',
+            package='dev_lab',
             row_floor=1,
             module_floor=1,
         )
@@ -538,7 +538,7 @@ def test_the_reachability_corpus_is_floored_on_both_sides() -> None:
     corpus is measured here: the modules, the sub-package half of them, the declared spellings, and
     the cross product that is the real population. The high side is in because a floor the tree has
     outgrown stops separating a clean walk from a broken one -- both readings come from
-    `lab_commons.dev.floors` rather than being written by hand a ninth time.
+    `dev_lab.dev.floors` rather than being written by hand a ninth time.
     """
     modules = _published_modules()
     assert_floor(len(modules), floor=KIT_FLOOR, what='published kit module')
@@ -571,7 +571,7 @@ def test_every_published_kit_module_is_named_by_every_import_spelling(case: tupl
     `IMPORT_SPELLINGS`, which lives in the kit and not in this file: a spelling the reader must
     resolve is a fact about the reader.
 
-    MEASURED: `from lab_commons.dev.famtests.citedtests import take_scan` answered `{'famtests'}`,
+    MEASURED: `from dev_lab.dev.famtests.citedtests import take_scan` answered `{'famtests'}`,
     a token no published module is named by, so every consumer adopting a `famtests` module in the
     natural form graded NAMED_ONLY forever -- the grade that means nothing corroborates the claim.
     It cost no red anywhere, because a detector that never fires reports what a clean tree reports.
@@ -590,9 +590,9 @@ def test_every_published_kit_module_is_named_by_every_import_spelling(case: tupl
 def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tuple[Path, str]) -> None:
     """THE PLANT, over the same cross product, and it is the real bug rather than an imitation of it.
 
-    `package='lab_commons'` is one level short of the kit. Under it every module resolves one segment
+    `package='dev_lab'` is one level short of the kit. Under it every module resolves one segment
     deeper than it is, and the repair that would make the arm above pass by reading EVERY segment is
-    exactly the repair that makes `lab_commons.dev.bounded` answer `bounded` here -- at which point
+    exactly the repair that makes `dev_lab.dev.bounded` answer `bounded` here -- at which point
     `_refuse_mismatch` sees a match, the wrong depth stops being refusable, and the fix has switched
     off the guard it repairs. So the bound is TWO segments below the package with the second one
     gated on `kit_subpackages`: `famtests` is a directory in the kit and `dev` is not, which is the
@@ -602,7 +602,7 @@ def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tu
     plant the arm above would be asserting a property of the strings rather than of the resolver.
     """
     path, spelling = case
-    named = imported_kit_modules(ast.parse(_spelled(path, spelling)), package='lab_commons', subpackages=SUBPACKAGES)
+    named = imported_kit_modules(ast.parse(_spelled(path, spelling)), package='dev_lab', subpackages=SUBPACKAGES)
     assert named == frozenset({'dev'}), (
         f'a resolver one level short of the kit answered {sorted(named)} for '
         f'`{_spelled(path, spelling).strip()}`; it must reach no further than `dev`. Anything else '
@@ -611,14 +611,12 @@ def test_a_resolver_one_level_short_names_no_kit_module_by_any_spelling(case: tu
     )
 
 
-@pytest.mark.parametrize(
-    'spelling', ['from lab_commons.dev.bounded import run_bounded', 'import lab_commons.dev.bounded']
-)
+@pytest.mark.parametrize('spelling', ['from dev_lab.dev.bounded import run_bounded', 'import dev_lab.dev.bounded'])
 def test_the_short_package_is_refused_in_either_spelling(tmp_path: Path, spelling: str) -> None:
     """THE PLANT AT THE OTHER DEPTH, driven through the REAL census, in BOTH spellings of one import.
 
     `test_a_package_that_resolves_onto_nothing_is_refused` plants exactly one of them. MEASURED
-    2026-09-18: under the OLD reader the `import lab_commons.dev.bounded` spelling of that same
+    2026-09-18: under the OLD reader the `import dev_lab.dev.bounded` spelling of that same
     consumer resolved to `{'dev', 'bounded'}` and the refusal did NOT fire -- the same
     spelling-bound blindness as the round trip, this time inside the guard rather than the detector.
     """
@@ -628,7 +626,7 @@ def test_the_short_package_is_refused_in_either_spelling(tmp_path: Path, spellin
             {'scripts/gate/runner.py': 'stays'},
             kit_modules(kit_dir),
             root=root,
-            package='lab_commons',
+            package='dev_lab',
             row_floor=1,
             module_floor=1,
         )
@@ -649,11 +647,11 @@ def test_a_name_no_kit_module_answers_to_is_not_manufactured() -> None:
 def test_a_sub_package_the_kit_does_not_publish_is_not_read_two_deep() -> None:
     """THE BOUND'S OWN ARM: the second segment is earned by `kit_subpackages`, never by shape alone.
 
-    Planted from the other side -- a consumer importing `lab_commons.dev.elsewhere.thing` when the
+    Planted from the other side -- a consumer importing `dev_lab.dev.elsewhere.thing` when the
     kit publishes no `elsewhere`. If the reader took the second segment unconditionally this would
     answer `thing`, and `thing` is exactly the shape of a top-level module name read one level short.
     """
-    form = 'from lab_commons.dev.elsewhere.thing import helper\n'
+    form = 'from dev_lab.dev.elsewhere.thing import helper\n'
     assert imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=SUBPACKAGES) == frozenset({'elsewhere'})
     widened = imported_kit_modules(ast.parse(form), package=PACKAGE, subpackages=frozenset({'elsewhere'}))
     assert widened == frozenset({'elsewhere', 'thing'})
@@ -667,13 +665,13 @@ def test_a_package_whose_whole_surface_is_its_init_is_a_kit_module(tmp_path: Pat
 
     `_published` drops any path with a private part and `__init__.py` has one, so a package that
     publishes everything from its `__init__` was in NEITHER `kit_modules` nor `kit_subpackages`. The
-    live instance is `lab_commons.dev.agenthooks`: eleven public names, seen by nothing, and a
+    live instance is `dev_lab.dev.agenthooks`: eleven public names, seen by nothing, and a
     consumer-a roster row graded `untouched` purely because its one kit import names it -- while
     being 98.0% identical to consumer-c's file of the same name.
 
     THE OTHER SIDE IS THE BAR, and it is what stops the repair from manufacturing agreement. An
     `__init__` that declares nothing is an INDEX, not a module: emitting it would let a bare
-    `from lab_commons.dev import famtests` corroborate a row against a surface that does not exist.
+    `from dev_lab.dev import famtests` corroborate a row against a surface that does not exist.
     """
     (tmp_path / 'engine').mkdir()
     (tmp_path / 'engine' / '__init__.py').write_text(
@@ -711,6 +709,6 @@ def test_the_live_kit_no_longer_hides_agenthooks() -> None:
     )
     assert 'famtests' not in modules, (
         'famtests declares `__all__: list[str] = []` and publishes nothing, so it is an INDEX. A row '
-        'for it would let a bare `from lab_commons.dev import famtests` corroborate against an empty '
+        'for it would let a bare `from dev_lab.dev import famtests` corroborate against an empty '
         'surface -- a detector inventing the finding it reports.'
     )

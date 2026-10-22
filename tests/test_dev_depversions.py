@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.depversions` -- every reading, on files, in both directions.
+"""The controls for :mod:`dev_lab.dev.depversions` -- every reading, on files, in both directions.
 
 WHY THIS FILE'S CENTRE OF GRAVITY IS THE READERS RATHER THAN THE PROBLEM FUNCTIONS. A problem
 function that returned a sentence unconditionally would make every consumer red and be deleted; one
@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.depversions import (
+from dev_lab.dev import floors
+from dev_lab.dev.depversions import (
     STALE_AFTER_DAYS,
     Exemption,
     Observed,
@@ -249,13 +249,13 @@ def test_the_environment_reading_invents_nothing() -> None:
 #: The modules whose whole claim is that a verdict can be taken without a network, named as data so
 #: the scan reads a SET rather than a glob that could silently walk nothing.
 NO_NETWORK_MODULES: tuple[str, ...] = (
-    'src/lab_commons/dev/depversions.py',
-    'src/lab_commons/dev/famtests/latestversions.py',
+    'src/dev_lab/dev/depversions.py',
+    'src/dev_lab/dev/famtests/latestversions.py',
 )
 
 #: The stdlib roots a network verb arrives through, plus the two lab_commons modules that ARE one.
 NETWORK_ROOTS = frozenset({'ftplib', 'http', 'socket', 'smtplib', 'subprocess', 'urllib'})
-NETWORK_MODULES = frozenset({'lab_commons.dev.dep_observe', 'lab_commons.dev.netverb'})
+NETWORK_MODULES = frozenset({'dev_lab.dev.dep_observe', 'dev_lab.dev.netverb'})
 
 
 def _runtime_imports(tree: ast.Module) -> set[str]:
@@ -267,8 +267,8 @@ def _runtime_imports(tree: ast.Module) -> set[str]:
             if isinstance(node, ast.Import):
                 found.update(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module:
-                # BOTH SPELLINGS, and the second is the one that matters: `from lab_commons.dev import
-                # dep_observe` has module `lab_commons.dev` and the network module only in its NAMES,
+                # BOTH SPELLINGS, and the second is the one that matters: `from dev_lab.dev import
+                # dep_observe` has module `dev_lab.dev` and the network module only in its NAMES,
                 # so a scan reading the module alone could not see the seam it exists to guard.
                 found.add(node.module)
                 found.update(f'{node.module}.{alias.name}' for alias in node.names)
@@ -324,14 +324,14 @@ def test_the_verdict_reaches_no_network_and_a_planted_reach_is_convicted(tmp_pat
         'that is only checkable while the call is somebody else to make.'
     )
     planted = tmp_path / 'planted_net.py'
-    planted.write_text('import urllib.request\nfrom lab_commons.dev import dep_observe\n', encoding='utf-8')
+    planted.write_text('import urllib.request\nfrom dev_lab.dev import dep_observe\n', encoding='utf-8')
     assert _network_reach(tmp_path, ('planted_net.py',)) == (
-        'planted_net.py: imports lab_commons.dev.dep_observe',
+        'planted_net.py: imports dev_lab.dev.dep_observe',
         'planted_net.py: imports urllib.request',
     )
     typed_only = tmp_path / 'typed_only.py'
     typed_only.write_text(
-        'from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from lab_commons.dev import dep_observe\n',
+        'from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from dev_lab.dev import dep_observe\n',
         encoding='utf-8',
     )
     assert _network_reach(tmp_path, ('typed_only.py',)) == (), (

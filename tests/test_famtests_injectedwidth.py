@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.injectedwidth` -- every arm, both directions.
+"""The controls for :mod:`dev_lab.dev.famtests.injectedwidth` -- every arm, both directions.
 
 THE PAIR THIS FILE EXISTS TO HOLD. This guard and the CJK guard next door key their declarations
 differently -- a SITE here, a FILE there -- and their consumer files are close enough to copy from one
@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import docwidth, floors
-from lab_commons.dev.famtests.injectedwidth import (
+from dev_lab.dev import docwidth, floors
+from dev_lab.dev.famtests.injectedwidth import (
     MisdeclaredSite,
     OverwideDeclaration,
     OverwidthDocument,
@@ -29,7 +29,7 @@ from lab_commons.dev.famtests.injectedwidth import (
     assert_widths_are_the_named_set,
     take_scan,
 )
-from lab_commons.dev.famtests.trackedcjk import (
+from dev_lab.dev.famtests.trackedcjk import (
     assert_the_declaration_is_the_shape_the_ratchet_keys_on as cjk_shape,
 )
 
@@ -165,7 +165,7 @@ def test_the_shipped_control_reds_when_the_comparison_becomes_inclusive(
     and the line a repo sitting at a measured maximum of 99 would never write by accident.
     """
     real = docwidth.line_widths
-    monkeypatch.setattr('lab_commons.dev.docwidth.line_widths', lambda text: tuple((n, w + 1) for n, w in real(text)))
+    monkeypatch.setattr('dev_lab.dev.docwidth.line_widths', lambda text: tuple((n, w + 1) for n, w in real(text)))
     with pytest.raises(AssertionError, match='exactly AT the ceiling'):
         assert_the_scanner_still_convicts(tmp_path, ceiling=_CEILING)
 
@@ -185,7 +185,7 @@ def test_the_shipped_control_reds_when_a_second_site_in_one_file_is_folded_away(
             overwidth=tuple(seen.values()), files_read=scan.files_read, undecodable=scan.undecodable
         )
 
-    monkeypatch.setattr('lab_commons.dev.docwidth.scan_widths', _one_per_file)
+    monkeypatch.setattr('dev_lab.dev.docwidth.scan_widths', _one_per_file)
     with pytest.raises(AssertionError, match='keyed by file and not by site'):
         assert_the_scanner_still_convicts(tmp_path, ceiling=_CEILING)
 
@@ -194,7 +194,7 @@ def test_the_shipped_control_reds_when_the_ratchet_stops_convicting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A ratchet that never fires passes every arm that only ever asks it for silence."""
-    monkeypatch.setattr('lab_commons.dev.docwidth.width_ratchet', lambda _overwidth, _declared: ())
+    monkeypatch.setattr('dev_lab.dev.docwidth.width_ratchet', lambda _overwidth, _declared: ())
     with pytest.raises(AssertionError, match='convicts nothing'):
         assert_the_scanner_still_convicts(tmp_path, ceiling=_CEILING)
 

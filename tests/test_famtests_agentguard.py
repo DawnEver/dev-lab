@@ -1,9 +1,9 @@
-"""``lab_commons.dev.famtests.agentguard`` -- driven against a REAL engine on a REAL repository.
+"""``dev_lab.dev.famtests.agentguard`` -- driven against a REAL engine on a REAL repository.
 
 NOTHING HERE IS MODELLED. Each case builds a temporary git repository, installs the shipped engine
-into it with :func:`lab_commons.dev.agent_guard.install_guard`, writes a rules file RENDERED from a
-real :class:`~lab_commons.dev.hook_adoption.HookAdoption` over real
-:class:`~lab_commons.dev.hooks.DenyRule` rows, and then runs ``node`` over the pair. The decision
+into it with :func:`dev_lab.dev.agent_guard.install_guard`, writes a rules file RENDERED from a
+real :class:`~dev_lab.dev.hook_adoption.HookAdoption` over real
+:class:`~dev_lab.dev.hooks.DenyRule` rows, and then runs ``node`` over the pair. The decision
 read back is the one an agent's tool would receive, which is the only reading that can tell a live
 guard from a plausible one.
 
@@ -30,9 +30,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.agent_guard import ENGINE_REL, RULES_REL, install_guard
-from lab_commons.dev.agenthooks import NoNode, node_executable
-from lab_commons.dev.famtests.agentguard import (
+from dev_lab.dev.agent_guard import ENGINE_REL, RULES_REL, install_guard
+from dev_lab.dev.agenthooks import NoNode, node_executable
+from dev_lab.dev.famtests.agentguard import (
     GuardNotLive,
     assert_committed_rules_are_rendered,
     assert_every_rule_is_accounted_for,
@@ -45,8 +45,8 @@ from lab_commons.dev.famtests.agentguard import (
     reason_for,
     shipped_rules,
 )
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import DenyRule
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DenyRule
 
 _GIT = shutil.which('git') or 'git'
 _NODE = shutil.which('node')

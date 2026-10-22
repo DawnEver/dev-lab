@@ -15,19 +15,19 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from lab_commons.box.demand import Demand
 from lab_commons.compute.execute import OFFERED, LocalExecutor, Where
 from lab_commons.compute.graph import Graph
 from lab_commons.compute.store import Nondeterministic, Record, ResultStore, result_hash
 from lab_commons.compute.unit import Engine, Unit, environment_here
-from lab_commons.dev import forgeunit
-from lab_commons.dev.artefacts import Config, FolderStore
-from lab_commons.dev.artefactstores import Ref
-from lab_commons.dev.forgealarm import NONDETERMINISM, Alarm
-from lab_commons.dev.forgerecords import Attachment
-from lab_commons.dev.forgerequest import UNIT, UndeclaredRequest, declared_request
-from lab_commons.dev.forgeunit import ForgeResults, UnitJob, offering, result_name, unit_request
+
+from dev_lab.dev import forgeunit
+from dev_lab.dev.artefacts import Config, FolderStore
+from dev_lab.dev.artefactstores import Ref
+from dev_lab.dev.forgealarm import NONDETERMINISM, Alarm
+from dev_lab.dev.forgerecords import Attachment
+from dev_lab.dev.forgerequest import UNIT, UndeclaredRequest, declared_request
+from dev_lab.dev.forgeunit import ForgeResults, UnitJob, offering, result_name, unit_request
 
 _GIT = shutil.which('git') or 'git'
 UNIT_HASH = 'ab' * 32
@@ -81,7 +81,7 @@ def test_a_job_spells_its_unit_bundle_size_and_needs_as_paths() -> None:
     job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(2, 6.0, 7200, {}), ('femm', 'windows'))
     assert UnitJob.of(job.paths()) == job
     declared = unit_request(job.paths())
-    assert declared.argv == ('-m', 'lab_commons.dev.forgeunit', *job.paths())
+    assert declared.argv == ('-m', 'dev_lab.dev.forgeunit', *job.paths())
     assert (declared.needs, declared.cpu, declared.mem_gb, declared.wall_h) == ({'femm', 'windows'}, 2.0, 6.0, 2.0)
     assert declared_request(Path(), 'c' * 40, UNIT, job.paths()) == declared  # the built-in producer
     with pytest.raises(UndeclaredRequest, match='no unit hash'):

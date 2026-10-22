@@ -1,13 +1,13 @@
 """The shared always-loaded-pages body: both readings, all four movements, and a real planted tree.
 
-The consumer-side control for :mod:`lab_commons.dev.famtests.rulespages`. What is checked here is
+The consumer-side control for :mod:`dev_lab.dev.famtests.rulespages`. What is checked here is
 that the body SEES each movement, since the argument for replacing a bare total with a named set is
 worth exactly as much as the evidence that the named set catches what the total missed -- so the
 central case below plants a page that GROWS while a sibling SHRINKS by the same amount, which is the
 edit a total reports as clean.
 
 PLANTED ON DISK, not as dictionaries. The scan, the naming and the comparison are one mechanism from
-a caller's side; a control that hands :func:`~lab_commons.dev.famtests.rulespages.ratchet_breaks` a
+a caller's side; a control that hands :func:`~dev_lab.dev.famtests.rulespages.ratchet_breaks` a
 literal never finds out whether the reading that feeds it counts lines the same way.
 """
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.rulespages import (
+from dev_lab.dev.famtests.rulespages import (
     VacuousPageScan,
     assert_rules_ratchet,
     budget_overrun,

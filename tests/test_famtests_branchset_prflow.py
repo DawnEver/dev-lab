@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.branchset import BranchSetViolation, assert_the_pr_flow_is_declared
+from dev_lab.dev.famtests.branchset import BranchSetViolation, assert_the_pr_flow_is_declared
 
 _BRANCHSET = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
 

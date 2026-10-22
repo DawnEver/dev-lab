@@ -1,6 +1,6 @@
 """A SERVED CHECKOUT CARRIES ITS COMPONENTS: the deploy's clone and update initialise its submodules.
 
-A product consumes its engines by path from ``components/<name>`` (:mod:`lab_commons.dev.components`),
+A product consumes its engines by path from ``components/<name>`` (:mod:`dev_lab.dev.components`),
 so a served checkout without its submodules builds a venv that cannot resolve them. Driven over REAL
 local repositories: an engine, and a product mounting it, both reached by ``file://`` urls.
 """
@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import git_out, run_git
-
 from lab_commons.hpc.deploy_spec import Deployment, Repo, checkout_of
 from lab_commons.hpc.deploy_steps import Step, Tools, update
 

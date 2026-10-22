@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import pradmit
-from lab_commons.dev.forgework import PullRequest
-from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.labsession import TRAILER
-from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.trialmerge import shares_unmerged
+from dev_lab.dev import pradmit
+from dev_lab.dev.forgework import PullRequest
+from dev_lab.dev.githooks.table import base_rows
+from dev_lab.dev.labsession import TRAILER
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.trialmerge import shares_unmerged
 
 _GIT = shutil.which('git') or 'git'
 _ZERO = '0' * 40
@@ -173,7 +173,7 @@ def test_the_split_set_is_reasoned_and_its_ceiling_only_falls() -> None:
 
 def test_the_base_table_runs_the_admission_at_pre_push() -> None:
     rows = {row['id']: row for row in base_rows()['pre-push']}
-    assert rows['pr-admit']['run'] == ['python', '-m', 'lab_commons.dev.pradmit']
+    assert rows['pr-admit']['run'] == ['python', '-m', 'dev_lab.dev.pradmit']
 
 
 def test_create_refusal_reads_the_forges_open_prs(repo: Path, monkeypatch) -> None:

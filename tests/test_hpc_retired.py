@@ -7,11 +7,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from lab_commons.dev import forgecli, platformparts, pushgate, verify, workstation
-from lab_commons.dev.lanepolicy import policy_from
 from lab_commons.hpc import __main__ as hpc_main
 from lab_commons.hpc.retired import RETIRED, refusal, refuse_retired_keys, retired_in
+
+from dev_lab.dev import forgecli, platformparts, pushgate, verify, workstation
+from dev_lab.dev.lanepolicy import policy_from
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -143,4 +143,4 @@ def test_a_retired_flag_matches_as_a_whole_token_never_inside_a_longer_flag() ->
     assert '--mode' in retired_in('`--mode`')
     assert '--mode' not in retired_in('python -m ai_lab.review --model claude-x')
     assert '--mode' not in retired_in('--mode-x')
-    assert 'cpuseat' in retired_in('from lab_commons.dev import cpuseats')
+    assert 'cpuseat' in retired_in('from dev_lab.dev import cpuseats')

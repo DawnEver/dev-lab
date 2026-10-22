@@ -5,12 +5,12 @@
 # drift the moment they are written twice, and CI then fails on something a local run could not
 # have caught.
 #
-# THE TARGET HEADERS BELOW ARE THE FAMILY BASE (`lab_commons.dev._famconfig_rows.MAKEFILE_BASE`),
+# THE TARGET HEADERS BELOW ARE THE FAMILY BASE (`dev_lab.dev._famconfig_rows.MAKEFILE_BASE`),
 # and the base is REQUIRED rather than RENDERED: the names are the family's, every recipe is this
 # repo's. Until 2026-09-18 this file held six targets and the kit's own base demanded nine -- the
 # repo that publishes the contract was the one repo not meeting it, which is the shape every other
 # finding in this family has. `verify` is the exception that proves the mode: its recipe IS the
-# base's, because `lab_commons.dev.verify` takes no argument naming a tree and so is portable by
+# base's, because `dev_lab.dev.verify` takes no argument naming a tree and so is portable by
 # construction, and this repo shipping it while running a hand-written chain instead was the same
 # defect one layer in.
 
@@ -21,7 +21,7 @@ install:
 .PHONY: install-dev
 install-dev:
 	uv pip install -e ".[dev]"
-	python -m lab_commons.dev.hook_install --install
+	python -m dev_lab.dev.hook_install --install
 
 .PHONY: lint
 lint:
@@ -50,7 +50,7 @@ adoption:
 
 .PHONY: verify
 verify:
-	python -m lab_commons.dev.verify
+	python -m dev_lab.dev.verify
 
 .PHONY: clean
 clean:

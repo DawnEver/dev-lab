@@ -10,7 +10,7 @@ accessed: 2026-10-21
 # PLAN: a short, robust toolchain (user-approved 2026-10-21)
 
 Scope: lab-commons, dev-lab (new), ai-lab, cc-market, cc-config, and every consumer (motronics-studio,
-wdg-lab, numerics-lab, optimi-lab). Principles: first principles, no historical baggage, Occam, single
+consumer-a, numerics-lab, consumer-b). Principles: first principles, no historical baggage, Occam, single
 source of truth, layered decoupling, names match, no backward compatibility, progressive disclosure.
 
 ## 1. The target in one paragraph
@@ -71,7 +71,7 @@ The forge and the hooks log every refusal and every hand action (one JSONL per k
 - Tables that belong to dev-lab are renamed `[tool.dev_lab.*]` in the same merge as the imports; no
   read-time upgrade.
 - Cut-over day: forge hosts install dev-lab and switch serving; consumers switch in one merge each
-  (numerics-lab, ai-lab, optimi-lab, wdg-lab, motronics); lab-commons releases without the moved modules.
+  (numerics-lab, ai-lab, consumer-b, consumer-a, motronics); lab-commons releases without the moved modules.
   Superseded heads are not tested with the old tool.
 - Versions: the machine tool self-updates each forge tick; a consumer venv carries dev-lab in uv.lock,
   relocked by auto-sync. `dev-lab>=X` rises only in the PR that first uses a new API; a push checks only

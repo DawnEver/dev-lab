@@ -2,7 +2,7 @@
 
 THE RULE. A name never carries a unit; the unit lives in the VALUE. `gap_mm = 12.5` teaches the
 reader the unit and hands pint nothing, so every conversion downstream is a convention nobody
-checks. `src/lab_commons/dev/units.py` is the scan that refuses it, and `quantity_parser` in
+checks. `src/dev_lab/dev/units.py` is the scan that refuses it, and `quantity_parser` in
 `lab_commons.units` is the other half -- where the unit goes instead.
 
 WHY THIS FILE EXISTS SEPARATELY FROM THE SCANNER'S OWN TESTS. `tests/test_dev_units.py` proves the
@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lab_commons.dev.rules import tracked_files
-from lab_commons.dev.units import SCANNED_SUFFIXES, scan_files
+from dev_lab.dev.rules import tracked_files
+from dev_lab.dev.units import SCANNED_SUFFIXES, scan_files
 
 _ROOT = Path(__file__).resolve().parents[1]
 

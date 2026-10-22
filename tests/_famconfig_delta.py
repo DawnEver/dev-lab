@@ -1,7 +1,7 @@
 r"""lab-commons' own DELTAS against the family config bases -- data, computed by nothing.
 
 GIT HOOKS ARE NOT A DELTA HERE: they are TOML (`[tool.lab_commons.hooks]` in pyproject.toml over
-`lab_commons/dev/githooks/base.toml`) and nothing is rendered for them.
+`dev_lab/dev/githooks/base.toml`) and nothing is rendered for them.
 
 `.gitignore` IS ADOPTED AS OF 2026-10-03, on the user's ruling that every project-level file has ONE
 source in this package. The base grew the family-mandated lines (`_famconfig_rows.GITIGNORE_FAMILY_LINES`)
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from lab_commons.dev.famconfig import Delta
+from dev_lab.dev.famconfig import Delta
 
 __all__ = [
     'DELTAS',

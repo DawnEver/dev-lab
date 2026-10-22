@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.sizesplits import SizeSplit, assert_no_new_size_splits, size_splits
-from lab_commons.dev.rules import tracked_files
+from dev_lab.dev.famtests.sizesplits import SizeSplit, assert_no_new_size_splits, size_splits
+from dev_lab.dev.rules import tracked_files
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 #: The size splits that predate the rule, by name -- removing one from the tree must remove it here.
-DEBT = frozenset({'src/lab_commons/dev/_rule_rows_b.py'})
+DEBT = frozenset({'src/dev_lab/dev/_rule_rows_b.py'})
 
 
 def test_the_tree_holds_no_size_split_beyond_its_debt() -> None:

@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.datedmemory` -- every reader and arm, both ways.
+"""The controls for :mod:`dev_lab.dev.famtests.datedmemory` -- every reader and arm, both ways.
 
 WHAT IS PROVED HERE. Not "the walk works": what this file owns is that each reader FIRES on a
 planted offender and STAYS SILENT on the honest neighbour beside it. A reader that names everything
@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.datedmemory import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.datedmemory import (
     DATE_DEPTH,
     MemoryScan,
     ParallelTree,

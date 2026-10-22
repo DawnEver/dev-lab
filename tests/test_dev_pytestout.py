@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.floors import assert_floor
-from lab_commons.dev.pytestout import (
+from dev_lab.dev.floors import assert_floor
+from dev_lab.dev.pytestout import (
     TRUNCATION_MARKERS,
     collected_count,
     markers_in,

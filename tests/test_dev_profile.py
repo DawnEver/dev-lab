@@ -1,4 +1,4 @@
-"""``lab_commons.dev.profile`` — the parameterisation, and the substitution it has to be.
+"""``dev_lab.dev.profile`` — the parameterisation, and the substitution it has to be.
 
 The root-resolution tests matter more than the rest because they are about the ONLY thing that
 decides whether adopting this kit costs a line or a rewrite: every guard in a consumer tree reaches
@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import profile as profile_module
-from lab_commons.dev.profile import DEFAULT_LINT_CONFIG, NotACheckout, RepoProfile
+from dev_lab.dev import profile as profile_module
+from dev_lab.dev.profile import DEFAULT_LINT_CONFIG, NotACheckout, RepoProfile
 
 
 @pytest.fixture

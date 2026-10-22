@@ -1,16 +1,29 @@
 [project]
-name = "lab-commons"
+name = "dev-lab"
 dynamic = ["version"]
-description = "Project-agnostic shared infrastructure (logging, paths) for the consumer-a/consumer-c/consumer-b family of labs."
+description = "The family development system: forge, hooks, gate, verify. Depends on lab-commons."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Mingyang Bao" }]
 requires-python = ">=3.12"
-# The base install is the standard library; every capability that needs a package is an extra.
-dependencies = []
+# dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
+# install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
+# parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
+# Floor: lab-commons at the split base 8c401f0 (hatch-vcs 0.3.1.dev992); one bare git URL graph-wide, as the
+# consumers spell it, so uv.lock pins its tip -- never a machine-local path.
+dependencies = [
+    "lab-commons[units,paths,io,structured]>=0.3.1.dev992",
+    "pytest",
+    "pytest-mock",
+    "ruff",
+    "commitizen",
+    # Imported directly (dev.dep_observe, the suppression guard), so declared directly: lab-commons[io]
+    # supplies it today, and a direct import riding on another package's extra is a declaration that lies.
+    "rtoml",
+]
 
 [project.urls]
-Homepage = "https://github.com/DawnEver/lab-commons"
+Homepage = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -18,60 +31,20 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 source = "vcs"
+fallback-version = "0.0.0"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/lab_commons/__version__.py"
+version-file = "src/dev_lab/__version__.py"
 template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_tuple = {version_tuple}\n"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lab_commons"]
+packages = ["src/dev_lab"]
 
-[project.optional-dependencies]
-# Each defining module has an explicit installation capability, not a root facade.
-units = ["numpy", "pint>=0.25.2", "pydantic>=2"]
-paths = ["platformdirs"]
-io = ["rtoml"]
-structured = ["structlog", "colorama; sys_platform == 'win32'"]
+[tool.uv.sources]
+# integrate/main until lab-commons main carries the split base (main is v0.3.0-745, behind 8c401f0); then drop `branch`.
+lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", branch = "integrate/main" }
 
-# THE GATE FOR ``lab_commons.dev``. That subpackage is opt-in exactly as ``lab_commons.em`` is --
-# the top level does not import it, and `tests/test_dev_gate.py` pins that against a fresh
-# interpreter -- and the extra below is what a consumer installs to opt in. It names the tools the
-# dev layer DRIVES (pytest and ruff, as executables rather than as imports); the layer itself needs
-# no new dependency, which the same test proves by reading its import statements. A consumer that
-# wants only logging installs nothing heavier than the tier-1 list above.
-dev = [
-    "lab-commons[units,paths,io,structured]",
-    "pytest",
-    "pytest-mock",
-    "ruff",
-    # `cz check` is the base commit-msg hook (`lab_commons/dev/githooks/base.toml`), run in this venv
-    # like every hook -- DRIVEN as an executable, exactly as pytest and ruff are.
-    "commitizen",
-]
-
-# THE TWO GATES FOR ``lab_commons.viz``, AND THERE ARE TWO ON PURPOSE. The plotting vocabulary
-# (`lab_commons.viz` itself) imports NO plotting library: a producer declares the figure it wants and
-# installs nothing. Drawing it is an ADAPTER, one module per library, and each adapter's library is
-# its own extra -- so a consumer takes the backend it wants and does not inherit the other's. The
-# layer is equal-peer by construction rather than by intent, and `tests/test_viz_gate.py` pins both
-# halves: that importing `lab_commons` pulls neither in, and that each adapter imports exactly the
-# library its own extra names.
-# The viz VOCABULARY is NumPy data, so it is its own extra; each backend extra names only its library.
-viz = ["numpy"]
-viz-mpl = [
-    # 3.5 is where `matplotlib.colormaps` -- the registry the layer's palette-name check reads --
-    # landed. Nothing below it is claimed, and no ceiling is stated: an upper bound here would be a
-    # resolver constraint inherited by every consumer that wants a plot.
-    "matplotlib>=3.5",
-]
-viz-bokeh = [
-    # 3.0 is where a figure's title became a model with text rather than a string, and where the
-    # palette registry this layer checks its colormap names against is the shape it reads. The
-    # adapter is written against that API and says so here instead of failing at the first figure.
-    "bokeh>=3",
-]
-
-# THE FAMILY PLACEMENT MAP (`lab_commons.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
+# THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.lab_commons.placement]
 code_roots = []
 # A worktree is a real second tree with its own src/, judged by the run inside it.
@@ -85,7 +58,7 @@ max_age_days = 3.0
 [tool.lab_commons.hpc]
 install = "uv sync --frozen --all-extras"
 
-# The run record's root (lab_commons.dev.platformparts).
+# The run record's root (dev_lab.dev.platformparts).
 [tool.lab_commons.parts]
 output = "output/logs"
 
@@ -95,7 +68,7 @@ output = "output/logs"
 # from [tool.lab_commons.hpc].
 [tool.lab_commons.tests]
 resources = ["workstation"]
-produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
+produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 # The tool FLOORS this repo's parts need (D21): `<tool> = {floor = "<version>", reason = "<why>"}`. A
 # declaration is a floor with its reason, never a pin (user ruling 2026-10-17); a tool needing no floor --
@@ -107,10 +80,10 @@ produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
 [tool.lab_commons.integrator]
 trunk = "main"
 integration = "integrate/main"
-merges_only_since = "c6ba73b78d56f7e0c3a4e95d208e752b9047bdf4"  # INTEGRATION-IS-MERGES-ONLY from here on
-pr_merges_since = "b97d2aa2871e09630863620bda713de750374ccb"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha
+merges_only_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-IS-MERGES-ONLY from here on: the split base (lab-commons 8c401f0 rewritten)
+pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha: the split base
 
-# The advisory PR review (lab_commons.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
+# The advisory PR review (dev_lab.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
 # interpreter, the sharp-review method) is each reviewing host's [capabilities.*] in its machine file.
 [tool.lab_commons.review]
 command = [
@@ -118,8 +91,8 @@ command = [
     "--method", "{capabilities.sharp_review.path}", "--range", "{range}", "--model", "claude-sonnet-5-5",
 ]
 
-# This repo's layer over the family hook base (lab_commons/dev/githooks/base.toml); run by
-# `python -m lab_commons.dev.githooks run <stage>`, installed by `python -m lab_commons.dev.hook_install --install`.
+# This repo's layer over the family hook base (dev_lab/dev/githooks/base.toml); run by
+# `python -m dev_lab.dev.githooks run <stage>`, installed by `python -m dev_lab.dev.hook_install --install`.
 [[tool.lab_commons.hooks.pre-commit]]
 id = "ruff"
 run = ["ruff", "check", "--force-exclude"]
@@ -134,7 +107,7 @@ pass_files = true
 
 [[tool.lab_commons.hooks.pre-push]]
 id = "pushgate"
-run = ["python", "-m", "lab_commons.dev.pushgate", "--trunk-ref", "refs/heads/main"]
+run = ["python", "-m", "dev_lab.dev.pushgate", "--trunk-ref", "refs/heads/main"]
 always_run = true
 
 [tool.lab_commons.branchset]
@@ -144,7 +117,7 @@ sessions = ['integrate/main']
 # Short-lived PR heads (user ruling 2026-10-19): pushable with no row, deleted by the forge once their PR is gone.
 ephemeral = ['pr/*']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
-# merged undeclared origin branches idle >= grace_hours (lab_commons.dev.branchprune).
+# merged undeclared origin branches idle >= grace_hours (dev_lab.dev.branchprune).
 prune_merged = true
 
 [tool.lab_commons.doors]
@@ -152,10 +125,10 @@ prune_merged = true
 # started in; when a refused command TARGETS this repo (its cwd, `cd X &&`, `git -C X`), the refusal
 # names the door declared here instead of the session repo's. <venv python> is .venv/Scripts/python.exe
 # on Windows and .venv/bin/python on POSIX -- in a worktree, the main checkout's.
-BARE-TEST-INVOCATION = "<venv python> -m lab_commons.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
+BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
-GIT-NETWORK-VERB = "<venv python> -m lab_commons.dev.netverb -- git <push|fetch|pull|clone|ls-remote> ...  (retries 3x, then reports a diagnosis)"
-OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name> 2>&1  (create the day's <kind> directory first; the shape is lab_commons.dev.datedlog's)"
+GIT-NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- git <push|fetch|pull|clone|ls-remote> ...  (retries 3x, then reports a diagnosis)"
+OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name> 2>&1  (create the day's <kind> directory first; the shape is dev_lab.dev.datedlog's)"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -231,7 +204,7 @@ ignore = [
     # -- ONE DEBT, NOT A JUDGEMENT, and it is labelled as such so it is not read as settled.
     "N818",    # error-suffix-on-exception-name -- 16 classes (2026-09-17). This is the kit's PUBLIC
                # exception surface; seven of the sixteen are re-exported through
-               # `lab_commons.dev.__init__`, so the rename is a cross-file, cross-repo move and
+               # `dev_lab.dev.__init__`, so the rename is a cross-file, cross-repo move and
                # belongs to the stage that re-points the consumers (R4), not to a lint pass. The
                # count above is the ceiling: this entry is expected to DISAPPEAR, not to be explained
                # again.
@@ -258,15 +231,15 @@ ignore = [
     "SLF001",  # a test that cannot read a private member cannot pin a private invariant
 ]
 
-# THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m lab_commons.dev.ciworkflows render`
-# (the family base is lab_commons/dev/ci_base.toml). ci.yml is the base caller, pointed at the reusable
+# THIS REPO'S CI, as TOML: rendered to .github/workflows/ by `python -m dev_lab.dev.ciworkflows render`
+# (the family base is dev_lab/dev/ci_base.toml). ci.yml is the base caller, pointed at the reusable
 # workflow beside it; python-verify.yml is THE family CI definition, which every repo's ci.yml calls.
 [tool.lab_commons.ci."ci.yml".jobs.verify]
 uses = "./.github/workflows/python-verify.yml"
 
 [tool.lab_commons.ci."ci.yml".jobs.verify.with]
 runner-os = '["ubuntu-latest", "windows-latest", "macos-latest"]'
-extras = "dev viz-mpl viz-bokeh"
+extras = ""
 guard-targets = "adoption"
 
 [tool.lab_commons.ci."python-verify.yml"]
@@ -345,7 +318,7 @@ uv sync --python ${{ matrix.python-version }} $extra_flags
 [[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]
 name = "Install the declared git hooks"
 run = '''
-uv run --no-sync python -m lab_commons.dev.hook_install --install
+uv run --no-sync python -m dev_lab.dev.hook_install --install
 '''
 
 [[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]

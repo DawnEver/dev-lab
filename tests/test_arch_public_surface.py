@@ -133,4 +133,4 @@ def test_a_planted_module_is_refused(tmp_path: Path) -> None:
 
 def test_the_guard_reads_this_repo() -> None:
     """The corpus really is this tree, spelled the way a refusal would spell it."""
-    assert 'src/lab_commons/dev/rules.py' in {rel(p) for p in source_modules()}
+    assert 'src/dev_lab/dev/rules.py' in {rel(p) for p in source_modules()}

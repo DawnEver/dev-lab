@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.autodoors import (
+from dev_lab.dev.autodoors import (
     CODEX_RULES_REL,
     DOOR_MODULES,
     claude_rows,
@@ -19,7 +19,7 @@ from lab_commons.dev.autodoors import (
     promises_raw,
     script_doors,
 )
-from lab_commons.dev.famtests.visibility import plant_checkout
+from dev_lab.dev.famtests.visibility import plant_checkout
 
 _GIT = shutil.which('git') or 'git'
 _SCRIPTS = ('scripts/gate/runner.py', 'scripts/hooks/with-retry.sh')
@@ -44,14 +44,14 @@ def test_dependency_doors_admit_each_checkout_interpreter_without_an_installer_w
     rows = claude_rows(('scripts/gate/dep_sync.py',))
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in rows]
     assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
-    assert any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs)
+    assert any(fnmatchcase(f'{interpreter} -m dev_lab.dev.dep --bootstrap lane', pattern) for pattern in globs)
     assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
-    assert not any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --sync', pattern) for pattern in globs)
+    assert not any(fnmatchcase(f'{interpreter} -m dev_lab.dev.dep --sync', pattern) for pattern in globs)
     assert not any(
         fnmatchcase(f'{interpreter} -c arbitrary scripts/gate/dep_sync.py --sync', pattern) for pattern in globs
     )
     assert not any(
-        fnmatchcase(f'{interpreter} -c arbitrary -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs
+        fnmatchcase(f'{interpreter} -c arbitrary -m dev_lab.dev.dep --bootstrap lane', pattern) for pattern in globs
     )
 
 
@@ -82,7 +82,7 @@ def test_an_interpreter_spelled_by_an_absolute_path_is_not_admitted_and_that_is_
 
 
 def test_bootstrap_is_a_specific_shared_door_in_both_client_renderings() -> None:
-    assert '"-m", "lab_commons.dev.dep", "--bootstrap"' in codex_rules()
+    assert '"-m", "dev_lab.dev.dep", "--bootstrap"' in codex_rules()
 
 
 def test_cross_checkout_script_permissions_are_derived_from_the_supplied_doors() -> None:
@@ -101,7 +101,7 @@ def test_every_row_is_narrow_and_one_per_door() -> None:
     assert sibling_push in rows
     rows = {row: why for row, why in rows.items() if row != sibling_push}
     assert set(rows.values()) == set(doors(_SCRIPTS).values())
-    assert 'Bash(.venv/*/python* -m lab_commons.dev.branchset *)' in rows
+    assert 'Bash(.venv/*/python* -m dev_lab.dev.branchset *)' in rows
     assert 'Bash(sh scripts/hooks/with-retry.sh *)' in rows
     assert all(any(row.endswith(f' {" ".join(argv)} *)') for (_runner, *argv) in doors(_SCRIPTS)) for row in rows)
 
@@ -138,7 +138,7 @@ def test_the_real_codex_engine_allows_a_door_and_not_a_raw_verb(tmp_path: Path) 
         )
         return done.stdout
 
-    assert '"decision":"allow"' in decision('.venv/bin/python', '-m', 'lab_commons.dev.worktrees', '--prune')
+    assert '"decision":"allow"' in decision('.venv/bin/python', '-m', 'dev_lab.dev.worktrees', '--prune')
     assert '"decision":"allow"' not in decision('git', 'push', 'origin', '--delete', 'x')
 
 
@@ -180,7 +180,7 @@ def test_a_main_session_publishes_through_the_wrapper_where_there_is_one() -> No
 def test_a_repo_without_a_wrapper_pushes_through_netverb_never_raw() -> None:
     """GIT-NETWORK-VERB refuses a raw push, so no rendering promises one; netverb is the road."""
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
-    netverb_push = '.venv/Scripts/python.exe -m lab_commons.dev.netverb -- git push origin main'
+    netverb_push = '.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin main'
     assert any(fnmatchcase(netverb_push, g) for g in globs)
     assert not any(fnmatchcase('git push origin main', g) for g in globs)
     assert not any(fnmatchcase('git -C ../sib push origin main', g) for g in globs)

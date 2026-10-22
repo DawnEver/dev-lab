@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.dep_observe` -- the refresher, driven with no network.
+"""The controls for :mod:`dev_lab.dev.dep_observe` -- the refresher, driven with no network.
 
 WHY NOTHING HERE TOUCHES A SOURCE. The whole point of the module is that its two transports answer
 different questions about the world, and a test that asked the world would be a test that fails on a
@@ -22,16 +22,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lab_commons.dev import dep_observe
-from lab_commons.dev.dep_observe import (
+from dev_lab.dev import dep_observe
+from dev_lab.dev.dep_observe import (
     ObservationRefused,
     main,
     observe,
     refresh,
     write_observed,
 )
-from lab_commons.dev.depversions import Observation, Observed, read_observed
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.depversions import Observation, Observed, read_observed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -173,7 +173,7 @@ def test_the_index_transport_reaches_its_answer_through_the_retry_wrapper(
     monkeypatch.setattr(dep_observe, 'run_network_verb', spy)
     assert dep_observe._index_verb('pint') == '0.25.2'
     argv = spy.calls[0]
-    assert argv[1:] == ('-m', 'lab_commons.dev.dep_observe', '--pypi', 'pint'), argv
+    assert argv[1:] == ('-m', 'dev_lab.dev.dep_observe', '--pypi', 'pint'), argv
     assert 'python' in argv[0].lower(), argv
 
 

@@ -10,9 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from lab_commons.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, RetiredOutcomes, read_cells
 from lab_commons.outcomes import Status
+
+from dev_lab.dev.test_outcomes import OUTCOMES_DIR_VAR, CellRecorder, RetiredOutcomes, read_cells
 
 
 def _report(nodeid: str, when: str, outcome: str, longrepr: object = None, **extra: object) -> SimpleNamespace:
@@ -114,7 +114,7 @@ def test_a_real_pytest_run_maps_its_skips_by_the_declaring_marker(tmp_path: Path
     )
     out = tmp_path / 'out'
     subprocess.run(
-        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'lab_commons.dev.test_outcomes'],
+        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'dev_lab.dev.test_outcomes'],
         cwd=tmp_path,
         env={**os.environ, OUTCOMES_DIR_VAR: str(out)},
         capture_output=True,

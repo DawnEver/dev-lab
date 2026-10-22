@@ -1,7 +1,7 @@
-"""The controls for :mod:`lab_commons.dev.famtests.rostercensus` -- every arm driven in BOTH directions.
+"""The controls for :mod:`dev_lab.dev.famtests.rostercensus` -- every arm driven in BOTH directions.
 
 WHAT IS PROVED HERE, and it is deliberately not "the census works": that is
-:mod:`lab_commons.dev.supersede`'s own test file, and re-asserting it here would be two answers to one
+:mod:`dev_lab.dev.supersede`'s own test file, and re-asserting it here would be two answers to one
 question. What this file owns is the ARMS a consumer calls -- that each one FIRES on a planted
 violation and STAYS SILENT on the honest shape beside it. A detector that never fires reports exactly
 what a clean roster reports, which is the blind spot that let a six-module import gap survive across
@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors, supersede
-from lab_commons.dev.famtests.rostercensus import (
+from dev_lab.dev import floors, supersede
+from dev_lab.dev.famtests.rostercensus import (
     SUBPACKAGE_IMPORT,
     EmptyWaiver,
     UnadoptedWaiver,
@@ -36,7 +36,7 @@ from lab_commons.dev.famtests.rostercensus import (
 )
 
 #: The kit's own dotted path, spelled in full for the reason the module docstring gives.
-PACKAGE = 'lab_commons.dev'
+PACKAGE = 'dev_lab.dev'
 
 #: One repo's spelling of the move side. Planted rather than imported, so nothing here depends on a
 #: consumer's vocabulary -- which is the fact the signature refuses to guess.
@@ -74,7 +74,7 @@ def test_the_kit_directory_resolves_and_is_the_directory_the_census_reads() -> N
 def test_an_unresolvable_package_refuses_instead_of_returning_a_directory() -> None:
     """THE CONTROL for the resolution: a kit that is not there must RAISE, never read as empty."""
     with pytest.raises(UnresolvedKit, match='does not resolve to a package'):
-        kit_directory(package='lab_commons.dev.no_such_kit_directory')
+        kit_directory(package='dev_lab.dev.no_such_kit_directory')
 
 
 def test_the_reach_arm_passes_only_when_every_declared_row_was_judged() -> None:

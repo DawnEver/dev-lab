@@ -3,7 +3,7 @@
 WHY EVERY CONTROL HERE IS PLANTED RATHER THAN READ OFF A TREE. The hazard is a command that LOOKS
 like a correct one: `uv run python -m x` and `uv run --no-sync python -m x` differ by one flag and by
 a whole environment. A scan run over a clean repo cannot tell whether it refuses that difference or
-merely never met it, so each row of the measured table in :mod:`lab_commons.dev.installdoor` is
+merely never met it, so each row of the measured table in :mod:`dev_lab.dev.installdoor` is
 planted here and pushed through the REAL classifier.
 
 THE THREE REAL DOORS, quoted verbatim from the checkouts they were measured in on 2026-09-17, are in
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.installdoor import (
+from dev_lab.dev.installdoor import (
     Delivery,
     UnlockedDoorsError,
     VacuousDoorScanError,
@@ -46,7 +46,7 @@ _KIT: tuple[str, ...] = ('lab-commons',)
 #: against a venv holding dev40 with the remote at dev42, measured 2026-09-17 with uv 0.12.5.
 _MEASURED: tuple[tuple[str, Delivery], ...] = (
     # consumer-b's pre-push hook. Reverted the kit on every push.
-    ('uv run python -m lab_commons.dev.githooks script bump-version', Delivery.UNLOCKED),
+    ('uv run python -m dev_lab.dev.githooks script bump-version', Delivery.UNLOCKED),
     # consumer-b/scripts/githooks/generate-changelog.sh. Reverted it on every commit.
     ('uv run python -m commitizen changelog', Delivery.UNLOCKED),
     # consumer-b/Makefile install-dev -- the door everyone suspected, and it was never the defect.

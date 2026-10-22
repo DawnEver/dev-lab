@@ -17,10 +17,10 @@ import inspect
 from pathlib import Path
 
 import pytest
-
-from lab_commons.dev.shards import Composed, compose, member_costs, pack, partition, population
-from lab_commons.dev.testfacts import VacuousScanError
 from lab_commons.outcomes import Conclusion
+
+from dev_lab.dev.shards import Composed, compose, member_costs, pack, partition, population
+from dev_lab.dev.testfacts import VacuousScanError
 
 #: A healthy set: three pieces, one tree, one env, all passing.
 _TREE = 'sha256:c0ffee'

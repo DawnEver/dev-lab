@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.branchset import BranchSet, apply_local
-from lab_commons.dev.famtests.branchset import (
+from dev_lab.dev.branchset import BranchSet, apply_local
+from dev_lab.dev.famtests.branchset import (
     BranchSetViolation,
     assert_local_branches_declared,
     assert_origin_branches_declared,
     merged_owed,
 )
-from lab_commons.dev.famtests.visibility import commit, plant_checkout
+from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session'}))

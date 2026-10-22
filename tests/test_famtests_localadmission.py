@@ -1,6 +1,6 @@
 """THE LOCAL-ADMISSION SCANNER, on a planted source and on this repo's own trees.
 
-This repo IS the single source, so :mod:`lab_commons.dev.pushgate` is exempt -- and every other file
+This repo IS the single source, so :mod:`dev_lab.dev.pushgate` is exempt -- and every other file
 here, the famtest bodies included, must hold no copy of the rule.
 """
 
@@ -11,14 +11,14 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests import localadmission
+from dev_lab.dev import floors
+from dev_lab.dev.famtests import localadmission
 
 ROOT: Final = Path(__file__).resolve().parents[1]
-ROOTS: Final = (('src/lab_commons', '*.py'), ('tests', '*.py'))
+ROOTS: Final = (('src/dev_lab', '*.py'), ('tests', '*.py'))
 
 #: The single source itself, and this scanner, whose planted control carries the shape as data.
-EXEMPT: Final = ('src/lab_commons/dev/pushgate.py', 'src/lab_commons/dev/famtests/localadmission.py')
+EXEMPT: Final = ('src/dev_lab/dev/pushgate.py', 'src/dev_lab/dev/famtests/localadmission.py')
 
 #: MEASURED 2026-10-04: 334 files over :data:`ROOTS`; set below the population.
 FILE_FLOOR: Final = 300
@@ -34,7 +34,7 @@ def test_no_file_in_this_repo_keeps_a_local_admission_rule() -> None:
 
 
 def test_the_single_source_itself_would_convict_without_its_exemption() -> None:
-    scan = localadmission.take_scan(ROOT, roots=(('src/lab_commons/dev', 'pushgate.py'),))
+    scan = localadmission.take_scan(ROOT, roots=(('src/dev_lab/dev', 'pushgate.py'),))
     with pytest.raises(localadmission.LocalAdmission):
         localadmission.assert_no_local_admission(scan, floor=1)
 

@@ -16,11 +16,11 @@ from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from lab_commons.dev import forgeautosync
-from lab_commons.dev.forgeautosync import CONTEXT, sync
-from lab_commons.dev.forgeintegration import tick
-from lab_commons.dev.lanepolicy import Policy, policy_from
-from lab_commons.dev.sessionbranch import MERGED_BRANCH
+from dev_lab.dev import forgeautosync
+from dev_lab.dev.forgeautosync import CONTEXT, sync
+from dev_lab.dev.forgeintegration import tick
+from dev_lab.dev.lanepolicy import Policy, policy_from
+from dev_lab.dev.sessionbranch import MERGED_BRANCH
 
 POLICY = Policy(pr_merges_since='0' * 40, auto_sync=True)
 _MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"

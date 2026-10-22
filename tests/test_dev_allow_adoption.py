@@ -15,7 +15,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev.allow_adoption import (
+from dev_lab.dev.allow_adoption import (
     AllowAdoption,
     DeclaredAllow,
     UnarguedAllow,
@@ -30,22 +30,22 @@ from lab_commons.dev.allow_adoption import (
     self_refused,
     settings_problems,
 )
-from lab_commons.dev.autodoors import claude_rows
-from lab_commons.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
-from lab_commons.dev.hook_adoption import HookAdoption
-from lab_commons.dev.hooks import Remedy
-from lab_commons.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_LAYOUTS, venv_interpreter
+from dev_lab.dev.autodoors import claude_rows
+from dev_lab.dev.floors import FloorMisdeclared, FloorUnmet, SlackFloor
+from dev_lab.dev.hook_adoption import HookAdoption
+from dev_lab.dev.hooks import Remedy
+from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_LAYOUTS, venv_interpreter
 
 #: The verdict entry point BOTH labs hand-wrote, character for character, in their own settings
 #: files AND in their own `scripts/deny_rules.py`. The agreement is the evidence for `glob_for`.
-VERIFY = Remedy('verdict-entry-point', './.venv/Scripts/python.exe -m lab_commons.dev.verify')
+VERIFY = Remedy('verdict-entry-point', './.venv/Scripts/python.exe -m dev_lab.dev.verify')
 
 #: consumer-b's network remedy. It SPELLS the shape its own rule matches, so it carries an opening --
 #: the one case `self_refused` exists for.
 NETVERB = Remedy(
     'retry-wrapper',
-    './.venv/Scripts/python.exe -m lab_commons.dev.netverb -- <verb>',
-    allow=r'lab_commons\.dev\.netverb\b',
+    './.venv/Scripts/python.exe -m dev_lab.dev.netverb -- <verb>',
+    allow=r'dev_lab.dev\.netverb\b',
 )
 
 #: consumer-a' process-tree killer, as its own `deny-rules.json` reason spells the command.
@@ -76,7 +76,7 @@ def test_the_permission_block_carries_the_owned_worktree_dependency_doors() -> N
         '.claude/worktrees/lane/.venv/bin/python',
     ):
         assert any(fnmatchcase(f'{interpreter} scripts/gate/dep_sync.py --sync', pattern) for pattern in globs)
-        assert any(fnmatchcase(f'{interpreter} -m lab_commons.dev.dep --bootstrap lane', pattern) for pattern in globs)
+        assert any(fnmatchcase(f'{interpreter} -m dev_lab.dev.dep --bootstrap lane', pattern) for pattern in globs)
         assert not any(fnmatchcase(f'{interpreter} -m pip install arbitrary', pattern) for pattern in globs)
 
 
@@ -118,7 +118,7 @@ def _leading_wildcards(entries: Sequence[str]) -> tuple[str, ...]:
 #: real renderer, which is why the refusal is pinned rather than the row.
 METAVARIABLE_PREFIXED: Final = (
     '<repo>/.venv/Scripts/python.exe scripts/gate/runner.py',
-    '{root}/.venv/bin/python -m lab_commons.dev.verify',
+    '{root}/.venv/bin/python -m dev_lab.dev.verify',
 )
 
 
@@ -153,7 +153,7 @@ def test_the_glob_matches_the_row_two_repos_wrote_by_hand() -> None:
     an allow row that matches no command is indistinguishable from one nobody needed. The
     interpreter is normalised; everything either hand actually decided is preserved.
     """
-    assert glob_for(VERIFY.command) == 'Bash(./.venv/*/python* -m lab_commons.dev.verify *)'
+    assert glob_for(VERIFY.command) == 'Bash(./.venv/*/python* -m dev_lab.dev.verify *)'
 
 
 def test_both_platform_spellings_of_one_remedy_derive_the_same_row() -> None:
@@ -165,15 +165,15 @@ def test_both_platform_spellings_of_one_remedy_derive_the_same_row() -> None:
     checkout on the other platform and the only repair available to that reader reds the first one
     back. A glob is the one option that is TRUE on both platforms at once.
     """
-    tail = ' -m lab_commons.dev.verify'
+    tail = ' -m dev_lab.dev.verify'
     rendered = {glob_for('./' + venv_interpreter(os_name=name) + tail) for name in VENV_LAYOUTS}
-    assert rendered == {'Bash(./.venv/*/python* -m lab_commons.dev.verify *)'}
+    assert rendered == {'Bash(./.venv/*/python* -m dev_lab.dev.verify *)'}
 
 
 def test_a_metavariable_becomes_one_wildcard_and_no_trailing_star_is_doubled() -> None:
     """`<root-pid>` is the agent's own value; a command already ending in `*` gains no second one."""
     assert glob_for(SWEEP.command) == 'Bash(.venv/*/python* scripts/gate/stop_sweep.py --pid *)'
-    assert glob_for(NETVERB.command) == 'Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)'
+    assert glob_for(NETVERB.command) == 'Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)'
 
 
 def test_a_root_token_never_ships_literally() -> None:
@@ -190,7 +190,7 @@ def test_a_remedy_that_is_all_metavariable_derives_nothing() -> None:
 def test_one_row_per_remedy_naming_every_rule_it_answers() -> None:
     """A repo with one verdict command gets ONE row, and it says both rules it is the exit from."""
     assert derived_entries(CONSUMER_C) == {
-        'Bash(./.venv/*/python* -m lab_commons.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
+        'Bash(./.venv/*/python* -m dev_lab.dev.verify *)': ('BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY'),
         INTERPRETER_ALLOW_ENTRY: (INTERPRETER_RULE,),
     }
 
@@ -204,8 +204,8 @@ def test_a_rule_declared_absent_derives_no_row() -> None:
 def test_a_needs_none_rule_is_never_derived_from() -> None:
     """GIT-STASH, PUSH-FORCE and WORKTREE-BASE-IS-EXPLICIT have PROSE exits, so nothing is guessed."""
     assert set(derived_entries(CONSUMER_B)) == {
-        'Bash(./.venv/*/python* -m lab_commons.dev.verify *)',
-        'Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)',
+        'Bash(./.venv/*/python* -m dev_lab.dev.verify *)',
+        'Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)',
         INTERPRETER_ALLOW_ENTRY,  # the ONE needs-none exit that is a row: the owner's interpreter spelling
     }
 
@@ -228,7 +228,7 @@ def test_a_declared_row_may_not_restate_a_derived_one() -> None:
         AllowAdoption(
             app_name='consumer_b',
             adoption=CONSUMER_C,
-            declared=(DeclaredAllow('Bash(./.venv/*/python* -m lab_commons.dev.verify *)', 'the verdict'),),
+            declared=(DeclaredAllow('Bash(./.venv/*/python* -m dev_lab.dev.verify *)', 'the verdict'),),
         )
 
 
@@ -237,7 +237,7 @@ def test_provenance_says_which_population_each_row_came_from() -> None:
     allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     seen = provenance(allow)
     assert seen['Bash(*yarn preview*)'] == 'declared: the docs preview server'
-    assert seen['Bash(./.venv/*/python* -m lab_commons.dev.netverb -- *)'] == 'derived from GIT-NETWORK-VERB'
+    assert seen['Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)'] == 'derived from GIT-NETWORK-VERB'
 
 
 #: A remedy spelling the very shape its own rule matches, with NO opening. `RAW-PROCESS-KILL` is
@@ -366,7 +366,7 @@ def test_the_family_doors_ride_every_block_and_a_declared_copy_is_refused() -> N
     entries = allow_entries(allow)
     assert set(claude_rows(('scripts/gate/runner.py',))) <= set(entries)
     assert 'Bash(.venv/Scripts/python.exe scripts/gate/runner.py *)' in entries
-    assert provenance(allow)['Bash(.venv/*/python* -m lab_commons.dev.stoprun *)'].startswith('family door')
-    door = DeclaredAllow('Bash(.venv/*/python* -m lab_commons.dev.stoprun *)', 'a restated door')
+    assert provenance(allow)['Bash(.venv/*/python* -m dev_lab.dev.stoprun *)'].startswith('family door')
+    door = DeclaredAllow('Bash(.venv/*/python* -m dev_lab.dev.stoprun *)', 'a restated door')
     with pytest.raises(UnarguedAllow):
         AllowAdoption('consumer_c', CONSUMER_C, (door,))

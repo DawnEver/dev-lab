@@ -6,7 +6,7 @@ indistinguishable from a tree with nothing wrong in it. Every guard here takes i
 this module and hands the count to :func:`assert_floor`, so the vacuous-green shape has exactly one
 place to be refused instead of one per guard.
 
-TRACKED RATHER THAN MERELY PRESENT, for the reason `lab_commons.dev.rules.tracked_files` gives: a
+TRACKED RATHER THAN MERELY PRESENT, for the reason `dev_lab.dev.rules.tracked_files` gives: a
 file that exists only in one working copy is not a file the fleet has, so a guarantee resting on it
 is a guarantee nobody else can reproduce. A tracked path that is missing from the working tree is
 DROPPED rather than read -- that is a fact about this checkout, not about the repo -- and the floor
@@ -20,7 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev.rules import tracked_files
+from dev_lab.dev.rules import tracked_files
 
 #: The repo root: this file is ``<root>/tests/_arch_corpus.py``.
 ROOT: Final = Path(__file__).resolve().parents[1]

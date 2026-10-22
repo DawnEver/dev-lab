@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import mergeaudit
-from lab_commons.dev.mergeaudit import ALTERED, CONFLICTED, LOST, Deviation
+from dev_lab.dev import mergeaudit
+from dev_lab.dev.mergeaudit import ALTERED, CONFLICTED, LOST, Deviation
 
 _GIT = shutil.which('git') or 'git'
 
@@ -207,7 +207,7 @@ def test_git_runs_the_check_at_commit_time_and_refuses_an_unnamed_loss(repo: Pat
     """END TO END through git's own commit-msg hook: the merge commit is never created."""
     hook = repo / '.git' / 'hooks' / 'commit-msg'
     python = Path(sys.executable).as_posix()
-    hook.write_text(f'#!/bin/sh\nexec "{python}" -m lab_commons.dev.mergeaudit "$1"\n', encoding='utf-8')
+    hook.write_text(f'#!/bin/sh\nexec "{python}" -m dev_lab.dev.mergeaudit "$1"\n', encoding='utf-8')
     hook.chmod(0o755)
     _pending_merge_dropping_b(repo)
     before = _git(repo, 'rev-parse', 'HEAD')
@@ -231,7 +231,7 @@ def test_git_merge_itself_runs_the_check_on_a_clean_merge(repo: Path) -> None:
     python = Path(sys.executable).as_posix()
     seen = repo / '.git' / 'hook-ran'
     hook.write_text(
-        f'#!/bin/sh\necho ran > "{seen.as_posix()}"\nexec "{python}" -m lab_commons.dev.mergeaudit "$1"\n',
+        f'#!/bin/sh\necho ran > "{seen.as_posix()}"\nexec "{python}" -m dev_lab.dev.mergeaudit "$1"\n',
         encoding='utf-8',
     )
     hook.chmod(0o755)

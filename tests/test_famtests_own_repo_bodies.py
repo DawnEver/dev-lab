@@ -8,9 +8,9 @@ import pytest
 from _famconfig_pyproject_section_delta import PYPROJECT_SECTION_DELTAS
 from _famconfig_section_delta import SECTION_DELTAS
 
-from lab_commons.dev.devdocs import CANONICAL_TREE, pointer_table
-from lab_commons.dev.famtests.configrender import assert_every_section_is_owned
-from lab_commons.dev.famtests.devdocs import assert_the_index_holds_the_live_table
+from dev_lab.dev.devdocs import CANONICAL_TREE, pointer_table
+from dev_lab.dev.famtests.configrender import assert_every_section_is_owned
+from dev_lab.dev.famtests.devdocs import assert_the_index_holds_the_live_table
 
 ROOT = Path(__file__).resolve().parents[1]
 

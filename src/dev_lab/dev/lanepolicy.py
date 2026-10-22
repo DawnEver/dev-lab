@@ -1,0 +1,82 @@
+"""The names a repo declares for its branches, in ``[tool.lab_commons.integrator]`` -- names only, never a rule.
+
+A LEAF: the integrator's queue, push admission, the forge tick and the record attacher all read the
+same declaration, and none of them may import another just to learn a branch name. Which origin
+branches are CHILDREN is not a name but a rule, and it is the schedule's one rule
+(``[tool.lab_commons.schedule] classes_by_ref``, :meth:`lab_commons.compute.model.Schedule.class_of`).
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final
+
+from lab_commons.hpc.declared import pyproject_at
+from lab_commons.hpc.retired import RETIRED
+
+__all__ = ['Policy', 'load_policy', 'policy_at', 'policy_from']
+
+_TABLE: Final = 'integrator'
+
+
+@dataclass(frozen=True)
+class Policy:
+    """What a consumer declares in ``[tool.lab_commons.integrator]``: names only, never a rule."""
+
+    #: The coordination branch: only the integrator merges into it, and every PR targets it.
+    integration: str = 'integrate/main'
+    #: The stable branch: moved ONLY by fast-forward to an integration commit whose parts are full PASS.
+    trunk: str = 'main'
+    #: The test trees :mod:`dev_lab.dev.mergeaudit` reads when a merge is committed.
+    test_roots: tuple[str, ...] = ('tests',)
+    #: INTEGRATION-IS-MERGES-ONLY holds for every first-parent commit of the integration branch after this sha
+    #: (:mod:`dev_lab.dev.sessionbranch`); a push that CREATES the branch is refused while it is ``''``.
+    merges_only_since: str = ''
+    #: A push of any other branch more than this many commits behind ``origin/<integration>`` is refused
+    #: (:mod:`dev_lab.dev.behindpush`); ``forge serve`` raises an ``integration`` alarm for a child branch
+    #: past it (:mod:`dev_lab.dev.forgeintegration`).
+    behind_max: int = 20
+    #: INTEGRATION-TAKES-ONLY-FORGE-MERGES from this sha on: the forge merges a PR into the integration branch
+    #: server-side once it is green (:mod:`dev_lab.dev.forgemerge`), and a client push adding any commit to
+    #: it is refused (:mod:`dev_lab.dev.sessionbranch`). ``''``: the integrator merges and pushes.
+    pr_merges_since: str = ''
+    #: AUTO-SYNC: the serve tick merges integration INTO a behind ephemeral PR head and pushes it
+    #: (:mod:`dev_lab.dev.forgeautosync`). Off unless declared.
+    auto_sync: bool = False
+    #: A head committed more recently than this duration is not synced: a live author is not raced.
+    auto_sync_quiet: str = '10 min'
+    #: FORGE NOTICES (:mod:`dev_lab.dev.forgenotice`): a notice whose head saw no new push this long after it
+    #: opened goes to the integrator.
+    notice_escalate: str = '2 h'
+    #: A PR head whose parts are still unsettled this long after its commit is a ``stall`` notice.
+    notice_stall: str = '6 h'
+
+
+def load_policy(root: Path) -> Policy:
+    """*root*'s working-tree ``[tool.lab_commons.integrator]``; defaults when it has no manifest."""
+    manifest = root / 'pyproject.toml'
+    return policy_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Policy()
+
+
+def policy_at(root: Path, rev: str) -> Policy:
+    """The ``[tool.lab_commons.integrator]`` commit or tree *rev* of *root* carries -- never the working tree's."""
+    return policy_from(pyproject_at(root, rev), f'{rev}:pyproject.toml')
+
+
+def policy_from(text: str, origin: str) -> Policy:
+    """The policy *text* declares, defaults for what it omits; a retired or unknown key is refused naming *origin*."""
+    declared = tomllib.loads(text).get('tool', {}).get('lab_commons', {}).get(_TABLE, {})
+    spelled = {key: f'{_TABLE}.{key}' if f'{_TABLE}.{key}' in RETIRED else key for key in declared}
+    if retired := [f'{key} is retired: {RETIRED[name]}' for key, name in spelled.items() if name in RETIRED]:
+        msg = f'[tool.lab_commons.{_TABLE}] in {origin}: ' + '; '.join(retired)
+        raise ValueError(msg)
+    known = {field.name for field in dataclasses.fields(Policy)}
+    unknown = sorted(set(declared) - known)
+    if unknown:
+        msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
+        raise ValueError(msg)
+    declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
+    return Policy(**declared)

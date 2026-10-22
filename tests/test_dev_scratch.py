@@ -1,4 +1,4 @@
-"""``lab_commons.dev.scratch``: SCRATCH-IS-NEVER-COMMITTED on planted trees and real git checkouts."""
+"""``dev_lab.dev.scratch``: SCRATCH-IS-NEVER-COMMITTED on planted trees and real git checkouts."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ import time
 
 import pytest
 
-from lab_commons import launch
-from lab_commons.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
-from lab_commons.dev.scratch import (
+from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
+from dev_lab.dev.scratch import (
     SCRATCH_README,
     ScratchCommitted,
     assert_scratch_never_committed,
@@ -23,6 +22,7 @@ from lab_commons.dev.scratch import (
     scratch_reminder,
     staged_scratch,
 )
+from lab_commons import launch
 
 _DAY = 86400.0
 
@@ -121,7 +121,9 @@ def test_the_forge_body_holds_tracked_scratch_to_exactly_its_readme(tmp_path) ->
 def test_an_untracked_scratch_file_is_visible_to_git_and_no_stray(tmp_path) -> None:
     _repo(tmp_path)
     _plant(tmp_path, 'scratch/probe.py')
-    status = launch.run(['git', '-C', str(tmp_path), 'status', '--porcelain', '-uall'], capture_output=True, text=True)
+    status = launch.run(
+        ['git', '-C', str(tmp_path), 'status', '--porcelain', '-uall'], capture_output=True, text=True, encoding='utf-8'
+    )
     assert '?? scratch/probe.py' in status.stdout
     assert stray_refusal(tmp_path) is None
 

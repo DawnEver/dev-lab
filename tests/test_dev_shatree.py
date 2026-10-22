@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, make_repo, run_git
 
-from lab_commons.dev.diskusage import extended
-from lab_commons.dev.platformparts import record_directory
-from lab_commons.dev.shatree import TREE_PREFIX, TreeFailed, close_tree, open_tree, record_manifest, tree_path
-from lab_commons.dev.venvpath import current_os_name, venv_interpreter
+from dev_lab.dev.diskusage import extended
+from dev_lab.dev.platformparts import record_directory
+from dev_lab.dev.shatree import TREE_PREFIX, TreeFailed, close_tree, open_tree, record_manifest, tree_path
+from dev_lab.dev.venvpath import current_os_name, venv_interpreter
 
 
 def _two_commits(tmp_path: Path) -> tuple[Path, str, str]:

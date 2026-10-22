@@ -3,7 +3,7 @@
 An issue records intent: what should change and why. Its state (todo, in progress, ready, done) is derived from
 origin's refs and the forge's parts, never kept by hand. Reference it from commits (`Refs #N`, `Closes #N`),
 claim it with `forge issue claim N`, and use labels only for what the scheduler and the store read. Write
-issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](forge.md#issues-and-pull-requests-the-door)).
+issues only through `python -m dev_lab.dev.forge issue ...` ([the forge](forge.md#issues-and-pull-requests-the-door)).
 
 ## Linking a branch to an issue
 
@@ -12,12 +12,12 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 - **`Closes #N` goes on the commit that lands the change**; the forge closes the issue when that commit
   reaches the default branch.
 - The reference lives in the body, never in the conventional-commit subject. A malformed reference (`Refs#12`,
-  `closes 12`, `#12abc`) is warned about by the `issue-ref` commit-msg hook (`lab_commons.dev.issueref`), never
+  `closes 12`, `#12abc`) is warned about by the `issue-ref` commit-msg hook (`dev_lab.dev.issueref`), never
   refused.
 
 ## Claims
 
-- A claim is a comment `claim <branch>`, written by `python -m lab_commons.dev.forge issue claim N [--branch B]`.
+- A claim is a comment `claim <branch>`, written by `python -m dev_lab.dev.forge issue claim N [--branch B]`.
   Its provenance line `[<machine> · <agent> · <branch>]` says who claimed it, since every agent on a box shares
   one forge account.
 - A later claim by the same claimant replaces its earlier one. Two claims naming different branches are a
@@ -26,7 +26,7 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 
 ## The derived state
 
-`python -m lab_commons.dev.forge issue status N [--json]` computes it every time:
+`python -m dev_lab.dev.forge issue status N [--json]` computes it every time:
 
 | state | derived from |
 |---|---|
@@ -40,7 +40,7 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 
 ## Reds are area issues
 
-- `python -m lab_commons.dev.forge route <run-record>` groups a record's reds by AREA and keeps each area in one
+- `python -m dev_lab.dev.forge route <run-record>` groups a record's reds by AREA and keeps each area in one
   open issue titled `area:<name>`. The repo declares its areas once, in `pyproject.toml`:
 
   ```toml
@@ -62,7 +62,7 @@ issues only through `python -m lab_commons.dev.forge issue ...` ([the forge](for
 ## Issues never rot
 
 `forge serve` runs `forge tidy` on every host, every tick, for every repo it serves (user ruling 2026-10-15;
-`python -m lab_commons.dev.forge tidy --dry-run` shows the plan). Every rule is ON; a repo only tunes it in
+`python -m dev_lab.dev.forge tidy --dry-run` shows the plan). Every rule is ON; a repo only tunes it in
 `[tool.lab_commons.forge.issue_hygiene]` -- these are the defaults:
 
 ```toml

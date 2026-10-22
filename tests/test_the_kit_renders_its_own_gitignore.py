@@ -7,7 +7,7 @@ has ONE source in this package, and what closed the gap was the BASE growing the
 The module's old re-opening trigger ("when the unadopted set empties, adopt rather than deleting this
 arm") is exactly what happened; the arms below are the adoption's.
 
-NOTHING HERE RE-IMPLEMENTS THE KIT: every arm is a body from :mod:`lab_commons.dev.famtests.configrender`,
+NOTHING HERE RE-IMPLEMENTS THE KIT: every arm is a body from :mod:`dev_lab.dev.famtests.configrender`,
 the same ones the consumers parametrize, plus the one fact the old module was right to keep -- the
 hatch-vcs version file must stay ignored, because a committed one makes a build irreproducible from tags.
 """
@@ -21,8 +21,8 @@ from typing import Final
 
 from _famconfig_delta import DELTAS, GITIGNORE, REPO
 
-from lab_commons.dev.famconfig import RENDERED
-from lab_commons.dev.famtests.configrender import (
+from dev_lab.dev.famconfig import RENDERED
+from dev_lab.dev.famtests.configrender import (
     assert_artefact_is_rendered,
     assert_delta_is_not_a_fork,
     assert_every_base_is_accounted_for,
@@ -37,7 +37,7 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 RERENDER: Final = (
     "python -c \"import sys, pathlib; sys.path.insert(0, 'tests'); "
     'from _famconfig_delta import DELTAS, GITIGNORE; '
-    'from lab_commons.dev.famconfig import artefact_base, render; '
+    'from dev_lab.dev.famconfig import artefact_base, render; '
     "pathlib.Path(GITIGNORE).write_text(render(artefact_base(GITIGNORE), DELTAS[GITIGNORE]), encoding='utf-8')\""
 )
 

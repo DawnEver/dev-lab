@@ -11,9 +11,6 @@ import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from test_hpc_grants import GRANT, _snap
-
-from lab_commons.dev.forgeslurm import with_allocation
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import allocate as verb
 from lab_commons.hpc.allocation import (
@@ -31,6 +28,9 @@ from lab_commons.hpc.config import Cost, Policy
 from lab_commons.hpc.grants import Grant, Machine, Session
 from lab_commons.hpc.plan import allocate
 from lab_commons.hpc.slurm import FORGE_SESSION, Snapshot, parse_usage, stream_of
+from test_hpc_grants import GRANT, _snap
+
+from dev_lab.dev.forgeslurm import with_allocation
 
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 OTHER = Grant(user='you', hosts=('login.example',), slurm_account='acct-free')

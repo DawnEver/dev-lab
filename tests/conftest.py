@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-
 from lab_commons.box import BOX_ENV, CPU_ENV, INSIDE_ENV
 from lab_commons.config import CONFIG_ENV
 

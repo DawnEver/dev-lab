@@ -12,10 +12,10 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
 2. The forge produces its `tests/<part>` parts. Each tick (`forge integration`, and every `forge serve`), a PR
    whose every part stands PASS, whose head merges cleanly into `integrate/main`, and whose merge passes the
    merge audit is MERGED BY THE FORGE: a merge commit carrying `Merged-Branch: <head>` and `Forge-Pull: <N>`
-   (`lab_commons.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
+   (`dev_lab.dev.forgemerge`), the `pr/*` head deleted with it. Otherwise its one integration comment says
    what is missing -- on a conflict, "merge `integrate/main` into the branch".
 
-   SCARCE PARTS BY REACH (user ruling 2026-10-22, `lab_commons.dev.forgescarce`). A part whose need-set holds a
+   SCARCE PARTS BY REACH (user ruling 2026-10-22, `dev_lab.dev.forgescarce`). A part whose need-set holds a
    resource the repo declares scarce -- ONE table, `[tool.lab_commons.tests] scarce = ["femm", "jmag", ...]`, a
    subset of `resources` -- is required of a PR only when a path of `merge-base..head` reaches one of its test
    files (the carry's footprint rule; the files are read off the `handed` map of the record the head's
@@ -30,7 +30,7 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    the fix cannot arrive through a PR. A direct push is admitted only when EVERY new first-parent commit
    carries a `Break-Glass: <reason>` trailer. No env var or config flag opens it, and an empty reason is
    refused at commit-msg. Every `forge serve` tick then keeps one `integration` issue per break-glass
-   commit past `pr_merges_since`, naming the commit and its reason (`lab_commons.dev.breakglass`). Put only
+   commit past `pr_merges_since`, naming the commit and its reason (`dev_lab.dev.breakglass`). Put only
    the emergency fix through it, follow up with a PR for anything else, and close the notice by moving
    `pr_merges_since` past the commit in that PR.
 
@@ -57,7 +57,7 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 ## Auto-sync: the forge syncs a behind PR head
 
 User ruling 2026-10-21: integration is automatic. Declared, each `forge serve` tick (the integration step,
-`lab_commons.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
+`dev_lab.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
 not contain `origin/<integration>`, and merges integration INTO the head in a worktree under the git directory:
 a merge commit (`Merged-Branch: <integration>`, first parent the head), never a rebase or a force, pushed under
 the head's own name. A lock left stale or conflicted by the merge is relocked inside the merge commit through
@@ -105,23 +105,23 @@ reads the forge and writes nothing else.
 
 Each tick, and nothing else:
 
-1. `python -m lab_commons.dev.forge queue` -- what is waiting, what is starved, which host is idle.
-2. `python -m lab_commons.dev.forge integration` -- every child's standing, the forge's merges, the branch rows.
+1. `python -m dev_lab.dev.forge queue` -- what is waiting, what is starved, which host is idle.
+2. `python -m dev_lab.dev.forge integration` -- every child's standing, the forge's merges, the branch rows.
 3. A PR stuck past an hour: its reason is already its one integration comment; route it to its author's session.
 4. `integrate promote <sha>` when an integration commit's every part stands PASS at scope `full`.
 5. Break-glass notices: read the `integration` issue each break-glass commit opened, and close it with the PR
    that moves `pr_merges_since` past the commit.
 6. A PR left open after its head landed is closed by the forge's tick; to do it now:
-   `python -m lab_commons.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
+   `python -m dev_lab.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
 
 A steward runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 
 ## The PR reviewer is advisory
 
-`PR-REVIEW-IS-ADVISORY` (`lab_commons.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
+`PR-REVIEW-IS-ADVISORY` (`dev_lab.dev.forgereview`). The forge only orchestrates: each open, non-draft PR
 into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
 `<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 2, read by
-`lab_commons.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
+`dev_lab.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
 of the findings and a `tests/review` commit status. **It gates nothing**: `tests/review` is never a part, so
 the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second
 tick on the same head runs nothing and posts nothing; a new head is reviewed afresh. A diff over the cap is
@@ -170,7 +170,7 @@ ONE-WRITER-PER-SESSION-BRANCH is git's own two mechanisms, and nothing is built 
 - **Remotely**, a plain push is compare-and-swap: origin refuses a non-fast-forward, so a writer on a stale
   tip loses and must merge first. SESSION-HISTORY-ONLY-GROWS refuses the force that would bypass it.
 
-The rest are refused at pre-push by the base row `session-branch` (`lab_commons.dev.sessionbranch`), from
+The rest are refused at pre-push by the base row `session-branch` (`dev_lab.dev.sessionbranch`), from
 local reads only -- no network call beyond the push itself -- with no escape hatch:
 
 | rule | refuses |
@@ -191,8 +191,8 @@ The CPU/box seat stays a RESOURCE lock; it decides no ownership.
 integration.
 
 ```
-python -m lab_commons.dev.forge sync                       # merge integration (and watched refs) if clean
-python -m lab_commons.dev.forge sync --watch origin/<ref>  # opt in to one more upstream; --unwatch, --list
+python -m dev_lab.dev.forge sync                       # merge integration (and watched refs) if clean
+python -m dev_lab.dev.forge sync --watch origin/<ref>  # opt in to one more upstream; --unwatch, --list
 ```
 
 - It trial-merges each upstream with `git merge-tree --write-tree`, reports how far behind and which files
@@ -211,12 +211,12 @@ with a comment saying why. Each child carries one PR at most.
 
 `ONE-SESSION-ONE-PR`: a launcher (`ccc`, `ccds`, `codc`; cc-config `scripts/shared/machine.mjs`) issues one
 `LAB_SESSION` per session, inherited by every child. The `lab-session` commit-msg row writes it as a
-`Lab-Session:` trailer (`lab_commons.dev.labsession`). A commit without `LAB_SESSION` is never refused, agent or
+`Lab-Session:` trailer (`dev_lab.dev.labsession`). A commit without `LAB_SESSION` is never refused, agent or
 human (user ruling 2026-10-21): it carries no trailer and the rule does not judge it, so a path no launcher
 starts (the VS Code Claude extension, the codex desktop app, `codc` attached to a shared app-server) keeps
 committing. Only a session that has an id is judged. `Claude-Session:` is prose nothing reads. `forge pr create`, and the `pr-admit` pre-push row for a
 NEW `pr/*` branch, refuse a head that shares a session with another open head and name that head's branch
-(`lab_commons.dev.pradmit`). A split is an entry of `pradmit.SPLITS` with its reason, under a pinned ceiling.
+(`dev_lab.dev.pradmit`). A split is an entry of `pradmit.SPLITS` with its reason, under a pinned ceiling.
 
 `NO-STACKED-PRS`: `forge pr create` refuses a head holding a commit of another open PR's head that integration
 does not hold (`trialmerge.shares_unmerged`). Wait for that PR to merge, or fold the work into it.
@@ -224,7 +224,7 @@ does not hold (`trialmerge.shares_unmerged`). Wait for that PR to merge, or fold
 ## The integration tick
 
 ```
-python -m lab_commons.dev.forge integration
+python -m dev_lab.dev.forge integration
 ```
 
 - Fetches origin and each PR head (`pull/N/head`).
@@ -237,7 +237,7 @@ python -m lab_commons.dev.forge integration
 
 ## The ready predicate
 
-`python -m lab_commons.dev.integrator queue [--json]` derives the merge queue from origin every time; nothing
+`python -m dev_lab.dev.integrator queue [--json]` derives the merge queue from origin every time; nothing
 stores it, so a duplicate or lost wake changes nothing.
 
 - **A child is absorbed** when `git cherry <origin/integration> <tip>` prints no `+` line; absorbed children
@@ -260,7 +260,7 @@ push admission row checks the same standing when the holder pushes it.
 
 `MERGE-DEVIATIONS-NAMED`: a merge may not lose or rewrite a test in silence.
 
-- `lab_commons.dev.mergeaudit` computes, per test, what a clean three-way merge would hold. A deviation is
+- `dev_lab.dev.mergeaudit` computes, per test, what a clean three-way merge would hold. A deviation is
   `LOST`, `ALTERED` or `CONFLICTED`, and each is named in the merge commit message:
   `Merge-Audit: <KIND> <test> -- <reason>`. A clean merge needs no line; a line naming no real deviation is
   refused.

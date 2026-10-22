@@ -19,7 +19,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev.docwidth import (
+from dev_lab.dev.docwidth import (
     INJECTED_BASENAMES,
     INJECTED_EXEMPT_PREFIXES,
     INJECTED_PREFIXES,
@@ -34,7 +34,7 @@ from lab_commons.dev.docwidth import (
     width_ratchet,
     width_remedy,
 )
-from lab_commons.dev.rules import tracked_files
+from dev_lab.dev.rules import tracked_files
 
 _ROOT: Final = Path(__file__).resolve().parents[1]
 
@@ -57,7 +57,7 @@ def test_is_injected_doc_matches_the_measured_default_corpus() -> None:
     assert is_injected_doc('CLAUDE.md')
     assert is_injected_doc('.claude/rules/taste.md')
     assert not is_injected_doc('.claude/memory/2026/09/16/note.md')
-    assert not is_injected_doc('src/lab_commons/dev/docwidth.py')
+    assert not is_injected_doc('src/dev_lab/dev/docwidth.py')
     assert frozenset({'AGENTS.md', 'CLAUDE.md'}) == INJECTED_BASENAMES
     assert INJECTED_PREFIXES == ('.claude/rules/',)
     assert INJECTED_EXEMPT_PREFIXES == ('.claude/memory/',)

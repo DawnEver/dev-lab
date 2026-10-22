@@ -1,4 +1,4 @@
-"""``lab_commons.dev.testfacts`` -- driven over REAL test files planted on disk.
+"""``dev_lab.dev.testfacts`` -- driven over REAL test files planted on disk.
 
 WHY PLANTED FILES AND NOT AST FRAGMENTS. The claim this module makes is about what a repo's ``tests/``
 tree says, and the two things that have actually gone wrong in the prior art are both file-shaped: a
@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.testfacts import (
+from dev_lab.dev.testfacts import (
     FAILING_CONTEXTS,
     VACUOUS_ASSERT_METHODS,
     Bucket,

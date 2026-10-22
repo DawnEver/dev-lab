@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.branchset import (
+from dev_lab.dev.branchset import (
     BranchSet,
     BranchSetNotDeclared,
     branchset_from,
@@ -21,13 +21,13 @@ from lab_commons.dev.branchset import (
     main,
     merge_candidates,
 )
-from lab_commons.dev.famtests.branchset import (
+from dev_lab.dev.famtests.branchset import (
     BranchSetViolation,
     assert_local_branches_declared,
     assert_origin_branches_declared,
     assert_the_planted_branchset_is_policed,
 )
-from lab_commons.dev.famtests.visibility import commit, plant_checkout
+from dev_lab.dev.famtests.visibility import commit, plant_checkout
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session'}))

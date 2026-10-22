@@ -1,4 +1,4 @@
-"""``lab_commons.dev.bounded`` -- the wall, the width, and the sentence, each driven for real.
+"""``dev_lab.dev.bounded`` -- the wall, the width, and the sentence, each driven for real.
 
 THE SUBJECT OF THE WALL IS THE CLOCK, so it is measured against a planted GRANDCHILD that really
 inherits the parent's stdout handle and really outlives the wall. That is the only shape that can
@@ -19,8 +19,9 @@ import sys
 import time
 
 import pytest
+from lab_commons.proc import process_tree
 
-from lab_commons.dev.bounded import (
+from dev_lab.dev.bounded import (
     BLAS_THREAD_VARS,
     NARROWED_FLOOR,
     blas_threads,
@@ -30,7 +31,6 @@ from lab_commons.dev.bounded import (
     run_bounded,
     wall_reason,
 )
-from lab_commons.proc import process_tree
 
 #: A parent that spawns a LONG-LIVED grandchild inheriting its stdout, then sleeps past the wall.
 #: The grandchild is what keeps the pipe open, which is the whole defect.
@@ -75,7 +75,7 @@ def test_a_run_that_finishes_inside_the_wall_is_not_disturbed() -> None:
 
 def test_the_blas_pool_is_shared_out_rather_than_handed_to_every_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     """The measured defect: N workers each building an N-core pool, 106 threads for 24 cores."""
-    monkeypatch.setattr('lab_commons.dev.bounded.logical_cores', lambda: 24)
+    monkeypatch.setattr('dev_lab.dev.bounded.logical_cores', lambda: 24)
     assert blas_threads(6) == 4
     assert blas_threads(24) == 1
     assert blas_threads(100) == 1, 'floor 1 -- a worker with zero threads computes nothing'

@@ -1,4 +1,4 @@
-"""``lab_commons.dev.famtests.platformskips`` -- planted skips both ways, then the kit's own tests."""
+"""``dev_lab.dev.famtests.platformskips`` -- planted skips both ways, then the kit's own tests."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.platformskips import PlatformSkip, assert_no_platform_skips, platform_skips
+from dev_lab.dev.famtests.platformskips import PlatformSkip, assert_no_platform_skips, platform_skips
 
 ROOT = Path(__file__).resolve().parents[1]
 

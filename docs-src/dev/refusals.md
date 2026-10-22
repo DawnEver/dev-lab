@@ -6,13 +6,13 @@ reasoning for one universal row (`INJECTED-TEXT-IS-PROGRESSIVE`); a repo-local r
 
 ## The shape of a refusal
 
-The budget is declared data in `lab_commons.dev.disclosure.BUDGETS`:
+The budget is declared data in `dev_lab.dev.disclosure.BUDGETS`:
 
 - `<ID>: <what was refused and why, as one clause>`
 - the exact command to run instead (the door);
 - `details: docs-src/dev/refusals.md#<id> (lab-commons)`, which points at the section below.
 
-When a command targets another repo, the engine adds one header line naming that repo. `lab_commons.dev.famtests.injectedtext` runs the budget in a consumer's suite. `{remedy}` in an exit is the consuming repo's own door.
+When a command targets another repo, the engine adds one header line naming that repo. `dev_lab.dev.famtests.injectedtext` runs the budget in a consumer's suite. `{remedy}` in an exit is the consuming repo's own door.
 
 ## BARE-TEST-INVOCATION
 
@@ -22,17 +22,17 @@ When a command targets another repo, the engine adds one header line naming that
 ## FORGE-WRITE-VIA-CLI
 
 - **Why it is refused.** a forge write through any client but the family door carries no PROVENANCE. The forge records only the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR written this way cannot say which machine or which agent wrote it. The family door opens every body it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.
-- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m lab_commons.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the steward`s to make: report it rather than reaching for another client.
+- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the steward`s to make: report it rather than reaching for another client.
 
 ## FORGE-WRITE-VIA-GH-API
 
 - **Why it is refused.** a forge write through any client but the family door carries no PROVENANCE. The forge records only the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR written this way cannot say which machine or which agent wrote it. The family door opens every body it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.
-- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m lab_commons.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the steward`s to make: report it rather than reaching for another client.
+- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the steward`s to make: report it rather than reaching for another client.
 
 ## FORGE-WRITE-VIA-HTTP
 
 - **Why it is refused.** a forge write through any client but the family door carries no PROVENANCE. The forge records only the token`s login, and every agent on a box shares one token, so an issue, comment, close or PR written this way cannot say which machine or which agent wrote it. The family door opens every body it writes with `[<machine> · <agent> · <branch>]`, read from HARNESS_MACHINE / HARNESS_AGENT.
-- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m lab_commons.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the steward`s to make: report it rather than reaching for another client.
+- **The exit.** Write through the family door: .venv/Scripts/python.exe or .venv/bin/python -m dev_lab.dev.forge issue create|comment|close, pr create (reads: issue list|view, pr view; token: auth login|status). A write the door has no verb for -- merge, edit, review -- is the steward`s to make: report it rather than reaching for another client.
 
 ## GIT-COMMIT-AMEND
 
@@ -67,7 +67,7 @@ When a command targets another repo, the engine adds one header line naming that
 ## PUSH-REMOTE-DELETE
 
 - **Why it is refused.** a main session may push without asking (MAIN-SESSION-PUBLISHES), and the allow row that opens the push is a glob -- it admits `--delete`, `-d`, `--prune`, `--mirror` and a `:<ref>` refspec exactly as readily as a plain push. Deleting a ref on origin is the one push nothing on the agent's side can undo: the local branch may already be gone, and another reader's verdict may cite the deleted tip. A raw delete checks nothing first; the 2026-10-21 ruling opened deletion only where it is PROVABLY lossless.
-- **The exit.** LOSSLESS-DELETE: `python -m lab_commons.dev.branchprune delete <branch>...` fetches, deletes only when every commit on the branch is on integration or on another live origin branch / open PR head (naming that container), and otherwise refuses naming the commits that would be lost. Local cleanup stays a door: `python -m lab_commons.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
+- **The exit.** LOSSLESS-DELETE: `python -m dev_lab.dev.branchprune delete <branch>...` fetches, deletes only when every commit on the branch is on integration or on another live origin branch / open PR head (naming that container), and otherwise refuses naming the commits that would be lost. Local cleanup stays a door: `python -m dev_lab.dev.branchset --apply` deletes merged LOCAL branches only and lists origin's.
 
 ## PUSH-NO-VERIFY
 
@@ -92,7 +92,7 @@ When a command targets another repo, the engine adds one header line naming that
 ## BARE-INTERPRETER
 
 - **Why it is refused.** a bare `python`/`py`, `uv run` or `uvx` runs an interpreter somebody else chose -- the PATH's, or uv's managed one -- not this checkout's venv. `uv run` may also mutate the checkout's environment outside the checked dependency door. Each worktree owns `.venv`; main's environment belongs only to main, never to an unpopulated lane.
-- **The exit.** Run this checkout's own venv interpreter: `.venv/Scripts/python.exe <args>` on Windows or `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run `-m lab_commons.dev.dep --bootstrap <worktree>` to create the target's own environment. Use the repo-declared dependency-sync door (`scripts/gate/dep_sync.py` where supplied) for dependency changes. Agents may run these specific checked doors; this does not permit arbitrary installers or silent main-environment mutation. A repo-declared CLI stays allowed.
+- **The exit.** Run this checkout's own venv interpreter: `.venv/Scripts/python.exe <args>` on Windows or `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run `-m dev_lab.dev.dep --bootstrap <worktree>` to create the target's own environment. Use the repo-declared dependency-sync door (`scripts/gate/dep_sync.py` where supplied) for dependency changes. Agents may run these specific checked doors; this does not permit arbitrary installers or silent main-environment mutation. A repo-declared CLI stays allowed.
 
 ## RECURSIVE-GREP
 
@@ -101,7 +101,7 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## REPORTS-LIVE-IN-MEMORY
 
-- **Why it is refused.** User ruling 2026-10-11: `output/` holds only what a program can regenerate (run logs, run records, measurements, charts, caches). A report a person or agent writes -- audit, analysis, design, plan, findings, workflow write-up -- cannot be regenerated, so under `output/` it is aged out, swept, and never indexed. Refused: a Write/Edit of a `*.md` under any `output/` segment (`lab_commons.dev.reportplace`, via the `codeplace` write hook) and a shell redirect, `tee`, `Out-File` or `Set-Content` creating one. A program writing its own Markdown is unaffected: it writes through no agent tool.
+- **Why it is refused.** User ruling 2026-10-11: `output/` holds only what a program can regenerate (run logs, run records, measurements, charts, caches). A report a person or agent writes -- audit, analysis, design, plan, findings, workflow write-up -- cannot be regenerated, so under `output/` it is aged out, swept, and never indexed. Refused: a Write/Edit of a `*.md` under any `output/` segment (`dev_lab.dev.reportplace`, via the `codeplace` write hook) and a shell redirect, `tee`, `Out-File` or `Set-Content` creating one. A program writing its own Markdown is unaffected: it writes through no agent tool.
 - **The exit.** Write it as a dated memory entry: `.claude/memory/<yyyy>/<mm>/<dd>/<slug>.md` with the MEMORY-SHAPE frontmatter (name, description, created, accessed, tags, metadata).
 
 ## SUBAGENT-NO-PUSH
@@ -111,4 +111,4 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## Cross-repo refusals
 
-When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `lab_commons.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.lab_commons.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.
+When a refused command targets a repo other than the session's (its cwd, `cd X &&`, `git -C X`), the engine in `dev_lab.dev.agenthooks` adds one header line. If the target repo declares a door for the rule in its pyproject `[tool.lab_commons.doors]`, the header names that door and the target repo's exit replaces the session's. If it declares none, the header says so, and the refusal below it is the session repo's: any repo file it names belongs to the session repo and may not exist in the target.

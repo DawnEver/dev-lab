@@ -5,8 +5,8 @@ The rule this guards -- no CJK character in tracked source outside `.claude/memo
 hold: a PLANTED CONTROL through the REAL scanner, the OPPOSITE DIRECTION (a clean file, an exempt
 file, a binary file), and the DECLARED GAPS as a named set that may only shrink.
 
-LAB-COMMONS' OWN DECLARATION IS EMPTY. The two CJK sites this repo carried (`src/lab_commons/dev/
-_unit_tokens.py`, `src/lab_commons/dev/units.py` -- both direct quotations of a user ruling) were
+LAB-COMMONS' OWN DECLARATION IS EMPTY. The two CJK sites this repo carried (`src/dev_lab/dev/
+_unit_tokens.py`, `src/dev_lab/dev/units.py` -- both direct quotations of a user ruling) were
 translated to English in the same commit that added this guard, so `_DECLARED` below is the
 strictest form the ratchet can take and this test is the proof it still runs green on a clean tree.
 """
@@ -19,7 +19,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev.cjk import (
+from dev_lab.dev.cjk import (
     CJK_RANGES,
     EXEMPT_PREFIXES,
     Occurrence,
@@ -37,7 +37,7 @@ from lab_commons.dev.cjk import (
     scan_non_ascii,
     translation_source,
 )
-from lab_commons.dev.rules import tracked_files
+from dev_lab.dev.rules import tracked_files
 
 _ROOT: Final = Path(__file__).resolve().parents[1]
 
@@ -93,7 +93,7 @@ def test_exempted_matches_the_declared_prefixes_and_nothing_wider() -> None:
     assert exempted('.claude/memory/2026/09/16/x.md')
     assert exempted('attic/motor_solver/old.py')
     assert exempted('archived/thing.py')
-    assert not exempted('src/lab_commons/dev/cjk.py')
+    assert not exempted('src/dev_lab/dev/cjk.py')
     assert EXEMPT_PREFIXES == ('.claude/memory/', 'attic/', '/archived/')
 
 

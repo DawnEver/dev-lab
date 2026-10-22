@@ -2,7 +2,7 @@
 
 User ruling 2026-10-13 (light runs never queue): a light run is admitted beside a heavy part, and the
 OS scheduler is what keeps it responsive there. MEASURED, not asserted from the spawn arguments: a real
-child is started through :func:`lab_commons.dev.forgeproduce.below_normal` and its priority is read
+child is started through :func:`dev_lab.dev.forgeproduce.below_normal` and its priority is read
 back from the OS. PLANTED CONTROL: the same child started plainly reads normal priority.
 """
 
@@ -15,7 +15,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from lab_commons.dev.forgeproduce import BELOW_NORMAL_NICE, below_normal
+from dev_lab.dev.forgeproduce import BELOW_NORMAL_NICE, below_normal
 
 _SLEEP = [sys.executable, '-c', 'import time; time.sleep(60)']
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000

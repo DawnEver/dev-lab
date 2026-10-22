@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
-from lab_commons.dev.doorcensus import (
+from dev_lab.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
+from dev_lab.dev.doorcensus import (
     CensusRowError,
     Declined,
     DoorDriftError,
@@ -251,10 +251,10 @@ def test_the_guard_passes_and_refuses_over_the_same_planted_family(tmp_path: Pat
 
 def test_the_kit_table_holds_only_the_kit_and_clears_its_floors() -> None:
     """The kit declares its OWN doors and nobody else's -- a consumer's row here is a fact stored in the wrong repo."""
-    assert {row.repo for row in DOORS} == {'lab-commons'}
+    assert {row.repo for row in DOORS} == {'dev-lab'}
     assert len({row.repo for row in DOORS}) >= REPO_FLOOR
     assert len(DOORS) >= DOOR_FLOOR, len(DOORS)
-    assert rows_for('lab-commons', DOORS) == DOORS
+    assert rows_for('dev-lab', DOORS) == DOORS
 
 
 def test_the_table_declares_no_path_twice() -> None:

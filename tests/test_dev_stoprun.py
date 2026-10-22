@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.servelock import was_stopped
-from lab_commons.dev.stoprun import (
+from dev_lab.dev.servelock import was_stopped
+from dev_lab.dev.stoprun import (
     SignaturesNotDeclared,
     declared_signatures,
     identify,
@@ -20,7 +20,7 @@ from lab_commons.dev.stoprun import (
 )
 
 _TABLE = {
-    10: (1, 'python -m lab_commons.dev.verify tests/a.py'),
+    10: (1, 'python -m dev_lab.dev.verify tests/a.py'),
     11: (10, 'python -m pytest -n 4'),
     12: (11, 'python worker'),
     20: (1, 'node server.js'),
@@ -46,14 +46,14 @@ def test_an_unidentified_or_missing_pid_is_refused_and_nothing_is_killed() -> No
 
 def test_the_real_table_and_kill_stop_a_planted_run_and_spare_a_bystander() -> None:
     sleeper = 'import time; time.sleep(120)'
-    run = subprocess.Popen([sys.executable, '-c', sleeper, '-m', 'lab_commons.dev.verify'])
+    run = subprocess.Popen([sys.executable, '-c', sleeper, '-m', 'dev_lab.dev.verify'])
     bystander = subprocess.Popen([sys.executable, '-c', sleeper])
     try:
         # A child seen between fork and exec still carries THIS process's command line, so the
         # table is read until the planted run shows its own -- the race one CI leg lost.
         table = process_table()
         for _ in range(100):
-            if 'lab_commons.dev.verify' in table.get(run.pid, (0, ''))[1]:
+            if 'dev_lab.dev.verify' in table.get(run.pid, (0, ''))[1]:
                 break
             time.sleep(0.1)
             table = process_table()
@@ -127,14 +127,14 @@ def test_a_declared_signature_stops_a_planted_tree_and_spares_a_bystander(tmp_pa
 
 def test_a_blocking_pre_push_hook_is_a_run_this_door_stops() -> None:
     """A PUSH MUST NEVER BLOCK: the rule says kill it, so the door that kills must recognise it."""
-    assert identify('python.exe -m lab_commons.dev.githooks run pre-push origin url')
+    assert identify('python.exe -m dev_lab.dev.githooks run pre-push origin url')
     assert identify('python.exe scripts/gate/prepush_gate.py')
-    assert not identify('python.exe -m lab_commons.dev.githooks run pre-commit')
+    assert not identify('python.exe -m dev_lab.dev.githooks run pre-commit')
     assert not identify('git push origin main')
 
 
 _SERVE = {
-    30: (1, 'python -m lab_commons.dev.forge serve --lock x'),
+    30: (1, 'python -m dev_lab.dev.forge serve --lock x'),
     31: (30, 'python scripts/gate/runner.py part jmag --full'),
     32: (31, 'python -m pytest -n 4'),
 }

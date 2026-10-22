@@ -1,7 +1,7 @@
 """THE LIVE HALF: the kit's recorded selection re-measured against its own test tree, plus the kit's controls.
 
 `test_dev_collectscope.py` proves the reader can fail, over planted files. THIS file proves the CENSUS
-can -- every refusal of `lab_commons.dev.collectcensus` driven through the real function -- and
+can -- every refusal of `dev_lab.dev.collectcensus` driven through the real function -- and
 measures the one selection this repo makes. Each consumer declares its own selections and residue in
 its own tests and calls the same `assert_reaches` over its own checkout.
 
@@ -20,7 +20,7 @@ from typing import Final
 import pytest
 from _collect_census_rows import FILE_FLOORS, REPO_FLOOR, ROW_FLOOR, ROWS
 
-from lab_commons.dev.collectcensus import (
+from dev_lab.dev.collectcensus import (
     CollectRow,
     CollectRowError,
     ReachDriftError,
@@ -33,7 +33,7 @@ from lab_commons.dev.collectcensus import (
 )
 
 #: The repo under verification, read from its WORKING TREE.
-HERE: Final = 'lab-commons'
+HERE: Final = 'dev-lab'
 ROOT: Final = Path(__file__).resolve().parents[1]
 ROOTS: Final = {HERE: ROOT}
 
@@ -84,15 +84,15 @@ def test_a_row_refuses_a_caption_and_an_empty_selection() -> None:
     assert CollectRow(**good).key == 'planted[dev]'
     with pytest.raises(CollectRowError, match='below the floor'):
         CollectRow(**{**good, 'why': 'too short'})
-    with pytest.raises(CollectRowError, match='names no extra'):
-        CollectRow(**{**good, 'selected': ()})
+    # An empty selection is the base install, a real selection (dev-lab's own CI makes it).
+    assert CollectRow(**{**good, 'selected': ()}).key == 'planted[]'
 
 
 def _planted(unresolved: frozenset[str]) -> CollectRow:
     """One row over the repo this file runs in, so a planted control drives the REAL declared set."""
     return CollectRow(
         repo=HERE,
-        selected=('dev',),
+        selected=(),
         errors=frozenset(),
         degrades=frozenset(),
         unresolved=unresolved,
@@ -101,7 +101,7 @@ def _planted(unresolved: frozenset[str]) -> CollectRow:
 
 
 def test_a_residue_name_its_own_manifest_declares_is_convicted() -> None:
-    """THE PLANTED CONTROL, through the real guard and over lab-commons' REAL declared set.
+    """THE PLANTED CONTROL, through the real guard and over dev-lab's REAL declared set.
 
     `pytest` is planted as residue; the manifest declares `pytest-cov` and `pytest-mock`, so the
     derivation fires. Revert the guard and this row passes silently.

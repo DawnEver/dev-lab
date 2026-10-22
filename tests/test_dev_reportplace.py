@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks
-from lab_commons.dev.codeplace import main
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.reportplace import refuse_report
+from dev_lab.dev import agenthooks
+from dev_lab.dev.codeplace import main
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.reportplace import refuse_report
 
 
 @pytest.fixture

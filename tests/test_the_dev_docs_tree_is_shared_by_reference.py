@@ -11,14 +11,14 @@ WHY A BASE IS THE WRONG MECHANISM, stated as the property rather than as an opin
 `famconfig.Base` exists to keep N COPIES of one file agreeing -- it renders the shared part into
 every repo and diffs what came back. This tree has no copies to keep agreeing: each family page
 exists exactly ONCE, in the kit, and what a consumer holds is a POINTER TABLE rendered from
-:data:`lab_commons.dev.devdocs.PAGES`. Rendering a page into four repos is precisely the fork the
+:data:`dev_lab.dev.devdocs.PAGES`. Rendering a page into four repos is precisely the fork the
 reference removed, so adopting a base here would UNDO the migration rather than complete it.
 `TestTheFamilyPagesExistExactlyOnce` is that sentence as a measurement.
 
 WHAT RE-MEASURING FOUND THAT THE PROSE DID NOT, and it is why this module is not just a pin:
 
 * **The "generated" claim was a declaration that lies.** All four indexes SAY their table is what
-  `lab_commons.dev.devdocs.pointer_table` renders, "so a page renamed there does not leave this one
+  `dev_lab.dev.devdocs.pointer_table` renders, "so a page renamed there does not leave this one
   quietly wrong". Nothing outside this repo has ever called that function: `pointer_table` was run
   once on 2026-09-16 and its output PASTED. A rename upstream would have left three tables of dead
   links saying in their own text that they could not rot.
@@ -51,9 +51,9 @@ from _config_census import reachable_repos, read_at_head
 from _config_census_rows import REPO_PATHS
 from _famconfig_delta import DELTAS
 
-from lab_commons.dev.devdocs import CANONICAL_TREE, PAGES, pointer_table, slugs
-from lab_commons.dev.famconfig import BASES, ForkedDelta, artefact_base
-from lab_commons.dev.famtests.devdocs import COPY_CEILING, copied_fraction
+from dev_lab.dev.devdocs import CANONICAL_TREE, PAGES, pointer_table, slugs
+from dev_lab.dev.famconfig import BASES, ForkedDelta, artefact_base
+from dev_lab.dev.famtests.devdocs import COPY_CEILING, copied_fraction
 
 #: The dev index, spelled once. Every repo in the family keeps one and only this one is generated.
 INDEX: Final = 'index.md'
@@ -82,7 +82,7 @@ LAB_REPOS: Final[tuple[str, ...]] = ('consumer-b', 'consumer-c')
 CONSUMER_A: Final = 'consumer-a'
 
 #: Floors: the readings that would otherwise be vacuous if a reader found nothing. The copy reader and
-#: its ceiling are :mod:`lab_commons.dev.famtests.devdocs`' -- the same body a consumer's own suite
+#: its ceiling are :mod:`dev_lab.dev.famtests.devdocs`' -- the same body a consumer's own suite
 #: runs, so the census and the consumer cannot disagree about what a copy is.
 REPO_FLOOR: Final = 3
 RESIDUE_FLOOR: Final = 5

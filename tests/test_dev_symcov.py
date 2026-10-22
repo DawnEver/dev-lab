@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-import lab_commons.dev.symcov as symcov_module
-from lab_commons.dev.symcov import (
+import dev_lab.dev.symcov as symcov_module
+from dev_lab.dev.symcov import (
     IGNORED_DIRECTORIES,
     Coverage,
     Unreadable,
@@ -33,7 +33,7 @@ from lab_commons.dev.symcov import (
     survey,
     symbols_under,
 )
-from lab_commons.dev.testfacts import VacuousScanError
+from dev_lab.dev.testfacts import VacuousScanError
 
 
 def _plant(root: Path, name: str, body: str) -> Path:

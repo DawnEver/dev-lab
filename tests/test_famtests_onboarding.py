@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.onboarding import (
+from dev_lab.dev.famtests.onboarding import (
     OnboardingViolation,
     assert_repo_is_onboarded,
     assert_the_forge_takes_pull_requests,
@@ -26,7 +26,7 @@ integration = 'integrate/main'
 pr_merges_since = 'abc123'
 
 [tool.lab_commons.tests]
-produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
+produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 
 [tool.lab_commons.hooks]
 """

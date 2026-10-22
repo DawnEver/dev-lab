@@ -7,12 +7,12 @@ outside every scan, ignore rule and search the repository runs, and outside wher
 
 ## One fact, three mechanisms
 
-The location is spelled once: `lab_commons.dev.worktreeplace.WORKTREES_REL`.
+The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 
 | mechanism | where | what it refuses |
 |---|---|---|
-| PREVENT | deny row `WORKTREES-STAY-INSIDE` in `lab_commons.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` | `git [-C <dir>] worktree add` / `worktree move` / `git clone` whose target is not `.../.claude/worktrees/<name>`; any `..`; a clone with no explicit target |
-| DETECT | `lab_commons.dev.famtests.worktreeplace.assert_every_worktree_stays_inside(root=...)` | any `git worktree list --porcelain` entry (main checkout excepted) not inside `<main>/.claude/worktrees/`; the red names the `git worktree move` that fixes it |
+| PREVENT | deny row `WORKTREES-STAY-INSIDE` in `dev_lab.dev._deny_rows`, rendered into every repo's `.claude/hooks/deny-rules.json` | `git [-C <dir>] worktree add` / `worktree move` / `git clone` whose target is not `.../.claude/worktrees/<name>`; any `..`; a clone with no explicit target |
+| DETECT | `dev_lab.dev.famtests.worktreeplace.assert_every_worktree_stays_inside(root=...)` | any `git worktree list --porcelain` entry (main checkout excepted) not inside `<main>/.claude/worktrees/`; the red names the `git worktree move` that fixes it |
 | IGNORE | the family `.gitignore` base's Claude section: `**/.claude/**` with only the shared directories re-included | a worktree showing up as untracked content of its own repository |
 
 - A deny pattern reads text: it cannot tell whether a `.claude` in the target belongs to this repository. The
@@ -20,12 +20,12 @@ The location is spelled once: `lab_commons.dev.worktreeplace.WORKTREES_REL`.
 
 ## Adopting it in a repo
 
-1. Upgrade `lab-commons` and re-render `.claude/hooks/deny-rules.json` (`lab_commons.dev.hook_adoption.render`).
+1. Upgrade `lab-commons` and re-render `.claude/hooks/deny-rules.json` (`dev_lab.dev.hook_adoption.render`).
 2. Add one test:
 
    ```python
    from pathlib import Path
-   from lab_commons.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
+   from dev_lab.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
 
 
    def test_every_worktree_stays_inside() -> None:

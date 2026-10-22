@@ -38,10 +38,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from lab_commons.dev.doorcensus import sibling_paths
-from lab_commons.dev.ruffwaivers import ruff_config as kit_ruff_config
-from lab_commons.dev.ruffwaivers import ruff_waivers
-from lab_commons.dev.worktreeplace import family_root
+from dev_lab.dev.doorcensus import sibling_paths
+from dev_lab.dev.ruffwaivers import ruff_config as kit_ruff_config
+from dev_lab.dev.ruffwaivers import ruff_waivers
+from dev_lab.dev.worktreeplace import family_root
 
 __all__ = [
     'MOVES',
@@ -89,7 +89,7 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 
 #: How long a `git` read of another checkout may take. Bounded because an unbounded wait here parks
 #: this repo's whole verdict on somebody else's index lock -- the shape
-#: `lab_commons.dev.famtests.untimedwaits` refuses before anything runs.
+#: `dev_lab.dev.famtests.untimedwaits` refuses before anything runs.
 _GIT_TIMEOUT_S: Final = 60
 
 #: Resolved once rather than looked up on PATH at every call.
@@ -129,8 +129,8 @@ def read_at_head(root: Path, relpath: str) -> str | None:
     """*relpath*'s content as COMMITTED in *root*, or ``None`` when that path is not committed there.
 
     **A DECLARATION IS A COMMITTED FACT, AND THIS IS NOT THIS MODULE'S INVENTION.** It is the rule
-    :func:`lab_commons.dev.rules.tracked_files` already states and
-    :mod:`lab_commons.dev.cjk` already turns down its corpus for: *a file that exists only in one
+    :func:`dev_lab.dev.rules.tracked_files` already states and
+    :mod:`dev_lab.dev.cjk` already turns down its corpus for: *a file that exists only in one
     working copy is not a file the fleet has, so a guarantee resting on it is one nobody else can
     reproduce.* A cross-repo census asks what the four repos DECLARE, and a working tree is what one
     box happens to hold this minute -- including another agent's half-finished edit.
@@ -138,7 +138,7 @@ def read_at_head(root: Path, relpath: str) -> str | None:
     WHAT THIS DELIBERATELY GIVES UP, so nobody reads it as free. A lane's uncommitted work is INVISIBLE
     here, so the census describes the last published state rather than the one its author is looking
     at. That is the correct trade for a guard whose whole subject is what the family has AGREED, and
-    it is the wrong trade for a guard about what this BOX has -- see :mod:`lab_commons.dev.hook_install`,
+    it is the wrong trade for a guard about what this BOX has -- see :mod:`dev_lab.dev.hook_install`,
     which reads the filesystem for exactly that reason.
     """
     found = subprocess.run(

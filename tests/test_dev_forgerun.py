@@ -19,18 +19,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-
 from lab_commons.compute import learned
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import artefacts, forgecarry, forgerun, forgerunstate, forgeship, forgeslurm
-from lab_commons.dev.forgealarm import LEASE, RUN, Alarm
-from lab_commons.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
-from lab_commons.dev.forgecoalesce import DRAINING
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.forgework import GITEA, ForgeCallFailed
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
-from lab_commons.dev.platformparts import ClusterPart, PartRefusal, part_context
-from lab_commons.dev.producer import RETRYABLE, ProducerExit, release_reason
 from lab_commons.hpc import records
 from lab_commons.hpc import run as hpc_run
 from lab_commons.hpc.account import ClusterAccount
@@ -41,6 +31,16 @@ from lab_commons.hpc.progress import Progress
 from lab_commons.hpc.run import NoRoom
 from lab_commons.hpc.slurm import FORGE_SESSION, Node, Quota, Snapshot, parse_usage
 from lab_commons.hpc.tree import NotSubmitted
+
+from dev_lab.dev import artefacts, forgecarry, forgerun, forgerunstate, forgeship, forgeslurm
+from dev_lab.dev.forgealarm import LEASE, RUN, Alarm
+from dev_lab.dev.forgeclaim import DESCRIPTION_LIMIT, OPEN, Claim, Work, assess
+from dev_lab.dev.forgecoalesce import DRAINING
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgework import GITEA, ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.platformparts import ClusterPart, PartRefusal, part_context
+from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)

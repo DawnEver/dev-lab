@@ -1,6 +1,6 @@
 """The restated-rules body over planted pages: a page that copies a registry statement reds, one citing its ID does not.
 
-The consumer-side control for :mod:`lab_commons.dev.famtests.restatedrules`. PLANTED CONTROL: the same
+The consumer-side control for :mod:`dev_lab.dev.famtests.restatedrules`. PLANTED CONTROL: the same
 page, with the copied sentence replaced by the rule's ID, passes -- so the red is the restatement and not
 the page.
 """
@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.restatedrules import (
+from dev_lab.dev.famtests.restatedrules import (
     RestatedRule,
     VacuousRestatementScan,
     assert_no_restated_rules,
     restated,
 )
-from lab_commons.dev.rules import RULES, rules_by_id
+from dev_lab.dev.rules import RULES, rules_by_id
 
 _RULE = rules_by_id(RULES)['MERGE-OR-DELETE']
 

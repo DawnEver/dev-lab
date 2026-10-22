@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.devdocs import (
+from dev_lab.dev.devdocs import (
     CANONICAL_TREE,
     PAGES,
     Page,

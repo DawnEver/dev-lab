@@ -1,4 +1,4 @@
-"""``lab_commons.dev`` — the OPT-IN gate, and the absence of a new dependency.
+"""``dev_lab.dev`` — the OPT-IN gate, and the absence of a new dependency.
 
 Two properties, and both are the kind that decay silently: that importing ``lab_commons`` never
 pulls this subpackage in (the same discipline that keeps ``lab_commons.em`` optional), and that
@@ -8,6 +8,8 @@ import statements for the second -- rather than against a restatement of them.
 """
 
 import ast
+import importlib.metadata
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -15,19 +17,23 @@ from pathlib import Path
 from lab_commons.file_io import read_toml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEV_ROOT = REPO_ROOT / 'src' / 'lab_commons' / 'dev'
+DEV_ROOT = REPO_ROOT / 'src' / 'dev_lab' / 'dev'
 
 
 def _declared_requirements() -> frozenset[str]:
-    """Every distribution ``[project] dependencies`` names, by its bare (unversioned) name."""
-    project = read_toml(REPO_ROOT / 'pyproject.toml')['project']
-    declared = list(project['dependencies'])
-    extras = project['optional-dependencies']
-    declared.extend(extras['dev'])
-    for requirement in extras['dev']:
+    """Every distribution ``[project] dependencies`` names, by its bare (unversioned) name.
+
+    A ``lab-commons[<extras>]`` requirement contributes what those extras install, read from the
+    INSTALLED lab-commons metadata: the extras are lab-commons' declaration, not this repo's.
+    """
+    declared = list(read_toml(REPO_ROOT / 'pyproject.toml')['project']['dependencies'])
+    for requirement in list(declared):
         if requirement.startswith('lab-commons['):
-            for capability in requirement.split('[', 1)[1].split(']', 1)[0].split(','):
-                declared.extend(extras[capability])
+            wanted = set(requirement.split('[', 1)[1].split(']', 1)[0].split(','))
+            for row in importlib.metadata.requires('lab-commons') or ():
+                marker = re.search(r"extra\s*==\s*['\"]([^'\"]+)['\"]", row)
+                if marker and marker.group(1) in wanted:
+                    declared.append(row)
     names = set()
     for requirement in declared:
         bare = requirement.split('[')[0].split('>')[0].split('<')[0].split('=')[0].split(';')[0]
@@ -56,7 +62,7 @@ class TestTheOptInGate:
         the real import graph said. ``-c`` inherits the environment, so the child resolves
         ``lab_commons`` exactly as the parent did.
         """
-        probe = 'import sys, lab_commons; print("lab_commons.dev" in sys.modules)'
+        probe = 'import sys, lab_commons; print("dev_lab.dev" in sys.modules)'
         result = subprocess.run(
             [sys.executable, '-c', probe],
             capture_output=True,
@@ -65,14 +71,13 @@ class TestTheOptInGate:
             errors='replace',
             check=True,
         )
-        assert result.stdout.strip() == 'False', 'importing lab_commons pulled lab_commons.dev in'
+        assert result.stdout.strip() == 'False', 'importing lab_commons pulled dev_lab.dev in'
 
-    def test_the_dev_extra_exists_and_names_the_tools_this_layer_drives(self) -> None:
-        """The extra IS the gate, so it has to be the one whose contents this layer actually uses."""
-        extras = read_toml(REPO_ROOT / 'pyproject.toml')['project']['optional-dependencies']
-        assert 'dev' in extras
-        named = {requirement.split('>')[0].split('=')[0].strip().lower() for requirement in extras['dev']}
-        assert {'pytest', 'ruff'} <= named
+    def test_the_base_install_names_the_tools_this_layer_drives(self) -> None:
+        """dev-lab IS the development system, so the tools it drives are its BASE install, not an extra."""
+        declared = read_toml(REPO_ROOT / 'pyproject.toml')['project']['dependencies']
+        named = {requirement.split('[')[0].split('>')[0].split('=')[0].strip().lower() for requirement in declared}
+        assert {'pytest', 'ruff', 'lab-commons'} <= named
 
     def test_no_dev_module_imports_anything_outside_stdlib_and_tier_one(self) -> None:
         """THE DEPENDENCY IS NOT ADDED, and the way to say so is to read the import statements.
@@ -80,13 +85,13 @@ class TestTheOptInGate:
         A ``pip install lab-commons`` must keep pulling exactly what it pulled before -- the
         library's own pyproject states that posture in its own words ("a consumer that wants only
         logging installs nothing heavier than this"). So every import this layer needs has to be
-        stdlib, ``lab_commons`` itself, or something ``[project] dependencies`` already names.
+        stdlib, ``lab_commons``/``dev_lab`` themselves, or something ``[project] dependencies`` already names.
 
         Read from the SOURCE rather than by importing, because a module that imported cleanly today
         would import cleanly tomorrow off a dependency another layer happened to install -- and the
         question is what this layer DECLARES, not what this box happens to have.
         """
-        allowed = _declared_requirements() | set(sys.stdlib_module_names) | {'lab_commons'}
+        allowed = _declared_requirements() | set(sys.stdlib_module_names) | {'lab_commons', 'dev_lab'}
         offenders = {
             source.name: sorted(_imported_roots(source) - allowed)
             for source in sorted(DEV_ROOT.glob('*.py'))

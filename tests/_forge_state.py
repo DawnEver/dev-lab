@@ -13,9 +13,9 @@ from __future__ import annotations
 import urllib.parse
 from typing import Any
 
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 API = '/api/v1/repos/o/r'
 FORGE = Forge('forge.example.org', 'o', 'r')

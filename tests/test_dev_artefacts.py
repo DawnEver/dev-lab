@@ -19,8 +19,8 @@ from typing import Any, cast
 
 import pytest
 
-from lab_commons.dev import artefacts
-from lab_commons.dev.artefacts import (
+from dev_lab.dev import artefacts
+from dev_lab.dev.artefacts import (
     ArtefactRefused,
     Config,
     FolderStore,
@@ -29,8 +29,8 @@ from lab_commons.dev.artefacts import (
     RcloneStore,
     Ref,
 )
-from lab_commons.dev.forgework import GITEA, Client, ForgeCallFailed
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.forgework import GITEA, Client, ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 
 SHA = 'a' * 40
 WHEN = datetime(2026, 10, 11, 9, 30, 5, tzinfo=UTC)

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from lab_commons.dev.family import is_member
+from dev_lab.dev.family import is_member
 
 
 def _repo(tmp_path: Path, text: str | None) -> Path:

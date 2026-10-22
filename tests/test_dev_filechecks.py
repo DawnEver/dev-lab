@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.filechecks import CHECKS, main
-from lab_commons.dev.githooks.table import base_rows
+from dev_lab.dev.filechecks import CHECKS, main
+from dev_lab.dev.githooks.table import base_rows
 
 _DEFECTS: dict[str, tuple[str, bytes, bytes]] = {
     'ast': ('m.py', b'def f(:\n', b'def f():\n    pass\n'),
@@ -70,7 +70,5 @@ def test_a_case_conflict_with_a_tracked_path_is_a_finding(tmp_path: Path, monkey
 
 
 def test_every_check_the_base_names_exists() -> None:
-    named = {
-        row['run'][3] for row in base_rows()['pre-commit'] if row['run'][1:3] == ['-m', 'lab_commons.dev.filechecks']
-    }
+    named = {row['run'][3] for row in base_rows()['pre-commit'] if row['run'][1:3] == ['-m', 'dev_lab.dev.filechecks']}
     assert named == set(CHECKS)

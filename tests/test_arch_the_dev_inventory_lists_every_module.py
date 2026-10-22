@@ -1,6 +1,6 @@
 """DECLARATION-LIES, over the one docstring that presents itself as an inventory.
 
-``lab_commons/dev/__init__.py`` opens with "WHAT IS HERE", a bulleted list of the subpackage's
+``dev_lab/dev/__init__.py`` opens with "WHAT IS HERE", a bulleted list of the subpackage's
 modules. A reader -- human or model -- takes that list as the surface. Nothing checked it.
 
 MEASURED 2026-09-16, and this is why the guard exists rather than a repair. Listing the directory
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from _arch_corpus import assert_floor
 
-import lab_commons.dev as dev_pkg
+import dev_lab.dev as dev_pkg
 
 #: The directory the inventory is about.
 DEV_DIR = Path(dev_pkg.__file__).resolve().parent
@@ -43,7 +43,7 @@ DEV_DIR = Path(dev_pkg.__file__).resolve().parent
 MODULE_FLOOR = 15
 
 #: How the docstring names a module: a Sphinx role over the fully-qualified path.
-_BULLET = re.compile(r':mod:`lab_commons\.dev\.([A-Za-z_][A-Za-z0-9_]*)`')
+_BULLET = re.compile(r':mod:`dev_lab.dev\.([A-Za-z_][A-Za-z0-9_]*)`')
 
 
 def public_modules(directory: Path) -> tuple[str, ...]:
@@ -72,7 +72,7 @@ def test_the_dev_inventory_names_every_public_module_and_only_those() -> None:
     assert_floor(len(present), MODULE_FLOOR, 'dev module inventory')
     problems = inventory_problems(dev_pkg.__doc__ or '', present)
     assert problems == (), (
-        "lab_commons/dev/__init__.py's inventory disagrees with the directory:\n  "
+        "dev_lab/dev/__init__.py's inventory disagrees with the directory:\n  "
         + '\n  '.join(problems)
         + '\nAdd the bullet with the module, or delete the bullet with it. An inventory that omits a '
         'module is a declaration that lies about the surface a consumer is importing.'
@@ -81,7 +81,7 @@ def test_the_dev_inventory_names_every_public_module_and_only_those() -> None:
 
 def test_a_planted_inventory_reds_on_both_sides() -> None:
     """THE PLANTED CONTROL, through the REAL matcher, one side at a time."""
-    doc = 'WHAT IS HERE:\n* :mod:`lab_commons.dev.here` -- a real one.\n* :mod:`lab_commons.dev.gone` -- retired.\n'
+    doc = 'WHAT IS HERE:\n* :mod:`dev_lab.dev.here` -- a real one.\n* :mod:`dev_lab.dev.gone` -- retired.\n'
     problems = inventory_problems(doc, ('here', 'unlisted'))
     assert problems == (
         'unlisted: a public module with no bullet in the dev inventory',
@@ -159,8 +159,8 @@ def test_no_inventory_bullet_exceeds_the_ceiling() -> None:
 
 def test_the_ceiling_is_not_vacuous_and_a_planted_overlong_bullet_is_refused() -> None:
     """THE CONTROL, BOTH WAYS: a real long bullet is counted, and a real short one is not."""
-    long_bullet = '* :mod:`lab_commons.dev.wordy` -- one.\n' + '  more prose.\n' * 4
-    short_bullet = '* :mod:`lab_commons.dev.terse` -- one line, and it ends here.\n'
+    long_bullet = '* :mod:`dev_lab.dev.wordy` -- one.\n' + '  more prose.\n' * 4
+    short_bullet = '* :mod:`dev_lab.dev.terse` -- one line, and it ends here.\n'
     spans = bullet_lengths(long_bullet + '\n' + short_bullet)
     assert spans == {'wordy': 5, 'terse': 1}, spans
     assert {n: v for n, v in spans.items() if v > 3} == {'wordy': 5}

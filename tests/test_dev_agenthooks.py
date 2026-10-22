@@ -37,9 +37,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import DENY_RULES, Remedy
+from dev_lab.dev import agenthooks
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, Remedy
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
@@ -51,10 +51,10 @@ pytestmark = pytest.mark.workstation
 ADOPTION = HookAdoption(
     app_name='lab-commons (suite)',
     remedies={
-        'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m lab_commons.dev.verify'),
-        'PUSH-NO-VERIFY': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m lab_commons.dev.verify'),
+        'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
+        'PUSH-NO-VERIFY': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
         'GIT-NETWORK-VERB': Remedy('retry-wrapper', 'sh {root}/scripts/hooks/with-retry.sh push'),
-        'RAW-PROCESS-KILL': Remedy('process-tree-killer', '.venv/Scripts/python.exe -m lab_commons.dev.stop --pid N'),
+        'RAW-PROCESS-KILL': Remedy('process-tree-killer', '.venv/Scripts/python.exe -m dev_lab.dev.stop --pid N'),
     },
 )
 
@@ -84,7 +84,7 @@ def test_a_plainly_denied_command_is_denied_with_its_remedy(rules: Path) -> None
     """The base case, and the reason text must carry the EXIT -- a sealed road gets routed around."""
     reason = agenthooks.decide('pytest tests/', rules)
     assert reason is not None, 'a bare pytest line was allowed; the guard refuses nothing'
-    assert 'lab_commons.dev.verify' in reason, f'denied with no exit to take: {reason!r}'
+    assert 'dev_lab.dev.verify' in reason, f'denied with no exit to take: {reason!r}'
 
 
 def test_an_ordinary_command_is_allowed(rules: Path) -> None:

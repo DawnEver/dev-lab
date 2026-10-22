@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.treedirt import Dirt, Kind, path_of, status_paths, verdict_dirt
+from dev_lab.dev.treedirt import Dirt, Kind, path_of, status_paths, verdict_dirt
 
 #: Resolved once, so the fixture drives the same git the module under test resolves.
 _GIT = shutil.which('git') or 'git'

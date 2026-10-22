@@ -1,6 +1,6 @@
 r"""THE RUFF SECTION BASE IS DRIVEN OVER THE LIVE TREES, and until this module it was driven over nothing.
 
-WHAT WAS WRONG, MEASURED 2026-09-18. `lab_commons.dev.famconfig` published `RUFF_SECTIONS`,
+WHAT WAS WRONG, MEASURED 2026-09-18. `dev_lab.dev.famconfig` published `RUFF_SECTIONS`,
 `section_base` and `section_problems` with 21 green tests, and every one of them drove a PLANTED
 file. Scanning ``tests/`` and ``src/`` for those three names returned the module that defines them
 and the kit's re-export -- nothing else. So the base could not have refused anything in any of the
@@ -38,8 +38,8 @@ from _config_census import reachable_repos
 from _config_census_rows import REPO_PATHS, REPOS
 from _famconfig_section_delta import RUFF_LINT, SECTION_DELTAS
 
-from lab_commons.dev._famconfig_ruff_rows import RUFF_SELECT, RUFF_SELECT_FLOOR
-from lab_commons.dev.famconfig import (
+from dev_lab.dev._famconfig_ruff_rows import RUFF_SELECT, RUFF_SELECT_FLOOR
+from dev_lab.dev.famconfig import (
     OWNED,
     RUFF_SECTIONS,
     SECTION_KEY_FLOOR,

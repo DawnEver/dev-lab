@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev.syncscope import (
+from dev_lab.dev.syncscope import (
     Scope,
     Selection,
     UnknownExtraError,
@@ -32,7 +32,7 @@ from lab_commons.dev.syncscope import (
 MANIFEST = """
 [project]
 name = "consumer-a"
-dependencies = ["numpy", "lab-commons @ git+https://gitea.example.org/Team/lab-commons.git"]
+dependencies = ["numpy", "lab-commons @ git+https://gitea.example.org/Team/lab-commons.git", "dev-lab @ git+https://gitea.example.org/Team/dev-lab.git"]
 
 [project.optional-dependencies]
 euclid = ["gmsh", "consumer-b[web] @ git+https://example.invalid/consumer-b.git"]
@@ -63,7 +63,7 @@ def test_an_extra_that_references_its_own_project_is_expanded() -> None:
 
 def test_the_verdict_set_is_derived_from_the_repos_own_pytest_configuration() -> None:
     """A plugin named in `addopts` is load-bearing: pytest exits 4 -- no verdict -- on an unknown option."""
-    assert verdict_set(MANIFEST) == {'pytest', 'pytest-xdist', 'pytest-timeout', 'ruff', 'lab-commons'}
+    assert verdict_set(MANIFEST) == {'pytest', 'pytest-xdist', 'pytest-timeout', 'ruff', 'dev-lab'}
 
 
 def test_a_manifest_naming_no_plugin_needs_only_the_runner_and_the_linter() -> None:
@@ -73,9 +73,9 @@ def test_a_manifest_naming_no_plugin_needs_only_the_runner_and_the_linter() -> N
 
 
 def test_the_kit_is_not_made_to_depend_on_itself() -> None:
-    """lab-commons declares no lab-commons; reading its own name into its verdict set would be a lie."""
-    kit = '[project]\nname = "lab-commons"\ndependencies = []\n\n[project.optional-dependencies]\ndev = ["pytest"]\n'
-    assert 'lab-commons' not in verdict_set(kit)
+    """dev-lab declares no dev-lab; reading its own name into its verdict set would be a lie."""
+    kit = '[project]\nname = "dev-lab"\ndependencies = []\n\n[project.optional-dependencies]\ndev = ["pytest"]\n'
+    assert 'dev-lab' not in verdict_set(kit)
 
 
 def test_the_incident_is_refused_a_bare_sync_strands_the_runner() -> None:

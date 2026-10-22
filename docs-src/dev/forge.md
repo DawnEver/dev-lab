@@ -2,7 +2,7 @@
 
 The forge (a self-hosted Gitea, or GitHub) is where every verdict lives. A pushed sha that lacks a
 `tests/<part>` status is work; a `forge serve` host claims it, runs the suite once and posts the result.
-You push, then read `python -m lab_commons.dev.forge queue` or `forge status list <sha>`. You never run a full
+You push, then read `python -m dev_lab.dev.forge queue` or `forge status list <sha>`. You never run a full
 suite to learn whether a sha is green, and you never wait for one to push.
 
 ## Parts
@@ -18,17 +18,17 @@ suite to learn whether a sha is green, and you never wait for one to push.
   (`platformparts.derived`). A new tool is a new marker and nothing else.
 - **A run** is one execution of one part's tests at one sha; its record is `run-<sha>-<part>-<req>.json.gz`
   (its `platform` key holds the part). An incremental part is its base part plus the re-run ids.
-- **Admission** is computed from parts and never stored (`lab_commons.dev.pushgate`): a lane and the
+- **Admission** is computed from parts and never stored (`dev_lab.dev.pushgate`): a lane and the
   integration branch need no part; the trunk needs `tests/base` and every part a part hands to, each a PASS
   at scope `full` -- every derived part green. An unreadable forge makes the trunk wait.
 - **One reader.** The integration tick, issue readiness and admission all read parts through
-  `lab_commons.dev.platformparts.standing`, which concludes PASS, FAIL or INCONCLUSIVE (unsettled).
+  `dev_lab.dev.platformparts.standing`, which concludes PASS, FAIL or INCONCLUSIVE (unsettled).
 - An INCONCLUSIVE run is no part and posts nothing. Which ids a part runs is its need-set over the repo's
   `[tool.lab_commons.tests] resources` ([HPC clusters](hpc.md#parts-by-need-set)).
 
 ## Producing parts: `forge serve`
 
-`python -m lab_commons.dev.forge serve` is the one call a crontab or harness makes on a producer host. It
+`python -m dev_lab.dev.forge serve` is the one call a crontab or harness makes on a producer host. It
 takes no mode: EVERY HOST SERVES EVERY CANDIDATE CLASS from one queue ([scheduling](#scheduling)). The rank
 decides ORDER and the admission decides FIT; nothing is reserved, lent or preempted (user ruling 2026-10-14).
 Each tick it:
@@ -46,24 +46,24 @@ Each tick it:
   `--lock` is `%LOCALAPPDATA%/lab-forge/serve.lock` on Windows, `<home>/.cache/lab-forge/serve.lock` elsewhere.
 - **A Windows workstation serves from ONE Scheduled Task**, `lab-forge-serve` (every 5 min, IgnoreNew, as
   you, only while logged on, hidden), written by [the workstation deploy](#deploy-a-windows-workstation). Its
-  action is the checkout's `pythonw.exe -m lab_commons.dev.workstation serve`, so NO console window opens:
+  action is the checkout's `pythonw.exe -m dev_lab.dev.workstation serve`, so NO console window opens:
   each child starts with `CREATE_NO_WINDOW` and every descendant inherits that windowless console. Output
   goes to `%LOCALAPPDATA%/lab-forge/serve.log` (rotated to `serve.log.1` at 4 MiB). Under the one serve
   lock it runs `forge serve` in each `[serve] repos` checkout in turn. **To stop it**, disable the Task --
   `schtasks /Change /TN lab-forge-serve /DISABLE` -- then stop a running serve with
-  `python -m lab_commons.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
+  `python -m dev_lab.dev.stoprun --pid <pid>`: its producers stop first and its claim is released as
   `error: stopped`.
 - **The producer argv is declared ONCE**, never typed: `[tool.lab_commons.tests] produce`, the argv after the
-  tree's interpreter, carrying `{part}` (`["-m", "lab_commons.dev.verify", "--part", "{part}"]`), read AT THE
+  tree's interpreter, carrying `{part}` (`["-m", "dev_lab.dev.verify", "--part", "{part}"]`), read AT THE
   CLAIMED SHA by `platformparts.producer_argv` with the claimed part filled in. It runs exactly that part's
   tests (`verify --part` selects them with one `-m`, `needsets.selecting`) and posts that part. A sha that
   declares no producer, or one never told its part, is not claimed, and the refusal names the key.
-- **A local part is judged in a tree at the claimed sha** (`lab_commons.dev.shatree`), as a cluster run is:
+- **A local part is judged in a tree at the claimed sha** (`dev_lab.dev.shatree`), as a cluster run is:
   `<main checkout>/.claude/worktrees/forge-<sha12>`, detached at the sha, with its submodules and its own
-  `.venv` (`-m lab_commons.dev.dep --bootstrap <tree>`). The declared argv runs there with that tree's
+  `.venv` (`-m dev_lab.dev.dep --bootstrap <tree>`). The declared argv runs there with that tree's
   interpreter, and the tree is removed once the run ends. The serving checkout's HEAD decides nothing about
   what is judged. A tree that cannot be built spawns nothing; the claim is released naming the step.
-- **Serve cleans its own storage every tick** (`lab_commons.dev.retention` runs what `lab_commons.dev.retentionplan`
+- **Serve cleans its own storage every tick** (`dev_lab.dev.retention` runs what `dev_lab.dev.retentionplan`
   decides; no cron line of its own). Files are the binding HPC resource, so the rules follow what each thing is
   FOR. One function says what is IN FLIGHT (`retentionplan.in_flight`): a sha a live run file names, a tree a
   queued or running Slurm job of the account works in (`squeue --me -o %Z` at or under `trees/<sha>`), or a sha
@@ -83,7 +83,7 @@ Each tick it:
   of the block or file quota the kept carry-source runs also go, oldest first (most files first when files
   bind), down to `target`, and a `storage` alarm is raised if still over. The policy is the kit defaults,
   overridden per key by the machine file's `[retention]` table (an unknown or retired key is refused). Preview:
-  `python -m lab_commons.dev.retention [--cluster]` is a DRY RUN: one line per path, then per rule paths, MB and
+  `python -m dev_lab.dev.retention [--cluster]` is a DRY RUN: one line per path, then per rule paths, MB and
   files, and usage now -> after for bytes and FILES; `--apply` deletes.
 - **An outdated kit refuses, never reads empty.** Every `[tool.lab_commons.<table>]` a judged commit declares
   must be one this lab-commons knows (`lab_commons.hpc.declared.KNOWN_TABLES`); an unknown table is refused
@@ -95,28 +95,28 @@ Each tick it:
   a commit's code and its exact dependencies are tested together and identical on every host, and the lock's
   hash keys the served venv. So a RUN judges its environment against the checkout's own lock and nothing
   else: `verify` refuses as STALE only when a git-installed package's commit differs from the one `uv.lock` at
-  HEAD pins (`lab_commons.dev.lockpins`) -- never against a dependency's remote tip, which would leave every
-  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`lab_commons.dev.lockcheck`) refuses a pushed commit
+  HEAD pins (`dev_lab.dev.lockpins`) -- never against a dependency's remote tip, which would leave every
+  commit locked before its dependency moved without a producible part. The `lock` pre-push row (`dev_lab.dev.lockcheck`) refuses a pushed commit
   that commits no lock, or that holds a requirement below the newest (an upper bound, an exact
   pin, a git rev) with no reason on its line or the comment line above. A reasoned range is the only way to
   stay below latest. Every push is judged on its pin alone (user ruling 2026-10-22): freshness is ONE party's job, the forge's --
   each serve tick relocks `origin/<integration>` itself through one `pr/relock-<dist>-<sha>` pull request
-  (`lab_commons.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. By hand, one
-  upgrades through the door `<venv python> -m lab_commons.dev.dep --lock-upgrade
+  (`dev_lab.dev.relock`), which merges like any other, and a lane takes it with `forge sync`. By hand, one
+  upgrades through the door `<venv python> -m dev_lab.dev.dep --lock-upgrade
   [ROOT]` (`uv lock --upgrade` under the same reasoned-hold rules, then a frozen sync of that checkout), then
   fixes, tests and commits. A
   resolution that cannot run (the network is down) refuses with its diagnosis; a deletion is never judged.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
   workstation's `workstation serve` fast-forwards lab-commons and then each `[serve]` repo to its upstream and
-  syncs its venv when `pyproject.toml` or `uv.lock` changed (`lab_commons.dev.workstation.refresh`); a cluster
+  syncs its venv when `pyproject.toml` or `uv.lock` changed (`dev_lab.dev.workstation.refresh`); a cluster
   account's cron line runs `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout, which checks
   out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
   (`lab_commons.hpc.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
   -- is released for that tick with its reason in the serve log, and the other repos are still served. The
   ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
   that adds a table, and that commit could then never reach the trunk.
-- **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
+- **The producer exit contract** (`dev_lab.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
   A box with no room for the producer is capacity, never a verdict: it exits `4`, so the claim goes back to
@@ -129,11 +129,11 @@ Each tick it:
 The counterpart of the cluster's `python -m lab_commons.hpc deploy`, run once per box, as the user who serves:
 
 ```
-uv run --no-project --with "lab-commons @ git+<forge>/lab-commons.git@integrate/main" -- python -m lab_commons.dev.workstation deploy --forge <forge> --repos lab-commons,<repo>,... --capabilities workstation,jmag:4 --dry-run
+uv run --no-project --with "lab-commons @ git+<forge>/lab-commons.git@integrate/main" -- python -m dev_lab.dev.workstation deploy --forge <forge> --repos lab-commons,<repo>,... --capabilities workstation,jmag:4 --dry-run
 ```
 
 **The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/lab-commons.git`
-anywhere and sign in, or `python -m lab_commons.dev.forge auth login`). The deploy only asks `git ls-remote` with
+anywhere and sign in, or `python -m dev_lab.dev.forge auth login`). The deploy only asks `git ls-remote` with
 prompting off, so it never reads or prints the credential, and with none stored it refuses naming this step.
 
 Read the `--dry-run` output (every action, plus the machine-file diff), then run it again without `--dry-run`.
@@ -144,7 +144,7 @@ A second run changes nothing. In order, it:
    refused together, each item with its remedy;
 2. clones each repo into `--root` (default `~/src`) at `--ref` (default `integrate/main`, the branch a serving kit
    follows), or fast-forwards an existing clean checkout. A dirty checkout is refused;
-3. bootstraps each `.venv` (`-m lab_commons.dev.dep --bootstrap`) where it is missing or the checkout moved, and
+3. bootstraps each `.venv` (`-m dev_lab.dev.dep --bootstrap`) where it is missing or the checkout moved, and
    installs each repo's hooks where they are not live;
 4. merges `[capabilities.<name>]` (`jmag:4` is `seats = 4`) and `[serve] repos, root` into
    `~/.config/lab-commons/config.toml`. Every other table, key and comment is kept;
@@ -179,14 +179,14 @@ serve (`lab_commons.hpc`) does not read the registry.
 - **Progress travels on the claim**: the owner re-posts ` -- building`, ` -- queued 3/93`,
   ` -- running 40/93 done 12/93`, ` -- publishing`, cut to the forge's 140 characters.
 - **NEWEST-HEAD-ONLY: a coalesced ref's run loses its pending tasks the tick its ref moves on, never a started one**
-  (user ruling 2026-10-22, `lab_commons.dev.forgerun`). For a class in `Schedule.coalesce`, a run whose sha is no
+  (user ruling 2026-10-22, `dev_lab.dev.forgerun`). For a class in `Schedule.coalesce`, a run whose sha is no
   longer its ref's tip has every not-yet-started task withdrawn (`scancel --state=PENDING`); its started tasks run
   to the end under a ` -- draining` claim, the tip waits behind it, and the tip's run carries what they finished.
   Then it is released as superseded naming the tip, with one alarm. Only a deliberate stop (`hpc.run.cancel_run`)
   kills a started task. Only a run already
   `publishing` its gathered record finishes. A ref of any other class is tested at every pushed sha: its run
   finishes and posts on its own sha, and the newer pushes are tested after it.
-- **Carry what no change can reach** (`lab_commons.dev.forgecarry`, `lab_commons.dev.footprint`). Each test
+- **Carry what no change can reach** (`dev_lab.dev.forgecarry`, `dev_lab.dev.footprint`). Each test
   file's FOOTPRINT is derived at the judged sha: itself, its conftest/`__init__` chain, its transitive in-repo
   imports (candidates, so an added shadow counts), `pyproject.toml`/`uv.lock`, the declared `everywhere`
   globs -- and EVERYTHING when a module in it reads the repo by path (`__file__`, a repo-path literal,
@@ -224,7 +224,7 @@ newest commit lacks, or a request issue.
   (`request`: a body naming `producer = "<name>"` and `sha = "<40-hex>"`; the producer is declared at that
   sha under `[tool.lab_commons.requests.<name>]` with `argv`, its need-set `needs` and its size `cpu`,
   `mem_gb`, `wall_h` (an unsized row is refused), admitted like a part and claimed on context `request/<n>`
-  -- `lab_commons.dev.forgerequest`). Publish one with `forge request <producer> --sha <sha>`, which refuses
+  -- `dev_lab.dev.forgerequest`). Publish one with `forge request <producer> --sha <sha>`, which refuses
   a sha origin does not serve or that commits no `uv.lock`. A host runs a request off origin's integration
   branch and trunk only for a login its machine file lists in `[requests] authors`; it waits, named, while a
   git source of its lock or submodules is unreachable here, and is told once on its issue after
@@ -305,7 +305,7 @@ its evidence ([HPC clusters](hpc.md#parts-by-need-set)).
 ## The queue
 
 ```
-python -m lab_commons.dev.forge queue [--json]
+python -m dev_lab.dev.forge queue [--json]
 ```
 
 The one status command, from the forge alone, on any machine with a forge credential. It fetches origin and
@@ -344,12 +344,12 @@ once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it l
 ## Records and the outbox
 
 - **Statuses wait in an outbox** (`<main-checkout>/output/forge/outbox/`) until the commit is on origin.
-  `python -m lab_commons.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
+  `python -m dev_lab.dev.forge publish` posts what is reachable; `verify` and every tick flush it too.
 - **Run records are attachments** of one closed issue titled `run records`, never refs.
-  `python -m lab_commons.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin
+  `python -m dev_lab.dev.forge records list|prune [--keep-trunk N] [--dry-run]`; prune keeps every origin
   tip and the newest N trunk commits.
-- `python -m lab_commons.dev.platformparts post <run-record>` turns a record into its part.
-- `python -m lab_commons.dev.forge route <record>` files the record's reds as `area:<name>` issues
+- `python -m dev_lab.dev.platformparts post <run-record>` turns a record into its part.
+- `python -m dev_lab.dev.forge route <record>` files the record's reds as `area:<name>` issues
   ([issues](issues.md#reds-are-area-issues)). `[tool.lab_commons.forge.owners]` maps an area name or a
   branch glob to gitea usernames (`jmag = ["alice"]`, `"lane/*" = ["bob"]`); each matching owner is
   @-mentioned in a `cc` line closing the issue body. No table, no mentions; a malformed name is refused.
@@ -357,7 +357,7 @@ once per `[alerts] repeat_hours` (absent: 6) -- the receiver's decision, so it l
 
 ## Issues and pull requests: the door
 
-Agents read and write the forge only through `python -m lab_commons.dev.forge` (`FORGE-THROUGH-THE-DOOR`);
+Agents read and write the forge only through `python -m dev_lab.dev.forge` (`FORGE-THROUGH-THE-DOOR`);
 no `gh` or `tea` binary is needed.
 
 - Verbs: `issue list|view|create|comment|close|claim|status|comments`, `issue comments-since ISO8601`,
@@ -373,9 +373,9 @@ no `gh` or `tea` binary is needed.
 One command per forge host, run from a checkout whose `origin` is on it (or pass `--host`):
 
 ```
-python -m lab_commons.dev.forge auth login      # prompts for the token, input hidden
-python -m lab_commons.dev.forge auth status     # where the token comes from, and who it is
-python -m lab_commons.dev.forge auth check      # can it do what a forge serve tick does (--url <repo url>)
+python -m dev_lab.dev.forge auth login      # prompts for the token, input hidden
+python -m dev_lab.dev.forge auth status     # where the token comes from, and who it is
+python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick does (--url <repo url>)
 ```
 
 - `login` checks the token against the forge and stores it with `git credential approve` only if accepted.

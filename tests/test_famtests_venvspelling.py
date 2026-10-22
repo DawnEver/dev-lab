@@ -1,6 +1,6 @@
 """Adoption of the venv-spelling guard HERE, plus the arms that judge the guard itself.
 
-The shared bodies live in :mod:`lab_commons.dev.famtests.venvspelling`; what is here is this
+The shared bodies live in :mod:`dev_lab.dev.famtests.venvspelling`; what is here is this
 repo's own answers -- which tree, which floor -- and the controls that prove the reader convicts.
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.venvspelling import (
+from dev_lab.dev.famtests.venvspelling import (
     SANCTIONED_SPELLERS,
     Spelling,
     assert_a_planted_recipe_is_convicted,
@@ -20,8 +20,8 @@ from lab_commons.dev.famtests.venvspelling import (
     scannable_text,
     spellings_in,
 )
-from lab_commons.dev.floors import FloorUnmet
-from lab_commons.dev.venvpath import (
+from dev_lab.dev.floors import FloorUnmet
+from dev_lab.dev.venvpath import (
     CANDIDATE_RELATIVE_PATHS,
     VENV_INTERPRETER_GLOB,
     VENV_LAYOUTS,
@@ -84,7 +84,7 @@ SOURCE = Path(__file__).resolve().parent.parent / 'src'
 #: RE-TAKEN 2026-10-11 AT 248 (branch-flow plus the cluster tick): floor 220.
 #: RE-TAKEN 2026-10-12 AT 262 (the forge owners, issue routing and hygiene modules): floor 230.
 #: RE-TAKEN 2026-10-18 AT 328 (outcomes, compute, forge coalesce/unit): floor 317.
-FILE_FLOOR = 349  # re-taken 2026-10-22 at 360: forge notices/autosync, labsession, pradmit joined the kit
+FILE_FLOOR = 215  # re-taken 2026-10-22 at 241 after the split left lab-commons' trees behind
 
 
 def _tree() -> dict[str, str]:
@@ -94,7 +94,7 @@ def _tree() -> dict[str, str]:
 
 def test_only_the_resolver_spells_a_venv_interpreter() -> None:
     """THE PROPERTY. No file outside the sanctioned set spells a concrete venv interpreter."""
-    assert_only_the_resolver_spells_a_venv_interpreter(files=_tree(), floor=FILE_FLOOR, what='lab-commons kit module')
+    assert_only_the_resolver_spells_a_venv_interpreter(files=_tree(), floor=FILE_FLOOR, what='dev-lab kit module')
 
 
 def test_the_reader_convicts_a_planted_recipe_and_spares_the_narrative() -> None:
@@ -110,7 +110,7 @@ def test_the_resolver_is_still_consulted() -> None:
 def test_the_scan_has_a_floor_that_a_lost_root_trips() -> None:
     """A SCAN THAT READ NOTHING IS NOT A CLEAN SCAN -- the floor refuses, rather than passing."""
     with pytest.raises(FloorUnmet):
-        assert_only_the_resolver_spells_a_venv_interpreter(files={}, floor=FILE_FLOOR, what='lab-commons kit module')
+        assert_only_the_resolver_spells_a_venv_interpreter(files={}, floor=FILE_FLOOR, what='dev-lab kit module')
 
 
 def test_the_floor_still_binds_on_the_tree_it_was_measured_against() -> None:
@@ -125,7 +125,7 @@ def test_the_floor_still_binds_on_the_tree_it_was_measured_against() -> None:
 
 def test_the_sanctioned_set_is_named_and_is_exactly_the_resolver() -> None:
     """A NAMED SET, and EQUALITY -- a superset pin cannot say which module stopped resolving."""
-    assert frozenset({'lab_commons/dev/venvpath.py'}) == SANCTIONED_SPELLERS
+    assert frozenset({'dev_lab/dev/venvpath.py'}) == SANCTIONED_SPELLERS
 
 
 @pytest.mark.parametrize('os_name', sorted(VENV_LAYOUTS))
@@ -205,7 +205,7 @@ def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
         f'{resolved} does not exist. VENV_LAYOUTS says this platform (os.name='
         f'{current_os_name()!r}) keeps its venv interpreter there, and the filesystem disagrees -- '
         f'so either this checkout owes itself `uv sync`, or the uv/.venv contract has moved and '
-        f'lab_commons.dev.venvpath.VENV_LAYOUTS is now wrong about this platform. Those are '
+        f'dev_lab.dev.venvpath.VENV_LAYOUTS is now wrong about this platform. Those are '
         f'different repairs and only the filesystem tells them apart, which is why this arm opens '
         f'it instead of comparing strings.'
     )
@@ -215,10 +215,10 @@ def test_the_resolved_interpreter_is_a_file_that_exists_on_this_box() -> None:
     ('command', 'expected'),
     [
         (
-            './.venv/Scripts/python.exe -m lab_commons.dev.verify',
-            f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify',
+            './.venv/Scripts/python.exe -m dev_lab.dev.verify',
+            f'./{VENV_INTERPRETER_GLOB} -m dev_lab.dev.verify',
         ),
-        ('./.venv/bin/python -m lab_commons.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m lab_commons.dev.verify'),
+        ('./.venv/bin/python -m dev_lab.dev.verify', f'./{VENV_INTERPRETER_GLOB} -m dev_lab.dev.verify'),
         ('.venv\\Scripts\\python.exe x', f'{VENV_INTERPRETER_GLOB} x'),
         ('.venv/bin/python3.12 x', f'{VENV_INTERPRETER_GLOB} x'),
         ('git push --force', 'git push --force'),

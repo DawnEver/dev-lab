@@ -11,7 +11,7 @@ from pathlib import Path
 
 from _forge_fake import git_out, run_git
 
-from lab_commons.dev import footprint, forgecarry
+from dev_lab.dev import footprint, forgecarry
 
 PYPROJECT = '[tool.lab_commons.parts]\noutput = "output/logs"\n'
 BASE = {

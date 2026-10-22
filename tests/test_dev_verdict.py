@@ -1,4 +1,4 @@
-"""``lab_commons.dev.verdict`` — the algebra, and the promotion it refuses.
+"""``dev_lab.dev.verdict`` — the algebra, and the promotion it refuses.
 
 THE DECISIVE TEST IS THE ONE THAT TRIES TO LIE: a run that selected three node ids, reported two,
 and asks to be called a PASS. Every construction path that could produce that is exercised here,
@@ -7,10 +7,10 @@ declaration the constructor does not enforce.
 """
 
 import pytest
-
-from lab_commons.dev.logref import LogRef, UnverifiableLog
-from lab_commons.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
 from lab_commons.outcomes import Conclusion
+
+from dev_lab.dev.logref import LogRef, UnverifiableLog
+from dev_lab.dev.verdict import IncompleteRun, Proof, Result, Selector, Verdict
 
 
 @pytest.fixture

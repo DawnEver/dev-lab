@@ -1,6 +1,6 @@
 """The installer and the verifier, over the THREE STATES a planted repo can be in.
 
-THE STATES ARE THE SIBLING MECHANISM'S, on purpose: :mod:`lab_commons.dev.hook_install` distinguishes
+THE STATES ARE THE SIBLING MECHANISM'S, on purpose: :mod:`dev_lab.dev.hook_install` distinguishes
 declared-but-absent from present-but-stale from present-but-not-ours, and every one of those is a
 different remedy. Planting them is what proves the verifier can TELL them apart -- a checker that
 returns "not installed" for all three sends a reader to the wrong fix twice out of three times.
@@ -19,9 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agent_guard, agenthooks
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import Remedy
+from dev_lab.dev import agent_guard, agenthooks
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import Remedy
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.workstation
 #: A minimal but REAL declaration: one rule with an exit that exists as a command.
 ADOPTION = HookAdoption(
     app_name='planted',
-    remedies={'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', 'python -m lab_commons.dev.verify')},
+    remedies={'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', 'python -m dev_lab.dev.verify')},
     declared_absent=frozenset({'GIT-NETWORK-VERB', 'PUSH-NO-VERIFY', 'RAW-PROCESS-KILL'}),
 )
 
@@ -187,7 +187,7 @@ def _ask(repo: Path, wired: list[str], command: str) -> str | None:
 def test_the_installed_guard_actually_refuses_a_command(repo: Path) -> None:
     """THE POINT. Run WHAT WAS INSTALLED, through the argv the wiring names, and read the verdict.
 
-    Driven through ``subprocess`` rather than through :func:`lab_commons.dev.agenthooks.decide`
+    Driven through ``subprocess`` rather than through :func:`dev_lab.dev.agenthooks.decide`
     deliberately: ``decide`` runs the engine inside the PACKAGE, and this arm has to prove the copy
     in the planted repo works when invoked by the repo-relative command line that was written into
     its settings. Those are the two things an install can get wrong.
@@ -201,7 +201,7 @@ def test_the_installed_guard_actually_refuses_a_command(repo: Path) -> None:
 
     denied = _ask(repo, wired, 'pytest tests/')
     assert denied is not None, 'the installed guard allowed a bare test line'
-    assert 'lab_commons.dev.verify' in denied, denied
+    assert 'dev_lab.dev.verify' in denied, denied
     assert _ask(repo, wired, 'git status') is None, 'the installed guard refused an ordinary command'
 
 

@@ -1,6 +1,6 @@
 """The commit-msg issue-reference check: it WARNS on a malformed reference and never blocks.
 
-The derivation in ``lab_commons.dev.forgeissue`` reads ``Refs #N`` / ``Closes #N`` / ``Fixes #N``
+The derivation in ``dev_lab.dev.forgeissue`` reads ``Refs #N`` / ``Closes #N`` / ``Fixes #N``
 from commit messages. A reference it cannot parse is not an error the commit made, it is a link the
 issue will never see -- so the check names it, and the commit goes through either way.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.issueref import main, malformed
+from dev_lab.dev.issueref import main, malformed
 
 VALID = (
     'feat: add the thing\n\nRefs #12',

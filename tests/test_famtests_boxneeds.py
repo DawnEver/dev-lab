@@ -1,4 +1,4 @@
-"""``lab_commons.dev.famtests.boxneeds`` -- planted modules both ways, then the kit's own tests."""
+"""``dev_lab.dev.famtests.boxneeds`` -- planted modules both ways, then the kit's own tests."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.boxneeds import NEEDS, UnmarkedNeed, assert_box_bodies_are_marked, unmarked
+from dev_lab.dev.famtests.boxneeds import NEEDS, UnmarkedNeed, assert_box_bodies_are_marked, unmarked
 
 ROOT = Path(__file__).resolve().parents[1]
 _PYPROJECT = '[tool.lab_commons.tests]\nresources = ["workstation"]\n'
@@ -16,9 +16,9 @@ _PYPROJECT = '[tool.lab_commons.tests]\nresources = ["workstation"]\n'
 _PLANTED = """
 from pathlib import Path
 import pytest
-from lab_commons.dev.famtests import agentguard, allowguard
-from lab_commons.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
-from lab_commons.dev.famtests.visibility import assert_origin_branch_set
+from dev_lab.dev.famtests import agentguard, allowguard
+from dev_lab.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
+from dev_lab.dev.famtests.visibility import assert_origin_branch_set
 
 ROOT = Path(__file__).parent
 

@@ -8,7 +8,7 @@ lands, with remedies that resolve here and NOTHING borrowed from the repo the ru
 
 WHAT THIS REPO CAN HONESTLY SHIP TODAY, and the asymmetry is the point rather than an embarrassment:
 
-* the verdict entry point EXISTS here -- it is this package's own ``python -m lab_commons.dev.verify``
+* the verdict entry point EXISTS here -- it is this package's own ``python -m dev_lab.dev.verify``
   -- so the two rules that route to it (a hand-written test line, a ``--no-verify`` push) ship;
 * the retry wrapper and the process-tree killer DO NOT exist here. Those two rules are declared
   ABSENT and are NOT RENDERED, because a deny rule whose exit does not exist in the repo reading it
@@ -30,7 +30,7 @@ import json
 import pytest
 from _arch_corpus import ROOT
 
-from lab_commons.dev.hook_adoption import (
+from dev_lab.dev.hook_adoption import (
     HookAdoption,
     assert_shippable,
     deny_rules,
@@ -40,18 +40,18 @@ from lab_commons.dev.hook_adoption import (
     unremedied,
     waived,
 )
-from lab_commons.dev.hooks import DENY_RULES, Remedy, UnremediedRule, denies
-from lab_commons.dev.rules import tracked_files
-from lab_commons.dev.venvpath import current_os_name, venv_interpreter
+from dev_lab.dev.hooks import DENY_RULES, Remedy, UnremediedRule, denies
+from dev_lab.dev.rules import tracked_files
+from dev_lab.dev.venvpath import current_os_name, venv_interpreter
 
 #: THIS repo's exit from a hand-written test line, and it is the reason the shared rule is shippable
 #: here at all: the portable verdict entry point lives in this very package. ``path`` names the file
 #: that implements it, so "the remedy exists" is resolved against git rather than asserted.
 _VERIFY = Remedy(
     kind='verdict-entry-point',
-    command=f'{venv_interpreter(os_name=current_os_name())} -m lab_commons.dev.verify',
-    allow=r'\blab_commons\.dev\.verify\b',
-    path='src/lab_commons/dev/verify.py',
+    command=f'{venv_interpreter(os_name=current_os_name())} -m dev_lab.dev.verify',
+    allow=r'\bdev_lab.dev\.verify\b',
+    path='src/dev_lab/dev/verify.py',
 )
 
 #: Rules this repo supplies an exit for, by ID.

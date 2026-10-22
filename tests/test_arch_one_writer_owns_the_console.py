@@ -1,6 +1,6 @@
 """ONE WRITER OWNS THE CONSOLE, so one fix can own its encoding.
 
-WHY THIS GUARD EXISTS, MEASURED 2026-09-18 on consumer-b. ``lab_commons.dev.verify._tee`` streamed a
+WHY THIS GUARD EXISTS, MEASURED 2026-09-18 on consumer-b. ``dev_lab.dev.verify._tee`` streamed a
 test's U+2713 to a cp1252 stdout -- the Windows DEFAULT whenever nothing overrides it -- and
 :func:`lab_commons.log.emit` raised ``UnicodeEncodeError`` out through the verdict runner. The run
 then produced AN INCONCLUSIVE WITH NO LOG: the one state that proves nothing and carries no verdict.
@@ -19,7 +19,7 @@ offenders are reported as a NAMED SET of ``module:line`` sites rather than a cou
 cannot say WHICH writer came back and invites being edited when it disagrees.
 :mod:`lab_commons.log` itself is the one permitted writer and is named here as data.
 
-BOTH SIDES OF THE FLOOR are bound through :mod:`lab_commons.dev.floors`: the low side so an empty
+BOTH SIDES OF THE FLOOR are bound through :mod:`dev_lab.dev.floors`: the low side so an empty
 scan is not read as a clean one, and the high side so the floor cannot be outgrown into a waiver
 nothing uses.
 """
@@ -31,7 +31,7 @@ from pathlib import Path
 
 from _arch_corpus import parse, rel, source_modules
 
-from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
+from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
 
 #: The only module allowed to hold a real stream. Every other writer borrows it through ``emit``.
 THE_ONE_WRITER = 'src/lab_commons/log.py'
@@ -42,7 +42,7 @@ NOT_OURS = ('stdout', 'stderr')
 #: RE-MEASURED 2026-09-19: 117 tracked modules under ``src/``, and BOTH NUMBERS STAY ON RECORD.
 #: The row above read "MEASURED 2026-09-18: 88" and the tree held 111 that day -- a stored reading
 #: that had already stopped agreeing with its derivation, which is precisely what
-#: :mod:`lab_commons.dev.famtests.storedreadings` (landed in this same merge) exists to convict.
+#: :mod:`dev_lab.dev.famtests.storedreadings` (landed in this same merge) exists to convict.
 #: The floor was not repriced with it, so the headroom absorbed the drift silently until the merge
 #: that added six modules pushed the scan 47 clear of a 45 headroom and the arm finally said so.
 #:
@@ -85,7 +85,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-21 at 353 (dev._rule_rows_branches, famtests restatedrules/sizesplits): 307 -> 313.
 #: Re-taken 2026-10-22 at 360 (the two above merged): 314 -> 320.
 #: Re-taken 2026-10-22 at 362 (pr/no-ephemeral-refs merged: dev.ephemeralrefs, dev._rule_rows_citations): 320 -> 322.
-MODULE_FLOOR = 322
+#: Re-taken 2026-10-22 at 240 when the split left lab-commons' trees behind: 322 -> 200.
+MODULE_FLOOR = 200
 MODULE_HEADROOM = 45
 
 

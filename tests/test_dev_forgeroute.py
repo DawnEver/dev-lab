@@ -8,9 +8,12 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, git_out, make_repo, run_git, serve
+from lab_commons.hpc.records import write_record
+from lab_commons.hpc.testcells import TestCell
+from lab_commons.outcomes import Cell, Reason, Status
 
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeroute import (
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeroute import (
     DEFAULT_AREA,
     area_of,
     group,
@@ -23,9 +26,6 @@ from lab_commons.dev.forgeroute import (
     route,
     still_red,
 )
-from lab_commons.hpc.records import write_record
-from lab_commons.hpc.testcells import TestCell
-from lab_commons.outcomes import Cell, Reason, Status
 
 _FORGE = Forge('forge.example.org', 'o', 'r')
 _ROOT = '/api/v1/repos/o/r'
@@ -232,7 +232,7 @@ def test_the_cli_reads_the_areas_at_the_records_commit(server, tmp_path: Path, m
     path = write_record(record, tmp_path / 'records')
     answer('GET', f'{_ROOT}/issues', (200, []))
     answer('POST', f'{_ROOT}/issues', (201, _issue(11, 'area:jmag', '')))
-    monkeypatch.setattr('lab_commons.dev.forgeroute.client_for', lambda *_a, **_k: client(_FORGE, Loopback(server)))
+    monkeypatch.setattr('dev_lab.dev.forgeroute.client_for', lambda *_a, **_k: client(_FORGE, Loopback(server)))
     assert main([str(path)], cwd=repo) == 0
     assert [b['title'] for m, _p, b in _writes() if m == 'POST'] == ['area:jmag']
 

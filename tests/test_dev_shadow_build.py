@@ -1,4 +1,4 @@
-"""``lab_commons.dev.shadow_build`` -- driven over REAL child processes and REAL zip files.
+"""``dev_lab.dev.shadow_build`` -- driven over REAL child processes and REAL zip files.
 
 WHY REAL CHILDREN. The whole claim of this module is about what a SUBPROCESS sees: that the shadow
 directory precedes site-packages, that the baseline arm does NOT inherit somebody else's
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.shadow_build import (
+from dev_lab.dev.shadow_build import (
     DEFAULT_CHILD_WALL_S,
     Comparison,
     SharedVenvWriteError,
@@ -135,7 +135,7 @@ class TestBuildRefusesAnEmptyBuild:
         it from a real 1.0.
         """
         monkeypatch.setattr(
-            'lab_commons.dev.shadow_build._door.run',
+            'dev_lab.dev.shadow_build._door.run',
             lambda *a, **_k: subprocess.CompletedProcess(a[0] if a else [], 0),
         )
         with pytest.raises(RuntimeError, match='wrote no wheel'):
@@ -150,7 +150,7 @@ class TestBuildRefusesAnEmptyBuild:
             (out / 'probe-1.0-py3-none-any.whl').write_bytes(b'')
             return subprocess.CompletedProcess([], 0)
 
-        monkeypatch.setattr('lab_commons.dev.shadow_build._door.run', _fake_run)
+        monkeypatch.setattr('dev_lab.dev.shadow_build._door.run', _fake_run)
         assert build_wheel(tmp_path / 'Cargo.toml', out).name == 'probe-1.0-py3-none-any.whl'
 
     def test_it_builds_and_never_installs(self, tmp_path: Path, monkeypatch) -> None:
@@ -168,7 +168,7 @@ class TestBuildRefusesAnEmptyBuild:
             (out / 'probe-1.0-py3-none-any.whl').write_bytes(b'')
             return subprocess.CompletedProcess(argv, 0)
 
-        monkeypatch.setattr('lab_commons.dev.shadow_build._door.run', _fake_run)
+        monkeypatch.setattr('dev_lab.dev.shadow_build._door.run', _fake_run)
         build_wheel(tmp_path / 'Cargo.toml', out)
         argv = seen[0]
         assert 'build' in argv
@@ -295,7 +295,7 @@ class TestInterleaving:
             order.append('installed' if shadow is None else 'shadow')
             return 1.0
 
-        monkeypatch.setattr('lab_commons.dev.shadow_build.time_once', _fake_time_once)
+        monkeypatch.setattr('dev_lab.dev.shadow_build.time_once', _fake_time_once)
         interleaved(tmp_path / 'probe.py', tmp_path / 'shadow', repeat=3)
         assert order == ['installed', 'shadow', 'installed', 'shadow', 'installed', 'shadow']
 

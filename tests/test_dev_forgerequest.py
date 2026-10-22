@@ -13,16 +13,17 @@ import pytest
 import test_dev_forgetick
 from _box_fake import ended, record
 from _forge_fake import Recorder, answer, git_out, run_git
-from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
-
 from lab_commons.box import Capacity
 from lab_commons.compute.learned import LOCAL, Run, run_of
 from lab_commons.compute.model import REQUEST, Demand, Resources, Supply
-from lab_commons.dev import forgeproduce, forgerequest
-from lab_commons.dev._forgebackends import GITEA
-from lab_commons.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
-from lab_commons.dev.forgepublish import RequestRefused, publish
-from lab_commons.dev.forgerequest import (
+from lab_commons.hpc.declared import OutdatedKit
+from test_dev_forgetick import API, LATER, PRODUCE, RETIRED_TABLE, _declare, _origin, _tick
+
+from dev_lab.dev import forgeproduce, forgerequest
+from dev_lab.dev._forgebackends import GITEA
+from dev_lab.dev.forgeclaim import MINE, REFUSED_AT_COMMIT, Claim, Work
+from dev_lab.dev.forgepublish import RequestRefused, publish
+from dev_lab.dev.forgerequest import (
     DONE_LABEL,
     UNADMITTED,
     UndeclaredRequest,
@@ -34,9 +35,8 @@ from lab_commons.dev.forgerequest import (
     unreachable_source,
     unserved,
 )
-from lab_commons.dev.forgeschedule import NOT_ADMITTED, labelled_issues
-from lab_commons.dev.platformparts import origin_url
-from lab_commons.hpc.declared import OutdatedKit
+from dev_lab.dev.forgeschedule import NOT_ADMITTED, labelled_issues
+from dev_lab.dev.platformparts import origin_url
 
 server = test_dev_forgetick.server  # the loopback forge fixture, shared
 

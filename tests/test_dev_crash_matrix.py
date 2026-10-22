@@ -19,20 +19,20 @@ from pathlib import Path
 
 import pytest
 from _forge_fake import Loopback, Recorder, answer, git_out, make_repo, run_git, serve
+from lab_commons.config import CONFIG_ENV
 from test_dev_forgeintent import _claimed as _intent_claimed
 from test_dev_forgeintent import _Forge, _reattach
 from test_dev_forgerun import SHA as RUN_SHA
 from test_dev_forgerun import _CrashAtSbatch, _Slurm, _start, _Store, _tick
 
-from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgeintent, forgerun, forgerunstate
-from lab_commons.dev._forge_journal import Journal, journal_for
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeclaim import DONE, OPEN, Claim, assess
-from lab_commons.dev.forgeoutbox import Post, PostFailed, enqueue, flush, queued, replay
-from lab_commons.dev.forgestatus import CommitStatus, status_post
-from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.producer import ProducerExit, release_reason
+from dev_lab.dev import forgeintent, forgerun, forgerunstate
+from dev_lab.dev._forge_journal import Journal, journal_for
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeclaim import DONE, OPEN, Claim, assess
+from dev_lab.dev.forgeoutbox import Post, PostFailed, enqueue, flush, queued, replay
+from dev_lab.dev.forgestatus import CommitStatus, status_post
+from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.producer import ProducerExit, release_reason
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'

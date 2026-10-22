@@ -16,13 +16,13 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import run_git
 
-from lab_commons.dev import forgeintent, forgeproduce
-from lab_commons.dev.forgeclaim import OPEN, Claim, Work, assess
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
-from lab_commons.dev.producer import RETRYABLE
-from lab_commons.dev.shatree import Tree
+from dev_lab.dev import forgeintent, forgeproduce
+from dev_lab.dev.forgeclaim import OPEN, Claim, Work, assess
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.producer import RETRYABLE
+from dev_lab.dev.shatree import Tree
 
 NOW = datetime(2026, 10, 16, 12, tzinfo=UTC)
 LEASE = timedelta(hours=6)

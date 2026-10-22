@@ -14,13 +14,13 @@ import pytest
 from _branch_repos import advance, clone_pair, commit
 from _forge_fake import Loopback, Recorder, answer, client, git_out, run_git, serve
 
-from lab_commons.dev import forgesync
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeintegration import CONTEXT, retarget_note, tick
-from lab_commons.dev.forgepulls import Marker, comment_upsert, marker
-from lab_commons.dev.forgerecords import RECORDS_TAG, attach, listing
-from lab_commons.dev.lanepolicy import Policy, load_policy
-from lab_commons.dev.trialmerge import merged_at, trial
+from dev_lab.dev import forgesync
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeintegration import CONTEXT, retarget_note, tick
+from dev_lab.dev.forgepulls import Marker, comment_upsert, marker
+from dev_lab.dev.forgerecords import RECORDS_TAG, attach, listing
+from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.trialmerge import merged_at, trial
 
 GITEA = Forge('forge.example.org', 'o', 'r')
 GITHUB = Forge('github.com', 'o', 'r')

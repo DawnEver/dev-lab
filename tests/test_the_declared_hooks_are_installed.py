@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.hookinstall import (
+from dev_lab.dev.famtests.hookinstall import (
     assert_a_foreign_hook_is_not_installed,
     assert_declared_hooks_are_installed,
     assert_hooks_dir_is_the_one_git_consults,

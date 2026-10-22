@@ -7,7 +7,7 @@ Two constraints keep it honest, and they pull in opposite directions on purpose:
   the code that enforces it and reasoning belongs in `.claude/memory/`. Without a ceiling, the
   cheapest place to put any new thought is the file every turn already pays for, and the pages
   become a document nobody reads because it is too long to read. The mechanism is
-  `lab_commons.dev.famtests.rulespages`, which this repo PARAMETRIZES: it used to be a bare total
+  `dev_lab.dev.famtests.rulespages`, which this repo PARAMETRIZES: it used to be a bare total
   here, and a total cannot say WHICH page grew -- see that module for why both readings are kept.
 * EVERY CITED RULE ID RESOLVES. A page cites the shared registry by ID rather than restating the
   statement -- two statements of one rule is exactly the drift the registry removes. An ID that no
@@ -25,8 +25,8 @@ from pathlib import Path
 
 from _arch_corpus import ROOT, _tracked, assert_floor, rel, rules_pages
 
-from lab_commons.dev.famtests.rulespages import assert_rules_ratchet, ratchet_breaks
-from lab_commons.dev.rules import RULES
+from dev_lab.dev.famtests.rulespages import assert_rules_ratchet, ratchet_breaks
+from dev_lab.dev.rules import RULES
 
 #: The always-loaded budget, MEASURED 2026-09-15 and UNCHANGED by the 2026-09-17 swap to a per-page
 #: ratchet. It may only go DOWN, and a new page is paid for out of it rather than added beside it.

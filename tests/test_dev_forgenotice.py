@@ -14,10 +14,10 @@ from _branch_repos import clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from lab_commons.dev import forgenotice
-from lab_commons.dev.forgeintegration import tick
-from lab_commons.dev.labsession import TRAILER
-from lab_commons.dev.lanepolicy import Policy, policy_from
+from dev_lab.dev import forgenotice
+from dev_lab.dev.forgeintegration import tick
+from dev_lab.dev.labsession import TRAILER
+from dev_lab.dev.lanepolicy import Policy, policy_from
 
 SESSION = 'session_aaaabbbbcccc'
 _NOW = datetime.now(UTC) + timedelta(minutes=5)

@@ -16,14 +16,14 @@ from types import SimpleNamespace
 import pytest
 from _box_fake import ended, record
 from _forge_fake import git_out, run_git
-
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import forgecarry, forgeproduce, forgerun, forgerunstate
-from lab_commons.dev.forgeclaim import Claim, Work
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.platformparts import Part, parts_of, standing
-from lab_commons.dev.shatree import Tree
 from lab_commons.outcomes import Conclusion
+
+from dev_lab.dev import forgecarry, forgeproduce, forgerun, forgerunstate
+from dev_lab.dev.forgeclaim import Claim, Work
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.platformparts import Part, parts_of, standing
+from dev_lab.dev.shatree import Tree
 
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
 ME = Claim('G', 'alice', NOW + timedelta(hours=6))

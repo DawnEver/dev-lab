@@ -2,7 +2,7 @@
 
 They are the only reason the instrument beside them is worth shipping.
 
-`lab_commons.dev.supersede` exists because a placement roster declared 17 MOVES and 7 were real. The
+`dev_lab.dev.supersede` exists because a placement roster declared 17 MOVES and 7 were real. The
 question that makes it more than a plausible idea is whether it reproduces the SEVENTEEN-TO-SEVEN
 correction without being told the answer. These rows are that test set: each one carries what a
 tranche concluded BY READING (`hand`) and what the instrument must conclude from the kit's published
@@ -12,7 +12,7 @@ somewhere to live instead of being tuned away.
 WHY THE ROWS ARE FACTS AND NOT PATHS. The consumer is consumer-a's LANE worktree, which this
 repo's suite cannot read and must not depend on. So each row carries the derived facts -- its
 declared side, its public surface, the kit modules it imports -- captured from that tree on
-2026-09-17. The KIT side is NOT captured: it is read live off `src/lab_commons/dev/`, so deleting a
+2026-09-17. The KIT side is NOT captured: it is read live off `src/dev_lab/dev/`, so deleting a
 provenance sentence or renaming a published function reds this, which is the half that can rot.
 
 TWO ROWS WERE RECOVERED FROM GIT, not from disk: `scripts/gate/bounded.py` and `scripts/gate/_box.py`
@@ -20,14 +20,14 @@ were deleted by the lane's own commit ff50483 the same day, which is what "alrea
 for them. Their surfaces come from that commit's parent.
 
 THE CONTROL IS IN THE SET, not beside it. `_symbol_coverage.py` publishes `survey`, and so does
-`lab_commons.dev.checkout`, which has nothing whatever to do with it: a name-matching census
+`dev_lab.dev.checkout`, which has nothing whatever to do with it: a name-matching census
 convicts it against the wrong module. It is here so that the instrument's refusal to treat overlap
 as a detector is EXERCISED by the same run that validates the positives.
 
 THE FIFTEENTH ROW IS THE ONE THAT FOUND THE INSTRUMENT'S BLIND SPOT -- TWICE, and it comes from a
 different repo on purpose. consumer-c's `tests/architecture/test_the_rules_pages_are_a_ratchet.py`
 is declared MOVES by its own roster and graded UNTOUCHED by the first census ever run against it --
-while `lab_commons.dev.famtests.rulespages`, landed hours earlier, already published its whole
+while `dev_lab.dev.famtests.rulespages`, landed hours earlier, already published its whole
 subject and more. Both detectors were silent: the kit module named no consumer, and a test file that
 has not adopted a shared body yet imports nothing from the kit BY DEFINITION. That is the class of
 row the provenance registry exists for, so it is pinned here by the case that found it rather than
@@ -53,7 +53,7 @@ graded NAMED_ONLY, which is the grade that means NOTHING CORROBORATES THE CLAIM.
 anywhere, because a blind detector reports what a clean tree reports.
 
 THE BLIND SPOT WAS CLOSED TWICE AND THE SECOND CLOSING WAS SWEPT, 2026-09-18. `1aa2738` taught the
-reader `from lab_commons.dev.famtests import x`; `from lab_commons.dev.famtests.x import y` stayed
+reader `from dev_lab.dev.famtests import x`; `from dev_lab.dev.famtests.x import y` stayed
 unresolved, so the round trip that was supposed to hold the two halves together passed over the two
 spellings the fix had just added. Re-driving both readers over all three consumer trees -- consumer-a
 `497dfb7b5`, consumer-b `71e184a1`, consumer-c `e66a32e`, 173 files that mention the kit -- moves SEVEN
@@ -87,7 +87,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from lab_commons.dev.supersede import CONSULTS, NAMED_ONLY, PARTIAL, SUPERSEDED, UNMEASURABLE, UNTOUCHED
+from dev_lab.dev.supersede import CONSULTS, NAMED_ONLY, PARTIAL, SUPERSEDED, UNMEASURABLE, UNTOUCHED
 
 __all__ = [
     'ALREADY_IN_THE_KIT',

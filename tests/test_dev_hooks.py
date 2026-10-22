@@ -26,7 +26,7 @@ import re
 
 import pytest
 
-from lab_commons.dev.hooks import (
+from dev_lab.dev.hooks import (
     DENY_RULES,
     MATCH_KINDS,
     PLACEHOLDER,
@@ -48,7 +48,7 @@ EXAMPLE_FLOOR = 30
 #: A remedy of each kind the registry needs, so a row that ``needs`` one can be rendered here. These
 #: are the TEST's remedies, not any repo's: what a real repo supplies is its own adoption's business.
 _REMEDIES = {
-    'verdict-entry-point': Remedy('verdict-entry-point', 'python -m lab_commons.dev.verify'),
+    'verdict-entry-point': Remedy('verdict-entry-point', 'python -m dev_lab.dev.verify'),
     'retry-wrapper': Remedy('retry-wrapper', 'sh scripts/hooks/with-retry.sh push origin HEAD'),
     'process-tree-killer': Remedy('process-tree-killer', 'python scripts/gate/stop_sweep.py --pid <pid>'),
 }

@@ -21,9 +21,9 @@ from typing import Final
 
 import pytest
 from _box_fake import quiet
-
 from lab_commons.box import BOX_ENV, GB, Capacity, Demand, NotAdmitted, hold, not_admitted
-from lab_commons.dev.dep import (
+
+from dev_lab.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
     Mode,
@@ -34,7 +34,7 @@ from lab_commons.dev.dep import (
     mutate,
     pip_argv,
 )
-from lab_commons.dev.envseat import EnvironmentSeat
+from dev_lab.dev.envseat import EnvironmentSeat
 
 _REQS: Final = ('example-package==1.2.3',)
 

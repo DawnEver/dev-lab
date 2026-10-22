@@ -17,8 +17,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
-from lab_commons.dev.githooks import bash_executable
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import shell
 from lab_commons.hpc.artifact import (
@@ -45,6 +43,8 @@ from lab_commons.hpc.worker import main as worker_main
 from lab_commons.outcomes import Reason, Status
 from lab_commons.outcomes.jsonl import read_jsonl
 from lab_commons.outcomes.record import OUTCOME, Event
+
+from dev_lab.dev.githooks import bash_executable
 
 FIXTURE = (Path(__file__).parent / '_hpc_fixtures' / 'cluster-2026-10-08.txt').read_text(encoding='utf-8')
 IDLE = FIXTURE.split('@@@ running')[0] + '@@@ running\n'
