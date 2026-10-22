@@ -542,13 +542,14 @@ def _judge(
         verdict = run_verify(root, arguments, wait_s=wait_s)
     except MalformedAllowance as exc:
         return _inconclusive(f'verify refuses to run: {exc}')
-    except Refused as exc:
-        return _inconclusive(
+    except Refused as exc:  # CAPACITY, never a verdict: a producer's claim goes back to claimable (UNREACHABLE)
+        code, lines = _inconclusive(
             f'verify: inconclusive -- this box is held and nothing was measured. Held by: {exc}. '
             f'Wait for it, or stop that holder, then re-run; '
             f'--lock-wait "<duration>" raises or drops the {wait_s:.0f} s ceiling on the wait. '
             f'{offer_line(root, head, arguments)}'
         )
+        return (ProducerExit.UNREACHABLE if post is not None else code), lines
     except UnverifiableLog as exc:
         return _inconclusive(
             f'verify: inconclusive -- the run wrote no usable log ({exc}); fix what emptied it, then re-run.'

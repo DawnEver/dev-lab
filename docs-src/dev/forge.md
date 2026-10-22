@@ -119,6 +119,9 @@ Each tick it:
 - **The producer exit contract** (`lab_commons.dev.producer.ProducerExit`): `0` PASS, `1` FAIL, `2` refused
   argv, `3` INCONCLUSIVE (claim released `error`, not re-claimed), `4` UNREACHABLE (released, open again next
   tick); anything else is a crash. A consumer runner maps its own verdicts onto these codes.
+  A box with no room for the producer is capacity, never a verdict: it exits `4`, so the claim goes back to
+  claimable naming the holder; an exit-3 release already posted stays settled (it cannot tell no room from
+  a run that wrote nothing), so such a head waits for its ref's next push or a human re-run.
 - **A full tier runs only inside this producer.** Anywhere else it refuses and names the remedy: push.
 
 ### Deploy a Windows workstation
