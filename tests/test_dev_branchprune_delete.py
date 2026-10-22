@@ -13,9 +13,9 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from lab_commons.dev.branchprune import delete
-from lab_commons.dev.forge import fetch_origin
-from lab_commons.dev.hooks import DENY_RULES, denies, rules_by_id
+from dev_lab.dev.branchprune import delete
+from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 
 SESSION = 'session_aaaabbbbcccc'
 
@@ -91,5 +91,5 @@ def test_a_raw_remote_delete_is_still_refused_and_its_remedy_names_the_door() ->
     """PLANTED control: the door's own invocation is permitted."""
     assert denies(DENY_RULES, 'git -C ../sib push origin --delete lane/x') == 'PUSH-REMOTE-DELETE'
     assert denies(DENY_RULES, 'sh scripts/hooks/with-retry.sh push origin :lane/x') == 'PUSH-REMOTE-DELETE'
-    assert 'lab_commons.dev.branchprune delete' in str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
-    assert denies(DENY_RULES, '.venv/Scripts/python.exe -m lab_commons.dev.branchprune delete lane/x') is None
+    assert 'dev_lab.dev.branchprune delete' in str(rules_by_id(DENY_RULES)['PUSH-REMOTE-DELETE'].remedy)
+    assert denies(DENY_RULES, '.venv/Scripts/python.exe -m dev_lab.dev.branchprune delete lane/x') is None

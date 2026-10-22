@@ -1,4 +1,4 @@
-"""``lab_commons.dev.forge`` -- driven against a REAL HTTP server and REAL git repositories.
+"""``dev_lab.dev.forge`` -- driven against a REAL HTTP server and REAL git repositories.
 
 WHY A REAL SERVER AND NOT A STUBBED CLIENT. Every claim this module makes is about what the forge was
 ASKED and what it ANSWERED, and a stubbed client erases exactly that: it asserts the arguments the
@@ -37,8 +37,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from lab_commons.dev import forge as module
-from lab_commons.dev.forge import (
+from dev_lab.dev import forge as module
+from dev_lab.dev.forge import (
     APPLIED,
     INERT,
     NOT_APPLIED,

@@ -12,9 +12,9 @@ translation beside it in the same commit. The English page is the source of trut
 
 ## Where it is implemented
 
-- `lab_commons.dev.cjk`: `TRANSLATION_SUFFIXES`, `translation_source`, `translation_exempted`,
+- `dev_lab.dev.cjk`: `TRANSLATION_SUFFIXES`, `translation_source`, `translation_exempted`,
   `orphaned_translations`. `scan_files` treats the paths it is handed as the corpus.
-- `lab_commons.dev.famtests.trackedcjk.assert_every_translation_has_its_source`: each repo calls it from its own
+- `dev_lab.dev.famtests.trackedcjk.assert_every_translation_has_its_source`: each repo calls it from its own
   architecture suite over its tracked corpus.
 
 ## Adding or updating a translation
@@ -28,6 +28,6 @@ translation beside it in the same commit. The English page is the source of trut
 
 ## The goal: no non-ASCII at all
 
-- `lab_commons.dev.cjk.scan_non_ascii` applies the same exemptions to every non-ASCII character, and
+- `dev_lab.dev.cjk.scan_non_ascii` applies the same exemptions to every non-ASCII character, and
   `non_ascii_distance` reports how far a repo is from zero. `famtests.trackedcjk.assert_no_tracked_non_ascii` is
   the goal test a repo wires, failing on purpose until the distance is zero.

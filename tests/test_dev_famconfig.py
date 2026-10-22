@@ -32,7 +32,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev._famconfig_rows import (
+from dev_lab.dev._famconfig_rows import (
     GITIGNORE_BASE,
     GITIGNORE_CLAUDE_SECTION,
     GITIGNORE_CONSUMER_CORE,
@@ -41,7 +41,7 @@ from lab_commons.dev._famconfig_rows import (
     MAKEFILE_BASE,
     MAKEFILE_RESIDUAL_SIGNALS,
 )
-from lab_commons.dev.famconfig import (
+from dev_lab.dev.famconfig import (
     ABSENT,
     BASES,
     DRIFTED,
@@ -262,7 +262,7 @@ def test_a_delta_past_its_ceiling_is_refused() -> None:
 
 def _makefile(targets: tuple[str, ...]) -> str:
     recipes = {'lint:': '\truff check .', 'fmt:': '\truff format .', 'test:': '\tpytest'}
-    body = [line for target in targets for line in (target, recipes.get(target, '\tpython -m lab_commons.dev.verify'))]
+    body = [line for target in targets for line in (target, recipes.get(target, '\tpython -m dev_lab.dev.verify'))]
     return '\n'.join(body) + '\n'
 
 
@@ -278,8 +278,8 @@ def test_a_target_header_is_satisfied_by_its_prerequisites_and_nothing_looser() 
     assert satisfies('all:', ('all:',))
     assert not satisfies('all:', ('alligator: x',))
     assert not satisfies('all:', ('install: all',))
-    assert satisfies('	python -m lab_commons.dev.verify', ('	python -m lab_commons.dev.verify',))
-    assert not satisfies('	python -m lab_commons.dev.verify', ('	python -m lab_commons.dev.verify --fast',))
+    assert satisfies('	python -m dev_lab.dev.verify', ('	python -m dev_lab.dev.verify',))
+    assert not satisfies('	python -m dev_lab.dev.verify', ('	python -m dev_lab.dev.verify --fast',))
 
 
 def test_a_makefile_holding_every_base_target_installs(tmp_path: Path) -> None:
@@ -679,7 +679,7 @@ def test_the_order_sensitive_set_is_named_rather_than_counted() -> None:
 #: rather than retyped, so a base that moves its recipe moves these arms with it instead of leaving
 #: them asserting about a file nobody ships.
 _VERIFY_TARGET: Final = 'verify:'
-_VERIFY_RECIPE: Final = '\tpython -m lab_commons.dev.verify'
+_VERIFY_RECIPE: Final = '\tpython -m dev_lab.dev.verify'
 
 
 def test_the_live_makefile_base_still_carries_the_pair_these_arms_are_about() -> None:

@@ -2,7 +2,7 @@
 
 A scope claim needs its own test -- one that PLANTS the thing in the region and calls the REAL
 guard. So nothing here re-implements the classification: each case writes a real module into a
-temporary tree, runs :func:`lab_commons.dev.foreign.scan` over it, and asserts on what came back.
+temporary tree, runs :func:`dev_lab.dev.foreign.scan` over it, and asserts on what came back.
 
 The live reading over this repo is the OTHER file, `test_the_leaf_carries_no_foreign_data.py`. That
 one can go green because the tree is clean; these cannot, because the hazard is planted.
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.floors import FloorUnmet
-from lab_commons.dev.foreign import (
+from dev_lab.dev.floors import FloorUnmet
+from dev_lab.dev.foreign import (
     DATA,
     PATH,
     PROSE,

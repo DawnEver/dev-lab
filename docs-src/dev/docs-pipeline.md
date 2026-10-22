@@ -1,6 +1,6 @@
 # The docs pipeline
 
-A repo's documentation site is built by the family driver, `lab_commons.dev.docsite`, from a table of sub-sites
+A repo's documentation site is built by the family driver, `dev_lab.dev.docsite`, from a table of sub-sites
 the repo supplies. Write markdown under `docs-src/`, add a sub-site as a ROW, and build through the repo's one
 entry point; the output is a build product and stays ignored by git. The driver owns what a requirement and a
 skip mean; the repo owns which packages, paths and flags.

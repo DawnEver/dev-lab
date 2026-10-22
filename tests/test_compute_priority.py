@@ -13,11 +13,11 @@ from _forge_fake import Loopback, Recorder, answer, client, serve
 
 from lab_commons.compute.model import Candidate, Ranked, Schedule, rank
 from lab_commons.compute.priority import Priority
-from lab_commons.dev import forgequeue
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgehosts import HostCard, card_of
-from lab_commons.dev.forgeorigin import head_login
-from lab_commons.dev.forgework import Comment
+from dev_lab.dev import forgequeue
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgehosts import HostCard, card_of
+from dev_lab.dev.forgeorigin import head_login
+from dev_lab.dev.forgework import Comment
 from lab_commons.hpc.shell import FULL
 
 NOW = datetime(2026, 10, 14, 12, 0, tzinfo=UTC)

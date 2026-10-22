@@ -1,7 +1,7 @@
 """NO-REFLECTION, adopted over this repo's tracked Python by the family body.
 
 The scan, the banned names, the attic/archived exclusion and the two-sided allow-set are
-`lab_commons.dev.famtests.noreflection`'s. This module supplies this tree's reasoned boundaries and its
+`dev_lab.dev.famtests.noreflection`'s. This module supplies this tree's reasoned boundaries and its
 floor, and plants the controls the body must convict.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famtests.noreflection import assert_no_reflection, reflection_sites
+from dev_lab.dev.famtests.noreflection import assert_no_reflection, reflection_sites
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,7 +26,7 @@ _GIT = shutil.which('git') or 'git'
 
 #: Path -> why reflection IS the operation there.
 _ALLOWED = {
-    'src/lab_commons/dev/seams.py': (
+    'src/dev_lab/dev/seams.py': (
         'rebind/restore_all rebind a name handed in as DATA (a Seam path) on an arbitrary owner and put '
         'the original back; the attribute name is not known to any type, so setattr is the operation'
     ),

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.gatebase import ZERO_SHA, admitted, gate_base
+from dev_lab.dev.gatebase import ZERO_SHA, admitted, gate_base
 
 _TRUNK = 'trunk'
 

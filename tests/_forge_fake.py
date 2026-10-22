@@ -17,8 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
 
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgework import Client
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgework import Client
 
 _GIT = shutil.which('git') or 'git'
 

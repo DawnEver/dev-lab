@@ -1,6 +1,6 @@
 # A rule is shared; the thing that refuses one is not
 
-This repo AUTHORS the family's development rules (`lab_commons.dev.rules`). These are the
+This repo AUTHORS the family's development rules (`dev_lab.dev.rules`). These are the
 constraints that come with owning that file. Universal rules are not restated here — they are
 cited by ID, and `tests/test_the_adoption_accounts_for_every_rule.py` is what makes the citation
 a check.

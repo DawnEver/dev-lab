@@ -14,14 +14,14 @@ from _branch_repos import advance, clone_pair, commit
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from lab_commons.dev import forgeintegration
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeintegration import Ticked, tick
-from lab_commons.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
-from lab_commons.dev.forgepulls import Marker, marker
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.sessionbranch import MERGED_BRANCH, merged_branch
+from dev_lab.dev import forgeintegration
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeintegration import Ticked, tick
+from dev_lab.dev.forgemerge import FORGE_PULL, decide, merge, merge_message
+from dev_lab.dev.forgepulls import Marker, marker
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.sessionbranch import MERGED_BRANCH, merged_branch
 
 POLICY = Policy(pr_merges_since='0' * 40)
 _MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"

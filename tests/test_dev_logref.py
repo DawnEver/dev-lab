@@ -1,4 +1,4 @@
-"""``lab_commons.dev.logref`` — the log a verdict carries, and the reader that re-derives it.
+"""``dev_lab.dev.logref`` — the log a verdict carries, and the reader that re-derives it.
 
 The property under test is not "the digest is computed". It is that a log which MOVED after the
 verdict was stamped is refused, while a log that merely grew after it is not -- because the stamped
@@ -10,8 +10,8 @@ import re
 
 import pytest
 
-from lab_commons.dev.logref import _STAMPED, MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
-from lab_commons.dev.verdict import Proof, Result, Selector, Verdict
+from dev_lab.dev.logref import _STAMPED, MARKER, Citation, LogRef, UnverifiableLog, stamp_line, verify_log
+from dev_lab.dev.verdict import Proof, Result, Selector, Verdict
 from lab_commons.outcomes import Conclusion
 
 SELECTOR = Selector('gate:integrate/main', ('t/a.py::test_one',))

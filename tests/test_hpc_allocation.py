@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from test_hpc_grants import GRANT, _snap
 
-from lab_commons.dev.forgeslurm import with_allocation
+from dev_lab.dev.forgeslurm import with_allocation
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import allocate as verb
 from lab_commons.hpc.allocation import (

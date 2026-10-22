@@ -1,0 +1,358 @@
+r"""The family's config artefacts as ONE BASE PLUS A NAMED DELTA, and a guard that reds on a hand edit.
+
+THE DEFECT THIS CLOSES. `.gitignore`, `Makefile` and their siblings are hand-maintained
+three times each across the consumers of this package, and the shared halves are large and boring --
+the counts, and what each was measured over, are in :mod:`dev_lab.dev._famconfig_rows`, which is
+DATA and computes nothing. Nothing links the copies, so a fix in one is a fix in one.
+
+THE SHAPE. A repo declares a :class:`Delta` -- what it ADDS, WHERE, and which base lines it DROPS
+with a reason -- and :func:`render` produces the file. :func:`inspect_file` re-renders from the LIVE
+base and delta and compares against disk, so a hand edit reds instead of drifting. A consumer
+therefore has exactly two states, which is this refactor's premise: it reads the family artefact, or
+it declares its delta. There is no third state where a local edit quietly wins.
+
+THIS MODULE IS THE WRITE HALF. The vocabulary (:class:`Base`, :class:`Delta`), the line readings and
+the survey live in :mod:`dev_lab.dev._famconfig_survey`; every REFUSAL -- what makes a declaration
+illegal -- lives in :mod:`dev_lab.dev._famconfig_refusals` as of 2026-09-18, when the ordering arm
+took this module past the repo's line band. Both are re-exported here, so the surface a consumer
+imports is one name. The imports run one way: measuring a file does not need the renderer, and
+refusing a declaration does not either.
+
+WHAT A DELTA MAY SAY, and this was the design question rather than a detail. A delta that can only
+APPEND cannot express "not this one", so the first repo that genuinely does not want a base line
+hand-edits the rendered file, and from that moment the guard is theatre. So a drop is expressible --
+but it is a MAPPING from the dropped line to its reason, never a set, because a removal and a drift
+are the same bytes on disk and only the DECLARATION can tell them apart. The rendering prints the
+drop as a comment, so the removal is legible to a reader of the artefact and not only to a reader of
+this package.
+
+AND AN APPEND CANNOT REACH INSIDE A BLOCK, which is the same limit pointing the other way and it
+blocked the retired hook configuration file in both labs until 2026-09-17: their extra hook ids,
+and the `exclude:` one of them had to hang on `trailing-whitespace`, belonged INSIDE the entry the
+base rendered. So an addition may be ANCHORED to a base line -- see :attr:`Delta.anchored` for why that was
+preferred to dropping the block and restating it, which is a fork wearing a workaround as a disguise.
+An anchor names a position by a base line's TEXT, so it is refused when the base does not have that
+line, when the base has it more than once, and when the same delta also drops it.
+
+THE STAMP, AND WHAT IT DELIBERATELY DOES NOT CARRY. A rendered file opens with a provenance block --
+the shape :mod:`dev_lab.dev.agent_guard` proves out on the hook engine, where an unstamped copy
+and a stale one need different remedies and bytes-differ cannot tell them apart. The block names the
+renderer and nothing else: no version, no date, no digest. A timestamp would make every re-render a
+diff, which is how a generated file earns the reputation that justifies editing it by hand; and a
+stored digest can itself go stale, while re-rendering from the live base cannot.
+
+RENDERED VERSUS REQUIRED, and the Makefile is why there are two modes. Its shared targets share a
+NAME and no RECIPE, so a rendered family Makefile would assert a portability that does not exist.
+:data:`REQUIRED` says the base lines must be PRESENT, :data:`RENDERED` demands byte equality, and
+naming the weaker mode is what stops it reaching `.gitignore` out of convenience.
+
+A RATCHET HAS TWO SIDES, and both are mechanised rather than described:
+
+* a base line cannot silently vanish -- :func:`inspect_file` reds on a base line absent from disk
+  with no drop declaring it, and a drop or an anchor naming a line the base lacks is refused, so a
+  stale declaration cannot outlive its subject either;
+* a base cannot acquire a line it is unable to place -- :func:`assert_base_is_order_free` refuses a
+  line that excludes a strict subset of what a floating base rule already excludes, in the artefacts
+  :data:`ORDER_SENSITIVE_ARTEFACTS` declares last-match-wins. An anchor points ONE way, so every base
+  line renders before every delta line; a re-ignore promoted into a `.gitignore` base would therefore
+  render above the negation it was written to close and silently undo it, and `fork_signals` would
+  have argued FOR the promotion. That is the one direction the anti-fork arm gets wrong, and this is
+  the arm that disagrees with it;
+* a delta cannot silently grow into a fork -- every delta carries a CEILING counting its anchored
+  lines too, a delta re-stating a base CONTENT line is refused at render time, and
+  :func:`fork_signals` names any line EVERY consumer's delta holds, because that is the base
+  re-forming where nobody is looking at it.
+
+`[tool.ruff]` IS A SECTION AND NOT A FILE, so it arrives through a DIFFERENT base -- landed
+2026-09-18, when the sweep that had kept it out (this repo's select widening to the consumers' 58)
+finished and the stated reason for its absence expired. Everything above is keyed by FILENAME and
+`RENDERED` demands the whole file, which for a `pyproject.toml` would mean this base owning
+`[build-system]` and `[project]` as well; `REQUIRED` asserts presence only, so it cannot see a
+consumer ADD an `ignore` entry. :mod:`dev_lab.dev._famconfig_sections` is the half whose subject
+is a TABLE -- :class:`SectionBase`, :class:`SectionDelta`, :func:`inspect_section` -- and it COMPARES
+rather than renders, because a table inside somebody else's file has nowhere to carry a stamp. It is
+re-exported here, so the surface a consumer imports is still one name.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final
+
+from dev_lab.dev._famconfig_refusals import (
+    ForkedDelta,
+    PositionalBase,
+    assert_base_is_order_free,
+    delta_problems,
+)
+from dev_lab.dev._famconfig_rows import BASES as _BASE_LINES
+from dev_lab.dev._famconfig_rows import (
+    GITIGNORE_FLOOR,
+    MAKE_TARGET_CORE,
+    ORDER_SENSITIVE_ARTEFACTS,
+    REPO_FLOOR,
+    STAMP,
+)
+from dev_lab.dev._famconfig_sections import (
+    DIVERGED,
+    NO_FILE,
+    NO_TABLE,
+    OWNED,
+    PYPROJECT_SECTIONS,
+    RUFF_SECTIONS,
+    SECTION_BASES,
+    SECTION_KEY_FLOOR,
+    AmbiguousSection,
+    ForkedSectionDelta,
+    SectionBase,
+    SectionDelta,
+    SectionReport,
+    expected_entries,
+    inspect_section,
+    locate_section,
+    ruff_config_path,
+    section_base,
+    section_problems,
+)
+from dev_lab.dev._famconfig_survey import (
+    MIN_BASE_LINES,
+    Base,
+    Delta,
+    VacuousBase,
+    assert_base_floor,
+    delta_lines,
+    floating_subject,
+    fork_signals,
+    meaningful_lines,
+    measured_delta,
+    negated_base_lines,
+    positional_base_lines,
+    recipe_blocks,
+    satisfies,
+    unbound_recipes,
+)
+
+__all__ = [
+    'ABSENT',
+    'BASES',
+    'DIVERGED',
+    'DRIFTED',
+    'FOREIGN',
+    'GITIGNORE_FLOOR',
+    'INSTALLED',
+    'MAKE_TARGET_CORE',
+    'MIN_BASE_LINES',
+    'NO_FILE',
+    'NO_TABLE',
+    'ORDER_SENSITIVE_ARTEFACTS',
+    'OWNED',
+    'PYPROJECT_SECTIONS',
+    'RENDERED',
+    'REPO_FLOOR',
+    'REQUIRED',
+    'RUFF_SECTIONS',
+    'SECTION_BASES',
+    'SECTION_KEY_FLOOR',
+    'STAMP',
+    'AmbiguousSection',
+    'ArtefactReport',
+    'Base',
+    'Delta',
+    'ForkedDelta',
+    'ForkedSectionDelta',
+    'PositionalBase',
+    'SectionBase',
+    'SectionDelta',
+    'SectionReport',
+    'VacuousBase',
+    'artefact_base',
+    'assert_base_floor',
+    'assert_base_is_order_free',
+    'delta_lines',
+    'delta_problems',
+    'expected_entries',
+    'floating_subject',
+    'fork_signals',
+    'inspect_file',
+    'inspect_section',
+    'locate_section',
+    'meaningful_lines',
+    'measured_delta',
+    'negated_base_lines',
+    'positional_base_lines',
+    'recipe_blocks',
+    'render',
+    'rendered_lines',
+    'ruff_config_path',
+    'satisfies',
+    'section_base',
+    'section_problems',
+    'unbound_recipes',
+]
+
+#: MODE. The file must equal base-plus-delta byte for byte.
+RENDERED: Final = 'RENDERED'
+#: MODE. The base lines must be PRESENT and the rest of the file is the repo's. The weaker of the
+#: two, named so that applying it is a decision somebody typed.
+REQUIRED: Final = 'REQUIRED'
+#: STATUS. No file at the path -- every guarantee the base carries is absent, not merely unchecked.
+ABSENT: Final = 'ABSENT'
+#: STATUS. The file on disk is what the live base and delta render.
+INSTALLED: Final = 'INSTALLED'
+#: STATUS. Stamped by this renderer, and its bytes differ from what base and delta now produce.
+DRIFTED: Final = 'DRIFTED'
+#: STATUS. Unstamped and not what the base renders -- somebody's own file, which rendering would clobber.
+FOREIGN: Final = 'FOREIGN'
+
+
+#: Every artefact, by name. Built from the data table rather than restated, so a base added there
+#: arrives here and a base deleted there cannot leave a live entry behind.
+BASES: Final[dict[str, Base]] = {
+    '.gitignore': Base('.gitignore', _BASE_LINES['.gitignore'], RENDERED),
+    'Makefile': Base('Makefile', _BASE_LINES['Makefile'], REQUIRED),
+    '.gitattributes': Base('.gitattributes', _BASE_LINES['.gitattributes'], RENDERED),
+    '.rgignore': Base('.rgignore', _BASE_LINES['.rgignore'], RENDERED),
+}
+
+
+def artefact_base(artefact: str) -> Base:
+    """The base for *artefact*, or a refusal naming the ones that exist.
+
+    A lookup rather than an attribute so that an artefact this package does not own fails HERE, with
+    the set it could have meant, instead of at the point a caller indexes ``None``.
+
+    IT ALSO RUNS :func:`assert_base_is_order_free`, so a base that needs an ordering this table cannot
+    express is refused on the way OUT of the kit rather than at a consumer's render. Every reader of a
+    base goes through here, including the survey half and every shared test body.
+    """
+    base = BASES.get(artefact)
+    if base is None:
+        msg = (
+            f'no family base for {artefact!r}. Declared artefacts: {sorted(BASES)}. A config file '
+            f'with no base is not shared by default -- add the row to dev_lab.dev._famconfig_rows '
+            f'with the measurement that says it is shared.'
+        )
+        raise ForkedDelta(msg)
+    assert_base_is_order_free(base)
+    return base
+
+
+def rendered_lines(base: Base, delta: Delta) -> tuple[str, ...]:
+    """The file *base* plus *delta* produces, as lines, stamp included.
+
+    A dropped base line is rendered as a COMMENT naming the repo and the reason, in place. That is
+    what makes a removal legible to somebody reading the artefact rather than only to somebody
+    reading this package -- a deletion that leaves no trace in the file is indistinguishable from the
+    line never having been in the base. An anchored block gets the same treatment for the same
+    reason: a comment at the anchor's own indentation says whose lines follow and how many, so the
+    reader of the artefact can see where the base stops and the repo starts.
+    """
+    problems = delta_problems(base, delta)
+    if problems:
+        raise ForkedDelta('\n'.join(problems))
+    assert_base_floor(len(base.lines), MIN_BASE_LINES, base.artefact)
+    assert_base_is_order_free(base)
+    out = [*base.stamp_lines, '']
+    for line in base.lines:
+        reason = delta.dropped.get(line)
+        if reason is None:
+            out.append(line)
+        else:
+            out.append(f'{base.comment} dropped from the base by {delta.repo}: {line} -- {reason}')
+        anchored = delta.anchored.get(line, ())
+        if anchored:
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f'{indent}{base.comment} {delta.repo} delta, anchored here: {len(anchored)} line(s)')
+            out += list(anchored)
+    if delta.added:
+        out += ['', f'{base.comment} --- {delta.repo} delta, {len(delta.added)} of {delta.ceiling} allowed ---']
+        out += list(delta.added)
+    return tuple(out)
+
+
+def render(base: Base, delta: Delta) -> str:
+    """:func:`rendered_lines` as text, newline-terminated."""
+    return '\n'.join(rendered_lines(base, delta)) + '\n'
+
+
+@dataclass(frozen=True, slots=True)
+class ArtefactReport:
+    """One artefact in one repo: where it is, what state it is in, and which lines say so."""
+
+    artefact: str
+    path: Path
+    status: str
+    detail: str
+    offending: tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        """Whether the file on disk is what the live base and delta say it should be."""
+        return self.status == INSTALLED
+
+
+def inspect_file(path: Path, base: Base, delta: Delta) -> ArtefactReport:
+    """Compare the file at *path* against what *base* and *delta* render RIGHT NOW.
+
+    Re-rendering rather than comparing a stored digest is the whole mechanism: no recorded answer can
+    go stale, so a base edited here moves every consumer's verdict on the next run.
+    """
+    if not path.is_file():
+        detail = f'no {base.artefact} here -- the base guarantees nothing at this path, it is absent rather than clean'
+        return ArtefactReport(base.artefact, path, ABSENT, detail, ())
+    text = path.read_text(encoding='utf-8')
+    live = meaningful_lines(text, base.comment)
+    if base.mode == REQUIRED:
+        return _required_report(path, base, delta, live)
+    expected = rendered_lines(base, delta)
+    if text == render(base, delta):
+        return ArtefactReport(base.artefact, path, INSTALLED, f'{len(expected)} lines, as rendered', ())
+    offending = _line_differences(meaningful_lines('\n'.join(expected), base.comment), live)
+    if STAMP not in text:
+        detail = (
+            f'unstamped and not what the base renders: a {base.artefact} this package did not write. '
+            f'Rendering over it would clobber it -- declare its lines as a Delta first.'
+        )
+        return ArtefactReport(base.artefact, path, FOREIGN, detail, offending)
+    detail = (
+        f'stamped by this renderer and {len(offending)} line(s) differ from what the live base and '
+        f"{delta.repo}'s delta produce. Re-render; if the edit was wanted, it is a delta line or a "
+        f'declared drop, and both of those live in code.'
+    )
+    return ArtefactReport(base.artefact, path, DRIFTED, detail, offending)
+
+
+def _required_report(path: Path, base: Base, delta: Delta, live: tuple[str, ...]) -> ArtefactReport:
+    """The weaker mode: every base line present, unless a drop declares it gone."""
+    problems = delta_problems(base, delta)
+    if problems:
+        raise ForkedDelta('\n'.join(problems))
+    missing = tuple(line for line in base.content_lines if line not in delta.dropped and not satisfies(line, live))
+    resurrected = tuple(line for line in delta.dropped if satisfies(line, live))
+    # THE ASSOCIATION, which neither list above can see. `satisfies` reads one line at a time, so a
+    # target matched by NAME and a recipe matched ANYWHERE in the file both pass while the recipe sits
+    # under a different target. DROPPED LINES COME OUT OF THE REQUIREMENT rather than out of the
+    # complaints: a line the delta declares gone is not required to sit anywhere, and filtering the
+    # messages instead would compare a raw line against its own repr and never match -- which is how
+    # the first cut of this arm reported a correctly declared drop as drift.
+    orphaned = unbound_recipes(tuple(line for line in base.content_lines if line not in delta.dropped), live)
+    offending = missing + resurrected + orphaned
+    if not offending:
+        return ArtefactReport(base.artefact, path, INSTALLED, f'all {len(base.content_lines)} base lines present', ())
+    detail = (
+        f'{len(missing)} base line(s) absent with no declared drop, {len(resurrected)} declared drop(s) '
+        f'present after all, {len(orphaned)} recipe line(s) present but not under the target they belong '
+        f'to. A base line may leave this file only through a Delta.dropped entry that says why, a drop '
+        f'contradicted by the file is a declaration that lies, and a target whose recipe moved elsewhere '
+        f'still RUNS -- it just does nothing.'
+    )
+    return ArtefactReport(base.artefact, path, DRIFTED, detail, offending)
+
+
+def _line_differences(expected: Sequence[str], live: Sequence[str]) -> tuple[str, ...]:
+    """Which meaningful lines are missing from disk and which are there uninvited."""
+    out = [f'missing: {line}' for line in expected if line not in live]
+    out += [f'unexpected: {line}' for line in live if line not in expected]
+    return tuple(out)

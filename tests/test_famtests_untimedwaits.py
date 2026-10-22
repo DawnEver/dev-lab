@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.untimedwaits` -- every distinction, both ways.
+"""The controls for :mod:`dev_lab.dev.famtests.untimedwaits` -- every distinction, both ways.
 
 A LINT THAT HAS NEVER BEEN SHOWN TO FIRE PROVES NOTHING WHEN IT IS GREEN, and one that refuses every
 subprocess it sees gets deleted rather than obeyed. Every arm below is planted against in both
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.untimedwaits import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.untimedwaits import (
     BLOCKING,
     WAITERS,
     UnboundedWait,
@@ -145,11 +145,11 @@ def test_the_exemption_arm_reads_the_tree_it_is_handed_rather_than_the_kits_own(
     must fall silent, while the second entry names a kit module that was NOT planted and must be
     refused. A body that resolved against this module's checkout would find it on disk and pass.
     """
-    _plant(tmp_path, 'src/lab_commons/dev/famtests/untimedwaits.py', 'x = 1\n')
-    assert_every_exemption_is_real(tmp_path, exempt=('src/lab_commons/dev/famtests/untimedwaits.py',))
+    _plant(tmp_path, 'src/dev_lab/dev/famtests/untimedwaits.py', 'x = 1\n')
+    assert_every_exemption_is_real(tmp_path, exempt=('src/dev_lab/dev/famtests/untimedwaits.py',))
     with pytest.raises(VacuousExemption, match=r'bounded\.py'):
         assert_every_exemption_is_real(
-            tmp_path, exempt=('src/lab_commons/dev/famtests/untimedwaits.py', 'src/lab_commons/dev/bounded.py')
+            tmp_path, exempt=('src/dev_lab/dev/famtests/untimedwaits.py', 'src/dev_lab/dev/bounded.py')
         )
 
 

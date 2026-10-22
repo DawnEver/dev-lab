@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.githooks import bash_executable
+from dev_lab.dev.githooks import bash_executable
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import shell
 from lab_commons.hpc.artifact import (

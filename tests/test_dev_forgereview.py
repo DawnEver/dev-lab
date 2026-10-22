@@ -20,9 +20,9 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out
 from _forge_state import StateForge
 
-from lab_commons.dev.forgemerge import decide
-from lab_commons.dev.forgepulls import Marker, marker
-from lab_commons.dev.forgereview import (
+from dev_lab.dev.forgemerge import decide
+from dev_lab.dev.forgepulls import Marker, marker
+from dev_lab.dev.forgereview import (
     CLAIMED,
     DEFAULT_CLAIM_STALE,
     RANGE_FIELD,
@@ -42,10 +42,10 @@ from lab_commons.dev.forgereview import (
     run_command,
     step,
 )
-from lab_commons.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
-from lab_commons.dev.forgestatus import CommitStatus, status_list
-from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.platformparts import standing
+from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgestatus import CommitStatus, status_list
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.platformparts import standing
 from lab_commons.outcomes import Conclusion
 
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))

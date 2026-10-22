@@ -2,7 +2,7 @@
 
 Each working session keeps exactly ONE long-lived branch, declared in `pyproject.toml`, and merges its work into
 it (`ONE-BRANCH-PER-SESSION`). Every other branch is merged and then deleted (`MERGE-OR-DELETE`): there is no
-third state, and a parked tag or renamed branch is the same debt. Run `python -m lab_commons.dev.branchset` to see
+third state, and a parked tag or renamed branch is the same debt. Run `python -m dev_lab.dev.branchset` to see
 what to merge and what to delete, and `--apply` to delete the merged local ones.
 
 ## The declaration
@@ -16,7 +16,7 @@ prune_merged = true            # default false: every serving host deletes merge
 grace_hours = 24               # default 24: idle time before a branch is pruned (merged) or alarmed (unmerged)
 ```
 
-Read by `lab_commons.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
+Read by `dev_lab.dev.branchset.declared_branchset(root)`; a missing or malformed table, or an unknown key,
 raises `BranchSetNotDeclared`. Adding a long-lived branch is a reviewed edit of `sessions`.
 
 A branch in an `ephemeral` namespace is the head of ONE pull request: the push hook and the census accept it
@@ -32,8 +32,8 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 |---|---|
 | `census(root, branchset)` | `undeclared_origin` (debt), `local_debt`, `unpushed` (undeclared, holding commits no origin ref has) |
 | `merge_candidates(root, branchset)` | every undeclared branch and parked tag, `deletable` when its tip is in the trunk's authority or a session branch; anything else is merged first |
-| `python -m lab_commons.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
-| `python -m lab_commons.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists origin's for a human |
+| `python -m dev_lab.dev.branchset [--root R]` | prints the candidates as `delete` / `merge` rows; deletes nothing |
+| `python -m dev_lab.dev.branchset --apply` | deletes merged LOCAL branches and tags, re-checking ancestry at the moment of deletion; lists origin's for a human |
 
 - **Merged means merged into the REMOTE authority.** A local `main` that is ahead and unpushed answers "merged"
   about work whose only published copy is the branch you are about to delete.
@@ -44,7 +44,7 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 
 ## The assertions consumers run
 
-`lab_commons.dev.famtests.branchset`:
+`dev_lab.dev.famtests.branchset`:
 
 - `assert_origin_branches_declared(root=, branchset=)`: red on an undeclared origin branch not contained in HEAD,
   `origin/<trunk>` or a session branch. A merged one is returned and warned as "deletion owed to a human".
@@ -55,8 +55,8 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 ## The push-time check
 
 The family base hook table carries the pre-push row `branchset-push`
-(`src/lab_commons/dev/githooks/base.toml`), so every repo that opts into `[tool.lab_commons.hooks]` runs it with no
-line of its own. It judges every pushed `refs/heads/**` ref (`lab_commons.dev.branchset_push`, reading git's ref
+(`src/dev_lab/dev/githooks/base.toml`), so every repo that opts into `[tool.lab_commons.hooks]` runs it with no
+line of its own. It judges every pushed `refs/heads/**` ref (`dev_lab.dev.branchset_push`, reading git's ref
 lines from stdin through the family hook runner). Each ref is judged by the declaration its OWN pushed commit carries
 (`<sha>:pyproject.toml`), never by the pushing checkout's working tree, so the verdict does not depend on
 which checkout pushes. Agent lanes are local: only the declared branches reach origin.
@@ -73,7 +73,7 @@ There is no bypass flag; the way to push a new long-lived branch is to add it to
 
 ## Pruning origin
 
-Finished branches still pile up on origin, so the forge prunes them (`lab_commons.dev.branchprune`). The host
+Finished branches still pile up on origin, so the forge prunes them (`dev_lab.dev.branchprune`). The host
 EVERY serving host -- no host owns this; a deletion is pinned to the judged sha, so a raced second delete is a no-op --
 surveys origin on every `forge serve` tick, after the tick's `git fetch --prune`. No other host reads or
 deletes anything. Undeclared branches whose tip has been idle for at least `grace_hours` are judged:
@@ -89,7 +89,7 @@ deletes anything. Undeclared branches whose tip has been idle for at least `grac
 - **Remote deletion is a human decision, expressed as data.** `prune_merged` defaults to `false`. Until a repo
   opts in, `forge integration` and `forge queue` print each merged branch as `deletable`, and nothing is deleted.
   An agent never deletes a remote ref by a raw push (`PUSH-REMOTE-DELETE`); it deletes one through LOSSLESS-DELETE,
-  `python -m lab_commons.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere.
+  `python -m dev_lab.dev.branchprune delete <branch>...`, which refuses unless every commit lives elsewhere.
 - **Each deletion is pinned to the sha the survey judged.** The live tip is read from the forge first. A branch
   that moved is kept, because its new tip is somebody's new work.
 - **Each deletion is logged** as one line, `{"event": "lab_commons.forge.prune", "ref", "sha", "rule"}`. The
@@ -107,8 +107,8 @@ comment `landed: head <sha12> is on <base> (merged by <sha12>)`, close, then the
 LOSSLESS-DELETE when the branch set allows it (an `ephemeral` namespace, or `prune_merged` for an undeclared
 branch). A PR not contained is never touched; a closed PR is not listed again. Each close is one
 `{"event": "lab_commons.forge.pr-close-landed", "pr", "head", "sha", "base", "merged_by"}` line. A person or
-agent runs the same: `python -m lab_commons.dev.forge pr close-landed [<n>...]` (no number: every open PR),
-which refuses a named PR whose head is not contained (`lab_commons.dev.prlanded`).
+agent runs the same: `python -m dev_lab.dev.forge pr close-landed [<n>...]` (no number: every open PR),
+which refuses a named PR whose head is not contained (`dev_lab.dev.prlanded`).
 
 ### Mirrors
 

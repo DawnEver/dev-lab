@@ -25,7 +25,7 @@ and who runs it, is on [the verdict model](verdict-model.md).
   correctness failure.
 - **The xfail list is the distance to done; its terminal state is empty.**
 - A repo declares the skips it allows as a NAMED SET, two-sided: an undeclared skip reds, and a declared skip
-  that is gone reds too (`lab_commons.dev.reports`).
+  that is gone reds too (`dev_lab.dev.reports`).
 
 ## One file, one module object
 

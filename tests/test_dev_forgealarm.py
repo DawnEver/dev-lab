@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev.forgealarm import AUTH, EVENT, Alarm, main, repeat_window, sound
+from dev_lab.dev.forgealarm import AUTH, EVENT, Alarm, main, repeat_window, sound
 from lab_commons.supervise.alert import Delivery, Notice
 
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
@@ -81,7 +81,7 @@ def test_a_channel_that_failed_is_tried_again_next_tick() -> None:
 
 
 def test_a_process_that_imports_no_dev_code_raises_one_through_the_cli(capsys) -> None:
-    """``python -m lab_commons.dev.forgealarm <kind> <repo> <subject> <body>``: the hpc deploy's channel."""
+    """``python -m dev_lab.dev.forgealarm <kind> <repo> <subject> <body>``: the hpc deploy's channel."""
     assert main(['run', 'https://f/o/r.git', 'the deploy refused r', 'its retired table']) == 0
     line = _line(capsys)
     assert (line['kind'], line['repo'], line['subject'], line['body']) == (

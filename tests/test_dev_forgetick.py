@@ -33,9 +33,9 @@ from lab_commons.compute.model import (
 )
 from lab_commons.compute.priority import Priority
 from lab_commons.compute.serves import SKIPPED_HERE, Serves
-from lab_commons.dev import forgeproduce, forgerounds, forgetick
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeclaim import (
+from dev_lab.dev import forgeproduce, forgerounds, forgetick
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeclaim import (
     CLAIMED,
     DEFAULT_LEASE,
     DONE,
@@ -50,13 +50,13 @@ from lab_commons.dev.forgeclaim import (
     serving,
     this_machine,
 )
-from lab_commons.dev.forgecoalesce import WAITING_BEHIND, behind
-from lab_commons.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.forgetick import tick
-from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.producer import ProducerExit, release_reason
+from dev_lab.dev.forgecoalesce import WAITING_BEHIND, behind
+from dev_lab.dev.forgeschedule import NOT_ADMITTED, OVER_BUDGET, candidates, load_schedule
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgetick import tick
+from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.producer import ProducerExit, release_reason
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.needsets import BASE
 from lab_commons.hpc.retired import RETIRED
@@ -187,11 +187,11 @@ def _declare(repo: Path, tips: dict[str, str], pyproject: str) -> str:
 #: A retired table, read off the registry: its spelling lives there and nowhere else.
 RETIRED_TABLE = min(key for key in RETIRED if key.startswith('[tool.lab_commons.'))
 
-PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]\n'
+PRODUCE = '[tool.lab_commons.tests]\nproduce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
 
 
 def _argv(part: str = BASE) -> list[str]:
-    return ['-m', 'lab_commons.dev.verify', '--part', part]
+    return ['-m', 'dev_lab.dev.verify', '--part', part]
 
 
 def _tick(repo: Path, server: ThreadingHTTPServer, **kwargs: object) -> forgetick.TickReport:
@@ -771,7 +771,7 @@ def test_no_working_remote_claims_no_part_whose_outputs_could_need_it(
 
 NEEDS = (
     '[tool.lab_commons.tests]\nresources = ["workstation", "jmag", "linux"]\n'
-    'produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]\n'
+    'produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]\n'
     '[tool.lab_commons.hpc]\ninstall = "uv sync"\n[tool.lab_commons.parts]\noutput = "output/logs"\n'
 )
 

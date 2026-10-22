@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.datedlog import date_parts, dated_log
+from dev_lab.dev.datedlog import date_parts, dated_log
 
 
 def test_the_three_parts_are_todays_local_date_two_digits_each() -> None:

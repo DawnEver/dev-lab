@@ -1,0 +1,204 @@
+"""The family's MECHANISM DOCS, declared as data so a consumer's pointer cannot rot.
+
+THE DEFECT THIS CLOSES, MEASURED 2026-09-16. The universal rule STATEMENTS were unified into
+:mod:`dev_lab.dev.rules` on 2026-09-15, each row carrying its ID, its statement and the
+mechanism that refuses a violation. **The MECHANISM DOCS were not.** So the four repos cited rules
+by ID and had nothing that explained how the mechanism works: ``consumer-a`` held 14 dev
+documents totalling roughly 1300 lines, of which ten were not about motors at all; ``consumer-b`` held
+one document and it was its own architecture; ``consumer-c`` and this repo held none. Three of four
+repos had no written mechanism, while one held all of it under a name that made it look local.
+
+THE SUBJECT TEST decides what is here, and it is the same shape as the noun test in
+:mod:`dev_lab.dev.rules`: **does the document's SUBJECT change when you change repos?** The BOX,
+GIT, THE FORGE or THE FAMILY'S PROCESS is the family's. Motors, solvers, meshes and cases stay home.
+A document that fails the test on half its sections is SPLIT at that seam rather than moved whole.
+
+WHY THIS MODULE IS DATA AND NOT THE PROSE. ``tests/test_arch_rules_pages.py`` refuses prose markdown
+under ``src/``, and it is right to: a page shipped inside a package is loaded by nobody and reviewed
+by nobody. So the pages live in ``docs-src/dev/`` of THIS repo -- one copy, in the open -- and what
+ships is the TABLE OF CONTENTS. That is the half a consumer needs, because the failure this migration
+exists to avoid is a consuming repo COPYING a shared page, which is the fork the sharing removed.
+
+SO THE CONSUMER SIDE IS GENERATED. A repo's own dev index calls :func:`pointer_table` and pastes what
+it returns, or renders it at build time; either way the row set comes from here. A page added, renamed
+or retired here changes every consumer's pointer at its next render instead of leaving four hand-typed
+tables that agree for a while. :func:`missing_pages` is the other half of the same ratchet, checked by
+this repo's own test suite: a row naming a file that is not on disk is a citation pointing at nothing.
+
+WHAT IS NOT HERE. Any BUILD of these pages. :mod:`dev_lab.dev.docsite` is the family's docs
+driver, and the rendered portal for this tree is a sub-site row in the repo that wants one -- today
+one consumer's ``family`` row in its docs build script, which renders this directory from a
+lab-commons CHECKOUT beside its primary one (``docs-src/`` is not in the wheel). The script is not
+named here on purpose: a path in this docstring is read as a SUPERSEDES claim by
+:mod:`dev_lab.dev.supersede`, and that script delegates rather than being replaced. A box with only the
+installed package gets that row's announced skip naming the clone, never a portal with a hole in it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Final, NamedTuple
+
+__all__ = [
+    'CANONICAL_TREE',
+    'PAGES',
+    'Page',
+    'docs_dir',
+    'missing_pages',
+    'page_path',
+    'pointer_table',
+    'slugs',
+]
+
+#: Where the pages live, relative to this repo's root. A consumer reaches them by reading this
+#: repo -- a checkout beside its own, or the file's page on the forge -- and never by copying one in.
+CANONICAL_TREE: Final = 'docs-src/dev'
+
+
+class Page(NamedTuple):
+    """One family mechanism document: its slug, its title, and the subject it owns."""
+
+    slug: str
+    title: str
+    subject: str
+
+
+#: One row per page under :data:`CANONICAL_TREE`. ORDER IS READING ORDER, not alphabetical: the migration
+#: page first for a workstation arriving from the old model, then the participants before the verdict they
+#: all cite, and the verdict before the branch layers that spend it.
+PAGES: Final[tuple[Page, ...]] = (
+    Page(
+        'onboarding',
+        'Onboarding a repo',
+        'The one call, every declaration a new repo supplies, and the order that matters',
+    ),
+    Page(
+        'migrate',
+        'Migrating a workstation',
+        'Start here if you used to run the gate before a push: what to stop, and the five commands that replace it',
+    ),
+    Page(
+        'the-three-participants',
+        'The three participants',
+        'Who does what: the human, the authors, the producers, the forge and the steward',
+    ),
+    Page(
+        'verdict-model',
+        'The verdict model',
+        'What a verdict is, the tiers, and which destination needs which forge parts',
+    ),
+    Page(
+        'testing-discipline',
+        'Testing discipline',
+        'The lightweight/heavy partition, xfail never skip, one test session per box',
+    ),
+    Page(
+        'branch-layers',
+        'Branch layers',
+        'Trunk, integration and child branches: what each proves and the one verb that moves it',
+    ),
+    Page('alignment', 'Alignment', 'How every branch keeps shared bookkeeping out of merge conflicts'),
+    Page('fanout', 'Fan-out', 'Parallel work in worktrees: environments, subagent bases, measuring, landing'),
+    Page(
+        'shared-checkout',
+        'The shared checkout',
+        'What breaks when several parties write one checkout, and the habits that prevent it',
+    ),
+    Page(
+        'orphans', 'Killed runs and orphans', 'What survives a stopped run, why a lock judges liveness, and how to reap'
+    ),
+    Page(
+        'box-resources', 'Box resources', 'What one workstation rations, and the broker every run declares its cost to'
+    ),
+    Page(
+        'forge', 'The forge', 'Parts, claims, `forge serve`, scheduling and `forge queue`: how a sha gets its verdict'
+    ),
+    Page(
+        'integration',
+        'The integration branch',
+        'The path of one change, the roles, the integration tick, `forge sync`, `integrate promote`, the merge audit',
+    ),
+    Page(
+        'issues',
+        'Issues',
+        'An issue is intent; its state is derived from refs and parts; claims and priority are labels and comments',
+    ),
+    Page('hpc', 'HPC clusters', 'A cluster is one more `forge serve` host: grants, the one-line deploy, runs, records'),
+    Page(
+        'components',
+        'Components',
+        'A product mounts its engines as submodules: the table, the derived-file check, the bump loop',
+    ),
+    Page('artefacts', 'Artefacts', "A run's declared outputs: the store, its layout and its retention"),
+    Page('retirement', 'Retirement', 'The archive keeps old code, the registry keeps a dead spelling dead'),
+    Page(
+        'docs-pipeline',
+        'The docs pipeline',
+        'The three properties a docs builder holds, and why a skipped sub-site is announced',
+    ),
+    Page(
+        'translations',
+        'Translations',
+        'How a `<stem>.zh.md` beside its `<stem>.md` passes the CJK guard, and the non-ASCII goal',
+    ),
+    Page('worktrees', 'Worktrees stay inside', 'Every checkout lives under `<repo>/.claude/worktrees/<name>`'),
+    Page('branch-set', 'One branch per session', 'The declared branch set, merge-or-delete, and the push-time check'),
+    Page(
+        'auto-doors',
+        'Auto mode runs the doors',
+        'Local cleanup and run stops are checked doors both clients allow unprompted',
+    ),
+    Page('refusals', 'Refusals', 'Every deny refusal is a clause, a door and a pointer; the full text of each row'),
+    Page(
+        'project-files',
+        'Project files',
+        'Every project file is rendered from a family base plus a delta, or owned by the repo; hooks and CI are TOML',
+    ),
+)
+
+
+def slugs() -> tuple[str, ...]:
+    """Every page slug, in reading order."""
+    return tuple(page.slug for page in PAGES)
+
+
+def docs_dir(root: Path) -> Path:
+    """The pages directory inside a lab-commons checkout rooted at *root*."""
+    return root.joinpath(*CANONICAL_TREE.split('/'))
+
+
+def page_path(root: Path, slug: str) -> Path:
+    """The file one page is in. Raises :class:`KeyError` for a slug the registry does not declare."""
+    if slug not in slugs():
+        msg = f'{slug!r} is not a family mechanism page; declared: {", ".join(slugs())}'
+        raise KeyError(msg)
+    return docs_dir(root) / f'{slug}.md'
+
+
+def missing_pages(root: Path) -> tuple[str, ...]:
+    """Every declared slug with no file, and every file with no row -- BOTH sides, in one call.
+
+    Two-sided on purpose. A row naming an absent file is a citation pointing at nothing; a page
+    nobody declared is a page no consumer's pointer table will ever show, which is the same failure
+    wearing the opposite sign. Pure over *root* so a planted tree can drive this function rather
+    than a re-implementation of it.
+    """
+    directory = docs_dir(root)
+    declared = set(slugs())
+    present = {path.stem for path in sorted(directory.glob('*.md'))} - {'index'}
+    out = [f'{slug}: declared with no file at {CANONICAL_TREE}/{slug}.md' for slug in sorted(declared - present)]
+    out += [f'{stem}: a page under {CANONICAL_TREE} that no row declares' for stem in sorted(present - declared)]
+    return tuple(out)
+
+
+def pointer_table(base: str, pages: Iterable[Page] = PAGES) -> str:
+    """The markdown table a CONSUMING repo puts in its own dev index, generated from the rows.
+
+    *base* is how that repo reaches this one -- a relative path to a sibling checkout, or the forge
+    URL of ``docs-src/dev``. It is the caller's because only the caller knows how it reaches the
+    shared tree; everything else comes from :data:`PAGES`, so four repos cannot drift into four
+    different tables of contents.
+    """
+    rows = '\n'.join(f'| [{page.title}]({base.rstrip("/")}/{page.slug}.md) | {page.subject} |' for page in pages)
+    return f'| page | what it covers |\n|---|---|\n{rows}'

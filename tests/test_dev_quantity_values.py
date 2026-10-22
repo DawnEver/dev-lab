@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.quantity_values import (
+from dev_lab.dev.quantity_values import (
     QuantitySite,
     assert_value_floor,
     carries_a_unit,

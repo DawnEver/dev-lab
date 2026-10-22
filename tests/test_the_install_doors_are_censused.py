@@ -16,8 +16,8 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
-from lab_commons.dev.doorcensus import (
+from dev_lab.dev._doorcensus_rows import DOOR_FLOOR, DOORS, REPO_FLOOR, SHARED
+from dev_lab.dev.doorcensus import (
     DoorDriftError,
     assert_census,
     door_text,

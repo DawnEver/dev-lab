@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import ephemeralrefs, floors
-from lab_commons.dev.famtests.ephemeralrefs import (
+from dev_lab.dev import ephemeralrefs, floors
+from dev_lab.dev.famtests.ephemeralrefs import (
     assert_no_tracked_file_cites_ephemeral,
     assert_the_scanner_still_convicts,
 )

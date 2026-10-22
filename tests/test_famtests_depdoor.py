@@ -1,4 +1,4 @@
-"""``lab_commons.dev.famtests.depdoor`` -- every arm driven GREEN and driven RED.
+"""``dev_lab.dev.famtests.depdoor`` -- every arm driven GREEN and driven RED.
 
 WHY EACH ARM IS DRIVEN TWICE. This module publishes assertions, and an assertion that cannot fail is
 the one defect no amount of green reveals. So each case below plants a repo that answers correctly
@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.dep import NO_ANCHORS_DECLARED, Port, mutate
-from lab_commons.dev.famtests.depdoor import (
+from dev_lab.dev.dep import NO_ANCHORS_DECLARED, Port, mutate
+from dev_lab.dev.famtests.depdoor import (
     A_REQUIREMENT,
     UNDECLARED_GAPS,
     Ran,

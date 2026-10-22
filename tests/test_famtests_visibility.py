@@ -1,4 +1,4 @@
-"""``lab_commons.dev.famtests.visibility`` -- driven on REAL repositories with REAL remotes.
+"""``dev_lab.dev.famtests.visibility`` -- driven on REAL repositories with REAL remotes.
 
 WHY A REAL REMOTE AND NOT A STUB. Every claim this body makes is about the difference between a LOCAL
 pointer and the REMOTE one, and a stub erases exactly that difference. So each case here runs
@@ -9,7 +9,7 @@ THE TRUNK TRAP IS PLANTED, and it is why this body takes no default. A repositor
 called ``main`` is a real repository, and a guessed trunk finds no ref, counts no commits and reports
 the checkout CLEAN. :func:`test_a_guessed_trunk_reports_a_foreign_checkout_clean_and_this_refuses`
 builds one and shows the refusal, which is the whole argument for the no-default rule stated in
-:mod:`lab_commons.dev.famtests`.
+:mod:`dev_lab.dev.famtests`.
 
 BOTH SIDES OF EVERY NAMED SET. A pin that only reds on ARRIVAL rots in the other direction: a pinned
 name whose branch was pushed or deleted goes on reading as a live decision. Each declared-set arm
@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.checkout import unmerged_changes
-from lab_commons.dev.famtests.visibility import (
+from dev_lab.dev.checkout import unmerged_changes
+from dev_lab.dev.famtests.visibility import (
     assert_local_only_branches,
     assert_one_pushable_branch,
     assert_origin_branch_set,

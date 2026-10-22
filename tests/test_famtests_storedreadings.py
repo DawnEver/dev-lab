@@ -1,4 +1,4 @@
-"""``lab_commons.dev.famtests.storedreadings`` -- every arm driven GREEN and driven RED.
+"""``dev_lab.dev.famtests.storedreadings`` -- every arm driven GREEN and driven RED.
 
 EVERY RED HERE IS REACHABLE, which is the difference from a seat famtest's suite and is worth stating
 because it is a property of the subject rather than of the effort put in: this body reads TEXT and
@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.storedreadings import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.storedreadings import (
     HISTORICAL_MARKERS,
     MARKER_WINDOW,
     PERCENT,

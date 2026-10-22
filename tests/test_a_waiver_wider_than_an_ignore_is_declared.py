@@ -2,13 +2,13 @@
 
 ``exclude`` drops every selector over a subtree and names no code; ``per-file-ignores`` drops a named
 code over a glob. Every arm stated over the GLOBAL ignore list is blind to both, which is why
-:mod:`lab_commons.dev.ruffwaivers` exists.
+:mod:`dev_lab.dev.ruffwaivers` exists.
 
 WHAT THIS FILE NO LONGER DOES, AND WHY. It used to read three sibling checkouts and hold their rows
 under neutral names, which made this public tree carry facts about repos it does not own -- and those
 facts went stale against the real trees, because the names were not theirs. Each consumer now
 declares its own excludes and per-file waivers, with real names, in its own tests, and calls
-:func:`~lab_commons.dev.ruffwaivers.assert_waivers_declared`. What stays here is the MECHANISM, driven
+:func:`~dev_lab.dev.ruffwaivers.assert_waivers_declared`. What stays here is the MECHANISM, driven
 by planted controls, and the kit's own rows judged by the same call a consumer makes.
 
 THE AXIS THE CONTROLS ARE PARAMETRIZED OVER IS SPELLING, not repos: ruff honours ``lint.extend-ignore``
@@ -27,8 +27,8 @@ from typing import Final
 import pytest
 from _config_census_rows import KIT_PER_FILE_WAIVERS
 
-from lab_commons.dev.floors import FloorUnmet, SlackFloor, assert_floor, assert_floor_still_binds
-from lab_commons.dev.ruffwaivers import (
+from dev_lab.dev.floors import FloorUnmet, SlackFloor, assert_floor, assert_floor_still_binds
+from dev_lab.dev.ruffwaivers import (
     MACHINE_EXCLUDES,
     UndeclaredWaiverError,
     WaiverKindError,

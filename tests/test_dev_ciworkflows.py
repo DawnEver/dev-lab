@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lab_commons.dev.ciworkflows import RENDER_COMMAND, STAMP, drift, main, merge, render, workflows, write
+from dev_lab.dev.ciworkflows import RENDER_COMMAND, STAMP, drift, main, merge, render, workflows, write
 
 _ROOT = Path(__file__).resolve().parents[1]
 

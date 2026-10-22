@@ -9,7 +9,7 @@ from pathlib import Path
 from _arch_corpus import assert_floor, parse, rel, source_modules
 
 from lab_commons import launch
-from lab_commons.dev import servetask, workstation
+from dev_lab.dev import servetask, workstation
 
 #: The creation flags that give a child a console of its OWN instead of the inherited windowless one.
 _DETACHING = frozenset({'DETACHED_PROCESS', 'CREATE_NEW_CONSOLE'})
@@ -22,7 +22,7 @@ def test_the_task_runs_the_windowless_interpreter_from_its_checkout_every_five_m
     lab = tmp_path / 'lab-commons'
     want = servetask.definition_of(lab)
     assert want.command == str(lab / '.venv' / 'Scripts' / 'pythonw.exe'), 'pythonw: no console window'
-    assert want.arguments == '-m lab_commons.dev.workstation serve'
+    assert want.arguments == '-m dev_lab.dev.workstation serve'
     assert want.working_directory == str(lab), 'the checkout is the working directory, not a `cmd /c cd`'
     assert (want.logon_type, want.hidden, want.interval) == ('InteractiveToken', 'true', 'PT5M')
 

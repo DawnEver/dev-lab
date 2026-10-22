@@ -8,7 +8,7 @@ cluster is doing, run `forge queue` from anywhere; ssh is only a human's debuggi
 ## Deploy: one line per account
 
 On the login host you chose, store your own forge token once (`git config --global credential.helper store`,
-`chmod 600 ~/.git-credentials`, then `python -m lab_commons.dev.forge auth login`), then paste:
+`chmod 600 ~/.git-credentials`, then `python -m dev_lab.dev.forge auth login`), then paste:
 
 ```
 [ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=$D/src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
@@ -175,7 +175,7 @@ per repo + sha + part + scope in `forge-runs/` beside the machine file. Slurm is
   ```toml
   [tool.lab_commons.tests]
   resources = ["femm", "jmag", "windows"]                          # markers that name a resource
-  produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]   # the ONE local producer, {part} filled
+  produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]   # the ONE local producer, {part} filled
   ```
 
   Every resource is equal: a tool, an OS, a host fact. A test that needs one carries its marker (registered in

@@ -24,8 +24,8 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev import bounded
-from lab_commons.dev.famtests import boundedremedy
+from dev_lab.dev import bounded
+from dev_lab.dev.famtests import boundedremedy
 
 #: The numbers this REPO drives the live arms at. Both labs measured 3.0 and 4.0 independently and
 #: landed on the same pair; the kit takes the same, and states that it is a copy of a measurement

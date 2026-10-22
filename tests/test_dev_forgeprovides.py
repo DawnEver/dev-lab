@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lab_commons.dev.forgeprovides import NO_PROVIDER, present, unserved
+from dev_lab.dev.forgeprovides import NO_PROVIDER, present, unserved
 
 
 def test_a_card_has_its_os_and_its_machine_file_resources() -> None:

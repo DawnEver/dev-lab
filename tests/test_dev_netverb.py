@@ -1,4 +1,4 @@
-"""``lab_commons.dev.netverb`` -- the retry loop driven against REAL subprocesses, both directions.
+"""``dev_lab.dev.netverb`` -- the retry loop driven against REAL subprocesses, both directions.
 
 NOTHING UNDER TEST IS MOCKED. Every case below runs a real interpreter as a real child process,
 which is the only shape that can fail for the right reason: the thing being claimed is what the loop
@@ -27,8 +27,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev._netverb_rows import ROWS
-from lab_commons.dev.netverb import (
+from dev_lab.dev._netverb_rows import ROWS
+from dev_lab.dev.netverb import (
     DEFAULT_ATTEMPTS,
     Attempt,
     Diagnosis,
@@ -291,7 +291,7 @@ def test_the_module_entry_point_reports_JSON_a_shell_caller_can_branch_on(tmp_pa
     argv, counter = _child(tmp_path, fails=99, message=' ! [rejected] main -> main\n')
     # The door runs only git, so the child is reached through a git shell alias.
     alias = 'alias.netverbprobe=!' + ' '.join(f'"{Path(word).as_posix()}"' for word in argv)
-    door = [sys.executable, '-m', 'lab_commons.dev.netverb', '--attempts', '3', '--backoff', '0', '--json', '--']
+    door = [sys.executable, '-m', 'dev_lab.dev.netverb', '--attempts', '3', '--backoff', '0', '--json', '--']
     done = subprocess.run(
         [*door, 'git', '-c', alias, 'netverbprobe'],
         capture_output=True,

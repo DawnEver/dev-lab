@@ -99,7 +99,7 @@ The base installation is the standard library alone. Select capabilities explici
 - **consumer-a** — the origin of this code; re-points `core/utils/{config,logger}.py`
   at this package (see that repo's `plan-lab-commons-standalone.md` for the swap runbook).
 - **consumer-c** — consumes the runtime package and the `[dev]` kit (shared rules registry,
-  deny rules and agent guard, famconfig-rendered config, `lab_commons.dev.verify`).
+  deny rules and agent guard, famconfig-rendered config, `dev_lab.dev.verify`).
 - **consumer-b** — consumes the runtime package (logging, paths, file_io, exceptions, units, em) and
   the `[dev]` kit the same way. Its forks (Hairpinexample-org, consumer-b-webui) do NOT depend on
   lab-commons.

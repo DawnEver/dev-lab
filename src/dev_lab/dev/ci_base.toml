@@ -1,0 +1,36 @@
+# THE FAMILY'S GITHUB ACTIONS WORKFLOWS -- the base, as data. Rendered by dev_lab.dev.ciworkflows.
+#
+# A repo OPTS IN to a workflow by declaring its table, `[tool.lab_commons.ci."<file>.yml"]`, in its own
+# pyproject.toml (an empty table takes the base as is); the repo's table is deep-merged over the base
+# (tables merge key by key, any other value replaces). A repo may also declare a workflow the base
+# does not have. `.github/workflows/<file>.yml` is then a RENDERED artefact: never hand-edited, never
+# parsed back. Re-render with `python -m dev_lab.dev.ciworkflows render`.
+
+# The thin caller: the checks are the repo's `make verify`; the CI shape (matrix, uv sync, failure
+# reporting) is defined once, in lab-commons' reusable python-verify.yml. `@main`, not a sha: the
+# caller follows the one shared definition, as the dependency on lab-commons carries no ref either.
+["ci.yml"]
+name = "CI"
+
+["ci.yml".on.push]
+branches = ["main"]
+
+["ci.yml".on.pull_request]
+
+["ci.yml".on.workflow_dispatch]
+
+["ci.yml".concurrency]
+group = "ci-${{ github.ref }}"
+cancel-in-progress = true
+
+["ci.yml".jobs.verify]
+uses = "DawnEver/lab-commons/.github/workflows/python-verify.yml@main"
+
+# Required: the reusable workflow's reporting job files its tracking issue in the CALLING repository,
+# and a reusable workflow can never widen the permissions its caller grants.
+["ci.yml".jobs.verify.permissions]
+contents = "read"
+issues = "write"
+
+["ci.yml".jobs.verify.with]
+python-versions = '["3.12", "3.13"]'

@@ -15,8 +15,8 @@ from types import SimpleNamespace
 import pytest
 
 from lab_commons.box import Refused
-from lab_commons.dev import _dep_project, dep
-from lab_commons.dev.envseat import EnvironmentSeat
+from dev_lab.dev import _dep_project, dep
+from dev_lab.dev.envseat import EnvironmentSeat
 
 
 @contextmanager
@@ -27,7 +27,7 @@ def _live_verdict(tmp_path, monkeypatch, *, python: str = sys.executable) -> Ite
     ready.unlink(missing_ok=True)
     code = (
         'import json,pathlib,sys\n'
-        'from lab_commons.dev.envseat import EnvironmentSeat\n'
+        'from dev_lab.dev.envseat import EnvironmentSeat\n'
         'with EnvironmentSeat(sys.prefix, "gate:environment-A").held():\n'
         ' pending=pathlib.Path(sys.argv[1]).with_suffix(".tmp")\n'
         ' pending.write_text(\n'
@@ -153,7 +153,7 @@ def test_real_bootstrap_B_runs_while_A_has_a_verdict_then_B_refuses_its_own_sync
     assert 'REFUSED:' in refusal
     assert 'installed' not in refusal
     failed = subprocess.run(
-        [str(python), '-I', '-m', 'lab_commons.dev.dep', '--sync'],
+        [str(python), '-I', '-m', 'dev_lab.dev.dep', '--sync'],
         check=False,
     )
     assert failed.returncode != 0

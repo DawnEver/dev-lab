@@ -1,7 +1,7 @@
 """THE LIVE HALF: the kit's recorded selection re-measured against its own test tree, plus the kit's controls.
 
 `test_dev_collectscope.py` proves the reader can fail, over planted files. THIS file proves the CENSUS
-can -- every refusal of `lab_commons.dev.collectcensus` driven through the real function -- and
+can -- every refusal of `dev_lab.dev.collectcensus` driven through the real function -- and
 measures the one selection this repo makes. Each consumer declares its own selections and residue in
 its own tests and calls the same `assert_reaches` over its own checkout.
 
@@ -20,7 +20,7 @@ from typing import Final
 import pytest
 from _collect_census_rows import FILE_FLOORS, REPO_FLOOR, ROW_FLOOR, ROWS
 
-from lab_commons.dev.collectcensus import (
+from dev_lab.dev.collectcensus import (
     CollectRow,
     CollectRowError,
     ReachDriftError,

@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks, disclosure
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import DENY_RULES, rules_by_id
+from dev_lab.dev import agenthooks, disclosure
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, rules_by_id
 
 
 @pytest.fixture(scope='module')

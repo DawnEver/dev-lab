@@ -48,8 +48,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lab_commons.dev.profile import RepoProfile
-from lab_commons.dev.rules import RULES, Adoption, assert_adopted, guard, lint, unadopted, waived
+from dev_lab.dev.profile import RepoProfile
+from dev_lab.dev.rules import RULES, Adoption, assert_adopted, guard, lint, unadopted, waived
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -212,7 +212,7 @@ _ABSENT_REASONS = {
     'AGENT-GUARD': (
         'HALF-CLOSED 2026-09-16, and the remaining half is NAMED rather than deferred. The rule says '
         'the refusal is IDENTICAL in every repo that adopts it, and the shared half of that now '
-        'exists here: `lab_commons.dev.hooks` holds the universal rows and this repo supplies its '
+        'exists here: `dev_lab.dev.hooks` holds the universal rows and this repo supplies its '
         'own remedies, driven against this tree by '
         'tests/test_the_deny_adoption_ships_only_remedied_rules.py. What is still absent is the '
         'INSTALLATION -- no .claude/settings.json here points a PreToolUse matcher at an engine, so '

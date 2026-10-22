@@ -1,4 +1,4 @@
-# Rendered by lab_commons.dev.ciworkflows from TOML (lab_commons/dev/ci_base.toml + [tool.lab_commons.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m lab_commons.dev.ciworkflows render`.
+# Rendered by dev_lab.dev.ciworkflows from TOML (dev_lab/dev/ci_base.toml + [tool.lab_commons.ci] in pyproject.toml). Hand edits are refused; edit the TOML and run `python -m dev_lab.dev.ciworkflows render`.
 {
   "name": "CI",
   "on": {

@@ -11,7 +11,7 @@ that actually has the problem.
 
 AND THE RUNTIME SET IS PINNED BY NAME, because a dependency added here is installed by every
 consumer whether it uses the feature or not. The dev layer is the counter-example that proves the
-shape works: ``lab_commons.dev`` drives pytest and ruff, needs no new runtime dependency, and is
+shape works: ``dev_lab.dev`` drives pytest and ruff, needs no new runtime dependency, and is
 gated behind the ``dev`` extra -- `tests/test_dev_gate.py` pins that against a fresh interpreter.
 A new name in the list below is a decision, and it must be typed here to be made.
 """

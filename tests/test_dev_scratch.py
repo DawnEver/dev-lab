@@ -1,4 +1,4 @@
-"""``lab_commons.dev.scratch``: SCRATCH-IS-NEVER-COMMITTED on planted trees and real git checkouts."""
+"""``dev_lab.dev.scratch``: SCRATCH-IS-NEVER-COMMITTED on planted trees and real git checkouts."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import time
 import pytest
 
 from lab_commons import launch
-from lab_commons.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
-from lab_commons.dev.scratch import (
+from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
+from dev_lab.dev.scratch import (
     SCRATCH_README,
     ScratchCommitted,
     assert_scratch_never_committed,

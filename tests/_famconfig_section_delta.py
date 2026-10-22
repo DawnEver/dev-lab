@@ -1,6 +1,6 @@
 r"""The four repos' RUFF SECTION deltas -- data, computed by nothing, one entry per repo.
 
-THE GAP THIS CLOSES, MEASURED 2026-09-18. :data:`lab_commons.dev.famconfig.RUFF_SECTIONS` landed with
+THE GAP THIS CLOSES, MEASURED 2026-09-18. :data:`dev_lab.dev.famconfig.RUFF_SECTIONS` landed with
 21 tests and every one of them drove a PLANTED file: a scan of ``tests/`` and ``src/`` for the three
 names that base publishes returned nothing outside the module defining them and the kit's re-export.
 A base nothing runs over a real tree is the shape this family's taste rule already names -- "a
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from lab_commons.dev.famconfig import SectionDelta
+from dev_lab.dev.famconfig import SectionDelta
 
 __all__ = [
     'CONSUMER_IGNORE_TAIL',

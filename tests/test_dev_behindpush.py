@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.behindpush import ALLOWED, COULD_NOT_JUDGE, REFUSED, refusal
-from lab_commons.dev.githooks.table import base_rows
-from lab_commons.dev.lanepolicy import Policy
+from dev_lab.dev.behindpush import ALLOWED, COULD_NOT_JUDGE, REFUSED, refusal
+from dev_lab.dev.githooks.table import base_rows
+from dev_lab.dev.lanepolicy import Policy
 
 _GIT = shutil.which('git') or 'git'
 _ZERO = '0' * 40
@@ -55,7 +55,7 @@ def test_a_lane_past_the_bound_is_refused_naming_the_remedy(tmp_path: Path) -> N
     code, text = refusal(root, lines=[_line('lane/x', lane)], policy=_POLICY)
     assert code == REFUSED
     assert 'lane/x is 3 behind' in text
-    assert 'python -m lab_commons.dev.forge sync' in text
+    assert 'python -m dev_lab.dev.forge sync' in text
 
 
 def test_the_integration_and_trunk_pushes_are_exempt(tmp_path: Path) -> None:
@@ -87,7 +87,7 @@ def test_a_commit_git_cannot_count_is_not_judged(tmp_path: Path) -> None:
 
 def test_the_family_hook_table_runs_it_at_pre_push() -> None:
     rows = [row for row in base_rows()['pre-push'] if row['id'] == 'behind-push']
-    assert [row['run'] for row in rows] == [['python', '-m', 'lab_commons.dev.behindpush']]
+    assert [row['run'] for row in rows] == [['python', '-m', 'dev_lab.dev.behindpush']]
 
 
 def test_a_deletion_never_reads_a_stale_checkouts_declaration(tmp_path: Path) -> None:

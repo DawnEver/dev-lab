@@ -6,7 +6,7 @@ all, and neither did ``docs-src/dev/``. The instrument for exactly this had exis
 (`SectionBase`, `SectionDelta`, `inspect_section`) and was wired to one artefact.
 
 WHAT THIS MODULE IS. It is the consumer of `PYPROJECT_SECTIONS`: the declarations are data in
-`lab_commons.dev._famconfig_pyproject_rows` and `_famconfig_pyproject_section_delta`, and every arm
+`dev_lab.dev._famconfig_pyproject_rows` and `_famconfig_pyproject_section_delta`, and every arm
 reads a real ``pyproject.toml`` off disk through the kit's own `inspect_section`. It re-implements
 nothing -- a second reader agreeing with the first by construction is the vacuous green this package
 refuses everywhere else.
@@ -38,7 +38,7 @@ from _config_census import reachable_repos
 from _config_census_rows import REPO_PATHS
 from _famconfig_pyproject_section_delta import PYPROJECT_SECTION_DELTAS
 
-from lab_commons.dev._famconfig_pyproject_rows import (
+from dev_lab.dev._famconfig_pyproject_rows import (
     PROJECT,
     PYPROJECT_DECLINED,
     PYPROJECT_FILE,
@@ -46,7 +46,7 @@ from lab_commons.dev._famconfig_pyproject_rows import (
     PYTEST_INI,
     README_NAME,
 )
-from lab_commons.dev.famconfig import (
+from dev_lab.dev.famconfig import (
     OWNED,
     PYPROJECT_SECTIONS,
     SECTION_KEY_FLOOR,

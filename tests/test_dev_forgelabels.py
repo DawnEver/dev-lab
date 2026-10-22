@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev._forgebackends import GITEA, GITHUB, Backend
-from lab_commons.dev.forgelabels import LabelMissing, add_label, ensure_labels
+from dev_lab.dev._forgebackends import GITEA, GITHUB, Backend
+from dev_lab.dev.forgelabels import LabelMissing, add_label, ensure_labels
 
 
 class _Client:

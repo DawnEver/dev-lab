@@ -1,7 +1,7 @@
-"""The controls for :mod:`lab_commons.dev.famtests.trackedcjk` -- every arm, driven on doctored input.
+"""The controls for :mod:`dev_lab.dev.famtests.trackedcjk` -- every arm, driven on doctored input.
 
 NO CJK CHARACTER IS WRITTEN INTO THIS FILE EITHER. Every planted one is built with :func:`chr` from
-:data:`lab_commons.dev.cjk.CJK_RANGES`, so the ranges stay derived and this test module is itself the
+:data:`dev_lab.dev.cjk.CJK_RANGES`, so the ranges stay derived and this test module is itself the
 plain-ASCII tracked source its subject is about -- which is the one place a guard like this can
 convict the file that tests it.
 
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import cjk, floors
-from lab_commons.dev.famtests.trackedcjk import (
+from dev_lab.dev import cjk, floors
+from dev_lab.dev.famtests.trackedcjk import (
     MisdeclaredWaiver,
     NonAsciiRemains,
     OrphanedTranslation,
@@ -133,7 +133,7 @@ def test_the_shipped_exemption_arm_passes_over_the_shipped_prefixes() -> None:
 def test_the_exemption_arm_reds_when_the_matcher_is_doctored(monkeypatch: pytest.MonkeyPatch) -> None:
     """DOCTORED INPUT, the direction that matters: a substring matcher excuses a tree nobody named."""
     monkeypatch.setattr(
-        'lab_commons.dev.cjk.exempted',
+        'dev_lab.dev.cjk.exempted',
         lambda name, prefixes=_PREFIXES: any(prefix.rstrip('/') in name for prefix in prefixes),
     )
     with pytest.raises(AssertionError, match='substring'):
@@ -143,7 +143,7 @@ def test_the_exemption_arm_reds_when_the_matcher_is_doctored(monkeypatch: pytest
 def test_the_exemption_arm_reds_when_nesting_is_lost(monkeypatch: pytest.MonkeyPatch) -> None:
     """The opposite doctoring: a root-only match, which reported 47,521 phantom characters once."""
     monkeypatch.setattr(
-        'lab_commons.dev.cjk.exempted',
+        'dev_lab.dev.cjk.exempted',
         lambda name, prefixes=_PREFIXES: any(name.startswith(prefix) for prefix in prefixes),
     )
     with pytest.raises(AssertionError, match='nested path SEGMENT'):
@@ -167,7 +167,7 @@ def test_the_shipped_control_reds_when_the_scanner_finds_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """DRIVE THE REAL ARM ON A DOCTORED READER AND ASSERT IT REDS, before trusting that it works."""
-    monkeypatch.setattr('lab_commons.dev.cjk.find_cjk', lambda _text, _ranges=None: ())
+    monkeypatch.setattr('dev_lab.dev.cjk.find_cjk', lambda _text, _ranges=None: ())
     with pytest.raises(AssertionError, match='planted offender'):
         assert_the_scanner_still_convicts(tmp_path, exempt_prefixes=_PREFIXES)
 
@@ -187,7 +187,7 @@ def test_the_shipped_control_reds_when_an_exemption_stops_being_recorded(
             undecodable=scan.undecodable,
         )
 
-    monkeypatch.setattr('lab_commons.dev.cjk.scan_files', _forgetful)
+    monkeypatch.setattr('dev_lab.dev.cjk.scan_files', _forgetful)
     with pytest.raises(AssertionError, match='exempt file is missing'):
         assert_the_scanner_still_convicts(tmp_path, exempt_prefixes=_PREFIXES)
 

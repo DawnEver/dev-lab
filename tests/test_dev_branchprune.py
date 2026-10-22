@@ -18,12 +18,12 @@ from typing import Any
 
 import pytest
 
-from lab_commons.dev.branchprune import DELETABLE, DELETE, EPHEMERAL, MERGED, STALE, prune, serve_prune, survey
-from lab_commons.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
-from lab_commons.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
-from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.lanepolicy import Policy, load_policy
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.branchprune import DELETABLE, DELETE, EPHEMERAL, MERGED, STALE, prune, serve_prune, survey
+from dev_lab.dev.branchset import BranchSet, BranchSetNotDeclared, declared_branchset
+from dev_lab.dev.forgealarm import PRUNED, STALE_BRANCH, Alarm
+from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
 from tests._forge_state import API, FORGE
 
 _GIT = shutil.which('git') or 'git'
@@ -218,7 +218,7 @@ def test_the_stale_alarm_names_ahead_behind_and_the_two_next_commands(tmp_path: 
     (stale,) = [a for a in alarms if a.kind == STALE_BRANCH]
     behind = _git(root, 'rev-list', '--count', 'refs/remotes/origin/lane/unmerged..refs/remotes/origin/integrate/main')
     assert f'1 ahead, {behind} behind integrate/main' in stale.body, stale.body
-    pr = 'python -m lab_commons.dev.forge pr create --head lane/unmerged --base integrate/main --title'
+    pr = 'python -m dev_lab.dev.forge pr create --head lane/unmerged --base integrate/main --title'
     assert pr in stale.body, stale.body
     assert 'git push origin --delete lane/unmerged' in stale.body, stale.body
     assert 'lane/merged' not in stale.body, 'control: a merged branch is never offered for abandonment'

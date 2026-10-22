@@ -7,13 +7,13 @@ import sys
 import time
 from pathlib import Path
 
-from lab_commons.dev import forgecli
-from lab_commons.dev.servelock import default_lock, held, note_stopped, was_stopped
+from dev_lab.dev import forgecli
+from dev_lab.dev.servelock import default_lock, held, note_stopped, was_stopped
 
 _HOLD = (
     'import sys, time\n'
     'from pathlib import Path\n'
-    'from lab_commons.dev.servelock import held\n'
+    'from dev_lab.dev.servelock import held\n'
     'with held(Path(sys.argv[1])) as mine:\n'
     '    print("held" if mine else "busy", flush=True)\n'
     '    time.sleep(30 if mine else 0)\n'

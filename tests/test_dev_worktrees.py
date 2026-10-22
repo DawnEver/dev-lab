@@ -12,8 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from lab_commons.dev.famtests.visibility import commit, plant_checkout
-from lab_commons.dev.worktrees import REGENERABLE, main, prune, regenerable
+from dev_lab.dev.famtests.visibility import commit, plant_checkout
+from dev_lab.dev.worktrees import REGENERABLE, main, prune, regenerable
 
 _GIT = shutil.which('git') or 'git'
 _BLOCKED = ('modified', 'untracked', 'staged', 'ignored', 'wip')

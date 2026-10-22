@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgeissue import (
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgeissue import (
     DONE,
     IN_PROGRESS,
     READY,
@@ -33,8 +33,8 @@ from lab_commons.dev.forgeissue import (
     lanes_for,
     main,
 )
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.forgework import Comment
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.forgework import Comment
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-"""``lab_commons.dev`` — the OPT-IN gate, and the absence of a new dependency.
+"""``dev_lab.dev`` — the OPT-IN gate, and the absence of a new dependency.
 
 Two properties, and both are the kind that decay silently: that importing ``lab_commons`` never
 pulls this subpackage in (the same discipline that keeps ``lab_commons.em`` optional), and that
@@ -15,7 +15,7 @@ from pathlib import Path
 from lab_commons.file_io import read_toml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEV_ROOT = REPO_ROOT / 'src' / 'lab_commons' / 'dev'
+DEV_ROOT = REPO_ROOT / 'src' / 'dev_lab' / 'dev'
 
 
 def _declared_requirements() -> frozenset[str]:
@@ -56,7 +56,7 @@ class TestTheOptInGate:
         the real import graph said. ``-c`` inherits the environment, so the child resolves
         ``lab_commons`` exactly as the parent did.
         """
-        probe = 'import sys, lab_commons; print("lab_commons.dev" in sys.modules)'
+        probe = 'import sys, lab_commons; print("dev_lab.dev" in sys.modules)'
         result = subprocess.run(
             [sys.executable, '-c', probe],
             capture_output=True,
@@ -65,7 +65,7 @@ class TestTheOptInGate:
             errors='replace',
             check=True,
         )
-        assert result.stdout.strip() == 'False', 'importing lab_commons pulled lab_commons.dev in'
+        assert result.stdout.strip() == 'False', 'importing lab_commons pulled dev_lab.dev in'
 
     def test_the_dev_extra_exists_and_names_the_tools_this_layer_drives(self) -> None:
         """The extra IS the gate, so it has to be the one whose contents this layer actually uses."""

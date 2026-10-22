@@ -1,9 +1,9 @@
-"""``lab_commons.dev.durations`` -- every arm driven GREEN and, where reachable, driven RED.
+"""``dev_lab.dev.durations`` -- every arm driven GREEN and, where reachable, driven RED.
 
 WHICH READING THIS REPO CANNOT TAKE, AND IT IS RECORDED RATHER THAN SKIPPED. ``pytest-xdist`` is NOT
 installed here (measured 2026-09-19 -- this repo declares no ``timeout`` and no ``-n`` either), so
 the LIVE arm of
-:func:`~lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` is the
+:func:`~dev_lab.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` is the
 CONSUMER'S and is not in this file at all. Writing it here as an ``importorskip`` was tried and this
 repo's own guards refused it twice -- see the comment where it would have gone; both refusals were
 right. The claim is driven anyway, twice, on source handed straight to the reader: once carrying the
@@ -27,8 +27,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import durations, floors
-from lab_commons.dev.durations import (
+from dev_lab.dev import durations, floors
+from dev_lab.dev.durations import (
     CRASH_MARKER,
     FAST,
     LEDGER_ENV_VAR,
@@ -209,7 +209,7 @@ def test_the_marker_check_refuses_source_it_never_read() -> None:
 #
 # So the live check belongs in the repos that actually shard, next to their own ledger wiring, and
 # the three lines it takes are written out in the recipe block of
-# `lab_commons.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` -- once, in the
+# `dev_lab.dev.durations.assert_the_crash_marker_is_what_the_scheduler_writes` -- once, in the
 # module a consumer reads to adopt it, rather than a second time here where nothing runs them.
 #
 # Nothing is lost by its absence: the reader is driven above on source carrying the sentence and on
@@ -265,7 +265,7 @@ def test_the_recorder_reads_tree_and_env_from_the_verify_door(tmp_path: Path, mo
 
 
 def test_the_plugin_registers_one_recorder_per_run(tmp_path: Path) -> None:
-    """`-p lab_commons.dev.durations` -- what verify passes -- records every run, targeted or full."""
+    """`-p dev_lab.dev.durations` -- what verify passes -- records every run, targeted or full."""
     registered: list[object] = []
     config = types.SimpleNamespace(
         rootpath=tmp_path,
@@ -281,7 +281,7 @@ def test_the_plugin_registers_one_recorder_per_run(tmp_path: Path) -> None:
 def test_a_recorder_is_hashable_so_any_pytest_can_register_it(tmp_path: Path) -> None:
     """Pytest 9.0's ``parsefactories`` adds every plugin to a SET (``_holderobjseen``).
 
-    An eq-generated dataclass sets ``__hash__`` to None, so ``-p lab_commons.dev.durations`` died with
+    An eq-generated dataclass sets ``__hash__`` to None, so ``-p dev_lab.dev.durations`` died with
     INTERNALERROR ``unhashable type: 'Recorder'`` there; 9.1 stopped hashing, which hid it. Identity is
     the right equality for a per-run plugin instance.
     """

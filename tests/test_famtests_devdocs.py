@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.devdocs` -- each arm fires on a plant, and is silent beside it.
+"""The controls for :mod:`dev_lab.dev.famtests.devdocs` -- each arm fires on a plant, and is silent beside it.
 
 A residue check that reads nothing and a residue check that reads everything as a copy both pass a
 one-sided test, so every arm here is driven both ways through the REAL function, over planted trees
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.devdocs import CANONICAL_TREE, slugs
-from lab_commons.dev.famtests.devdocs import (
+from dev_lab.dev.devdocs import CANONICAL_TREE, slugs
+from dev_lab.dev.famtests.devdocs import (
     COPY_CEILING,
     assert_local_dev_pages_are_residues,
     copied_fraction,
@@ -72,8 +72,8 @@ def test_a_recopied_family_page_is_refused() -> None:
 
 
 def test_a_family_subject_under_a_local_name_is_refused_unless_allowlisted() -> None:
-    page = '# Translations\n\n- How `lab_commons.dev.cjk` exempts a translation.\n'
-    assert family_subjects(page) == {'lab_commons.dev.cjk'}
+    page = '# Translations\n\n- How `dev_lab.dev.cjk` exempts a translation.\n'
+    assert family_subjects(page) == {'dev_lab.dev.cjk'}
     problems = residue_problems({'local-cjk': page}, _family(), subject_allowlist={})
     assert any('FAMILY module' in p for p in problems), problems
     assert residue_problems({'local-cjk': page}, _family(), subject_allowlist={'local-cjk': 'ours'}) == ()

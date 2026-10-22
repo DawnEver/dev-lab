@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lab_commons.dev import forgeclaim, forgehosts
-from lab_commons.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
-from lab_commons.dev.forgework import ForgeCallFailed, is_pull
+from dev_lab.dev import forgeclaim, forgehosts
+from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE, HostCard, publish, read_cards
+from dev_lab.dev.forgework import ForgeCallFailed, is_pull
 from lab_commons.hpc.account import ClusterAccount
 from tests._forge_state import StateForge
 
@@ -71,7 +71,7 @@ def test_planted_control_the_old_lookup_opens_a_duplicate_every_tick() -> None:
 
 def test_a_lookup_that_cannot_see_the_issue_it_just_created_refuses(monkeypatch) -> None:
     forge = StateForge()
-    monkeypatch.setattr('lab_commons.dev.forgepulls.is_pull', _presence_only)  # the 2026-10-12 blindness
+    monkeypatch.setattr('dev_lab.dev.forgepulls.is_pull', _presence_only)  # the 2026-10-12 blindness
     with pytest.raises(forgehosts.HostsIssueLost):
         publish(forge, _card('ada/alice'))
     with pytest.raises(forgehosts.HostsIssueLost, match='repository counts 1'):

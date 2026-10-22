@@ -19,8 +19,8 @@ from types import ModuleType
 
 import pytest
 
-from lab_commons.dev import seams as seams_module
-from lab_commons.dev.seams import Seam, install, rebind, restore_all, timings
+from dev_lab.dev import seams as seams_module
+from dev_lab.dev.seams import Seam, install, rebind, restore_all, timings
 
 #: The module that DEFINES the measured callable. Source text rather than a fixture object, because
 #: the hazard is about a SECOND namespace holding its own binding, which only a real import creates.
@@ -187,4 +187,4 @@ def test_the_module_registers_itself_under_exactly_ONE_name() -> None:
     an installed package has one import spelling, and this says so.
     """
     holders = {name for name, module in list(sys.modules.items()) if module is seams_module}
-    assert holders == {'lab_commons.dev.seams'}
+    assert holders == {'dev_lab.dev.seams'}

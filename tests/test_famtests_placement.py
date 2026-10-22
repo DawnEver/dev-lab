@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.placement` -- every arm, both ways.
+"""The controls for :mod:`dev_lab.dev.famtests.placement` -- every arm, both ways.
 
 WHAT IS PROVED HERE. That each arm refuses a planted offender and stays silent on the honest tree
 beside it, and -- for the two bar arms -- that the family's FOUR REAL MEASUREMENTS are driven through
@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests._placement_readings import CEILINGS, MINIMUMS, NOT_FAMILY, ROSTERS
-from lab_commons.dev.famtests.placement import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests._placement_readings import CEILINGS, MINIMUMS, NOT_FAMILY, ROSTERS
+from dev_lab.dev.famtests.placement import (
     MOVES,
     SPLITS,
     STAYS,

@@ -1,4 +1,4 @@
-"""``lab_commons.dev.forgeauth`` -- ``auth login|status`` against a REAL loopback server and a REAL git.
+"""``dev_lab.dev.forgeauth`` -- ``auth login|status`` against a REAL loopback server and a REAL git.
 
 The credential store is git's own ``store`` helper pointed at a file under ``tmp_path``, configured
 through ``GIT_CONFIG_GLOBAL`` with the system config masked -- so ``git credential approve`` and
@@ -16,10 +16,10 @@ from pathlib import Path
 import pytest
 from test_dev_forgework import _answer, _Loopback, _Recorder, _repo, server
 
-from lab_commons.dev.forge import Forge, store_credential, token_for
-from lab_commons.dev.forgeauth import main
-from lab_commons.dev.forgework import Client, ForgeCallFailed
-from lab_commons.dev.netverb import DEFAULT_ATTEMPTS, Disposition
+from dev_lab.dev.forge import Forge, store_credential, token_for
+from dev_lab.dev.forgeauth import main
+from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.netverb import DEFAULT_ATTEMPTS, Disposition
 
 __all__ = ['server']
 
@@ -133,7 +133,7 @@ def test_status_with_no_token_says_how_to_get_one(tmp_path, capsys) -> None:
 
 def test_the_forge_module_routes_auth_to_this_door() -> None:
     done = subprocess.run(
-        [sys.executable, '-m', 'lab_commons.dev.forge', 'auth', '--help'],
+        [sys.executable, '-m', 'dev_lab.dev.forge', 'auth', '--help'],
         capture_output=True,
         text=True,
         encoding='utf-8',

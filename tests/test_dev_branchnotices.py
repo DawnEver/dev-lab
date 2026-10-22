@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 import pytest
 from test_dev_forgenotice import SESSION, _part, _tick, _world
 
-from lab_commons.dev import branchnotices
+from dev_lab.dev import branchnotices
 
 if TYPE_CHECKING:
-    from lab_commons.dev.forgework import Client
+    from dev_lab.dev.forgework import Client
 
 _ZERO = '0' * 40
 

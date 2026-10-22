@@ -8,9 +8,9 @@ import json
 import pytest
 
 from lab_commons.compute import learned
-from lab_commons.dev import forgedemand
-from lab_commons.dev.forgerecords import Attachment
-from lab_commons.dev.forgework import ForgeCallFailed
+from dev_lab.dev import forgedemand
+from dev_lab.dev.forgerecords import Attachment
+from dev_lab.dev.forgework import ForgeCallFailed
 
 REPO = 'https://g/r.git'
 

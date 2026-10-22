@@ -1,11 +1,11 @@
-"""The controls for :mod:`lab_commons.dev.floors` -- every arm driven in BOTH directions.
+"""The controls for :mod:`dev_lab.dev.floors` -- every arm driven in BOTH directions.
 
 WHAT IS PROVED HERE. A floor helper is the one module whose own failure is invisible by inspection:
 if it never raised, every guard in the family would go on reporting green and nothing downstream
 would look different. So each arm is driven on the violating side AND on the honest side beside it,
 and the two sides of the ratchet are asserted against each other -- a value that clears
-:func:`~lab_commons.dev.floors.assert_floor` and trips
-:func:`~lab_commons.dev.floors.assert_floor_still_binds` is what says the two arms are not one arm
+:func:`~dev_lab.dev.floors.assert_floor` and trips
+:func:`~dev_lab.dev.floors.assert_floor_still_binds` is what says the two arms are not one arm
 written twice.
 
 THE LABEL GETS A CONTROL OF ITS OWN, which is unusual for a string and is the point. A wrong *what*
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev.floors import (
+from dev_lab.dev.floors import (
     FloorMisdeclared,
     FloorUnmet,
     SlackFloor,

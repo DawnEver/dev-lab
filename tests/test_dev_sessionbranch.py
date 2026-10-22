@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.breakglass import notices
-from lab_commons.dev.lanepolicy import load_policy
-from lab_commons.dev.sessionbranch import P2, P3, P5
+from dev_lab.dev.breakglass import notices
+from dev_lab.dev.lanepolicy import load_policy
+from dev_lab.dev.sessionbranch import P2, P3, P5
 
 _GIT = shutil.which('git') or 'git'
 _DECL = (
@@ -77,7 +77,7 @@ def repo(tmp_path: Path) -> Path:
     hooks.mkdir()
     python = Path(sys.executable).as_posix()
     (hooks / 'pre-push').write_text(
-        f'#!/bin/sh\nexec "{python}" -m lab_commons.dev.sessionbranch "$@"\n', encoding='utf-8', newline='\n'
+        f'#!/bin/sh\nexec "{python}" -m dev_lab.dev.sessionbranch "$@"\n', encoding='utf-8', newline='\n'
     )
     (hooks / 'pre-push').chmod(0o755)
     _git(work, 'config', 'core.hooksPath', hooks.as_posix())

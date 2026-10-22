@@ -16,11 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks
-from lab_commons.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.venvpath import checkout_interpreter, current_os_name, venv_interpreter
-from lab_commons.dev.worktreeplace import (
+from dev_lab.dev import agenthooks
+from dev_lab.dev.famtests.worktreeplace import assert_every_worktree_stays_inside
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.venvpath import checkout_interpreter, current_os_name, venv_interpreter
+from dev_lab.dev.worktreeplace import (
     WORKTREES_REL,
     family_root,
     is_inside,

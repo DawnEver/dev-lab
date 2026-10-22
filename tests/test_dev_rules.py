@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.profile import RepoProfile
-from lab_commons.dev.rules import (
+from dev_lab.dev.profile import RepoProfile
+from dev_lab.dev.rules import (
     RULES,
     Adoption,
     LintRule,

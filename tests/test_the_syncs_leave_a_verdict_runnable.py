@@ -13,11 +13,11 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev._doorcensus_rows import DOORS
-from lab_commons.dev._synccensus_rows import REPO_FLOOR, ROW_FLOOR, ROWS, SITE_COMMAND_FLOOR, SITES
-from lab_commons.dev.doorcensus import door_text, reachable
-from lab_commons.dev.installdoor import commands
-from lab_commons.dev.synccensus import (
+from dev_lab.dev._doorcensus_rows import DOORS
+from dev_lab.dev._synccensus_rows import REPO_FLOOR, ROW_FLOOR, ROWS, SITE_COMMAND_FLOOR, SITES
+from dev_lab.dev.doorcensus import door_text, reachable
+from dev_lab.dev.installdoor import commands
+from dev_lab.dev.synccensus import (
     EvidenceGoneError,
     ScopeDriftError,
     ScopeRow,

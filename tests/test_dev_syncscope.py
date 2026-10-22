@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from lab_commons.dev.syncscope import (
+from dev_lab.dev.syncscope import (
     Scope,
     Selection,
     UnknownExtraError,

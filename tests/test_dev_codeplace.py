@@ -1,4 +1,4 @@
-"""``lab_commons.dev.codeplace``: the code-root allow-list and the scratch lifecycle, on planted trees."""
+"""``dev_lab.dev.codeplace``: the code-root allow-list and the scratch lifecycle, on planted trees."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import time
 import pytest
 
 from lab_commons import launch
-from lab_commons.dev.codeplace import (
+from dev_lab.dev.codeplace import (
     ARCHIVED_SEGMENTS,
     FAMILY_CODE_ROOTS,
     FAMILY_HOMES,
@@ -28,7 +28,7 @@ from lab_commons.dev.codeplace import (
     stray_files,
     stray_refusal,
 )
-from lab_commons.dev.famtests import noreflection
+from dev_lab.dev.famtests import noreflection
 
 _ROOTS = ('src/', 'tests/', 'scratch/', '.claude/memory/')
 _DAY = 86400.0

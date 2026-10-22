@@ -14,9 +14,9 @@ import pytest
 from _forge_fake import git_out, make_repo, run_git
 
 from lab_commons.compute.model import Schedule
-from lab_commons.dev.forgealarm import INTEGRATION
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.integrator import (
+from dev_lab.dev.forgealarm import INTEGRATION
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.integrator import (
     BLOCKED,
     MERGE,
     PARTS_NEEDED,
@@ -30,7 +30,7 @@ from lab_commons.dev.integrator import (
     read_refs,
     ready_lanes,
 )
-from lab_commons.dev.lanepolicy import Policy, load_policy
+from dev_lab.dev.lanepolicy import Policy, load_policy
 
 _POLICY = Policy()
 _SCHEDULE = Schedule()

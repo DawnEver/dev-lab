@@ -22,7 +22,7 @@ from lab_commons.credentials import (
     key_username,
     store_credential,
 )
-from lab_commons.dev import forge
+from dev_lab.dev import forge
 
 #: What each platform's git or credential helper needs from the host: the loader path a module-built
 #: git starts with (Ada), and the profile directories Git Credential Manager keeps its store under.
@@ -135,7 +135,7 @@ def test_store_hands_the_secret_to_the_helper_on_stdin_and_reads_it_back(tmp_pat
 def test_the_runtime_module_does_not_import_the_dev_kit() -> None:
     """A consumer without the ``dev`` extra reads its keys through this module, so it may not need ``dev``."""
     probe = (
-        'import sys, lab_commons.credentials; print(sorted(m for m in sys.modules if m.startswith("lab_commons.dev")))'
+        'import sys, lab_commons.credentials; print(sorted(m for m in sys.modules if m.startswith("dev_lab.dev")))'
     )
     done = subprocess.run(
         [sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8', timeout=60, check=True

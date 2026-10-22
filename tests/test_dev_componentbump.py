@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.dev.componentbump import (
+from dev_lab.dev.componentbump import (
     HELD,
     IDLE,
     LANDED,
@@ -27,11 +27,11 @@ from lab_commons.dev.componentbump import (
     issue_title,
     tick,
 )
-from lab_commons.dev.components import Component
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgestatus import CommitStatus, state_for
-from lab_commons.dev.forgework import Client
-from lab_commons.dev.platformparts import Part
+from dev_lab.dev.components import Component
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgestatus import CommitStatus, state_for
+from dev_lab.dev.forgework import Client
+from dev_lab.dev.platformparts import Part
 from lab_commons.outcomes import Conclusion
 
 NUM = Component('numerics-lab', 'https://f/o/numerics-lab.git', 'main', ('base', 'linux'))

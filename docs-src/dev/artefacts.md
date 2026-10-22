@@ -36,7 +36,7 @@ folder = "~/<the synced HPC Data - Documents folder>"
 outputs = ["output/fields/*.h5"]       # globs or files, relative to the run's work tree
 ```
 
-- Only declared outputs are packed (`lab_commons.dev.artefacts.collect`, `pack`). A declared output that matched
+- Only declared outputs are packed (`dev_lab.dev.artefacts.collect`, `pack`). A declared output that matched
   nothing fails the run loudly, naming it. Nothing undeclared is uploaded.
 
 </details>

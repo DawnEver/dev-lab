@@ -1,6 +1,6 @@
 """A published repo: no tracked file may name a machine, a person, a home path or a chat id.
 
-The scan is the kit's `lab_commons.dev.privatemarkers`; it runs under `make verify` (and so in CI) because verify
+The scan is the kit's `dev_lab.dev.privatemarkers`; it runs under `make verify` (and so in CI) because verify
 runs this suite. The machine-local denylist `~/.claude/private-markers` adds this host's private
 values without committing them.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.privatemarkers import load_markers, scan_text, scan_tree
+from dev_lab.dev.privatemarkers import load_markers, scan_text, scan_tree
 
 _ROOT = Path(__file__).resolve().parent.parent
 

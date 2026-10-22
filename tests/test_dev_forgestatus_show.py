@@ -1,7 +1,7 @@
 """``forge status show``: a verdict line answers "is it green"; the reds it names answer "why not".
 
 The record behind a part is attached to the forge and its URL is the status's ``target_url``
-(:mod:`lab_commons.dev.forgerecords`); this verb reads it back and prints the failing node ids.
+(:mod:`dev_lab.dev.forgerecords`); this verb reads it back and prints the failing node ids.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import gzip
 import json
 from typing import Any
 
-from lab_commons.dev.forgestatus import status_show
+from dev_lab.dev.forgestatus import status_show
 
 _SHA = 'a' * 40
 _RECORD_URL = 'https://forge.example.org/attachments/record.json.gz'

@@ -5,7 +5,7 @@ The rule this guards -- a unit-suffixed name is refused, so the unit has nowhere
 test here is one of three shapes, and the third is the one that makes the other two mean anything:
 
 * a PLANTED CONTROL: a synthetic tree with one known violation per scanned surface, driven through the
-  REAL :func:`~lab_commons.dev.units.scan_files` and the SAME list handed in, never a re-implementation
+  REAL :func:`~dev_lab.dev.units.scan_files` and the SAME list handed in, never a re-implementation
   of the matching that would agree with itself by construction;
 * the OPPOSITE DIRECTION for each claim -- a clean tree reports nothing while still reporting its file
   count, a token inside a name is not a trailing segment, a comment is not a key;
@@ -32,9 +32,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import units
-from lab_commons.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
-from lab_commons.dev.units import (
+from dev_lab.dev import units
+from dev_lab.dev._unit_tokens import EXCLUDED_TOKENS, UNIT_TOKENS
+from dev_lab.dev.units import (
     SCANNED_SUFFIXES,
     Scan,
     Violation,
@@ -490,7 +490,7 @@ def _shrugs(excluded: Mapping[str, str]) -> list[str]:
     cheapest filler is a fragment. And UNIQUENESS, because a copy-pasted reason reads as two considered
     decisions and is one -- and the second row is the one nobody re-measured.
 
-    Takes its table as an ARGUMENT for the reason :func:`~lab_commons.dev.units.assert_registry_sane`
+    Takes its table as an ARGUMENT for the reason :func:`~dev_lab.dev.units.assert_registry_sane`
     does: a check that can only ever be run against the real data cannot be shown to fire at all.
     """
     offenders = [token for token, reason in excluded.items() if len(reason.strip()) < _REASON_FLOOR]
@@ -645,7 +645,7 @@ def test_the_module_declares_its_public_surface() -> None:
 def _subtract_enclosing_scopes(text: str) -> tuple[units._Signature, ...]:
     """The pre-single-descent implementation, kept as the CONTROL the one-pass reader is judged against.
 
-    This is how :func:`~lab_commons.dev.units._python_signatures` decided module/class scope before
+    This is how :func:`~dev_lab.dev.units._python_signatures` decided module/class scope before
     the single descent landed: a full ``ast.walk`` per ENCLOSING callable to collect the assignments
     that are function-local, then a second full ``ast.walk`` to yield. It is reproduced here rather
     than imported so the equivalence test below compares two INDEPENDENT answers. If it is ever
@@ -799,7 +799,7 @@ def test_the_single_descent_agrees_with_the_control_on_this_repository() -> None
 
 
 def _search_per_name(lines: Sequence[str], names: Iterable[str], pattern: str) -> tuple[units._Signature, ...]:
-    """The pre-index implementation of :func:`~lab_commons.dev.units._locate`, kept as the CONTROL.
+    """The pre-index implementation of :func:`~dev_lab.dev.units._locate`, kept as the CONTROL.
 
     This is how a key's line was found before the word-run index landed: one compiled pattern per
     name, and every one of them searched against every line -- quadratic in a file's key count, which

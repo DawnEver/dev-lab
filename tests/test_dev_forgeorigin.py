@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lab_commons.dev import forgehosts, forgeorigin
+from dev_lab.dev import forgehosts, forgeorigin
 from lab_commons.hpc.account import ClusterAccount
 
 

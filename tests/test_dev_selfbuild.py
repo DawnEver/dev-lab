@@ -1,9 +1,9 @@
-"""``lab_commons.dev.selfbuild`` -- driven over REAL manifests, REAL wheel files and REAL anchors.
+"""``dev_lab.dev.selfbuild`` -- driven over REAL manifests, REAL wheel files and REAL anchors.
 
 WHAT IS AND IS NOT FAKED, stated first because it is the only interesting choice here. The manifests
 are real TOML files on disk, read by the real ``tomllib``; the wheels are real files with real wheel
 filenames; the verdict anchors are real files that are really deleted. What is injected is the ``run``
-callable -- and that is the seam :mod:`lab_commons.dev.dep` declares for exactly this, not a patch
+callable -- and that is the seam :mod:`dev_lab.dev.dep` declares for exactly this, not a patch
 over the module under test. It has to be: the only alternative is invoking pip, and pip is how this
 box's SHARED environment moves. A test suite that mutated the interpreter another lane's verdict is
 running in would be committing the offence this whole module exists to police.
@@ -21,9 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.dep import HeldEnvironmentError, Port
-from lab_commons.dev.envseat import EnvironmentSeat
-from lab_commons.dev.selfbuild import (
+from dev_lab.dev.dep import HeldEnvironmentError, Port
+from dev_lab.dev.envseat import EnvironmentSeat
+from dev_lab.dev.selfbuild import (
     ForeignDistributionError,
     NothingBuiltError,
     declared_distributions,

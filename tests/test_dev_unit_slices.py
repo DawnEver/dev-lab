@@ -1,6 +1,6 @@
 """Every slice of the unseen unit-in-name gap is measured as a NAMED SET, and a declared non-unit is never counted.
 
-Each test PLANTS a source, drives the REAL :func:`~lab_commons.dev.unit_slices.measure` over it, and asserts the exact
+Each test PLANTS a source, drives the REAL :func:`~dev_lab.dev.unit_slices.measure` over it, and asserts the exact
 set of ``path:line:name`` keys -- a set, not a count, because a count is blind to a swap (``NAMED-SETS-NOT-COUNTS``).
 The opposite direction rides along in the same plant: the site the slice must NOT count is written next to the one it
 must, and the exceptions control asserts each declared row moves its site to ``exempt`` rather than dropping it.
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import unit_slices
-from lab_commons.dev.unit_slices import DECLARED_EXCEPTIONS, SLICES, measure
+from dev_lab.dev import unit_slices
+from dev_lab.dev.unit_slices import DECLARED_EXCEPTIONS, SLICES, measure
 
 
 def _plant(tmp_path: Path, name: str, text: str) -> Path:

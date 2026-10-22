@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import hook_install
-from lab_commons.dev.famtests.hookinstall import (
+from dev_lab.dev import hook_install
+from dev_lab.dev.famtests.hookinstall import (
     assert_declared_hooks_are_installed,
     assert_stages_are_declared,
 )
-from lab_commons.dev.hook_install import (
+from dev_lab.dev.hook_install import (
     ABSENT,
     FOREIGN,
     INSTALL_COMMAND,
@@ -75,7 +75,7 @@ def test_a_shim_runs_the_stage_through_the_checkout_venv() -> None:
     assert SHIM_MARKER in text
     assert '.venv/Scripts/python.exe' in text
     assert '.venv/bin/python' in text
-    assert '-m lab_commons.dev.githooks run pre-push "$@"' in text
+    assert '-m dev_lab.dev.githooks run pre-push "$@"' in text
 
 
 def test_an_older_shim_of_ours_is_stale_and_replaced(repo: Path) -> None:

@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.logref import LogRef
-from lab_commons.dev.reports import StepReport
-from lab_commons.dev.runcache import CACHE_REL, CachedRun, RetiredCache, cache_path, cached, record, remember, runs
-from lab_commons.dev.verdict import Verdict
-from lab_commons.dev.verify import build_verdict
+from dev_lab.dev.logref import LogRef
+from dev_lab.dev.reports import StepReport
+from dev_lab.dev.runcache import CACHE_REL, CachedRun, RetiredCache, cache_path, cached, record, remember, runs
+from dev_lab.dev.verdict import Verdict
+from dev_lab.dev.verify import build_verdict
 
 GIT = shutil.which('git') or 'git'
 

@@ -15,10 +15,10 @@ from typing import Final
 import pytest
 from _forge_fake import git_out, run_git
 
-from lab_commons.dev import retention, retentionplan
-from lab_commons.dev.diskusage import Usage, parse_mmlsquota
-from lab_commons.dev.retention import apply, serve_pass
-from lab_commons.dev.retentionplan import (
+from dev_lab.dev import retention, retentionplan
+from dev_lab.dev.diskusage import Usage, parse_mmlsquota
+from dev_lab.dev.retention import apply, serve_pass
+from dev_lab.dev.retentionplan import (
     Plan,
     Policy,
     carry_sources,

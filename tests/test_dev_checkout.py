@@ -1,4 +1,4 @@
-"""``lab_commons.dev.checkout`` -- driven on REAL git repositories with REAL remotes.
+"""``dev_lab.dev.checkout`` -- driven on REAL git repositories with REAL remotes.
 
 WHY A REAL REMOTE AND NOT A STUB. Every claim this module makes is about the difference between a
 LOCAL pointer and the REMOTE one, and that difference is precisely what a stub erases. So each case
@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from lab_commons.dev.checkout import (
+from dev_lab.dev.checkout import (
     authority_for,
     classify,
     debris,

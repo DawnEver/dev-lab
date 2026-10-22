@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from lab_commons.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND, install, read_hooks
+from dev_lab.dev.hook_install import HOOKS_STEP, INSTALL_COMMAND, install, read_hooks
 
 _GIT = shutil.which('git') or 'git'
 

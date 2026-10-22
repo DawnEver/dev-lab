@@ -12,11 +12,11 @@ import pytest
 from _forge_fake import git_out, run_git
 
 from lab_commons.compute.model import BRANCH, PR, Schedule
-from lab_commons.dev import forgescarce, forgeschedule
-from lab_commons.dev.forgescarce import files_by_part, red_alarms, unreached
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.platformparts import standing
+from dev_lab.dev import forgescarce, forgeschedule
+from dev_lab.dev.forgescarce import files_by_part, red_alarms, unreached
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.platformparts import standing
 from lab_commons.hpc.needsets import read_vocabulary, scarce_parts
 from lab_commons.outcomes import Conclusion
 

@@ -21,7 +21,7 @@ Both drive `inspect_section` over a planted file, and the clean control beside t
 THE FILE IS NOT THE ARTEFACT, which is the second decision this arm carries. consumer-a keeps its
 rules in `ruff.toml`; the other three keep `[tool.ruff]*` inside `pyproject.toml`. A base keyed by
 filename cannot serve both, and the kit already declared that the PATH is per-repo data twice --
-`lab_commons.dev.profile.DEFAULT_LINT_CONFIG` and `lab_commons.dev.rules.lint_selection`, which reads
+`dev_lab.dev.profile.DEFAULT_LINT_CONFIG` and `dev_lab.dev.rules.lint_selection`, which reads
 both shapes on purpose. So this base is keyed by the TABLE and resolves the file, and
 `test_both_spellings_resolve_to_the_same_table` pins that both ways.
 """
@@ -34,7 +34,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev._famconfig_ruff_rows import (
+from dev_lab.dev._famconfig_ruff_rows import (
     RUFF_IGNORE_CORE,
     RUFF_LINE_LENGTH,
     RUFF_SECTION_PREFIX,
@@ -42,7 +42,7 @@ from lab_commons.dev._famconfig_ruff_rows import (
     RUFF_SELECT_FLOOR,
     RUFF_TARGET_VERSIONS,
 )
-from lab_commons.dev.famconfig import (
+from dev_lab.dev.famconfig import (
     DIVERGED,
     NO_FILE,
     NO_TABLE,

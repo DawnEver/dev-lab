@@ -15,11 +15,11 @@ from typing import cast
 
 import pytest
 
-from lab_commons.dev import forgeservesteps, relock
-from lab_commons.dev.forgealarm import Alarm
-from lab_commons.dev.forgework import Client, PullRequest
-from lab_commons.dev.lanepolicy import Policy
-from lab_commons.dev.relock import PREFIX, Relock, RelockFailed, branch_for, carry, decision, dist_of
+from dev_lab.dev import forgeservesteps, relock
+from dev_lab.dev.forgealarm import Alarm
+from dev_lab.dev.forgework import Client, PullRequest
+from dev_lab.dev.lanepolicy import Policy
+from dev_lab.dev.relock import PREFIX, Relock, RelockFailed, branch_for, carry, decision, dist_of
 
 _SHA = 'dca72b71758ee4c70fb991fbcb44c56a9e52498d'
 _GIT = shutil.which('git') or 'git'

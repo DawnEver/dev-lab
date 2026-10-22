@@ -1,4 +1,4 @@
-"""``lab_commons.dev.content`` — a content address over the MEASURED paths.
+"""``dev_lab.dev.content`` — a content address over the MEASURED paths.
 
 Every test here is about what the address is BLIND to as much as what it sees: it must move when a
 measured byte moves, and must not move when anything else does. The second half is what makes it
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.content import content_address, file_digest
+from dev_lab.dev.content import content_address, file_digest
 
 
 @pytest.fixture

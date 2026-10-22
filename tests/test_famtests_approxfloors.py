@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.approxfloors` -- every distinction, both ways.
+"""The controls for :mod:`dev_lab.dev.famtests.approxfloors` -- every distinction, both ways.
 
 A LINT THAT HAS NEVER BEEN SHOWN TO FIRE PROVES NOTHING WHEN IT IS GREEN, and one convicting every
 comparison it sees is deleted rather than obeyed. Every distinction below is planted against in both
@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.approxfloors import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.approxfloors import (
     BARS,
     ApproxScan,
     FloorlessTolerance,
@@ -191,7 +191,7 @@ def test_the_shipped_control_reds_when_the_reader_is_doctored(tmp_path: Path, mo
     which is the same vacuity it exists to refuse one level down. Here the READER is broken on purpose
     -- every call reads as having stated its floor -- and the shipped control must notice.
     """
-    monkeypatch.setattr('lab_commons.dev.famtests.approxfloors._stated', lambda _call: (True, True))
+    monkeypatch.setattr('dev_lab.dev.famtests.approxfloors._stated', lambda _call: (True, True))
     with pytest.raises(AssertionError, match='planted offenders'):
         assert_the_scanner_still_convicts(tmp_path, bar='ratio')
 
@@ -200,7 +200,7 @@ def test_the_shipped_control_reds_when_the_matcher_over_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The other direction: a matcher reaching a call that is not ``approx`` must be caught too."""
-    monkeypatch.setattr('lab_commons.dev.famtests.approxfloors.is_approx', lambda _func: True)
+    monkeypatch.setattr('dev_lab.dev.famtests.approxfloors.is_approx', lambda _func: True)
     with pytest.raises(AssertionError, match='approx calls among'):
         assert_the_scanner_still_convicts(tmp_path, bar='ratio')
 

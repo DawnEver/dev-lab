@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.latestversions` -- both arms and all three answers.
+"""The controls for :mod:`dev_lab.dev.famtests.latestversions` -- both arms and all three answers.
 
 THE ARM THIS FILE EXISTS FOR IS THE ONE ABOUT THE FETCH, and it is asserted as a TYPE rather than
 only as a message. ``FetchUnavailable`` must NOT be an ``AssertionError``: this family reads an
@@ -21,9 +21,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.depversions import Exemption, Observation, Observed
-from lab_commons.dev.famtests.latestversions import (
+from dev_lab.dev import floors
+from dev_lab.dev.depversions import Exemption, Observation, Observed
+from dev_lab.dev.famtests.latestversions import (
     DependencyDrift,
     Fetch,
     FetchUnavailable,

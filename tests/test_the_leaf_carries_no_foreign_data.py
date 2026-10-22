@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from _arch_corpus import ROOT
 
-from lab_commons.dev._foreign_rows import EVICTED, PROSE_CEILING, SCAN_FLOOR, SELF, SIBLINGS, SYNTHETIC
-from lab_commons.dev.foreign import (
+from dev_lab.dev._foreign_rows import EVICTED, PROSE_CEILING, SCAN_FLOOR, SELF, SIBLINGS, SYNTHETIC
+from dev_lab.dev.foreign import (
     DATA,
     PATH,
     PROSE,
@@ -56,4 +56,4 @@ def test_the_prose_half_may_only_fall() -> None:
 
 def test_the_registry_that_names_the_siblings_is_the_only_module_excluded() -> None:
     """The exclusion is itself a claim, so it is pinned rather than left to a reader."""
-    assert SELF == ('src/lab_commons/dev/_foreign_rows.py',)
+    assert SELF == ('src/dev_lab/dev/_foreign_rows.py',)

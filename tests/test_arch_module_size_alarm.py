@@ -20,7 +20,7 @@ and both directions were live:
   ruff set required a docstring on every public class, method and ``__init__``, and counted with
   docstrings and comments blanked the four pre-existing rows moved by ONE line in total. That is the
   whole 483-line rise the ceiling had to absorb, for one real line of code.
-* IT DEADLOCKED THE PACKAGE AGAINST ITS OWN INVENTORY. ``src/lab_commons/dev/__init__.py`` is a
+* IT DEADLOCKED THE PACKAGE AGAINST ITS OWN INVENTORY. ``src/dev_lab/dev/__init__.py`` is a
   DOCUMENT -- 400 raw lines, of which 167 are code -- and
   ``test_arch_the_dev_inventory_lists_every_module`` demands one bullet per public module. It sat at
   exactly the raw band, so EVERY new public module needed a line the band refused, while the ceiling
@@ -28,7 +28,7 @@ and both directions were live:
   once by reflowing prose; on the CODE reading that file has 133 lines of room, and the deadlock is
   gone rather than deferred.
 * IT WAS ALSO LETTING A REAL OFFENDER THROUGH IN THE OTHER DIRECTION.
-  ``src/lab_commons/dev/famtests/depdoor.py`` stood at 411 raw lines -- over the raw band and in no
+  ``src/dev_lab/dev/famtests/depdoor.py`` stood at 411 raw lines -- over the raw band and in no
   pin, a live red nobody had answered. On the code reading it is 209 and genuinely fine.
 
 THE BAND IS RE-CALIBRATED WITH ITS OWN EVIDENCE, because changing the unit invalidates the old
@@ -37,7 +37,7 @@ GAP between 278 (``_doorcensus_rows.py``) and 310 (``_unit_tokens.py``); 300 sit
 knee in the data rather than a preference, and it is deliberately NOT placed just above the largest
 module landing today -- a band chosen to admit its author's own file is the digit being edited to
 meet the table, which is the defect the rest of this file is about. The blanker is
-:func:`lab_commons.dev.famtests.density.code_only`, the family's existing prose reader, so there is
+:func:`dev_lab.dev.famtests.density.code_only`, the family's existing prose reader, so there is
 no second implementation to keep in step.
 """
 
@@ -47,7 +47,7 @@ from pathlib import Path
 
 from _arch_corpus import ROOT, SOURCE_FLOOR, assert_floor, parse, rel, source_modules
 
-from lab_commons.dev.famtests.density import code_only
+from dev_lab.dev.famtests.density import code_only
 
 #: This repo's band, in CODE lines. A module past it is refactored, or pinned below with its
 #: measurement. See the docstring for why the unit changed and where 300 was measured.
@@ -74,8 +74,8 @@ def code_lines(path: Path) -> int:
 #: measures. `resources.py` is the standing one -- it holds the broker, the registry and the record
 #: in one file, and splitting it is its own change.
 DEBT: dict[str, int] = {
-    'src/lab_commons/dev/_rule_rows.py': 422,  # 461 raw; every line it gained was ISC004 parenthesisation
-    'src/lab_commons/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
+    'src/dev_lab/dev/_rule_rows.py': 422,  # 461 raw; every line it gained was ISC004 parenthesisation
+    'src/dev_lab/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
 }
 
 #: The ceiling on the escape hatch: total pinned debt in CODE lines. It went UP exactly once, on

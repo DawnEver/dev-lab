@@ -126,9 +126,9 @@ ALLOWED: Final[dict[Site, str]] = {
     'unit that never reports. A pool future would carry it without a catch, but pool threads are '
     'joined at interpreter exit, so one hung foreign entry would block exit; a daemon thread does not',
     (
-        'src/lab_commons/dev/forgerequest.py',
+        'src/dev_lab/dev/forgerequest.py',
         'PLC0415',
-        'from lab_commons.dev.forgeunit import unit_request',
+        'from dev_lab.dev.forgeunit import unit_request',
     ): 'forgeunit publishes a Job THROUGH this module (forgepublish -> forgerequest), so a module-scope '
     'import here is a cycle that fails at import time. The built-in unit producer is resolved where '
     'it is called, once per request read',
@@ -154,22 +154,22 @@ ALLOWED: Final[dict[Site, str]] = {
     'must become a critical anomaly -- a probe that cannot run is worse than one reporting a '
     'problem, because nothing is watching -- rather than unwinding the whole cycle',
     (
-        'src/lab_commons/dev/forgework.py',
+        'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def resend(self, write: Write) -> Any:',
     ): 'the outbox replay sends a journaled write through the same retry loop and returns its parsed JSON unchanged',
     (
-        'src/lab_commons/dev/forgework.py',
+        'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def _attempts(self, write: Write, data: bytes | None) -> Any:',
     ): 'the retry loop under every verb returns the parsed JSON answer, whose shape is the endpoint',
     (
-        'src/lab_commons/dev/forgework.py',
+        'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def landed(self, write: Write) -> Any:',
     ): "a create's read-back returns the listed object as the forge answered it -- the shape the create would have",
     (
-        'src/lab_commons/dev/forgework.py',
+        'src/dev_lab/dev/forgework.py',
         'ANN401',
         (
             'def upload(self, path: str, *, field: str, filename: str, content: bytes, '
@@ -177,19 +177,19 @@ ALLOWED: Final[dict[Site, str]] = {
         ),
     ): 'the attachment door returns the parsed JSON answer, normalized by its one caller (forgerecords.Attachment)',
     (
-        'src/lab_commons/dev/forgework.py',
+        'src/dev_lab/dev/forgework.py',
         'ANN401',
         ') -> Any:',
     ): 'call and the journaling door under it (the end of their wrapped signatures) return the parsed JSON '
     'answer, whose shape is the endpoint; each verb normalizes it into a typed Issue/Comment/PullRequest',
     (
-        'src/lab_commons/dev/forgework.py',
+        'src/dev_lab/dev/forgework.py',
         'ANN401',
         'def upload_raw(self, host: str, path: str, *, content: bytes, durable: Durable | None = None) -> Any:',
     ): "GitHub's release-asset upload returns the parsed JSON answer, normalized by its one caller "
     '(forgerecords.Attachment)',
     (
-        'src/lab_commons/dev/docsite.py',
+        'src/dev_lab/dev/docsite.py',
         'arg-type',
         'run(pdoc_argv(modules, out_dir, **options), cwd=root)',
     ): 'pdoc_argv takes `**options: object` so any caller option reaches it; run() is typed on str',
@@ -209,17 +209,17 @@ ALLOWED: Final[dict[Site, str]] = {
         'global _run_date',
     ): 'the per-run date is memoized the same way, so a run straddling midnight keeps one folder',
     (
-        'src/lab_commons/dev/forgerecords.py',
+        'src/dev_lab/dev/forgerecords.py',
         'PLC0415',
-        'from lab_commons.dev.retentionplan import load_policy as retention',
+        'from dev_lab.dev.retentionplan import load_policy as retention',
     ): 'retentionplan reaches this module through the forge layer; the [retention] budget has one reader',
     (
-        'src/lab_commons/dev/servelock.py',
+        'src/dev_lab/dev/servelock.py',
         'PLC0415',
         'import msvcrt',
     ): 'the Windows lock primitive: msvcrt exists only on Windows, so a top-level import breaks POSIX',
     (
-        'src/lab_commons/dev/servelock.py',
+        'src/dev_lab/dev/servelock.py',
         'PLC0415',
         'import fcntl',
     ): 'the POSIX lock primitive: fcntl exists only on POSIX, so a top-level import breaks Windows',
@@ -376,7 +376,7 @@ ALLOWED: Final[dict[Site, str]] = {
         'tests/**',
     ): 'a test that cannot read a private member cannot pin a private invariant',
     (
-        'src/lab_commons/dev/quantity_values.py',
+        'src/dev_lab/dev/quantity_values.py',
         'BLE001',
         'except Exception:',
     ): 'folding every pint failure into one answer IS the contract; one typo must not crash the scan',
@@ -401,22 +401,22 @@ ALLOWED: Final[dict[Site, str]] = {
         'return real_popen(argv, *args, **kw)',
     ): 'the spy forwards whatever Popen was called with; a pass-through cannot restate its overloads',
     (
-        'src/lab_commons/dev/units.py',
+        'src/dev_lab/dev/units.py',
         'C901',
         'def _python_signatures(text: str) -> Iterator[_Signature]:',
     ): 'one branch per AST node kind read; splitting it hides that the set is exhaustive',
     (
-        'src/lab_commons/dev/unit_slices.py',
+        'src/dev_lab/dev/unit_slices.py',
         'C901',
         'def _read_python(path: str, text: str, tokens: Collection[str], out: _Collector) -> None:',
     ): 'one branch per AST node kind read, and that set IS the slice list; splitting it hides a missing slice',
     (
-        'src/lab_commons/dev/unit_slices.py',
+        'src/dev_lab/dev/unit_slices.py',
         'C901',
         'def _read_binding(',
     ): 'one branch per assignment-target kind, each feeding a different slice; the dispatch is the table',
     (
-        'src/lab_commons/dev/unit_slices.py',
+        'src/dev_lab/dev/unit_slices.py',
         'C901',
         'def _read_rust(path: str, text: str, tokens: Collection[str], out: _Collector) -> None:',
     ): "a lexer's state machine: comment, string and code states in one loop, which is what a lexer is",
@@ -556,58 +556,58 @@ ALLOWED: Final[dict[Site, str]] = {
         'return subprocess.run(*args, **_windowless(kwargs))',
     ): 'the door forwards check as each caller passes it; every caller already decides it',
     (
-        'src/lab_commons/dev/branchnotices.py',
+        'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
-        'from lab_commons.dev.forgepulls import pr_list',
+        'from dev_lab.dev.forgepulls import pr_list',
     ): 'branchnotices runs inside git hooks on every commit and push; the forge client is read only on a '
     'cache miss, so the network leaf is imported there and a cache hit costs no import',
     (
-        'src/lab_commons/dev/branchnotices.py',
+        'src/dev_lab/dev/branchnotices.py',
         'PLC0415',
-        'from lab_commons.dev.forgework import client_for',
+        'from dev_lab.dev.forgework import client_for',
     ): 'the same hook-latency reason: the client is built only on a cache miss, inside the bounded reader thread',
     (
-        'src/lab_commons/dev/branchnotices.py',
+        'src/dev_lab/dev/branchnotices.py',
         'BLE001',
         'except Exception:',
     ): 'the forge read runs in a daemon thread under a deadline beside a git verb; a notice must never fail '
     'the verb, and the forge client raises several unrelated types (network, JSON, auth)',
     (
-        'src/lab_commons/dev/branchnotices.py',
+        'src/dev_lab/dev/branchnotices.py',
         'S110',
         'except Exception:',
     ): 'the same thread: the failure is silent ON PURPOSE -- no notice is shown, and the next verb asks again',
     (
-        'src/lab_commons/dev/branchnotices.py',
+        'src/dev_lab/dev/branchnotices.py',
         'BLE001',
         'except (Exception, SystemExit):',
     ): 'the hook entry point: whatever the report raises, including argparse SystemExit on a bad flag, the '
     'hook exits 0, because a notice must never fail a git verb (test_main_exits_zero_whatever_happens)',
     (
-        'src/lab_commons/dev/branchnotices.py',
+        'src/dev_lab/dev/branchnotices.py',
         'S110',
         'except (Exception, SystemExit):',
     ): 'the same entry point: nothing is printed on failure because the hook line is informational only',
     (
-        'src/lab_commons/dev/forgenotice.py',
+        'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from lab_commons.dev.forgepulls import Marker, comment_list, marker',
+        'from dev_lab.dev.forgepulls import Marker, comment_list, marker',
     ): 'forgenotice is imported by the hook-path branchnotices and must stay a leaf at import; the forge '
     'modules load only when a notice is actually read from a PR comment',
     (
-        'src/lab_commons/dev/forgenotice.py',
+        'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from lab_commons.dev.forgepulls import pr_list',
+        'from dev_lab.dev.forgepulls import pr_list',
     ): 'the same leaf-at-import reason: the PR list is read only by the CLI path that needs it',
     (
-        'src/lab_commons/dev/forgenotice.py',
+        'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from lab_commons.dev.forgework import ForgeCallFailed, client_for',
+        'from dev_lab.dev.forgework import ForgeCallFailed, client_for',
     ): 'the same leaf-at-import reason: the client is built only by the CLI entry point',
     (
-        'src/lab_commons/dev/forgenotice.py',
+        'src/dev_lab/dev/forgenotice.py',
         'PLC0415',
-        'from lab_commons.dev.lanepolicy import load_policy',
+        'from dev_lab.dev.lanepolicy import load_policy',
     ): 'the same leaf-at-import reason: the lane policy is read only by the CLI entry point',
 }
 

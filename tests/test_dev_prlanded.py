@@ -13,8 +13,8 @@ from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
-from lab_commons.dev.forge import fetch_origin
-from lab_commons.dev.prlanded import EVENT, close_landed
+from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.prlanded import EVENT, close_landed
 
 _MANIFEST = """[project]
 name = "planted"

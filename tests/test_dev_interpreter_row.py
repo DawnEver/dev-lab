@@ -1,6 +1,6 @@
 """BARE-INTERPRETER: the reflex spellings are refused through the REAL engine, with the owner's exit.
 
-One owner (:mod:`lab_commons.dev.venvpath`) spells the interpreter; the deny row's remedy, the settings
+One owner (:mod:`dev_lab.dev.venvpath`) spells the interpreter; the deny row's remedy, the settings
 allow row and these tests all read it. A repo CLI behind `uv run` is opened per repo, never in the base.
 """
 
@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks
-from lab_commons.dev._deny_interpreter_row import INTERPRETER_REMEDY
-from lab_commons.dev.allow_adoption import AllowAdoption, derived_entries, self_refused
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import DENY_RULES, Remedy, rules_by_id
-from lab_commons.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_INTERPRETER_GLOB, VENV_LAYOUTS
+from dev_lab.dev import agenthooks
+from dev_lab.dev._deny_interpreter_row import INTERPRETER_REMEDY
+from dev_lab.dev.allow_adoption import AllowAdoption, derived_entries, self_refused
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, Remedy, rules_by_id
+from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_INTERPRETER_GLOB, VENV_LAYOUTS
 
 
 def test_a_missing_worktree_environment_is_bootstrapped_not_borrowed() -> None:
@@ -38,7 +38,7 @@ def _rules(tmp_path: Path, remedies: dict[str, Remedy]) -> Path:
     'command',
     [
         'uv run python x.py',
-        'uv run -m lab_commons.dev.verify',
+        'uv run -m dev_lab.dev.verify',
         'uvx python',
         'python x.py',
         'python3 -c "print(1)"',
@@ -65,7 +65,7 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
 @pytest.mark.parametrize(
     'command',
     [
-        '.venv/Scripts/python.exe -m lab_commons.dev.verify',
+        '.venv/Scripts/python.exe -m dev_lab.dev.verify',
         '.venv/bin/python x.py',
         'C:/work/repo/.venv/Scripts/python.exe -V',
         'git commit -m "uv run python is refused now"',

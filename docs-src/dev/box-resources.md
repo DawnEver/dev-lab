@@ -23,7 +23,7 @@ take; it is admitted only when the MEASURED room holds it, and it runs inside a 
 
 ## Who claims
 
-- `python -m lab_commons.dev.verify -- <paths>` runs its pytest step in the box at the selection's declared
+- `python -m dev_lab.dev.verify -- <paths>` runs its pytest step in the box at the selection's declared
   claim; `--lock-wait "<duration>"` is its queue ceiling.
 - `forge serve` admits a part against what the ledger can still admit, and runs its producer in the box at
   exactly that demand ([forge](forge.md#admission)); the producer's own verify does not claim again.

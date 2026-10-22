@@ -23,7 +23,7 @@ from lab_commons.compute import learned
 from lab_commons.compute.model import Candidate, Ranked, Resources, Supply
 from lab_commons.compute.presence import Evidence, Presence
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import (
+from dev_lab.dev import (
     forgehosts,
     forgeproduce,
     forgerounds,
@@ -34,18 +34,18 @@ from lab_commons.dev import (
     forgeship,
     prlanded,
 )
-from lab_commons.dev.forgealarm import AUTH, IDLE, INTEGRATION, PRUNED, RUN, STARVED, UNTAGGED, Alarm
-from lab_commons.dev.forgeclaim import OPEN, Claim, Work
-from lab_commons.dev.forgeintegration import Child, Feedback, Ticked
-from lab_commons.dev.forgeproduce import Produced
-from lab_commons.dev.forgeroute import Routed
-from lab_commons.dev.forgetick import TickReport
-from lab_commons.dev.forgetidy import Hygiene
-from lab_commons.dev.forgework import ForgeCallFailed
-from lab_commons.dev.netverb import Attempt, Diagnosis, Report
-from lab_commons.dev.platformparts import ClusterPart
-from lab_commons.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
-from lab_commons.dev.shatree import Tree, TreeFailed
+from dev_lab.dev.forgealarm import AUTH, IDLE, INTEGRATION, PRUNED, RUN, STARVED, UNTAGGED, Alarm
+from dev_lab.dev.forgeclaim import OPEN, Claim, Work
+from dev_lab.dev.forgeintegration import Child, Feedback, Ticked
+from dev_lab.dev.forgeproduce import Produced
+from dev_lab.dev.forgeroute import Routed
+from dev_lab.dev.forgetick import TickReport
+from dev_lab.dev.forgetidy import Hygiene
+from dev_lab.dev.forgework import ForgeCallFailed
+from dev_lab.dev.netverb import Attempt, Diagnosis, Report
+from dev_lab.dev.platformparts import ClusterPart
+from dev_lab.dev.producer import PRODUCING_VAR, RETRYABLE, ProducerExit, release_reason
+from dev_lab.dev.shatree import Tree, TreeFailed
 from lab_commons.hpc.account import ClusterAccount
 from lab_commons.hpc.shell import FULL
 

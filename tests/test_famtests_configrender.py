@@ -1,4 +1,4 @@
-"""``lab_commons.dev.famtests.configrender`` -- driven over REAL artefacts on disk.
+"""``dev_lab.dev.famtests.configrender`` -- driven over REAL artefacts on disk.
 
 WHY REAL FILES. Every assertion this body makes is about what is ON DISK against what the live base
 and a declared delta RENDER, and a fixture that hands the comparison two in-memory strings has
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.famconfig import (
+from dev_lab.dev.famconfig import (
     BASES,
     RENDERED,
     REQUIRED,
@@ -26,7 +26,7 @@ from lab_commons.dev.famconfig import (
     artefact_base,
     render,
 )
-from lab_commons.dev.famtests.configrender import (
+from dev_lab.dev.famtests.configrender import (
     assert_artefact_is_rendered,
     assert_delta_is_not_a_fork,
     assert_every_base_is_accounted_for,

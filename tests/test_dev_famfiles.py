@@ -14,16 +14,16 @@ from typing import Final
 import pytest
 from _famconfig_delta import DELTAS, REPO
 
-from lab_commons.dev.famconfig import BASES, RENDERED
-from lab_commons.dev.famfiles import MANAGED, OWNED, PROJECT_FILES, main, project_files_on_disk, render_all
-from lab_commons.dev.famtests.famfiles import (
+from dev_lab.dev.famconfig import BASES, RENDERED
+from dev_lab.dev.famfiles import MANAGED, OWNED, PROJECT_FILES, main, project_files_on_disk, render_all
+from dev_lab.dev.famtests.famfiles import (
     assert_every_managed_file_is_rendered,
     assert_every_project_file_is_accounted_for,
 )
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 DELTAS_FILE: Final = ROOT / 'tests' / '_famconfig_delta.py'
-RERENDER: Final = 'python -m lab_commons.dev.famfiles --deltas tests/_famconfig_delta.py'
+RERENDER: Final = 'python -m dev_lab.dev.famfiles --deltas tests/_famconfig_delta.py'
 
 
 def _git(*args: str, cwd: Path) -> None:

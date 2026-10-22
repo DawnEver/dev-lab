@@ -1,7 +1,7 @@
 """THE KIT'S COLLECTION-REACH ROW, pure DATA -- the selection this repo makes and what it leaves its tests.
 
-The machinery is `lab_commons.dev.collectcensus` and the reader under it is
-`lab_commons.dev.collectscope`. Nothing here computes: a table edited through the module that checks
+The machinery is `dev_lab.dev.collectcensus` and the reader under it is
+`dev_lab.dev.collectscope`. Nothing here computes: a table edited through the module that checks
 it drifts away from what it describes.
 
 THE KIT'S OWN ROW ONLY. Every consumer declares its selections -- and the residue it cannot settle,
@@ -16,7 +16,7 @@ makes -- `dev` plus the two plotting extras -- with the same three empty sets.
 
 from __future__ import annotations
 
-from lab_commons.dev.collectcensus import CollectRow
+from dev_lab.dev.collectcensus import CollectRow
 
 __all__ = [
     'FILE_FLOORS',

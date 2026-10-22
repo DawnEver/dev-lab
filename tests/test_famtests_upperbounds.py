@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.upperbounds` -- both dialects, both policies.
+"""The controls for :mod:`dev_lab.dev.famtests.upperbounds` -- both dialects, both policies.
 
 THE ARM THAT CARRIES THIS FILE is the pair ``pyo3 = "0.29"`` and ``robust = "1.1"``: one spelling,
 two meanings, and only the first is a ceiling. A reader that convicts both makes every Cargo manifest
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.upperbounds import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.upperbounds import (
     ECOSYSTEMS,
     POLICIES,
     BoundScan,
@@ -228,7 +228,7 @@ def test_the_shipped_control_reds_when_the_caret_rule_is_lost(monkeypatch: pytes
         def match(_text: str) -> None:
             return None
 
-    monkeypatch.setattr('lab_commons.dev.famtests._upperbounds_readings._CARET_ZERO', _Blind)
+    monkeypatch.setattr('dev_lab.dev.famtests._upperbounds_readings._CARET_ZERO', _Blind)
     with pytest.raises(AssertionError, match='planted ceilings'):
         assert_the_reader_still_convicts(ecosystem='cargo')
 
@@ -236,7 +236,7 @@ def test_the_shipped_control_reds_when_the_caret_rule_is_lost(monkeypatch: pytes
 def test_the_shipped_control_reds_when_the_reader_convicts_every_caret(monkeypatch: pytest.MonkeyPatch) -> None:
     """The opposite doctoring: convicting a bare 1.1 would make every Cargo manifest an offender."""
     monkeypatch.setattr(
-        'lab_commons.dev.famtests._upperbounds_readings._why_bounded',
+        'dev_lab.dev.famtests._upperbounds_readings._why_bounded',
         lambda spec, *, ecosystem: 'everything is a bound' if spec.strip() else None,  # noqa: ARG005
     )
     with pytest.raises(AssertionError, match='planted ceilings'):

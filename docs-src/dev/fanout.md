@@ -13,8 +13,8 @@ forge's job, not yours.
   `lab-commons[dev]`:
 
   ```text
-  <available python> -m lab_commons.dev.dep --bootstrap <worktree> [--sync] [--extra <name> ...]
-  <worktree>/.venv/Scripts/python.exe -m lab_commons.dev.dep --root <worktree> --sync
+  <available python> -m dev_lab.dev.dep --bootstrap <worktree> [--sync] [--extra <name> ...]
+  <worktree>/.venv/Scripts/python.exe -m dev_lab.dev.dep --root <worktree> --sync
   ```
 
   The target is always `<worktree>/.venv`, never an inherited `VIRTUAL_ENV`. Failures exit non-zero.
@@ -37,7 +37,7 @@ forge's job, not yours.
   `git worktree add --detach .claude/worktrees/<name> <sha>` ([worktrees stay inside](worktrees.md)).
 - **Split by file-disjointness.** Shared hotspots (an entry-point module, the central chain, the registries
   every feature touches) go to ONE lane, or are serialised.
-- There is no lane ledger: `python -m lab_commons.dev.worktrees` lists the trees, `--prune` removes clean,
+- There is no lane ledger: `python -m dev_lab.dev.worktrees` lists the trees, `--prune` removes clean,
   pushed ones ([auto mode runs the doors](auto-doors.md)).
 
 ## Subagents: give them a sha, not your HEAD

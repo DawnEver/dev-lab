@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.density` -- every reader, both ways.
+"""The controls for :mod:`dev_lab.dev.famtests.density` -- every reader, both ways.
 
 WHAT IS PROVED HERE. Not "the meter runs": what this file owns is that each reader FIRES on a planted
 shape and STAYS SILENT on the honest neighbour beside it. A meter reading everything as one repo's and
@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-from lab_commons.dev.famtests.density import (
+from dev_lab.dev.famtests.density import (
     Density,
     NoSignals,
     assert_readings_convict,

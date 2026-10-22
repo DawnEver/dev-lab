@@ -20,7 +20,7 @@ crates = { numerics = "crates/numerics" }           # optional: Cargo crate -> i
 
 The mount path is derived, never declared: `components/<name>`. A missing or unknown key, a name that
 is not `<x>-lab`, or `lab-commons` itself is refused, naming the row
-(`lab_commons.dev.components.components_of`).
+(`dev_lab.dev.components.components_of`).
 
 ## Derived files, checked
 
@@ -35,13 +35,13 @@ disagreement names the file and the fix:
 | the index | a gitlink at every mount, and no undeclared gitlink under `components/` |
 
 Only what lies under `components/` is checked. A product adopts it with one test,
-`assert drift_at(ROOT) == ()`. From a shell: `python -m lab_commons.dev.components [--root R]`
+`assert drift_at(ROOT) == ()`. From a shell: `python -m dev_lab.dev.components [--root R]`
 exits 1 on any drift.
 
 ## The bump loop
 
-`python -m lab_commons.dev.componentbump [--root R]` fetches origin and runs one tick
-(`lab_commons.dev.componentbump.tick`). Nothing is stored: each tick derives its state from origin's
+`python -m dev_lab.dev.componentbump [--root R]` fetches origin and runs one tick
+(`dev_lab.dev.componentbump.tick`). Nothing is stored: each tick derives its state from origin's
 refs, the forge's statuses and its issues, so a repeated tick or two hosts ticking at once see the
 same state.
 

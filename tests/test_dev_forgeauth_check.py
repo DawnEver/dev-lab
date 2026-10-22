@@ -10,8 +10,8 @@ from typing import Final
 import pytest
 from _forge_fake import Loopback, Recorder, answer, credential_env, serve
 
-from lab_commons.dev.forge import forge_of_url
-from lab_commons.dev.forgeauth import TICK_SCOPES, main, tick_refusal
+from dev_lab.dev.forge import forge_of_url
+from dev_lab.dev.forgeauth import TICK_SCOPES, main, tick_refusal
 
 URL: Final = 'https://forge.example.org/o/r.git'
 API: Final = '/api/v1/repos/o/r'

@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from _forge_fake import run_git
 
-from lab_commons.dev.components import (
+from dev_lab.dev.components import (
     Component,
     ComponentRefused,
     components_of,

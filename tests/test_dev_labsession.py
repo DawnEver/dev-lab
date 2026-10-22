@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import labsession
-from lab_commons.dev.githooks.table import base_rows
+from dev_lab.dev import labsession
+from dev_lab.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
 _ID = '0f3c2a9e-5b1d-4e7a-9c11-2d3e4f5a6b7c'
@@ -80,4 +80,4 @@ def test_sessions_reads_the_trailers_between_two_commits(tmp_path: Path) -> None
 
 def test_the_base_table_runs_the_stamp_at_commit_msg() -> None:
     rows = {row['id']: row for row in base_rows()['commit-msg']}
-    assert rows['lab-session']['run'] == ['python', '-m', 'lab_commons.dev.labsession']
+    assert rows['lab-session']['run'] == ['python', '-m', 'dev_lab.dev.labsession']

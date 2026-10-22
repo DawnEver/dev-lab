@@ -1,7 +1,7 @@
 # Killed runs and orphans
 
 Stopping a wrapper does not stop the run: the test session and its workers survive, keep their memory and may
-keep the box's CPU seat. Stop a run with `python -m lab_commons.dev.stoprun --pid <root pid>` (its whole tree,
+keep the box's CPU seat. Stop a run with `python -m dev_lab.dev.stoprun --pid <root pid>` (its whole tree,
 children first), then list the processes again. Never age out or delete a lock whose holder is alive; end the
 holder instead.
 
@@ -24,7 +24,7 @@ holder instead.
 | tool | what it does |
 |---|---|
 | a tool-level stop, or closing the shell | ends the wrapper only |
-| `python -m lab_commons.dev.stoprun --pid PID [--dry-run]` | stops one identified run and its subtree; refuses a pid that matches no run signature |
+| `python -m dev_lab.dev.stoprun --pid PID [--dry-run]` | stops one identified run and its subtree; refuses a pid that matches no run signature |
 | a repo's reaper script | reaps orphans box-wide, and refuses while any live controller exists |
 
 - A reaper decides at the box level: a test process is an orphan only when no live controller is anywhere on

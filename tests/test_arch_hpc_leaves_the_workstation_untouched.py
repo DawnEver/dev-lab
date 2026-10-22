@@ -1,7 +1,7 @@
 """A cluster run leaves the local workstation untouched (user ruling 2026-10-09).
 
 THE INVARIANT. :mod:`lab_commons.hpc` never imports the box lock or an environment seat (nothing in
-``lab_commons.dev``), never runs pytest or any interpreter locally, and its only local subprocesses are
+``dev_lab.dev``), never runs pytest or any interpreter locally, and its only local subprocesses are
 READ-ONLY git; its only local write is the record path given by ``-o``. Measured before the fix: the
 bundle step wrote a temporary ``refs/lab-ci/<sha>`` into the caller's checkout, and the run was one
 local process waiting hours on the cluster.
@@ -57,12 +57,12 @@ def test_hpc_imports_nothing_of_the_box_lock_or_the_environment_seats() -> None:
     probe = (
         'import importlib, pkgutil, sys, lab_commons.hpc as h\n'
         "for m in pkgutil.iter_modules(h.__path__): importlib.import_module('lab_commons.hpc.' + m.name)\n"
-        "print('\\n'.join(sorted(k for k in sys.modules if k.startswith('lab_commons.dev'))))\n"
+        "print('\\n'.join(sorted(k for k in sys.modules if k.startswith('dev_lab.dev'))))\n"
     )
     out = subprocess.run(
         [sys.executable, '-c', probe], capture_output=True, text=True, encoding='utf-8', check=True
     ).stdout
-    assert out.split() == [], 'lab_commons.hpc reaches lab_commons.dev (box lock, env seats) -- it must not'
+    assert out.split() == [], 'lab_commons.hpc reaches dev_lab.dev (box lock, env seats) -- it must not'
 
 
 def test_the_pack_reads_the_repository_and_the_cluster_cache_can_index_it(tmp_path: Path) -> None:

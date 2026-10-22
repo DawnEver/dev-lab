@@ -1,4 +1,4 @@
-"""THE READER CAN FAIL, over PLANTED files, driving the real functions in `lab_commons.dev.collectscope`.
+"""THE READER CAN FAIL, over PLANTED files, driving the real functions in `dev_lab.dev.collectscope`.
 
 `test_the_test_trees_collect_after_a_sync.py` is the MEASUREMENT of the family. This file is the
 control: every claim the reader makes is planted here in BOTH directions, because a scan that
@@ -25,7 +25,7 @@ from typing import Final
 
 import pytest
 
-from lab_commons.dev.collectscope import (
+from dev_lab.dev.collectscope import (
     ALIASES,
     Fate,
     NotACheckout,
@@ -36,7 +36,7 @@ from lab_commons.dev.collectscope import (
     read_imports,
     resolve,
 )
-from lab_commons.dev.syncscope import Selection
+from dev_lab.dev.syncscope import Selection
 
 #: A manifest with the two shapes the join needs: a distribution whose import name matches it, and
 #: two whose names do not. `dev` is the selection every control below makes.

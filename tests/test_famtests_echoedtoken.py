@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests import echoedtoken
+from dev_lab.dev import floors
+from dev_lab.dev.famtests import echoedtoken
 
 if TYPE_CHECKING:
     from collections.abc import Collection
@@ -33,7 +33,7 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 ROOTS: Final[tuple[tuple[str, str], ...]] = (('src/lab_commons', '*.py'), ('tests', '*.py'))
 
 #: The scanner's own module carries the shape as DATA, in the planted source its control writes.
-EXEMPT: Final[tuple[str, ...]] = ('src/lab_commons/dev/famtests/echoedtoken.py',)
+EXEMPT: Final[tuple[str, ...]] = ('src/dev_lab/dev/famtests/echoedtoken.py',)
 
 #: MEASURED 2026-09-18 over :data:`ROOTS`: 2338 function bodies; RE-MEASURED 2026-10-01 at 3228 when
 #: the forge status/issue doors outgrew the headroom. Set below the population with room, and

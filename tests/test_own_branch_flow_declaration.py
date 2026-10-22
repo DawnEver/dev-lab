@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import platformparts, pushgate
-from lab_commons.dev.branchset import declared_branchset
-from lab_commons.dev.lanepolicy import load_policy
+from dev_lab.dev import platformparts, pushgate
+from dev_lab.dev.branchset import declared_branchset
+from dev_lab.dev.lanepolicy import load_policy
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = '0' * 40
@@ -34,7 +34,7 @@ def test_every_part_this_repo_needs_has_a_producer(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(platformparts, 'origin_url', lambda *_a: 'https://h/o/r.git')
     assert platformparts.producer_argv(ROOT, 'workstation', sha='HEAD') == [
         '-m',
-        'lab_commons.dev.verify',
+        'dev_lab.dev.verify',
         '--part',
         'workstation',
     ]

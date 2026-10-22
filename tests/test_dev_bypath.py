@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import bypath
-from lab_commons.dev.bypath import load
+from dev_lab.dev import bypath
+from dev_lab.dev.bypath import load
 
 #: The module name the planted modules import their ledger from. Registered in ``sys.modules``
 #: because a by-path module has no import route back to this test file.

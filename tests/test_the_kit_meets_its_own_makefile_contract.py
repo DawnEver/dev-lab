@@ -1,7 +1,7 @@
 r"""THE KIT MEETS THE Makefile CONTRACT IT PUBLISHES, and until 2026-09-18 it was the only repo that did not.
 
-WHAT WAS WRONG. `lab_commons.dev._famconfig_rows.MAKEFILE_BASE` is a target CONTRACT -- nine headers
-plus the one recipe that is genuinely portable, `python -m lab_commons.dev.verify` -- measured across
+WHAT WAS WRONG. `dev_lab.dev._famconfig_rows.MAKEFILE_BASE` is a target CONTRACT -- nine headers
+plus the one recipe that is genuinely portable, `python -m dev_lab.dev.verify` -- measured across
 four repos. This repo declared no Makefile delta and met five of the nine: `all`, `clean`, `install`,
 `install-dev` and `test-parallel` were absent, and `verify` ran a hand-written `lint fmt-check test`
 chain rather than the module this package ships for exactly that job. The repo publishing the
@@ -17,7 +17,7 @@ THE COMPLETENESS ARM is in ``test_the_kit_renders_its_own_gitignore.py``: `.giti
 kit base and was adopted here on 2026-10-03, so all three are now declared.
 
 NOTHING HERE RE-IMPLEMENTS THE KIT. Every assertion is one of the shared bodies in
-:mod:`lab_commons.dev.famtests.configrender` -- the same ones both labs parametrize. This module
+:mod:`dev_lab.dev.famtests.configrender` -- the same ones both labs parametrize. This module
 supplies only what is a fact about THIS repo: the root, the name, the delta table, and the remedy.
 
 `REQUIRED` IS THIS ARTEFACT'S TERMINAL MODE, AND THE LAST CLASS DRIVES THE MEASUREMENT THAT SAYS SO.
@@ -56,7 +56,7 @@ from _config_census import reachable_repos
 from _config_census_rows import REPO_PATHS
 from _famconfig_delta import DELTAS, MAKE_TARGET_FLOOR, MAKEFILE, MAKEFILE_DELTA, REPO
 
-from lab_commons.dev.famconfig import (
+from dev_lab.dev.famconfig import (
     REQUIRED,
     artefact_base,
     delta_lines,
@@ -64,7 +64,7 @@ from lab_commons.dev.famconfig import (
     measured_delta,
     recipe_blocks,
 )
-from lab_commons.dev.famtests.configrender import (
+from dev_lab.dev.famtests.configrender import (
     assert_artefact_is_rendered,
     assert_delta_is_not_a_fork,
     assert_modes_are_as_agreed,
@@ -153,10 +153,10 @@ class TestTheMakefileIsTheFamilyContractPlusThisReposRecipes:
         planted.write_text(live, encoding='utf-8')
         clean = measured_delta(planted, artefact_base(MAKEFILE), REPO)
         assert clean.dropped == {}, f'the unedited copy already reports drops: {sorted(clean.dropped)}'
-        planted.write_text(live.replace('verify:\n\tpython -m lab_commons.dev.verify', ''), encoding='utf-8')
+        planted.write_text(live.replace('verify:\n\tpython -m dev_lab.dev.verify', ''), encoding='utf-8')
         bent = measured_delta(planted, artefact_base(MAKEFILE), REPO)
         assert 'verify:' in bent.dropped, f'deleting the verify target did not red: {sorted(bent.dropped)}'
-        assert 'python -m lab_commons.dev.verify' in ' '.join(bent.dropped), (
+        assert 'python -m dev_lab.dev.verify' in ' '.join(bent.dropped), (
             f'the refusal never names the recipe the base owns: {sorted(bent.dropped)}'
         )
 

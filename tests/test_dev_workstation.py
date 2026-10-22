@@ -1,4 +1,4 @@
-"""``python -m lab_commons.dev.workstation`` against fake ``git``, ``dep --bootstrap``, venv python and ``schtasks``.
+"""``python -m dev_lab.dev.workstation`` against fake ``git``, ``dep --bootstrap``, venv python and ``schtasks``.
 
 Each fake is a tiny Python program run through :data:`sys.executable`, logging its argv to ``calls.log``
 and keeping its state in files under the test's temporary directory; the COM and PATH probes are
@@ -20,10 +20,10 @@ from typing import Final
 import pytest
 
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev import hostrefresh, servetask, workstation
-from lab_commons.dev.forgealarm import Alarm
-from lab_commons.dev.servelock import held
-from lab_commons.dev.venvpath import venv_interpreter
+from dev_lab.dev import hostrefresh, servetask, workstation
+from dev_lab.dev.forgealarm import Alarm
+from dev_lab.dev.servelock import held
+from dev_lab.dev.venvpath import venv_interpreter
 from lab_commons.hpc.deploy_spec import host_serve_argv
 
 FORGE: Final = 'https://forge.example/team'
@@ -359,7 +359,7 @@ def test_serve_reinstalls_the_serving_checkouts_own_hooks_after_it_updates_itsel
     seen = len(box.calls())
     assert _serve(box, tmp_path)[0] == 0
     installs = [call for call in box.calls()[seen:] if '--install' in call.split()]
-    assert installs == [f'python -m lab_commons.dev.hook_install --repo {kit} --install']
+    assert installs == [f'python -m dev_lab.dev.hook_install --repo {kit} --install']
     again = len(box.calls())
     assert _serve(box, tmp_path)[0] == 0
     assert not [call for call in box.calls()[again:] if '--install' in call.split()], 'live hooks are only read'
@@ -484,7 +484,7 @@ def test_a_windowless_serve_writes_itself_and_its_children_to_the_capped_log(
 
 REAL_DOOR: Final = r"""
 import pathlib, sys
-from lab_commons.dev._dep_project import target_root
+from dev_lab.dev._dep_project import target_root
 target_root(pathlib.Path(sys.argv[-1]), pathlib.Path.cwd())
 """
 

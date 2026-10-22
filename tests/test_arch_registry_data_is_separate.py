@@ -22,10 +22,10 @@ from pathlib import Path
 
 from _arch_corpus import ROOT, parse
 
-from lab_commons.dev.rules import RULES
+from dev_lab.dev.rules import RULES
 
-DATA_MODULE = ROOT / 'src' / 'lab_commons' / 'dev' / '_rule_rows.py'
-MACHINERY_MODULE = ROOT / 'src' / 'lab_commons' / 'dev' / 'rules.py'
+DATA_MODULE = ROOT / 'src' / 'dev_lab' / 'dev' / '_rule_rows.py'
+MACHINERY_MODULE = ROOT / 'src' / 'dev_lab' / 'dev' / 'rules.py'
 
 
 def ids_hardcoded_in(path: Path, known: frozenset[str]) -> tuple[str, ...]:

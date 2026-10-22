@@ -1,4 +1,4 @@
-r"""``lab_commons.dev._logdistil`` — the log is parsed without being held, and nothing else moves.
+r"""``dev_lab.dev._logdistil`` — the log is parsed without being held, and nothing else moves.
 
 THE REPRODUCTION, MEASURED 2026-09-18. ``run_verify`` read the WHOLE log back with
 ``path.read_text()`` and then ran six regexes over it. A 400,000-line / 80.8 MB run completes in
@@ -16,7 +16,7 @@ whole-text parse this replaced against the streamed one.
 
 AND A RATCHET, because the distillation is only safe while it stays WIDER than the parser.
 ``PARSE_SHAPES`` is the NAMED SET of shapes ``reports`` consults, read out of its SOURCE rather than
-listed by hand, with both sides of a :mod:`lab_commons.dev.floors` floor. A pattern added there reds
+listed by hand, with both sides of a :mod:`dev_lab.dev.floors` floor. A pattern added there reds
 here until it has a representative line proved to survive; a pattern deleted there reds too, so the
 representative cannot outlive the shape it stands for.
 """
@@ -31,18 +31,18 @@ from pathlib import Path
 
 from _arch_corpus import ROOT
 
-from lab_commons.dev._logdistil import Distillate, distil, distil_log, relevant
-from lab_commons.dev.floors import assert_floor, assert_floor_still_binds
-from lab_commons.dev.pytestout import TRUNCATION_MARKERS
-from lab_commons.dev.reports import StepReport, read_pytest
-from lab_commons.dev.verify import _PYTEST_BANNER, PYTEST_ARGS, _tee
+from dev_lab.dev._logdistil import Distillate, distil, distil_log, relevant
+from dev_lab.dev.floors import assert_floor, assert_floor_still_binds
+from dev_lab.dev.pytestout import TRUNCATION_MARKERS
+from dev_lab.dev.reports import StepReport, read_pytest
+from dev_lab.dev.verify import _PYTEST_BANNER, PYTEST_ARGS, _tee
 
 #: The banner ``verify`` writes between the ruff half of a log and the pytest half.
 BANNER = _PYTEST_BANNER
 
-#: Every shape :func:`~lab_commons.dev.reports.read_pytest` consults, mapped to a line that carries
+#: Every shape :func:`~dev_lab.dev.reports.read_pytest` consults, mapped to a line that carries
 #: it. RE-MEASURED 2026-09-19 by reading BOTH modules the parse now spans: ``reports.py`` keeps the
-#: verdict-facing shapes, and :mod:`lab_commons.dev.pytestout` holds the readers plus the truncation
+#: verdict-facing shapes, and :mod:`dev_lab.dev.pytestout` holds the readers plus the truncation
 #: vocabulary. The VALUES are what the distillation has to keep, and the KEYS are checked against the
 #: two modules' own source below, so this cannot drift into a list of shapes somebody remembered.
 #:
@@ -90,7 +90,7 @@ def source_shapes() -> set[str]:
 
     THREE KINDS, because the parse has three. A module-level name bound to a ``re.compile(...)``
     call; a bare substring tested with ``in`` against the pytest text; and every element of
-    :data:`~lab_commons.dev.pytestout.TRUNCATION_MARKERS`, which is the ``in`` test moved into data
+    :data:`~dev_lab.dev.pytestout.TRUNCATION_MARKERS`, which is the ``in`` test moved into data
     and would otherwise leave this scan reading SEVEN FEWER shapes than the parser consults while
     still answering a clean set. All three are shapes a line has to survive the distillation to be
     seen by, so all three belong in the same set.
@@ -102,7 +102,7 @@ def source_shapes() -> set[str]:
     """
     found: set[str] = set()
     for name in ('reports.py', 'pytestout.py'):
-        tree = ast.parse((ROOT / 'src' / 'lab_commons' / 'dev' / name).read_text(encoding='utf-8'))
+        tree = ast.parse((ROOT / 'src' / 'dev_lab' / 'dev' / name).read_text(encoding='utf-8'))
         for node in tree.body:
             if not isinstance(node, ast.Assign | ast.AnnAssign):
                 continue

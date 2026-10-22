@@ -12,10 +12,10 @@ from types import SimpleNamespace
 import pytest
 from _forge_fake import Loopback, Recorder, answer, client, credential_env, git_out, make_repo, run_git, serve
 
-from lab_commons.dev import forgerecords
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.forgealarm import STORAGE
-from lab_commons.dev.forgerecords import (
+from dev_lab.dev import forgerecords
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.forgealarm import STORAGE
+from dev_lab.dev.forgerecords import (
     RECORDS_TITLE,
     attach,
     kept_shas,
@@ -27,7 +27,7 @@ from lab_commons.dev.forgerecords import (
     replace_named,
     sha_of,
 )
-from lab_commons.dev.retentionplan import Policy
+from dev_lab.dev.retentionplan import Policy
 
 FORGE = Forge('forge.example.org', 'o', 'r')
 API = '/api/v1/repos/o/r'

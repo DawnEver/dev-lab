@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from lab_commons.config import SHARED_KEYS, User
-from lab_commons.dev.famtests.sharedsettings import (
+from dev_lab.dev.famtests.sharedsettings import (
     DEFAULT_LITERALS,
     assert_a_planted_redefinition_is_convicted,
     assert_no_package_redefines_a_shared_setting,
 )
-from lab_commons.dev.floors import FloorUnmet
+from dev_lab.dev.floors import FloorUnmet
 
 #: This repo's kit source.
 SOURCE = Path(__file__).resolve().parent.parent / 'src'

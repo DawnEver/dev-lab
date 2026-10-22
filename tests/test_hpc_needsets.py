@@ -22,7 +22,7 @@ from lab_commons.hpc.retired import RETIRED
 PYPROJECT = """
 [tool.lab_commons.tests]
 resources = ["windows", "femm", "jmag"]
-produce = ["-m", "lab_commons.dev.verify", "--part", "{part}"]
+produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 """
 
 _NAMES = ('femm', 'jmag', 'matlab', 'windows', 'linux', 'workstation')

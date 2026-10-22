@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.githooks import main as githooks_main
-from lab_commons.dev.githooks.runner import ZERO_SHA, parse_push_lines, resolve, run_stage
-from lab_commons.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
+from dev_lab.dev.githooks import main as githooks_main
+from dev_lab.dev.githooks.runner import ZERO_SHA, parse_push_lines, resolve, run_stage
+from dev_lab.dev.githooks.table import STAGES, Hook, HookTableError, base_rows, hook_table, merge
 
 _GIT = shutil.which('git') or 'git'
 
@@ -261,8 +261,8 @@ def test_a_post_commit_hook_never_changes_the_commits_exit_status(repo: Path) ->
 
 def test_the_base_runs_the_pr_notices_reader_after_a_commit_and_before_a_pr_push() -> None:
     rows = {stage: [r for r in base_rows()[stage] if r['id'] == 'pr-notices'] for stage in ('post-commit', 'pre-push')}
-    assert [r['run'] for r in rows['post-commit']] == [['python', '-m', 'lab_commons.dev.branchnotices']]
-    assert [r['run'] for r in rows['pre-push']] == [['python', '-m', 'lab_commons.dev.branchnotices', '--push']]
+    assert [r['run'] for r in rows['post-commit']] == [['python', '-m', 'dev_lab.dev.branchnotices']]
+    assert [r['run'] for r in rows['pre-push']] == [['python', '-m', 'dev_lab.dev.branchnotices', '--push']]
     assert rows['pre-push'][0]['refs'] == '^refs/heads/pr/'
 
 

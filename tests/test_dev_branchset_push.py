@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev.branchset import BranchSet
-from lab_commons.dev.branchset_push import (
+from dev_lab.dev.branchset import BranchSet
+from dev_lab.dev.branchset_push import (
     ALLOWED,
     COULD_NOT_JUDGE,
     REFUSED,
@@ -30,7 +30,7 @@ from lab_commons.dev.branchset_push import (
     refusal,
     undeclared,
 )
-from lab_commons.dev.githooks.table import base_rows
+from dev_lab.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session', 'integrate/main'}))
@@ -243,7 +243,7 @@ def _wire_hook(root: Path) -> None:
     The interpreter is THIS PROCESS's: a planted checkout has no ``.venv`` of its own.
     """
     hook = root / '.git' / 'hooks' / 'pre-push'
-    runner = f'"{Path(sys.executable).as_posix()}" -m lab_commons.dev.githooks run pre-push "$@"'
+    runner = f'"{Path(sys.executable).as_posix()}" -m dev_lab.dev.githooks run pre-push "$@"'
     hook.write_text(f'#!/usr/bin/env bash\n{runner}\n')
     hook.chmod(0o755)
 
@@ -308,7 +308,7 @@ def test_the_base_table_runs_the_check_at_pre_push_for_every_consumer() -> None:
     rows = {row['id']: row for row in base_rows()['pre-push']}
     assert 'branchset-push' in rows, sorted(rows)
     row = rows['branchset-push']
-    assert row['run'] == ['python', '-m', 'lab_commons.dev.branchset_push'], row['run']
+    assert row['run'] == ['python', '-m', 'dev_lab.dev.branchset_push'], row['run']
     assert row.get('always_run'), 'a push that changes no path still moves a ref; the check must run for it'
 
 

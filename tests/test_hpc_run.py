@@ -24,9 +24,9 @@ import pytest
 from lab_commons.compute import learned
 from lab_commons.compute.learned import Measured
 from lab_commons.config import CONFIG_ENV
-from lab_commons.dev.forgestatus import CommitStatus
-from lab_commons.dev.githooks import bash_executable
-from lab_commons.dev.platformparts import PartRefusal, part_of, parts_of
+from dev_lab.dev.forgestatus import CommitStatus
+from dev_lab.dev.githooks import bash_executable
+from dev_lab.dev.platformparts import PartRefusal, part_of, parts_of
 from lab_commons.envkey import env_key
 from lab_commons.hpc import __main__ as cli
 from lab_commons.hpc import cluster as cluster_module
@@ -1523,7 +1523,7 @@ def test_a_failed_run_build_is_inconclusive(
     assert 'could not find `cargo`' in capsys.readouterr().err
 
 
-# -- carried cells (lab_commons.dev.forgecarry) ------------------------------------------------------
+# -- carried cells (dev_lab.dev.forgecarry) ------------------------------------------------------
 
 A_SHA = 'a' * 40
 OK_CELL: dict[str, object] = {'status': 'ok', 'evidence': 'observed'}

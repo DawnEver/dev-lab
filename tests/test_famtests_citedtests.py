@@ -1,4 +1,4 @@
-"""The controls for :mod:`lab_commons.dev.famtests.citedtests` -- every reader and arm, both ways.
+"""The controls for :mod:`dev_lab.dev.famtests.citedtests` -- every reader and arm, both ways.
 
 A GUARD THAT NEVER FIRES REPORTS EXACTLY WHAT A CLEAN TREE REPORTS, so nothing here asserts only that
 a scan came back empty: every arm is planted against, in both directions, over a real tree on disk.
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import floors
-from lab_commons.dev.famtests.citedtests import (
+from dev_lab.dev import floors
+from dev_lab.dev.famtests.citedtests import (
     CitedScan,
     DanglingCitation,
     VacuousExemption,

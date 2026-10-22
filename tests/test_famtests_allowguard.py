@@ -1,13 +1,13 @@
-"""``lab_commons.dev.famtests.allowguard`` -- driven through the REAL engine, on REAL fixture repos.
+"""``dev_lab.dev.famtests.allowguard`` -- driven through the REAL engine, on REAL fixture repos.
 
 WHY THE REAL ENGINE. The subject is whether two hand-written files AGREE, and the only thing that can
 answer that is the thing that arbitrates them at runtime. An allow GLOB compared against a deny REGEX
 by eye is exactly the reasoning this shared body replaces with a measurement, so every case here
 renders a real ``deny-rules.json`` from the real registry, installs the real engine with
-:func:`lab_commons.dev.agent_guard.install_guard`, and lets ``node`` decide.
+:func:`dev_lab.dev.agent_guard.install_guard`, and lets ``node`` decide.
 
 NODE IS A REQUIREMENT OF THE HOST, NEVER A SKIP: the ``workstation`` marker assigns this file to the part
-whose boxes carry ``node``, and where it runs without one :class:`lab_commons.dev.agenthooks.NoNode` reds --
+whose boxes carry ``node``, and where it runs without one :class:`dev_lab.dev.agenthooks.NoNode` reds --
 the hook entry starts with ``node``, so such a box runs NO guard in every repo on it.
 
 BOTH DIRECTIONS ARE PLANTED EVERYWHERE, because every assertion here can be satisfied by an
@@ -34,9 +34,9 @@ from pathlib import Path
 
 import pytest
 
-from lab_commons.dev import agenthooks
-from lab_commons.dev.agent_guard import ENGINE_REL, RULES_REL, SETTINGS_REL, engine_beside, install_guard
-from lab_commons.dev.famtests.allowguard import (
+from dev_lab.dev import agenthooks
+from dev_lab.dev.agent_guard import ENGINE_REL, RULES_REL, SETTINGS_REL, engine_beside, install_guard
+from dev_lab.dev.famtests.allowguard import (
     GLOB_CASES,
     Scan,
     UnreadableSettings,
@@ -47,8 +47,8 @@ from lab_commons.dev.famtests.allowguard import (
     contradictions,
     probe_command,
 )
-from lab_commons.dev.hook_adoption import HookAdoption, render
-from lab_commons.dev.hooks import Remedy
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import Remedy
 
 # THE ENGINE RUNS ON `node`, A REQUIREMENT OF THE HOST: the `node` marker assigns this file to the parts
 # whose hosts have it ([tool.lab_commons.tests] resources). Where it runs and node is absent, `NoNode` still reds.
@@ -59,10 +59,10 @@ pytestmark = pytest.mark.workstation
 ADOPTION = HookAdoption(
     app_name='lab-commons (famtests suite)',
     remedies={
-        'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m lab_commons.dev.verify'),
-        'PUSH-NO-VERIFY': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m lab_commons.dev.verify'),
+        'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
+        'PUSH-NO-VERIFY': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
         'GIT-NETWORK-VERB': Remedy('retry-wrapper', 'sh {root}/scripts/hooks/with-retry.sh push'),
-        'RAW-PROCESS-KILL': Remedy('process-tree-killer', '.venv/Scripts/python.exe -m lab_commons.dev.stop --pid N'),
+        'RAW-PROCESS-KILL': Remedy('process-tree-killer', '.venv/Scripts/python.exe -m dev_lab.dev.stop --pid N'),
     },
 )
 
@@ -76,7 +76,7 @@ DENIED_ENTRY = 'Bash(pytest *)'
 HARMLESS_ENTRY = 'Bash(echo *)'
 
 #: The sanctioned exit a red points at. One repo's answer; spelled here because this fixture is a repo.
-SANCTIONED = './.venv/Scripts/python.exe -m lab_commons.dev.verify'
+SANCTIONED = './.venv/Scripts/python.exe -m dev_lab.dev.verify'
 
 
 def _write_settings(repo: Path, allow: list[str]) -> Path:
@@ -171,7 +171,7 @@ def test_the_scan_reports_what_it_probed_as_well_as_what_it_refused(contradictor
     assert isinstance(scan, Scan)
     assert set(scan.probed) == {HARMLESS_ENTRY, DENIED_ENTRY}, scan
     assert set(scan.refused) == {DENIED_ENTRY}, scan
-    assert 'lab_commons.dev.verify' in scan.refused[DENIED_ENTRY], scan.refused
+    assert 'dev_lab.dev.verify' in scan.refused[DENIED_ENTRY], scan.refused
 
 
 def test_a_clean_allow_list_refuses_nothing_and_still_reports_what_it_probed(clean: Path) -> None:
@@ -214,7 +214,7 @@ def test_an_unwired_repository_refuses_instead_of_reporting_agreement(tmp_path: 
     """THE IMPROVEMENT OVER ALL THREE FORKED COPIES, and it is delegated rather than re-walked.
 
     Each repo's own version hand-walked ``hooks.PreToolUse`` looking for the rules filename, which
-    answers ABSENT and STALE identically. :func:`lab_commons.dev.agent_guard.guard_installation`
+    answers ABSENT and STALE identically. :func:`dev_lab.dev.agent_guard.guard_installation`
     already tells those apart, so the floor asks IT -- a settings file whose wiring runs the engine
     with other arguments is a different finding from one that does not run it at all, and collapsing
     them sends a reader to the wrong repair.

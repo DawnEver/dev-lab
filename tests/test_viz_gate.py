@@ -1,7 +1,7 @@
 """``lab_commons.viz`` — the OPT-IN gate, and the constraint that makes each adapter an equal peer.
 
 THREE PROPERTIES, AND ALL THREE DECAY SILENTLY. That importing ``lab_commons`` never pulls the tier
-in (the same discipline that keeps ``lab_commons.dev`` and ``lab_commons.em`` optional); that the
+in (the same discipline that keeps ``dev_lab.dev`` and ``lab_commons.em`` optional); that the
 vocabulary module reaches no plotting library at all, so a producer may depend on it on a box where
 none is installed; and that each adapter imports EXACTLY the library its own extra names -- not the
 other's, and not one that happens to be installed on the box reading this.

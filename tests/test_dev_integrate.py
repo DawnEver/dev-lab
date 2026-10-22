@@ -1,7 +1,7 @@
 """``integrate promote``: the trunk moves by refs alone, over REAL repositories.
 
 The INTEGRATION branch is not moved from a client at all: the forge merges a green pull request server side
-(:mod:`lab_commons.dev.forgemerge`). So this module holds the one verb a client still has -- the trunk's
+(:mod:`dev_lab.dev.forgemerge`). So this module holds the one verb a client still has -- the trunk's
 fast-forward -- and the refusal of the verb that used to merge.
 """
 
@@ -15,9 +15,9 @@ import pytest
 from _branch_repos import advance, clone_pair
 from _forge_fake import Loopback, answer, client, git_out, run_git, serve
 
-from lab_commons.dev import integrate
-from lab_commons.dev.forge import Forge
-from lab_commons.dev.integrate import promote
+from dev_lab.dev import integrate
+from dev_lab.dev.forge import Forge
+from dev_lab.dev.integrate import promote
 
 GITEA = Forge('forge.example.org', 'o', 'r')
 GAPI = '/api/v1/repos/o/r'

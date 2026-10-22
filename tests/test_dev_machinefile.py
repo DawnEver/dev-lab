@@ -6,7 +6,7 @@ import tomllib
 
 import pytest
 
-from lab_commons.dev._machinefile import diff, merged
+from dev_lab.dev._machinefile import diff, merged
 
 HAND: str = (
     '# this box\n[hpc]\n\n[[hpc.grant]]\nuser = "me"  # mine\nslurm_account = "a"\n\n'
