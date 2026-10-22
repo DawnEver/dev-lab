@@ -85,3 +85,29 @@ def test_the_hatch_vcs_version_file_stays_ignored() -> None:
         timeout=60,
     )
     assert done.returncode == 0, f'{VERSION_FILE} is not ignored; a build would commit it'
+
+
+#: Paths a family repo deliberately tracks under an ignored root, at any depth; the planted control is the
+#: generated index the same base must keep ignoring outside an archive.
+_TRACKED: Final = (
+    '.claude/sharp-review.json',
+    'attic/old/.claude/rules/MEMORY.md',
+    'attic/old/.claude/meta/MEMORY.full.md',
+    'attic/old/.claude/memory/2026/06/01/_meta.json',
+)
+_IGNORED: Final = ('.claude/rules/MEMORY.md', '.claude/memory/2026/06/01/_meta.json', 'attic/old/__pycache__/x.pyc')
+
+
+def _ignored(path: str) -> bool:
+    done = subprocess.run(
+        [shutil.which('git') or 'git', '-C', str(ROOT), 'check-ignore', '-q', '--no-index', path],
+        check=False,
+        timeout=60,
+    )
+    return done.returncode == 0
+
+
+def test_what_a_family_repo_tracks_under_an_ignored_root_is_trackable() -> None:
+    """The review ledger and an archived tree are tracked; the generated index and caches stay ignored."""
+    assert [path for path in _TRACKED if _ignored(path)] == []
+    assert [path for path in _IGNORED if not _ignored(path)] == []
