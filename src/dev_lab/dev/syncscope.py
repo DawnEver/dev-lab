@@ -115,9 +115,10 @@ PLUGIN_TRIGGERS: Final[dict[str, str]] = {
 _LINTER: Final = 'ruff'
 
 #: The kit itself: the family's one verify entry point is ``python -m dev_lab.dev.verify``, so a
-#: repo that DECLARES lab-commons anywhere cannot produce a verdict without it. A repo that does not
-#: declare it is either the kit or does not run it, and neither is this rule's subject.
-_KIT: Final = 'lab-commons'
+#: repo that DECLARES dev-lab anywhere cannot produce a verdict without it. A repo that does not
+#: declare it is either the kit or does not run it, and neither is this rule's subject. The kit is
+#: dev-lab (the tool that owns verify), never lab-commons (the runtime it is built on).
+_KIT: Final = 'dev-lab'
 
 #: The leading run of a PEP 508 spec that is the distribution name: ``pkg[extra] @ git+...`` and
 #: ``pkg>=1; sys_platform == 'win32'`` both answer ``pkg``.

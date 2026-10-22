@@ -3,8 +3,9 @@
 LIBRARIES FLOAT, PRODUCTS COMPOSE. An engine (``<x>-lab``) depends on its peers by floating git
 dependencies, so a library's sha does not fix its peers' source. A PRODUCT's sha must: one verdict per
 sha means nothing otherwise. So a product mounts every engine as a git submodule under
-``components/<name>`` -- the gitlink IS the pin -- and consumes it by path. lab-commons is never a
-component: it stays a floating git dependency of everything, the product included.
+``components/<name>`` -- the gitlink IS the pin -- and consumes it by path. lab-commons (the runtime)
+and dev-lab (the development system) are never components: each stays a floating git dependency of
+everything, the product included.
 
 THE ROW, declared once in the product's ``pyproject.toml``::
 
@@ -102,10 +103,13 @@ def components_of(pyproject: str) -> tuple[Component, ...]:
         raise ComponentRefused(msg)
     return tuple(_row(name, raw) for name, raw in table.items())
 
+#: The family kits: the runtime (lab-commons) and the development system (dev-lab); `dev-lab` matches <x>-lab.
+_NEVER_COMPONENTS: Final = frozenset({'lab-commons', 'dev-lab'})
+
 
 def _row(name: str, raw: object) -> Component:
-    if name == 'lab-commons':
-        msg = 'lab-commons is never a component: it stays a floating git dependency of every repo'
+    if name in _NEVER_COMPONENTS:
+        msg = f'{name} is never a component: it stays a floating git dependency of every repo'
         raise ComponentRefused(msg)
     if not _ENGINE.fullmatch(name):
         msg = f'component {name!r}: an engine is named <x>-lab'

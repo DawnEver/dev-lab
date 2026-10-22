@@ -6,11 +6,21 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Mingyang Bao" }]
 requires-python = ">=3.12"
-# The base install is the standard library; every capability that needs a package is an extra.
-dependencies = ["lab-commons"]
+# dev-lab IS the development system, so what lab-commons shipped as its `dev` extra is this package's base
+# install: the lab-commons runtime it is built on (logging, paths, config, units for the duration/quantity
+# parsers) plus the tools it DRIVES as executables (pytest, ruff, `cz check` for the base commit-msg hook).
+# Floor: lab-commons at the split base 8c401f0 (hatch-vcs 0.3.1.dev992); one bare git URL graph-wide, as the
+# consumers spell it, so uv.lock pins its tip -- never a machine-local path.
+dependencies = [
+    "lab-commons[units,paths,io,structured]>=0.3.1.dev992",
+    "pytest",
+    "pytest-mock",
+    "ruff",
+    "commitizen",
+]
 
 [project.urls]
-Homepage = "https://github.com/DawnEver/lab-commons"
+Homepage = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -27,50 +37,9 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 [tool.hatch.build.targets.wheel]
 packages = ["src/dev_lab"]
 
-[project.optional-dependencies]
-# Each defining module has an explicit installation capability, not a root facade.
-units = ["numpy", "pint>=0.25.2", "pydantic>=2"]
-paths = ["platformdirs"]
-io = ["rtoml"]
-structured = ["structlog", "colorama; sys_platform == 'win32'"]
-
-# THE GATE FOR ``dev_lab.dev``. That subpackage is opt-in exactly as ``lab_commons.em`` is --
-# the top level does not import it, and `tests/test_dev_gate.py` pins that against a fresh
-# interpreter -- and the extra below is what a consumer installs to opt in. It names the tools the
-# dev layer DRIVES (pytest and ruff, as executables rather than as imports); the layer itself needs
-# no new dependency, which the same test proves by reading its import statements. A consumer that
-# wants only logging installs nothing heavier than the tier-1 list above.
-dev = [
-    "lab-commons[units,paths,io,structured]",
-    "pytest",
-    "pytest-mock",
-    "ruff",
-    # `cz check` is the base commit-msg hook (`dev_lab/dev/githooks/base.toml`), run in this venv
-    # like every hook -- DRIVEN as an executable, exactly as pytest and ruff are.
-    "commitizen",
-]
-
-# THE TWO GATES FOR ``lab_commons.viz``, AND THERE ARE TWO ON PURPOSE. The plotting vocabulary
-# (`lab_commons.viz` itself) imports NO plotting library: a producer declares the figure it wants and
-# installs nothing. Drawing it is an ADAPTER, one module per library, and each adapter's library is
-# its own extra -- so a consumer takes the backend it wants and does not inherit the other's. The
-# layer is equal-peer by construction rather than by intent, and `tests/test_viz_gate.py` pins both
-# halves: that importing `lab_commons` pulls neither in, and that each adapter imports exactly the
-# library its own extra names.
-# The viz VOCABULARY is NumPy data, so it is its own extra; each backend extra names only its library.
-viz = ["numpy"]
-viz-mpl = [
-    # 3.5 is where `matplotlib.colormaps` -- the registry the layer's palette-name check reads --
-    # landed. Nothing below it is claimed, and no ceiling is stated: an upper bound here would be a
-    # resolver constraint inherited by every consumer that wants a plot.
-    "matplotlib>=3.5",
-]
-viz-bokeh = [
-    # 3.0 is where a figure's title became a model with text rather than a string, and where the
-    # palette registry this layer checks its colormap names against is the shape it reads. The
-    # adapter is written against that API and says so here instead of failing at the first figure.
-    "bokeh>=3",
-]
+[tool.uv.sources]
+# integrate/main until lab-commons main carries the split base (main is v0.3.0-745, behind 8c401f0); then drop `branch`.
+lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", branch = "integrate/main" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.lab_commons.placement]
@@ -108,8 +77,8 @@ produce = ["-m", "dev_lab.dev.verify", "--part", "{part}"]
 [tool.lab_commons.integrator]
 trunk = "main"
 integration = "integrate/main"
-merges_only_since = "c6ba73b78d56f7e0c3a4e95d208e752b9047bdf4"  # INTEGRATION-IS-MERGES-ONLY from here on
-pr_merges_since = "b97d2aa2871e09630863620bda713de750374ccb"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha
+merges_only_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-IS-MERGES-ONLY from here on: the split base (lab-commons 8c401f0 rewritten)
+pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha: the split base
 
 # The advisory PR review (dev_lab.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
 # interpreter, the sharp-review method) is each reviewing host's [capabilities.*] in its machine file.
@@ -267,7 +236,7 @@ uses = "./.github/workflows/python-verify.yml"
 
 [tool.lab_commons.ci."ci.yml".jobs.verify.with]
 runner-os = '["ubuntu-latest", "windows-latest", "macos-latest"]'
-extras = "dev viz-mpl viz-bokeh"
+extras = ""
 guard-targets = "adoption"
 
 [tool.lab_commons.ci."python-verify.yml"]
@@ -447,7 +416,3 @@ if (failed) {
   });
 }
 '''
-
-# LOCAL SPLIT ONLY: lab-commons at the split's base. Replace by the published source at cut-over.
-[tool.uv.sources]
-lab-commons = { path = "C:/Users/linxu/src/lab-commons/.claude/worktrees/collab-gaps", editable = true }
