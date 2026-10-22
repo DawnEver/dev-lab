@@ -347,6 +347,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   only: publish = the local ref, history only grows, integration takes merges only.
 * :mod:`lab_commons.dev.branchprune` -- MERGED-BRANCHES-PRUNED: every serving host deletes merged idle origin
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
+* :mod:`lab_commons.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented, closed,
+  and its branch deleted through LOSSLESS-DELETE; every serve tick, and ``forge pr close-landed``.
 * :mod:`lab_commons.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
 * :mod:`lab_commons.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
 * :mod:`lab_commons.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.

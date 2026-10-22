@@ -101,6 +101,8 @@ Each tick, and nothing else:
 4. `integrate promote <sha>` when an integration commit's every part stands PASS at scope `full`.
 5. Break-glass notices: read the `integration` issue each break-glass commit opened, and close it with the PR
    that moves `pr_merges_since` past the commit.
+6. A PR left open after its head landed is closed by the forge's tick; to do it now:
+   `python -m lab_commons.dev.forge pr close-landed <n>` ([branch-set.md](branch-set.md#landed-pull-requests-close)).
 
 A steward runs no test, merges no branch by hand, and pushes nothing to `integrate/main`.
 

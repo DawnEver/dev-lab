@@ -227,6 +227,7 @@ def _serve(
         lambda _root, _built, **kw: (reviewed if reviewed is not None else []).append(kw),
     )
     monkeypatch.setattr(forgeservesteps, 'reconcile', (issues or _Issues()).reconcile)
+    monkeypatch.setattr(forgeserve, 'serve_close_landed', lambda *_a, **_k: None)
     monkeypatch.setattr(forgeserve, 'serve_prune', prune)
     monkeypatch.setattr(forgeserve, 'serve_records_prune', records_prune)
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
