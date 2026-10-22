@@ -270,3 +270,12 @@ ends with `uv cache prune --ci`.
 
 A human with VPN access may ssh to the login node and read `squeue --me`, `~/ci/runs/<sha>/<part>/state.json`, the
 `forge-runs/` state files and `~/.cache/lab-forge-<repo>.log`. No tool path does this.
+
+## Cleaning output
+
+`python -m lab_commons.hpc clean --root <remote abs dir> [--dry-run] [--grant <user>] <name>...` (`lab_commons.hpc.clean`)
+deletes plain-named directories DIRECTLY under a remote root, through the grant: names match `^[A-Za-z0-9][A-Za-z0-9._-]*$`,
+the resolved parent must equal the resolved root, a running job (`squeue -t R %Z`) under any target refuses the whole
+call, and each target is verified gone; a residual (e.g. a `.lab-hpc` record dir another account owns) is reported
+with its owner, exit 1. Exit 2 is usage, validation or refusal. The caller names `--root` (its Makefile); it is a
+narrow door, so an agent allow row for that target needs nothing extra in settings.
