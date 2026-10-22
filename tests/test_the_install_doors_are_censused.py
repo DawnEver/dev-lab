@@ -30,7 +30,7 @@ _ROOT: Final = Path(__file__).resolve().parents[1]
 _BASE: Final = _ROOT.parent
 
 #: The repo this suite is verifying, read from its WORKING TREE.
-_HERE: Final = 'lab-commons'
+_HERE: Final = 'dev-lab'
 
 _PATHS: Final[dict[str, str]] = {_HERE: _ROOT.name}
 
@@ -42,7 +42,7 @@ def _roots() -> dict[str, Path]:
 def test_every_declared_door_still_measures_what_the_table_records() -> None:
     """THE CENSUS. Equality per file, in both directions, over every repo reachable from this box."""
     seen = assert_census(_BASE, _PATHS, DOORS, repo_floor=REPO_FLOOR, door_floor=DOOR_FLOOR, here=_HERE)
-    assert 'lab-commons' in seen, 'the census did not even read the tree it runs in'
+    assert _HERE in seen, 'the census did not even read the tree it runs in'
 
 
 def test_the_shared_ci_door_is_judged_against_what_its_callers_float() -> None:
