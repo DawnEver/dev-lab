@@ -145,6 +145,10 @@ SYNTHETIC: Final[dict[str, str]] = {
     'src/lab_commons/dev/famtests/datedmemory.py::path': (
         '1 example lane note, `lanes/a-lane.md`, in the prose that explains the dated shape.'
     ),
+    'src/lab_commons/dev/famtests/ephemeralrefs.py::path': (
+        'the planted tree`s files -- `scratch/probe.py`, `output/...` artefacts, `src/pkg/a.py` -- which '
+        'the control writes into a tmp repo and convicts; they name no file in any checkout.'
+    ),
     'src/lab_commons/dev/famfiles.py::path': (
         'the PROJECT_FILES list names family-managed files (`.claude/settings.json`, the hook files) that '
         'every adopting repo tracks and this one does not yet -- the list is the family`s, not a consumer`s.'

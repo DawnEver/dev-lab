@@ -84,7 +84,8 @@ NOT_OURS = ('stdout', 'stderr')
 #: Re-taken 2026-10-21 at 354 (dev forgeautosync, labsession, pradmit, _rule_rows_pr_flow): 307 -> 314.
 #: Re-taken 2026-10-21 at 353 (dev._rule_rows_branches, famtests restatedrules/sizesplits): 307 -> 313.
 #: Re-taken 2026-10-22 at 360 (the two above merged): 314 -> 320.
-MODULE_FLOOR = 320
+#: Re-taken 2026-10-22 at 362 (pr/no-ephemeral-refs merged: dev.ephemeralrefs, dev._rule_rows_citations): 320 -> 322.
+MODULE_FLOOR = 322
 MODULE_HEADROOM = 45
 
 

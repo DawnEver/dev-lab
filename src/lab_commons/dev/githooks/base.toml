@@ -73,6 +73,13 @@ id = "trailing-whitespace"
 run = ["python", "-m", "lab_commons.dev.filechecks", "trailing-whitespace"]
 pass_files = true
 
+# TRACKED-CITES-NO-EPHEMERAL on the STAGED files (fast); the full tree, orphaned escapes included, is
+# the famtest `lab_commons.dev.famtests.ephemeralrefs` in the base part.
+[[pre-commit]]
+id = "ephemeral-refs"
+run = ["python", "-m", "lab_commons.dev.ephemeralrefs"]
+pass_files = true
+
 [[commit-msg]]
 id = "commitizen"
 run = ["cz", "check", "--allow-abort", "--commit-msg-file"]

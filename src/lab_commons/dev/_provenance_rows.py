@@ -487,6 +487,7 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     # not a forked file.
     'venvpath': ('original',),
     'worktreeplace': ('original',),
+    'ephemeralrefs': ('original',),
     'famfiles': ('original',),
     # ORIGINAL: an audit (2026-10-21) found consumer pages restating registry rules, and no consumer
     # file refused the copy -- there is nothing to supersede.

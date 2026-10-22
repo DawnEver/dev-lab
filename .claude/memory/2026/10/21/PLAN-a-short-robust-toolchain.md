@@ -38,7 +38,7 @@ merges it; every failure is a status on the PR.
 | R8 | agents cannot verify locally | `measure` refused for memory in nearly every agent run |
 | R9 | concurrency decided per call site | G memory-starved by parallel runs that each sized themselves |
 | R10 | session identity is agent-written | `Claude-Session:` is Claude-only; codex/ccds write none |
-| R11 | reference artefacts used as inputs | output/reference decks read by tests and production |
+| R11 | reference artefacts used as inputs | reference decks under the ignored output tree, read by tests and production |
 
 ## 3. Metrics
 

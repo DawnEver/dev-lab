@@ -35,5 +35,5 @@ absent, smoke `FAILED: exit 0: ...; the script wrote no version file`.
 ## Live, this box, 2026-10-18
 
 `probe('jmag', CHECKS['jmag'], Requirement('25.2', ...))` -> present, version `25.2.01zp`;
-find registry `C:\Program Files\JMAG-Designer25.2\designer.exe`; smoke `passed: exit 0: Runing script;
+find registry `<Program Files>/JMAG-Designer25.2/designer.exe`; smoke `passed: exit 0: Runing script;
 wrote version 25.2.01zp`; wall 5.0 s.
