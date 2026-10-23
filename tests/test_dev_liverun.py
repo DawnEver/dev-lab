@@ -276,7 +276,7 @@ def _junction(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
-@pytest.mark.node
+@pytest.mark.workstation
 def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one(
     live_tree: tuple[Path, int], tmp_path: Path
 ) -> None:
