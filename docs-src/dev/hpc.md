@@ -51,8 +51,9 @@ On the login host you chose, store your own forge token once (`git config --glob
   there, not on the login shell's PATH.
 
 Once every account is deployed, a workstation re-deploys the whole fleet with
-`python -m dev_lab.dev.hpchost deploy-fleet [--account <user>]... [--dry-run]`: one detached `ssh` per
-`[[hpc.grant]]` account running that account's own `deploy`, one log each under
+`python -m dev_lab.dev.hpchost deploy-fleet [--account <user>]... [--dry-run]`: for each `[[hpc.grant]]`
+account it reads that account's own `[deploy]` host and root, then one detached `ssh` to that host runs its
+`deploy`, one log each under
 `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/<user>.log`. An account outside the grants is refused.
 
 ## Grants: the machine file
