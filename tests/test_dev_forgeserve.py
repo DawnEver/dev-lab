@@ -619,6 +619,28 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert len(advanced) == 2
 
 
+def test_a_submitted_cluster_run_is_not_running_demand_again_its_tasks_are_in_the_standing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    cluster_claim = dataclasses.replace(ME, hpc='ada/alice')
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    work = Work('integrate/main', SHA, 'base', 'mine', cluster_claim, cluster=part)
+
+    def advance(_root: Path, run: forgerunstate.Run, **_kwargs: object) -> forgerunstate.Run:
+        moved = dataclasses.replace(run, phase=forgerunstate.SUBMITTED, job_ids=('100',))
+        forgerunstate.save(moved)
+        return moved
+
+    monkeypatch.setattr(forgerun, 'advance', advance)
+    _serve(monkeypatch, tmp_path, _claimed(work), seat=SEAT, cluster=_Slurm)
+    _report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
+    (line,) = [one for one in said if one.startswith('running=')][-1:]
+    assert line == 'running=[]', (
+        "a submitted run's pending and running tasks are already held in the account's standing: counting its "
+        'demand again starved the integration head on Ada (2026-10-23, 0 free while PR runs were in flight)'
+    )
+
+
 def test_a_run_with_no_cluster_to_advance_on_alarms_and_waits(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')

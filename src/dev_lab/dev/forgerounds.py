@@ -57,7 +57,8 @@ class Rounds:
 
     *ticking* and *carding* are the keywords every :func:`~dev_lab.dev.forgetick.tick` and every host card
     share; *supplied* is :func:`supply_now` with its host bound, *holding* the box ledger's claims now (none on a
-    cluster); *runs* the cluster runs here, each running at *sized* of its need-set.
+    cluster); *runs* the cluster runs here, each NOT YET SUBMITTED one running at *sized* of its need-set -- a
+    submitted one's tasks are already held in the cluster's standing, and counting them twice starved the queue.
     """
 
     root: Path
@@ -96,7 +97,9 @@ class Rounds:
         """One round: what this host admits against now, the tick, and a start for everything it claimed."""
         held = tuple(self.holding())
         supply = self.supplied(held)
-        running = [self.sized(needs_of(run.platform)) for run in self.runs]
+        # a run Slurm holds is in the standing already (every pending and running task): only an unsubmitted one is not
+        unsubmitted = (forgerunstate.CLAIMED_PHASE, forgerunstate.SUBMITTING)
+        running = [self.sized(needs_of(run.platform)) for run in self.runs if run.phase in unsubmitted]
         ticked = _tick(
             self.repo, self.root, self.alarm, **self.ticking,
             supply=supply, running=running,
