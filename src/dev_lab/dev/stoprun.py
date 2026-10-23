@@ -22,7 +22,8 @@ AN ORPHAN IS STOPPABLE TOO, BY THREE CONDITIONS THAT MUST ALL HOLD (added 2026-1
 Designers, a node-side ``JobSystem.exe -s`` and a leftover ``scratch/`` shell watcher matched no run
 signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept a box from admitting a solve):
 
-* its PARENT IS GONE -- the ppid is absent, or is a younger process wearing the recycled number;
+* its PARENT IS GONE -- the ppid is absent, is init (POSIX reparents an orphan to pid 1), or is a younger
+  process wearing the recycled number;
 * NO BOX CLAIM is held by it or a descendant (:func:`lab_commons.box.ledger.holdings`; a Designer a claim
   was handed over to is that claim's, and is released through its own door). An unreadable ledger refuses;
 * its command line is a DECLARED vendor tool or a ``scratch/`` script (:data:`SCRATCH`, built in)::
@@ -103,6 +104,9 @@ RUN_SIGNATURES: Final = (
 
 #: A one-off under a ``scratch/`` directory (the family's home for probes): an orphan of one is stoppable.
 SCRATCH: Final = re.compile(r'(?:^|[\s"\'=/\\])scratch[/\\]')
+
+#: The pid POSIX reparents an orphan to; a ppid at or below it names no live creator.
+_INIT: Final = 1
 
 Proc = tuple[int, str]  # (parent pid, command line)
 
@@ -211,7 +215,7 @@ def _orphan_refusal(
     if not any(sig.search(cmdline) for sig in (SCRATCH, *(re.compile(s) for s in orphans))):
         return f'no orphan signature either (built-in {SCRATCH.pattern!r} or {_TABLE} orphans)'
     ppid = table[pid][0]
-    if ppid and ppid in table:
+    if ppid > _INIT and ppid in table:  # POSIX reparents an orphan to init: its parent is gone
         parent, child = born(ppid), born(pid)
         if parent is None or child is None or parent <= child:
             return f'its parent {ppid} is alive ({table[ppid][1][:120]!r}) -- stop that run instead'

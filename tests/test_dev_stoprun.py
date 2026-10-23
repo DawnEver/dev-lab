@@ -202,6 +202,14 @@ def test_a_node_side_jobsystem_and_a_scratch_watcher_are_orphans_too() -> None:
         assert killed == expect
 
 
+def test_a_planted_posix_orphan_reparented_to_init_is_an_orphan() -> None:
+    """PLANTED (forge, 2026-10-23): on POSIX an orphan's ppid becomes 1, and init is alive and older than it."""
+    table = {60: (1, 'python -c sleep scratch/watch.py'), 1: (0, '/sbin/init')}
+    born = {60: 200, 1: 1}.get
+    code, lines = stop(60, table, dry_run=True, claimed=_none_claimed, born=born)
+    assert code == 0, lines
+
+
 def test_an_orphan_whose_parent_pid_was_reused_by_a_younger_process_is_still_an_orphan() -> None:
     table = {40: (7, _DESIGNER), 7: (1, 'explorer.exe')}
     born = {40: 100, 7: 200}.get
