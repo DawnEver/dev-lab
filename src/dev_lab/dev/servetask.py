@@ -1,8 +1,8 @@
 """THE ONE Scheduled Task that makes a Windows workstation a ``forge serve`` host: its name, definition and state.
 
-The workstation counterpart of a cluster account's crontab lines (:mod:`lab_commons.hpc.deploy`). ONE
+The workstation counterpart of a cluster account's crontab lines (:mod:`dev_lab.dev.hpchost.deploy`). ONE
 Task, ``lab-forge-serve``, serves every repo the machine file declares (``[serve] repos``): its action
-runs :mod:`dev_lab.dev.workstation` ``serve`` from the lab-commons checkout, which takes the
+runs :mod:`dev_lab.dev.workstation` ``serve`` from the dev-lab checkout, which takes the
 per-user serve lock once (:mod:`dev_lab.dev.servelock`) and serves each repo in turn from its own
 checkout and venv. One Task and not one per repo, because the lock is per host: per-repo Tasks firing
 on the same minute would either overlap (per-repo locks) or starve all but the first (one lock).
@@ -13,7 +13,7 @@ THE TASK, as one ``schtasks /Create /XML`` definition (:func:`task_xml`):
 * every 5 minutes; a tick still running when the next fires is skipped (``IgnoreNew``);
 * as THIS user, only while logged on (``InteractiveToken``, no stored password): the forge credential
   and a vendor's scheduler are per user, and JMAG's COM classes need the user's session;
-* the action ``<lab-commons checkout>/.venv/Scripts/pythonw.exe -m dev_lab.dev.workstation serve``,
+* the action ``<dev-lab checkout>/.venv/Scripts/pythonw.exe -m dev_lab.dev.workstation serve``,
   its working directory the checkout, the Task ``Hidden``.
 
 INVISIBLE ON A WORKSTATION, MEASURED 2026-10-13: the earlier action ``cmd /c cd /d <checkout> && python
@@ -126,7 +126,7 @@ def this_user() -> str:
 
 
 def definition_of(lab: Path) -> Definition:
-    """The Task that serves every declared repo from the lab-commons checkout *lab*, with no window."""
+    """The Task that serves every declared repo from the dev-lab checkout *lab*, with no window."""
     arguments = '-m dev_lab.dev.workstation serve'
     return Definition(command=str(lab / _VENV_PYTHONW), arguments=arguments, working_directory=str(lab))
 

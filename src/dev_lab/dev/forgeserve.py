@@ -187,7 +187,6 @@ def serve(
     retention pass, *reserving* what takes a local part's box claim before the tick claims it
     (:func:`~dev_lab.dev.forgerounds.reserve`; none on a cluster seat) -- each a seam a test fakes.
     """
-    started = clock()
     repo = origin_url(root)
     table = section('schedule') if table is None else table
     raised: list[Alarm] = []  # every alarm this tick, for its host card
@@ -238,9 +237,10 @@ def serve(
     runs, card = host_rounds.runs, host_rounds.card
     ticked = rounds[-1]
     claimed = [item for one in rounds for item in one.claimed]
+    runs_from = clock()  # the runs get a period of their own: rounds that ran long never starve them to one
     left = _advance(
         root, runs, client=client, machine=machine, seat=seat, lease=lease, slurm=slurm, why=why, say=say, alarm=alarm,
-        beat=lambda: card(claimed), spent=lambda: clock() >= started + timedelta(seconds=beat_s),
+        beat=lambda: card(claimed), spent=lambda: clock() >= runs_from + timedelta(seconds=beat_s),
     )  # fmt: skip
     tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
@@ -284,9 +284,12 @@ def _advance(
     """Advance every run one tick; the shas still in flight. A run that cannot advance waits and alarms.
 
     A run's step can be slow (a gather, the routing and the post of a 55k-test record, a submit's prep), so
-    the host card is published (*beat*) before each, and once the tick's period is *spent* the runs not yet
-    reached wait for the next tick -- after the first, so no run starves behind a long round. A tick is
-    bounded by its period plus one step, and ``forge queue``'s STALE keeps meaning down.
+    the host card is published (*beat*) before each, and once the runs' own period is *spent* (counted from
+    the first run, so the rounds before cannot spend it) the runs not yet reached wait for the next tick. A
+    tick always advances at least one, and *runs* arrive least recently advanced first
+    (:func:`forgerunstate.live`), so the runs one tick leaves are the first the next reaches: every run is
+    reached within as many ticks as there are runs. The runs are bounded by one period plus one step, and
+    ``forge queue``'s STALE keeps meaning down.
     """
     if not runs:
         return []
@@ -313,6 +316,7 @@ def _advance(
             say(f'{run_tag(run.platform, run.sha)}: cannot advance: {stuck}')
             after = run
         if after is not None:
+            forgerunstate.touch(after)
             left.append(after.sha)
     return left
 

@@ -66,4 +66,4 @@ same state.
 
 Every tree that runs a product's code initialises its submodules at their pinned commits: the forge's
 local part trees (`shatree`), the cluster's run trees (`hpc.shell`), and each served checkout that the
-deploy and its tick update (`hpc.deploy_steps.update`).
+deploy and its tick update (`hpchost.steps.update`).

@@ -9,7 +9,7 @@ the host's kit does, from outside it (:func:`refresh`): fast-forward the clean c
 sync is retried by the next tick, and an unchanged checkout costs one hash.
 
 Shared by ``workstation deploy`` (its checkout and venv steps) and ``workstation serve`` (every tick).
-A cluster account's tick is the same rule through its own keyed build (:func:`lab_commons.hpc.tick.tick`).
+A cluster account's tick is the same rule through its own keyed build (:func:`dev_lab.dev.hpchost.tick.tick`).
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
-from lab_commons.hpc.deploy_steps import Step
 from lab_commons.log import emit
 
+from dev_lab.dev.hpchost.steps import Step
 from dev_lab.dev.venvpath import venv_interpreter
 
 __all__ = ['ENV_INPUTS', 'ENV_STAMP', 'Moved', 'env_key', 'follow', 'read', 'refresh', 'sync_venv', 'venv_python']

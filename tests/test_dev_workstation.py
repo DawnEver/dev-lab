@@ -19,15 +19,15 @@ from typing import Final
 
 import pytest
 from lab_commons.config import CONFIG_ENV
-from lab_commons.hpc.deploy_spec import host_serve_argv
 
 from dev_lab.dev import hostrefresh, servetask, workstation
 from dev_lab.dev.forgealarm import Alarm
+from dev_lab.dev.hpchost.spec import host_serve_argv
 from dev_lab.dev.servelock import held
 from dev_lab.dev.venvpath import venv_interpreter
 
 FORGE: Final = 'https://forge.example/team'
-REPOS: Final = 'lab-commons,alpha,beta'
+REPOS: Final = 'dev-lab,alpha,beta'
 DEPLOY: Final = ('--repos', REPOS, '--capabilities', 'workstation,jmag:4', '--forge', FORGE)
 VENV: Final = str(venv_interpreter(os_name=os.name))
 
@@ -145,15 +145,15 @@ def _changes(calls: list[str]) -> list[str]:
 def test_a_fresh_box_is_cloned_bootstrapped_hooked_declared_and_scheduled(box: Box) -> None:
     assert box.deploy() == 0
     calls = box.calls()
-    for name in ('lab-commons', 'alpha', 'beta'):
+    for name in ('dev-lab', 'alpha', 'beta'):
         assert f'git clone -q -b integrate/main {FORGE}/{name}.git {box.root / name}' in calls
         assert f'bootstrap {box.root / name}' in calls
         assert (box.root / name / '.git' / 'HOOKED').exists()
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
     assert declared['capabilities'] == {'workstation': {}, 'jmag': {'seats': 4}}
-    assert declared['serve'] == {'repos': ['lab-commons', 'alpha', 'beta'], 'root': str(box.root)}
+    assert declared['serve'] == {'repos': ['dev-lab', 'alpha', 'beta'], 'root': str(box.root)}
     assert 'reserve' not in declared, 'no delegate named, no [reserve] written'
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
 
 
 def test_a_second_run_changes_nothing(box: Box) -> None:
@@ -173,7 +173,7 @@ def test_a_dry_run_reads_but_touches_nothing_and_prints_the_diff(box: Box, capsy
     assert box.machine.read_text(encoding='utf-8') == declared
     assert not box.task.exists()
     out = capsys.readouterr().out
-    assert '[dry-run] lab-commons: git clone' in out
+    assert '[dry-run] dev-lab: git clone' in out
     assert '+[serve]' in out
     assert '+[capabilities.jmag]' in out
     assert '[dry-run] schtasks /Create /TN lab-forge-serve' in out
@@ -257,8 +257,8 @@ def test_a_refused_repo_is_skipped_alone_and_the_others_are_still_served(
     assert workstation.deploy(argv, programs=programs) == 2
     assert f'git -C {box.root / "alpha"} merge --ff-only -q @{{u}}' in box.calls(), 'the planted control moves on'
     declared = tomllib.loads(box.machine.read_text(encoding='utf-8'))
-    assert declared['serve']['repos'] == ['lab-commons', 'alpha'], 'a refused repo is not served'
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
+    assert declared['serve']['repos'] == ['dev-lab', 'alpha'], 'a refused repo is not served'
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
     assert 'beta' in capsys.readouterr().err
     assert [(one.repo, 'local changes' in one.body) for one in raised] == [(f'{FORGE}/beta.git', True)]
 
@@ -282,7 +282,7 @@ def test_a_bad_capability_is_refused_by_name() -> None:
 def test_an_older_task_action_is_replaced(box: Box) -> None:
     box.task.write_text('<Command>cmd</Command><Arguments>/c cd /d x &amp;&amp; py -m serve</Arguments>')
     assert box.deploy() == 0
-    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'lab-commons')
+    assert servetask.installed(box.task.read_text()) == servetask.definition_of(box.root / 'dev-lab')
 
 
 def test_off_windows_the_deploy_is_refused(box: Box) -> None:
@@ -313,10 +313,10 @@ def test_serve_runs_each_declared_repo_in_its_own_checkout_and_reports_the_worst
     _serving(box)
     worst, ran = _serve(box, tmp_path, {'beta': 1})
     assert worst == 1
-    assert [cwd.name for _, cwd in ran] == ['lab-commons', 'alpha', 'beta']
+    assert [cwd.name for _, cwd in ran] == ['dev-lab', 'alpha', 'beta']
     argv, cwd = ran[0]
     assert argv == host_serve_argv(), 'the HOST kit serves every repo; a repo venv only runs its producers'
-    assert cwd == box.root / 'lab-commons'
+    assert cwd == box.root / 'dev-lab'
 
 
 def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: Path) -> None:
@@ -339,7 +339,7 @@ def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: 
     synced = calls.index(f'bootstrap {alpha}', seen)
     assert moved < synced < served['alpha'], 'moved, then synced, then served'
     assert f'bootstrap {box.root / "beta"}' not in calls[seen:], 'an unchanged venv is not synced'
-    assert served['lab-commons'] <= calls.index(f'git -C {alpha} fetch -q', seen), 'lab-commons first'
+    assert served['dev-lab'] <= calls.index(f'git -C {alpha} fetch -q', seen), 'dev-lab first'
     again = len(box.calls())
     assert _serve(box, tmp_path)[0] == 0
     assert not [c for c in box.calls()[again:] if c.startswith('bootstrap')], 'the stamp makes a second tick quiet'
@@ -348,12 +348,12 @@ def test_serve_refreshes_a_stale_venv_before_its_forge_runs(box: Box, tmp_path: 
 def test_serve_reinstalls_the_serving_checkouts_own_hooks_after_it_updates_itself(box: Box, tmp_path: Path) -> None:
     """PLAN R1: a host's shims are kept current by the machine, never by hand (2026-10-22, #273).
 
-    The serving lab-commons checkout moved to a kit whose shim differs from the installed one: the tick
+    The serving dev-lab checkout moved to a kit whose shim differs from the installed one: the tick
     re-installs ITS hooks before serving. A repo checkout's hooks are not the serving kit's and are left alone.
     PLANTED CONTROL: hooks already live are only read, never re-written.
     """
     _serving(box)
-    kit, alpha = box.root / 'lab-commons', box.root / 'alpha'
+    kit, alpha = box.root / 'dev-lab', box.root / 'alpha'
     (kit / '.git' / 'HOOKED').unlink()
     (alpha / '.git' / 'HOOKED').unlink()
     seen = len(box.calls())
@@ -384,7 +384,7 @@ def test_a_repo_whose_refresh_fails_is_released_by_name_and_the_others_are_serve
     capsys.readouterr()
     worst, ran = _serve(box, tmp_path)
     assert worst == 2
-    assert [cwd.name for _, cwd in ran] == ['lab-commons']
+    assert [cwd.name for _, cwd in ran] == ['dev-lab']
     err = capsys.readouterr().err
     assert 'alpha released, not served this tick' in err
     assert 'local changes' in err
@@ -430,7 +430,7 @@ def test_a_host_the_registry_gives_no_forge_role_claims_nothing_and_releases_its
     assert '[serve] not a forge host (' in out
     assert named in out
     assert [line for line in out.splitlines() if 'released ' in line] == [
-        f'[serve] {name} released {name}' for name in ('lab-commons', 'alpha', 'beta')
+        f'[serve] {name} released {name}' for name in ('dev-lab', 'alpha', 'beta')
     ]
 
 
@@ -493,7 +493,7 @@ def test_the_bootstrap_passes_the_real_door_from_an_unrelated_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``dep --bootstrap`` refuses to move a primary checkout from elsewhere, so the deploy runs it IN the checkout."""
-    checkout, elsewhere = tmp_path / 'lab-commons', tmp_path / 'elsewhere'
+    checkout, elsewhere = tmp_path / 'dev-lab', tmp_path / 'elsewhere'
     elsewhere.mkdir()
     subprocess.run([shutil.which('git') or 'git', 'init', '-q', str(checkout)], check=True)
     door = tmp_path / 'door.py'

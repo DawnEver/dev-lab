@@ -619,6 +619,28 @@ def test_a_claimed_cluster_part_starts_a_run_and_is_advanced_never_spawned(monke
     assert len(advanced) == 2
 
 
+def test_a_submitted_cluster_run_is_not_running_demand_again_its_tasks_are_in_the_standing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    cluster_claim = dataclasses.replace(ME, hpc='ada/alice')
+    part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
+    work = Work('integrate/main', SHA, 'base', 'mine', cluster_claim, cluster=part)
+
+    def advance(_root: Path, run: forgerunstate.Run, **_kwargs: object) -> forgerunstate.Run:
+        moved = dataclasses.replace(run, phase=forgerunstate.SUBMITTED, job_ids=('100',))
+        forgerunstate.save(moved)
+        return moved
+
+    monkeypatch.setattr(forgerun, 'advance', advance)
+    _serve(monkeypatch, tmp_path, _claimed(work), seat=SEAT, cluster=_Slurm)
+    _report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm)
+    (line,) = [one for one in said if one.startswith('running=')][-1:]
+    assert line == 'running=[]', (
+        "a submitted run's pending and running tasks are already held in the account's standing: counting its "
+        'demand again starved the integration head on Ada (2026-10-23, 0 free while PR runs were in flight)'
+    )
+
+
 def test_a_run_with_no_cluster_to_advance_on_alarms_and_waits(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(CONFIG_ENV, str(tmp_path / 'home' / 'config.toml'))
     part = ClusterPart('https://f/o/r.git', 'tests', tmp_path / 'parts')
@@ -1258,15 +1280,88 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
     assert any(line == f'[serve] the tick ran past its period: {shas[2][:12]} wait for the next' for line in said), said
     advanced.clear()
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, table={'tick_minutes': 5})
-    assert advanced == shas, 'PLANTED: a quick tick advances every run'
+    assert sorted(advanced) == shas, 'PLANTED: a quick tick advances every run'
     advanced.clear()
-    now[:] = [NOW, NOW + timedelta(hours=1)]  # the tick started at NOW; its rounds took an hour
+    _rounds_take(monkeypatch, now, timedelta(hours=1))
     monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
     _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-        table={'tick_minutes': 5}, clock=lambda: now.pop(0) if len(now) > 1 else now[0],
+        table={'tick_minutes': 5}, clock=lambda: now[0],
     )  # fmt: skip
-    assert advanced == shas[:1], 'a tick whose rounds ran long still advances one run: no run starves'
+    assert sorted(advanced) == shas, 'the rounds ran an hour, and the runs still get their own period'
+
+
+def _rounds_take(monkeypatch: pytest.MonkeyPatch, now: list[datetime], took: timedelta) -> None:
+    """The tick's rounds (its integration pass, claims, producers) move *now* on by *took*."""
+    real = forgerounds.Rounds.serve
+
+    def slow(self: forgerounds.Rounds, beat_s: float) -> object:
+        now[0] += took
+        return real(self, beat_s)
+
+    monkeypatch.setattr(forgerounds.Rounds, 'serve', slow)
+
+
+def test_bookkeeping_that_spends_the_period_does_not_starve_the_runs(monkeypatch, tmp_path: Path) -> None:
+    """The runs' budget starts when the runs do, so a long integration pass cannot cut them to one per tick.
+
+    Ada 2026-10-23: a tick spent ~25 min on rounds and bookkeeping before the runs, ``spent()`` was already
+    true, one run of six advanced per tick, and a superseded run's cheap withdrawal waited hours.
+    PLANTED CONTROL: runs that themselves overrun the period are still cut off after the one past it.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    now = [NOW]
+    advanced: list[str] = []
+    _rounds_take(monkeypatch, now, timedelta(minutes=25))
+
+    def clock() -> datetime:
+        return now[0]
+
+    monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
+    _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+        table={'tick_minutes': 5}, clock=clock,
+    )  # fmt: skip
+    assert sorted(advanced) == shas, "every quick run, a superseded one's withdrawal among them, advances"
+    advanced.clear()
+
+    def slow(_root: Path, run: forgerunstate.Run, **_kw: object) -> forgerunstate.Run:
+        advanced.append(run.sha)
+        now[0] += timedelta(minutes=6)
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', slow)
+    _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+        table={'tick_minutes': 5}, clock=clock,
+    )  # fmt: skip
+    assert len(advanced) == 1, 'PLANTED: runs that overrun their own period still stop after one'
+
+
+def test_consecutive_slow_ticks_reach_every_run_least_recently_advanced_first(monkeypatch, tmp_path: Path) -> None:
+    """A tick reaches its runs least-recently-advanced first, so no run is left unreached tick after tick.
+
+    Ada 2026-10-23: runs were advanced in sha order, the first two spent every period, and a superseded
+    integration run behind them was never reached -- its pending tasks never withdrawn, every newer tip
+    waiting behind it. PLANTED CONTROL: the first slow tick still reaches only the first two.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    now = [NOW]
+    advanced: list[str] = []
+
+    def slow(_root: Path, run: forgerunstate.Run, **_kw: object) -> forgerunstate.Run:
+        advanced.append(run.sha)
+        now[0] += timedelta(minutes=4)
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', slow)
+    for _ in range(2):
+        _serve(
+            monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+            table={'tick_minutes': 5}, clock=lambda: now[0],
+        )  # fmt: skip
+    assert advanced[:2] == shas[:2], 'PLANTED: the first slow tick reaches the first two'
+    assert advanced[2] == shas[2], 'the second tick starts at the run the first did not reach'
 
 
 class _Untagged(_Slurm):

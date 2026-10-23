@@ -35,6 +35,7 @@ from typing import Final
 
 import pytest
 from _box_fake import ended
+from lab_commons import box
 from lab_commons.box import BOX_ENV, CPU_ENV, GB, INSIDE_ENV, Capacity, Demand, Refused, hold, write_ended
 from lab_commons.compute import learned
 from lab_commons.compute.model import Resources
@@ -63,7 +64,6 @@ from dev_lab.dev.runcache import CachedRun, record, runs
 from dev_lab.dev.verdict import Verdict
 from dev_lab.dev.verify import EXIT_CODES, LEDGER_PLUGIN, PYTEST_ARGS, build_verdict, project_root
 from dev_lab.dev.verify import _tee as tee_step
-from lab_commons import box
 
 #: A clean run, in the shape pytest's ``-q`` footer prints it.
 CLEAN = '.' * 70 + '\n307 passed in 12.3s\n'

@@ -1,10 +1,9 @@
 """A WINDOWS WORKSTATION AS A ``forge serve`` HOST, in one run: ``python -m dev_lab.dev.workstation deploy``.
 
-The counterpart of a cluster account's ``python -m lab_commons.hpc deploy``. It lives here, not in
-:mod:`lab_commons.hpc`, because what it schedules is this package's own serve and lock (hpc imports no
-dev code); it reuses hpc's run-or-print :class:`~lab_commons.hpc.deploy_steps.Step`.
+The counterpart of a cluster account's ``python -m dev_lab.dev.hpchost deploy``, and it reuses that
+deploy's run-or-print :class:`~dev_lab.dev.hpchost.steps.Step`.
 
-``deploy --repos lab-commons,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
+``deploy --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 [--forge <https base>]
 [--root DIR] [--ref BRANCH] [--dry-run]``, each step reporting and safe to repeat:
 
 1. PROBE: ``uv`` and ``git`` on PATH; ``node`` when the ``node`` capability is declared; JMAG Designer and
@@ -30,9 +29,9 @@ serves it; the deploy finishes for the others, raises one forge ``run`` alarm pe
 (:mod:`dev_lab.dev.forgealarm`), and exits 2 naming each.
 
 ``serve`` IS THE TASK'S ACTION: under the per-user serve lock (:mod:`dev_lab.dev.servelock`),
-lab-commons and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
+dev-lab and then each ``[serve] repos`` entry is REFRESHED BY THE HOST -- fast-forwarded to its
 upstream and its venv synced when step 4 says so -- and only then THE HOST KIT runs ``forge serve`` in its
-checkout (:func:`~lab_commons.hpc.deploy_spec.host_serve_argv`); the repo's venv only runs its producers.
+checkout (:func:`~dev_lab.dev.hpchost.spec.host_serve_argv`); the repo's venv only runs its producers.
 The host owns the refresh because a repo's own kit cannot (incident 2026-10-13: a venv whose
 old ``forge serve`` exited 2 every tick could never run the code that would update it). A repo whose
 refresh fails is released with its reason in the serve log. Its exit is the worst child's; one repo's
@@ -58,8 +57,6 @@ from typing import IO, Any, Final
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
 from lab_commons.config import config_path, section
-from lab_commons.hpc.deploy_spec import LAB_COMMONS, host_serve_argv
-from lab_commons.hpc.deploy_steps import Step, Tools
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
 
@@ -70,6 +67,8 @@ from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
 from dev_lab.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
+from dev_lab.dev.hpchost.spec import KIT, host_serve_argv
+from dev_lab.dev.hpchost.steps import Step, Tools
 from dev_lab.dev.servelock import default_lock, held
 
 if sys.platform == 'win32':
@@ -219,8 +218,8 @@ def _capabilities(text: str) -> dict[str, dict[str, Any]]:
 
 def _repos(text: str) -> tuple[str, ...]:
     repos = tuple(dict.fromkeys(part.strip() for part in text.split(',') if part.strip()))
-    if LAB_COMMONS not in repos:
-        msg = f'the Task runs from the {LAB_COMMONS} checkout, so --repos must include it'
+    if KIT not in repos:
+        msg = f'the Task runs from the {KIT} checkout, so --repos must include it'
         raise argparse.ArgumentTypeError(msg)
     return repos
 
@@ -229,7 +228,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.workstation', description=__doc__.splitlines()[0])
     verbs = parser.add_subparsers(dest='verb', required=True)
     dep = verbs.add_parser('deploy', help='make this workstation a forge serve host')
-    dep.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {LAB_COMMONS}')
+    dep.add_argument('--repos', type=_repos, required=True, help=f'comma-separated; must include {KIT}')
     dep.add_argument('--capabilities', type=_capabilities, default={}, help='comma-separated name or name:seats')
     dep.add_argument('--forge', default='', help='https base a missing checkout is cloned from: <forge>/<repo>.git')
     dep.add_argument('--root', type=Path, default=Path.home() / 'src', help='checkouts live in <root>/<repo>')
@@ -383,7 +382,7 @@ def deploy(argv: Sequence[str], *, programs: Programs | None = None) -> int:
     refused = _checkouts(step, tools, checkouts, urls, args.ref)
     tables: dict[str, dict[str, Any]] = {f'capabilities.{name}': facts for name, facts in args.capabilities.items()}
     tables['serve'] = {'repos': [name for name in args.repos if name not in refused], 'root': str(args.root)}
-    rc = _machine_file(step, tables) or _task(step, tools, checkouts[LAB_COMMONS])
+    rc = _machine_file(step, tables) or _task(step, tools, checkouts[KIT])
     for name, why in refused.items():
         tools.alarm(Alarm(RUN, urls[name], f'workstation deploy refused {name}; this box does not serve it', why))
         emit(f'deploy refused {name} (left out of [serve] repos): {why}', err=True)
@@ -408,9 +407,9 @@ def serve(
 ) -> int:
     """Refresh, then ``forge serve``, each ``[serve] repos`` checkout under one lock; the worst exit.
 
-    lab-commons is refreshed first, then each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
+    dev-lab is refreshed first, then each repo in order (:func:`dev_lab.dev.hostrefresh.refresh`):
     a repo whose refresh fails is RELEASED this tick, its reason named in the serve log, and never stops the next one.
-    The serving lab-commons checkout's own hooks are re-installed whenever they are not live (stale after a move).
+    The serving dev-lab checkout's own hooks are re-installed whenever they are not live (stale after a move).
     Every child starts with no console window; *out*, when given, receives its stdout and stderr.
     """
     table = section('serve')
@@ -432,7 +431,7 @@ def serve(
         if why:
             return _stand_down(tools, Path(root), repos, why)
         worst = 0
-        for name in sorted(repos, key=lambda repo: repo != LAB_COMMONS):
+        for name in sorted(repos, key=lambda repo: repo != KIT):
             checkout = Path(root) / name
             emit(f'[serve] {name}', flush=True)
             if why := refresh(step, git=tools.git, bootstrap=tools.bootstrap, checkout=checkout):
@@ -440,7 +439,7 @@ def serve(
                 worst = max(worst, 2)
                 continue
             # the serving kit's own shims follow it (plan R1): kept current by the machine, never by hand
-            if name == LAB_COMMONS and (rc := _hooks(step, tools, checkout, name)):
+            if name == KIT and (rc := _hooks(step, tools, checkout, name)):
                 emit(f'[serve] {name}: its hooks were not re-installed (exit {rc}); the old shims stay', err=True)
             streams = {'stdin': subprocess.DEVNULL, 'stdout': out, 'stderr': subprocess.STDOUT} if out else {}
             rc = run(host_serve_argv(), cwd=checkout, check=False, **streams).returncode
