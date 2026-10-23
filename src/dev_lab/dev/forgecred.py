@@ -23,6 +23,7 @@ __all__ = [
     'AUTH_REFUSED',
     'AUTH_REMEDY',
     'AUTH_TRANSIENT',
+    'REFRESHABLE_USER',
     'authorization',
     'refresh_credential',
     'token_for',
@@ -34,6 +35,9 @@ __all__ = [
 #: its 401 the credential is refreshed as git does (:func:`refresh_credential`) and
 #: the call retried; only a refusal AFTER that refresh names the credential.
 AUTH_REFUSED: Final = frozenset({401, 403})
+
+#: The username Git Credential Manager's OAuth store presents: the one store that refreshes after a reject.
+REFRESHABLE_USER: Final = 'OAUTH_USER'
 
 #: Where the one explanation of a forge auth refusal lives; every remedy below points there.
 AUTH_DOC: Final = 'docs-src/dev/forge.md#credentials (dev-lab)'
@@ -80,10 +84,22 @@ def refresh_credential(
     THE MECHANISM BEHIND "A GIT VERB FAILS ONCE, THEN SUCCEEDS" (measured 2026-10-21): Git Credential
     Manager's OAuth store (username ``OAUTH_USER``) hands out a cached access token that EXPIRES. A git verb
     sends it, the forge answers 401, git rejects it, and the next ``fill`` -- the retry -- makes GCM spend its
-    refresh token on a new one. A store that keeps no refresh token (``git credential-store``, a pasted
-    token) has nothing left after the reject, so this raises :class:`lab_commons.credentials.NoCredential`:
-    only then is storing a new credential the remedy (``docs-src/dev/forge.md#credentials``).
+    refresh token on a new one. ONLY THAT STORE IS REJECTED. A store that keeps no refresh token (``git
+    credential-store``, a pasted token) would be ERASED by a reject, and one 401 is not evidence the credential
+    is bad (the 2026-10-18 incident: it authenticated minutes later) -- so the refused pair is handed back
+    unchanged, the caller sees no new secret, and the refusal names the account rather than the store.
     """
     username, secret = refused
-    _credential('reject', {'host': host, 'username': username, 'password': secret}, cwd=cwd, env=env)
+    if username != REFRESHABLE_USER:
+        return refused
+    _reject(host, username, secret, cwd=cwd, env=env)
     return credential_for(host, cwd=cwd, env=env)
+
+
+def _reject(host: str, username: str, secret: str, *, cwd: Path | None, env: Mapping[str, str] | None) -> None:
+    """``git credential reject`` -- through the runtime's private helper, the one place this tree calls it.
+
+    :mod:`lab_commons.credentials` exposes ``credential_for`` and ``store_credential`` but no public reject;
+    until it does, this function is the single caller, so the private import has one home.
+    """
+    _credential('reject', {'host': host, 'username': username, 'password': secret}, cwd=cwd, env=env)
