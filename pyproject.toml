@@ -46,9 +46,7 @@ packages = ["src/dev_lab"]
 
 [tool.uv.sources]
 # integrate/main until lab-commons main carries the split base (main is v0.3.0-745, behind 8c401f0); then drop `branch`.
-# PINNED to pr/item-wall (lab-commons #323: lab_commons.census, compute.durable's durable_text/read_table) until
-# #323 lands on integrate/main; then restore `branch = "integrate/main"`.
-lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", rev = "0a098408a26b929e5f758c1030a14220d8de2c73" }
+lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", branch = "integrate/main" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.lab_commons.placement]
