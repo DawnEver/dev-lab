@@ -14,16 +14,17 @@ from dev_lab.dev.stoprun import (
     SignaturesNotDeclared,
     declared_signatures,
     identify,
+    orphaned_worker,
     process_table,
     stop,
     subtree,
 )
 
 _TABLE = {
-    10: (1, 'python -m dev_lab.dev.verify tests/a.py'),
-    11: (10, 'python -m pytest -n 4'),
-    12: (11, 'python worker'),
-    20: (1, 'node server.js'),
+    10: (1, 'python -m dev_lab.dev.verify tests/a.py', 100.0),
+    11: (10, 'python -m pytest -n 4', 100.0),
+    12: (11, 'python worker', 100.0),
+    20: (1, 'node server.js', 100.0),
 }
 
 
@@ -53,7 +54,7 @@ def test_the_real_table_and_kill_stop_a_planted_run_and_spare_a_bystander() -> N
         # table is read until the planted run shows its own -- the race one CI leg lost.
         table = process_table()
         for _ in range(100):
-            if 'dev_lab.dev.verify' in table.get(run.pid, (0, ''))[1]:
+            if 'dev_lab.dev.verify' in table.get(run.pid, (0, '', 0.0))[1]:
                 break
             time.sleep(0.1)
             table = process_table()
@@ -82,7 +83,7 @@ def test_a_declared_signature_is_read_from_the_repo_and_a_malformed_one_raises(t
 
 
 def test_dry_run_names_the_signature_that_matched_and_kills_nothing() -> None:
-    table = {30: (1, 'C:/JMAG/jcwrap.exe -batch'), 31: (30, 'solver')}
+    table = {30: (1, 'C:/JMAG/jcwrap.exe -batch', 100.0), 31: (30, 'solver', 100.0)}
     killed: list[int] = []
     code, lines = stop(30, table, dry_run=True, kill=killed.append, signatures=('jcwrap',))
     assert code == 0
@@ -103,7 +104,7 @@ def test_a_declared_signature_stops_a_planted_tree_and_spares_a_bystander(tmp_pa
         table = process_table()
         for _ in range(100):
             table = process_table()
-            children = [p for p, (ppid, _) in table.items() if ppid == planted.pid]
+            children = [p for p, (ppid, *_) in table.items() if ppid == planted.pid]
             if children:
                 break
             time.sleep(0.1)
@@ -134,9 +135,9 @@ def test_a_blocking_pre_push_hook_is_a_run_this_door_stops() -> None:
 
 
 _SERVE = {
-    30: (1, 'python -m dev_lab.dev.forge serve --lock x'),
-    31: (30, 'python scripts/gate/runner.py part jmag --full'),
-    32: (31, 'python -m pytest -n 4'),
+    30: (1, 'python -m dev_lab.dev.forge serve --lock x', 100.0),
+    31: (30, 'python scripts/gate/runner.py part jmag --full', 100.0),
+    32: (31, 'python -m pytest -n 4', 100.0),
 }
 
 
@@ -162,3 +163,46 @@ def test_a_serve_that_outlives_its_grace_is_killed(tmp_path: Path) -> None:
     killed: list[int] = []
     stop(30, _SERVE, dry_run=False, kill=killed.append, gone=lambda *_: False, notes=tmp_path)
     assert killed == [32, 31, 30]
+
+
+#: A multiprocessing worker names the process it exists to serve in its own command line.
+_WORKER = (
+    '"C:/py/python.exe" -c "from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=40, pipe_handle=9)"'
+)
+
+
+def test_a_worker_whose_named_parent_is_gone_is_an_orphan_and_is_stopped() -> None:
+    """The proof is structural: the parent it names is not in the table, so it can never be handed work."""
+    table = {41: (40, _WORKER, 100.0), 42: (41, 'python child', 101.0)}
+    assert orphaned_worker(table, 41) == 40
+    killed: list[int] = []
+    code, lines = stop(41, table, dry_run=False, kill=killed.append)
+    assert code == 0
+    assert killed == [42, 41]
+    assert 'orphaned worker of 40' in lines[0]
+
+
+def test_a_worker_whose_parent_pid_was_reused_is_an_orphan() -> None:
+    """Windows reuses pids: a process holding the named pid but CREATED AFTER the worker is not its parent."""
+    table = {40: (1, 'notepad.exe', 500.0), 41: (40, _WORKER, 100.0)}
+    assert orphaned_worker(table, 41) == 40
+    assert stop(41, table, dry_run=True)[0] == 0
+
+
+def test_a_worker_of_a_live_parent_is_refused() -> None:
+    """PLANTED CONTROL: the same command line under its living parent is somebody's running pool."""
+    table = {40: (1, 'python -m some.service', 50.0), 41: (40, _WORKER, 100.0)}
+    assert orphaned_worker(table, 41) is None
+    killed: list[int] = []
+    assert stop(41, table, dry_run=False, kill=killed.append)[0] == 3
+    assert killed == []
+
+
+def test_the_real_table_carries_each_process_creation_time() -> None:
+    """The reuse proof needs creation times, so the platform table must supply one for every process."""
+    import os
+
+    table = process_table()
+    ppid, cmdline, created = table[os.getpid()]
+    assert ppid > 0 and cmdline
+    assert 0 < created <= time.time()

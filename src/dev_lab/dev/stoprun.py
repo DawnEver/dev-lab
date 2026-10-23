@@ -6,6 +6,13 @@ raw kill with a checked one: it REFUSES unless the pid's command line is a run i
 (:data:`RUN_SIGNATURES` -- the family verify, a gate runner, pytest, a ``forge serve`` -- plus any the repo
 declares), and then stops that pid's subtree only, children first, never an ancestor or a sibling. Local only.
 
+AN ORPHANED WORKER IS PROVEN, NOT RECOGNISED (2026-10-23). A child that outlives the run that started it is
+unreachable by any signature: the root that identified it is gone. A multiprocessing worker names the process
+it exists to serve (``spawn_main(parent_pid=N)``), so it is an orphan exactly when N is absent, or N was created
+after the worker (the pid was reused). :func:`orphaned_worker` reads that from the table; a worker whose parent
+lives is somebody's running pool and stays refused. A widened signature would trust the command line's shape
+instead of this fact, so none is offered.
+
 A ``forge serve`` IS STOPPED SO ITS CLAIM IS RELEASED: its producers are noted as stopped on purpose
 (:func:`dev_lab.dev.servelock.note_stopped`) and stopped first, then the serve itself is given
 :data:`SERVE_GRACE_S` to release the claim as ``error: stopped`` and exit before it is killed too.
@@ -56,6 +63,7 @@ __all__ = [
     'SignaturesNotDeclared',
     'declared_signatures',
     'identify',
+    'orphaned_worker',
     'main',
     'process_table',
     'repo_root',
@@ -83,14 +91,18 @@ RUN_SIGNATURES: Final = (
     SERVE,
 )
 
-Proc = tuple[int, str]  # (parent pid, command line)
+Proc = tuple[int, str, float]  # (parent pid, command line, creation time in epoch seconds)
+
+#: A multiprocessing worker's own statement of the process it serves.
+_WORKER_PARENT: Final = re.compile(r'\bspawn_main\(parent_pid=(\d+)')
 
 
 def process_table() -> dict[int, Proc]:
     """``{pid: (ppid, cmdline)}`` for every process, from the platform's own table."""
     if os.name == 'nt':
         script = (
-            'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine '
+            'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine,'
+            "@{n='Created';e={([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() / 1000.0}} "
             '| ConvertTo-Json -Compress'
         )
         shell = shutil.which('powershell') or 'powershell'
@@ -105,9 +117,12 @@ def process_table() -> dict[int, Proc]:
         )
         rows = json.loads(done.stdout or '[]')
         rows = rows if isinstance(rows, list) else [rows]
-        return {int(r['ProcessId']): (int(r['ParentProcessId'] or 0), r['CommandLine'] or '') for r in rows}
+        return {
+            int(r['ProcessId']): (int(r['ParentProcessId'] or 0), r['CommandLine'] or '', float(r['Created'] or 0.0))
+            for r in rows
+        }
     done = _door.run(
-        [shutil.which('ps') or 'ps', '-ww', '-A', '-o', 'pid=,ppid=,args='],
+        [shutil.which('ps') or 'ps', '-ww', '-A', '-o', 'pid=,ppid=,etimes=,args='],
         capture_output=True,
         text=True,
         encoding='utf-8',
@@ -115,11 +130,12 @@ def process_table() -> dict[int, Proc]:
         check=False,
         timeout=60,
     )
+    now = time.time()
     table: dict[int, Proc] = {}
     for line in done.stdout.splitlines():
-        pid, ppid, *args = [*line.split(None, 2), '', ''][:3]
-        if pid.isdigit() and ppid.isdigit():
-            table[int(pid)] = (int(ppid), args[0])
+        pid, ppid, age, args = [*line.split(None, 3), '', '', ''][:4]
+        if pid.isdigit() and ppid.isdigit() and age.isdigit():
+            table[int(pid)] = (int(ppid), args, now - int(age))
     return table
 
 
@@ -172,6 +188,17 @@ def identify(cmdline: str, signatures: tuple[str, ...] = ()) -> str | None:
     return None
 
 
+def orphaned_worker(table: Mapping[int, Proc], pid: int) -> int | None:
+    """The parent pid *pid* names and has lost, or ``None`` when it is no orphaned worker."""
+    named = _WORKER_PARENT.search(table[pid][1]) if pid in table else None
+    if named is None:
+        return None
+    parent = int(named.group(1))
+    if parent not in table or table[parent][2] > table[pid][2]:
+        return parent
+    return None
+
+
 def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
     """*pid* and every descendant, deepest first (children are stopped before their parent)."""
     order: list[int] = []
@@ -179,7 +206,7 @@ def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
     while frontier:
         current = frontier.pop()
         order.append(current)
-        frontier += [p for p, (ppid, _) in table.items() if ppid == current and p != current and p not in order]
+        frontier += [p for p, (ppid, *_) in table.items() if ppid == current and p != current and p not in order]
     return order[::-1]
 
 
@@ -232,12 +259,14 @@ def stop(
     if pid in _ancestors(table, os.getpid()):
         return 3, [f'refused: {pid} is an ancestor of this process']
     matched = identify(table[pid][1], signatures)
+    if matched is None and (lost := orphaned_worker(table, pid)) is not None:
+        matched = f'orphaned worker of {lost}'
     if matched is None:
         return 3, [f'refused: {pid} matches no run signature (built-in or {_TABLE}): {table[pid][1][:200]!r}']
     lines = [f'matched signature {matched!r}']
     serve = matched == SERVE.pattern
     if serve and not dry_run:
-        for child in (p for p, (ppid, _) in table.items() if ppid == pid and p != pid):
+        for child in (p for p, (ppid, *_) in table.items() if ppid == pid and p != pid):
             note_stopped(child, root=notes)
     for member in subtree(table, pid):
         if serve and member == pid and not dry_run and gone(pid, SERVE_GRACE_S):
