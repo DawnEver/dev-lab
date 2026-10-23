@@ -56,6 +56,7 @@ from typing import IO, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
+from lab_commons.compute.durable import durable_text
 from lab_commons.config import config_path, section
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -303,10 +304,7 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
     if step.dry:
         emit('  [dry-run] the diff above is not written')
         return 0
-    path.parent.mkdir(parents=True, exist_ok=True)
-    staged = path.with_name(path.name + '.new')
-    staged.write_text(after, encoding='utf-8')
-    staged.replace(path)
+    durable_text(path, after)
     return 0
 
 

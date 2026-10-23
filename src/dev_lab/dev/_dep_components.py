@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Final
 
 import lab_commons.launch as _door
+from lab_commons.compute.durable import durable_text
 
 from dev_lab.dev.components import components_of
 
@@ -69,5 +70,4 @@ def changed(root: Path, prefix: Path) -> tuple[str, ...]:
 
 def record(root: Path, prefix: Path) -> None:
     """Stamp *prefix* with the trees *root*'s components are at now -- only after a sync that succeeded."""
-    prefix.mkdir(parents=True, exist_ok=True)
-    (prefix / STAMP_FILE).write_text(json.dumps(_stamps(root), indent=2, sort_keys=True), encoding='utf-8')
+    durable_text(prefix / STAMP_FILE, json.dumps(_stamps(root), indent=2, sort_keys=True))
