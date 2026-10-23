@@ -503,7 +503,23 @@ def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.r
         emit(f'REFUSED: {exc}')
         return 1
     emit(result.render())
+    if syncing and not args.dry_run and not result.returncode:
+        _refresh_automode(root, run=run)
     return result.returncode or 0
+
+
+def _refresh_automode(root: Path, *, run: Callable[..., Any]) -> None:
+    """Render the checkout's machine-local auto-mode prose (:mod:`dev_lab.dev.automode`), in its own process.
+
+    Its own process so this door imports nothing of the forge it does not need; it always exits 0 and prints
+    why it wrote nothing when a fleet source is unreadable here, so it never fails the sync.
+    """
+    run(
+        [sys.executable, '-m', 'dev_lab.dev.automode', 'write', '--repo', str(root)],
+        check=False,
+        timeout=CHILD_WALL_S,
+        cwd=root,
+    )
 
 
 if __name__ == '__main__':

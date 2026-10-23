@@ -355,7 +355,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   closes salvaged PRs and deletes their branches through LOSSLESS-DELETE.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a PR waits on a scarce part only where its diff reaches it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
-* :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: a repo's ``.claude/automode.json``, prose intents from single sources.
+* :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.

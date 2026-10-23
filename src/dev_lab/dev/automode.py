@@ -9,36 +9,38 @@ PROSE, NEVER SPELLINGS. The classifier judges INTENT; the exact command a door t
 ``permissions.allow`` row :mod:`dev_lab.dev.autodoors` renders. A command or module spelled here would be a
 second, unchecked allow list (:func:`spelled_commands` refuses one).
 
-SINGLE SOURCES:
+THE FILE IS MACHINE-LOCAL AND DERIVED, NEVER COMMITTED (user ruling 2026-10-23). Fleet facts -- account names,
+login hosts, workstation names, internal addresses -- are shared through the synced ``hosts.json`` and the
+machine file's ``[[hpc.grant]]``; a committed copy would be a second source and internal data in git history.
+So the family ``.gitignore`` ignores it in every consumer, and it is rendered on each machine from:
 
-* the source-control remote: this checkout's ``origin`` (:func:`dev_lab.dev.forge.forge_from_remote`) and its
-  declared branch set (trunk, long-lived branches);
-* the trusted hosts, by NAME so the classifier recognises them (:func:`read_fleet`): every workstation of the
-  synced workstation registry (``hosts.json``, named by the machine file's ``[workstation] registry``) with its
-  computer name, address and roles, and every cluster account of the machine file's ``[[hpc.grant]]`` tables
-  with its login hosts;
-* the action categories: :data:`INTENTS`, one per door or rule the kit holds, and :data:`OPTIONAL_INTENTS`,
-  rendered only for a repo that names one in ``[tool.lab_commons.automode] declares``.
+* what the REPO declares, committed and host-free: :data:`INTENTS` (one per kit door or rule),
+  :data:`OPTIONAL_INTENTS` named in ``[tool.lab_commons.automode] declares``, and its ``origin`` and branch set;
+* what the MACHINE holds (:func:`read_fleet`): every workstation of the synced workstation registry
+  (``hosts.json``, named by the machine file's ``[workstation] registry``) and every ``[[hpc.grant]]`` account
+  with its login hosts, by NAME so the classifier recognises them.
 
-THE COMMITTED FILE IS A DERIVED ARTEFACT OF MACHINE-LOCAL SOURCES. ``python -m dev_lab.dev.autodoors --write``
-writes it beside the Codex rules, and refuses when a source is unreadable. Without ``--write`` the drift check
-re-renders it: a stale file exits 1, and where a source cannot be read (a cluster login node holds no
-``hosts.json``) :class:`SourcesUnavailable` is raised -- INCONCLUSIVE, naming the source, never a pass (the
-rule :exc:`~dev_lab.dev.famtests.latestversions.FetchUnavailable` states for an unanswered fetch).
+It is rendered by the dependency door's bootstrap and sync (:mod:`dev_lab.dev.dep`) and by
+``python -m dev_lab.dev.automode {write [--repo R] | session-start}`` (the latter reads a ``SessionStart`` hook
+payload's ``cwd``). When a source is unreadable (a cluster login node holds no ``hosts.json``) NOTHING is
+written and the reason is printed by name (:class:`SourcesUnavailable`) -- never a file missing its hosts.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+import sys
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TextIO
 
 from lab_commons.config import config_path, section
 from lab_commons.hpc.grants import Grant, load_grants
+from lab_commons.log import emit
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
@@ -52,8 +54,10 @@ __all__ = [
     'Fleet',
     'SourcesUnavailable',
     'automode',
-    'check',
+    'leaks',
+    'main',
     'read_fleet',
+    'refresh',
     'render',
     'spelled_commands',
     'write',
@@ -216,16 +220,78 @@ def render(root: Path, fleet: Fleet | None = None) -> str:
     return json.dumps(automode(root, fleet), indent=2) + '\n'
 
 
-def check(root: Path, fleet: Fleet | None = None) -> bool:
-    """Whether the tracked file equals a fresh render; :class:`SourcesUnavailable` when that cannot be said."""
-    fresh = render(root, fleet)
-    target = root / AUTOMODE_REL
-    return target.is_file() and target.read_text(encoding='utf-8') == fresh
-
-
 def write(root: Path, fleet: Fleet | None = None) -> None:
     """Write the fresh render; :class:`SourcesUnavailable` (nothing written) when a source is unreadable."""
     text = render(root, fleet)
     target = root / AUTOMODE_REL
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding='utf-8', newline='\n')
+
+
+def refresh(root: Path, *, say: Callable[[str], None], fleet: Fleet | None = None) -> bool:
+    """Render *root*'s local file, or print why not; never raises for an unreadable source. Whether it wrote."""
+    try:
+        write(root, fleet)
+    except SourcesUnavailable as unread:
+        say(f'[automode] {AUTOMODE_REL} not written -- {unread}')
+        return False
+    say(f'[automode] wrote {AUTOMODE_REL} (machine-local, gitignored)')
+    return True
+
+
+#: An IPv4 address or a dotted host name: the SHAPES a host takes, whichever fleet this machine holds.
+_HOST_SHAPE: Final = re.compile(
+    r'\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.uk|com|org|net|site)\b'
+)
+
+
+def leaks(texts: Sequence[str], fleet: Fleet | None = None) -> tuple[str, ...]:
+    """The fleet facts *texts* (committed, kit or repo) carry -- must be empty.
+
+    Any host SHAPE, plus every name *fleet* holds (workstation name, computer, address; account, login host)
+    as a whole word. A committed copy of a fleet fact is the second source the ruling forbids.
+    """
+    names: set[str] = set()
+    for entry in fleet.workstations if fleet else ():
+        names |= {str(entry.get(key)) for key in ('name', 'computer', 'address') if entry.get(key)}
+    for grant in fleet.grants if fleet else ():
+        names |= {grant.user, *grant.hosts}
+    found = {m.group(0) for text in texts for m in _HOST_SHAPE.finditer(text)}
+    found |= {name for name in names for text in texts if re.search(rf'(?<![\w.-]){re.escape(name)}(?![\w-])', text)}
+    return tuple(sorted(found))
+
+
+def _root_of(cwd: Path) -> Path | None:
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / '.git').exists():
+            return candidate
+    return None
+
+
+def main(argv: Sequence[str] | None = None, *, stdin: TextIO | None = None) -> int:
+    """``write [--repo R]`` renders the local file; ``session-start`` does so for a hook payload's ``cwd``.
+
+    Always exit 0: an unreadable source is printed by name, and a session never fails to start over it.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args[:1] == ['session-start']:
+        try:
+            payload = json.load(stdin or sys.stdin)
+        except ValueError:
+            payload = {}
+        cwd = Path((payload if isinstance(payload, dict) else {}).get('cwd') or Path.cwd()).resolve()
+        root = _root_of(cwd)
+    elif args[:1] == ['write']:
+        parser = argparse.ArgumentParser(prog='dev_lab.dev.automode write')
+        parser.add_argument('--repo', type=Path, default=Path.cwd())
+        root = _root_of(parser.parse_args(args[1:]).repo.resolve())
+    else:
+        emit('usage: python -m dev_lab.dev.automode {write [--repo R] | session-start}', err=True)
+        return 2
+    if root is not None:
+        refresh(root, say=emit)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

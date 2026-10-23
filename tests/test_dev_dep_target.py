@@ -343,12 +343,12 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_re_resolves(tmp_path) ->
         return SimpleNamespace(returncode=0)
 
     assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
-    assert '--upgrade-package' in calls[-1]
-    assert '--frozen' not in calls[-1]
+    assert '--upgrade-package' in calls[-2]
+    assert '--frozen' not in calls[-2]
     assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
-    assert '--frozen' in calls[-1]
-    assert '--upgrade-package' not in calls[-1]
-    assert '--upgrade-package' not in calls[-1]
+    assert '--frozen' in calls[-2]
+    assert calls[-1][1:4] == ('-m', 'dev_lab.dev.automode', 'write'), 'a sync renders the local auto-mode prose last'
+    assert '--upgrade-package' not in calls[-2]
 
 
 def _recording() -> tuple[list[tuple[str, ...]], object]:
@@ -370,7 +370,8 @@ def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp
     )
     calls, run = _recording()
     assert dep.main(['--lock-upgrade', str(tmp_path)], cwd=tmp_path, run=run) == 0
-    lock, sync = calls
+    lock, sync, render = calls
+    assert render[1:4] == ('-m', 'dev_lab.dev.automode', 'write')
     assert lock[1:3] == ('lock', '--upgrade')
     assert str(tmp_path) in lock
     assert sync[1] == 'sync'

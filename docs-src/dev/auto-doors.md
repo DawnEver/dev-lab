@@ -37,29 +37,36 @@ rendered from these:
 
 No rendering may promise a raw verb (`promises_raw`).
 
-## Auto-mode prose: `<repo>/.claude/automode.json`
+## Auto-mode prose: `<repo>/.claude/automode.json` (machine-local, never committed)
 
 Claude Code reads `autoMode` only from user, managed or `--settings` files, so the user's launcher passes a trusted
-repo's `<repo>/.claude/automode.json` through `--settings`. `dev_lab.dev.automode` renders it:
-`{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}`.
+repo's `<repo>/.claude/automode.json` through `--settings`. The file is LOCAL AND DERIVED: the family `.gitignore`
+ignores it in every consumer, and it is never committed, because fleet facts (account names, login hosts,
+workstation names, internal addresses) are shared only through their two sources and a committed copy would put
+them in git history (user ruling 2026-10-23). `dev_lab.dev.automode` renders
+`{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}` from:
 
-- `environment`: the repo's `origin` and declared branch set, and the trusted hosts BY NAME so the classifier
-  recognises them: each workstation of the synced workstation registry (`hosts.json`, named by the machine file's
-  `[workstation] registry`) with its computer, address and roles, and each `[[hpc.grant]]` account with its login
-  hosts. The committed file is therefore a derived artefact of machine-local sources: the check re-renders it, and
-  where a source is unreadable (a cluster login node has no registry) it exits 3, INCONCLUSIVE, naming the source,
-  and `--write` writes nothing.
-- `allow`: `INTENTS`, one prose category per door or rule (Break-Glass, close-landed, close-superseded,
-  lossless prune, hook install, fleet deploy, cancel-stuck, read-only monitoring), plus each `OPTIONAL_INTENTS`
-  entry the repo names in `[tool.lab_commons.automode] declares` (e.g. `"jmag-material-card"`).
+1. **The repo's declaration** (committed, host-free): `INTENTS`, one prose category per kit door or rule
+   (Break-Glass, close-landed, close-superseded, lossless prune, hook install, fleet deploy, cancel-stuck,
+   read-only monitoring), each `OPTIONAL_INTENTS` entry named in `[tool.lab_commons.automode] declares`
+   (e.g. `"jmag-material-card"`), and the repo's `origin` and branch set.
+2. **The machine's fleet sources**: the synced workstation registry `hosts.json` (its path in the machine file's
+   `[workstation] registry`), each workstation with its computer, address and roles; and the machine file's
+   `[[hpc.grant]]` accounts with their login hosts.
+
+It is rendered by the dependency door's bootstrap and sync, and by
+`python -m dev_lab.dev.automode {write [--repo R] | session-start}`; the kit renders no `SessionStart` hook of
+its own, so a repo that wants a refresh per session wires `session-start` there (it reads the payload's `cwd`).
+When either source is unreadable (a cluster login node holds no registry) nothing is written and the reason is
+printed by name; it always exits 0.
 
 Entries are intent, never a command or module spelling (`spelled_commands`); the exact commands are the narrow
-rows above.
+rows above. `leaks` scans every committed kit text for a host shape and for each fleet fact this machine holds.
 
 ## Adopting
 
 1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)))`, re-render
    `.claude/settings.json` with `permissions_block`, and drop any declared row that now duplicates a door row.
 2. Run `python -m dev_lab.dev.autodoors --repo . [--shell-door <path>] --write` and commit
-   `.codex/rules/family-doors.rules` and `<repo>/.claude/automode.json`; without `--write` it exits 1 when either is stale.
+   `.codex/rules/family-doors.rules`; without `--write` it exits 1 when the file is stale.
 3. Delete local copies of the doors.

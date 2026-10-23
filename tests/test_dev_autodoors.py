@@ -20,11 +20,9 @@ from dev_lab.dev.autodoors import (
     promises_raw,
     script_doors,
 )
-from dev_lab.dev.automode import Fleet
 from dev_lab.dev.famtests.visibility import plant_checkout
 
 _GIT = shutil.which('git') or 'git'
-_NO_FLEET = Fleet((), ())
 _SCRIPTS = ('scripts/gate/runner.py', 'scripts/hooks/with-retry.sh')
 
 
@@ -158,13 +156,11 @@ def test_script_doors_are_the_tracked_entry_points(tmp_path: Path) -> None:
         'scripts/door.py',
         'scripts/hooks/with-retry.sh',
     )
-    assert main(['--repo', str(work)], fleet=_NO_FLEET) == 1
-    assert main(['--repo', str(work), '--write'], fleet=_NO_FLEET) == 0
+    assert main(['--repo', str(work)]) == 1
+    assert main(['--repo', str(work), '--write']) == 0
     assert (work / CODEX_RULES_REL).is_file()
-    assert main(['--repo', str(work)], fleet=_NO_FLEET) == 0
-    assert main(['--repo', str(work), '--shell-door', 'scripts/hooks/with-retry.sh'], fleet=_NO_FLEET) == 1, (
-        'a new door is stale'
-    )
+    assert main(['--repo', str(work)]) == 0
+    assert main(['--repo', str(work), '--shell-door', 'scripts/hooks/with-retry.sh']) == 1, 'a new door is stale'
 
 
 def test_a_main_session_publishes_through_the_wrapper_where_there_is_one() -> None:

@@ -1,7 +1,12 @@
-"""REPO-AUTOMODE: ``.claude/automode.json`` is RENDERED from single sources, prose only, and drift is refused."""
+"""REPO-AUTOMODE: ``.claude/automode.json`` is machine-local, derived, gitignored, and never committed.
+
+PLANTED CONTROLS: a checkout without the family ignore line DOES track the file; the leak scan DOES see a planted
+host; a machine file with no registry writes nothing and says why.
+"""
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import subprocess
@@ -10,20 +15,23 @@ from pathlib import Path
 import pytest
 from lab_commons.hpc.grants import Grant
 
-from dev_lab.dev.autodoors import INCONCLUSIVE
-from dev_lab.dev.autodoors import main as autodoors_main
+from dev_lab.dev._famconfig_rows import GITIGNORE_CLAUDE_SECTION
+from dev_lab.dev.autodoors import claude_rows, codex_rules, doors
 from dev_lab.dev.automode import (
+    _ENVIRONMENT,
     AUTOMODE_REL,
     INTENTS,
     OPTIONAL_INTENTS,
     Fleet,
     SourcesUnavailable,
     automode,
-    check,
+    leaks,
+    main,
     read_fleet,
+    refresh,
     spelled_commands,
-    write,
 )
+from dev_lab.dev.dep import _refresh_automode
 from dev_lab.dev.famtests.visibility import plant_checkout
 
 _GIT = shutil.which('git') or 'git'
@@ -31,12 +39,12 @@ _GIT = shutil.which('git') or 'git'
 _FLEET = Fleet(
     workstations=(
         {'name': 'G', 'computer': 'G', 'address': '10.0.0.1', 'roles': ['client', 'node', 'forge']},
-        {'name': 'WS1', 'computer': 'BOXONE', 'address': 'boxone.example', 'roles': ['client', 'node']},
+        {'name': 'WS1', 'computer': 'BOXONE', 'address': 'boxone.example.ac.uk', 'roles': ['client', 'node']},
     ),
     grants=(
-        Grant(user='alice', hosts=('login1.example', 'login2.example'), slurm_account='acct'),
-        Grant(user='alice', hosts=('login1.example',), slurm_account='other'),
-        Grant(user='bob', hosts=('login2.example',), slurm_account='acct'),
+        Grant(user='alice9', hosts=('login1.example.ac.uk', 'login2.example.ac.uk'), slurm_account='acct'),
+        Grant(user='alice9', hosts=('login1.example.ac.uk',), slurm_account='other'),
+        Grant(user='bob7', hosts=('login2.example.ac.uk',), slurm_account='acct'),
     ),
 )
 
@@ -50,84 +58,115 @@ sessions = ["integrate/main"]
 {extra}"""
 
 
-def _repo(tmp_path: Path, extra: str = '') -> Path:
+def _repo(tmp_path: Path, extra: str = '', *, ignore: tuple[str, ...] = GITIGNORE_CLAUDE_SECTION) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     work = plant_checkout(tmp_path, trunk='main').work
     (work / 'pyproject.toml').write_text(_MANIFEST.format(extra=extra), encoding='utf-8')
+    (work / '.gitignore').write_text('\n'.join(ignore) + '\n', encoding='utf-8')
     subprocess.run(
         [_GIT, '-C', str(work), 'remote', 'set-url', 'origin', 'https://forge.example/Team/planted.git'], check=True
     )
     return work
 
 
-def test_every_array_opens_with_defaults_and_is_prose(tmp_path: Path) -> None:
-    rendered = automode(_repo(tmp_path), _FLEET)
+def _tracked_after_add(work: Path) -> list[str]:
+    subprocess.run([_GIT, '-C', str(work), 'add', '.'], check=True)
+    return subprocess.run(
+        [_GIT, '-C', str(work), 'ls-files'], check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+
+
+def test_the_rendered_file_is_gitignored_and_never_listed(tmp_path: Path) -> None:
+    work = _repo(tmp_path / 'family')
+    assert refresh(work, say=lambda _l: None, fleet=_FLEET)
+    assert (work / AUTOMODE_REL).is_file()
+    assert subprocess.run([_GIT, '-C', str(work), 'check-ignore', '-q', AUTOMODE_REL], check=False).returncode == 0
+    assert AUTOMODE_REL not in _tracked_after_add(work)
+
+
+def test_planted_without_the_family_ignore_the_file_would_be_tracked(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the ls-files check above can see the file when nothing ignores it."""
+    work = _repo(tmp_path / 'bare', ignore=('# nothing',))
+    refresh(work, say=lambda _l: None, fleet=_FLEET)
+    assert AUTOMODE_REL in _tracked_after_add(work)
+
+
+def test_the_render_equals_its_sources(tmp_path: Path) -> None:
+    rendered = automode(_repo(tmp_path), _FLEET)['autoMode']
     for key in ('environment', 'allow'):
-        entries = rendered['autoMode'][key]
-        assert entries[0] == '$defaults', key
-        assert len(entries) > 1
-        assert spelled_commands(entries[1:]) == (), key
-    assert any('forge.example' in line and 'Team/planted' in line for line in rendered['autoMode']['environment'])
-    assert len(rendered['autoMode']['allow']) == 1 + len(INTENTS)
-
-
-def test_the_trusted_hosts_are_named_from_the_sources(tmp_path: Path) -> None:
-    environment = ' '.join(automode(_repo(tmp_path), _FLEET)['autoMode']['environment'])
-    for name in ('G (computer G; address 10.0.0.1', 'serves the forge', 'WS1 (computer BOXONE; address boxone.example'):
-        assert name in environment
-    assert 'account alice at login hosts login1.example, login2.example (Slurm account acct)' in environment
-    assert 'account bob at login hosts login2.example' in environment
-    assert environment.count('account alice') == 1, 'one line per account, its first grant'
-
-
-def test_the_spelling_scan_sees_a_planted_command() -> None:
-    """PLANTED CONTROL: the scan the prose test relies on does fire."""
-    assert spelled_commands(['run python -m dev_lab.dev.forge watch']) != ()
-    assert spelled_commands(['deploy with `ssh host`']) != ()
-    assert spelled_commands(['installs the kit hooks']) == ()
-
-
-def test_an_optional_intent_is_rendered_only_where_the_repo_declares_it(tmp_path: Path) -> None:
-    plain = automode(_repo(tmp_path / 'a'), _FLEET)['autoMode']['allow']
-    declared = automode(
-        _repo(tmp_path / 'b', '\n[tool.lab_commons.automode]\ndeclares = ["jmag-material-card"]\n'), _FLEET
+        assert rendered[key][0] == '$defaults', key
+        assert spelled_commands(rendered[key][1:]) == (), key
+    environment = ' '.join(rendered['environment'])
+    for fact in ('G (computer G; address 10.0.0.1', 'serves the forge', 'WS1 (computer BOXONE'):
+        assert fact in environment
+    assert (
+        'account alice9 at login hosts login1.example.ac.uk, login2.example.ac.uk (Slurm account acct)' in environment
     )
+    assert 'account bob7 at login hosts login2.example.ac.uk' in environment
+    assert environment.count('account alice9') == 1, 'one line per account, its first grant'
+    assert rendered['allow'][1:] == list(INTENTS.values())
+
+
+def test_an_optional_intent_renders_only_where_declared_and_an_unknown_one_is_refused(tmp_path: Path) -> None:
+    plain = automode(_repo(tmp_path / 'a'), _FLEET)['autoMode']['allow']
+    jmag = '\n[tool.lab_commons.automode]\ndeclares = ["jmag-material-card"]\n'
+    declared = automode(_repo(tmp_path / 'b', jmag), _FLEET)['autoMode']['allow']
     assert OPTIONAL_INTENTS['jmag-material-card'] not in plain
-    assert OPTIONAL_INTENTS['jmag-material-card'] in declared['autoMode']['allow']
-
-
-def test_an_unknown_declared_intent_is_refused(tmp_path: Path) -> None:
-    work = _repo(tmp_path, '\n[tool.lab_commons.automode]\ndeclares = ["anything-goes"]\n')
+    assert OPTIONAL_INTENTS['jmag-material-card'] in declared
     with pytest.raises(ValueError, match='anything-goes'):
-        automode(work, _FLEET)
+        automode(_repo(tmp_path / 'c', '\n[tool.lab_commons.automode]\ndeclares = ["anything-goes"]\n'), _FLEET)
 
 
-def test_the_tracked_file_must_equal_a_fresh_render(tmp_path: Path) -> None:
+def _committed() -> list[str]:
+    """Every committed text the kit renders into a repo or ships: categories, toolchain facts, the door table."""
+    return [
+        *INTENTS.values(),
+        *OPTIONAL_INTENTS.values(),
+        *_ENVIRONMENT,
+        *doors().values(),
+        *claude_rows(),
+        codex_rules(),
+    ]
+
+
+def test_no_committed_kit_text_carries_a_fleet_fact() -> None:
+    assert leaks(_committed(), _FLEET) == ()
+    try:
+        here = read_fleet()
+    except SourcesUnavailable:
+        return  # no fleet on this box: the host SHAPES above were still scanned
+    assert leaks(_committed(), here) == ()
+
+
+def test_the_leak_scan_sees_a_planted_fleet_fact() -> None:
+    """PLANTED CONTROL: a category carrying a host, an address or an account is caught."""
+    assert leaks(['restart WS1 nightly'], _FLEET) == ('WS1',)
+    assert leaks(['deploy alice9 there'], _FLEET) == ('alice9',)
+    assert '10.9.9.9' in leaks(['reach 10.9.9.9'])
+    assert 'hpclogin01.ada.nottingham.ac.uk' in leaks(['on hpclogin01.ada.nottingham.ac.uk'])
+
+
+def test_an_unreadable_source_writes_nothing_and_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL: a machine file with no registry -- a cluster login node -- is inconclusive, by name."""
     work = _repo(tmp_path)
-    assert check(work, _FLEET) is False, 'absent is stale'
-    write(work, _FLEET)
-    assert check(work, _FLEET) is True
-    moved = Fleet(_FLEET.workstations[:1], _FLEET.grants)
-    assert check(work, moved) is False, 'a fleet source that changed makes the file stale'
-    target = work / AUTOMODE_REL
-    edited = json.loads(target.read_text(encoding='utf-8'))
-    edited['autoMode']['allow'].append('anything at all')
-    target.write_text(json.dumps(edited), encoding='utf-8')
-    assert check(work, _FLEET) is False, 'PLANTED: a hand edit is drift'
-
-
-def test_an_unreadable_source_is_inconclusive_never_a_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """PLANTED CONTROL: a machine file with no registry -- a cluster login node -- cannot judge the file."""
-    work = _repo(tmp_path)
-    write(work, _FLEET)
     machine = tmp_path / 'config.toml'
     machine.write_text('[hpc]\n', encoding='utf-8')
     monkeypatch.setenv('LAB_COMMONS_CONFIG', str(machine))
     with pytest.raises(SourcesUnavailable, match='registry'):
         read_fleet()
-    with pytest.raises(SourcesUnavailable):
-        check(work)
-    before = (work / AUTOMODE_REL).read_text(encoding='utf-8')
-    assert autodoors_main(['--repo', str(work)]) == INCONCLUSIVE
-    assert autodoors_main(['--repo', str(work), '--write']) == INCONCLUSIVE
-    assert (work / AUTOMODE_REL).read_text(encoding='utf-8') == before, 'nothing is written on an unread source'
+    said: list[str] = []
+    assert refresh(work, say=said.append) is False
+    assert not (work / AUTOMODE_REL).exists()
+    assert len(said) == 1
+    assert 'not written' in said[0]
+    assert 'registry' in said[0]
+    payload = io.StringIO(json.dumps({'cwd': str(work)}))
+    assert main(['session-start'], stdin=payload) == 0, 'a session never fails to start over it'
+    assert not (work / AUTOMODE_REL).exists()
+
+
+def test_the_dependency_door_renders_it_in_its_own_process(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    _refresh_automode(tmp_path, run=lambda argv, **_kw: calls.append(list(argv)))
+    ((*_, module, verb, flag, repo),) = calls
+    assert (module, verb, flag, repo) == ('dev_lab.dev.automode', 'write', '--repo', str(tmp_path))
