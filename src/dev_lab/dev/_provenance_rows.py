@@ -502,4 +502,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'runner': ('original',),
     'filechecks': ('original',),
     'ciworkflows': ('original',),
+    # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
+    # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
+    'account': ('original',),
+    'allocate': ('original',),
+    'checks': ('original',),
+    'deploy': ('original',),
+    'spec': ('original',),
+    'steps': ('original',),
+    'tick': ('original',),
 }

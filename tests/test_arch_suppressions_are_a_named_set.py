@@ -65,6 +65,12 @@ Site = tuple[str, str, str]
 #: so both rows are declared below rather than any number being edited down to meet the tree.
 ALLOWED: Final[dict[Site, str]] = {
     (
+        'src/dev_lab/dev/hpchost/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hpchost import allocate, deploy, tick',
+    ): 'the hpchost package is the lightweight CLI dispatch door; importing it does not load the '
+    'deployment and forge verb implementations until main dispatches a command',
+    (
         'tests/test_dev_forgetick.py',
         'FBT001',
         'claimed: bool,',
