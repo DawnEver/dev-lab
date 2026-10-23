@@ -70,6 +70,13 @@ ALLOWED: Final[dict[Site, str]] = {
         'claimed: bool,',
     ): 'a parametrized case argument: pytest passes it by name, so the positional-bool hazard cannot occur',
     (
+        'src/dev_lab/dev/hpchost/__init__.py',
+        'PLC0415',
+        'from dev_lab.dev.hpchost import allocate, deploy, tick',
+    ): 'the package is imported for its leaves (workstation and hostrefresh read hpchost.spec and '
+    'hpchost.steps), so a package-scope verb import would load deploy, its account checks and tick into '
+    'every serve process that never runs a verb. main() is the one caller and resolves them when it runs',
+    (
         'src/dev_lab/dev/forgerequest.py',
         'PLC0415',
         'from dev_lab.dev.forgeunit import unit_request',

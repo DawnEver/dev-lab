@@ -502,4 +502,13 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'runner': ('original',),
     'filechecks': ('original',),
     'ciworkflows': ('original',),
+    # -- `dev_lab.dev.hpchost`: ORIGINAL. Moved whole from `lab_commons.hpc` at the dev-lab cut-over
+    # (2026-10-22, 9ac2e68); lab-commons is the upstream kit, not a consumer, so no consumer file was replaced.
+    'account': ('original',),
+    'allocate': ('original',),
+    'checks': ('original',),
+    'deploy': ('original',),
+    'spec': ('original',),
+    'steps': ('original',),
+    'tick': ('original',),
 }
