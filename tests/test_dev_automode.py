@@ -73,7 +73,7 @@ def _repo(tmp_path: Path, extra: str = '', *, ignore: tuple[str, ...] = GITIGNOR
 def _tracked_after_add(work: Path) -> list[str]:
     subprocess.run([_GIT, '-C', str(work), 'add', '.'], check=True)
     return subprocess.run(
-        [_GIT, '-C', str(work), 'ls-files'], check=True, capture_output=True, text=True
+        [_GIT, '-C', str(work), 'ls-files'], check=True, capture_output=True, text=True, encoding='utf-8'
     ).stdout.splitlines()
 
 

@@ -250,7 +250,9 @@ def test_a_real_orphaned_scratch_script_is_stopped_and_a_parented_one_is_spared(
         f'print(subprocess.Popen([sys.executable, "-c", "{sleeper}", "scratch/watch.py"], '
         'stdin=d, stdout=d, stderr=d).pid)'
     )
-    launcher = subprocess.run([sys.executable, '-c', spawn], capture_output=True, text=True, timeout=60, check=True)
+    launcher = subprocess.run(
+        [sys.executable, '-c', spawn], capture_output=True, text=True, encoding='utf-8', timeout=60, check=True
+    )
     orphan = int(launcher.stdout.strip())
     parented = subprocess.Popen([sys.executable, '-c', sleeper, 'scratch/watch.py'])
     try:
