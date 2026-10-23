@@ -74,14 +74,16 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons import envkey as envkey_module
 from lab_commons.box import Refused
+from lab_commons.census import Process, processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 from dev_lab.dev import _dep_project
 from dev_lab.dev._dep_components import changed, record
+from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev.envseat import EnvironmentSeat
+from dev_lab.dev.liverun import Census, describe, executing_from
 from dev_lab.dev.lockcheck import unreasoned_holds
-from dev_lab.dev.netverb import run_network_verb
 
 __all__ = [
     'CHILD_WALL_S',
@@ -106,13 +108,6 @@ NO_ANCHORS_DECLARED: Final = (
     'is DETECTED here and not remediable. Remedy: pass Port(anchor_paths=...) once this repo keeps '
     'citable verdicts; until then, treat any verdict taken before this change as void.'
 )
-
-#: A HANG DETECTOR on the child process, not a performance bound. Thirty minutes is the wall the
-#: family's `gate` tier already declares for a whole verdict run: a dependency change still running
-#: past the wall of the tier that would be waiting on it is hung by the family's own definition,
-#: whatever an install normally costs. No install here has been timed on an idle box, and a timing
-#: from a busy one is not a property of the command.
-CHILD_WALL_S: Final = 30 * 60
 
 
 class HeldEnvironmentError(RuntimeError):
@@ -313,6 +308,7 @@ def mutate(
     dry_run: bool = False,
     timeout: float = CHILD_WALL_S,
     python: str | None = None,
+    census: Census = processes,
 ) -> Report:
     """THE DOOR. Measure the environment, refuse a live verdict, change it, retire what it invalidated.
 
@@ -333,7 +329,8 @@ def mutate(
     Raises:
         ValueError: *requirements* is empty. A bare ``pip install`` names nothing to change, so
             there is no change whose safety this could be deciding.
-        HeldEnvironmentError: a run holds the target environment's seat; the refusal names it.
+        HeldEnvironmentError: a run holds the target environment's seat, or any live process executes
+            from it; the refusal names it.
 
     """
     if not requirements:
@@ -344,7 +341,9 @@ def mutate(
         raise ValueError(msg)
     prefix = sys.prefix if python is None else _snapshot(python)[0]
     argv = pip_argv(requirements, mode=mode, version=version, python=python)
-    return _change(argv, port=port, prefix=prefix, python=python, run=run, dry_run=dry_run, timeout=timeout)
+    return _change(
+        argv, port=port, prefix=prefix, python=python, run=run, dry_run=dry_run, timeout=timeout, census=census
+    )
 
 
 def _snapshot(python: str | None) -> tuple[str, str]:
@@ -379,7 +378,9 @@ def _change(
     timeout: float = CHILD_WALL_S,
     cwd: Path | None = None,
     environment: dict[str, str] | None = None,
+    census: Census = processes,
 ) -> Report:
+    """Hold the seat, refuse an environment any live process executes from, run *argv* (retried when it resolves)."""
     gaps = []
     declared = port.anchors()
     if declared is None:
@@ -392,40 +393,28 @@ def _change(
                     return 'missing-environment'
                 return port.env_key(python)
 
+            if users := executing_from(prefix, census=census):
+                raise HeldEnvironmentError(_in_use(port.name, prefix, users))
             before = key()
             if dry_run:
                 return Report(port.name, prefix, tuple(argv), None, before, None, (), tuple(gaps))
-            options = {'check': False, 'timeout': timeout}
-            if cwd is not None:
-                options['cwd'] = cwd
-            if environment is not None:
-                options['env'] = environment
             try:
-                completed = run(list(argv), **options)
+                returncode = run_change(argv, run=run, timeout=timeout, cwd=cwd, environment=environment)
             finally:
                 after = key()
                 retired = retire_anchors(declared) if declared and after != before else ()
-            return Report(port.name, prefix, tuple(argv), completed.returncode, before, after, retired, tuple(gaps))
+            return Report(port.name, prefix, tuple(argv), returncode, before, after, retired, tuple(gaps))
     except Refused as exc:
         raise _held_refusal(port.name, exc, prefix) from exc
 
 
-def init_submodules(root: Path, *, dry_run: bool = False) -> str | None:
-    """Initialise every submodule *root*'s commit records, through the network door; why it failed, else ``None``.
-
-    A path dependency may point INTO a submodule (a product's engine under ``components/``, plan C5), so a
-    checkout whose submodules were never initialised cannot be resolved: ``uv`` reports the path as not
-    existing. MEASURED 2026-10-19 on a serve checkout of a consumer-studio, which bootstrapped only after a
-    manual ``git submodule update --init``. Every sync, bootstrap and lock therefore does this first.
-    """
-    if not (root / '.gitmodules').is_file():
-        return None
-    command = [shutil.which('git') or 'git', '-C', str(root), 'submodule', 'update', '--init', '--recursive']
-    if dry_run:
-        emit('would run: ' + ' '.join(command))
-        return None
-    report = run_network_verb(command, timeout=CHILD_WALL_S)
-    return None if report.ok else f'submodules of {root} could not be initialised: {report.remedy}'
+def _in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
+    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run."""
+    return (
+        f'{name}: {prefix} is the environment of a live process that holds no seat (2026-10-19: a `deck run` '
+        f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it '
+        f'(python -m dev_lab.dev.stoprun --pid <pid>), or change the environment of another worktree.'
+    )
 
 
 def _lock_upgrade(
@@ -445,10 +434,16 @@ def _lock_upgrade(
     if dry_run:
         emit('would run: ' + ' '.join(command))
         return 0
-    return run(command, check=False, timeout=CHILD_WALL_S, cwd=root, env=environment).returncode
+    return run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
 
 
-def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.run, cwd: Path | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    run: Callable[..., Any] = _door.run,
+    cwd: Path | None = None,
+    census: Census = processes,
+) -> int:
     """Bootstrap, sync or lock-upgrade the named worktree's own environment, with declared full extras."""
     parser = argparse.ArgumentParser(description=__doc__)
     targets = parser.add_mutually_exclusive_group()
@@ -500,6 +495,7 @@ def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.r
             dry_run=args.dry_run,
             cwd=root,
             environment=environment,
+            census=census,
         )
     except HeldEnvironmentError as exc:
         emit(f'REFUSED: {exc}')

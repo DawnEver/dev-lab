@@ -66,9 +66,10 @@ from dev_lab.dev.forgealarm import RUN, Alarm, sound
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
+from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv, venv_python
 from dev_lab.dev.hpchost.spec import KIT, host_serve_argv
 from dev_lab.dev.hpchost.steps import Step, Tools
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelock import default_lock, held
 
 if sys.platform == 'win32':
@@ -258,7 +259,7 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
     denied = []
     for name, url in urls.items():
         argv = [*programs.git, '-c', 'credential.interactive=never', 'ls-remote', '-q', url, 'HEAD']
-        rc = read(argv, _NO_PROMPT).returncode
+        rc = run_network_verb(argv, env={**os.environ, **_NO_PROMPT}).returncode
         emit(f'  {name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
             denied.append(name)
@@ -267,8 +268,10 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
 
 def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> Moved:
     if not (checkout / '.git').exists():
-        clone = [*programs.git, 'clone', '-q', '-b', ref, url, str(checkout)]
-        return Moved(step.change(f'{checkout.name}: git clone -b {ref} {url} {checkout}', clone))
+        what = f'{checkout.name}: git clone -b {ref} {url} {checkout}'
+        if step.dry:
+            return Moved(step.change(what, []))
+        return network(step, what, [*programs.git, 'clone', '-q', '-b', ref, url, str(checkout)])
     return follow(step, programs.git, checkout)
 
 

@@ -179,7 +179,7 @@ def test_a_main_session_publishes_through_the_wrapper_where_there_is_one() -> No
 
 
 def test_a_repo_without_a_wrapper_pushes_through_netverb_never_raw() -> None:
-    """GIT-NETWORK-VERB refuses a raw push, so no rendering promises one; netverb is the road."""
+    """NETWORK-VERB refuses a raw push, so no rendering promises one; netverb is the road."""
     globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
     netverb_push = '.venv/Scripts/python.exe -m dev_lab.dev.netverb -- git push origin main'
     assert any(fnmatchcase(netverb_push, g) for g in globs)

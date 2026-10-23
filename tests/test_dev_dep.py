@@ -50,6 +50,7 @@ class _Run:
 
     def __init__(self, returncode: int = 0) -> None:
         self.returncode = returncode
+        self.stdout = self.stderr = ''
         self.calls: list[tuple[str, ...]] = []
 
     def __call__(self, argv: list[str], **kwargs: object) -> _Run:

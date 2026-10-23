@@ -54,24 +54,26 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
-from typing import Final
+from pathlib import Path, PurePath
+from typing import Any, Final
 
 from lab_commons.log import emit
 
-from dev_lab.dev._netverb_rows import ROWS
+from dev_lab.dev._netverb_rows import REMEDIES, ROWS
 from dev_lab.dev.bounded import run_bounded
 
 __all__ = [
     'DEFAULT_ATTEMPTS',
     'DEFAULT_BACKOFF_S',
-    'NETWORK_VERBS',
+    'GIT_NETWORK_VERBS',
+    'UV_NETWORK_VERBS',
     'Attempt',
     'Diagnosis',
     'Disposition',
     'NotANetworkVerb',
     'Report',
     'classify',
+    'is_network_verb',
     'is_retryable',
     'main',
     'run_network_verb',
@@ -105,6 +107,7 @@ class Diagnosis(StrEnum):
     REF_REJECTED = 'ref-rejected'
     FORGE_REFUSED = 'forge-refused'
     REMOTE_ABSENT = 'remote-absent'
+    TRANSPORT_REFUSED = 'transport-refused'
     STOPPED_BY_CALLER = 'stopped-by-caller'
 
 
@@ -243,10 +246,11 @@ class Report:
             )
         if self.disposition is Disposition.REFUSED:
             said = self._hook_says() if self.diagnosis is Diagnosis.HOOK_REFUSED else ''
+            known = REMEDIES.get(self.diagnosis.value, 'read the output and fix what was refused')
             return (
                 f'{verb}: REFUSED on attempt {self.attempt_count} with diagnosis '
                 f'{self.diagnosis.value} -- retrying cannot change this answer; '
-                + (f'the hook says: {said}' if said else 'read the output and fix what was refused')
+                + (f'the hook says: {said}' if said else known)
             )
         return (
             f'{verb}: gave up after {self.attempt_count} of {self.allowed_attempts} attempts, last '
@@ -294,6 +298,7 @@ def run_network_verb(
     no_prompt: bool = True,
     sleep: Callable[[float], None] = time.sleep,
     before_retry: Callable[[Attempt], bool] | None = None,
+    run: Callable[..., Any] = run_bounded,
 ) -> Report:
     """Run *argv* until it succeeds, is refused, or runs out of attempts -- and REPORT either way.
 
@@ -318,6 +323,9 @@ def run_network_verb(
             first occupant, was removed for exactly that misdiagnosis.
         sleep: the backoff, injected so a test can drive the REAL loop at full speed. The command
             under test is always a real subprocess; only the clock is substituted.
+        run: how ONE attempt runs, called as :func:`~dev_lab.dev.bounded.run_bounded` is. A door that
+            takes an injected runner (:mod:`dev_lab.dev.dep`) hands it on, so its command is retried
+            HERE rather than by a second loop of its own.
 
     """
     if attempts < 1:
@@ -327,7 +335,7 @@ def run_network_verb(
     child_env = _child_env(env, no_prompt=no_prompt)
     made: list[Attempt] = []
     for index in range(1, attempts + 1):
-        attempt = _attempt(index, argv, cwd=cwd, env=child_env, timeout=timeout)
+        attempt = _attempt(index, argv, cwd=cwd, env=child_env, timeout=timeout, run=run)
         made.append(attempt)
         if attempt.ok or not attempt.retryable:
             break
@@ -346,10 +354,11 @@ def _attempt(
     cwd: Path | str | None,
     env: Mapping[str, str],
     timeout: float | None,
+    run: Callable[..., Any],
 ) -> Attempt:
     """One invocation, through the tree-killing wall. Both streams, because both carry evidence."""
     try:
-        done = run_bounded(argv, cwd=cwd, env=dict(env), text=True, encoding='utf-8', errors='replace', timeout=timeout)
+        done = run(list(argv), cwd=cwd, env=dict(env), text=True, encoding='utf-8', errors='replace', timeout=timeout)
     except subprocess.TimeoutExpired as expired:
         return Attempt(index, 124, str(expired.output or ''), Diagnosis.TIMED_OUT)
     output = (done.stdout or '') + (done.stderr or '')
@@ -358,16 +367,48 @@ def _attempt(
     return Attempt(index, done.returncode, output, classify(output))
 
 
-#: The git verbs that talk to a remote -- the one list the deny row and the door's spelling both read.
-NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote')
+#: The git verbs that talk to a remote -- the one list the deny row, the arch scan and the door's spelling
+#: read. ``submodule`` is one only as ``submodule update``, which clones and fetches.
+GIT_NETWORK_VERBS: Final = ('push', 'fetch', 'pull', 'clone', 'ls-remote', 'submodule')
+
+#: The uv verbs that RESOLVE, reaching an index or a git dependency on the forge (2026-10-19: one `uv sync`
+#: of a git dependency failed on auth and the re-run passed). ``pip`` is one only as ``pip install|sync|compile``.
+UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip')
+
+#: A verb that is a network verb only with one of these second words.
+_SUBVERBS: Final = {'submodule': frozenset({'update'}), 'pip': frozenset({'install', 'sync', 'compile'})}
+
+#: git's global options that take a SEPARATE value (``-C <path>``, ``-c <key=value>``).
+_VALUED: Final = frozenset({'-C', '-c', '--git-dir', '--work-tree', '--namespace'})
+
+_PROGRAMS: Final = {'git': GIT_NETWORK_VERBS, 'uv': UV_NETWORK_VERBS}
+
+
+def _program(word: str) -> str:
+    """``C:/x/uv.EXE`` -> ``uv``: the program a path names, case- and suffix-free."""
+    return PurePath(word.replace('\\', '/')).name.lower().removesuffix('.exe')
+
+
+def is_network_verb(argv: Sequence[str]) -> bool:
+    """Whether *argv* talks to a remote -- the ONE predicate the door, ``dep`` and the arch scan read."""
+    verbs = _PROGRAMS.get(_program(argv[0])) if argv else None
+    if verbs is None:
+        return False
+    words, index = list(argv[1:]), 0
+    while index < len(words) and words[index].startswith('-'):
+        index += 2 if words[index] in _VALUED else 1
+    words = [word for word in words[index:] if not word.startswith('-')]
+    if not words or words[0] not in verbs:
+        return False
+    return words[0] not in _SUBVERBS or (len(words) > 1 and words[1] in _SUBVERBS[words[0]])
 
 
 class NotANetworkVerb(ValueError):
-    """The command after ``--`` is neither ``git ...`` nor a bare git network verb."""
+    """The command after ``--`` is no network verb (:func:`is_network_verb`)."""
 
 
 def spelled(command: Sequence[str]) -> list[str]:
-    """The argv to run: a leading ``--`` dropped, and ``git`` prepended to a bare network verb.
+    """The argv to run: a leading ``--`` dropped, and ``git`` prepended to a bare git network verb.
 
     Only the separator in front is dropped; a later ``--`` is git's own pathspec separator.
 
@@ -378,14 +419,15 @@ def spelled(command: Sequence[str]) -> list[str]:
     words = list(command)
     if words[:1] == ['--']:
         words = words[1:]
-    if words[:1] == ['git']:
+    if words[:1] == ['git'] or is_network_verb(words):
         return words
-    if words and words[0] in NETWORK_VERBS:
+    if is_network_verb(['git', *words]):
         return ['git', *words]
-    first = words[0] if words else '<nothing>'
+    first = ' '.join(words[:2]) if words else '<nothing>'
     msg = (
-        f'netverb: {first!r} is not a git network verb -- spell it '
-        f'`python -m dev_lab.dev.netverb -- git push ...` (or `-- {"|".join(NETWORK_VERBS)} ...`)'
+        f'netverb: {first!r} is not a network verb -- spell it '
+        f'`python -m dev_lab.dev.netverb -- git push ...` (or `-- {"|".join(GIT_NETWORK_VERBS)} ...`, '
+        f'`-- uv {"|".join(UV_NETWORK_VERBS)} ...`)'
     )
     raise NotANetworkVerb(msg)
 

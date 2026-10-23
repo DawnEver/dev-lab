@@ -107,6 +107,7 @@ class Ran:
     def __init__(self, returncode: int = 0) -> None:
         """Answer *returncode* to every call, and record what each one was handed."""
         self.returncode = returncode
+        self.stdout = self.stderr = ''  # the streams netverb classifies a resolving command by
         self.calls: list[list[str]] = []
 
     def __call__(self, argv: list[str], **_: object) -> Ran:

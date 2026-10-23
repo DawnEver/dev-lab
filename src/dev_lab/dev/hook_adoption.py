@@ -26,7 +26,7 @@ and is deliberately not performed from here::
     ADOPTION = HookAdoption(
         app_name='consumer-b',
         remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
-        declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
+        declared_absent=frozenset({'NETWORK-VERB', 'RAW-PROCESS-KILL'}),
     )
     Path('.claude/hooks/deny-rules.json').write_text(render(ADOPTION), encoding='utf-8')
 

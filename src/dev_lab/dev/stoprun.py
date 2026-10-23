@@ -33,17 +33,15 @@ signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept 
 A refusal names the condition that failed -- a live parent is named, so the run it belongs to is stopped instead.
 ``--dry-run`` names the signature that matched.
 
-No new dependency: the process table is read with ``Get-CimInstance Win32_Process`` on Windows and
-``ps -ww -A -o pid=,ppid=,args=`` elsewhere (``-ww``: an unbounded width, so a long command line
-is never cut before the signature it carries); :func:`stop` takes the table as an argument so a test can
-plant one.
+No new dependency: the process table is :func:`lab_commons.census.processes` (Win32 calls on Windows,
+``/proc`` on Linux, ``ps -ww`` on macOS) -- the one census :mod:`dev_lab.dev.liverun` reads too;
+:func:`stop` takes the table as an argument so a test can plant one.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import os
 import re
 import shutil
@@ -58,6 +56,7 @@ from typing import Final
 
 import lab_commons.launch as _door
 from lab_commons.box.ledger import holdings
+from lab_commons.census import processes
 from lab_commons.liveness import CreationClock, creation_stamp
 from lab_commons.log import emit
 from lab_commons.proc import pid_alive
@@ -109,40 +108,8 @@ Proc = tuple[int, str]  # (parent pid, command line)
 
 
 def process_table() -> dict[int, Proc]:
-    """``{pid: (ppid, cmdline)}`` for every process, from the platform's own table."""
-    if os.name == 'nt':
-        script = (
-            'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine '
-            '| ConvertTo-Json -Compress'
-        )
-        shell = shutil.which('powershell') or 'powershell'
-        done = _door.run(
-            [shell, '-NoProfile', '-Command', script],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            check=False,
-            timeout=60,
-        )
-        rows = json.loads(done.stdout or '[]')
-        rows = rows if isinstance(rows, list) else [rows]
-        return {int(r['ProcessId']): (int(r['ParentProcessId'] or 0), r['CommandLine'] or '') for r in rows}
-    done = _door.run(
-        [shutil.which('ps') or 'ps', '-ww', '-A', '-o', 'pid=,ppid=,args='],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace',
-        check=False,
-        timeout=60,
-    )
-    table: dict[int, Proc] = {}
-    for line in done.stdout.splitlines():
-        pid, ppid, *args = [*line.split(None, 2), '', ''][:3]
-        if pid.isdigit() and ppid.isdigit():
-            table[int(pid)] = (int(ppid), args[0])
-    return table
+    """``{pid: (ppid, cmdline)}`` for every process, from the one census (:mod:`lab_commons.census`)."""
+    return {one.pid: (one.ppid, one.command_line) for one in processes()}
 
 
 class SignaturesNotDeclared(ValueError):

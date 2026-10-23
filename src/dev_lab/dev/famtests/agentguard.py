@@ -15,7 +15,7 @@ hand-rolled engine runner each repo wrote for itself.
 
 THE DENY ARM NAMES THE RULE IT EXPECTS, and this is the strongest thing in the module. A deny arm
 that asks only *"was this refused"* cannot tell a working rule from one a NEIGHBOUR is covering for:
-MEASURED in one lab, ``GIT-NETWORK-VERB`` shipped, sat ahead of ``PUSH-FORCE`` and ``PUSH-NO-VERIFY``
+MEASURED in one lab, ``NETWORK-VERB`` shipped, sat ahead of ``PUSH-FORCE`` and ``PUSH-NO-VERIFY``
 in registry order, and answered for every bare ``git push`` -- so both push rules could have stopped
 firing altogether with the suite still green. That is the count-pin failure in a different spelling,
 and the cure is the same: name the row. :func:`assert_refused_by` compares the refusal TEXT against

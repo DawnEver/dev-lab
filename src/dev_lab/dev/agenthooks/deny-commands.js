@@ -69,6 +69,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 /** The tools whose `tool_input.command` the shell executes. */
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -351,6 +352,28 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   return `[targets ${shown}, which declares no door; repo files named below are ${session}'s]\n${reason}`;
 }
 
+/* ================================ A ROW THAT BINDS ONLY WHILE A RUN IS LIVE ================================
+ *
+ * `when: 'live-run'` (TREE-HAS-A-LIVE-RUN): the pattern names a command that mutates a checkout or its venv,
+ * and it is refused only while a run executes from the checkout the command targets. Whether one does is
+ * the process table's answer, which this engine cannot read: it asks `python -m dev_lab.dev.liverun
+ * --tree <target>` through the session checkout's own interpreter, only AFTER the pattern matched, so an
+ * unmatched command pays nothing. Exit 1 prints the refusal; anything else -- no interpreter, a crash, a
+ * timeout -- is no refusal (fail-open, as everywhere in this engine).
+ */
+function liveRunRefusal(target, sessionRoot) {
+  if (!target || !sessionRoot) return '';
+  const tail = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
+  const python = path.join(sessionRoot, '.venv', ...tail);
+  if (!fs.existsSync(python)) return '';
+  const done = spawnSync(python, ['-m', 'dev_lab.dev.liverun', '--tree', target], {
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true,
+  });
+  return done.status === 1 ? String(done.stdout || '').trim() : '';
+}
+
 /** Does `rule` fire on any executed text? */
 function fires(rule, texts) {
   const argument = rule.matches === 'argument';
@@ -390,6 +413,11 @@ for (const rule of rules) {
   } catch {
     continue; // one malformed rule never blocks the session
   }
+  let liveReason = '';
+  if (hit && rule.when === 'live-run') {
+    liveReason = liveRunRefusal(input.cwd ? repoRoot(targetDir(cmd, input.cwd)) : null, sessionRoot);
+    hit = liveReason !== '';
+  }
   if (hit && rule.severity === 'hint') {
     hints.push(String(rule.reason || rule.name).replaceAll('{root}', root));
   } else if (hit) {
@@ -398,13 +426,9 @@ for (const rule of rules) {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: reasonFor(
-            rule,
-            String(rule.reason || rule.name).replaceAll('{root}', root),
-            cmd,
-            input.cwd || '',
-            sessionRoot
-          ),
+          permissionDecisionReason:
+            liveReason ||
+            reasonFor(rule, String(rule.reason || rule.name).replaceAll('{root}', root), cmd, input.cwd || '', sessionRoot),
         },
       })
     );

@@ -1,0 +1,279 @@
+"""``dev_lab.dev.liverun`` -- a checkout whose run is live refuses edits, merges and re-syncs; an idle one does not.
+
+TWO KINDS OF CONTROL. The judgement (which process is a run of which tree, what is the tree) is driven over a
+PLANTED census, both directions, at full speed. Then the whole chain is driven for real once: a real venv in
+a throwaway checkout, a real sleeper executing from it, the real census, the real JS engine and the real
+Edit hook -- refusing while the sleeper lives and naming its pid, silent for an idle checkout.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import pytest
+from lab_commons.census import Process, processes
+from lab_commons.proc import kill_process_tree
+
+from dev_lab.dev import agenthooks, dep, liverun
+from dev_lab.dev.hook_adoption import HookAdoption, render
+from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
+
+_SCRIPTS = 'Scripts' if os.name == 'nt' else 'bin'
+_PYTHON = 'python.exe' if os.name == 'nt' else 'python'
+
+
+def _checkout(path: Path) -> Path:
+    (path / '.git').mkdir(parents=True)
+    return path
+
+
+def _proc(pid: int, exe: Path | str, *, ppid: int = 1, age: float | None = 600.0, cmd: str = '') -> Process:
+    return Process(pid, ppid, str(exe), cmd or f'{exe} -m motronics case sweep', age)
+
+
+@pytest.fixture
+def tree(tmp_path: Path) -> Path:
+    root = _checkout(tmp_path / 'repo')
+    _checkout(root / '.claude' / 'worktrees' / 'lane')
+    return root
+
+
+def _venv_python(root: Path) -> Path:
+    return root / '.venv' / _SCRIPTS / _PYTHON
+
+
+# ----------------------------------------------------------------------------------------- which process is a run
+
+
+def test_a_process_executing_from_the_checkouts_venv_is_its_live_run(tree: Path) -> None:
+    run = _proc(4242, _venv_python(tree))
+    assert liverun.live_runs(tree, census=lambda: [run], me=1) == (run,)
+
+
+def test_a_process_of_a_nested_worktree_or_of_no_checkout_is_not_the_mains_run(tree: Path, tmp_path: Path) -> None:
+    lane = _proc(11, _venv_python(tree / '.claude' / 'worktrees' / 'lane'))
+    elsewhere = _proc(12, tmp_path / 'other' / _PYTHON)
+    unreadable = _proc(13, '')
+    census = [lane, elsewhere, unreadable]
+    assert liverun.live_runs(tree, census=lambda: census, me=1) == ()
+    assert liverun.live_runs(tree / '.claude' / 'worktrees' / 'lane', census=lambda: census, me=1) == (lane,)
+
+
+def test_a_hook_young_process_is_not_a_run_and_an_old_one_is(tree: Path) -> None:
+    """The floor: concurrent hooks start through the same interpreter and live for under a second."""
+    young = _proc(21, _venv_python(tree), age=liverun.RUN_FLOOR_S / 2)
+    old = _proc(22, _venv_python(tree), age=liverun.RUN_FLOOR_S * 2)
+    assert liverun.live_runs(tree, census=lambda: [young, old], me=1) == (old,)
+
+
+def test_the_asker_and_its_own_in_tree_family_are_not_runs(tree: Path) -> None:
+    """The hook's launcher, a test's pytest workers: kin of an in-tree ancestor of the asker."""
+    python = _venv_python(tree)
+    launcher = _proc(30, python, ppid=2)
+    me = _proc(31, '/usr/bin/python3', ppid=30)
+    worker = _proc(32, python, ppid=30)
+    stranger = _proc(40, python, ppid=2)
+    census = [launcher, me, worker, stranger]
+    assert liverun.live_runs(tree, census=lambda: census, me=31) == (stranger,)
+
+
+# ----------------------------------------------------------------------------------------------- what is the tree
+
+
+def test_the_tree_is_the_checkout_minus_its_outputs_and_agent_state(tree: Path) -> None:
+    assert liverun.in_tree(tree / 'src' / 'a.py', tree)
+    assert liverun.in_tree(tree / 'pyproject.toml', tree)
+    assert not liverun.in_tree(tree / 'output' / 'logs' / 'run.log', tree), 'a run writes its own logs there'
+    assert not liverun.in_tree(tree / '.claude' / 'memory' / 'note.md', tree)
+    assert not liverun.in_tree(tree / '.claude' / 'worktrees' / 'lane' / 'src' / 'a.py', tree), 'another checkout'
+
+
+# ----------------------------------------------------------------------------------------------- the Edit hook
+
+
+def _edit(path: Path, tool: str = 'Edit') -> io.StringIO:
+    key = 'notebook_path' if tool == 'NotebookEdit' else 'file_path'
+    return io.StringIO(json.dumps({'tool_name': tool, 'tool_input': {key: str(path)}, 'cwd': str(path.parent)}))
+
+
+@pytest.mark.parametrize('tool', ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+def test_the_hook_denies_an_edit_of_a_tree_with_a_live_run_and_names_it(
+    tree: Path, tool: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = _proc(4242, _venv_python(tree), cmd='python.exe -m motronics deck run cases/x')
+    assert liverun.main(['hook'], stdin=_edit(tree / 'src' / 'a.py', tool), census=lambda: [run]) == 0
+    decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
+    assert decision['permissionDecision'] == 'deny'
+    reason = decision['permissionDecisionReason']
+    assert reason.startswith('TREE-HAS-A-LIVE-RUN:')
+    assert 'pid 4242: python.exe -m motronics deck run cases/x' in reason
+    assert 'another worktree' in reason
+
+
+@pytest.mark.parametrize('target', ['output/logs/run.log', '.claude/memory/note.md'])
+def test_the_hook_allows_writes_outside_the_tree_while_a_run_is_live(
+    tree: Path, target: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = _proc(4242, _venv_python(tree))
+    assert liverun.main(['hook'], stdin=_edit(tree / target), census=lambda: [run]) == 0
+    assert capsys.readouterr().out == ''
+
+
+def test_the_hook_allows_an_edit_of_an_idle_tree(tree: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert liverun.main(['hook'], stdin=_edit(tree / 'src' / 'a.py'), census=list) == 0
+    assert capsys.readouterr().out == ''
+
+
+def test_the_hook_ignores_an_unreadable_payload_and_other_tools(tree: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run = _proc(4242, _venv_python(tree))
+    assert liverun.main(['hook'], stdin=io.StringIO('not json'), census=lambda: [run]) == 0
+    read = json.dumps({'tool_name': 'Read', 'tool_input': {'file_path': str(tree / 'src' / 'a.py')}})
+    assert liverun.main(['hook'], stdin=io.StringIO(read), census=lambda: [run]) == 0
+    assert capsys.readouterr().out == ''
+
+
+def test_the_tree_mode_exits_one_naming_the_run_and_zero_when_idle(
+    tree: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = _proc(4242, _venv_python(tree))
+    assert liverun.main(['--tree', str(tree / 'src')], census=lambda: [run]) == 1
+    assert 'pid 4242' in capsys.readouterr().out
+    assert liverun.main(['--tree', str(tree)], census=list) == 0
+
+
+# --------------------------------------------------------------------------------------------- the deny row
+
+
+def test_the_row_binds_only_while_a_run_is_live() -> None:
+    """The registry's own text half: refused live, free idle; a read-only near-miss is free either way."""
+    rule = rules_by_id(DENY_RULES)[liverun.RULE_ID]
+    for command in rule.refuses:
+        assert denies((rule,), command, live=True) == rule.id, command
+        assert denies((rule,), command) is None, command
+    for command in rule.permits:
+        assert denies((rule,), command, live=True) is None, command
+
+
+# --------------------------------------------------------------------------------- dep refuses a venv in use
+
+
+def test_dep_refuses_an_environment_a_live_process_executes_from(tmp_path: Path) -> None:
+    prefix = tmp_path / 'env'
+    user = _proc(5151, prefix / _SCRIPTS / _PYTHON, cmd='python -m motronics deck run cases/x')
+    ran: list[object] = []
+    port = dep.Port(name='repo', anchor_paths=lambda: (), key=lambda: 'k')
+    with pytest.raises(dep.HeldEnvironmentError, match=r'pid 5151: python -m motronics deck run'):
+        dep._change(
+            ['uv', 'sync'], port=port, prefix=str(prefix), python=None, run=ran.append, dry_run=False,
+            census=lambda: [user],
+        )  # fmt: skip
+    assert ran == [], 'the mutation ran under a live process'
+
+
+def test_dep_mutates_an_environment_nothing_executes_from(tmp_path: Path) -> None:
+    prefix = tmp_path / 'env'
+    elsewhere = _proc(5151, tmp_path / 'other' / _SCRIPTS / _PYTHON)
+    seen: list[list[str]] = []
+
+    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, '', '')
+
+    port = dep.Port(name='repo', anchor_paths=lambda: (), key=lambda: 'k')
+    report = dep._change(
+        ['uv', 'sync'], port=port, prefix=str(prefix), python=None, run=run, dry_run=False, census=lambda: [elsewhere]
+    )
+    assert report.returncode == 0
+    assert seen == [['uv', 'sync']]
+
+
+def test_dep_retries_a_transient_resolve_through_the_network_door(tmp_path: Path) -> None:
+    """INCIDENT (1): `uv sync` failed once on forge auth and was not retried; through netverb it recovers."""
+    answers = [
+        subprocess.CompletedProcess([], 1, '', 'remote: Failed to authenticate user\n'),
+        subprocess.CompletedProcess([], 0, '', ''),
+    ]  # fmt: skip
+    calls: list[list[str]] = []
+
+    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return answers[len(calls) - 1]
+
+    port = dep.Port(name='repo', anchor_paths=lambda: (), key=lambda: 'k')
+    report = dep._change(
+        ['uv', 'sync', '--frozen'], port=port, prefix=str(tmp_path / 'env'), python=None, run=run, dry_run=False,
+        census=list,
+    )  # fmt: skip
+    assert report.returncode == 0
+    assert len(calls) == 2, 'the transient was not retried'
+
+
+# ------------------------------------------------------------------------------------------- the real chain
+
+
+@pytest.fixture(scope='module')
+def live_tree(tmp_path_factory: pytest.TempPathFactory):  # noqa: ANN201 -- a generator fixture
+    """A throwaway checkout with a REAL venv and a REAL sleeper executing from it, old enough to be a run."""
+    root = _checkout(tmp_path_factory.mktemp('live') / 'repo')
+    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(root / '.venv')], check=True, timeout=300)
+    sleeper = subprocess.Popen([str(_venv_python(root)), '-c', 'import time; time.sleep(300)'])
+    try:
+        deadline = time.monotonic() + 60
+        while not liverun.live_runs(root) and time.monotonic() < deadline:
+            time.sleep(0.5)
+        yield root, sleeper.pid
+    finally:
+        kill_process_tree(sleeper.pid)
+        sleeper.wait(timeout=30)
+
+
+def test_the_real_census_sees_a_real_run_and_the_hook_names_its_pid(live_tree: tuple[Path, int]) -> None:
+    root, pid = live_tree
+    runs = liverun.live_runs(root, census=processes)
+    assert pid in {one.pid for one in runs}
+    out = io.StringIO()
+    sys_stdout, sys.stdout = sys.stdout, out
+    try:
+        liverun.main(['hook'], stdin=_edit(root / 'src' / 'a.py'))
+    finally:
+        sys.stdout = sys_stdout
+    assert f'pid {pid}' in json.loads(out.getvalue())['hookSpecificOutput']['permissionDecisionReason']
+
+
+def _junction(link: Path, target: Path) -> None:
+    if os.name == 'nt':
+        shell = os.environ.get('COMSPEC', 'cmd.exe')
+        subprocess.run([shell, '/c', 'mklink', '/J', str(link), str(target)], check=True, capture_output=True)
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+@pytest.mark.node
+def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one(
+    live_tree: tuple[Path, int], tmp_path: Path
+) -> None:
+    """PLANTED BOTH WAYS through `node`: the same `git -C <tree> merge` is refused live and free idle."""
+    root, pid = live_tree
+    session = _checkout(tmp_path / 'session')
+    _junction(session / '.venv', Path(sys.prefix))
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    rules = hooks / 'deny-rules.json'
+    rules.write_text(render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8')
+    idle = _checkout(tmp_path / 'idle')
+    live = agenthooks.decide(f'git -C {root.as_posix()} merge origin/integrate/main', rules, cwd=session)
+    assert live is not None
+    assert live.startswith('TREE-HAS-A-LIVE-RUN:'), live
+    assert f'pid {pid}' in live
+    assert agenthooks.decide(f'git -C {idle.as_posix()} merge origin/integrate/main', rules, cwd=session) is None
+    assert agenthooks.decide(f'git -C {root.as_posix()} status', rules, cwd=session) is None
+
+
+#: Every row needing a repo artefact, declared absent so the planted adoption renders without remedies.
+_NEEDING = {rule.id for rule in DENY_RULES if rule.needs is not None}

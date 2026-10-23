@@ -42,12 +42,17 @@ When a command targets another repo, the engine adds one header line naming that
 - **Why it is refused.** `--amend` does not act on YOUR last commit, it acts on HEAD -- and on a shared lane HEAD belongs to whoever committed most recently. This family has NO single-agent mode, so "I just committed" is not a safety argument; it is the exact condition under which this fires. MEASURED 2026-09-18 on `feat/consumer-c`: agent A committed, agent B committed 40 seconds later, and A amended to fix two digits in its OWN message -- rewriting B's commit and replacing B's message with A's. It was caught inside a minute through `git reflog` and the tree recovered byte-identical, so only the SHA moved; nothing about the recovery made that outcome likelier than losing the work.
 - **The exit.** Do not rewrite -- land the correction FORWARD. Read what HEAD actually is first: git log -1 --format="%h %an %s". If the CONTENT is wrong, commit the fix on top. If only the message is wrong and nothing a reader acts on changes, record the correction where the work is reported and leave the commit alone; that is the right call once anything sits on top of it.
 
-## GIT-NETWORK-VERB
+## NETWORK-VERB
 
 HINT: a bare network verb loses only the retry; force, delete and no-verify pushes are refusals of their own.
 
-- **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between.
+- **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between. Widened 2026-10-19 to every verb `dev_lab.dev.netverb.is_network_verb` names -- git's `-C`/`-c` spellings, `submodule update`, and uv's resolving verbs -- after a `uv sync` of a git dependency failed once on forge auth and a re-run passed.
 - **The exit.** Re-issue through the retry wrapper, which retries 3x and then REPORTS with a diagnosis: {remedy}
+
+## TREE-HAS-A-LIVE-RUN
+
+- **Why it is refused.** a run executes its checkout's code and `.venv` for its whole life, so an edit, a merge, a checkout or an environment sync under it makes its result describe a tree that never existed. Measured 2026-10-19 in motronics: during a JMAG `deck run`, an agent edited a test, merged into the checkout and re-synced the venv the run executed from. The run is found WITHOUT its cooperation -- a process whose executable lies inside the checkout (`dev_lab.dev.liverun`, read off `lab_commons.census`) -- and the row binds only while one exists. `output/` and `.claude/` are not the tree.
+- **The exit.** Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for the run, or stop it: python -m dev_lab.dev.stoprun --pid <pid>.
 
 ## GIT-STASH
 

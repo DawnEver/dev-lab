@@ -35,6 +35,7 @@ from dev_lab.dev.netverb import (
     Disposition,
     NotANetworkVerb,
     classify,
+    is_network_verb,
     is_retryable,
     main,
     run_network_verb,
@@ -376,3 +377,91 @@ def test_netverb_hands_git_s_ref_lines_to_the_pre_push_hook_and_an_up_to_date_pu
     got.unlink()
     assert run_network_verb(push, attempts=1).attempts[-1].ok
     assert got.read_text(encoding='utf-8') == '', 'an up-to-date push runs pre-push with an empty stdin'
+
+
+#: THE INCIDENT (motronics, 2026-10-19): `dep --bootstrap <worktree>` gave up "after 3 of 3 attempts, last
+#: diagnosis unclassified" on a submodule whose URL is a LOCAL path -- deterministic, never transient.
+_FILE_TRANSPORT = (
+    "Cloning into 'D:/w/cases/winding/connection'...\n"
+    "fatal: transport 'file' not allowed\n"
+    "fatal: clone of 'D:/m/.git/modules/cases/winding/connection' into submodule path 'cases/...' failed\n"
+)
+
+
+def test_a_blocked_file_transport_is_refused_on_the_first_attempt_and_names_its_remedy(tmp_path: Path) -> None:
+    """PLANTED, permanent side: git's own protocol policy repeats its answer, so one attempt and a remedy."""
+    clock = _Clock()
+    argv, counter = _child(tmp_path, fails=99, message=_FILE_TRANSPORT)
+    report = run_network_verb(argv, backoff_s=0.0, sleep=clock)
+    assert _ran(counter) == 1
+    assert report.diagnosis is Diagnosis.TRANSPORT_REFUSED
+    assert report.disposition is Disposition.REFUSED
+    assert '-c protocol.file.allow=always' in report.remedy
+
+
+def test_uvs_spelling_of_a_forge_auth_failure_is_transient_and_recovers(tmp_path: Path) -> None:
+    """THE OTHER INCIDENT (motronics, 2026-10-19): `uv sync` failed once on a git dependency's auth; a re-run passed."""
+    message = (
+        'error: Failed to download and build `ai-lab @ git+https://x/ai-lab`\n  remote: Failed to authenticate user\n'
+    )
+    argv, counter = _child(tmp_path, fails=1, message=message)
+    report = run_network_verb(argv, backoff_s=0.0, sleep=_Clock())
+    assert _ran(counter) == 2
+    assert report.attempts[0].diagnosis is Diagnosis.TRANSIENT
+    assert report.disposition is Disposition.RECOVERED
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['git', 'push', 'origin', 'HEAD'],
+        ['git', '-C', 'x', 'fetch', '--prune'],
+        ['/usr/bin/git', '-c', 'protocol.file.allow=always', '-C', 'x', 'submodule', 'update', '--init'],
+        ['git', 'ls-remote', 'https://x'],
+        ['git', 'clone', 'https://x', 'y'],
+        ['git', 'pull'],
+        ['uv', 'sync', '--frozen'],
+        ['C:/uv.EXE', 'lock', '--upgrade'],
+        ['uv', 'pip', 'install', '--python', 'p', 'x'],
+        ['uv', 'add', 'x'],
+        ['uv', 'remove', 'x'],
+    ],
+)
+def test_every_network_verb_is_recognised(argv: list[str]) -> None:
+    """The ONE predicate the arch scan, dep and the spelling all read."""
+    assert is_network_verb(argv)
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['git', 'status'],
+        ['git', '-C', 'x', 'log', '--', 'fetch'],
+        ['git', 'submodule', 'status'],
+        ['uv', 'run', 'python'],
+        ['uv', 'pip', 'list'],
+        ['python', '-m', 'pip', 'list'],
+        [],
+    ],
+)
+def test_a_local_command_is_not_a_network_verb(argv: list[str]) -> None:
+    """The planted near-misses: local git, a read-only uv, a `fetch` that is a pathspec."""
+    assert not is_network_verb(argv)
+
+
+@pytest.mark.parametrize(
+    ('typed', 'expected'),
+    [
+        (['--', 'uv', 'lock', '--upgrade'], ['uv', 'lock', '--upgrade']),
+        (['--', 'git', 'submodule', 'update', '--init'], ['git', 'submodule', 'update', '--init']),
+    ],
+)
+def test_the_door_runs_every_network_verb_not_only_git(typed: list[str], expected: list[str]) -> None:
+    """`netverb -- uv lock` is the door the deny row names, so it must be spelled, not refused."""
+    assert spelled(typed) == expected
+
+
+def test_the_door_refuses_a_non_network_uv_command() -> None:
+    """`uv run` is no network verb: retrying an arbitrary program is not this door's job."""
+    with pytest.raises(NotANetworkVerb):
+        spelled(['--', 'uv', 'run', 'python'])

@@ -30,7 +30,7 @@ interpreter is this checkout's ``.venv/...`` (the plain heads below) or a worktr
 USER RULING 2026-10-08 (MAIN-SESSION-PUBLISHES), superseding the push half of 2026-10-04: a MAIN
 session pushes and fast-forwards its trunks without waiting for a user decision. So the publishing
 verbs are doors too (:data:`PUBLISH_DOORS`): ``git merge --ff-only`` (also as ``git -C <repo>``), and
-the push, ALWAYS RETRY-WRAPPED and never raw (GIT-NETWORK-VERB refuses a raw one): the repo's own
+the push, ALWAYS RETRY-WRAPPED and never raw (NETWORK-VERB refuses a raw one): the repo's own
 wrapper (``sh <rel> *``), a sibling checkout's wrapper (``sh */<rel> push *``), or the family verb
 :mod:`dev_lab.dev.netverb` in a repo without one. A subagent is still refused every push by the
 scoped deny row SUBAGENT-NO-PUSH, and a force push by PUSH-FORCE: a deny hook fires before
@@ -96,7 +96,7 @@ DOOR_MODULES: Final[dict[str, str]] = {
 }
 
 #: MAIN-SESSION-PUBLISHES: the local trunk verbs a main session runs unattended. The push is not here:
-#: it is retry-wrapped (the repo's wrapper door, or ``netverb``), because GIT-NETWORK-VERB refuses a raw one.
+#: it is retry-wrapped (the repo's wrapper door, or ``netverb``), because NETWORK-VERB refuses a raw one.
 PUBLISH_DOORS: Final[dict[tuple[str, ...], str]] = {
     ('git', 'merge', '--ff-only'): 'a fast-forward of a trunk; never creates a merge commit (MAIN-SESSION-PUBLISHES)',
 }
