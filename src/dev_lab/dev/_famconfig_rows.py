@@ -168,6 +168,9 @@ GITIGNORE_CLAUDE_SECTION: Final[tuple[str, ...]] = (
     '!**/attic/**',
     '**/.claude/**/__pycache__/',
     '**/.claude/**/*.py[cod]',
+    # The auto-mode prose is MACHINE-LOCAL, derived from the synced fleet sources (dev_lab.dev.automode, user
+    # ruling 2026-10-23): a committed copy would put fleet facts in history. Named so no re-inclusion tracks it.
+    '**/.claude/automode.json',
 )
 
 #: Lines NO `.gitignore` in the family may carry, base or delta -- as patterns, with the ruling. A
