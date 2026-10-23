@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.branchset import (
+    EPHEMERAL_OFF,
     BranchSet,
     BranchSetNotDeclared,
     Census,
@@ -136,9 +137,9 @@ def assert_local_branches_declared(*, root: Path, branchset: BranchSet) -> tuple
     return found.unpushed
 
 
-#: The two declarations that ARE the flow, on the lines a repo adds to adopt it.
+#: The declarations that ARE the flow, on the lines a repo adds to adopt it (``ephemeral`` is the family default).
 _PR_FLOW: Final = (
-    "[tool.lab_commons.branchset]  ephemeral = ['pr/*']\n"
+    "[tool.lab_commons.branchset]  trunk = 'main'  sessions = ['integrate/main']\n"
     '[tool.lab_commons.integrator] pr_merges_since = "<the integrate/main sha the flow starts after>"'
 )
 
@@ -166,7 +167,7 @@ def assert_the_pr_flow_is_declared(*, root: Path) -> str:
         raise BranchSetViolation(msg) from undeclared
     missing = [
         *(['[tool.lab_commons.integrator] pr_merges_since = "<sha>"'] if not policy.pr_merges_since else []),
-        *(["[tool.lab_commons.branchset] ephemeral = ['pr/*']"] if not declared.is_ephemeral('pr/x') else []),
+        *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
         *(
             [f'[tool.lab_commons.branchset] sessions names {policy.integration!r}']
             if policy.integration not in declared.sessions

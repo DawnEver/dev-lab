@@ -22,16 +22,18 @@ def _manifest(root: Path, text: str) -> Path:
 
 def test_a_repo_with_no_branch_set_is_told_the_two_lines_to_add(tmp_path: Path) -> None:
     _manifest(tmp_path, "[project]\nname = 'x'\n")
-    with pytest.raises(BranchSetViolation, match="ephemeral = \\['pr/\\*'\\]"):
+    with pytest.raises(BranchSetViolation, match="sessions = \\['integrate/main'\\]"):
         assert_the_pr_flow_is_declared(root=tmp_path)
 
 
 def test_each_missing_declaration_is_named(tmp_path: Path) -> None:
-    _manifest(tmp_path, _BRANCHSET + "[tool.lab_commons.integrator]\nintegration = 'integrate/main'\n")
+    """An omitted ``ephemeral`` is the family ``pr/*`` default; only ``ephemeral = []`` turns the flow off."""
+    off = _BRANCHSET + 'ephemeral = []\n' + "[tool.lab_commons.integrator]\nintegration = 'integrate/main'\n"
+    _manifest(tmp_path, off)
     with pytest.raises(BranchSetViolation) as refused:
         assert_the_pr_flow_is_declared(root=tmp_path)
     assert 'pr_merges_since' in str(refused.value)
-    assert "ephemeral = ['pr/*']" in str(refused.value)
+    assert 'ephemeral = [] turns off' in str(refused.value)
 
 
 def test_the_same_manifest_with_both_declarations_passes_and_hands_the_sha_back(tmp_path: Path) -> None:

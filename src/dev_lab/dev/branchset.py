@@ -45,6 +45,8 @@ from dev_lab.dev.checkout import authority_for, git_out, origin_branches
 
 __all__ = [
     'ARCHIVE_PREFIX',
+    'EPHEMERAL_OFF',
+    'FAMILY_EPHEMERAL',
     'BranchSet',
     'BranchSetKeyRetired',
     'BranchSetNotDeclared',
@@ -66,6 +68,10 @@ _KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hour
 #: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
 #: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
 FAMILY_EPHEMERAL: Final[tuple[str, ...]] = ('pr/*',)
+#: What a manifest that turned the namespace off is told, by every assertion that reads it.
+EPHEMERAL_OFF: Final = (
+    '[tool.lab_commons.branchset] ephemeral = [] turns off the family pr/* namespace -- delete the line'
+)
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
