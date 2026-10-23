@@ -97,6 +97,10 @@ EVICTED: Final[dict[str, str]] = {
         'the shape `RULES` exposes -- and both consumer-b and consumer-c build `Adoption` against it, '
         'so their adoption tests move WITH it in one push train. No `_compat` alias.'
     ),
+    'src/dev_lab/dev/_rule_rows_memory.py::path': (
+        'The memory rows of the same registry, split out of `_rule_rows.py` by concept (2026-10-23): their '
+        'mechanism paths belong to that registry, under the same HEADLINE row and the same migration.'
+    ),
     'src/dev_lab/dev/_famconfig_ruff_rows.py::data': (
         '3 repo-keyed rows in the ruff base. The base/delta renderer is right; the per-repo delta '
         'belongs in the repo whose delta it is.'
