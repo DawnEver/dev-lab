@@ -32,7 +32,7 @@ import os
 import shutil
 import tomllib
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -143,7 +143,7 @@ def archive(main: Path, name: str, *, census: Census = processes, today: date | 
     """Move worktree *name*'s outputs into *main*, save its work, and say whether it is safe to remove."""
     main = main.resolve()
     outputs, target = _declared(main)
-    saved = main / target / (today or date.today()).strftime('%Y%m%d') / name  # noqa: DTZ011 -- a local day
+    saved = main / target / (today or datetime.now(UTC).astimezone().date()).strftime('%Y%m%d') / name
     registered = worktrees(main)
     if registered is None:
         return Archived(name, saved, refused=f'git could not list the worktrees of {main}')

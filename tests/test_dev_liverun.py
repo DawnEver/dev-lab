@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -240,7 +241,7 @@ def test_dep_retries_a_transient_resolve_through_the_network_door(tmp_path: Path
 
 
 @pytest.fixture(scope='module')
-def live_tree(tmp_path_factory: pytest.TempPathFactory):  # noqa: ANN201 -- a generator fixture
+def live_tree(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[Path, int]]:
     """A throwaway checkout with a REAL venv and a REAL sleeper executing from it, old enough to be a run."""
     root = _checkout(tmp_path_factory.mktemp('live') / 'repo')
     subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(root / '.venv')], check=True, timeout=300)
