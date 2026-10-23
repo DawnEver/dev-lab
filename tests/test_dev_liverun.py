@@ -20,7 +20,7 @@ import pytest
 from lab_commons.census import Process, processes
 from lab_commons.proc import kill_process_tree
 
-from dev_lab.dev import agenthooks, dep, liverun
+from dev_lab.dev import agenthooks, dep, forgeserve, liverun
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import DENY_RULES, denies, rules_by_id
 
@@ -33,8 +33,12 @@ def _checkout(path: Path) -> Path:
     return path
 
 
-def _proc(pid: int, exe: Path | str, *, ppid: int = 1, age: float | None = 600.0, cmd: str = '') -> Process:
-    return Process(pid, ppid, str(exe), cmd or f'{exe} -m motronics case sweep', age)
+def _proc(
+    pid: int, exe: Path | str, *, ppid: int = 1, age: float | None = 600.0, cmd: str = '', cwd: Path | str | None = None
+) -> Process:
+    """A process; by default a sweep, whose cwd is the checkout its venv interpreter lives in."""
+    where = str(Path(exe).parents[2]) if cwd is None and exe else str(cwd or '')
+    return Process(pid, ppid, str(exe), cmd or f'{exe} -m motronics case sweep cases/x', age, where)
 
 
 @pytest.fixture
@@ -51,15 +55,33 @@ def _venv_python(root: Path) -> Path:
 # ----------------------------------------------------------------------------------------- which process is a run
 
 
-def test_a_process_executing_from_the_checkouts_venv_is_its_live_run(tree: Path) -> None:
+def test_a_sweep_reading_the_tree_locks_the_tree_and_its_venv(tree: Path) -> None:
+    """PLANTED: the measured v3 shape -- venv interpreter, cwd in the tree (`-m` puts the cwd on sys.path)."""
     run = _proc(4242, _venv_python(tree))
     assert liverun.live_runs(tree, census=lambda: [run], me=1) == (run,)
+    assert liverun.executing_from(tree / '.venv', census=lambda: [run], me=1) == (run,)
+
+
+def test_a_serve_in_its_own_work_root_locks_the_venv_and_not_the_tree(tree: Path) -> None:
+    """PLANTED: a forge serve executes from the venv and works in its own root, so the tree stays editable."""
+    serve = _proc(5151, _venv_python(tree), cwd=tree / '.claude' / 'worktrees', cmd='python -m dev_lab.dev.forge serve')
+    assert liverun.live_runs(tree, census=lambda: [serve], me=1) == ()
+    assert liverun.executing_from(tree / '.venv', census=lambda: [serve], me=1) == (serve,)
+
+
+def test_a_log_tail_in_the_tree_is_not_a_reader_and_a_script_it_names_is(tree: Path) -> None:
+    """Measured: day-old `tail -F output/...` processes sit with cwd in the checkout; they read only output/."""
+    (tree / 'scratch').mkdir()
+    (tree / 'scratch' / 'v3_long_run.copy.sh').write_text('', encoding='utf-8')
+    tail = _proc(61, '/usr/bin/tail', cwd=tree, cmd=f'tail -n 0 -F {(tree / "output" / "x.log").as_posix()}')
+    chain = _proc(62, '/usr/bin/bash', cwd=tree, cmd='bash scratch/v3_long_run.copy.sh')
+    assert liverun.live_runs(tree, census=lambda: [tail, chain], me=1) == (chain,)
 
 
 def test_a_process_of_a_nested_worktree_or_of_no_checkout_is_not_the_mains_run(tree: Path, tmp_path: Path) -> None:
     lane = _proc(11, _venv_python(tree / '.claude' / 'worktrees' / 'lane'))
-    elsewhere = _proc(12, tmp_path / 'other' / _PYTHON)
-    unreadable = _proc(13, '')
+    elsewhere = _proc(12, tmp_path / 'other' / _PYTHON, cwd=tmp_path / 'other')
+    unreadable = _proc(13, '', cwd='')
     census = [lane, elsewhere, unreadable]
     assert liverun.live_runs(tree, census=lambda: census, me=1) == ()
     assert liverun.live_runs(tree / '.claude' / 'worktrees' / 'lane', census=lambda: census, me=1) == (lane,)
@@ -76,7 +98,7 @@ def test_the_asker_and_its_own_in_tree_family_are_not_runs(tree: Path) -> None:
     """The hook's launcher, a test's pytest workers: kin of an in-tree ancestor of the asker."""
     python = _venv_python(tree)
     launcher = _proc(30, python, ppid=2)
-    me = _proc(31, '/usr/bin/python3', ppid=30)
+    me = _proc(31, '/usr/bin/python3', ppid=30, cwd=tree)
     worker = _proc(32, python, ppid=30)
     stranger = _proc(40, python, ppid=2)
     census = [launcher, me, worker, stranger]
@@ -222,7 +244,7 @@ def live_tree(tmp_path_factory: pytest.TempPathFactory):  # noqa: ANN201 -- a ge
     """A throwaway checkout with a REAL venv and a REAL sleeper executing from it, old enough to be a run."""
     root = _checkout(tmp_path_factory.mktemp('live') / 'repo')
     subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(root / '.venv')], check=True, timeout=300)
-    sleeper = subprocess.Popen([str(_venv_python(root)), '-c', 'import time; time.sleep(300)'])
+    sleeper = subprocess.Popen([str(_venv_python(root)), '-c', 'import time; time.sleep(300)'], cwd=root)
     try:
         deadline = time.monotonic() + 60
         while not liverun.live_runs(root) and time.monotonic() < deadline:
@@ -277,3 +299,12 @@ def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one
 
 #: Every row needing a repo artefact, declared absent so the planted adoption renders without remedies.
 _NEEDING = {rule.id for rule in DENY_RULES if rule.needs is not None}
+
+
+def test_a_serve_works_in_a_root_that_is_not_the_tree(tree: Path) -> None:
+    """By construction: `forge serve` chdirs to its work root, where its cwd reads no tree."""
+    work = forgeserve.work_root(tree)
+    assert work.is_dir()
+    assert not liverun.in_tree(work, tree)
+    serve = _proc(7, _venv_python(tree), cwd=work, cmd='python -m dev_lab.dev.forge serve')
+    assert not liverun.reads_tree(serve, tree)

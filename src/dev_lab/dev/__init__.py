@@ -89,11 +89,11 @@ are too unqualified to survive being flattened into a namespace this wide.
   and as ``python -m dev_lab.dev.netverb -- git fetch origin`` for a shell caller -- so it is
   not re-exported below, exactly as ``verify`` is not: a package that imports its own entry point
   makes ``runpy`` warn the module was already in ``sys.modules``.
-* :mod:`dev_lab.dev.liverun` - TREE-HAS-A-LIVE-RUN: a checkout a run executes from (a live process whose
-  executable lies inside it, read off :mod:`lab_commons.census` without the run's cooperation) refuses
+* :mod:`dev_lab.dev.liverun` - TREE-HAS-A-LIVE-RUN: a checkout a live process READS (a Python interpreter
+  working in it, or an argument naming a path in it, read off :mod:`lab_commons.census`) refuses
   Edit/Write (its ``hook``) and, through the deny engine's ``when: 'live-run'`` row, merges, checkouts and
-  environment syncs; ``dep`` refuses a venv any live process executes from. ``output/`` and ``.claude/`` are
-  not the tree.
+  environment syncs; ``dep`` refuses a venv any live process executes from. ``output/``, ``.claude/`` and
+  ``.venv/`` are not the tree.
 * :mod:`dev_lab.dev.checkout` — SHARED-CHECKOUT, which both siblings declared absent on the
   grounds that the push obligation "is a fact about origin, not about any file in this checkout".
   The premise is true and the conclusion was wrong: git answers "what is here that origin does not

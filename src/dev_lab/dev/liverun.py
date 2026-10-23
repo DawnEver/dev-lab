@@ -6,11 +6,17 @@ that checkout, ran ``git merge`` into it, and ran ``dep --sync`` on a worktree's
 from. ``deck run`` holds no environment seat, so the seat could not refuse the sync: a seat is a promise the
 run has to make, and this one forgot.
 
-THE ONE SOURCE OF TRUTH IS THE PROCESS TABLE, not a ledger a run must remember to join. A run IS a process
-whose executable lies inside the checkout -- its own ``.venv`` interpreter, or a binary built there -- read by
-:func:`lab_commons.census.processes` without the run's cooperation (a Windows venv launcher stays alive for
-its child's whole life, so the launcher's image names the venv). Not the cwd: Windows does not expose
-another process's cwd cheaply, and on POSIX every idle shell -- the agent's own included -- sits in one.
+THE ONE SOURCE OF TRUTH IS THE PROCESS TABLE (:func:`lab_commons.census.processes`), read without the run's
+cooperation, and it answers TWO questions, one lock each:
+
+* VENV LOCK (:func:`executing_from`): a process whose executable lies in an environment uses THAT environment,
+  so ``dep`` refuses to mutate it. A ``forge serve`` from main's venv locks the venv.
+* TREE LOCK (:func:`live_runs`): a process READS a checkout when it is a Python interpreter whose cwd is in it
+  (``python -m`` puts the cwd first on ``sys.path``) or when an argument names an existing path in it (a
+  ``scratch/*.sh`` chain, ``cases/...``). Measured 2026-10-19: the v3 sweep's interpreter works in its worktree;
+  its bash chains name main's ``scratch/`` scripts; two dozen day-old ``tail -F output/...`` processes and
+  Claude Code's own node processes sit in the checkout and read none of it. A serve works in its own root
+  (:func:`dev_lab.dev.forgeserve.work_root`), so it locks the venv and never the tree.
 
 WHAT IS NOT A RUN, each decided by evidence:
 
@@ -33,6 +39,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import shlex
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
@@ -60,7 +68,14 @@ __all__ = [
 RULE_ID: Final = str(LIVE_RUN['id'])
 
 #: Top-level directories of a checkout that no run reads: a write there never changes what a run executes.
-NOT_THE_TREE: Final = ('output', '.claude')
+NOT_THE_TREE: Final = ('output', '.claude', '.venv')
+
+#: The interpreter whose cwd is READ: ``python -m`` puts the cwd first on ``sys.path``. Not node: Claude Code and
+#: its MCP servers are node processes sitting in the checkout for the whole session (measured 2026-10-19).
+_INTERPRETER: Final = re.compile(r'^python[\w.]*(?:\.exe)?$', re.IGNORECASE)
+
+#: A Git Bash spelling of a drive path, ``/d/x`` -> ``d:/x``.
+_DRIVE: Final = re.compile(r'^/([a-zA-Z])/')
 
 #: A process younger than this is a concurrent hook, not a run (seconds).
 RUN_FLOOR_S: Final = 5.0
@@ -131,20 +146,37 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
     )
 
 
+def _named_paths(one: Process) -> Iterable[Path]:
+    """Every existing path *one*'s arguments name (its own executable excluded), relative ones against its cwd."""
+    try:
+        words = shlex.split(one.command_line, posix=False)[1:]
+    except ValueError:
+        words = one.command_line.split()[1:]
+    for word in words:
+        bare = word.strip('"\'')
+        text = _DRIVE.sub(lambda drive: f'{drive[1]}:/', bare, count=1) if os.name == 'nt' else bare
+        if text.startswith('-') or ('/' not in text and '\\' not in text):
+            continue
+        path = Path(text) if Path(text).is_absolute() else Path(one.cwd, text) if one.cwd else None
+        if path is not None and path.exists():
+            yield path
+
+
+def reads_tree(one: Process, root: Path | str) -> bool:
+    """Whether *one* READS checkout *root*: an interpreter working in it, or an argument naming a path in it."""
+    name = Path(one.executable.replace('\\', '/')).name
+    if _INTERPRETER.match(name) and one.cwd and in_tree(one.cwd, root):
+        return True
+    return any(in_tree(path, root) for path in _named_paths(one))
+
+
 def live_runs(root: Path | str, *, census: Census = processes, me: int | None = None) -> tuple[Process, ...]:
-    """Every run executing from checkout *root*: its image lies in *root* and in no checkout nested below it."""
-
-    def inside(one: Process) -> bool:
-        if not one.executable or not _under(one.executable, str(root)):
-            return False
-        owner = checkout_of(Path(one.executable).parent)
-        return owner is not None and _key(owner) == _key(root)
-
-    return _others(tuple(census()), inside, os.getpid() if me is None else me)
+    """TREE LOCK: every run READING checkout *root* (:func:`reads_tree`) -- never one that only uses its venv."""
+    return _others(tuple(census()), lambda one: reads_tree(one, root), os.getpid() if me is None else me)
 
 
 def executing_from(prefix: Path | str, *, census: Census = processes, me: int | None = None) -> tuple[Process, ...]:
-    """Every process executing from the environment at *prefix* -- seat holder or not."""
+    """VENV LOCK: every process executing from the environment at *prefix* -- seat holder or not."""
     return _others(tuple(census()), lambda one: _under(one.executable, str(prefix)), os.getpid() if me is None else me)
 
 
