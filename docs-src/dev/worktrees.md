@@ -34,3 +34,25 @@ The location is spelled once: `dev_lab.dev.worktreeplace.WORKTREES_REL`.
 
 3. Re-render `.gitignore` from the family base ([project files](project-files.md)).
 4. Move any misplaced tree with the command the red names.
+
+## Archiving a tree before removing it
+
+`python -m dev_lab.dev.worktrees --archive <name>` (`dev_lab.dev.worktree_archive`) is the step before
+a deliberate removal. It removes nothing; it reports `safe to remove` or why not.
+
+- Refuses a tree with an occupant (`dev_lab.dev.liverun.occupants`: a process working in it, executing from
+  it, or reading it -- another session's tree is live) and a tree on another volume (a move there is a copy).
+- Saves `HEAD.txt`, `dirty.patch` (`git diff HEAD --binary`) and the untracked non-ignored files under
+  `<archive-to>/<yyyymmdd>/<name>/`.
+- MOVES (renames) every file under each `archive-outputs` directory to the same relative path in the main
+  checkout: identical bytes are skipped, differing bytes land as `<file>.<name>`, a directory holding
+  `pyvenv.cfg` never travels.
+
+```toml
+[tool.lab_commons.worktrees]            # the main checkout's pyproject.toml; both keys optional
+archive-outputs = ["output/logs"]       # the default
+archive-to = "output/worktree-archive"  # the default
+```
+
+It is a flag of the `worktrees` door, whose allow row every adopting repo already renders, so a consumer gets it
+by upgrading lab-commons alone.

@@ -61,6 +61,7 @@ __all__ = [
     'in_tree',
     'live_runs',
     'main',
+    'occupants',
     'refusal',
 ]
 
@@ -194,6 +195,21 @@ def live_runs(root: Path | str, *, census: Census = processes, me: int | None = 
 def executing_from(prefix: Path | str, *, census: Census = processes, me: int | None = None) -> tuple[Process, ...]:
     """VENV LOCK: every process executing from the environment at *prefix* -- seat holder or not."""
     return _others(tuple(census()), lambda one: _under(one.executable, str(prefix)), os.getpid() if me is None else me)
+
+
+def occupants(root: Path | str, *, census: Census = processes, me: int | None = None) -> tuple[Process, ...]:
+    """WHOLE-TREE LOCK: every process working in, executing from, or reading checkout *root* -- ``output/`` included.
+
+    A tree about to be archived and removed is stricter than one about to be edited: a session's node process
+    sitting in it (another agent's worktree) and a ``tail`` of its ``output/`` are its occupants too.
+    """
+
+    def inside(one: Process) -> bool:
+        return (
+            (bool(one.cwd) and _under(one.cwd, str(root))) or _under(one.executable, str(root)) or reads_tree(one, root)
+        )
+
+    return _others(tuple(census()), inside, os.getpid() if me is None else me)
 
 
 def describe(runs: Iterable[Process]) -> str:
