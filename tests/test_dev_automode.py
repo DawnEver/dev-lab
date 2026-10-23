@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -38,7 +39,7 @@ _GIT = shutil.which('git') or 'git'
 
 _FLEET = Fleet(
     workstations=(
-        {'name': 'G', 'computer': 'G', 'address': '10.0.0.1', 'roles': ['client', 'node', 'forge']},
+        {'name': 'G', 'computer': 'G', 'address': '192.0.2.1', 'roles': ['client', 'node', 'forge']},
         {'name': 'WS1', 'computer': 'BOXONE', 'address': 'boxone.example.ac.uk', 'roles': ['client', 'node']},
     ),
     grants=(
@@ -97,7 +98,7 @@ def test_the_render_equals_its_sources(tmp_path: Path) -> None:
         assert rendered[key][0] == '$defaults', key
         assert spelled_commands(rendered[key][1:]) == (), key
     environment = ' '.join(rendered['environment'])
-    for fact in ('G (computer G; address 10.0.0.1', 'serves the forge', 'WS1 (computer BOXONE'):
+    for fact in ('G (computer G; address 192.0.2.1', 'serves the forge', 'WS1 (computer BOXONE'):
         assert fact in environment
     assert (
         'account alice9 at login hosts login1.example.ac.uk, login2.example.ac.uk (Slurm account acct)' in environment
@@ -142,8 +143,8 @@ def test_the_leak_scan_sees_a_planted_fleet_fact() -> None:
     """PLANTED CONTROL: a category carrying a host, an address or an account is caught."""
     assert leaks(['restart WS1 nightly'], _FLEET) == ('WS1',)
     assert leaks(['deploy alice9 there'], _FLEET) == ('alice9',)
-    assert '10.9.9.9' in leaks(['reach 10.9.9.9'])
-    assert 'hpclogin01.ada.nottingham.ac.uk' in leaks(['on hpclogin01.ada.nottingham.ac.uk'])
+    assert '192.0.2.9' in leaks(['reach 192.0.2.9'])
+    assert 'login1.cluster.example.ac.uk' in leaks(['on login1.cluster.example.ac.uk'])
 
 
 def test_an_unreadable_source_writes_nothing_and_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -170,3 +171,69 @@ def test_the_dependency_door_renders_it_in_its_own_process(tmp_path: Path) -> No
     _refresh_automode(tmp_path, run=lambda argv, **_kw: calls.append(list(argv)))
     ((*_, module, verb, flag, repo),) = calls
     assert (module, verb, flag, repo) == ('dev_lab.dev.automode', 'write', '--repo', str(tmp_path))
+
+
+#: The SHAPES a real fleet fact takes in this family: a private (RFC 1918) address, a university AD or Ada host.
+_TREE_SHAPES = re.compile(
+    r'\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b'
+    r'|\b[\w-]+(?:\.[\w-]+)*\.(?:ada|ad)\.nottingham\.ac\.uk\b',
+    re.IGNORECASE,
+)
+
+
+def _tree_leaks(texts: dict[str, str], fleet: Fleet | None) -> list[str]:
+    """``path: fact`` for every fleet SHAPE, and every fleet name of 4+ characters as a whole word, in *texts*."""
+    names: set[str] = set()
+    for entry in fleet.workstations if fleet else ():
+        names |= {str(entry.get(key)) for key in ('name', 'computer', 'address') if entry.get(key)}
+    for grant in fleet.grants if fleet else ():
+        names |= {grant.user, *grant.hosts}
+    words = [re.compile(rf'(?<![\w.-]){re.escape(n)}(?![\w-])', re.IGNORECASE) for n in names if len(n) >= 4]
+    found = []
+    for path, text in texts.items():
+        found += [f'{path}: {m.group(0)}' for m in _TREE_SHAPES.finditer(text)]
+        found += [f'{path}: {w.pattern}' for w in words if w.search(text)]
+    return found
+
+
+def _tracked_texts() -> dict[str, str]:
+    root = Path(__file__).resolve().parents[1]
+    listed = (
+        subprocess.run(
+            [_GIT, 'ls-files', '-z', '--', 'src', 'tests', 'docs-src'], cwd=root, capture_output=True, check=True
+        )
+        .stdout.decode('utf-8')
+        .split('\0')
+    )
+    texts = {}
+    for rel in filter(None, listed):
+        try:
+            texts[rel] = (root / rel).read_text(encoding='utf-8')
+        except (UnicodeDecodeError, OSError):
+            continue
+    return texts
+
+
+def test_no_tracked_file_carries_a_fleet_fact() -> None:
+    """FLEET-FACTS-UNCOMMITTED: hosts.json and the machine file are the one source; a tracked copy is a second."""
+    texts = _tracked_texts()
+    assert len(texts) > 100, 'FLOOR: the scan read the tree'
+    try:
+        here: Fleet | None = read_fleet()
+    except SourcesUnavailable:
+        here = None  # no fleet on this box: the SHAPES are still scanned
+    assert _tree_leaks(texts, here) == []
+
+
+def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
+    """PLANTED CONTROL: each shape, and a fleet name, is caught; a TEST-NET address and an example host are not."""
+    planted = {
+        'a': 'reach 10.' + '1.2.3',
+        'b': 'reach 172.' + '20.0.1',
+        'c': 'reach 192.' + '168.4.5',
+        'd': 'ssh login1.' + 'ada.nottingham.ac.uk',
+        'e': 'box ws.' + 'ad.nottingham.ac.uk',
+        'f': 'deploy alice9 there',
+    }
+    assert len(_tree_leaks(planted, _FLEET)) == 6
+    assert _tree_leaks({'g': 'reach 192.0.2.7 on login1.example'}, _FLEET) == []

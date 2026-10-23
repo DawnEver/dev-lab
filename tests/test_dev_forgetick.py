@@ -128,7 +128,7 @@ def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None
 
 def test_a_lapsed_cluster_claim_is_retaken_by_another_account_and_a_live_one_never() -> None:
     """Only the owner renews, so a lapsed lease means the owner is gone. PLANTED CONTROL: a minute earlier, held."""
-    dead = Claim('hpclogin02', 'bob', NOW - timedelta(minutes=1), 'ada/bob')
+    dead = Claim('login2', 'bob', NOW - timedelta(minutes=1), 'ada/bob')
     assert _assess([_pending(dead, 3, 'linux')], 'linux') == (STALE, dead)
     live = dataclasses.replace(dead, until=NOW + timedelta(minutes=1))
     assert _assess([_pending(live, 3, 'linux')], 'linux') == (CLAIMED, live)
@@ -136,8 +136,8 @@ def test_a_lapsed_cluster_claim_is_retaken_by_another_account_and_a_live_one_nev
 
 def test_two_login_hosts_of_one_account_are_two_owners() -> None:
     """One account cannot win a race against itself: the earlier host holds, the later stands down."""
-    me = Claim('hpclogin02', 'alice', LATER, 'ada/alice')
-    other_host = dataclasses.replace(me, machine='hpclogin01')
+    me = Claim('login2', 'alice', LATER, 'ada/alice')
+    other_host = dataclasses.replace(me, machine='login1')
     history = [_pending(other_host, 1, 'linux'), _pending(me, 2, 'linux')]
     assert assess(history, 'tests/linux', me=me, now=NOW) == (CLAIMED, other_host)
 

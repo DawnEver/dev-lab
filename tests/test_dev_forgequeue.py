@@ -123,7 +123,7 @@ def _pull(head: str, sha: str) -> dict[str, object]:
 
 
 def _forge_of(tips: dict[str, str], cards: list[HostCard]) -> None:
-    running = Claim('hpclogin02', 'alice', NOW + timedelta(hours=6), 'ada/alice', 'running 40/93 done 12/93')
+    running = Claim('login2', 'alice', NOW + timedelta(hours=6), 'ada/alice', 'running 40/93 done 12/93')
     claim = {'id': 1, 'context': 'tests/base', 'status': 'pending', 'description': running.description()}
     answer('GET', '/api/v1/user', (200, {'login': 'carol'}))
     answer('GET', f'{API}/pulls', (200, [_pull('feat/a', tips['feat/a'])]))

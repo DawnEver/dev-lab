@@ -1,6 +1,6 @@
 """FILES ARE A RESOURCE (user ruling 2026-10-14): the home's file quota is read, admitted against and alarmed on.
 
-The incident: Ada alyyw103's GPFS home sat at files 2,020,000 = its hard limit with 43 GB of 1 TB used, every
+The incident: Ada carol's GPFS home sat at files 2,020,000 = its hard limit with 43 GB of 1 TB used, every
 write failed ``Disk quota exceeded``, serve kept claiming, and the alarm named neither the limit nor the
 1.34 M-file experiment directory the forge does not own. Each refusal below has its PLANTED CONTROL beside it.
 """
@@ -82,7 +82,7 @@ def test_a_measured_file_cost_replaces_the_prior() -> None:
 
 def test_quota_minus_w_is_the_fallback_and_reads_both_limits() -> None:
     text = (
-        'Disk quotas for user alyyw103 (uid 1001):\n'
+        'Disk quotas for user carol (uid 1001):\n'
         '     Filesystem  blocks   quota   limit   grace   files   quota   limit   grace\n'
         '      /dev/sdb1  45088768*  41943040  52428800  6days   2020000  2000000  2020000\n'
     )
@@ -96,7 +96,7 @@ def test_the_card_states_the_storage_and_says_a_full_home_claims_nothing(tmp_pat
     assert 'AT THE FILE LIMIT' not in storage_text(parse_mmlsquota(AT_BYTE_LIMIT)), 'PLANTED CONTROL'
     assert storage_text(None).startswith('unread'), 'unreadable is stated, never a zero'
     snapshot = _snapshot()
-    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='alyyw103', slurm_account='a')])
+    machine: Any = SimpleNamespace(grants=[SimpleNamespace(user='carol', slurm_account='a')])
     cluster = forgeslurm.SlurmCluster(tmp_path, machine, cast('Any', None), lambda _g: lambda *_a: '', lambda: full)
     monkeypatch.setattr(forgeslurm, 'probe', lambda *_a: snapshot)
     standing = cluster.standing()

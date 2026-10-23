@@ -7,7 +7,7 @@ where it is absent the Linux ``quota -w`` is the fallback. Unreadable is ``None`
 cluster the usage is the disk the checkout sits on. Read by :mod:`dev_lab.dev.retention` and, as the
 ``files`` supply of a Slurm account, by :mod:`dev_lab.dev.forgeslurm`.
 
-STILL OVER, THE ALARM NAMES THE LIMIT AND THE CONSUMERS (user ruling 2026-10-14). Ada alyyw103 sat at its
+STILL OVER, THE ALARM NAMES THE LIMIT AND THE CONSUMERS (user ruling 2026-10-14). Ada carol sat at its
 2,020,000-file hard limit with 43 GB of 1 TB used, and the alarm said only "still near its quota" -- not
 which limit, nor that 1.34 M of the files were one experiment directory the forge does not own.
 :func:`pressure_text` states bytes and files used/limit, which one binds, and the biggest directories of
