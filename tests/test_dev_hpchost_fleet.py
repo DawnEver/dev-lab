@@ -77,3 +77,19 @@ def test_the_remote_runs_the_accounts_own_deploy_never_prompting() -> None:
     argv = remote_argv('alice', Target('hpclogin02.example', 'src'))
     assert argv[:3] == ['ssh', '-o', 'BatchMode=yes']
     assert 'cd ~/src/dev-lab && .venv/bin/python -m dev_lab.dev.hpchost deploy' in argv[-1]
+
+
+def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp_path: Path) -> None:
+    said: list[str] = []
+    twice = (*_FLEET, Grant(user='alice', hosts=('other.example',), slurm_account='acct'))
+    code = deploy_fleet(
+        twice,
+        (),
+        home=tmp_path,
+        dry_run=False,
+        say=said.append,
+        connect=lambda grant: lambda _cmd, _stdin=None: _DEPLOY[grant.user],
+        launch=lambda _argv, _log: None,
+    )
+    assert code == 2
+    assert any("['alice'] hold more than one" in line for line in said)

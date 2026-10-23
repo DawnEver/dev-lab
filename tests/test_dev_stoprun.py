@@ -283,3 +283,18 @@ def test_a_real_orphaned_scratch_script_is_stopped_and_a_parented_one_is_spared(
         parented.wait(timeout=30)
         with contextlib.suppress(OSError):
             os.kill(orphan, signal.SIGTERM)
+
+
+def test_a_pid_whose_creation_stamp_moved_is_not_killed() -> None:
+    """A pid recycled after the snapshot names another process: it is skipped, its siblings still stop."""
+    killed: list[int] = []
+    seen: dict[int, int] = {}
+
+    def born(pid: int) -> int:
+        seen[pid] = seen.get(pid, 0) + 1
+        return 1000 + pid + (1 if pid == 11 and seen[pid] > 1 else 0)  # 11 is reborn after the snapshot
+
+    code, lines = stop(10, _TABLE, dry_run=False, kill=killed.append, born=born)
+    assert code == 0
+    assert killed == [12, 10]
+    assert any('skipped 11' in line for line in lines)

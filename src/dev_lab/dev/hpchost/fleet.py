@@ -110,7 +110,11 @@ def deploy_fleet(
     launch: Launch = _detached,
 ) -> int:
     """Start each account's deploy on its declared host; 2 when any account was refused."""
-    fleet = {grant.user: grant for grant in reversed(grants)}  # the first grant of a user wins
+    users = [grant.user for grant in grants]
+    if twice := sorted({user for user in users if users.count(user) > 1}):
+        say(f'deploy-fleet: refused -- {twice} hold more than one [[hpc.grant]]; one account, one deploy host')
+        return 2
+    fleet = {grant.user: grant for grant in grants}
     if unknown := sorted(set(accounts) - set(fleet)):
         say(f'deploy-fleet: refused -- {unknown} not in the declared fleet {sorted(fleet)}')
         return 2

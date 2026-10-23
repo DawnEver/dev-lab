@@ -287,12 +287,17 @@ def stop(
     else:
         lines = [f'matched signature {matched!r}']
     serve = matched == SERVE.pattern
+    # Each member's creation stamp as the snapshot saw it: a pid recycled during the serve grace is not ours.
+    stamps = {member: born(member) for member in subtree(table, pid)} if not dry_run else {}
     if serve and not dry_run:
         for child in (p for p, (ppid, _) in table.items() if ppid == pid and p != pid):
             note_stopped(child, root=notes)
     for member in subtree(table, pid):
         if serve and member == pid and not dry_run and gone(pid, SERVE_GRACE_S):
             lines.append(f'serve {pid} released its claim and exited')
+            continue
+        if not dry_run and born(member) != stamps[member]:
+            lines.append(f'skipped {member}: its pid now names another process (creation stamp moved)')
             continue
         lines.append(f'{"would stop" if dry_run else "stopped"} {member}  {table[member][1][:120]}')
         if not dry_run:

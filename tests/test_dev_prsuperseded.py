@@ -7,12 +7,14 @@ untouched; a closed target, a merged replacement and a closed replacement each r
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from _branch_repos import advance, clone_pair
 from _forge_fake import git_out, run_git
 from _forge_state import StateForge
 
 from dev_lab.dev.forge import fetch_origin
+from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.prsuperseded import close_superseded
 
 _MANIFEST = """[project]
@@ -92,3 +94,27 @@ def test_a_replacement_not_open_or_already_merged_is_refused(tmp_path: Path) -> 
     assert code == 1
     assert any('already merged' in line for line in said)
     assert forge.pulls[old]['state'] == 'open'
+
+
+def test_a_number_named_twice_is_closed_and_commented_once(tmp_path: Path) -> None:
+    work, forge, old, new, _ = _setup(tmp_path)
+    assert _close(work, forge, (old, old), new)[0] == 0
+    assert len(forge.comments[old]) == 1
+
+
+def test_a_close_that_fails_writes_no_comment_and_stops(tmp_path: Path) -> None:
+    """CLOSE FIRST: a PR the forge would not close is never left open saying it is superseded."""
+    work, forge, old, new, other = _setup(tmp_path)
+    real = forge.call
+
+    def call(method: str, path: str, *args: object, **kwargs: object) -> object:
+        if method == 'PATCH' and path.endswith(f'/pulls/{old}'):
+            raise ForgeCallFailed(SimpleNamespace(attempts=(), remedy='forge refused the close'))  # type: ignore[arg-type]
+        return real(method, path, *args, **kwargs)
+
+    forge.call = call  # type: ignore[method-assign]
+    code, said = _close(work, forge, (old, other), new)
+    assert code == 1
+    assert not forge.comments[old]
+    assert forge.pulls[other]['state'] == 'open', 'the PRs after the failure are untouched'
+    assert any('stopped' in line for line in said)

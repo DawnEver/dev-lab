@@ -465,3 +465,9 @@ def test_the_door_refuses_a_non_network_uv_command() -> None:
     """`uv run` is no network verb: retrying an arbitrary program is not this door's job."""
     with pytest.raises(NotANetworkVerb):
         spelled(['--', 'uv', 'run', 'python'])
+
+
+def test_uv_global_options_with_a_value_do_not_hide_the_verb() -> None:
+    assert is_network_verb(['uv', '--directory', 'x', 'sync'])
+    assert is_network_verb(['uv', '--project', 'x', 'lock'])
+    assert not is_network_verb(['uv', '--directory', 'x', 'pip', 'list'])

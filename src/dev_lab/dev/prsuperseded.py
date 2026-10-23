@@ -62,20 +62,27 @@ def close_superseded(
         refused.append(f'#{by}: refused -- the replacement is {replacement.state}, not open')
     elif landing(root, replacement):
         refused.append(f'#{by}: refused -- the replacement is already merged into {replacement.base}')
-    pulls = [client.pr_view(n) for n in numbers]
+    pulls = [client.pr_view(n) for n in dict.fromkeys(numbers)]  # once each, in the order given
     refused += [f'#{pr.number}: refused -- it is {pr.state}' for pr in pulls if pr.state != 'open']
     refused += [f'#{by}: refused -- a PR does not supersede itself' for pr in pulls if pr.number == by]
     if refused:
         for why in refused:
             say(why)
         return 1
-    failed = 0
     for pr in pulls:
-        client.issue_comment(pr.number, f'superseded by #{by}: {line.strip()}')
-        client.call('PATCH', f'{client.repo}/pulls/{pr.number}', {'state': 'closed'})
+        # CLOSE FIRST: a comment saying "superseded" on a PR left open is the half-done state to avoid. Each PR
+        # is finished (closed, commented, branch pruned) before the next is touched, and the first failure stops.
+        try:
+            client.call('PATCH', f'{client.repo}/pulls/{pr.number}', {'state': 'closed'})
+            client.issue_comment(pr.number, f'superseded by #{by}: {line.strip()}')
+        except ForgeCallFailed as why:
+            say(f'#{pr.number}: stopped -- {why}; the PRs after it were not touched')
+            return 1
         say(json.dumps({'event': EVENT, 'pr': pr.number, 'by': by, 'head': pr.head, 'session': session or None}))
-        failed |= branchprune.delete(root, [pr.head], client=client, session=session, fetch=fetch, say=say, alarm=alarm)
-    return failed
+        if branchprune.delete(root, [pr.head], client=client, session=session, fetch=fetch, say=say, alarm=alarm):
+            say(f'#{pr.number}: closed, but its branch was kept; the PRs after it were not touched')
+            return 1
+    return 0
 
 
 def main(argv: Sequence[str] | None = None, *, cwd: Path | None = None) -> int:

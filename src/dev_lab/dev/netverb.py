@@ -378,8 +378,12 @@ UV_NETWORK_VERBS: Final = ('sync', 'lock', 'add', 'remove', 'pip')
 #: A verb that is a network verb only with one of these second words.
 _SUBVERBS: Final = {'submodule': frozenset({'update'}), 'pip': frozenset({'install', 'sync', 'compile'})}
 
-#: git's global options that take a SEPARATE value (``-C <path>``, ``-c <key=value>``).
-_VALUED: Final = frozenset({'-C', '-c', '--git-dir', '--work-tree', '--namespace'})
+#: Each program's global options that take a SEPARATE value (``git -C <path>``, ``uv --directory <path>``):
+#: the verb is the first word after them, so a program's own set is what finds it.
+_VALUED: Final = {
+    'git': frozenset({'-C', '-c', '--git-dir', '--work-tree', '--namespace'}),
+    'uv': frozenset({'--directory', '--project', '--python', '-p', '--config-file', '--cache-dir', '--color'}),
+}
 
 _PROGRAMS: Final = {'git': GIT_NETWORK_VERBS, 'uv': UV_NETWORK_VERBS}
 
@@ -391,12 +395,13 @@ def _program(word: str) -> str:
 
 def is_network_verb(argv: Sequence[str]) -> bool:
     """Whether *argv* talks to a remote -- the ONE predicate the door, ``dep`` and the arch scan read."""
-    verbs = _PROGRAMS.get(_program(argv[0])) if argv else None
+    program = _program(argv[0]) if argv else ''
+    verbs = _PROGRAMS.get(program)
     if verbs is None:
         return False
     words, index = list(argv[1:]), 0
     while index < len(words) and words[index].startswith('-'):
-        index += 2 if words[index] in _VALUED else 1
+        index += 2 if words[index] in _VALUED[program] else 1
     words = [word for word in words[index:] if not word.startswith('-')]
     if not words or words[0] not in verbs:
         return False

@@ -15,7 +15,6 @@ from pathlib import Path
 import lab_commons.launch as _door
 import pytest
 
-from dev_lab.dev import foreign
 from dev_lab.dev.floors import FloorUnmet
 from dev_lab.dev.foreign import (
     DATA,
@@ -197,6 +196,17 @@ def test_an_ignored_file_on_this_disk_still_does_not_resolve(tmp_path: Path) -> 
     (tmp_path / 'out' / 'rendered.json').write_text('{}', encoding='utf-8')
     (tmp_path / 'src' / 'kept.json').write_text('{}', encoding='utf-8')
     _git(tmp_path, 'add', '.gitignore', 'src/kept.json')
-    foreign._tracked.cache_clear()
     assert is_unresolved_path('out/rendered.json', tmp_path), 'an ignored file on disk read as this repo`s'
     assert not is_unresolved_path('src/kept.json', tmp_path), 'PLANTED: a tracked file resolves'
+
+
+def test_a_file_added_after_the_first_read_resolves_in_the_same_process(tmp_path: Path) -> None:
+    """The tracked set follows the index: a long-lived caller sees a later ``git add``."""
+    _git(tmp_path, 'init', '-q')
+    (tmp_path / 'a.json').write_text('{}', encoding='utf-8')
+    _git(tmp_path, 'add', 'a.json')
+    assert is_unresolved_path('b/later.json', tmp_path)
+    (tmp_path / 'b').mkdir()
+    (tmp_path / 'b' / 'later.json').write_text('{}', encoding='utf-8')
+    _git(tmp_path, 'add', 'b/later.json')
+    assert not is_unresolved_path('b/later.json', tmp_path)
