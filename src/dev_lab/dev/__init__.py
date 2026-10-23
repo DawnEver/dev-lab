@@ -356,6 +356,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.
 * :mod:`dev_lab.dev.workstation` -- a Windows workstation as a serve host in one run, and the Task's serve loop.
+* :mod:`dev_lab.dev.hpchost` -- a cluster account as a serve host: its deploy, cron tick and allocation record.
 * :mod:`dev_lab.dev.hostrefresh` -- the host fast-forwards a served checkout and syncs its venv before its forge.
 * :mod:`dev_lab.dev.worktreeplace` -- WORKTREES-STAY-INSIDE: where every checkout lives, and the trees that do not.
 * :mod:`dev_lab.dev.famfiles` -- PROJECT-FILES-HAVE-ONE-SOURCE: the one list of project files and the one render.

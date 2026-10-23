@@ -17,7 +17,6 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +26,7 @@ from lab_commons.compute import probe as supply_probe
 from lab_commons.compute.model import Resources, Supply
 from lab_commons.config import config_path
 from lab_commons.hpc.account import ClusterAccount
-from lab_commons.hpc.allocation import RECORD, session_for
+from lab_commons.hpc.allocation import resolve
 from lab_commons.hpc.builds import builds_at
 from lab_commons.hpc.cluster import Runner, Unreachable, probe, submitter
 from lab_commons.hpc.config import Config
@@ -42,10 +41,9 @@ from lab_commons.hpc.watch import PENDING, settle
 
 from dev_lab.dev.diskusage import Usage, read_usage, storage_text
 from dev_lab.dev.forgecarry import carry_from, read_by
-from dev_lab.dev.forgerecords import read_named
+from dev_lab.dev.forgerecords import read_allocation
 from dev_lab.dev.forgerunstate import Cluster, Run, Standing, Unrecorded
 from dev_lab.dev.forgeschedule import USAGE_COMMAND, parse_usage
-from dev_lab.dev.forgework import ForgeCallFailed, client_for
 
 __all__ = ['SlurmCluster', 'progress_text', 'slurm_cluster', 'standing_of']
 
@@ -208,21 +206,6 @@ class SlurmCluster:
         return f'slurm:{self.machine.grants[0].user}'
 
 
-def with_allocation(machine: Machine, read: Callable[[], bytes | None]) -> Machine:
-    """*machine* with its session's share from the one allocation record (:mod:`lab_commons.hpc.allocation`).
-
-    A forge that cannot be read leaves the share derived -- the default, never a guessed override.
-    """
-    if machine.session is None:
-        return machine
-    try:
-        held = read()
-    except (ForgeCallFailed, OSError, ValueError):
-        held = None
-    text = None if held is None else held.decode('utf-8')
-    return replace(machine, session=session_for(machine.session.name, text, now=datetime.now(UTC)))
-
-
 def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
     """The cluster of *seat*, through the grants of its account only (another user's home is not this one's)."""
     if seat is None:
@@ -238,7 +221,7 @@ def slurm_cluster(root: Path, seat: ClusterAccount | None) -> SlurmCluster:
             'add one naming its slurm_account and share so a cluster part can be planned'
         )
         raise ValueError(msg)
-    resolved = with_allocation(machine, lambda: read_named(client_for(root), RECORD))
+    resolved = resolve(machine, lambda: read_allocation(root))
     return SlurmCluster(root, Machine(session=resolved.session, grants=grants), Config(), submitter())
 
 

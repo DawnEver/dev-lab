@@ -72,6 +72,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import lab_commons.launch as _door
+from lab_commons import envkey as envkey_module
 from lab_commons.box import Refused
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
@@ -80,7 +81,6 @@ from dev_lab.dev import _dep_project
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.lockcheck import unreasoned_holds
 from dev_lab.dev.netverb import run_network_verb
-from lab_commons import envkey as envkey_module
 
 __all__ = [
     'CHILD_WALL_S',

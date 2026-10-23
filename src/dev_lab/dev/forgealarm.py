@@ -164,7 +164,7 @@ def sound(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``<kind> <repo> <subject> <body>``: sound one alarm from a process that imports no dev code (the hpc deploy)."""
+    """``<kind> <repo> <subject> <body>``: sound one alarm from another process (the hpc deploy)."""
     try:
         kind, repo, subject, body = sys.argv[1:] if argv is None else argv
     except ValueError:

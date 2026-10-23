@@ -11,20 +11,20 @@ On the login host you chose, store your own forge token once (`git config --glob
 `chmod 600 ~/.git-credentials`, then `python -m dev_lab.dev.forge auth login`), then paste:
 
 ```
-[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/lab-commons; { [ -d $D/.git ] || git clone -q -b integrate/main $F/lab-commons.git $D; } && git -C $D pull -q --ff-only && cd $D && PYTHONPATH=$D/src ~/.local/bin/uv run --no-project --python 3.13 python -m lab_commons.hpc deploy --host <login host> --repo lab-commons=$F/lab-commons.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
+[ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh; F=https://<forge>/<org>; D=~/src/dev-lab; { [ -d $D/.git ] || git clone -q -b integrate/main $F/dev-lab.git $D; } && git -C $D pull -q --ff-only && cd $D && ~/.local/bin/uv run --python 3.13 python -m dev_lab.dev.hpchost deploy --host <login host> --repo dev-lab=$F/dev-lab.git@integrate/main --repo <repo>=$F/<repo>.git@integrate/main --partition <partition> ...
 ```
 
 - **The same line is the upgrade.** The first run stores the declaration (`[deploy]` in the account's machine
   file: host, root, python, served repos, partitions, and `--slurm-account` when Slurm names several); later
-  runs read it, and flags that disagree with it are refused. `lab-commons` is always served: every tick runs it.
+  runs read it, and flags that disagree with it are refused. `dev-lab` (the kit) is always served: every tick runs it.
 - **The host refreshes; a repo never updates itself.** Each cron line runs the HOST's kit,
-  `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout: it checks out `~/<root>/lab-commons`
+  `python -m dev_lab.dev.hpchost tick <repo>` from the dev-lab checkout: it checks out `~/<root>/dev-lab`
   and then the repo at their deployed refs, rebuilds the repo's venv where its inputs (its committed `uv.lock` among them) moved
   (the deploy's own keyed steps), and only then serves it: THE HOST KIT's `forge serve` with the repo checkout
   as its cwd. The repo's venv only runs its producers, in their trees, so one host runs one scheduler. A repo whose refresh fails is
   released for that tick, its reason in its log; a kit that cannot move is reported and the repo serves with
   the kit it has. Only the crontab itself changes when you re-run the line.
-- **What it does** (`lab_commons.hpc.deploy`): refuses off the declared host; checks the account before changing
+- **What it does** (`dev_lab.dev.hpchost.deploy`): refuses off the declared host; checks the account before changing
   anything -- `credential.helper` set and `~/.git-credentials` mode 600, `git ls-remote` per repo, and
   `forge auth check` per repo (the API calls a tick makes: `GET /user`, push permission for commit statuses,
   the issue list); writes the account's own `[[hpc.grant]]` when it has none (user from `id -un`, account and
@@ -39,7 +39,7 @@ On the login host you chose, store your own forge token once (`git config --glob
   the written grant by hand.
 - `--dry-run` prints every action; `--remove` deletes the marked crontab lines only.
 - **The crontab line**, per repo, every 5 minutes:
-  `PATH=...; cd ~/src/lab-commons && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m lab_commons.hpc tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
+  `PATH=...; cd ~/src/dev-lab && flock -n ~/.cache/lab-forge-<repo>.lock .venv/bin/python -m dev_lab.dev.hpchost tick <repo> >> ~/.cache/lab-forge-<repo>.log 2>&1 # lab-commons-deploy:<repo>`.
   Every alarm a tick raises rides on the host's card and `forge queue` prints it; `[alerts]` in the machine
   file adds Telegram/email/webhook delivery.
 - **One login host per account.** Cron is per host and `flock` on a shared filesystem does not lock across
@@ -84,7 +84,7 @@ movable_minutes = 30                 # rerun-safe AND this short = movable
     and its share lends out; two busy sessions meet at equal halves. No registry, no heartbeat: Slurm is the
     source of truth (`hpc.allocation`).
   - *Override.* One expiring record, `hpc-allocation.json` on the forge's records home, read by every submitter:
-    `python -m lab_commons.hpc allocate --until 2026-10-18T09:00Z alice=64/240 bob=32/120` (`name=cpus/mem_gb`),
+    `python -m dev_lab.dev.hpchost allocate --until 2026-10-18T09:00Z alice=64/240 bob=32/120` (`name=cpus/mem_gb`),
     `allocate --show`, `allocate --clear`. While unexpired it fixes the named sessions' shares; the remainder (the pool less what each named session
     uses of its share, floored at 0) is divided by the same max-min among the unnamed active streams, untagged
     included -- a named session's slack lends out.

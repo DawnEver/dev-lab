@@ -108,11 +108,11 @@ Each tick it:
   resolution that cannot run (the network is down) refuses with its diagnosis; a deletion is never judged.
 - **The HOST refreshes a served repo before its forge runs; a repo never updates itself** (incident 2026-10-13:
   a repo venv whose old `forge serve` exited 2 every tick could never run the code that would update it). A
-  workstation's `workstation serve` fast-forwards lab-commons and then each `[serve]` repo to its upstream and
+  workstation's `workstation serve` fast-forwards dev-lab and then each `[serve]` repo to its upstream and
   syncs its venv when `pyproject.toml` or `uv.lock` changed (`dev_lab.dev.workstation.refresh`); a cluster
-  account's cron line runs `python -m lab_commons.hpc tick <repo>` from the lab-commons checkout, which checks
+  account's cron line runs `python -m dev_lab.dev.hpchost tick <repo>` from the dev-lab checkout, which checks
   out both at their deployed refs and rebuilds the venv where its inputs or the kit's HEAD moved
-  (`lab_commons.hpc.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
+  (`dev_lab.dev.hpchost.tick`). A repo whose refresh fails -- dirty, diverged, a sync that exits non-zero
   -- is released for that tick with its reason in the serve log, and the other repos are still served. The
   ref is the integration branch, not the trunk: a kit following the trunk would refuse the integration commit
   that adds a table, and that commit could then never reach the trunk.
@@ -126,13 +126,13 @@ Each tick it:
 
 ### Deploy a Windows workstation
 
-The counterpart of the cluster's `python -m lab_commons.hpc deploy`, run once per box, as the user who serves:
+The counterpart of the cluster's `python -m dev_lab.dev.hpchost deploy`, run once per box, as the user who serves:
 
 ```
-uv run --no-project --with "lab-commons @ git+<forge>/lab-commons.git@integrate/main" -- python -m dev_lab.dev.workstation deploy --forge <forge> --repos lab-commons,<repo>,... --capabilities workstation,jmag:4 --dry-run
+uv run --no-project --with "dev-lab @ git+<forge>/dev-lab.git@integrate/main" -- python -m dev_lab.dev.workstation deploy --forge <forge> --repos dev-lab,<repo>,... --capabilities workstation,jmag:4 --dry-run
 ```
 
-**The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/lab-commons.git`
+**The one manual step** comes first: store your own git credential for the forge (`git clone <forge>/dev-lab.git`
 anywhere and sign in, or `python -m dev_lab.dev.forge auth login`). The deploy only asks `git ls-remote` with
 prompting off, so it never reads or prints the credential, and with none stored it refuses naming this step.
 

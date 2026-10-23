@@ -22,6 +22,10 @@ dependencies = [
     "rtoml",
 ]
 
+# The allocation record's reader, loaded by lab_commons.hpc.allocation.recorded: every submitter reads it.
+[project.entry-points."lab_commons.hpc.allocation"]
+forge = "dev_lab.dev.forgerecords:read_allocation"
+
 [project.urls]
 Homepage = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/dev-lab"
 

@@ -16,7 +16,7 @@ On the login host (Ada), with a machine that has a browser beside you:
 3. Choose `sharepoint` ("Sharepoint site name or URL"), give the site of the team "HPC Data", and pick its
    `Documents` library. The remote then reads `drive_type = documentLibrary`.
 4. `chmod 600 ~/.config/rclone/rclone.conf` -- it holds your token.
-5. Check it: `rclone lsd hpc-data: --max-depth 1`, then `python -m lab_commons.hpc deploy` (below).
+5. Check it: `rclone lsd hpc-data: --max-depth 1`, then `python -m dev_lab.dev.hpchost deploy` (below).
 
 ## Set up a workstation (read only)
 
@@ -94,7 +94,7 @@ cap_gb = 0                 # per writer; 0 = no cap
 - Each tick a cluster host probes its remote read-only (`rclone lsd <remote>: --max-depth 1`,
   `remote_problem`). When it is missing or unusable, the host claims no part with declared `outputs` (they could
   exceed `threshold_mb`) and its host card states why; parts with no declared outputs are still claimed.
-- `python -m lab_commons.hpc deploy` runs the same probe for every served repo that declares an rclone store
+- `python -m dev_lab.dev.hpchost deploy` runs the same probe for every served repo that declares an rclone store
   and WARNS with this recipe when it fails; it is never a refusal, since most parts declare no large outputs.
 
 </details>

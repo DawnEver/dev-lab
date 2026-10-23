@@ -38,6 +38,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TextIO
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.codeplace import (
@@ -46,7 +47,6 @@ from dev_lab.dev.codeplace import (
     checkout_root,
     declared_placement,
 )
-from lab_commons import launch
 
 __all__ = [
     'SCRATCH_README',
