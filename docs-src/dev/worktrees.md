@@ -50,8 +50,8 @@ a deliberate removal. It removes nothing; it reports `safe to remove` or why not
 
 ```toml
 [tool.lab_commons.worktrees]            # the main checkout's pyproject.toml; both keys optional
-archive-outputs = ["output/logs"]       # the default
-archive-to = "output/worktree-archive"  # the default
+archive-outputs = ["<dir>"]             # default: worktree_archive.OUTPUTS
+archive-to = "<dir>"                    # default: worktree_archive.ARCHIVE_TO
 ```
 
 It is a flag of the `worktrees` door, whose allow row every adopting repo already renders, so a consumer gets it

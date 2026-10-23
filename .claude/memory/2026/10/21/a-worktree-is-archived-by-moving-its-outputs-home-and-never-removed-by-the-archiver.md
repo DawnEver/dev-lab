@@ -29,8 +29,8 @@ metadata:
   relative path in main with `Path.replace`.
 - Same-named file: identical bytes skipped (main untouched); differing -> `<file>.<worktree>`; both names taken
   by different bytes -> the file stays and the tree is NOT safe.
-- Data: `[tool.lab_commons.worktrees] archive-outputs` (default `["output/logs"]`), `archive-to` (default
-  `output/worktree-archive`).
+- Data: `[tool.lab_commons.worktrees] archive-outputs` (default `worktree_archive.OUTPUTS`), `archive-to`
+  (default `worktree_archive.ARCHIVE_TO`).
 - Removal stays explicit: the report names `git worktree remove --force <name>` as a separate step.
 
 Tests: `tests/test_dev_worktree_archive.py` (planted worktrees: identical, differing, renamed-not-copied by

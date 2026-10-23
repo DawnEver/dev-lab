@@ -76,7 +76,7 @@ NOT_THE_TREE: Final = ('output', '.claude', '.venv')
 #: its MCP servers are node processes sitting in the checkout for the whole session (measured 2026-10-19).
 _INTERPRETER: Final = re.compile(r'^python[\w.]*(?:\.exe)?$', re.IGNORECASE)
 
-#: A Git Bash spelling of a drive path, ``/d/x`` -> ``d:/x``.
+#: A Git Bash spelling of a drive path, ``/<drive>/x`` -> ``<drive>:/x``.
 _DRIVE: Final = re.compile(r'^/([a-zA-Z])/')
 
 #: A process younger than this is a concurrent hook, not a run (seconds).
