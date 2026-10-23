@@ -219,7 +219,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "commitizen" },
-    { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git?branch=integrate%2Fmain" },
+    { name = "lab-commons", extras = ["io", "paths", "structured", "units"], git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git" },
     { name = "pytest" },
     { name = "pytest-mock" },
     { name = "rtoml" },
@@ -273,8 +273,8 @@ wheels = [
 
 [[package]]
 name = "lab-commons"
-version = "0.3.1.dev1016+g16140227f"
-source = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git?branch=integrate%2Fmain#16140227f57024dc0461df50a1bde249c0703a77" }
+version = "0.3.1.dev1033+g261877995"
+source = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git#26187799584ed85e556f23714ba815560e1579a1" }
 
 [package.optional-dependencies]
 io = [

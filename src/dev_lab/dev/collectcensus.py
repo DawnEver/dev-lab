@@ -27,7 +27,7 @@ from typing import Final
 
 from dev_lab.dev.collectscope import FileReading, Reach, local_modules, reach, read_imports, tree_texts
 from dev_lab.dev.doorcensus import UnreadableRepo, door_text
-from dev_lab.dev.syncscope import Selection, _base, canon, extras
+from dev_lab.dev.syncscope import Selection, _base, canon, extras, groups
 
 __all__ = [
     'TESTS',
@@ -79,6 +79,11 @@ class CollectRow:
     degrades: frozenset[str]
     unresolved: frozenset[str]
     why: str
+    groups: tuple[str, ...] = ()
+    default_groups: bool = True
+    all_groups: bool = False
+    excluded_groups: tuple[str, ...] = ()
+    only_groups: bool = False
 
     def __post_init__(self) -> None:
         """Refuse a row that cannot be true before any tree is read.
@@ -93,7 +98,7 @@ class CollectRow:
     @property
     def key(self) -> str:
         """``<repo>[<extra>,<extra>]``, the spelling a refusal names a row by."""
-        return f'{self.repo}[{",".join(self.selected)}]'
+        return f'{self.repo}[{",".join(self.selected)}]' + (f' groups={self.groups}' if self.groups else '')
 
 
 def _declared(manifest: str) -> frozenset[str]:
@@ -102,7 +107,9 @@ def _declared(manifest: str) -> frozenset[str]:
     `_base` is the scope reader's own "project plus its required dependencies"; a second copy here
     would be free to disagree with it.
     """
-    return _base(manifest) | frozenset(dist for members in extras(manifest).values() for dist in members)
+    return _base(manifest) | frozenset(
+        dist for members in (*extras(manifest).values(), *groups(manifest).values()) for dist in members
+    )
 
 
 @cache
@@ -122,10 +129,34 @@ def readings_of(root: Path, *, at_head: bool) -> tuple[dict[str, FileReading], s
     return readings, manifest, _declared(manifest), local_modules(root)
 
 
-def measure(root: Path, selected: tuple[str, ...], *, at_head: bool) -> Reach:
+def measure(
+    root: Path,
+    selected: tuple[str, ...],
+    *,
+    at_head: bool,
+    groups: tuple[str, ...] = (),
+    default_groups: bool = True,
+    all_groups: bool = False,
+    excluded_groups: tuple[str, ...] = (),
+    only_groups: bool = False,
+) -> Reach:
     """What *selected* leaves *root*'s test tree able to do. The join, in one call, over the REAL reader."""
     readings, manifest, declared, local = readings_of(root, at_head=at_head)
-    return reach(readings, Selection(prunes=True, extras=frozenset(selected)), manifest, declared, local)
+    return reach(
+        readings,
+        Selection(
+            prunes=True,
+            extras=frozenset(selected),
+            groups=frozenset(groups),
+            default_groups=default_groups,
+            all_groups=all_groups,
+            excluded_groups=frozenset(excluded_groups),
+            only_groups=only_groups,
+        ),
+        manifest,
+        declared,
+        local,
+    )
 
 
 def assert_reaches(
@@ -152,7 +183,16 @@ def assert_reaches(
         root = roots.get(row.repo)
         if root is None:
             continue
-        found = measure(root, row.selected, at_head=row.repo != here)
+        found = measure(
+            root,
+            row.selected,
+            at_head=row.repo != here,
+            groups=row.groups,
+            default_groups=row.default_groups,
+            all_groups=row.all_groups,
+            excluded_groups=row.excluded_groups,
+            only_groups=row.only_groups,
+        )
         _assert_read(found.files, floors[row.repo], row.repo)
         _assert_row(row, found)
         seen.add(row.repo)

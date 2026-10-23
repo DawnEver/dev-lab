@@ -45,8 +45,8 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 packages = ["src/dev_lab"]
 
 [tool.uv.sources]
-# integrate/main until lab-commons main carries the split base (main is v0.3.0-745, behind 8c401f0); then drop `branch`.
-lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", branch = "integrate/main" }
+# The forge HEAD is the split integration line; one bare URL composes with downstream declarations.
+lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.lab_commons.placement]
@@ -316,7 +316,7 @@ run = '''extra_flags=""
 for extra in ${{ inputs.extras }}; do
   extra_flags="$extra_flags --extra $extra"
 done
-uv sync --python ${{ matrix.python-version }} $extra_flags
+uv sync --frozen --python ${{ matrix.python-version }} $extra_flags
 '''
 
 [[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]

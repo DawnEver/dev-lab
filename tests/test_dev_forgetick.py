@@ -895,7 +895,7 @@ def test_the_kit_declaring_a_table_its_server_does_not_know_is_refused_on_its_ow
     PLANTED CONTROL: the test two above -- the same unknown table in a CONSUMER's declaration waits, unposted.
     """
     repo, tips = _origin(tmp_path)
-    bad = _declare(repo, tips, '[project]\nname = "lab-commons"\n' + PRODUCE + '[tool.lab_commons.tomorrow]\n')
+    bad = _declare(repo, tips, '[project]\nname = "dev-lab"\n' + PRODUCE + '[tool.lab_commons.tomorrow]\n')
     run_git(repo, 'update-ref', 'refs/remotes/origin/topic/a', bad)
     head = _declare(repo, tips, PRODUCE)
     answer('GET', f'{API}/pulls', (200, [_pull(7, 'topic/a', bad, 'priority:user')]))

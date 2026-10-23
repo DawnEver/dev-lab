@@ -68,7 +68,7 @@
         },
         {
           "name": "Sync the environment",
-          "run": "extra_flags=\"\"\nfor extra in ${{ inputs.extras }}; do\n  extra_flags=\"$extra_flags --extra $extra\"\ndone\nuv sync --python ${{ matrix.python-version }} $extra_flags\n"
+          "run": "extra_flags=\"\"\nfor extra in ${{ inputs.extras }}; do\n  extra_flags=\"$extra_flags --extra $extra\"\ndone\nuv sync --frozen --python ${{ matrix.python-version }} $extra_flags\n"
         },
         {
           "name": "Install the declared git hooks",

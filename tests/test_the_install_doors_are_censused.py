@@ -74,7 +74,9 @@ def test_a_reverting_door_planted_into_a_live_repo_is_refused() -> None:
     home = _ROOT / 'pyproject.toml'
     text = home.read_text(encoding='utf-8')
     assert 'uv run --no-sync make verify' in text, 'the remedy this control plants the removal of is gone'
-    assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'UNLOCKED'}
+    # No caller lock is supplied to this text-only reading: the frozen sync remains unmeasured,
+    # while every planted implicit run is still convicted as UNLOCKED.
+    assert read(text.replace('uv run --no-sync', 'uv run'), ('lab-commons',)).deliveries == {'UNLOCKED', 'UNMEASURED'}
 
 
 def test_the_census_refuses_a_drift_planted_into_the_real_table() -> None:

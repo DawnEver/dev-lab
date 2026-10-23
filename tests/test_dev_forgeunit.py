@@ -111,6 +111,11 @@ def test_the_first_posted_result_wins_and_a_differing_one_alarms(tmp_path: Path,
     assert (fetched.output('out').read_text(encoding='utf-8'), fetched.record.host) == ('42', 'h1')
 
 
+def test_a_sized_compute_unit_keeps_its_positive_fractional_memory() -> None:
+    job = UnitJob(UNIT_HASH, Ref('forge', 'k.tar.gz', 10, 'f' * 64), Demand(1, 0.25, 60, {}), ())
+    assert UnitJob.of(job.paths()) == job
+
+
 def _repo(tmp_path: Path) -> Path:
     repo = tmp_path / 'repo'
     repo.mkdir()
