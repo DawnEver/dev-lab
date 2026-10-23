@@ -153,7 +153,7 @@ class UnitJob:
             backend, key, size, sha256 = tokens['bundle'].split('|')
             cpu, mem_gb, wall_s = tokens['size'].split('|')
             needs = tuple(filter(None, tokens['needs'].split('+')))
-            return cls(
+            job = cls(
                 tokens['unit'],
                 Ref(backend, key, int(size), sha256),
                 Demand(int(cpu), float(mem_gb), int(wall_s), {}),
@@ -162,6 +162,10 @@ class UnitJob:
         except (KeyError, ValueError) as why:
             msg = f'{spelling}: {why}'
             raise UndeclaredRequest(msg) from None
+        if job.demand.cpu <= 0:  # a Job runs compute; Demand alone admits a coreless claim
+            msg = f'{spelling}: cpu {job.demand.cpu} is not a positive count of cores'
+            raise UndeclaredRequest(msg)
+        return job
 
 
 def unit_request(paths: Sequence[str]) -> Declared:
