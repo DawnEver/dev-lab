@@ -13,6 +13,9 @@ The three ``lab_commons.hpc`` verbs that launched the forge, moved here with it 
   writes, prints or deletes the ONE expiring allocation record on the forge
   (:mod:`lab_commons.hpc.allocation`); the forge's own submits read it (:mod:`dev_lab.dev.forgeslurm`).
 
+* ``deploy-fleet [--account <user>]... [--dry-run]`` (:mod:`~dev_lab.dev.hpchost.fleet`) starts, detached over ssh,
+  every declared account's own ``deploy``, one log per account.
+
 Everything else about the cluster -- plan, submit, run, gather, clean -- stays ``python -m lab_commons.hpc``.
 """
 
@@ -25,17 +28,19 @@ from lab_commons.log import emit
 
 __all__ = ['main']
 
-_USAGE = 'usage: python -m dev_lab.dev.hpchost {deploy [...] | tick <repo>... | allocate [...]}'
+_USAGE = 'usage: python -m dev_lab.dev.hpchost {deploy [...] | deploy-fleet [...] | tick <repo>... | allocate [...]}'
 
 
 def main(argv: list[str] | None = None) -> int:
     """Dispatch ``deploy``, ``tick <repo>...`` or ``allocate``; anything else is refused naming the verbs."""
-    from dev_lab.dev.hpchost import allocate, deploy, tick  # noqa: PLC0415 -- the package imports no verb
+    from dev_lab.dev.hpchost import allocate, deploy, fleet, tick  # noqa: PLC0415 -- the package imports no verb
 
     argv = sys.argv[1:] if argv is None else argv
     verb, rest = (argv[0], argv[1:]) if argv else ('', [])
     if verb == 'deploy':
         return deploy.main(rest)
+    if verb == 'deploy-fleet':
+        return fleet.main(rest)
     if verb == 'allocate':
         return allocate.allocate(rest)
     if verb == 'tick' and rest:

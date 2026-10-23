@@ -61,6 +61,7 @@ from typing import Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
+from dev_lab.dev import automode
 from dev_lab.dev.venvpath import VENV_INTERPRETER_GLOB, VENV_LAYOUTS
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
@@ -69,6 +70,7 @@ __all__ = [
     'DOOR_MODULES',
     'NEVER_ALLOWED',
     'PUBLISH_DOORS',
+    'VERB_DOORS',
     'claude_rows',
     'codex_rules',
     'doors',
@@ -100,6 +102,25 @@ PUBLISH_DOORS: Final[dict[tuple[str, ...], str]] = {
     ('git', 'merge', '--ff-only'): 'a fast-forward of a trunk; never creates a merge commit (MAIN-SESSION-PUBLISHES)',
 }
 _RETRY_WRAPPER: Final = 'with-retry.sh'
+
+#: THE BOUNDED VERBS: one door module's single verb, each re-checking its own safety bound when it acts.
+#: Its row names the verb, so the module's other verbs stay prompted.
+VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
+    ('python', '-m', 'dev_lab.dev.hpchost', 'deploy-fleet'): (
+        "starts each DECLARED fleet account's own deploy over ssh, detached; an undeclared account is refused"
+    ),
+    ('python', '-m', 'dev_lab.dev.forge', 'cancel-stuck'): (
+        "scancels only this sha's run-<sha12>-<part> tasks busy at full CPU with no result past their bound"
+    ),
+    ('python', '-m', 'dev_lab.dev.forge', 'watch'): 'read-only: prints a commit verdict until settled or a deadline',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
+        'closes open PRs salvaged into another OPEN, unmerged PR, then LOSSLESS-DELETEs their branches'
+    ),
+    ('python', '-m', 'dev_lab.dev.branchprune', 'delete'): (
+        'LOSSLESS-DELETE: a remote branch only when every commit on it is held elsewhere'
+    ),
+}
 
 #: Bootstrap is a checked dependency door, not permission to invoke arbitrary installers.
 _DEPENDENCY_BOOTSTRAP: Final = ('python', '-m', 'dev_lab.dev.dep', '--bootstrap')
@@ -155,6 +176,7 @@ def doors(scripts: tuple[str, ...] = ()) -> dict[tuple[str, ...], str]:
     out[_DEPENDENCY_BOOTSTRAP] = "creates the named checkout's own environment through the checked dependency door"
     for rel in scripts:
         out[('sh', rel) if rel.endswith('.sh') else ('python', rel)] = f'repo door {rel}'
+    out.update(VERB_DOORS)
     out.update(PUBLISH_DOORS)
     return out
 
@@ -232,11 +254,18 @@ def promises_raw(text: str) -> tuple[str, ...]:
     return tuple(sorted({m.group(0) for m in _RAW.finditer(text)}))
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Print the Claude rows and check (or ``--write``) the Codex rules for a repo. Exit 1 when stale."""
+#: The exit when the auto-mode prose cannot be judged because a fleet source did not read.
+INCONCLUSIVE: Final = 3
+
+
+def main(argv: list[str] | None = None, *, fleet: automode.Fleet | None = None) -> int:
+    """Print the Claude rows; check (or ``--write``) the Codex rules and the auto-mode prose.
+
+    Exit 1 when stale; 3 (INCONCLUSIVE, nothing written) when a fleet source is unreadable here.
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.autodoors', description=main.__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())
-    parser.add_argument('--write', action='store_true', help=f'write {CODEX_RULES_REL}')
+    parser.add_argument('--write', action='store_true', help=f'write {CODEX_RULES_REL} and {automode.AUTOMODE_REL}')
     parser.add_argument('--shell-door', action='append', default=[], help='a tracked shell door (repeatable)')
     args = parser.parse_args(argv)
     root = args.repo.resolve()
@@ -245,14 +274,24 @@ def main(argv: list[str] | None = None) -> int:
     target = root / CODEX_RULES_REL
     for row in claude_rows(scripts):
         emit(f'[autodoors] claude  {row}')
+    try:
+        prose_text = automode.render(root, fleet)
+    except automode.SourcesUnavailable as unread:
+        emit(f'[autodoors] claude  {automode.AUTOMODE_REL}: INCONCLUSIVE -- {unread}', err=True)
+        return INCONCLUSIVE
     if args.write:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding='utf-8', newline='\n')
+        automode.write(root, fleet)
         emit(f'[autodoors] codex   wrote {CODEX_RULES_REL}')
+        emit(f'[autodoors] claude  wrote {automode.AUTOMODE_REL}')
         return 0
     current = target.is_file() and target.read_text(encoding='utf-8') == text
+    prose_file = root / automode.AUTOMODE_REL
+    prose = prose_file.is_file() and prose_file.read_text(encoding='utf-8') == prose_text
     emit(f'[autodoors] codex   {CODEX_RULES_REL}: {"current" if current else "STALE -- run with --write"}')
-    return 0 if current else 1
+    emit(f'[autodoors] claude  {automode.AUTOMODE_REL}: {"current" if prose else "STALE -- run with --write"}')
+    return 0 if current and prose else 1
 
 
 if __name__ == '__main__':

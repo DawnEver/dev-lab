@@ -12,6 +12,7 @@ import pytest
 from dev_lab.dev.autodoors import (
     CODEX_RULES_REL,
     DOOR_MODULES,
+    VERB_DOORS,
     claude_rows,
     codex_rules,
     doors,
@@ -19,9 +20,11 @@ from dev_lab.dev.autodoors import (
     promises_raw,
     script_doors,
 )
+from dev_lab.dev.automode import Fleet
 from dev_lab.dev.famtests.visibility import plant_checkout
 
 _GIT = shutil.which('git') or 'git'
+_NO_FLEET = Fleet((), ())
 _SCRIPTS = ('scripts/gate/runner.py', 'scripts/hooks/with-retry.sh')
 
 
@@ -155,11 +158,13 @@ def test_script_doors_are_the_tracked_entry_points(tmp_path: Path) -> None:
         'scripts/door.py',
         'scripts/hooks/with-retry.sh',
     )
-    assert main(['--repo', str(work)]) == 1
-    assert main(['--repo', str(work), '--write']) == 0
+    assert main(['--repo', str(work)], fleet=_NO_FLEET) == 1
+    assert main(['--repo', str(work), '--write'], fleet=_NO_FLEET) == 0
     assert (work / CODEX_RULES_REL).is_file()
-    assert main(['--repo', str(work)]) == 0
-    assert main(['--repo', str(work), '--shell-door', 'scripts/hooks/with-retry.sh']) == 1, 'a new door is stale'
+    assert main(['--repo', str(work)], fleet=_NO_FLEET) == 0
+    assert main(['--repo', str(work), '--shell-door', 'scripts/hooks/with-retry.sh'], fleet=_NO_FLEET) == 1, (
+        'a new door is stale'
+    )
 
 
 def test_a_main_session_publishes_through_the_wrapper_where_there_is_one() -> None:
@@ -186,3 +191,13 @@ def test_a_repo_without_a_wrapper_pushes_through_netverb_never_raw() -> None:
     assert not any(fnmatchcase('git -C ../sib push origin main', g) for g in globs)
     assert promises_raw(' '.join(globs)) == ()
     assert promises_raw('Bash(git push --force origin *)') == ('--force',)
+
+
+def test_each_bounded_verb_renders_one_row_naming_its_verb_and_no_sibling_verb() -> None:
+    """VERB_DOORS: the row admits the bounded verb and NOT the same module's other verbs (planted control)."""
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
+    for _runner, *argv in VERB_DOORS:
+        assert any(fnmatchcase(f'.venv/Scripts/python.exe {" ".join(argv)} x', g) for g in globs), argv
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge serve', g) for g in globs)
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpchost deploy --remove', g) for g in globs)
+    assert promises_raw(' '.join(globs)) == ()

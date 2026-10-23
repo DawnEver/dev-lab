@@ -271,6 +271,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
 * :mod:`dev_lab.dev.forgepublish` -- ``forge request``: publish a request only when a host could reproduce it.
 * :mod:`dev_lab.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
+* :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>``: read-only, a commit's verdicts until settled or a deadline.
+* :mod:`dev_lab.dev.forgestuck` -- STUCK-RUN-CANCEL: ``forge cancel-stuck <sha>`` scancels only its stuck forge tasks.
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
@@ -349,8 +351,11 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented, closed,
   and its branch deleted through LOSSLESS-DELETE; every serve tick, and ``forge pr close-landed``.
+* :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr>``
+  closes salvaged PRs and deletes their branches through LOSSLESS-DELETE.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a PR waits on a scarce part only where its diff reaches it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
+* :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: a repo's ``.claude/automode.json``, prose intents from single sources.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.

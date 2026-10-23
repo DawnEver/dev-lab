@@ -327,6 +327,17 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
   their defaults are in [issues](issues.md#issues-never-rot). It says so in ONE comment on the hosts issue.
 - `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
 
+### Watching a sha, and cancelling its stuck tasks
+
+`python -m dev_lab.dev.forge watch <sha> [--deadline-minutes M]` only reads: it prints each `tests/<part>`
+change until every part is final (exit 0 green, 1 red) or the deadline passes (exit 3).
+
+`python -m dev_lab.dev.forge cancel-stuck <sha> [--factor N] [--bound-minutes M]`, run in the repo's checkout,
+scancels only the full sha's `run-<sha12>-<part>` tasks that are busy (90 % CPU or more) with no new test line in
+their stream for longer than `N x` the longest measured duration of the shard's tests (the learned `durations`
+every host prices from). A shard holding an unmeasured test is floored at `M` minutes, named `unmeasured` in the
+output. Every other task of the sha is listed as healthy; no other job is cancelled.
+
 ## Alarms
 
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
