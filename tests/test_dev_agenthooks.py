@@ -135,6 +135,35 @@ def test_a_wrapper_cannot_hide_the_interpreter_that_consumes_a_heredoc(rules: Pa
         )
 
 
+#: THE 2026-10-20 INCIDENT LINES, verbatim, plus their sibling prefixes. SHELL LINES, so their home is
+#: here rather than the registry row's segment-shaped `refuses`.
+_PREFIXED_BARE_TESTS = (
+    (
+        'cd /d/Documents/MingyangBao/motronics-studio/.claude/worktrees/longrun-js && .venv/Scripts/python.exe'
+        ' -m pytest -q -x tests/unit/hamilton/adapters/jmag/ -k "job_system or system_check or jobs"'
+        ' -p no:cacheprovider 2>&1 | tail -5'
+    ),
+    'timeout 1200 .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/unit/x.py 2>&1 | grep passed',
+    'export LAB_COMMONS_CONFIG=/d/x/machine.toml; .venv/Scripts/python.exe -m pytest -q tests/unit/x.py',
+    'VAR=x python -m pytest',
+    'nohup .venv/Scripts/python.exe -m pytest tests &',
+    '(cd x && pytest)',
+)
+
+
+@pytest.mark.parametrize('command', _PREFIXED_BARE_TESTS)
+def test_a_bare_test_line_behind_a_prefix_is_refused(rules: Path, command: str) -> None:
+    """`cd ... &&`, `timeout N`, `export ...;`, `VAR=x`, `nohup ... &` and a subshell hide nothing."""
+    assert agenthooks.decide(command, rules) is not None, f'a prefix hid the bare test line: {command!r}'
+
+
+def test_the_measure_door_behind_the_same_prefixes_is_admitted(rules: Path) -> None:
+    """THE OTHER SIDE: the verdict door is not caught by the same prefixes."""
+    door = '.venv/Scripts/python.exe -m dev_lab.dev.verify -- tests/unit/x.py'
+    for command in (door, f'cd /d/x && {door} 2>&1 | tail -5', f'timeout 1200 {door}'):
+        assert agenthooks.decide(command, rules) is None, f'the measure door was refused: {command!r}'
+
+
 def test_uv_run_is_a_wrapper_but_uv_itself_is_still_a_command(tmp_path: Path) -> None:
     """THE RATCHET'S OTHER SIDE.
 
