@@ -36,12 +36,15 @@ repo's data -- which is the failure this whole module is about, one layer in.
 from __future__ import annotations
 
 import ast
+import functools
 import io
 import re
 import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+import lab_commons.launch as _door
 
 from dev_lab.dev.floors import assert_floor
 
@@ -162,7 +165,28 @@ def is_unresolved_path(text: str, repo_root: Path) -> bool:
     stripped = text.strip()
     if not _PATHLIKE.match(stripped) or '..' in stripped.split('/'):
         return False
-    return not (repo_root / stripped).exists()
+    tracked = _tracked(repo_root)
+    if tracked is None:  # not a git checkout (a wheel): the disk is the only tree there is
+        return not (repo_root / stripped).exists()
+    return stripped.rstrip('/') not in tracked
+
+
+@functools.cache
+def _tracked(repo_root: Path) -> frozenset[str] | None:
+    """Every tracked file of *repo_root* and every directory holding one; ``None`` outside git.
+
+    An ignored file a developer's box rendered (``.claude/automode.json``) exists on THAT disk only, so
+    reading the disk would make the answer depend on the box -- the exact thing the definition above
+    promises it does not.
+    """
+    done = _door.run(
+        ['git', '-C', str(repo_root), 'ls-files', '-z'], capture_output=True, text=True, encoding='utf-8', check=False
+    )
+    if done.returncode != 0:
+        return None
+    files = [name for name in done.stdout.split('\0') if name]
+    dirs = {'/'.join(parts[:i]) for name in files for parts in [name.split('/')] for i in range(1, len(parts))}
+    return frozenset(files) | frozenset(dirs)
 
 
 def _docstring_ids(tree: ast.Module) -> set[int]:

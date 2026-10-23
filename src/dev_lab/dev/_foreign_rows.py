@@ -139,6 +139,10 @@ EVICTED: Final[dict[str, str]] = {
 #: anywhere, and a waiver list nobody believes is a waiver list nobody reads. Two-sided all the
 #: same: if the example goes, the handle goes with it.
 SYNTHETIC: Final[dict[str, str]] = {
+    'src/dev_lab/dev/automode.py::path': (
+        '`.claude/automode.json`, the machine-local file this module WRITES into a consumer checkout; '
+        'it is gitignored, so it resolves only where it was rendered and names no tracked file.'
+    ),
     'src/dev_lab/dev/durations.py::path': (
         '6 illustrative paths in refusal text -- `tests/integration/test_planted_wedge.py` and the '
         '`tests/a/*` trio -- naming the SHAPE of a slow test, not a file in anybody`s repo.'
