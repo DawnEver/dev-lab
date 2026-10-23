@@ -8,7 +8,7 @@ and read by :func:`declared_branchset`::
     [tool.lab_commons.branchset]
     trunk = 'main'                 # no default: a guessed trunk finds nothing and reads clean
     sessions = ['integrate/main']  # one branch per declared session or lane owner; [] when none
-    ephemeral = ['pr/*']           # glob namespaces a PR head lives in; deleted once its PR merges or closes
+    ephemeral = ['pr/*']           # the DEFAULT, so omit it; PR-head globs, deleted once the PR goes; [] opts out
     prune_merged = true            # any host's serve tick DELETES merged idle origin branches (idempotent)
     grace_hours = 24               # how long a branch's tip sits idle before it is pruned or alarmed
 
@@ -35,6 +35,7 @@ import fnmatch
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import Final
 
 from lab_commons.hpc.declared import pyproject_at
 from lab_commons.hpc.retired import RETIRED
@@ -61,6 +62,10 @@ __all__ = [
 
 _TABLE = '[tool.lab_commons.branchset]'
 _KEYS = frozenset({'trunk', 'sessions', 'ephemeral', 'prune_merged', 'grace_hours'})
+
+#: The family's PR-head namespace (user ruling 2026-10-19, made the default 2026-10-23): ruled ONCE here, so a
+#: manifest that omits ``ephemeral`` carries it and one that means none writes ``ephemeral = []``.
+FAMILY_EPHEMERAL: Final[tuple[str, ...]] = ('pr/*',)
 
 #: The ref shape a branch is PARKED under instead of being merged or deleted. MERGE-OR-DELETE (user ruling
 #: 2026-10-11): "you drop it into an archive tag and nobody ever looks at it" -- such a tag is debt exactly
@@ -186,7 +191,7 @@ def branchset_from(text: str, manifest: str) -> BranchSet:
             f'(python -m dev_lab.dev.dep --bootstrap <checkout>)'
         )
         raise KitOlderThanCheckout(msg)
-    ephemeral = table.get('ephemeral', [])
+    ephemeral = table.get('ephemeral', list(FAMILY_EPHEMERAL))
     if not isinstance(ephemeral, list) or not all(isinstance(glob, str) and glob for glob in ephemeral):
         msg = f'{_TABLE} ephemeral in {manifest} is {ephemeral!r}; it must be a list of branch globs (pr/*)'
         raise BranchSetNotDeclared(msg)

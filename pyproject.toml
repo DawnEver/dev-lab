@@ -118,8 +118,6 @@ always_run = true
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
-# Short-lived PR heads (user ruling 2026-10-19): pushable with no row, deleted by the forge once their PR is gone.
-ephemeral = ['pr/*']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
 # merged undeclared origin branches idle >= grace_hours (dev_lab.dev.branchprune).
 prune_merged = true
