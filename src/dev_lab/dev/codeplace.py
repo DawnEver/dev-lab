@@ -55,10 +55,10 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import TextIO
 
+from lab_commons import launch
 from lab_commons.log import emit
 
 from dev_lab.dev.reportplace import refuse_report
-from lab_commons import launch
 
 __all__ = [
     'ARCHIVED_SEGMENTS',
