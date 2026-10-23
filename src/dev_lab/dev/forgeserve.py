@@ -285,7 +285,9 @@ def _advance(
 
     A run's step can be slow (a gather, the routing and the post of a 55k-test record, a submit's prep), so
     the host card is published (*beat*) before each, and once the tick's period is *spent* the runs not yet
-    reached wait for the next tick -- after the first, so no run starves behind a long round. A tick is
+    reached wait for the next tick. A tick always advances at least one, and *runs* arrive least recently
+    advanced first (:func:`forgerunstate.live`), so the runs one tick leaves are the first the next reaches:
+    every run is reached within as many ticks as there are runs. A tick is
     bounded by its period plus one step, and ``forge queue``'s STALE keeps meaning down.
     """
     if not runs:
@@ -313,6 +315,7 @@ def _advance(
             say(f'{run_tag(run.platform, run.sha)}: cannot advance: {stuck}')
             after = run
         if after is not None:
+            forgerunstate.touch(after)
             left.append(after.sha)
     return left
 

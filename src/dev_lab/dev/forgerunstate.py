@@ -160,6 +160,13 @@ def save(run: Run) -> Path:
     return durable_write(target, json.dumps(asdict(run), indent=2).encode('utf-8'))
 
 
+def touch(run: Run) -> None:
+    """Mark *run* advanced now: its file's mtime is when a tick last reached it (:func:`live`'s order)."""
+    path = _path(run)
+    if path.exists():
+        path.touch()
+
+
 def drop(run: Run) -> None:
     """Release *run*: its file goes; nothing about it is kept here."""
     _path(run).unlink(missing_ok=True)
@@ -199,13 +206,14 @@ def _read(path: Path) -> Run:
 
 
 def live(repo_url: str, *, refused: Callable[[str], None] | None = None) -> tuple[Run, ...]:
-    """Every run of *repo_url* in flight here, older schemas adopted (:func:`_read`).
+    """Every run of *repo_url* in flight here, least recently advanced first (:func:`touch`), older schemas adopted.
 
     A file of an unknown schema raises :class:`ForeignSchema` -- or, given *refused*, is skipped and its
     refusal handed to it, so one bad file never stops the other runs.
     """
     found = []
-    for path in sorted(directory().glob('*.json')) if directory().is_dir() else ():
+    paths = directory().glob('*.json') if directory().is_dir() else ()
+    for path in sorted(paths, key=lambda one: (one.stat().st_mtime_ns, one.name)):
         try:
             run = _read(path)
         except ForeignSchema as why:

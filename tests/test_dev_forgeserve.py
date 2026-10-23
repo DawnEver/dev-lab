@@ -1258,7 +1258,7 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
     assert any(line == f'[serve] the tick ran past its period: {shas[2][:12]} wait for the next' for line in said), said
     advanced.clear()
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, table={'tick_minutes': 5})
-    assert advanced == shas, 'PLANTED: a quick tick advances every run'
+    assert sorted(advanced) == shas, 'PLANTED: a quick tick advances every run'
     advanced.clear()
     now[:] = [NOW, NOW + timedelta(hours=1)]  # the tick started at NOW; its rounds took an hour
     monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
@@ -1266,7 +1266,33 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
         table={'tick_minutes': 5}, clock=lambda: now.pop(0) if len(now) > 1 else now[0],
     )  # fmt: skip
-    assert advanced == shas[:1], 'a tick whose rounds ran long still advances one run: no run starves'
+    assert len(advanced) == 1, 'a tick whose rounds ran long still advances one run'
+
+
+def test_consecutive_slow_ticks_reach_every_run_least_recently_advanced_first(monkeypatch, tmp_path: Path) -> None:
+    """A tick reaches its runs least-recently-advanced first, so no run is left unreached tick after tick.
+
+    Ada 2026-10-23: runs were advanced in sha order, the first two spent every period, and a superseded
+    integration run behind them was never reached -- its pending tasks never withdrawn, every newer tip
+    waiting behind it. PLANTED CONTROL: the first slow tick still reaches only the first two.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    now = [NOW]
+    advanced: list[str] = []
+
+    def slow(_root: Path, run: forgerunstate.Run, **_kw: object) -> forgerunstate.Run:
+        advanced.append(run.sha)
+        now[0] += timedelta(minutes=4)
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', slow)
+    for _ in range(2):
+        _serve(
+            monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+            table={'tick_minutes': 5}, clock=lambda: now[0],
+        )  # fmt: skip
+    assert advanced[:2] == shas[:2], 'PLANTED: the first slow tick reaches the first two'
+    assert advanced[2] == shas[2], 'the second tick starts at the run the first did not reach'
 
 
 class _Untagged(_Slurm):
