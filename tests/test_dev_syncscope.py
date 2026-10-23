@@ -137,12 +137,13 @@ def test_a_selection_composed_elsewhere_is_unmeasured_and_not_empty() -> None:
     assert scope(_selecting(), MANIFEST) is Scope.STRANDS, 'a bare sync must stay a finding, not a blind spot'
 
 
-def test_a_dependency_group_makes_the_answer_unmeasured_rather_than_confident() -> None:
-    """An axis this reader does not model must say so. `--no-dev` is about GROUPS, not about a `dev` EXTRA."""
+def test_a_dependency_group_is_measured_separately_from_an_extra() -> None:
+    """Default dev supplies pytest, but not the ruff verdict dependency in the extra."""
     with_group = MANIFEST + '\n[dependency-groups]\ndev = ["pytest"]\n'
     assert declares_groups(with_group)
     assert not declares_groups(MANIFEST)
-    assert scope(_selecting(), with_group) is Scope.UNMEASURED
+    assert scope(_selecting(), with_group) is Scope.STRANDS
+    assert scope(_selecting('dev'), with_group) is Scope.COMPLETE
 
 
 def test_a_verdict_distribution_supplied_only_under_a_marker_is_unmeasured() -> None:
