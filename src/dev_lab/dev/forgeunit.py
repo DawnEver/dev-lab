@@ -162,8 +162,8 @@ class UnitJob:
         except (KeyError, ValueError) as why:
             msg = f'{spelling}: {why}'
             raise UndeclaredRequest(msg) from None
-        if job.demand.cpu <= 0:  # a Job runs compute; Demand alone admits a coreless claim
-            msg = f'{spelling}: cpu {job.demand.cpu} is not a positive count of cores'
+        if job.demand.cpu <= 0:
+            msg = f'{spelling}: a compute unit requires positive cpu, not a coreless resource claim'
             raise UndeclaredRequest(msg)
         return job
 

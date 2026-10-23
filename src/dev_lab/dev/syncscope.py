@@ -41,11 +41,9 @@ command                                            population
 ``uv pip install`` / ``pip install``               ADDS; pip has no prune verb
 =================================================  ===========================================
 
-``--no-dev`` IS NOT ABOUT A ``dev`` EXTRA and the spelling invites exactly that misreading: it
-suppresses ``[dependency-groups]``, which NO repo in this family declares. All four put pytest and
-ruff in an EXTRA, so the dev tooling arrives only under ``--extra dev`` and ``--no-dev`` changes
-nothing. The day a repo adopts ``[dependency-groups]`` this module answers :attr:`Scope.UNMEASURED`
-rather than a confident wrong answer, because it does not model the group axis.
+``--no-dev`` IS NOT ABOUT A ``dev`` EXTRA: it excludes the dev dependency GROUP. Groups and extras
+are independent axes. Defaults come from ``tool.uv.default-groups`` (otherwise dev when declared);
+only-group excludes the project and defaults, and no-group exclusions win over inclusions.
 
 WHAT THIS CANNOT SEE, stated so a green is not over-read:
 
@@ -77,6 +75,7 @@ __all__ = [
     'canon',
     'declares_groups',
     'extras',
+    'groups',
     'scope',
     'selection',
     'stranded',
@@ -127,7 +126,9 @@ _NAME: Final = re.compile(r'^\s*(?P<name>[A-Za-z0-9._-]+)')
 #: The ``uv run`` flags that CONSUME the token after them, so a value is never read as the child
 #: program. Declared as data because the alternative -- "the first bare token wins" -- reads
 #: ``uv run --python 3.12 pytest`` as running ``3.12``.
-_VALUE_FLAGS: Final = frozenset({'--directory', '--extra', '--group', '--project', '--python', '--with', '-p'})
+_VALUE_FLAGS: Final = frozenset(
+    {'--directory', '--extra', '--group', '--only-group', '--no-group', '--project', '--python', '--with', '-p'}
+)
 
 #: How a spec names extras of the distribution it references: ``consumer-a[euclid,maxwell]``.
 _EXTRAS_OF: Final = re.compile(r'^\s*[A-Za-z0-9._-]+\s*\[(?P<extras>[^\]]*)\]')
@@ -170,6 +171,11 @@ class Selection:
     extras: frozenset[str] = frozenset()
     all_extras: bool = False
     unresolved: tuple[str, ...] = ()
+    groups: frozenset[str] = frozenset()
+    all_groups: bool = False
+    default_groups: bool = True
+    excluded_groups: frozenset[str] = frozenset()
+    only_groups: bool = False
 
 
 def canon(name: str) -> str:
@@ -197,11 +203,7 @@ def _manifest(text: str) -> dict:
 
 
 def declares_groups(text: str) -> bool:
-    """Answer whether the manifest declares ``[dependency-groups]``, the axis this module does NOT model.
-
-    Asked rather than assumed absent. No repo in the family declares one today, and a reader that
-    silently ignored the table would answer confidently about a population it could not see.
-    """
+    """Answer whether the manifest declares the dependency-group axis."""
     return bool(tomllib.loads(text).get('dependency-groups'))
 
 
@@ -223,6 +225,36 @@ def extras(text: str) -> dict[str, frozenset[str]]:
     raw = {canon(name): tuple(specs) for name, specs in project.get('optional-dependencies', {}).items()}
     me = canon(project.get('name', ''))
     return {name: frozenset(_expand(name, raw, me, set())) for name in raw}
+
+
+def groups(text: str) -> dict[str, frozenset[str]]:
+    """Expand the manifest's dependency groups, refusing unknown or cyclic includes."""
+    table = tomllib.loads(text)
+    raw = {canon(name): list(entries) for name, entries in table.get('dependency-groups', {}).items()}
+    legacy = table.get('tool', {}).get('uv', {}).get('dev-dependencies', ())
+    if legacy:
+        raw.setdefault('dev', []).extend(legacy)
+
+    def expand(name: str, seen: frozenset[str]) -> frozenset[str]:
+        if name in seen:
+            msg = f'dependency group cycle at {name!r}'
+            raise ValueError(msg)
+        if name not in raw:
+            msg = f'dependency group {name!r} is not declared'
+            raise ValueError(msg)
+        found: set[str] = set()
+        for entry in raw[name]:
+            if isinstance(entry, str):
+                if dist := _spec_name(entry):
+                    found.add(dist)
+            elif isinstance(entry, dict) and set(entry) == {'include-group'}:
+                found.update(expand(canon(entry['include-group']), seen | {name}))
+            else:
+                msg = f'unreadable dependency group entry in {name!r}: {entry!r}'
+                raise ValueError(msg)
+        return frozenset(found)
+
+    return {name: expand(name, frozenset()) for name in raw}
 
 
 def _expand(name: str, raw: dict[str, tuple[str, ...]], me: str, seen: set[str]) -> set[str]:
@@ -263,7 +295,12 @@ def _marked(text: str) -> frozenset[str]:
     """
     project = _manifest(text)
     supplied: dict[str, bool] = {}
-    for spec in [*project.get('dependencies', ()), *_all_optional(project)]:
+    table = tomllib.loads(text)
+    grouped = [
+        entry for entries in table.get('dependency-groups', {}).values() for entry in entries if isinstance(entry, str)
+    ]
+    grouped.extend(table.get('tool', {}).get('uv', {}).get('dev-dependencies', ()))
+    for spec in [*project.get('dependencies', ()), *_all_optional(project), *grouped]:
         dist = _spec_name(spec)
         if dist is not None:
             supplied[dist] = supplied.get(dist, True) and ';' in spec
@@ -294,7 +331,7 @@ def verdict_set(text: str) -> frozenset[str]:
     tokens = set(haystack.split())
     plugins = {dist for token, dist in PLUGIN_TRIGGERS.items() if token in tokens or f'{token}=' in haystack}
     needed = {RUNNER, _LINTER} | plugins
-    declared = _base(text) | {dist for members in extras(text).values() for dist in members}
+    declared = _base(text) | {dist for members in (*extras(text).values(), *groups(text).values()) for dist in members}
     if _KIT in declared and canon(_manifest(text).get('name', '')) != _KIT:
         needed.add(_KIT)
     return frozenset(needed)
@@ -338,13 +375,22 @@ def _uv_own(after_run: list[str]) -> list[str]:
 
 def _select(tokens: list[str]) -> Selection:
     picked: set[str] = set()
+    grouped: set[str] = set()
+    excluded: set[str] = set()
     unresolved: list[str] = []
     for index, word in enumerate(tokens):
-        if word == '--extra' and index + 1 < len(tokens):
-            value = tokens[index + 1]
-        elif word.startswith('--extra='):
+        flag = word.split('=', 1)[0]
+        if flag in {'--dev', '--only-dev', '--no-dev'}:
+            (excluded if flag == '--no-dev' else grouped).add('dev')
+            continue
+        if flag not in {'--extra', '--group', '--only-group', '--no-group'}:
+            continue
+        if '=' in word:
             value = word.split('=', 1)[1]
+        elif index + 1 < len(tokens):
+            value = tokens[index + 1]
         else:
+            unresolved.append(word)
             continue
         # A `$VAR`, a `${{ inputs.x }}` or a glob is a selection composed somewhere else. NAMED
         # rather than dropped: "no extras" and "extras this reader could not read" have opposite
@@ -352,12 +398,18 @@ def _select(tokens: list[str]) -> Selection:
         if re.search(r'[$*{}]', value):
             unresolved.append(value)
         else:
-            picked.add(canon(value))
+            target = picked if flag == '--extra' else excluded if flag == '--no-group' else grouped
+            target.add(canon(value))
     return Selection(
         prunes=True,
         extras=frozenset(picked),
         all_extras='--all-extras' in tokens,
         unresolved=tuple(unresolved),
+        groups=frozenset(grouped),
+        all_groups='--all-groups' in tokens,
+        default_groups='--no-default-groups' not in tokens,
+        excluded_groups=frozenset(excluded),
+        only_groups=any(word.split('=', 1)[0] in {'--only-group', '--only-dev'} for word in tokens),
     )
 
 
@@ -370,13 +422,41 @@ def survivors(chosen: Selection, text: str) -> frozenset[str]:
 
     """
     declared = extras(text)
-    if chosen.all_extras:
-        return _base(text) | frozenset(dist for members in declared.values() for dist in members)
+    if chosen.unresolved:
+        msg = f'unresolved dependency selection: {chosen.unresolved}'
+        raise ValueError(msg)
+    if chosen.only_groups and (chosen.extras or chosen.all_extras):
+        msg = 'only-group combined with project extras is not measured by this reader'
+        raise ValueError(msg)
     unknown = sorted(chosen.extras - set(declared))
     if unknown:
         msg = f'selection names {unknown} which this manifest does not declare; it declares {sorted(declared)}'
         raise UnknownExtraError(msg)
-    return _base(text) | frozenset(dist for name in chosen.extras for dist in declared[name])
+    grouped = groups(text)
+    selected = set(grouped) if chosen.all_groups else set(chosen.groups)
+    if chosen.default_groups and not chosen.only_groups:
+        defaults = (
+            tomllib.loads(text).get('tool', {}).get('uv', {}).get('default-groups', ['dev'] if 'dev' in grouped else [])
+        )
+        if defaults != 'all' and (
+            not isinstance(defaults, list) or not all(isinstance(name, str) for name in defaults)
+        ):
+            msg = 'tool.uv.default-groups must be a list of group names or "all"'
+            raise ValueError(msg)
+        selected.update(grouped if defaults == 'all' else map(canon, defaults))
+    unknown_groups = (selected | (chosen.excluded_groups - {'dev'})) - set(grouped)
+    # --no-dev is valid even in an extras-only project.
+    if unknown_groups:
+        msg = f'dependency groups not declared: {sorted(unknown_groups)}'
+        raise ValueError(msg)
+    selected.difference_update(chosen.excluded_groups)
+    base = frozenset() if chosen.only_groups else _base(text)
+    selected_extras = declared if chosen.all_extras else chosen.extras
+    return (
+        base
+        | frozenset(dist for name in selected_extras for dist in declared[name])
+        | frozenset(dist for name in selected if name in grouped for dist in grouped[name])
+    )
 
 
 def stranded(chosen: Selection, text: str) -> tuple[str, ...]:
@@ -393,7 +473,7 @@ def scope(chosen: Selection, text: str) -> Scope:
     """
     if not chosen.prunes:
         return Scope.INERT
-    if chosen.unresolved or declares_groups(text):
+    if chosen.unresolved:
         return Scope.UNMEASURED
     left = stranded(chosen, text)
     if _marked(text) & verdict_set(text):

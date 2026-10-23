@@ -37,9 +37,12 @@ found was not a Makefile target: it was ``entry: uv run python -m ...`` in a pre
 mutated the environment on every push, and a changelog hook that did the same on every commit. A
 door is what MOVES the environment, not what is named ``install``.
 
-WHAT IS REFUSED, and it is one sentence: a command that consults a lock either NAMES the floating
-requirement for re-resolution (``-P``/``--upgrade-package``, or ``-U``) or does not touch the
-environment at all (``--no-sync``). Commands that re-resolve by construction -- ``uv pip install``,
+WHAT IS REFUSED: a command that consults a lock must either explicitly install a tracked readable
+lock (``--frozen`` or ``--locked``), NAME the floating requirement for re-resolution
+(``-P``/``--upgrade-package``, or ``-U``), or not touch the environment (``--no-sync``).
+LOCKED is installation evidence, not a claim of freshness: frozen skips freshness checks, whereas
+locked refuses a resolution that would change the lock. Freshness is a separate owner guard.
+Commands that re-resolve by construction -- ``uv pip install``,
 ``pip install`` -- are already correct and are deliberately NOT changed; a fix applied where there
 is no defect costs the next reader the reason.
 
@@ -62,6 +65,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Final
 
+from dev_lab.dev.checkout import git_out
+from dev_lab.dev.syncscope import _uv_own
+
 __all__ = [
     'LOCK_CONSUMING',
     'PREFIX_TOKENS',
@@ -74,6 +80,7 @@ __all__ = [
     'commands',
     'floating_in_manifest',
     'floating_requirements',
+    'has_locked_resolution',
     'scan_doors',
     'unlocked',
 ]
@@ -126,15 +133,16 @@ _UPGRADE_FLAGS: Final = frozenset({'-P', '--upgrade-package'})
 class Delivery(Enum):
     """What a command does to the DECLARED build of a floating requirement.
 
-    Three values rather than two, because "does not deliver it" splits into two different facts and
-    conflating them would make the remedy unnameable. :attr:`INERT` is a command that moves no
-    environment -- there is nothing for it to deliver stale. :attr:`UNLOCKED` is a command that DOES
-    move the environment and serves whatever an earlier resolution left in a lock.
+    INERT moves no environment; RESOLVES requests re-resolution. LOCKED explicitly installs a
+    tracked readable lock without claiming freshness; UNMEASURED lacks that lock evidence.
+    UNLOCKED moves the environment without either explicit lock discipline or re-resolution.
     """
 
     RESOLVES = 'resolves'
     UNLOCKED = 'unlocked'
     INERT = 'inert'
+    LOCKED = 'locked'
+    UNMEASURED = 'unmeasured'
 
 
 class UnlockedDoorsError(AssertionError):
@@ -187,6 +195,10 @@ def floating_in_manifest(text: str) -> tuple[str, ...]:
     specs: list[str] = list(project.get('dependencies', ()))
     for extra in project.get('optional-dependencies', {}).values():
         specs.extend(extra)
+    specs.extend(
+        entry for entries in table.get('dependency-groups', {}).values() for entry in entries if isinstance(entry, str)
+    )
+    specs.extend(table.get('tool', {}).get('uv', {}).get('dev-dependencies', ()))
     found = {match.group('name') for spec in specs if (match := _DIRECT_GIT.match(spec)) and _is_floating(match['url'])}
     return tuple(sorted(found))
 
@@ -214,7 +226,15 @@ def _upgrades(argv: list[str], names: tuple[str, ...]) -> bool:
 
 def _verb(argv: list[str]) -> str:
     """Return the first token of *argv* that is not a flag -- ``uv --native-tls sync`` is still ``sync``."""
-    return next((token for token in argv if not token.startswith('-')), '')
+    skip = False
+    for token in argv:
+        if skip:
+            skip = False
+        elif token in {'--directory', '--project', '--config-file', '--cache-dir'}:
+            skip = True
+        elif not token.startswith('-'):
+            return token
+    return ''
 
 
 def _pip_delivery(rest: list[str]) -> Delivery:
@@ -222,19 +242,26 @@ def _pip_delivery(rest: list[str]) -> Delivery:
     return Delivery.RESOLVES if _verb(rest) == 'install' else Delivery.INERT
 
 
-def _uv_delivery(rest: list[str], names: tuple[str, ...]) -> Delivery:
+def _uv_delivery(rest: list[str], names: tuple[str, ...], *, locked: bool) -> Delivery:
     """Decide what a ``uv`` invocation delivers, which is the whole question this module exists for."""
     verb = _verb(rest)
     if verb == 'pip':
         return _pip_delivery(rest[rest.index('pip') + 1 :])
     if verb == 'lock':
         return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.INERT
-    if verb not in LOCK_CONSUMING or '--no-sync' in rest:
+    own = rest[: rest.index('run')] + _uv_own(rest[rest.index('run') + 1 :]) if verb == 'run' else rest
+    if verb not in LOCK_CONSUMING or '--no-sync' in own:
         return Delivery.INERT
-    return Delivery.RESOLVES if _upgrades(rest, names) else Delivery.UNLOCKED
+    if {'--frozen', '--locked'} & set(own):
+        # A root lock is not proof about a redirected project, script or configuration.
+        redirects = {'--directory', '--project', '--script', '--config-file', '-C'}
+        if any(token.split('=', 1)[0] in redirects for token in own):
+            return Delivery.UNMEASURED
+        return Delivery.LOCKED if locked else Delivery.UNMEASURED
+    return Delivery.RESOLVES if _upgrades(own, names) else Delivery.UNLOCKED
 
 
-def classify(argv: list[str], names: tuple[str, ...]) -> Delivery:
+def classify(argv: list[str], names: tuple[str, ...], *, locked: bool = False) -> Delivery:
     """Decide what this command delivers for the floating requirements *names*.
 
     Pure over its arguments, so a planted control drives THIS function rather than a second
@@ -250,7 +277,7 @@ def classify(argv: list[str], names: tuple[str, ...]) -> Delivery:
     if program.startswith('python') and rest[:2] == ['-m', 'pip']:
         return _pip_delivery(rest[2:])
     if program == 'uv':
-        return _uv_delivery(rest, names)
+        return _uv_delivery(rest, names, locked=locked)
     # `uvx` lands here with everything else: it runs a tool in its own ephemeral environment.
     return Delivery.INERT
 
@@ -293,6 +320,37 @@ def _is_program(token: str) -> bool:
     return name in {'uv', 'uvx', 'pip', 'pip3'} or bool(re.fullmatch(r'python[0-9.]*', name))
 
 
+def has_locked_resolution(root: Path, *, at_head: bool = False) -> bool:
+    """A tracked, readable uv lock exists; this does NOT certify graph freshness."""
+    if at_head:
+        text = git_out(root, 'show', 'HEAD:uv.lock')
+    elif git_out(root, 'ls-files', '--error-unmatch', 'uv.lock') is not None:
+        try:
+            text = (root / 'uv.lock').read_text(encoding='utf-8')
+        except OSError:
+            return False
+    else:
+        return False
+    if text is None:
+        return False
+    try:
+        table = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return False
+    packages = table.get('package')
+    return (
+        type(table.get('version')) is int
+        and isinstance(packages, list)
+        and bool(packages)
+        and all(
+            isinstance(package, dict)
+            and isinstance(package.get('name'), str)
+            and isinstance(package.get('source'), dict)
+            for package in packages
+        )
+    )
+
+
 def scan_doors(root: Path, paths: list[str], names: tuple[str, ...]) -> tuple[Door, ...]:
     """Every installer-capable command in *paths*, classified. *paths* are repo-relative.
 
@@ -301,18 +359,22 @@ def scan_doors(root: Path, paths: list[str], names: tuple[str, ...]) -> tuple[Do
     stops a list of typos from reading as a clean tree.
     """
     doors: list[Door] = []
+    locked = has_locked_resolution(root)
     for relative in paths:
         path = root / relative
         if not path.is_file():
             continue
         text = path.read_text(encoding='utf-8', errors='replace')
-        doors.extend(Door(relative, number, shlex.join(argv), classify(argv, names)) for number, argv in commands(text))
+        doors.extend(
+            Door(relative, number, shlex.join(argv), classify(argv, names, locked=locked))
+            for number, argv in commands(text)
+        )
     return tuple(doors)
 
 
 def unlocked(doors: tuple[Door, ...]) -> tuple[Door, ...]:
     """Return the doors that move an environment and serve whatever a local lock last resolved."""
-    return tuple(door for door in doors if door.delivery is Delivery.UNLOCKED)
+    return tuple(door for door in doors if door.delivery in {Delivery.UNLOCKED, Delivery.UNMEASURED})
 
 
 def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], floor: int) -> tuple[Door, ...]:
@@ -342,9 +404,10 @@ def assert_doors_deliver(root: Path, paths: list[str], names: tuple[str, ...], f
     if stale:
         listed = '\n  '.join(door.describe() for door in stale)
         msg = (
-            f'these install doors serve whatever uv.lock pins rather than the declared build of '
+            f'these install doors lack explicit tracked-lock installation or re-resolution for '
             f'{", ".join(names)}:\n  {listed}\n'
-            f'What they deliver is whatever the lock last resolved. Two remedies, and which one applies is decided by '
+            f'Use --frozen/--locked with a tracked readable uv.lock (freshness checked separately), '
+            f'or choose the remedy decided by '
             f'whether the command is supposed to move the environment at all: a real install door '
             f'adds `--upgrade-package {names[0]}` (which implies --refresh-package), and a git hook '
             f'or a tool invocation adds `--no-sync`, because a hook that reinstalls the environment '
