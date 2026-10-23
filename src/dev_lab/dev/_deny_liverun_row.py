@@ -8,6 +8,10 @@ tree. The Edit/Write half renders its refusal from this same row (:mod:`dev_lab.
 
 from __future__ import annotations
 
+from dev_lab.dev.venvpath import venv_interpreter
+
+_NT, _POSIX = venv_interpreter(os_name='nt'), venv_interpreter(os_name='posix')
+
 #: git verbs that rewrite the working tree or the index a run's checkout executes from.
 _GIT_MUTATORS = 'merge|pull|checkout|switch|reset|apply|am|cherry-pick|rebase|restore|rm|mv|clean|stash'
 
@@ -32,8 +36,8 @@ LIVE_RUN: dict[str, object] = {
         'git switch main',
         'git cherry-pick 4a4e8b13f',
         'git restore src/a.py',
-        '.venv/Scripts/python.exe -m dev_lab.dev.dep --sync',
-        '.venv/bin/python -m dev_lab.dev.dep --bootstrap .claude/worktrees/x',
+        f'{_NT} -m dev_lab.dev.dep --sync',
+        f'{_POSIX} -m dev_lab.dev.dep --bootstrap .claude/worktrees/x',
         'uv sync --frozen',
         'uv pip install requests',
     ),
@@ -43,7 +47,7 @@ LIVE_RUN: dict[str, object] = {
         'git diff --stat',
         'git show HEAD:src/a.py',
         'git merge-base --is-ancestor a b',
-        '.venv/Scripts/python.exe -m dev_lab.dev.dep --dry-run',
+        f'{_NT} -m dev_lab.dev.dep --dry-run',
         'uv pip list',
     ),
 }

@@ -35,6 +35,7 @@ from lab_commons.log import emit
 
 from dev_lab.dev.datedlog import dated_log
 from dev_lab.dev.hpchost.spec import DEFAULT_ROOT, KIT
+from dev_lab.dev.venvpath import venv_interpreter
 
 __all__ = ['KIND', 'Target', 'declared_target', 'deploy_fleet', 'main', 'remote_argv']
 
@@ -72,7 +73,8 @@ def declared_target(grant: Grant, shell: Runner) -> Target | str:
 
 def remote_argv(user: str, target: Target) -> list[str]:
     """The ssh argv that runs *user*'s own deploy on its DECLARED host, never prompting."""
-    command = f'cd {PurePosixPath("~", target.root, KIT)} && .venv/bin/python -m dev_lab.dev.hpchost deploy'
+    python = venv_interpreter(os_name='posix')  # every cluster login host is POSIX
+    command = f'cd {PurePosixPath("~", target.root, KIT)} && {python} -m dev_lab.dev.hpchost deploy'
     return [
         'ssh',
         '-o',
@@ -85,7 +87,8 @@ def remote_argv(user: str, target: Target) -> list[str]:
 
 
 def _detached(argv: Sequence[str], log: IO[Any]) -> object:
-    flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == 'nt' else 0
+    # The door adds CREATE_NO_WINDOW; DETACHED_PROCESS would leave the windowless console the serve child inherits.
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
     return _door.popen(
         list(argv),
         stdin=subprocess.DEVNULL,
