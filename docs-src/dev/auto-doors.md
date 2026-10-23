@@ -43,9 +43,12 @@ Claude Code reads `autoMode` only from user, managed or `--settings` files, so t
 repo's `<repo>/.claude/automode.json` through `--settings`. `dev_lab.dev.automode` renders it:
 `{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}`.
 
-- `environment`: the repo's `origin` and declared branch set, and the SOURCES of the forge fleet (the synced
-  workstation registry named by the machine file's `[workstation] registry`, and its `[[hpc.grant]]` accounts).
-  Both are machine-local, so no host is listed in a tracked file.
+- `environment`: the repo's `origin` and declared branch set, and the trusted hosts BY NAME so the classifier
+  recognises them: each workstation of the synced workstation registry (`hosts.json`, named by the machine file's
+  `[workstation] registry`) with its computer, address and roles, and each `[[hpc.grant]]` account with its login
+  hosts. The committed file is therefore a derived artefact of machine-local sources: the check re-renders it, and
+  where a source is unreadable (a cluster login node has no registry) it exits 3, INCONCLUSIVE, naming the source,
+  and `--write` writes nothing.
 - `allow`: `INTENTS`, one prose category per door or rule (Break-Glass, close-landed, close-superseded,
   lossless prune, hook install, fleet deploy, cancel-stuck, read-only monitoring), plus each `OPTIONAL_INTENTS`
   entry the repo names in `[tool.lab_commons.automode] declares` (e.g. `"jmag-material-card"`).

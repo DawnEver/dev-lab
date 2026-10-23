@@ -9,18 +9,22 @@ PROSE, NEVER SPELLINGS. The classifier judges INTENT; the exact command a door t
 ``permissions.allow`` row :mod:`dev_lab.dev.autodoors` renders. A command or module spelled here would be a
 second, unchecked allow list (:func:`spelled_commands` refuses one).
 
-SINGLE SOURCES, and what is NOT rendered:
+SINGLE SOURCES:
 
 * the source-control remote: this checkout's ``origin`` (:func:`dev_lab.dev.forge.forge_from_remote`) and its
   declared branch set (trunk, long-lived branches);
-* the forge serve fleet and the cluster accounts are MACHINE-LOCAL -- the synced workstation registry named by
-  the machine file's ``[workstation] registry`` and the machine file's ``[[hpc.grant]]`` tables. A tracked file
-  rendered from them would differ per machine, so the file names those SOURCES and lists no host;
+* the trusted hosts, by NAME so the classifier recognises them (:func:`read_fleet`): every workstation of the
+  synced workstation registry (``hosts.json``, named by the machine file's ``[workstation] registry``) with its
+  computer name, address and roles, and every cluster account of the machine file's ``[[hpc.grant]]`` tables
+  with its login hosts;
 * the action categories: :data:`INTENTS`, one per door or rule the kit holds, and :data:`OPTIONAL_INTENTS`,
   rendered only for a repo that names one in ``[tool.lab_commons.automode] declares``.
 
-``python -m dev_lab.dev.autodoors --write`` writes it beside the Codex rules; without ``--write`` a stale file
-exits 1.
+THE COMMITTED FILE IS A DERIVED ARTEFACT OF MACHINE-LOCAL SOURCES. ``python -m dev_lab.dev.autodoors --write``
+writes it beside the Codex rules, and refuses when a source is unreadable. Without ``--write`` the drift check
+re-renders it: a stale file exits 1, and where a source cannot be read (a cluster login node holds no
+``hosts.json``) :class:`SourcesUnavailable` is raised -- INCONCLUSIVE, naming the source, never a pass (the
+rule :exc:`~dev_lab.dev.famtests.latestversions.FetchUnavailable` states for an unanswered fetch).
 """
 
 from __future__ import annotations
@@ -28,20 +32,28 @@ from __future__ import annotations
 import json
 import re
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.config import config_path, section
+from lab_commons.hpc.grants import Grant, load_grants
+
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import UnreadableRemote, forge_from_remote
+from dev_lab.dev.workstation import FORGE_ROLE, REGISTRY_TABLE
 
 __all__ = [
     'AUTOMODE_REL',
     'DEFAULTS',
     'INTENTS',
     'OPTIONAL_INTENTS',
+    'Fleet',
+    'SourcesUnavailable',
     'automode',
     'check',
+    'read_fleet',
     'render',
     'spelled_commands',
     'write',
@@ -53,19 +65,12 @@ AUTOMODE_REL: Final = '.claude/automode.json'
 #: Keeps the client's built-in entries in force; the first entry of every array.
 DEFAULTS: Final = '$defaults'
 
-#: The toolchain facts true of every consuming repo; the repo's own remote is added by :func:`automode`.
+#: The toolchain facts true of every consuming repo; the remote and the hosts are added by :func:`automode`.
 _ENVIRONMENT: Final = (
     (
         "The family development kit (dev-lab) is installed in each checkout's own virtual environment; its checked "
         'doors are the sanctioned way to run privileged development operations, and each re-checks its safety '
         'bound at the moment it acts.'
-    ),
-    (
-        'The forge serve fleet is the set of workstations listed in the synced workstation registry (hosts.json, '
-        'whose path the local machine file declares under its workstation table; an entry with the forge role serves) '
-        'plus the university HPC cluster accounts declared in that machine file as cluster grants, each reached '
-        'by key-based ssh at its declared login hosts. Both lists are machine-local, so they are named here by '
-        'source rather than copied.'
     ),
     (
         'Test verdicts are produced once per commit by the forge serve hosts and posted as commit statuses; a '
@@ -90,12 +95,12 @@ INTENTS: Final[dict[str, str]] = {
     ),
     'install-hooks': 'Installing or refreshing the kit git hooks in a checkout of this repository.',
     'deploy-fleet': (
-        'Deploying or restarting the forge serve hosts of the declared fleet: the workstation scheduled task '
-        'and each declared cluster account, over ssh, detached, one log per account.'
+        'Deploying or restarting the forge serve hosts of the trusted fleet: the workstation scheduled task '
+        'and each trusted cluster account on its own declared login host, over ssh, detached, one log per account.'
     ),
     'cancel-stuck': (
         "Cancelling the forge's own test jobs of one commit that are confirmed stuck: busy at full CPU with no "
-        'new result for longer than their bound. Never any other job.'
+        'new test result for longer than a multiple of their measured duration. Never any other job.'
     ),
     'monitor': 'Read-only monitoring of the forge: commit statuses, the queue, host cards and run progress.',
 }
@@ -110,6 +115,36 @@ OPTIONAL_INTENTS: Final[dict[str, str]] = {
 
 #: What a command or module spelling looks like; prose carries none.
 _SPELLED: Final = re.compile(r'`|\bpython\b|\s-m\s|\s--?[a-z]|\bdev_lab\b|\blab_commons\b|\.py\b|\bssh\s+\S+@')
+
+
+class SourcesUnavailable(RuntimeError):
+    """A machine-local source of the fleet could not be read, so the render cannot be judged. INCONCLUSIVE.
+
+    Not a stale file and not a current one: a check that read it as either would report a fleet it never read.
+    """
+
+
+@dataclass(frozen=True)
+class Fleet:
+    """The trusted hosts: the registry's workstation entries and the machine file's cluster grants."""
+
+    workstations: tuple[Mapping[str, Any], ...]
+    grants: tuple[Grant, ...]
+
+
+def read_fleet() -> Fleet:
+    """The fleet from its two machine-local sources; :class:`SourcesUnavailable` naming the one that did not read."""
+    registry = section(REGISTRY_TABLE).get('registry')
+    if not isinstance(registry, str) or not registry:
+        msg = f'no [{REGISTRY_TABLE}] registry in {config_path()}: the workstation registry is unreadable here'
+        raise SourcesUnavailable(msg)
+    try:
+        hosts = json.loads(Path(registry).expanduser().read_text(encoding='utf-8-sig'))['hosts']
+        grants = load_grants().grants
+    except (OSError, ValueError, KeyError, TypeError) as bad:
+        msg = f'the fleet sources did not read ({registry}, {config_path()}): {bad}'
+        raise SourcesUnavailable(msg) from None
+    return Fleet(tuple(hosts), tuple(grants))
 
 
 def spelled_commands(entries: Sequence[str]) -> tuple[str, ...]:
@@ -142,26 +177,55 @@ def _source_control(root: Path) -> str:
     return said + f'; its trunk is {branches.trunk} and its long-lived branches are {others}.'
 
 
-def automode(root: Path) -> dict[str, Any]:
-    """The ``autoMode`` settings object for the checkout at *root*."""
+def _workstation(entry: Mapping[str, Any]) -> str:
+    facts = [f'computer {entry["computer"]}'] if entry.get('computer') else []
+    facts += [f'address {entry["address"]}'] if entry.get('address') else []
+    roles = list(entry.get('roles') or [])
+    if roles:
+        facts.append(f'roles {", ".join(roles)}{", serves the forge" if FORGE_ROLE in roles else ""}')
+    return f'{entry.get("name", "?")} ({"; ".join(facts)})'
+
+
+def _fleet_lines(fleet: Fleet) -> list[str]:
+    lines = []
+    if fleet.workstations:
+        names = ', '.join(_workstation(entry) for entry in fleet.workstations)
+        lines.append(f'Trusted workstations of this team (the synced workstation registry): {names}.')
+    accounts: dict[str, Grant] = {}
+    for grant in fleet.grants:
+        accounts.setdefault(grant.user, grant)
+    if accounts:
+        listed = '; '.join(
+            f'account {g.user} at login hosts {", ".join(g.hosts)} (Slurm account {g.slurm_account})'
+            for g in accounts.values()
+        )
+        lines.append(f'Trusted university HPC cluster accounts of this team, reached by key-based ssh: {listed}.')
+    return lines
+
+
+def automode(root: Path, fleet: Fleet | None = None) -> dict[str, Any]:
+    """The ``autoMode`` settings object for the checkout at *root* (*fleet*: :func:`read_fleet` when omitted)."""
     allow = [*INTENTS.values(), *(OPTIONAL_INTENTS[name] for name in _declared(root))]
-    environment = [_source_control(root), *_ENVIRONMENT]
+    hosts = _fleet_lines(read_fleet() if fleet is None else fleet)
+    environment = [_source_control(root), *hosts, *_ENVIRONMENT]
     return {'autoMode': {'environment': [DEFAULTS, *environment], 'allow': [DEFAULTS, *allow]}}
 
 
-def render(root: Path) -> str:
+def render(root: Path, fleet: Fleet | None = None) -> str:
     """:func:`automode` as the file's text."""
-    return json.dumps(automode(root), indent=2) + '\n'
+    return json.dumps(automode(root, fleet), indent=2) + '\n'
 
 
-def check(root: Path) -> bool:
-    """Whether the tracked file equals a fresh render."""
+def check(root: Path, fleet: Fleet | None = None) -> bool:
+    """Whether the tracked file equals a fresh render; :class:`SourcesUnavailable` when that cannot be said."""
+    fresh = render(root, fleet)
     target = root / AUTOMODE_REL
-    return target.is_file() and target.read_text(encoding='utf-8') == render(root)
+    return target.is_file() and target.read_text(encoding='utf-8') == fresh
 
 
-def write(root: Path) -> None:
-    """Write the fresh render."""
+def write(root: Path, fleet: Fleet | None = None) -> None:
+    """Write the fresh render; :class:`SourcesUnavailable` (nothing written) when a source is unreadable."""
+    text = render(root, fleet)
     target = root / AUTOMODE_REL
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(render(root), encoding='utf-8', newline='\n')
+    target.write_text(text, encoding='utf-8', newline='\n')

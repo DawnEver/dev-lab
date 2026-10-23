@@ -254,8 +254,15 @@ def promises_raw(text: str) -> tuple[str, ...]:
     return tuple(sorted({m.group(0) for m in _RAW.finditer(text)}))
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Print the Claude rows; check (or ``--write``) the Codex rules and the auto-mode prose. Exit 1 when stale."""
+#: The exit when the auto-mode prose cannot be judged because a fleet source did not read.
+INCONCLUSIVE: Final = 3
+
+
+def main(argv: list[str] | None = None, *, fleet: automode.Fleet | None = None) -> int:
+    """Print the Claude rows; check (or ``--write``) the Codex rules and the auto-mode prose.
+
+    Exit 1 when stale; 3 (INCONCLUSIVE, nothing written) when a fleet source is unreadable here.
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.autodoors', description=main.__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--write', action='store_true', help=f'write {CODEX_RULES_REL} and {automode.AUTOMODE_REL}')
@@ -267,15 +274,21 @@ def main(argv: list[str] | None = None) -> int:
     target = root / CODEX_RULES_REL
     for row in claude_rows(scripts):
         emit(f'[autodoors] claude  {row}')
+    try:
+        prose_text = automode.render(root, fleet)
+    except automode.SourcesUnavailable as unread:
+        emit(f'[autodoors] claude  {automode.AUTOMODE_REL}: INCONCLUSIVE -- {unread}', err=True)
+        return INCONCLUSIVE
     if args.write:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding='utf-8', newline='\n')
-        automode.write(root)
+        automode.write(root, fleet)
         emit(f'[autodoors] codex   wrote {CODEX_RULES_REL}')
         emit(f'[autodoors] claude  wrote {automode.AUTOMODE_REL}')
         return 0
     current = target.is_file() and target.read_text(encoding='utf-8') == text
-    prose = automode.check(root)
+    prose_file = root / automode.AUTOMODE_REL
+    prose = prose_file.is_file() and prose_file.read_text(encoding='utf-8') == prose_text
     emit(f'[autodoors] codex   {CODEX_RULES_REL}: {"current" if current else "STALE -- run with --write"}')
     emit(f'[autodoors] claude  {automode.AUTOMODE_REL}: {"current" if prose else "STALE -- run with --write"}')
     return 0 if current and prose else 1
