@@ -130,7 +130,6 @@ prune_merged = true
 BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
 NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync, which retries inside"
-OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name> 2>&1  (create the day's <kind> directory first; the shape is dev_lab.dev.datedlog's)"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

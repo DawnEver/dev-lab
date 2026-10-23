@@ -51,8 +51,10 @@ reader can switch off without editing it is the silent absence this module exist
 from __future__ import annotations
 
 import json
+import tomllib
 from typing import TYPE_CHECKING
 
+from dev_lab.dev._deny_rows import RETIRED_IDS
 from dev_lab.dev.agent_guard import ENGINE_REL, GUARDED, RULES_REL, guard_installation
 from dev_lab.dev.agenthooks import node_executable, run_engine
 from dev_lab.dev.hook_adoption import DENY_RULES, assert_shippable, render
@@ -68,6 +70,7 @@ if TYPE_CHECKING:
 __all__ = [
     'GuardNotLive',
     'assert_committed_rules_are_rendered',
+    'assert_doors_name_live_rules',
     'assert_every_rule_is_accounted_for',
     'assert_node_is_available',
     'assert_refused_by',
@@ -188,6 +191,29 @@ def assert_committed_rules_are_rendered(
             f'result: the declaration is the half a reader trusts, and the JSON is the half the '
             f'engine obeys, and nothing else keeps them equal.'
         )
+
+
+def assert_doors_name_live_rules(*, root: Path, rules: Sequence[DenyRule] = DENY_RULES) -> None:
+    """Every key of ``[tool.lab_commons.doors]`` is a live rule ID; a retired one is named with its replacement.
+
+    The engine reads that table by rule ID and uses a key that names no rule for nothing, so a door keyed by a
+    renamed rule silently stops being offered (RETIRED-NAMES-REGISTERED).
+
+    Raises:
+        GuardNotLive: a key is retired or names no rule.
+
+    """
+    manifest = root / 'pyproject.toml'
+    with manifest.open('rb') as handle:
+        doors = tomllib.load(handle).get('tool', {}).get('lab_commons', {}).get('doors', {})
+    known = {rule.id for rule in rules}
+    stale = sorted(set(doors) - known)
+    if stale:
+        named = '; '.join(
+            f'{key} is retired, rename it {RETIRED_IDS[key]}' if key in RETIRED_IDS else f'{key} is no rule'
+            for key in stale
+        )
+        _refuse(f'[tool.lab_commons.doors] in {manifest}: {named}. A door under a key no rule reads is never offered.')
 
 
 def assert_every_rule_is_accounted_for(
