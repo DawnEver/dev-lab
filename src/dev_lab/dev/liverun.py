@@ -57,6 +57,7 @@ __all__ = [
     'RULE_ID',
     'RUN_FLOOR_S',
     'checkout_of',
+    'env_in_use',
     'executing_from',
     'in_tree',
     'live_runs',
@@ -221,6 +222,15 @@ def refusal(root: Path | str, runs: Sequence[Process]) -> str:
     """The deny text: the row's own hazard and remedy, then the runs it saw."""
     rule = rules_by_id(DENY_RULES)[RULE_ID]
     return f'{rule.reason()}\n  tree: {Path(root).as_posix()}\n{describe(runs)}'
+
+
+def env_in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
+    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run."""
+    return (
+        f'{name}: {prefix} is the environment of a live process that holds no seat (2026-10-19: a `deck run` '
+        f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it '
+        f'(python -m dev_lab.dev.stoprun --pid <pid>), or change the environment of another worktree.'
+    )
 
 
 def _hook(stdin: TextIO, census: Census) -> int:

@@ -270,9 +270,8 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
 def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> Moved:
     if not (checkout / '.git').exists():
         what = f'{checkout.name}: git clone -b {ref} {url} {checkout}'
-        if step.dry:
-            return Moved(step.change(what, []))
-        return network(step, what, [*programs.git, 'clone', '-q', '-b', ref, url, str(checkout)])
+        clone = [*programs.git, 'clone', '-q', '-b', ref, url, str(checkout)]
+        return Moved(step.change(what, [])) if step.dry else network(step, what, clone)
     return follow(step, programs.git, checkout)
 
 

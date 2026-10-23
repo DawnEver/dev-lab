@@ -74,7 +74,7 @@ from typing import Any, Final
 import lab_commons.launch as _door
 from lab_commons import envkey as envkey_module
 from lab_commons.box import Refused
-from lab_commons.census import Process, processes
+from lab_commons.census import processes
 from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
@@ -82,7 +82,7 @@ from dev_lab.dev import _dep_project
 from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev.envseat import EnvironmentSeat
-from dev_lab.dev.liverun import Census, describe, executing_from
+from dev_lab.dev.liverun import Census, env_in_use, executing_from
 from dev_lab.dev.lockcheck import unreasoned_holds
 
 __all__ = [
@@ -394,7 +394,7 @@ def _change(
                 return port.env_key(python)
 
             if users := executing_from(prefix, census=census):
-                raise HeldEnvironmentError(_in_use(port.name, prefix, users))
+                raise HeldEnvironmentError(env_in_use(port.name, prefix, users))
             before = key()
             if dry_run:
                 return Report(port.name, prefix, tuple(argv), None, before, None, (), tuple(gaps))
@@ -406,15 +406,6 @@ def _change(
             return Report(port.name, prefix, tuple(argv), returncode, before, after, retired, tuple(gaps))
     except Refused as exc:
         raise _held_refusal(port.name, exc, prefix) from exc
-
-
-def _in_use(name: str, prefix: str, users: Sequence[Process]) -> str:
-    """H1 WITHOUT A SEAT: a process executes from the environment, so moving it moves the files under that run."""
-    return (
-        f'{name}: {prefix} is the environment of a live process that holds no seat (2026-10-19: a `deck run` '
-        f'held none and was re-synced under):\n{describe(users)}\nWait for it, stop it '
-        f'(python -m dev_lab.dev.stoprun --pid <pid>), or change the environment of another worktree.'
-    )
 
 
 def _lock_upgrade(
