@@ -136,6 +136,6 @@ def test_every_network_argv_in_the_kit_reaches_the_retry_door() -> None:
         ("def f():\n    run(['uv', 'pip', 'list'])\n", False),
     ],
 )
-def test_the_scan_flags_a_raw_network_argv_and_passes_a_routed_one(body: str, flagged: bool) -> None:  # noqa: FBT001
+def test_a_planted_raw_network_argv_is_flagged_and_a_routed_one_passes(body: str, flagged: bool) -> None:  # noqa: FBT001
     """PLANTED, both directions: a raw verb is found, a routed one and a local verb are not."""
     assert bool(unrouted(ast.parse(body))) is flagged
