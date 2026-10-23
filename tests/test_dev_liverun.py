@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -300,6 +301,53 @@ def test_the_real_engine_refuses_a_merge_into_a_live_tree_and_allows_an_idle_one
 
 #: Every row needing a repo artefact, declared absent so the planted adoption renders without remedies.
 _NEEDING = {rule.id for rule in DENY_RULES if rule.needs is not None}
+
+
+def _session_whose_interpreter_cannot_answer(root: Path) -> Path:
+    """A session checkout whose ``.venv`` python is NOT Python (a copy of ``node``): every probe crashes."""
+    session = _checkout(root)
+    node = shutil.which('node')
+    assert node, 'the engine runs under node, so node is on PATH'
+    python = session / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    python.parent.mkdir(parents=True)
+    try:
+        os.link(node, python)
+    except OSError:
+        shutil.copy2(node, python)
+    hooks = session / '.claude' / 'hooks'
+    hooks.mkdir(parents=True)
+    (hooks / 'deny-rules.json').write_text(
+        render(HookAdoption(app_name='s', declared_absent=frozenset(_NEEDING))), encoding='utf-8'
+    )
+    return session
+
+
+@pytest.mark.parametrize(
+    'spelling',
+    [
+        'git -C {tree} merge origin/integrate/main',
+        'git -c core.autocrlf=false -C {tree} merge origin/integrate/main',
+        'uv --directory {tree} sync',
+        'uv --project={tree} run pytest',
+    ],
+)
+def test_a_live_run_probe_that_cannot_answer_refuses_and_names_the_target(tmp_path: Path, spelling: str) -> None:
+    """The harm is irreversible, so a crashed probe is not "no live run"; the target is the tree the call names."""
+    session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
+    tree = _checkout(tmp_path / 'tree')
+    rules = session / '.claude' / 'hooks' / 'deny-rules.json'
+    said = agenthooks.decide(spelling.format(tree=tree.as_posix()), rules, cwd=session)
+    assert said is not None
+    assert said.startswith('TREE-HAS-A-LIVE-RUN: could not confirm'), said
+    assert str(tree) in said or tree.as_posix() in said
+
+
+def test_a_command_the_row_does_not_match_never_asks_the_probe(tmp_path: Path) -> None:
+    """PLANTED CONTROL for the test above: the same broken probe, a read-only command, nothing refused."""
+    session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
+    tree = _checkout(tmp_path / 'tree')
+    rules = session / '.claude' / 'hooks' / 'deny-rules.json'
+    assert agenthooks.decide(f'git -C {tree.as_posix()} status', rules, cwd=session) is None
 
 
 def test_a_serve_works_in_a_root_that_is_not_the_tree(tree: Path) -> None:

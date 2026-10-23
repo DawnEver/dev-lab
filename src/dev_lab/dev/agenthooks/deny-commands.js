@@ -285,7 +285,27 @@ function hostPath(word) {
   return drive ? `${drive[1]}:${bare.slice(2)}` : bare;
 }
 
-/** The directory the command acts in: the call's cwd, moved by `cd X` segments, or `git -C X`. */
+/** The directory one `git ...` / `uv ...` segment names for itself, or `null`: git's `-C X` among its global
+ * options (`-c k=v` and the rest are skipped), uv's `--directory X` / `--project X` (or `=X`) anywhere. */
+function namedDir(words) {
+  const program = (words[0] || '').replace(/\.exe$/i, '');
+  if (program === 'git') {
+    for (let i = 1; i < words.length; i += 1) {
+      if (words[i] === '-C') return words[i + 1] || null;
+      if (words[i] === '-c') i += 1;
+      else if (!words[i].startsWith('-')) return null; // the verb: global options end here
+    }
+  } else if (program === 'uv') {
+    for (let i = 1; i < words.length; i += 1) {
+      const eq = /^--(?:directory|project)=(.+)$/.exec(words[i]);
+      if (eq) return eq[1];
+      if (words[i] === '--directory' || words[i] === '--project') return words[i + 1] || null;
+    }
+  }
+  return null;
+}
+
+/** The directory the command acts in: the call's cwd, moved by `cd X` segments, or the dir a git/uv call names. */
 function targetDir(cmd, cwd) {
   let dir = cwd;
   const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
@@ -296,8 +316,8 @@ function targetDir(cmd, cwd) {
       dir = path.resolve(dir, hostPath(cd[1]));
       continue;
     }
-    const gitC = new RegExp(String.raw`^git(?:\.exe)?\s+-C\s+${word}`).exec(text);
-    if (gitC) return path.resolve(dir, hostPath(gitC[1]));
+    const named = namedDir(text.match(new RegExp(word, 'g')) || []);
+    if (named) return path.resolve(dir, hostPath(named));
   }
   return dir;
 }
@@ -358,8 +378,9 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
  * and it is refused only while a run executes from the checkout the command targets. Whether one does is
  * the process table's answer, which this engine cannot read: it asks `python -m dev_lab.dev.liverun
  * --tree <target>` through the session checkout's own interpreter, only AFTER the pattern matched, so an
- * unmatched command pays nothing. Exit 1 prints the refusal; anything else -- no interpreter, a crash, a
- * timeout -- is no refusal (fail-open, as everywhere in this engine).
+ * unmatched command pays nothing. Exit 0 is no live run and exit 1 prints the refusal. No interpreter is no
+ * refusal: a checkout without the kit has nobody to ask. A crash or a timeout REFUSES, unlike the rest of
+ * this engine, because the harm this row guards (a run's tree changed under it) cannot be undone.
  */
 function liveRunRefusal(target, sessionRoot) {
   if (!target || !sessionRoot) return '';
@@ -371,7 +392,13 @@ function liveRunRefusal(target, sessionRoot) {
     timeout: 15000,
     windowsHide: true,
   });
-  return done.status === 1 ? String(done.stdout || '').trim() : '';
+  if (done.status === 0) return '';
+  const said = String(done.stdout || '').trim();
+  if (done.status === 1 && said) return said;
+  // A Python that cannot start or import the module also exits 1, with nothing on stdout: not an answer.
+  const why = done.error ? done.error.message : `exit ${done.status}${said ? '' : ', no answer'}`;
+  return `TREE-HAS-A-LIVE-RUN: could not confirm that no run executes from ${target} (${why}); re-run when ` +
+    `python -m dev_lab.dev.liverun --tree ${target} answers.`;
 }
 
 /** Does `rule` fire on any executed text? */

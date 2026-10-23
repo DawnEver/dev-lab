@@ -14,13 +14,19 @@ _NT, _POSIX = venv_interpreter(os_name='nt'), venv_interpreter(os_name='posix')
 
 #: git verbs that rewrite the working tree or the index a run's checkout executes from.
 _GIT_MUTATORS = 'merge|pull|checkout|switch|reset|apply|am|cherry-pick|rebase|restore|rm|mv|clean|stash'
+#: git's global options before the verb: ``-C X``, ``-c k=v``, ``--no-pager``, ``--git-dir=X``.
+_GIT_GLOBAL = r'(?:\s+(?:-[Cc]\s+\S+|--[\w-]+(?:=\S+)?))*'
+#: uv verbs that change the venv or the lock: ``uv run`` syncs first unless told ``--no-sync``, and
+#: ``uv lock --check`` only reads.
+_UV_MUTATORS = r'sync|add|remove|lock(?![^\n]*--check)|run(?![^\n]*--no-sync)|pip\s+(?:install|uninstall|sync)'
 
 LIVE_RUN: dict[str, object] = {
     'id': 'TREE-HAS-A-LIVE-RUN',
     'pattern': (
-        rf'(?:git(?:\s+-[Cc]\s+\S+)*\s+(?:{_GIT_MUTATORS})'
+        rf'(?:git{_GIT_GLOBAL}\s+(?:{_GIT_MUTATORS})'
         r'|\S*python[\w.]*\s+-m\s+dev_lab\.dev\.dep\b[^\n]*\s--(?:sync|bootstrap|lock-upgrade|upgrade-package)'
-        r'|uv\s+(?:sync|add|remove|pip\s+(?:install|uninstall|sync)))(?![\w-])'
+        r'|(?:\S*python[\w.]*\s+-m\s+)?pip3?\s+(?:install|uninstall)'
+        rf'|uv(?:\s+--?[\w-]+(?:[=\s][^\s-]\S*)?)*?\s+(?:{_UV_MUTATORS}))(?![\w-])'
     ),
     'matches': 'command',
     'when': 'live-run',
@@ -40,6 +46,13 @@ LIVE_RUN: dict[str, object] = {
         f'{_POSIX} -m dev_lab.dev.dep --bootstrap .claude/worktrees/x',
         'uv sync --frozen',
         'uv pip install requests',
+        'uv run pytest tests/a',
+        'uv --directory .claude/worktrees/x sync',
+        'uv lock --upgrade',
+        'pip install requests',
+        f'{_NT} -m pip install requests',
+        'git -c core.autocrlf=false -C .claude/worktrees/x merge lane/x',
+        'git --no-pager checkout main',
     ),
     'permits': (
         'git status',
@@ -49,5 +62,8 @@ LIVE_RUN: dict[str, object] = {
         'git merge-base --is-ancestor a b',
         f'{_NT} -m dev_lab.dev.dep --dry-run',
         'uv pip list',
+        'uv lock --check',
+        'pip list',
+        'git -c core.pager=cat log -3',
     ),
 }
