@@ -22,7 +22,10 @@ from typing import Final
 import pytest
 from _box_fake import quiet
 from lab_commons.box import BOX_ENV, GB, Capacity, Demand, NotAdmitted, hold, not_admitted
+from lab_commons.census import Process
 
+from dev_lab.dev import dep as dep_module
+from dev_lab.dev import liverun
 from dev_lab.dev.dep import (
     NO_ANCHORS_DECLARED,
     HeldEnvironmentError,
@@ -41,8 +44,13 @@ _REQS: Final = ('example-package==1.2.3',)
 
 @pytest.fixture(autouse=True)
 def isolated_environment_seats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fake installers contend in a private broker directory, not the suite runner's environment."""
+    """Fake installers contend in a private broker directory, not the suite runner's environment.
+
+    The suite's sibling workers execute from this same venv, so the live-process census is stubbed; the refusal
+    keeps its planted control in ``test_a_live_process_executing_from_the_environment_refuses``.
+    """
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
+    monkeypatch.setattr(dep_module, 'executing_from', lambda *_a, **_k: ())
 
 
 class _Run:
@@ -297,4 +305,14 @@ def test_a_queue_ahead_is_named_as_the_cause_not_a_verdict_in_this_environment(m
     assert 'a verdict is running' not in message
     assert "queued behind 'verify:p8'" in message
     assert not_admitted(message), 'the cause still classifies as capacity across the process boundary'
+    assert run.calls == []
+
+
+def test_a_live_process_executing_from_the_environment_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PLANTED CONTROL for the fixture's census stub: a process running from the prefix refuses, before the child."""
+    monkeypatch.setattr(dep_module, 'executing_from', liverun.executing_from)
+    runner = Process(1, 0, str(Path(sys.prefix) / 'python.exe'), 'python -m pytest', 3600.0, sys.prefix)
+    run = _Run()
+    with pytest.raises(HeldEnvironmentError):
+        mutate(_REQS, port=Port(name='x'), run=run, census=lambda: [runner])
     assert run.calls == []

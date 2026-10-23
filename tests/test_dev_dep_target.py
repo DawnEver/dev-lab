@@ -118,6 +118,7 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
 def test_mutation_holds_the_same_environment_seat_until_the_child_finishes(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
+    monkeypatch.setattr(dep, 'executing_from', lambda *_a, **_k: ())  # sibling suite workers share this venv
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
         with pytest.raises(Refused), EnvironmentSeat(sys.prefix, 'gate:starts-during-mutation').held():
