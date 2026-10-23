@@ -5,10 +5,11 @@ solve burns its allocation and its run never settles. Cancelling it was an ad-ho
 bounds it so an agent may run it unattended. A task is cancelled only when EVERY bound holds:
 
 * its job name is the forge's for this commit, ``run-<sha12>-<part>`` (:func:`lab_commons.hpc.run.job_name`),
-  and the sha given is a full 40-hex commit -- a prefix could name another commit's run;
+  AND its Slurm job id is one the part's CURRENT round recorded -- the name carries only 12 hex, so the job
+  id is what ties a task to this commit's round (an earlier round's task of the same name is refused);
 * it is RUNNING, at :data:`BUSY` or more of its allocated CPUs (cpu time / (elapsed x cpus));
 * its items' stream (the per-test lines of :mod:`lab_commons.hpc.pytest_item`) took no new line for longer
-  than its LIMIT.
+  than its LIMIT, read once to judge and AGAIN just before ``scancel``.
 
 THE LIMIT IS MEASURED, ONE SOURCE: ``--factor`` x the longest MEASURED duration of the shard's tests, read
 from the forge's learned table (:attr:`lab_commons.compute.learned.Measured.durations`, keyed by node id) --
@@ -69,6 +70,8 @@ class Task:
     cpu_s: float  # cumulative CPU time
     idle_s: float  # since its stream last took a line
     limit: Limit = Limit(0.0, '')
+    refused: str = ''  # a read that cannot tie the task to its round, or measure it
+    streams: str = ''  # the quoted stream paths, re-read before a cancel
 
 
 def parse_duration(text: str) -> float:
@@ -97,6 +100,8 @@ def judge(task: Task, sha: str) -> str:
     """``''`` when *task* is a stuck forge task of *sha*; else the bound it fails."""
     if not re.fullmatch(rf'run-{sha[:12]}-{_PART}', task.name):
         return f'{task.job_id} {task.name}: refused -- not a forge task of {sha[:12]}'
+    if task.refused:
+        return f'{task.job_id} {task.name}: refused -- {task.refused}'
     busy = task.cpu_s / max(task.elapsed_s * max(task.cpus, 1), 1.0)
     if busy < BUSY:
         return f'{task.job_id} {task.name}: healthy -- CPU {busy:.0%} is below {BUSY:.0%}'
@@ -113,16 +118,32 @@ def judge(task: Task, sha: str) -> str:
 _QUEUE: Final = "date +%s; squeue -h --me -t RUNNING -o '%i|%j|%M|%C'"
 
 
+#: Separates the CPU lines from the stream clock in one probe's output.
+_SPLIT: Final = '--stream--'
+
+
+def _cpu_seconds(lines: Sequence[str]) -> float | None:
+    """The most CPU any step of the task reports, parsed rather than text-sorted; ``None`` when none did."""
+    seen = [parse_duration(line) for line in lines if ':' in line]
+    return max(seen) if seen else None
+
+
+def _newest(text: str) -> float:
+    stamps = [float(word) for word in text.split() if word.replace('.', '', 1).isdigit()]
+    return max(stamps, default=0.0)
+
+
 def read_tasks(
     shell: Runner,
     sha: str,
-    run_dir: Callable[[str], str],
+    round_of: Callable[[str], tuple[str, frozenset[str]]],
     limit: Callable[[Sequence[str]], Limit],
 ) -> list[Task]:
     """Every RUNNING task under *shell*'s account; a task of *sha* also with its CPU, stream age and limit.
 
-    *run_dir* maps a part to its current round's run directory, whose ``manifest.json`` names each shard's
-    items (their node ids and stream). Other jobs are read too and kept, so :func:`judge` refuses them by name.
+    *round_of* maps a part to its CURRENT round: the run directory, whose ``manifest.json`` names each shard's
+    items (their node ids and stream), and the Slurm job ids that round submitted. Other jobs are read too
+    and kept, so :func:`judge` refuses them by name.
     """
     lines = shell(_QUEUE, None).split()
     now, rows = float(lines[0]), [line.split('|') for line in lines[1:]]
@@ -132,25 +153,50 @@ def read_tasks(
         if not found or '_' not in job_id:
             tasks.append(Task(job_id, name, parse_duration(elapsed), int(cpus), 0.0, 0.0))
             continue
-        manifest: dict[str, Any] = json.loads(shell(f'cat {shlex.quote(run_dir(found.group(1)))}/manifest.json', None))
+        run_dir, job_ids = round_of(found.group(1))
+        base = job_id.partition('_')[0]
+        if base not in job_ids:
+            why = f'job {base} is not one the current round submitted ({", ".join(sorted(job_ids)) or "none"})'
+            tasks.append(Task(job_id, name, parse_duration(elapsed), int(cpus), 0.0, 0.0, refused=why))
+            continue
+        manifest: dict[str, Any] = json.loads(shell(f'cat {shlex.quote(run_dir)}/manifest.json', None))
         start, stop = manifest['shards'][int(job_id.rpartition('_')[2])]
         items = manifest['items'][start:stop]
         streams = ' '.join(sorted({f'{ROOT}/trees/{sha}/{shlex.quote(item["stream"])}' for item in items}))
         probe = (
-            f'sstat -n -P -a -j {shlex.quote(job_id)} -o TotalCPU | sort | tail -1; '
-            f'stat -c %Y {streams} 2>/dev/null | sort -n | tail -1 || echo 0'
+            f'sstat -n -P -a -j {shlex.quote(job_id)} -o TotalCPU; echo {_SPLIT}; '
+            f'stat -c %Y {streams} 2>/dev/null || true'
         )
-        total, mtime = [*shell(probe, None).split(), '0', '0'][:2]
-        idle_s = now - float(mtime) if float(mtime) else parse_duration(elapsed)
-        cpu_s = parse_duration(total) if ':' in total else 0.0
+        cpu_text, _, stream_text = shell(probe, None).partition(_SPLIT)
+        cpu_s = _cpu_seconds(cpu_text.split())
+        mtime = _newest(stream_text)
+        idle_s = now - mtime if mtime else parse_duration(elapsed)
         ids = [node for item in items for node in item.get('ids', ())]
-        tasks.append(Task(job_id, name, parse_duration(elapsed), int(cpus), cpu_s, idle_s, limit(ids)))
+        refused = '' if cpu_s is not None else 'sstat reported no CPU time, so its load cannot be measured'
+        tasks.append(
+            Task(
+                job_id, name, parse_duration(elapsed), int(cpus), cpu_s or 0.0, idle_s, limit(ids),
+                refused=refused, streams=streams,
+            )
+        )  # fmt: skip
     return tasks
 
 
-def _run_dir(sha: str, grant: Grant, shell: Runner) -> Callable[[str], str]:
+def _still_silent(shell: Runner, task: Task) -> bool:
+    """Re-read *task*'s stream clock just before a cancel: a line written since the judgement spares it."""
+    lines = shell(f'date +%s; stat -c %Y {task.streams} 2>/dev/null || true', None).split()
+    now, newest = float(lines[0]), _newest(' '.join(lines[1:]))
+    return not newest or now - newest > task.limit.seconds
+
+
+def _round_of(sha: str, grant: Grant, shell: Runner) -> Callable[[str], tuple[str, frozenset[str]]]:
     machine = Machine(session=None, grants=(grant,))
-    return lambda part: load_state(sha, part, machine, {grant.account: shell})[0]['rounds'][-1]['run_dir']
+
+    def current(part: str) -> tuple[str, frozenset[str]]:
+        last = load_state(sha, part, machine, {grant.account: shell})[0]['rounds'][-1]
+        return last['run_dir'], frozenset(str(job) for job in last.get('job_ids', ()))
+
+    return current
 
 
 def cancel_stuck(
@@ -160,26 +206,39 @@ def cancel_stuck(
     *,
     limit: Callable[[Sequence[str]], Limit],
     say: Callable[[str], None],
-    run_dir: Callable[[str, Grant, Runner], Callable[[str], str]] = _run_dir,
+    round_of: Callable[[str, Grant, Runner], Callable[[str], tuple[str, frozenset[str]]]] = _round_of,
 ) -> int:
-    """Cancel every stuck forge task of *sha* across *grants*; 1 when any task of the sha was left alone."""
+    """Cancel every stuck forge task of *sha* across *grants*; 1 when any task of the sha was left alone.
+
+    A grant whose read fails is reported and the others are still judged, so one account cannot hide the rest;
+    any such failure makes the exit 2.
+    """
     if not _SHA.fullmatch(sha):
         say(f'cancel-stuck: refused -- {sha!r} is not a full 40-hex commit sha')
         return 2
-    left = 0
+    left, failed = 0, 0
     for grant in grants:
-        shell = connect(grant)
-        tasks = read_tasks(shell, sha, run_dir(sha, grant, shell), limit)
-        stuck = [t for t in tasks if not judge(t, sha)]
-        for task in tasks:
-            if (why := judge(task, sha)) and task.name.startswith(f'run-{sha[:12]}-'):
+        try:
+            shell = connect(grant)
+            tasks = read_tasks(shell, sha, round_of(sha, grant, shell), limit)
+            stuck = [t for t in tasks if not judge(t, sha)]
+            for task in tasks:
+                if (why := judge(task, sha)) and task.name.startswith(f'run-{sha[:12]}-'):
+                    left += 1
+                    say(why)
+            spared = [t for t in stuck if not _still_silent(shell, t)]
+            for task in spared:
                 left += 1
-                say(why)
-        if stuck:
-            scancel(shell, [t.job_id for t in stuck])
-            for task in stuck:
-                say(f'{grant.name}: cancelled stuck {task.job_id} {task.name} ({task.limit.basis})')
-    return 1 if left else 0
+                say(f'{task.job_id} {task.name}: healthy -- a test line arrived while it was being judged')
+            stuck = [t for t in stuck if t not in spared]
+            if stuck:
+                scancel(shell, [t.job_id for t in stuck])
+                for task in stuck:
+                    say(f'{grant.name}: cancelled stuck {task.job_id} {task.name} ({task.limit.basis})')
+        except (RuntimeError, OSError, ValueError, KeyError, IndexError) as why:
+            failed += 1
+            say(f'{grant.name}: refused -- {why}')
+    return 2 if failed else 1 if left else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

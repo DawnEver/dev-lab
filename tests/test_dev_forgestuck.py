@@ -66,43 +66,105 @@ _MANIFEST = {
 
 
 class _Shell:
-    """A fake account: shard 1 (a slow test) and shard 2 (a fast one), equally silent; and a foreign job."""
+    """A fake account: shard 1 (a slow test) and shard 2 (a fast one), equally silent; and a foreign job.
 
-    def __init__(self) -> None:
+    *sstat* is what ``sstat`` prints for every task; *fresh* makes the re-read before a cancel see a new line.
+    """
+
+    def __init__(self, *, sstat: str = '00:30.000\n04:00:00\n', fresh: bool = False, job: str = '1') -> None:
         self.cancelled: list[str] = []
+        self.sstat, self.fresh, self.job = sstat, fresh, job
 
     def __call__(self, command: str, stdin: str | None = None) -> str:
         del stdin
-        if command.startswith('date'):
+        if 'squeue' in command:
             return (
-                f'100000\n1_1|run-{SHA[:12]}-linux|04:00:00|1\n1_2|run-{SHA[:12]}-linux|04:00:00|1\n'
+                f'100000\n{self.job}_1|run-{SHA[:12]}-linux|04:00:00|1\n{self.job}_2|run-{SHA[:12]}-linux|04:00:00|1\n'
                 '9|someone-else|04:00:00|1\n'
             )
         if command.startswith('cat '):
             return json.dumps(_MANIFEST)
         if command.startswith('sstat'):
-            return '04:00:00\n90000\n'  # silent 10000 s
+            return f'{self.sstat}--stream--\n90000\n'  # silent 10000 s
+        if command.startswith('date'):
+            return '100000\n99990\n' if self.fresh else '100000\n90000\n'
         if command.startswith('scancel'):
             self.cancelled += command.split()[1:]
             return ''
         raise AssertionError(command)
 
 
-def test_only_the_task_silent_past_its_measured_wall_is_cancelled() -> None:
-    shell, said = _Shell(), []
-    durations = {'t::slow': 5000.0, 't::fast': 60.0}
-    code = cancel_stuck(
+def _cancel(shell: _Shell, said: list[str], durations: dict[str, float] | None = None) -> int:
+    durations = {'t::slow': 5000.0, 't::fast': 60.0} if durations is None else durations
+    return cancel_stuck(
         SHA,
         [_GRANT],
         lambda _g: shell,
         limit=lambda ids: limit_of(ids, durations, factor=3, bound_s=HOUR),
         say=said.append,
-        run_dir=lambda *_: lambda _p: '/r',
+        round_of=lambda *_: lambda _p: ('/r', frozenset({'1'})),
     )
+
+
+def test_only_the_task_silent_past_its_measured_wall_is_cancelled() -> None:
+    shell, said = _Shell(), []
+    code = _cancel(shell, said)
     assert shell.cancelled == ['1_2'], 'the fast test is overdue; the slow one is within 3 x its wall'
     assert code == 1
     assert any('1_1' in line and 'healthy' in line for line in said)
     assert 'someone-else' not in ' '.join(shell.cancelled)
+
+
+def test_a_task_of_an_earlier_round_is_refused_though_its_name_matches() -> None:
+    """PLANTED CONTROL for the test above: the same silent tasks under a job id this round never submitted."""
+    shell, said = _Shell(job='7'), []
+    assert _cancel(shell, said) == 1
+    assert shell.cancelled == []
+    assert any('not one the current round submitted' in line for line in said)
+
+
+def test_the_cpu_time_is_the_largest_step_parsed_not_text_sorted() -> None:
+    """``9:59.000`` sorts after ``1-02:00:00`` as text; parsed, the day-long step is the task's load."""
+    shell, said = _Shell(sstat='1-02:00:00\n09:59.000\n'), []
+    _cancel(shell, said)
+    assert shell.cancelled == ['1_2']
+
+
+def test_a_task_sstat_cannot_measure_is_refused() -> None:
+    shell, said = _Shell(sstat=''), []
+    _cancel(shell, said)
+    assert shell.cancelled == []
+    assert any('sstat reported no CPU time' in line for line in said)
+
+
+def test_a_line_written_while_it_was_judged_spares_the_task() -> None:
+    shell, said = _Shell(fresh=True), []
+    assert _cancel(shell, said) == 1
+    assert shell.cancelled == []
+    assert any('arrived while it was being judged' in line for line in said)
+
+
+def test_a_failing_grant_is_reported_and_the_next_is_still_judged() -> None:
+    shell, said = _Shell(), []
+    broken = Grant(user='v', hosts=('down.example',), slurm_account='acct')
+
+    def connect(grant: Grant) -> _Shell:
+        if grant is broken:
+            msg = 'ssh: unreachable'
+            raise OSError(msg)
+        return shell
+
+    code = cancel_stuck(
+        SHA,
+        [broken, _GRANT],
+        connect,
+        limit=lambda ids: limit_of(ids, {'t::slow': 5000.0, 't::fast': 60.0}, factor=3, bound_s=HOUR),
+        say=said.append,
+        round_of=lambda *_: lambda _p: ('/r', frozenset({'1'})),
+    )
+    assert code == 2
+    assert shell.cancelled == ['1_2']
+    assert any('unreachable' in line for line in said)
 
 
 def test_a_short_sha_is_refused_before_any_read() -> None:
