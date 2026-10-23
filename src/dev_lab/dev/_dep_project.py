@@ -52,11 +52,14 @@ def uv_command(
     syncing: bool,
     upgrade_packages: Sequence[str],
     frozen: bool = False,
+    reinstall_packages: Sequence[str] = (),
 ) -> list[str]:
     """One target-addressed command; a sync re-resolves every declared floating Git requirement.
 
     A *frozen* sync builds exactly the committed ``uv.lock`` (``--frozen``) and re-resolves nothing: how a
     commit's own environment is materialised, so two hosts on two days build the same revisions.
+    *reinstall_packages* are rebuilt from source whatever their version says (a component whose tree moved,
+    :mod:`dev_lab.dev._dep_components`).
     """
     uv = shutil.which('uv')
     if uv is None:
@@ -73,6 +76,8 @@ def uv_command(
     if syncing:
         for extra in selected:
             command.extend(('--extra', extra))
+        for package in reinstall_packages:
+            command.extend(('--reinstall-package', package))
     if frozen:
         return [*command, '--frozen']
     upgrades = set(upgrade_packages)

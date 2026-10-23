@@ -78,6 +78,7 @@ from lab_commons.envkey import env_key, env_manifest
 from lab_commons.log import emit
 
 from dev_lab.dev import _dep_project
+from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.lockcheck import unreasoned_holds
 from dev_lab.dev.netverb import run_network_verb
@@ -486,6 +487,7 @@ def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.r
         syncing=syncing,
         upgrade_packages=args.upgrade_package,
         frozen=args.bootstrap is not None or locking,
+        reinstall_packages=changed(root, prefix) if syncing else (),
     )
     port = Port(name=str(root), anchor_paths=lambda: paths)
     try:
@@ -504,6 +506,7 @@ def main(argv: Sequence[str] | None = None, *, run: Callable[..., Any] = _door.r
         return 1
     emit(result.render())
     if syncing and not args.dry_run and not result.returncode:
+        record(root, prefix)  # the trees this environment now holds its components at
         _refresh_automode(root, run=run)
     return result.returncode or 0
 
