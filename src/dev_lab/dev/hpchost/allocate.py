@@ -1,7 +1,8 @@
 """``python -m dev_lab.dev.hpchost allocate`` -- write, show or clear the ONE expiring allocation record.
 
-The record and the share it sets are :mod:`lab_commons.hpc.allocation`; this is its verb and the store it lives
-in (the forge's records home). The forge's own submits read it (:func:`dev_lab.dev.forgeslurm.with_allocation`).
+The record, its reader and the share it sets are :mod:`lab_commons.hpc.allocation` -- a runtime fact every
+submitter reads (:func:`lab_commons.hpc.allocation.resolve`, through :func:`dev_lab.dev.forgerecords.read_allocation`).
+This is only its WRITER: the verb deciding shares, and the store it lives in (the forge's records home).
 """
 
 from __future__ import annotations

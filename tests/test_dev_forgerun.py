@@ -764,7 +764,7 @@ def test_an_unreachable_cluster_is_never_read_as_nothing_submitted(tmp_path: Pat
 def _built(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> forgeslurm.SlurmCluster:
     grant = Grant('alice', ('login1',), 'acct')
     monkeypatch.setattr(forgeslurm, 'load_grants', lambda: Machine(session=_session_from_env(), grants=(grant,)))
-    monkeypatch.setattr(forgeslurm, 'with_allocation', lambda machine, _read: machine)
+    monkeypatch.setattr(forgeslurm, 'resolve', lambda machine, _read: machine)
     monkeypatch.setattr(forgeslurm, 'submitter', lambda: lambda _grant: None)
     return forgeslurm.slurm_cluster(tmp_path, ClusterAccount('ada', 'alice'))
 

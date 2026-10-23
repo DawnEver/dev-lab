@@ -36,6 +36,7 @@ from typing import Any, Final, cast
 
 import lab_commons.launch as _door
 from lab_commons.config import config_path, section
+from lab_commons.hpc.allocation import RECORD as ALLOCATION
 from lab_commons.log import emit
 
 from dev_lab.dev._forge_journal import Durable, Probe
@@ -192,6 +193,16 @@ def read_named(client: Client, name: str) -> bytes | None:
     """The newest file stored under *name* on the records home; ``None`` when there is none."""
     held = [item for item in listing(client) if item.name == name]
     return client.download(held[-1].url) if held else None
+
+
+def read_allocation(root: Path | None = None) -> bytes | None:
+    """The allocation record on *root*'s forge (default: the working directory's) -- ``None`` when there is none.
+
+    THE READER lab-commons loads (entry point :data:`lab_commons.hpc.allocation.READER`), so every submitter --
+    a person's ``python -m lab_commons.hpc submit`` and the forge's own -- reads one record; the forge writes it
+    (``python -m dev_lab.dev.hpchost allocate``).
+    """
+    return read_named(client_for(Path.cwd() if root is None else root), ALLOCATION)
 
 
 def remove_named(client: Client, name: str) -> int:
