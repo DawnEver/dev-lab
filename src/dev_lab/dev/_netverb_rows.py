@@ -84,8 +84,9 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         # `git fetch` failed AUTH and succeeded on the retry, and was reported "blocked". 2026-09-17,
         # this session: a push to a gitea forge failed auth and succeeded on a later attempt while a
         # `fetch` cleared an identical HTTP 401 on its second attempt. A 401 is NOT a 403 -- the
-        # credential helper, the token cache and the proxy in front of it are all mid-flight state,
-        # and mid-flight state is exactly what an attempt later clears.
+        # attempt-1 auth failure is an EXPIRED OAuth access token (Git Credential Manager, username
+        # OAUTH_USER): git rejects it on the 401 and the retry's fill refreshes it (measured 2026-10-21;
+        # see the credentials section of the forge dev doc). An attempt later clears it: git refreshes in between.
         'transient',
         True,
         (

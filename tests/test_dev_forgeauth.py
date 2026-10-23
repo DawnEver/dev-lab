@@ -193,7 +193,9 @@ def test_an_auth_refusal_is_asked_once_and_names_the_remedy(server, tmp_path, ca
     assert len(_Recorder.received) == 1
     err = capsys.readouterr().err
     assert 'transient' not in err
-    assert 'auth login' in err
+    # A plain store holds no refresh token: a 401's refresh empties it, the one case a re-login fixes.
+    # A 403 authenticated the credential and refused the act, so no refresh is spent and none is named.
+    assert ('auth login' in err) is (code == 401)
     assert 'stale' not in err
 
 

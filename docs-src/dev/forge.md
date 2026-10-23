@@ -341,7 +341,7 @@ output. Every other task of the sha is listed as healthy; no other job is cancel
 ## Alarms
 
 `forgealarm` writes one JSON line `{"event": "lab_commons.forge.alarm", "kind", "repo", "subject", "body",
-"delivered", "repeat"}` to stderr for: `auth` (a credential `GET /user` refuses after a 401/403, or none stored -- a 401/403 whose credential still authenticates is transient and never alarms `auth`), `lease` (a lease lost or not
+"delivered", "repeat"}` to stderr for: `auth` (a credential `GET /user` still refuses after git's refresh, or none stored -- a 401/403 whose credential authenticates or refreshes is never an `auth` alarm; [why](#a-gitea-auth-refusal-is-an-expired-oauth-token-not-a-bad-credential)), `lease` (a lease lost or not
 renewable, orphaned jobs), `run` (a cluster run that cannot advance), `idle` (an account idle with work
 pending), `starved`, and `integration` -- not a failure but a PROMPT: on EVERY host each tick derives the
 integration queue and raises one alarm per row that asks for action (a READY lane, a PROMOTE-able tip, a
@@ -396,6 +396,22 @@ python -m dev_lab.dev.forge auth check      # can it do what a forge serve tick 
   `read:user`. **GitHub**: a fine-grained token with Issues, Pull requests and Contents read/write, or let Git
   Credential Manager's OAuth store it on the first push.
 - Rotate by running `auth login` again; a revoked token shows as a failing `auth status`.
+
+### A gitea auth refusal is an expired OAuth token, not a bad credential
+
+THE ONE EXPLANATION; every refusal remedy, alarm and rule that mentions a forge 401 points here.
+
+- Measured 2026-10-21: on a Windows box `git credential fill` for the forge answers username `OAUTH_USER` --
+  Git Credential Manager's OAuth store. Its ACCESS token EXPIRES. git sends it, the forge answers 401
+  (`remote: Failed to authenticate user`), git `reject`s it, and the NEXT `fill` makes GCM spend its refresh
+  token on a new one. That is the whole "every git network verb fails on attempt 1 and succeeds on attempt 2"
+  -- not a flaky server, not a mystery transient. `netverb`'s retry is what lets git finish its own refresh.
+- The forge API client does the same (`dev_lab.dev.forgecred.refresh_credential`): on a 401 that `GET /user`
+  confirms it rejects the refused secret, fills again and retries the call once with the refreshed token.
+- Only a refusal AFTER that refresh is permanent, and it does NOT ask for `auth login`: the account, its scopes
+  or the forge refuse a credential that was just refreshed, so report the output. `auth login` is named only
+  when the refresh leaves the store EMPTY -- a plain stored token has no refresh token, so the reject removes it.
+- So the forge never needs a re-login on an OAuth box. Never run `auth login` because of one 401.
 
 ## Protecting `main` on the server
 

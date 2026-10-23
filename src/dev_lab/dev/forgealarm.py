@@ -2,7 +2,7 @@
 
 A cron tick on a cluster login node logs into a file nobody reads. Five failures there are SILENT
 unless raised: the forge refusing the stored credential (``auth``: a 401/403 that ``GET /user``
-confirms, an expired token, or none stored), a claim whose lease cannot be
+confirms even after git's refresh of an expired OAuth token, or none stored), a claim whose lease cannot be
 renewed (``lease``: the forge refused the post, another owner
 holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot advance (``run``), and
 an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
