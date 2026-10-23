@@ -92,3 +92,15 @@ def test_a_failed_sync_records_nothing_so_the_next_one_reinstalls_again(tmp_path
 
     assert dep.main(['--sync'], cwd=root, run=run) == 2
     assert changed(root, root / '.venv') == ('numerics-lab',)
+
+
+def test_an_edit_to_an_untracked_file_moves_the_stamp(tmp_path: Path) -> None:
+    """The stamp hashes an untracked file's CONTENT, not only its name."""
+    root, engine = _product(tmp_path)
+    prefix = tmp_path / '.venv'
+    prefix.mkdir()
+    (engine / 'probe.py').write_text('a = 1\n', encoding='utf-8')
+    record(root, prefix)
+    assert changed(root, prefix) == ()
+    (engine / 'probe.py').write_text('a = 2\n', encoding='utf-8')
+    assert changed(root, prefix) == ('numerics-lab',)

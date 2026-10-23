@@ -44,8 +44,18 @@ def _tree(path: Path) -> str:
         return done.stdout if done.returncode == 0 else ''
 
     head = git('rev-parse', 'HEAD').strip()
-    diff = git('diff', 'HEAD') + git('ls-files', '--others', '--exclude-standard')
-    return head + (f'+{hashlib.sha256(diff.encode()).hexdigest()[:16]}' if diff else '') if head else ''
+    if not head:
+        return ''
+    digest, dirty = hashlib.sha256(git('diff', 'HEAD').encode()), bool(git('diff', 'HEAD'))
+    for name in filter(None, git('ls-files', '--others', '--exclude-standard', '-z').split('\0')):
+        # The CONTENT of an untracked file, not only its name: an edit to one must move the stamp.
+        dirty = True
+        digest.update(name.encode() + b'\0')
+        try:
+            digest.update((path / name).read_bytes())
+        except OSError:
+            digest.update(b'<unreadable>')
+    return head + (f'+{digest.hexdigest()[:16]}' if dirty else '')
 
 
 def _stamps(root: Path) -> dict[str, str]:

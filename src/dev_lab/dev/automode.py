@@ -241,7 +241,8 @@ def refresh(root: Path, *, say: Callable[[str], None], fleet: Fleet | None = Non
 
 #: An IPv4 address or a dotted host name: the SHAPES a host takes, whichever fleet this machine holds.
 _HOST_SHAPE: Final = re.compile(
-    r'\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.uk|com|org|net|site)\b'
+    r'\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.uk|com|org|net|site)\b',
+    re.IGNORECASE,
 )
 
 
@@ -284,7 +285,11 @@ def main(argv: Sequence[str] | None = None, *, stdin: TextIO | None = None) -> i
     elif args[:1] == ['write']:
         parser = argparse.ArgumentParser(prog='dev_lab.dev.automode write')
         parser.add_argument('--repo', type=Path, default=Path.cwd())
-        root = _root_of(parser.parse_args(args[1:]).repo.resolve())
+        repo = parser.parse_args(args[1:]).repo.resolve()
+        root = _root_of(repo)
+        if root is None:
+            emit(f'automode write: {repo} is not inside a git checkout, so there is nothing to render', err=True)
+            return 1
     else:
         emit('usage: python -m dev_lab.dev.automode {write [--repo R] | session-start}', err=True)
         return 2

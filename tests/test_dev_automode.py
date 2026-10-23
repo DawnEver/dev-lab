@@ -237,3 +237,12 @@ def test_the_tree_scan_sees_a_planted_fleet_fact() -> None:
     }
     assert len(_tree_leaks(planted, _FLEET)) == 6
     assert _tree_leaks({'g': 'reach 192.0.2.7 on login1.example'}, _FLEET) == []
+
+
+def test_write_outside_a_checkout_says_why_and_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(['write', '--repo', str(tmp_path)]) == 1
+    assert 'not inside a git checkout' in capsys.readouterr().err
+
+
+def test_a_host_name_is_a_leak_whatever_its_case() -> None:
+    assert leaks(['ssh WS1.Example.AC.UK']) == ('WS1.Example.AC.UK',)

@@ -1,6 +1,6 @@
 """The network half of :mod:`dev_lab.dev.dep`: every resolving command through the ONE retry door, and submodules.
 
-NETWORK-RETRY-THEN-REPORT (2026-10-19, motronics): a ``uv sync`` of a git dependency failed once on forge auth
+NETWORK-RETRY-THEN-REPORT (2026-10-19, a consumer): a ``uv sync`` of a git dependency failed once on forge auth
 and was not retried, and a worktree's ``git submodule update`` from a LOCAL path was refused as ``transport
 'file' not allowed`` and retried as if transient. :func:`run_change` routes by
 :func:`~dev_lab.dev.netverb.is_network_verb`; :func:`init_submodules` opens the file transport for that
@@ -87,7 +87,7 @@ def init_submodules(root: Path, *, dry_run: bool = False) -> str | None:
 
     A path dependency may point INTO a submodule (a product's engine under ``components/``, plan C5), so a
     checkout whose submodules were never initialised cannot be resolved: ``uv`` reports the path as not
-    existing. MEASURED 2026-10-19 on a serve checkout of motronics-studio, which bootstrapped only after a
+    existing. MEASURED 2026-10-19 on a serve checkout of a consumer, which bootstrapped only after a
     manual ``git submodule update --init``. Every sync, bootstrap and lock therefore does this first.
     """
     if not (root / '.gitmodules').is_file():

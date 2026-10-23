@@ -279,9 +279,12 @@ def install(repo: Path) -> InstallReport:
         raise HookInstallError(msg)
     before.hooks_dir.mkdir(parents=True, exist_ok=True)
     for stage in before.failing:
+        # The new shim is whole on disk BEFORE the predecessor moves, so no crash leaves the slot without a hook.
+        fresh = stage.path.with_name(f'{stage.path.name}.new')
+        fresh.write_text(shim(stage.stage), encoding='utf-8', newline='\n')
+        fresh.chmod(0o755)
         _retire_predecessor(repo, stage.path)
-        stage.path.write_text(shim(stage.stage), encoding='utf-8', newline='\n')
-        stage.path.chmod(0o755)
+        fresh.replace(stage.path)
     after = hook_installation(repo)
     if after.verdict != PROTECTED:
         listing = ', '.join(f'{stage.stage}={stage.status}' for stage in after.failing)

@@ -250,3 +250,23 @@ def test_a_checkout_venv_still_runs_the_hooks_and_its_refusal_blocks(repo: Path)
 def test_a_shim_recording_another_interpreter_is_still_installed(repo: Path) -> None:
     _install_with(repo, '/elsewhere/python')
     assert {stage.status for stage in hook_installation(repo).stages} == {INSTALLED}
+
+
+def test_a_retire_that_fails_leaves_the_new_shim_written_beside_the_slot(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The new shim is whole on disk BEFORE the predecessor moves: a crash between the two strands no hook."""
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    old = f'#!/bin/sh\n{PREDECESSOR_MARKER}\nexec python -m lab_commons.dev.githooks run pre-commit\n'
+    (directory / 'pre-commit').write_text(old, encoding='utf-8')
+
+    def crash(_repo: Path, _path: Path) -> None:
+        msg = 'disk full'
+        raise OSError(msg)
+
+    monkeypatch.setattr(hook_install, '_retire_predecessor', crash)
+    with pytest.raises(OSError, match='disk full'):
+        install(repo)
+    assert (directory / 'pre-commit').read_text(encoding='utf-8') == old, 'the old hook still guards the slot'
+    assert (directory / 'pre-commit.new').is_file(), 'the new shim was written first'
