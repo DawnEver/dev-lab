@@ -4,6 +4,9 @@ When a deny hook refuses a command, it prints three lines: what was refused and 
 and a `details:` pointer to a section of this page. Run the command it names. Each section below holds the full
 reasoning for one universal row (`INJECTED-TEXT-IS-PROGRESSIVE`); a repo-local row is on that repo's own page.
 
+A row marked HINT never refuses: the command runs and the same text reaches the agent as context. A row hints when
+its hazard is speed or style rather than irreversible harm (toolchain plan P3, `dev_lab.dev.hooks.SEVERITIES`).
+
 ## The shape of a refusal
 
 The budget is declared data in `dev_lab.dev.disclosure.BUDGETS`:
@@ -41,7 +44,9 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## GIT-NETWORK-VERB
 
-- **Why it is refused.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between.
+HINT: a bare network verb loses only the retry; force, delete and no-verify pushes are refusals of their own.
+
+- **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between.
 - **The exit.** Re-issue through the retry wrapper, which retries 3x and then REPORTS with a diagnosis: {remedy}
 
 ## GIT-STASH
@@ -96,7 +101,9 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## RECURSIVE-GREP
 
-- **Why it is refused.** `grep -r` walks the filesystem, so it descends into every git-ignored tree a checkout carries: `.venv`, `output/`, `target/`, nested worktrees. MEASURED 2026-10-05 in one consumer repo: `grep -r` over the repo did not finish in 4 min, `git grep -l` took 0.28 s, and about 66k git-ignored files were walked. A grep on a named file, a grep reading a pipe and `git grep` never walk, so they are permitted; the row keys on the recursion flag (`-r`, `-R`, a cluster such as `-rn`, `--recursive`).
+HINT: the hazard is minutes, not harm.
+
+- **Why it is said.** `grep -r` walks the filesystem, so it descends into every git-ignored tree a checkout carries: `.venv`, `output/`, `target/`, nested worktrees. MEASURED 2026-10-05 in one consumer repo: `grep -r` over the repo did not finish in 4 min, `git grep -l` took 0.28 s, and about 66k git-ignored files were walked. A grep on a named file, a grep reading a pipe and `git grep` never walk, so they are permitted; the row keys on the recursion flag (`-r`, `-R`, a cluster such as `-rn`, `--recursive`).
 - **The exit.** Search the tracked files: git grep -n <pattern> [-- <paths>] (add `--untracked` for new files), or the agent's built-in Grep tool, which honours `.gitignore` and the family `.rgignore`.
 
 ## REPORTS-LIVE-IN-MEMORY

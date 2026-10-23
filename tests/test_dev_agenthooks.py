@@ -94,7 +94,7 @@ def test_an_ordinary_command_is_allowed(rules: Path) -> None:
 
 def test_a_denied_verb_behind_an_allowed_wrapper_is_still_denied(rules: Path) -> None:
     """THE WRAPPER CASE. A segment has as many command positions as it has wrappers."""
-    for command in ('timeout 900 pytest tests/', 'nohup git push origin HEAD', 'env sudo pytest -q'):
+    for command in ('timeout 900 pytest tests/', 'nohup git push --force origin HEAD', 'env sudo pytest -q'):
         assert agenthooks.decide(command, rules) is not None, f'the wrapper hid the command: {command!r}'
 
 
@@ -194,8 +194,14 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
         agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if agenthooks.decide(command, rules, agent_id=agent) is None:
-                wrong.append(f'{rule.id}: the engine ALLOWED a command the row says it refuses: {command!r}')
+            # A hint row is SAID, unless a sibling refusal fires on the same command and wins (`git clone`).
+            hint = rule.severity == 'hint'
+            said_or_refused = agenthooks.decide(command, rules, agent_id=agent, hint=hint) or (
+                hint and agenthooks.decide(command, rules, agent_id=agent)
+            )
+            if not said_or_refused:
+                said = 'never HINTED on' if hint else 'ALLOWED'
+                wrong.append(f'{rule.id}: the engine {said} a command the row says it fires on: {command!r}')
             outside = agenthooks.decide(command, rules) if agent else None
             if outside is not None and outside.startswith(f'{rule.id}:'):
                 wrong.append(f'{rule.id}: the scoped row fired OUTSIDE a subagent on {command!r}')
@@ -364,9 +370,10 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
     assert inside is not None
     assert inside.startswith('SUBAGENT-NO-PUSH:'), inside
     assert 'hand the commit SHA back' in inside
-    outside = agenthooks.decide('git push origin HEAD', rules)
+    assert agenthooks.decide('git push origin HEAD', rules) is None, 'the main session may push'
+    outside = agenthooks.decide('git push origin HEAD', rules, hint=True)
     assert outside is not None
-    assert outside.startswith('GIT-NETWORK-VERB:'), 'the main session lost its own (retry) door'
+    assert outside.startswith('GIT-NETWORK-VERB:'), 'the main session lost the hint naming its (retry) door'
 
 
 def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
@@ -391,3 +398,31 @@ def test_a_hook_skip_prefix_is_seen_by_the_engine(rules: Path) -> None:
     assert reason is not None
     assert reason.startswith('SUBAGENT-NO-PUSH:')
     assert agenthooks.decide('SKIP=ruff git commit -m "x"', rules) is None, 'the main session was refused'
+
+
+# --------------------------------------------------------------------------------------------
+# HINTS -- the engine SPEAKS a hint row as context and never denies on it; a refusal still wins
+
+
+def _rows(tmp_path: Path, *rows: dict) -> Path:
+    path = tmp_path / 'deny-rules.json'
+    path.write_text(json.dumps(list(rows)), encoding='utf-8')
+    return path
+
+
+_HINT = {'name': 'PLANTED-HINT', 'pattern': r'grep\s+-r', 'matches': 'command', 'severity': 'hint', 'reason': 'H'}
+_DENY = {'name': 'PLANTED-DENY', 'pattern': r'rm\s+-rf', 'matches': 'command', 'reason': 'D'}
+
+
+def test_a_hint_row_is_context_and_not_a_refusal(tmp_path: Path) -> None:
+    rules = _rows(tmp_path, _HINT, _DENY)
+    assert agenthooks.decide('grep -r x src', rules) is None
+    assert agenthooks.decide('grep -r x src', rules, hint=True) == 'H'
+    assert agenthooks.decide('git status', rules, hint=True) is None
+
+
+def test_a_refusal_wins_over_a_hint_on_the_same_line(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the deny row alone refuses, and a hint beside it cannot open it."""
+    rules = _rows(tmp_path, _HINT, _DENY)
+    assert agenthooks.decide('grep -r x src && rm -rf build', rules) == 'D'
+    assert agenthooks.decide('rm -rf build', rules) == 'D'

@@ -138,6 +138,9 @@ DENY_ROWS: tuple[dict[str, object], ...] = (
         '"blocked"; the wrapper retries, then diagnoses.',
         'remedy': 'Re-issue through the retry wrapper: {remedy}',
         'needs': 'retry-wrapper',
+        # A HINT (toolchain plan P3): a bare network verb loses only the retry, and the hooks a push runs
+        # are the same either way; the force, delete and no-verify shapes are refusals of their own.
+        'severity': 'hint',
         'refuses': (
             'git push origin HEAD',
             'git fetch --all',

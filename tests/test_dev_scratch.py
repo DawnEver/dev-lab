@@ -8,6 +8,7 @@ import os
 import time
 
 import pytest
+from lab_commons import launch
 
 from dev_lab.dev.codeplace import PlacementNotDeclared, declared_placement, stray_refusal
 from dev_lab.dev.scratch import (
@@ -22,7 +23,6 @@ from dev_lab.dev.scratch import (
     scratch_reminder,
     staged_scratch,
 )
-from lab_commons import launch
 
 _DAY = 86400.0
 

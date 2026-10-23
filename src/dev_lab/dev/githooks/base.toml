@@ -18,6 +18,14 @@
 # What each stage hands a hook is git's own contract: pre-commit selects among the STAGED paths;
 # commit-msg appends the message file to `run`; pre-push pipes git's ref lines to stdin and selects
 # among the paths those pushes change. The checks below report and never rewrite a file.
+#
+# WHAT RUNS HERE (toolchain plan P3, user-approved 2026-10-23): a local row is an irreversible-harm check or a
+# second-scale format check. Everything the forge already judges on the pushed sha is the forge's alone, and
+# a local copy only refused the same push twice: the tracked-tree scans (TRACKED-CITES-NO-EPHEMERAL,
+# SCRATCH-IS-NEVER-COMMITTED: dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set
+# (dev_lab.dev.famtests.branchset), the behind bound (an `integration` alarm, dev_lab.dev.forgeintegration)
+# and PR admission (`forge pr create`, dev_lab.dev.pradmit). A repo may still declare any of those modules
+# as a row of its own. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
 
 [[pre-commit]]
 id = "check-added-large-files"
@@ -73,27 +81,6 @@ id = "trailing-whitespace"
 run = ["python", "-m", "dev_lab.dev.filechecks", "trailing-whitespace"]
 pass_files = true
 
-# TRACKED-CITES-NO-EPHEMERAL on the STAGED files (fast); the full tree, orphaned escapes included, is
-# the famtest `dev_lab.dev.famtests.ephemeralrefs` in the base part.
-[[pre-commit]]
-id = "ephemeral-refs"
-run = ["python", "-m", "dev_lab.dev.ephemeralrefs"]
-pass_files = true
-
-# STRAY-FILE-REFUSED: no commit while an untracked, non-ignored file sits outside the declared stray roots
-# ([tool.lab_commons.placement] stray_roots, plus scratch/), naming each one and its remedy (dev_lab.dev.codeplace).
-[[pre-commit]]
-id = "stray-files"
-run = ["python", "-m", "dev_lab.dev.codeplace", "stray-check"]
-always_run = true
-
-# SCRATCH-IS-NEVER-COMMITTED: a staged path under the declared scratch other than its README is refused,
-# naming the two exits (promote into src/ with tests, or delete); the forge body holds the tracked set.
-[[pre-commit]]
-id = "scratch-commit"
-run = ["python", "-m", "dev_lab.dev.scratch", "check"]
-pass_files = true
-
 [[commit-msg]]
 id = "commitizen"
 run = ["cz", "check", "--allow-abort", "--commit-msg-file"]
@@ -115,7 +102,8 @@ run = ["python", "-m", "dev_lab.dev.forgeorigin"]
 id = "lab-session"
 run = ["python", "-m", "dev_lab.dev.labsession"]
 
-# MERGE-DEVIATIONS-NAMED, checked when the merge is committed (dev_lab.dev.mergeaudit).
+# MERGE-DEVIATIONS-NAMED, checked when the merge is committed (dev_lab.dev.mergeaudit). It stays local: the
+# remedy is a trailer IN the merge commit, and a pushed merge cannot be amended, so a forge-side red has no exit.
 [[commit-msg]]
 id = "merge-audit"
 run = ["python", "-m", "dev_lab.dev.mergeaudit"]
@@ -128,20 +116,6 @@ id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
 always_run = true
 
-# ONE-BRANCH-PER-SESSION at push time: a push creating or updating a branch the repo's [tool.lab_commons.branchset]
-# does not declare is refused (dev_lab.dev.branchset_push). Lanes are local; only declared branches reach origin.
-[[pre-push]]
-id = "branchset-push"
-run = ["python", "-m", "dev_lab.dev.branchset_push"]
-always_run = true
-
-# BEHIND-IS-BOUNDED: a push of a branch other than integration/trunk more than [tool.lab_commons.integrator]
-# behind_max commits behind origin/<integration> is refused, naming `forge sync` (dev_lab.dev.behindpush).
-[[pre-push]]
-id = "behind-push"
-run = ["python", "-m", "dev_lab.dev.behindpush"]
-always_run = true
-
 # PIN (user ruling 2026-10-17): a pushed commit commits uv.lock, and every hold below the newest declares its reason.
 # Git objects only, milliseconds. FRESHNESS is the forge's alone (user ruling 2026-10-22): no push resolves; the
 # forge relocks integration (dev_lab.dev.relock).
@@ -149,14 +123,6 @@ always_run = true
 id = "lock"
 run = ["python", "-m", "dev_lab.dev.lockcheck"]
 always_run = true
-
-# ONE-SESSION-ONE-PR at the birth of a pr/* branch: a NEW pr/* whose commits share a Lab-Session with an unmerged
-# origin/pr/* head is refused, naming that head's branch (dev_lab.dev.pradmit; `forge pr create` asks the forge).
-[[pre-push]]
-id = "pr-admit"
-run = ["python", "-m", "dev_lab.dev.pradmit"]
-always_run = true
-refs = '^refs/heads/pr/'
 
 # FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push, and every commit on a pr/*
 # branch, print that PR's open notices for this LAB_SESSION (dev_lab.dev.branchnotices: one reader, cached 60 s,
@@ -168,6 +134,15 @@ always_run = true
 refs = '^refs/heads/pr/'
 
 # post-commit is ADVISORY (githooks.table.ADVISORY): the commit is made, and no row can change its exit status.
+
+# STRAY-FILE-REFUSED as a HINT: an untracked, non-ignored file outside the declared stray roots
+# ([tool.lab_commons.placement] stray_roots, plus scratch/) is named with its remedy after the commit
+# (dev_lab.dev.codeplace). Untracked files are invisible to the forge, so this is the one place it is said.
+[[post-commit]]
+id = "stray-files"
+run = ["python", "-m", "dev_lab.dev.codeplace", "stray-check"]
+always_run = true
+
 [[post-commit]]
 id = "pr-notices"
 run = ["python", "-m", "dev_lab.dev.branchnotices"]

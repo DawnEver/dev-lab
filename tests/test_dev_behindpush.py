@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from dev_lab.dev.behindpush import ALLOWED, COULD_NOT_JUDGE, REFUSED, refusal
-from dev_lab.dev.githooks.table import base_rows
 from dev_lab.dev.lanepolicy import Policy
 
 _GIT = shutil.which('git') or 'git'
@@ -83,11 +82,6 @@ def test_a_commit_git_cannot_count_is_not_judged(tmp_path: Path) -> None:
     code, text = refusal(root, lines=[_line('lane/x', 'f' * 40)], policy=_POLICY)
     assert code == COULD_NOT_JUDGE
     assert 'lane/x' in text
-
-
-def test_the_family_hook_table_runs_it_at_pre_push() -> None:
-    rows = [row for row in base_rows()['pre-push'] if row['id'] == 'behind-push']
-    assert [row['run'] for row in rows] == [['python', '-m', 'dev_lab.dev.behindpush']]
 
 
 def test_a_deletion_never_reads_a_stale_checkouts_declaration(tmp_path: Path) -> None:

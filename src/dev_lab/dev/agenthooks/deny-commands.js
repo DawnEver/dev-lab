@@ -8,8 +8,9 @@
  * is a rule in the JSON file passed as argv[2] (`.claude/hooks/deny-rules.json`), so adding or
  * retiring a rule is a data change, never an engine change.
  *
- * A rule is {name, pattern, matches?, allow?, scope?, reason}. `scope: 'subagent'` judges the rule only
- * when the payload carries a non-empty `agent_id`. `pattern` (JS regex source) denies a
+ * A rule is {name, pattern, matches?, allow?, scope?, severity?, reason}. `scope: 'subagent'` judges the rule only
+ * when the payload carries a non-empty `agent_id`. `severity: 'hint'` never denies: the call runs and the
+ * reason reaches the agent as `additionalContext` -- unless a refusing rule also fires, which wins. `pattern` (JS regex source) denies a
  * command it matches, unless `allow` (regex source) also matches -- the sanctioned spelling.
  * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd.
  *
@@ -379,6 +380,7 @@ const cmd = (input.tool_input && input.tool_input.command) || '';
 const root = (input.cwd || '').replace(/\\/g, '/');
 const sessionRoot = repoRoot(path.resolve(path.dirname(process.argv[2]), '..', '..'));
 const texts = executedTexts(cmd);
+const hints = [];
 
 for (const rule of rules) {
   if (rule.scope === 'subagent' && !subagent) continue;
@@ -388,7 +390,9 @@ for (const rule of rules) {
   } catch {
     continue; // one malformed rule never blocks the session
   }
-  if (hit) {
+  if (hit && rule.severity === 'hint') {
+    hints.push(String(rule.reason || rule.name).replaceAll('{root}', root));
+  } else if (hit) {
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {
@@ -406,5 +410,10 @@ for (const rule of rules) {
     );
     process.exit(0);
   }
+}
+if (hints.length) {
+  process.stdout.write(
+    JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: hints.join('\n') } })
+  );
 }
 process.exit(0);

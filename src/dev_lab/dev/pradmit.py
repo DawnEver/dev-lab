@@ -3,8 +3,9 @@
 ONE-SESSION-ONE-PR. A session's commits carry its ``Lab-Session`` (:mod:`dev_lab.dev.labsession`, stamped from
 the launcher's id). A head whose commits share a session with ANOTHER open head is refused: the session's work
 belongs on the branch it already has, and the remedy names that branch. Judged at ``forge pr create`` against the
-forge's open PRs, and at the pre-push of a NEW ``pr/*`` branch against the last fetch's unmerged
-``origin/pr/*`` heads (a pre-push hook makes no network call). A split is admitted only for a session in
+forge's open PRs. :func:`main` is the same question at the pre-push of a NEW ``pr/*`` branch against the last
+fetch's unmerged ``origin/pr/*`` heads, a row a repo may declare; the family base leaves it to the forge
+(toolchain plan P3). A split is admitted only for a session in
 :data:`SPLITS`, each with its reason, under a ceiling pinned by its test that only falls; there is no switch.
 
 NO-STACKED-PRS. A head holding a commit of another open head that integration does not hold is refused at
