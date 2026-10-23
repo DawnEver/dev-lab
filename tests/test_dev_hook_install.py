@@ -23,7 +23,9 @@ from dev_lab.dev.hook_install import (
     FOREIGN,
     INSTALL_COMMAND,
     INSTALLED,
+    PREDECESSOR_MARKER,
     PROTECTED,
+    RETIRED_SHIMS_DIR,
     SHIM_MARKER,
     STALE,
     UNPROTECTED,
@@ -104,6 +106,18 @@ def test_a_stale_shim_of_ours_is_live_for_the_property_and_still_reported_to_a_p
     stale.write_text('#!/bin/sh\necho mine\n', encoding='utf-8')
     with pytest.raises(AssertionError, match=FOREIGN):
         assert_declared_hooks_are_installed(root=repo)
+
+
+def test_a_predecessor_shim_is_retired_as_a_record_and_replaced(repo: Path) -> None:
+    """The predecessor kit's shim is our lineage: moved aside, never refused. PLANTED CONTROL: the next test."""
+    directory = hooks_dir(repo)
+    directory.mkdir(parents=True, exist_ok=True)
+    old = f'#!/bin/sh\n{PREDECESSOR_MARKER}\nexec python -m lab_commons.dev.githooks run pre-commit\n'
+    (directory / 'pre-commit').write_text(old, encoding='utf-8')
+    assert {s.stage: s.status for s in hook_installation(repo).stages}['pre-commit'] == STALE
+    assert install(repo).verdict == PROTECTED
+    assert {stage.status for stage in hook_installation(repo).stages} == {INSTALLED}
+    assert (repo / '.git' / RETIRED_SHIMS_DIR / 'pre-commit').read_text(encoding='utf-8') == old
 
 
 def test_somebody_elses_hook_is_refused_and_left_alone(repo: Path) -> None:
