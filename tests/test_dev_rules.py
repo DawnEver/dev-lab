@@ -68,6 +68,7 @@ _IDS = frozenset(
         'ISSUE-IS-INTENT',
         'LATEST-DEPENDENCIES',
         'MEMORY-SHAPE',
+        'MONTHLY-PLANS-CARRIED',
         'MODULE-SIZE-ALARM',
         'NAMED-SETS-NOT-COUNTS',
         'NETWORK-RETRY-THEN-REPORT',

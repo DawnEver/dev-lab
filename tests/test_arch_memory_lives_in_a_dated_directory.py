@@ -29,6 +29,8 @@ from pathlib import Path
 
 from _arch_corpus import MEMORY_FLOOR, ROOT, assert_floor, memory_entries
 
+from dev_lab.dev.famtests._datedmemory_readings import is_month_summary
+
 #: `YYYY / MM / DD` -- the three leading parts of every memory path, below `.claude/memory/`.
 DATE_DEPTH = 3
 
@@ -49,6 +51,7 @@ def misshapen_entries(paths: tuple[Path, ...], memory_root: Path) -> tuple[str, 
         inner = path.relative_to(memory_root)
         parts = inner.parts[:DATE_DEPTH]
         dated = len(inner.parts) > DATE_DEPTH and all(part.isdigit() for part in parts)
+        dated = dated or is_month_summary(inner.parts)
         name = inner.as_posix()
         if not dated:
             out.append(
@@ -89,7 +92,12 @@ def test_a_planted_misshapen_entry_is_refused(tmp_path: Path) -> None:
     partial = plant('2026/09/15/half-declared.md', '---\nname: x\n---\n\n# X\n')
     clean = plant('2026/09/15/good.md', frontmatter)
 
-    problems = misshapen_entries((undated, bare, partial, clean), tmp_path)
+    summary = plant('2026/09/SUMMARY-2026-09.md', frontmatter)
+    misfiled = plant('2026/09/SUMMARY-2026-08.md', frontmatter)
+
+    problems = misshapen_entries((undated, bare, partial, clean, summary, misfiled), tmp_path)
+    assert not any('SUMMARY-2026-09.md' in p for p in problems), "the month's own summary must pass"
+    assert any('SUMMARY-2026-08.md' in p for p in problems), 'a summary under another month must be refused'
     assert any('a-fork.md' in p and 'YYYY/MM/DD' in p for p in problems), 'an undated entry must be refused'
     assert any('no-frontmatter.md' in p and 'declares nothing' in p for p in problems)
     assert any('half-declared.md' in p and 'description:' in p for p in problems)

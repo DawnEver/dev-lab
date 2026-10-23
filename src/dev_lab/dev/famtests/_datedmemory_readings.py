@@ -55,6 +55,7 @@ __all__ = [
     'MemoryScan',
     'date_disagreements',
     'entries',
+    'is_month_summary',
     'memory_trees',
     'silent',
     'take_scan',
@@ -64,6 +65,17 @@ __all__ = [
 #: ``YYYY / MM / DD`` -- the three leading parts of every memory path. FOUR digits, which is the
 #: layout :func:`dev_lab.dev.datedlog.dated_log` does not write; see the module docstring.
 DATE_DEPTH: Final = 3
+
+#: The ONE entry at month depth: ``YYYY/MM/SUMMARY-YYYY-MM.md``, the month's summary whose ``## Plans``
+#: section is the repo's plan catalogue (MONTHLY-PLANS-CARRIED). Its name repeats its directory, so a
+#: summary filed under another month is not this shape and stays undated.
+MONTH_SUMMARY: Final = re.compile(r'(\d{4})/(\d{2})/SUMMARY-\1-\2\.md')
+
+
+def is_month_summary(parts: tuple[str, ...]) -> bool:
+    """Whether *parts*, relative to the memory tree, are that month's own summary."""
+    return MONTH_SUMMARY.fullmatch('/'.join(parts)) is not None
+
 
 #: How an entry dates itself. One regex, because a second spelling of it is a second answer: both
 #: consumers already had this exact pattern, character for character.
@@ -165,8 +177,14 @@ def _dated(parts: tuple[str, ...]) -> bool:
 
 
 def undated(tree: Path, files: Iterable[Path]) -> tuple[str, ...]:
-    """THE SHAPE READING. Files whose first three parts are not a date, whatever put them there."""
-    return tuple(sorted(Path(*_inner(tree, p)).as_posix() for p in files if not _dated(_inner(tree, p))))
+    """THE SHAPE READING. Files whose first three parts are not a date, except the month's own summary."""
+    return tuple(
+        sorted(
+            Path(*_inner(tree, p)).as_posix()
+            for p in files
+            if not _dated(_inner(tree, p)) and not is_month_summary(_inner(tree, p))
+        )
+    )
 
 
 def silent(tree: Path, files: Iterable[Path]) -> tuple[str, ...]:
