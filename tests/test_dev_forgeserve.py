@@ -1260,13 +1260,60 @@ def test_a_tick_past_its_period_leaves_the_runs_it_did_not_reach_for_the_next(mo
     _serve(monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm, table={'tick_minutes': 5})
     assert sorted(advanced) == shas, 'PLANTED: a quick tick advances every run'
     advanced.clear()
-    now[:] = [NOW, NOW + timedelta(hours=1)]  # the tick started at NOW; its rounds took an hour
+    _rounds_take(monkeypatch, now, timedelta(hours=1))
     monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
     _serve(
         monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
-        table={'tick_minutes': 5}, clock=lambda: now.pop(0) if len(now) > 1 else now[0],
+        table={'tick_minutes': 5}, clock=lambda: now[0],
     )  # fmt: skip
-    assert len(advanced) == 1, 'a tick whose rounds ran long still advances one run'
+    assert sorted(advanced) == shas, 'the rounds ran an hour, and the runs still get their own period'
+
+
+def _rounds_take(monkeypatch: pytest.MonkeyPatch, now: list[datetime], took: timedelta) -> None:
+    """The tick's rounds (its integration pass, claims, producers) move *now* on by *took*."""
+    real = forgerounds.Rounds.serve
+
+    def slow(self: forgerounds.Rounds, beat_s: float) -> object:
+        now[0] += took
+        return real(self, beat_s)
+
+    monkeypatch.setattr(forgerounds.Rounds, 'serve', slow)
+
+
+def test_bookkeeping_that_spends_the_period_does_not_starve_the_runs(monkeypatch, tmp_path: Path) -> None:
+    """The runs' budget starts when the runs do, so a long integration pass cannot cut them to one per tick.
+
+    Ada 2026-10-23: a tick spent ~25 min on rounds and bookkeeping before the runs, ``spent()`` was already
+    true, one run of six advanced per tick, and a superseded run's cheap withdrawal waited hours.
+    PLANTED CONTROL: runs that themselves overrun the period are still cut off after the one past it.
+    """
+    shas = _runs_on_disk(monkeypatch, tmp_path, 3)
+    now = [NOW]
+    advanced: list[str] = []
+    _rounds_take(monkeypatch, now, timedelta(minutes=25))
+
+    def clock() -> datetime:
+        return now[0]
+
+    monkeypatch.setattr(forgerun, 'advance', lambda _r, run, **_k: advanced.append(run.sha) or run)
+    _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+        table={'tick_minutes': 5}, clock=clock,
+    )  # fmt: skip
+    assert sorted(advanced) == shas, "every quick run, a superseded one's withdrawal among them, advances"
+    advanced.clear()
+
+    def slow(_root: Path, run: forgerunstate.Run, **_kw: object) -> forgerunstate.Run:
+        advanced.append(run.sha)
+        now[0] += timedelta(minutes=6)
+        return run
+
+    monkeypatch.setattr(forgerun, 'advance', slow)
+    _serve(
+        monkeypatch, tmp_path, TickReport((), (), ()), seat=SEAT, cluster=_Slurm,
+        table={'tick_minutes': 5}, clock=clock,
+    )  # fmt: skip
+    assert len(advanced) == 1, 'PLANTED: runs that overrun their own period still stop after one'
 
 
 def test_consecutive_slow_ticks_reach_every_run_least_recently_advanced_first(monkeypatch, tmp_path: Path) -> None:
