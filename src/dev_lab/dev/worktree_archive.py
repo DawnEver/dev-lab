@@ -22,7 +22,12 @@ is NOT safe.
 
 WHAT IS SAVED: under ``archive-to`` (default :data:`ARCHIVE_TO`) ``/<yyyymmdd>/<worktree>/``: ``HEAD.txt`` (sha
 and branch), ``dirty.patch`` (``git diff HEAD --binary``: every uncommitted tracked change) and ``untracked/``
-(the untracked, non-ignored files, small by construction -- ignored ones are outputs or regenerable).
+(the untracked, non-ignored files, small by construction).
+
+WHAT IS NOT SAFE TO REMOVE, checked rather than assumed: an IGNORED file outside the declared outputs, a venv and
+the regenerable caches (:data:`REGENERABLE`) -- a local ``.env``, an ignored probe -- is neither moved nor saved,
+so it is listed and the tree is NOT safe; and a DETACHED HEAD whose commit no ref contains is lost to ``gc`` once
+the tree goes, so it is named and the tree is NOT safe until a branch or tag holds it.
 """
 
 from __future__ import annotations
@@ -38,19 +43,23 @@ from typing import TYPE_CHECKING, Final
 
 from lab_commons.census import processes
 
-from dev_lab.dev.checkout import git_out, worktrees
+from dev_lab.dev.checkout import git_bytes, git_out, worktrees
 from dev_lab.dev.liverun import describe, occupants
 
 if TYPE_CHECKING:
     from dev_lab.dev.liverun import Census
 
-__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'Archived', 'archive', 'volume']
+__all__ = ['ARCHIVE_TO', 'OUTPUTS', 'REGENERABLE', 'Archived', 'archive', 'volume']
 
 #: The family default of what a worktree's runs produce and the main checkout keeps (``docs-src/dev/output-tree``).
 OUTPUTS: Final = ('output/logs',)
 #: Where the saved work of an archived tree goes, relative to the main checkout.
 ARCHIVE_TO: Final = 'output/worktree-archive'
 _VENV_MARK: Final = 'pyvenv.cfg'
+#: Ignored directories a tool rebuilds on its next run: losing them loses nothing.
+REGENERABLE: Final = frozenset(
+    {'__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache', '.hypothesis', 'node_modules', 'target'}
+)
 
 
 @dataclass(frozen=True)
@@ -64,11 +73,13 @@ class Archived:
     identical: tuple[Path, ...] = ()
     renamed: tuple[Path, ...] = ()
     conflicts: tuple[Path, ...] = ()
+    stranded: tuple[Path, ...] = ()  # ignored files neither moved nor saved
+    unreachable: str = ''  # a detached HEAD commit no ref contains
 
     @property
     def safe(self) -> bool:
         """Whether nothing the tree holds is lost by removing it now."""
-        return self.refused is None and not self.conflicts
+        return self.refused is None and not self.conflicts and not self.stranded and not self.unreachable
 
     def lines(self) -> tuple[str, ...]:
         """One report line per fact, then the verdict on removal."""
@@ -79,10 +90,13 @@ class Archived:
             f' file, {len(self.identical)} identical skipped; work saved in {self.saved}'
         )
         tail = [f'  KEPT {path} (both names taken by different bytes)' for path in self.conflicts]
+        tail += [f'  IGNORED {path} (neither an output nor saved)' for path in self.stranded]
+        if self.unreachable:
+            tail.append(f'  DETACHED {self.unreachable} (no ref contains it; branch or tag it first)')
         verdict = (
             f'safe to remove: git worktree remove --force {self.name} (a separate, explicit step)'
             if self.safe
-            else 'NOT safe to remove: the kept files above are in the tree only'
+            else 'NOT safe to remove: what is listed above is in the tree only'
         )
         return (head, *tail, verdict)
 
@@ -115,17 +129,57 @@ def _save(tree: Path, saved: Path) -> None:
     head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
     branch = (git_out(tree, 'branch', '--show-current') or '').strip() or '(detached)'
     (saved / 'HEAD.txt').write_text(f'{head}\n{branch}\n', encoding='utf-8')
-    patch = git_out(tree, 'diff', 'HEAD', '--binary')
+    patch = git_bytes(tree, 'diff', 'HEAD', '--binary')
     if patch is None:
         msg = f'git could not diff {tree}'
         raise RuntimeError(msg)
-    (saved / 'dirty.patch').write_text(patch, encoding='utf-8', newline='')
+    (saved / 'dirty.patch').write_bytes(patch)
     for rel in filter(None, (git_out(tree, 'ls-files', '--others', '--exclude-standard', '-z') or '').split('\0')):
         source = tree / rel
         if source.is_file() and not _in_venv(source.parent, tree):
             target = saved / 'untracked' / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+
+
+def _regenerable(rel: Path) -> bool:
+    return rel.suffix == '.pyc' or any(part in REGENERABLE for part in rel.parts)
+
+
+def _stranded(tree: Path, outputs: tuple[str, ...]) -> tuple[Path, ...]:
+    """Ignored files outside *outputs*, venvs and :data:`REGENERABLE` -- what a removal would lose unsaved."""
+    listed = git_out(tree, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z')
+    if listed is None:
+        msg = f'git could not list the ignored files of {tree}'
+        raise RuntimeError(msg)
+    tops = [Path(one) for one in outputs]
+    kept: list[Path] = []
+    for entry in filter(None, listed.split('\0')):
+        rel = Path(entry.rstrip('/'))
+        if any(rel.is_relative_to(top) for top in tops) or _regenerable(rel):
+            continue
+        path = tree / rel
+        found = [one.relative_to(tree) for one in _files(path)] if path.is_dir() else [rel]
+        kept += [
+            one
+            for one in found
+            if not any(one.is_relative_to(top) for top in tops)
+            and not _regenerable(one)
+            and not _in_venv((tree / one).parent, tree)
+        ]
+    return tuple(sorted(kept))
+
+
+def _unreachable(tree: Path) -> str:
+    """The detached HEAD sha no ref contains, or ``''`` -- a branch's commits survive the tree in its ref."""
+    if (git_out(tree, 'branch', '--show-current') or '').strip():
+        return ''
+    head = (git_out(tree, 'rev-parse', 'HEAD') or '').strip()
+    holders = git_out(tree, 'for-each-ref', '--contains', head, '--format=%(refname)')
+    if holders is None:
+        msg = f'git could not say which refs contain {head} in {tree}'
+        raise RuntimeError(msg)
+    return '' if holders.strip() else head
 
 
 def _files(top: Path) -> list[Path]:
@@ -173,4 +227,14 @@ def archive(main: Path, name: str, *, census: Census = processes, today: date | 
                 identical.append(beside.relative_to(main))
             else:
                 conflicts.append(rel)
-    return Archived(name, saved, None, tuple(moved), tuple(identical), tuple(renamed), tuple(conflicts))
+    return Archived(
+        name,
+        saved,
+        None,
+        tuple(moved),
+        tuple(identical),
+        tuple(renamed),
+        tuple(conflicts),
+        stranded=_stranded(tree, outputs),
+        unreachable=_unreachable(tree),
+    )
