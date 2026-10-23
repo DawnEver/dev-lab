@@ -4,12 +4,16 @@ import os
 import shutil
 import sys
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import lab_commons.launch as _door
+from lab_commons.log import emit
 
+from dev_lab.dev._dep_network import CHILD_WALL_S, run_change
 from dev_lab.dev.installdoor import floating_requirements
+from dev_lab.dev.lockcheck import unreasoned_holds
 from dev_lab.dev.venvpath import venv_interpreter
 
 
@@ -132,3 +136,23 @@ def read_project(root: Path, requested: Sequence[str] | None) -> tuple[str, tupl
         raise ValueError(msg)
     python = str(root / venv_interpreter(os_name=os.name))
     return python, tuple(selected), anchor_paths(root, declaration.get('anchors', ()))
+
+
+def lock_upgrade(
+    root: Path, python: str, *, run: Callable[..., Any], dry_run: bool, environment: dict[str, str]
+) -> int:
+    """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`dev_lab.dev.lockcheck` names.
+
+    The holds lockcheck refuses at push are refused HERE first, before anything resolves: a lock written
+    under an unreasoned hold would only be refused again at the push. Only the lock moves in this step; the
+    environment then follows it through the seated frozen sync in :func:`dev_lab.dev.dep.main`.
+    """
+    holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
+    if holds:
+        emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
+        return 1
+    command = lock_upgrade_command(root, python)
+    if dry_run:
+        emit('would run: ' + ' '.join(command))
+        return 0
+    return run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)

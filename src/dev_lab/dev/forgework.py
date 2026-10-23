@@ -50,6 +50,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev import forge as _forge
 from dev_lab.dev._forge_journal import LOOKBACK, Durable, Journal, Probe, Write, journal_for, since, write_key
+from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, is_pull, pull_of
 from dev_lab.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
 from dev_lab.dev.forge import (
     _GIT,
@@ -94,16 +95,6 @@ _UNAUTHENTICATED: Final = 401
 _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
 
 
-def is_pull(raw: Mapping[str, Any]) -> bool:
-    """Whether a listed issue is a pull request: its ``pull_request`` is not null -- even `{}` marks a pull.
-
-    Gitea sends ``"pull_request": null`` on every plain issue, so testing the key's presence read
-    every issue as a pull: ``issue list`` printed nothing and the hosts lookup found no issue and
-    opened a new one every tick (128 ``forge hosts`` issues on three repos, 2026-10-12).
-    """
-    return raw.get('pull_request') is not None
-
-
 #: The separator in the provenance line, spelled once.
 _DOT: Final = ' · '
 
@@ -133,77 +124,6 @@ def _credential_refused(report: Report) -> bool:
     """The last attempt was a 401/403 that :meth:`Client._diagnosis` diagnosed refused after asking ``GET /user``."""
     last = report.attempts[-1] if report.attempts else None
     return last is not None and last.returncode in _forge.AUTH_REFUSED and last.diagnosis is Diagnosis.FORGE_REFUSED
-
-
-@dataclass(frozen=True)
-class Issue:
-    """An issue, identical in shape whichever forge answered."""
-
-    number: int
-    title: str
-    state: str
-    body: str
-    url: str
-    author: str
-
-
-@dataclass(frozen=True)
-class Comment:
-    """A comment on an issue."""
-
-    id: int
-    body: str
-    url: str
-    #: The login the FORGE records as its writer -- never a claim the body makes about itself.
-    author: str = ''
-
-
-@dataclass(frozen=True)
-class PullRequest:
-    """A pull request, identical in shape whichever forge answered."""
-
-    number: int
-    title: str
-    state: str
-    body: str
-    url: str
-    author: str
-    head: str
-    base: str
-    #: The head's commit; a fork's head branch is not in this repository, its commit is (``pull/N/head``).
-    head_sha: str = ''
-    #: The labels on the PR -- where a user's designation (``priority:user``, ``priority:<n>``) is read.
-    labels: tuple[str, ...] = ()
-    #: Whether the forge holds it as a draft (gitea: ``draft``, or a ``WIP:``/``[WIP]`` title prefix).
-    draft: bool = False
-
-
-#: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
-_WIP_PREFIXES: Final = ('WIP:', '[WIP]')
-
-
-def _issue(raw: Mapping[str, Any]) -> Issue:
-    return Issue(
-        raw['number'], raw['title'], raw['state'], raw.get('body') or '', raw['html_url'], raw['user']['login']
-    )
-
-
-def pull_of(raw: Mapping[str, Any]) -> PullRequest:
-    """A forge's pull-request JSON as a :class:`PullRequest`."""
-    issue = _issue(raw)
-    return PullRequest(
-        *dataclasses.astuple(issue),
-        raw['head']['ref'],
-        raw['base']['ref'],
-        raw['head'].get('sha') or '',
-        tuple(str(label['name']) for label in raw.get('labels') or ()),
-        bool(raw.get('draft')) or issue.title.upper().startswith(_WIP_PREFIXES),
-    )
-
-
-def comment_of(raw: Mapping[str, Any]) -> Comment:
-    """A forge's comment JSON as a :class:`Comment`."""
-    return Comment(raw['id'], raw.get('body') or '', raw['html_url'], (raw.get('user') or {}).get('login', ''))
 
 
 def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:

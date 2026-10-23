@@ -83,7 +83,6 @@ from dev_lab.dev._dep_components import changed, record
 from dev_lab.dev._dep_network import CHILD_WALL_S, init_submodules, run_change
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.liverun import Census, env_in_use, executing_from
-from dev_lab.dev.lockcheck import unreasoned_holds
 
 __all__ = [
     'CHILD_WALL_S',
@@ -408,26 +407,6 @@ def _change(
         raise _held_refusal(port.name, exc, prefix) from exc
 
 
-def _lock_upgrade(
-    root: Path, python: str, *, run: Callable[..., Any], dry_run: bool, environment: dict[str, str]
-) -> int:
-    """Rewrite *root*'s lock at the newest resolution -- the remedy :mod:`dev_lab.dev.lockcheck` names.
-
-    The holds lockcheck refuses at push are refused HERE first, before anything resolves: a lock written
-    under an unreasoned hold would only be refused again at the push. Only the lock moves in this step; the
-    environment then follows it through the seated frozen sync in :func:`main`.
-    """
-    holds = unreasoned_holds((root / 'pyproject.toml').read_text(encoding='utf-8'))
-    if holds:
-        emit('REFUSED: ' + '; '.join(f'{hold} holds a requirement below the newest with no reason' for hold in holds))
-        return 1
-    command = _dep_project.lock_upgrade_command(root, python)
-    if dry_run:
-        emit('would run: ' + ' '.join(command))
-        return 0
-    return run_change(command, run=run, timeout=CHILD_WALL_S, cwd=root, environment=environment)
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -463,7 +442,7 @@ def main(
         emit(f'REFUSED: {why}')
         return 1
     if locking:
-        code = _lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
+        code = _dep_project.lock_upgrade(root, python, run=run, dry_run=args.dry_run, environment=environment)
         if code:
             return code
     command = _dep_project.uv_command(
