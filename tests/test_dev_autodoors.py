@@ -12,6 +12,7 @@ import pytest
 from dev_lab.dev.autodoors import (
     CODEX_RULES_REL,
     DOOR_MODULES,
+    VERB_DOORS,
     claude_rows,
     codex_rules,
     doors,
@@ -186,3 +187,13 @@ def test_a_repo_without_a_wrapper_pushes_through_netverb_never_raw() -> None:
     assert not any(fnmatchcase('git -C ../sib push origin main', g) for g in globs)
     assert promises_raw(' '.join(globs)) == ()
     assert promises_raw('Bash(git push --force origin *)') == ('--force',)
+
+
+def test_each_bounded_verb_renders_one_row_naming_its_verb_and_no_sibling_verb() -> None:
+    """VERB_DOORS: the row admits the bounded verb and NOT the same module's other verbs (planted control)."""
+    globs = [row.removeprefix('Bash(').removesuffix(')') for row in claude_rows(())]
+    for _runner, *argv in VERB_DOORS:
+        assert any(fnmatchcase(f'.venv/Scripts/python.exe {" ".join(argv)} x', g) for g in globs), argv
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.forge serve', g) for g in globs)
+    assert not any(fnmatchcase('.venv/Scripts/python.exe -m dev_lab.dev.hpchost deploy --remove', g) for g in globs)
+    assert promises_raw(' '.join(globs)) == ()

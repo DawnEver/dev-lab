@@ -13,7 +13,15 @@ pushes.
 | `python -m dev_lab.dev.worktrees [--prune]` | Lists the worktrees. `--prune` removes one only when it is clean (`git status --porcelain` empty), holds no ignored content but regenerable artefacts (caches, `.venv`, `*.egg-info`, `build/`, `target/`, plus `[tool.lab_commons.worktrees] regenerable`), and its HEAD is on a remote branch. Removal is `git worktree remove` without `--force`; an unregistered empty directory is removed with `rmdir`. Anything else is listed with what blocks it. |
 | `python -m dev_lab.dev.stoprun --pid PID [--repo PATH] [--dry-run]` | Stops one identified run and its subtree, children first, never an ancestor or a sibling. A run is identified by its command line: the built-in signatures (verify, a gate runner, pytest) plus regexes in `[tool.lab_commons.stoprun] signatures`. Any other pid is refused (exit 3). |
 
-The raw verbs (`git branch -D`, `git worktree remove --force`, `rm -rf`, `taskkill`) stay unallowed.
+| `python -m dev_lab.dev.forge pr close-landed [N...]` | Closes an open PR whose head is already on its base, then deletes its branch losslessly. |
+| `python -m dev_lab.dev.forge pr close-superseded N... --by M [--why <line>]` | Closes each open PR salvaged into open, unmerged PR `M`, comments `superseded by #M: <line>`, then deletes its branch through `branchprune delete` (kept, naming the commits, if any exists nowhere else). Refuses a closed target, a closed or merged `M`, or `M` itself. |
+| `python -m dev_lab.dev.branchprune delete <branch>...` | LOSSLESS-DELETE: a remote branch only when every commit on it is on integration or another live branch or open PR head. |
+| `python -m dev_lab.dev.forge cancel-stuck <sha> [--bound-minutes M \| --wall-minutes W --factor N]` | Scancels only `run-<sha12>-<part>` tasks of the full 40-hex `<sha>` that run at 90 % CPU or more with no new line in their run's results file for longer than `N x W` (default N = 3), else `M` (default 60). Lists every other task of the sha as healthy; other jobs are never touched. |
+| `python -m dev_lab.dev.forge watch <sha> [--deadline-minutes M]` | Read-only: prints each `tests/<part>` status change until all are final (exit 0 green, 1 red) or the deadline (exit 3). |
+| `python -m dev_lab.dev.hpchost deploy-fleet [--account U]... [--dry-run]` | Starts, detached over `ssh -o BatchMode=yes`, each `[[hpc.grant]]` account's own `hpchost deploy`, one log per account under `~/.cache/dev-lab/<yy>/<mm>/<dd>/deploy-fleet/`. An account outside the machine file's grants refuses the whole run. |
+
+The raw verbs (`git branch -D`, `git worktree remove --force`, `rm -rf`, `taskkill`, a raw `scancel`) stay unallowed.
+A bounded verb's row names the verb (`VERB_DOORS`), so the module's other verbs stay prompted.
 
 ## One table, two clients
 
@@ -29,10 +37,26 @@ rendered from these:
 
 No rendering may promise a raw verb (`promises_raw`).
 
+## Auto-mode prose: `<repo>/.claude/automode.json`
+
+Claude Code reads `autoMode` only from user, managed or `--settings` files, so the user's launcher passes a trusted
+repo's `<repo>/.claude/automode.json` through `--settings`. `dev_lab.dev.automode` renders it:
+`{"autoMode": {"environment": ["$defaults", ...], "allow": ["$defaults", ...]}}`.
+
+- `environment`: the repo's `origin` and declared branch set, and the SOURCES of the forge fleet (the synced
+  workstation registry named by the machine file's `[workstation] registry`, and its `[[hpc.grant]]` accounts).
+  Both are machine-local, so no host is listed in a tracked file.
+- `allow`: `INTENTS`, one prose category per door or rule (Break-Glass, close-landed, close-superseded,
+  lossless prune, hook install, fleet deploy, cancel-stuck, read-only monitoring), plus each `OPTIONAL_INTENTS`
+  entry the repo names in `[tool.lab_commons.automode] declares` (e.g. `"jmag-material-card"`).
+
+Entries are intent, never a command or module spelling (`spelled_commands`); the exact commands are the narrow
+rows above.
+
 ## Adopting
 
 1. Construct `AllowAdoption(..., scripts=script_doors(root, shell_doors=(...)))`, re-render
    `.claude/settings.json` with `permissions_block`, and drop any declared row that now duplicates a door row.
 2. Run `python -m dev_lab.dev.autodoors --repo . [--shell-door <path>] --write` and commit
-   `.codex/rules/family-doors.rules`; without `--write` it exits 1 when the file is stale.
+   `.codex/rules/family-doors.rules` and `<repo>/.claude/automode.json`; without `--write` it exits 1 when either is stale.
 3. Delete local copies of the doors.
