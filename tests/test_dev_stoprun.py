@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -200,9 +201,8 @@ def test_a_worker_of_a_live_parent_is_refused() -> None:
 
 def test_the_real_table_carries_each_process_creation_time() -> None:
     """The reuse proof needs creation times, so the platform table must supply one for every process."""
-    import os
-
     table = process_table()
     ppid, cmdline, created = table[os.getpid()]
-    assert ppid > 0 and cmdline
+    assert ppid > 0
+    assert cmdline
     assert 0 < created <= time.time()

@@ -63,8 +63,8 @@ __all__ = [
     'SignaturesNotDeclared',
     'declared_signatures',
     'identify',
-    'orphaned_worker',
     'main',
+    'orphaned_worker',
     'process_table',
     'repo_root',
     'stop',
@@ -199,6 +199,14 @@ def orphaned_worker(table: Mapping[int, Proc], pid: int) -> int | None:
     return None
 
 
+def _why_stoppable(table: Mapping[int, Proc], pid: int, signatures: tuple[str, ...]) -> str | None:
+    """What makes *pid* stoppable: the signature it matches, or the parent it names and has lost."""
+    matched = identify(table[pid][1], signatures)
+    if matched is None and (lost := orphaned_worker(table, pid)) is not None:
+        return f'orphaned worker of {lost}'
+    return matched
+
+
 def subtree(table: Mapping[int, Proc], pid: int) -> list[int]:
     """*pid* and every descendant, deepest first (children are stopped before their parent)."""
     order: list[int] = []
@@ -258,9 +266,7 @@ def stop(
         return 3, [f'refused: no process {pid}']
     if pid in _ancestors(table, os.getpid()):
         return 3, [f'refused: {pid} is an ancestor of this process']
-    matched = identify(table[pid][1], signatures)
-    if matched is None and (lost := orphaned_worker(table, pid)) is not None:
-        matched = f'orphaned worker of {lost}'
+    matched = _why_stoppable(table, pid, signatures)
     if matched is None:
         return 3, [f'refused: {pid} matches no run signature (built-in or {_TABLE}): {table[pid][1][:200]!r}']
     lines = [f'matched signature {matched!r}']
