@@ -308,3 +308,21 @@ def test_a_serve_works_in_a_root_that_is_not_the_tree(tree: Path) -> None:
     assert not liverun.in_tree(work, tree)
     serve = _proc(7, _venv_python(tree), cwd=work, cmd='python -m dev_lab.dev.forge serve')
     assert not liverun.reads_tree(serve, tree)
+
+
+def test_an_argument_whose_stat_raises_is_no_path_and_the_census_survives(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MEASURED 2026-10-21: an argument naming a busy named pipe made ``Path.exists`` raise WinError 231."""
+    pipe = 'C:/pipe/busy'
+    real = Path.exists
+
+    def exists(self: Path, *args: object, **kwargs: object) -> bool:
+        if self.as_posix() == pipe:
+            raise OSError(231, 'All pipe instances are busy')
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'exists', exists)
+    reader = _proc(9, 'C:/bin/node.exe', cmd=f'node.exe {pipe} {tree / "src"}', cwd='C:/')
+    (tree / 'src').mkdir()
+    assert liverun.live_runs(tree, census=lambda: (reader,), me=1) == (reader,)

@@ -105,7 +105,7 @@ def checkout_of(path: Path | str) -> Path | None:
 
 def in_tree(path: Path | str, root: Path | str) -> bool:
     """Whether a write to *path* changes what a run of checkout *root* executes."""
-    owner = checkout_of(Path(path).parent if not Path(path).is_dir() else path)
+    owner = checkout_of(path if _is_dir(Path(path)) else Path(path).parent)
     if owner is None or _key(owner) != _key(root):
         return False
     relative = Path(os.path.relpath(Path(path).absolute(), Path(root).absolute()))
@@ -158,8 +158,24 @@ def _named_paths(one: Process) -> Iterable[Path]:
         if text.startswith('-') or ('/' not in text and '\\' not in text):
             continue
         path = Path(text) if Path(text).is_absolute() else Path(one.cwd, text) if one.cwd else None
-        if path is not None and path.exists():
+        if path is not None and _exists(path):
             yield path
+
+
+def _exists(path: Path) -> bool:
+    """``Path.exists`` that answers ``False`` where stat RAISES: a busy named pipe (WinError 231, 2026-10-21)."""
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _is_dir(path: Path) -> bool:
+    """``Path.is_dir`` answering ``False`` where stat RAISES, as :func:`_exists` does: an existing pipe can be busy."""
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
 
 
 def reads_tree(one: Process, root: Path | str) -> bool:
