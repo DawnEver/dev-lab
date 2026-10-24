@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from dev_lab.dev import agent_guard, agenthooks
+from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
 
@@ -167,25 +167,9 @@ def test_unreadable_rules_are_stale_rather_than_present(repo: Path) -> None:
     assert agent_guard.guard_installation(repo).by_part['rules'].status == agent_guard.STALE
 
 
-def _posix_shell() -> str:
-    """The POSIX shell the tool runs a hook line in: Git Bash on Windows, found beside ``git`` as the tool finds it.
-
-    A serve host's scheduled task has ``git`` on PATH but not Git's ``usr/bin`` (G, 2026-10-24), so a bare
-    ``sh`` lookup would test the PATH rather than the guard.
-    """
-    found = shutil.which('bash') or shutil.which('sh')
-    if found:
-        return found
-    git = shutil.which('git')
-    if git:
-        for root in Path(git).resolve().parents[:2]:
-            for rel in ('bin/bash.exe', 'usr/bin/bash.exe', 'bin/sh.exe', 'usr/bin/sh.exe'):
-                if (root / rel).is_file():
-                    return str(root / rel)
-    return 'sh'
-
-
-_SHELL = _posix_shell()
+# The shell the tool runs a hook line in, found as the hooks find it: a serve host's scheduled task has
+# ``git`` on PATH but no bash (G, 2026-10-24), so a bare lookup would test the PATH rather than the guard.
+_SHELL = bash_executable()
 
 
 def _wired_line(repo: Path) -> str:
@@ -356,12 +340,9 @@ def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(
 
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
-    bash = shutil.which('bash')
-    if bash is None:
-        pytest.fail('no bash on this host: the hook command is a bash line')
     env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
     done = subprocess.run(
-        [bash, '-c', agent_guard.STRAY_COMMAND],
+        [_SHELL, '-c', agent_guard.STRAY_COMMAND],
         input='{}',
         capture_output=True,
         text=True,
