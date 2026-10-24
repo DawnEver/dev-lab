@@ -42,20 +42,17 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 - Deleting a branch on origin BY HAND is a human's action (the forge's automatic prune, below, is the same
   human decision made once as data): the door prints `git push origin --delete <b>`.
 
-## The assertions consumers run
+## The assertion consumers run
 
-`dev_lab.dev.famtests.branchset`:
-
-- `assert_origin_branches_declared(root=, branchset=)`: red on an undeclared origin branch not contained in HEAD,
-  `origin/<trunk>` or a session branch. A merged one is returned and warned as "deletion owed to a human".
-- `assert_local_branches_declared(root=, branchset=)`: red on an undeclared local branch origin already holds;
-  one holding unpushed work is returned and warned, never red, because it is the only copy.
-- `assert_the_planted_branchset_is_policed(tmp_path, trunk=)`: the planted control on a real bare origin.
+`dev_lab.dev.famtests.branchset.assert_the_pr_flow_is_declared(root=)` judges the DECLARATION only: the repo
+declares `pr_merges_since`, the `pr/*` ephemeral namespace and its integration branch in `sessions`. No test
+reads origin's refs or a host's local branches: such a test judges the environment, not the code under test,
+and reds every unrelated PR (ruling 2026-10-24).
 
 ## Judged on the forge, never at push
 
-The branch set is the forge's alone (toolchain plan P3; user ruling 2026-10-24): `assert_origin_branches_declared`
-reds an undeclared origin branch in the repo's own suite, and the pruner below alarms or deletes it. No pre-push
+The branch set is the forge's alone (toolchain plan P3; user ruling 2026-10-24): the forge's
+`branchset` status is the one judgement, and the pruner below alarms or deletes an undeclared origin branch. No pre-push
 row reads the branch set, and none can be declared: the push-time module is retired. Every open PR head into
 integration carries a `branchset` status (`dev_lab.dev.forgeheadgate`): `failure` when its branch is not admitted
 by the set its own commit declares, naming the ephemeral namespaces and `sessions`. Agent lanes are local: only

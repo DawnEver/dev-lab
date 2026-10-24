@@ -198,9 +198,9 @@ WHAT IS HERE, one module per shared body:
 
 * :mod:`dev_lab.dev.famtests.lockpin` -- PIN on the forge: the checked-out commit commits ``uv.lock`` and every
   hold below the newest names its reason (no pre-push row reads the lock, user ruling 2026-10-24).
-* :mod:`dev_lab.dev.famtests.branchset` -- ONE-BRANCH-PER-SESSION: origin carries only the declared
-  branch set, and this box no undeclared branch origin already holds; unpushed work is reported, not
-  refused. Generalises the per-consumer origin-branch pins of :mod:`~dev_lab.dev.famtests.visibility`.
+* :mod:`dev_lab.dev.famtests.branchset` -- ONE-BRANCH-PER-SESSION, the declaration only: a repo declares the
+  one PR flow. The LIVE branch set is the forge's ``branchset`` status (:mod:`dev_lab.dev.forgeheadgate`),
+  never a test.
 
 * :mod:`dev_lab.dev.famtests.noreflection` -- NO-REFLECTION: no tracked Python outside attic/ and
   archived/ calls ``getattr``/``hasattr``/``setattr``/``delattr`` or defines ``__getattr__``, outside a

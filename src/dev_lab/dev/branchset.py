@@ -22,7 +22,7 @@ Three questions are asked of it, all through local refs (fetch first; the remote
   DELETED now: its tip is an ancestor of the trunk or of a session branch. Anything else is merged
   first. ``python -m dev_lab.dev.branchset [--root R]`` prints this list; it deletes nothing.
 
-The assertions consumers run are :mod:`dev_lab.dev.famtests.branchset`. Remote deletion is a human
+The live set is judged by the forge alone (:mod:`dev_lab.dev.forgeheadgate`), never a test. Remote deletion is a human
 decision expressed as DATA: ``prune_merged`` (default ``false``) is what lets the forge prune merged origin
 branches (:mod:`dev_lab.dev.branchprune`); an agent never deletes a remote ref by hand.
 """
