@@ -53,7 +53,8 @@ NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a
 for supersession -- the run keeps its claim as ``draining`` until the last one ends, then is released as
 superseded naming the tip and dropped -- one alarm. The tip waits behind it (:mod:`forgecoalesce`), so its run
 carries every outcome the drained tasks finished (:mod:`dev_lab.dev.forgecarry`). Only a deliberate stop
-(:func:`lab_commons.hpc.run.cancel_run`) kills a started task. Ada 2026-10-22: 44% of a week's forge core-h was
+(:func:`lab_commons.hpc.run.cancel_run`) kills a started task. A run whose REF IS GONE (merged or closed) has no tip to drain for: unless
+the integration tip carries its result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`). Ada 2026-10-22: 44% of a week's forge core-h was
 cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
@@ -102,6 +103,7 @@ from dev_lab.dev.forgerunstate import (
 from dev_lab.dev.forgeschedule import coalesced, tip_of
 from dev_lab.dev.forgestatus import status_history, status_post
 from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 
@@ -111,6 +113,9 @@ __all__ = ['advance', 'start']
 _ADVANCE: Final = 'advance'
 _WAIT: Final = 'wait'
 _GONE: Final = 'gone'
+
+#: :func:`_superseding_tip` for a run whose ref is gone (merged or closed) and no live head carries it.
+_GONE: Final = '(ref gone)'
 
 #: A status description is short on every forge.
 _DESCRIPTION_MAX: Final = 140
@@ -215,10 +220,43 @@ def _superseding_tip(root: Path, run: Run) -> str:
 
     A DOCS-ONLY tip never supersedes (DOCS-ONLY-CARRIES, :func:`dev_lab.dev.forgecarry.docs_only`): no test's
     footprint reaches its diff, so its part IS this run's result, posted on it too when it lands (:func:`publish`).
+    :data:`_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
     """
+    if _ref_gone(root, run):
+        return _GONE
     tip = tip_of(root, run.ref)
     moved = tip and tip != run.sha and coalesced(root, run.ref)
     return tip if moved and not equivalent(root, run.sha, tip) else ''
+
+
+def _integration(root: Path) -> str:
+    """*root*'s integration branch."""
+    return load_policy(root).integration
+
+
+def _ref_gone(root: Path, run: Run) -> bool:
+    """Whether *run*'s ref has no tip (merged or closed, deleted) and its result carries to no live head.
+
+    NEWEST-HEAD-ONLY drains a superseded run's started tasks because its tip carries them; a gone ref has no
+    tip. The integration tip is the one live head left that may carry it (DOCS-ONLY-CARRIES, P6).
+    """
+    if tip_of(root, run.ref):
+        return False
+    integration = tip_of(root, _integration(root))
+    return not (integration and equivalent(root, run.sha, integration))
+
+
+def _cancel_orphan(
+    client: Client, run: Run, *, cluster: Cluster, say: Callable[[str], None], alarm: Callable[[Alarm], None], tag: str
+) -> None:
+    """Cancel every job of *run* -- started ones too -- release it superseded and drop it: one alarm."""
+    ids = cluster.cancel(run)
+    reason = f'released: superseded -- {run.ref} is gone and no live head carries its result'[:_DESCRIPTION_MAX]
+    why = f'jobs {" ".join(ids) or "none"} cancelled'
+    alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was orphaned', why))
+    say(f'{tag}: {why} -- {reason}')
+    _release(client, run, reason, say)
+    drop(run)
 
 
 def _supersede(
@@ -239,6 +277,9 @@ def _supersede(
     run carries what the drained tasks finished (:mod:`dev_lab.dev.forgecarry`) -- and is returned. Once
     none runs it is released and dropped: one alarm.
     """
+    if tip == _GONE:  # no tip to drain for: every job goes, started ones too
+        _cancel_orphan(client, run, cluster=cluster, say=say, alarm=alarm, tag=tag)
+        return None
     started = cluster.withdraw(run)
     if started:
         say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')

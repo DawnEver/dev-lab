@@ -737,6 +737,43 @@ def test_a_run_whose_coalesced_ref_moves_on_withdraws_its_pending_tasks_and_drai
     assert f'superseded by {tip[:12]}' in alarm.subject
 
 
+@pytest.mark.parametrize(
+    ('carries', 'cancelled'),
+    [
+        (False, True),  # no live head: its ref is gone and the integration tip cannot carry it -- cancelled
+        (True, False),  # PLANTED CONTROL: its result carries to the integration tip (P6) -- kept
+    ],
+)
+def test_a_run_whose_ref_is_gone_is_cancelled_started_tasks_too_unless_its_result_carries(
+    home: Path, monkeypatch: pytest.MonkeyPatch, *, carries: bool, cancelled: bool
+) -> None:
+    """A run whose sha is no ref's tip any more -- its PR merged or closed, the branch deleted -- drains for no one.
+
+    Ada 2026-10-24: 16 started shards of eight motronics shas that were no origin head ran 7 h to 1 d 16 h while
+    the live PR crawled. NEWEST-HEAD-ONLY keeps a superseded run's started tasks because its TIP carries them;
+    a deleted ref has no tip, so unless the integration tip carries its result (equivalent, P6) every job goes.
+    """
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    _submitted_run(home, store, slurm)
+    integration = 'e' * 40
+    monkeypatch.setattr(forgerun, 'tip_of', lambda _root, ref: integration if ref == 'integration' else '')
+    monkeypatch.setattr(forgerun, '_integration', lambda _root: 'integration')
+    monkeypatch.setattr(forgerun, 'equivalent', lambda _root, a, b: carries and (a, b) == (SHA, integration))
+    slurm.started = ['4242']
+    after = _tick(store, slurm, alarms=alarms)
+    if not cancelled:
+        assert after is not None
+        assert (slurm.cancelled, alarms) == ([], [])
+        return
+    assert slurm.cancelled == ['4242'], 'started tasks too: no live head carries them'
+    assert after is None
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    post = store.posts[-1]
+    assert (post['status'], 'superseded' in post['description']) == ('error', True)
+    [alarm] = alarms
+    assert alarm.kind == RUN
+
+
 def test_a_submitted_run_with_jobs_of_its_name_still_queued_is_kept(home: Path) -> None:
     """PLANTED CONTROL: no state yet but squeue holds jobs of the run's name -- not "never submitted"."""
     store, slurm = _Store(), _Slurm(home / 'r')
