@@ -85,7 +85,7 @@ PROJECT_FILES: Final[dict[str, ProjectFile]] = {
         _m('Makefile', 'famconfig REQUIRED: the target headers and the verify recipe must be present'),
         _m('ruff.toml', 'famconfig section bases RUFF_SECTIONS (or the same tables under [tool.ruff])'),
         _m('pyproject.toml', 'famconfig section bases PYPROJECT_SECTIONS; per-repo tables named in PYPROJECT_DECLINED'),
-        _m('.claude/settings.json', 'agent_guard.wire_settings (the PreToolUse hook) and allow_adoption'),
+        _m('.claude/settings.json', 'agent_guard.wire_settings (the guard and stray hooks) and allow_adoption'),
         _m('.claude/hooks/deny-commands.js', 'agent_guard install: the shipped engine, byte for byte'),
         _m('.claude/hooks/deny-rules.json', 'hook_adoption.render: the deny registry plus the repo remedies'),
         _m('.github/workflows/python-verify.yml', 'ciworkflows RENDERED from TOML: THE family CI definition'),

@@ -12,6 +12,8 @@ A PR IS MERGED WHEN, and only when, read from the object store and the forge:
 * every ``tests/<part>`` part of its head stands PASS (:func:`dev_lab.dev.platformparts.standing`), except a
   scarce part its diff does not reach -- WAIVED, run on integration after the merge
   (:mod:`dev_lab.dev.forgescarce`, user ruling 2026-10-22);
+* its review is not HELD: a head over the review cap waits for its sliced review's ``success``
+  (:func:`review_hold`); every other review state stays advisory;
 * its head merges into ``origin/<integration>`` with no conflict (it contains integration, or the
   three-way merge is clean -- :func:`dev_lab.dev.trialmerge.trial`);
 * the merge commit the forge will write passes the merge audit
@@ -34,7 +36,7 @@ from lab_commons.outcomes import Conclusion
 
 from dev_lab.dev.forgework import GITEA
 from dev_lab.dev.mergeaudit import MergeAuditError, judge
-from dev_lab.dev.platformparts import standing
+from dev_lab.dev.platformparts import OVER_CAP, REVIEW_CONTEXT, standing
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 from dev_lab.dev.trialmerge import trial
 
@@ -45,10 +47,18 @@ if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
     from dev_lab.dev.lanepolicy import Policy
 
-__all__ = ['FORGE_PULL', 'Decision', 'decide', 'merge', 'merge_message']
+__all__ = ['FORGE_PULL', 'Decision', 'decide', 'merge', 'merge_message', 'review_hold']
 
 #: The trailer naming the pull request a forge merge closed.
 FORGE_PULL: Final = 'Forge-Pull'
+
+
+def review_hold(statuses: Sequence[CommitStatus]) -> str | None:
+    """Why a merge of the commit waits on its review, or ``None``: only a latest :data:`OVER_CAP` hold waits."""
+    latest = next((one for one in statuses if one.context == REVIEW_CONTEXT), None)
+    if latest is None or latest.state != 'pending' or not latest.description.startswith(OVER_CAP):
+        return None
+    return f'{REVIEW_CONTEXT} is {latest.description!r}'
 
 
 @dataclass(frozen=True)
@@ -93,6 +103,8 @@ def decide(
     if stood.result is not Conclusion.PASS:
         but = f' but the unreached scarce {", ".join(sorted(waived))}' if waived else ''
         missing.append(f'every `tests/<part>` part{but} PASS on {head[:12]} (it stands {stood.reading})')
+    if (held := review_hold(statuses)) is not None:
+        missing.append(f'its review: {held}')
     tried = trial(root, base, head)
     if not tried.clean:
         files = ', '.join(f'`{name}`' for name in tried.conflicts)

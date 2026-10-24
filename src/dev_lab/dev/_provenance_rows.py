@@ -196,6 +196,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'sessionbranch': ('original',),
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit': ('original',),
+    # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
+    'mergeresolution': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),

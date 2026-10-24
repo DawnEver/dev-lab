@@ -1,7 +1,7 @@
 """AUTO-SYNC: the forge merges integration INTO a behind ``pr/*`` head, so no PR waits for a hand ``forge sync``.
 
 User ruling 2026-10-21: integration is an automatic mechanism; a steward cannot hand-merge every PR whose base
-moved. Declared per repo (``[tool.lab_commons.integrator] auto_sync = true``; undeclared, nothing is synced),
+moved. On wherever the forge merges PRs (``[tool.lab_commons.integrator] pr_merges_since``; no switch of its own),
 the integration step of ``forge serve`` (:func:`dev_lab.dev.forgeintegration.tick`, given its host) asks
 :func:`plan` of each open PR into integration that the forge did not merge this tick, and :func:`sync` carries
 out a ``sync`` plan:

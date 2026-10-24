@@ -138,7 +138,8 @@ def test_the_refusal_arm_has_no_plantable_red_and_that_is_recorded() -> None:
     of the same ratchet, and the one a repo could really break.
     """
     quiet = Port(name=_REPO, anchor_paths=lambda: ())
-    report = mutate(A_REQUIREMENT, port=quiet, dry_run=True)
+    # No live holder: the gap question alone, never a parallel runner executing from the same env.
+    report = mutate(A_REQUIREMENT, port=quiet, dry_run=True, census=lambda: ())
     assert report.gaps == ()
 
 

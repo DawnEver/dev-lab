@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from dev_lab.dev import agent_guard, agenthooks
+from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
 
@@ -135,7 +135,7 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     after = json.loads(settings.read_text(encoding='utf-8'))
 
     assert after['permissions'] == planted['permissions'], 'an unrelated settings key was lost'
-    assert after['hooks']['Stop'] == planted['hooks']['Stop'], 'an unrelated event was lost'
+    assert after['hooks']['Stop'][0] == planted['hooks']['Stop'][0], 'an unrelated event was lost'
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'
     assert pre[1] == planted['hooks']['PreToolUse'][1], "another agent's Bash hook was moved or widened"
@@ -167,25 +167,9 @@ def test_unreadable_rules_are_stale_rather_than_present(repo: Path) -> None:
     assert agent_guard.guard_installation(repo).by_part['rules'].status == agent_guard.STALE
 
 
-def _posix_shell() -> str:
-    """The POSIX shell the tool runs a hook line in: Git Bash on Windows, found beside ``git`` as the tool finds it.
-
-    A serve host's scheduled task has ``git`` on PATH but not Git's ``usr/bin`` (G, 2026-10-24), so a bare
-    ``sh`` lookup would test the PATH rather than the guard.
-    """
-    found = shutil.which('bash') or shutil.which('sh')
-    if found:
-        return found
-    git = shutil.which('git')
-    if git:
-        for root in Path(git).resolve().parents[:2]:
-            for rel in ('bin/bash.exe', 'usr/bin/bash.exe', 'bin/sh.exe', 'usr/bin/sh.exe'):
-                if (root / rel).is_file():
-                    return str(root / rel)
-    return 'sh'
-
-
-_SHELL = _posix_shell()
+# The shell the tool runs a hook line in, found as the hooks find it: a serve host's scheduled task has
+# ``git`` on PATH but no bash (G, 2026-10-24), so a bare lookup would test the PATH rather than the guard.
+_SHELL = bash_executable()
 
 
 def _wired_line(repo: Path) -> str:
@@ -301,3 +285,69 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
     pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
     assert pre == [{'matcher': 'Bash', 'hooks': [theirs]}, {'matcher': 'Bash|PowerShell', 'hooks': [ours]}]
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
+def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop() -> None:
+    """STRAY-FILE-REFUSED is live only when wired: PostToolUse on every shell tool, and Stop."""
+    after = agent_guard.wire_settings({})
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+    assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
+
+
+def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() -> None:
+    """Idempotent, and another author's PostToolUse/Stop hooks stay where they were."""
+    planted = {
+        'hooks': {
+            'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}]}],
+            'Stop': [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}],
+        },
+    }
+    once = agent_guard.wire_settings(planted)
+    assert agent_guard.wire_settings(once) == once
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert once['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}, stray]}
+    ]
+    assert once['hooks']['Stop'] == [planted['hooks']['Stop'][0], {'hooks': [stray]}]
+    assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
+
+
+def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census() -> None:
+    """Every exit of the wiring wires the census: our PreToolUse hook already present is the upgrade path."""
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
+    after = agent_guard.wire_settings(old)
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+
+
+def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
+    """The report reads the SAME wiring table the install writes, so a pre-census settings file is STALE."""
+    settings = repo / agent_guard.SETTINGS_REL
+    settings.parent.mkdir(parents=True)
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
+    settings.write_text(json.dumps(old), encoding='utf-8')
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE, part.detail
+    assert 'PostToolUse' in part.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
+def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
+    """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
+    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
+    done = subprocess.run(
+        [_SHELL, '-c', agent_guard.STRAY_COMMAND],
+        input='{}',
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        env=env,
+        check=False,
+    )
+    assert (done.returncode, done.stdout) == (0, ''), done.stderr

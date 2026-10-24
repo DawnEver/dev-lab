@@ -108,6 +108,8 @@ ALIASES: Final[dict[str, frozenset[str]]] = {
     'PIL': frozenset({'pillow'}),
     # pytest's implementation package, imported directly for its expression parser.
     '_pytest': frozenset({'pytest'}),
+    # SIMBA's Python API: the distribution is `aesim-simba`, its import package `aesim`.
+    'aesim': frozenset({'aesim-simba'}),
     'cv2': frozenset({'opencv-contrib-python', 'opencv-python', 'opencv-python-headless'}),
     'pdfminer': frozenset({'pdfminer-six'}),
     'pywintypes': frozenset({'pywin32'}),

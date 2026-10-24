@@ -38,6 +38,17 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_mergeaudit.py',),
     ),
     (
+        'MERGE-RESOLUTION-DECLARED',
+        (
+            'A conflicted merge commit lists every conflicted file once as `<path>: <class> -- <why>`, the class '
+            'one of upstream-structure+lane-content, lane-supersedes, deleted-as-baggage or both-needed, and '
+            'both-needed with its why; the conflicted set is recomputed from the parents` trees, never trusted '
+            'from the message, and the commit-msg hook refuses committing a merge that leaves one undeclared or '
+            'declares one the parents do not conflict on.'
+        ),
+        ('tests/test_dev_mergeresolution.py',),
+    ),
+    (
         'DOWNSTREAM-SYNCS-INTEGRATION',
         (
             'A child branch (a lane, a feat branch, a pull-request head) merges ONLY the integration branch, so '
