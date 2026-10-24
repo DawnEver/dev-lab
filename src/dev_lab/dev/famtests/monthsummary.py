@@ -66,7 +66,7 @@ def plans(text: str) -> tuple[dict[str, Plan], list[str]]:
     heads = list(_ENTRY.finditer(body))
     out: dict[str, Plan] = {}
     problems: list[str] = []
-    for head, after in zip(heads, [*heads[1:], None], strict=True):
+    for head, after in zip(heads, [*heads[1:], None], strict=False):  # one more `after` than heads; none when empty
         slug = head.group(1)
         fields = dict(_FIELD.findall(body[head.end() : after.start() if after else len(body)]))
         status, evidence = fields.get('status', ''), fields.get('evidence', '')

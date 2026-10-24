@@ -27,3 +27,8 @@ def test_the_planted_control_reds_when_the_carry_goes_blind(tmp_path: Path, monk
 
 def test_every_month_of_this_repo_carries_its_plans() -> None:
     assert_every_month_carries_its_plans(_MEMORY, since=_SINCE)
+
+
+def test_a_catalogue_with_no_plans_is_an_empty_catalogue_not_a_crash() -> None:
+    """A month that planned nothing writes ``None.`` under ``## Plans``; the reader returns no plans and no problems."""
+    assert monthsummary.plans('## Month\n\nx\n\n## Plans\n\nNone.\n') == ({}, [])
