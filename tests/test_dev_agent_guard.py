@@ -167,8 +167,25 @@ def test_unreadable_rules_are_stale_rather_than_present(repo: Path) -> None:
     assert agent_guard.guard_installation(repo).by_part['rules'].status == agent_guard.STALE
 
 
-#: The POSIX shell the tool runs a hook line in (Git Bash on Windows).
-_SHELL = shutil.which('bash') or shutil.which('sh') or 'sh'
+def _posix_shell() -> str:
+    """The POSIX shell the tool runs a hook line in: Git Bash on Windows, found beside ``git`` as the tool finds it.
+
+    A serve host's scheduled task has ``git`` on PATH but not Git's ``usr/bin`` (G, 2026-10-24), so a bare
+    ``sh`` lookup would test the PATH rather than the guard.
+    """
+    found = shutil.which('bash') or shutil.which('sh')
+    if found:
+        return found
+    git = shutil.which('git')
+    if git:
+        for root in Path(git).resolve().parents[:2]:
+            for rel in ('bin/bash.exe', 'usr/bin/bash.exe', 'bin/sh.exe', 'usr/bin/sh.exe'):
+                if (root / rel).is_file():
+                    return str(root / rel)
+    return 'sh'
+
+
+_SHELL = _posix_shell()
 
 
 def _wired_line(repo: Path) -> str:
