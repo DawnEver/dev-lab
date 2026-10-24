@@ -9,28 +9,19 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
     (
         'ONE-SESSION-ONE-PR',
         (
-            'One agent session (`LAB_SESSION`, stamped as a `Lab-Session:` trailer) is one open PR per repo; '
-            '`forge pr create` refuses a second, and a split is a declared `pradmit.SPLITS` entry.'
+            'A development agent focused on one task (`LAB_SESSION`, stamped as a `Lab-Session:` trailer) gathers '
+            'its work on one open PR per repo; `forge pr create` never refuses, it tells a second PR of the same '
+            'session which open PR the work belongs on, on stderr and as an `Admission:` line in the PR body.'
         ),
         ('tests/test_dev_labsession.py', 'tests/test_dev_pradmit.py', 'tests/test_dev_forgework.py'),
     ),
     (
         'NO-STACKED-PRS',
         (
-            'Every PR is cut from and targets integration: `forge pr create` refuses a head holding another open '
-            "PR's unmerged commits."
+            'Every PR is cut from and targets integration: `forge pr create` tells a head holding another open '
+            "PR's unmerged commits that it is stacked and lands only after that PR, and opens it anyway."
         ),
         ('tests/test_dev_pradmit.py',),
-    ),
-    (
-        'INTEGRATOR-DOOR',
-        (
-            'The integrator publishes what the machine cannot through one named door: a head commit carrying '
-            '`Integrator-Door: <why>` by an author in `[tool.lab_commons.integrator] integrators` is exempt from '
-            'ONE-SESSION-ONE-PR and NO-STACKED-PRS at pre-push and at `forge pr create`, which writes who and why '
-            'into the PR body.'
-        ),
-        ('tests/test_dev_pradmit.py', 'tests/test_dev_forgework.py'),
     ),
     (
         'DOCS-ONLY-CARRIES',

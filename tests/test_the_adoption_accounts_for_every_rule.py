@@ -171,7 +171,6 @@ _ENFORCED = {
     # Incident 2026-10-21: 28 open motronics PRs, one session spread over several, one stalled base holding a dozen.
     'ONE-SESSION-ONE-PR': (guard('tests/test_dev_labsession.py'), guard('tests/test_dev_pradmit.py')),
     'NO-STACKED-PRS': (guard('tests/test_dev_pradmit.py'),),
-    'INTEGRATOR-DOOR': (guard('tests/test_dev_pradmit.py'), guard('tests/test_dev_forgework.py')),
     'DOCS-ONLY-CARRIES': (guard('tests/test_dev_forgecarry.py'), guard('tests/test_dev_forgetick.py')),
     'PLANTED-CONTROL': (guard('tests/test_arch_every_scan_binds_a_floor.py'),),
     'REFUSAL-NAMES-THE-REMEDY': (

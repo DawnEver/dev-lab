@@ -172,12 +172,11 @@ def issue_and_pr(
     client = client_for(root, env=env, transport=transport)
     try:
         if (args.noun, args.verb) == ('pr', 'create') and (
-            why := pradmit.create_refusal(root, client, head=args.head, base=args.base)
+            said := pradmit.create_advice(root, client, head=args.head, base=args.base)
         ):
-            emit(f'[forge] pr create REFUSED -- {why}', err=True)
-            return 1
-        if (args.noun, args.verb) == ('pr', 'create') and (record := pradmit.door_record(root, args.head)):
-            args.body = f'{args.body}\n\n{record}' if args.body else record
+            lines = [f'{pradmit.ADMISSION}: {line}' for line in said]
+            emit('\n'.join(f'[forge] {line}' for line in lines), err=True)
+            args.body = '\n\n'.join([*([args.body] if args.body else []), '\n'.join(lines)])
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)

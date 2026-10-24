@@ -434,20 +434,17 @@ def test_download_returns_the_raw_bytes_with_the_credential_and_a_refusal_raises
         _client(forge, transport).download('https://forge.example.org/attachments/absent')
 
 
-def test_pr_create_asks_the_admission_first_and_a_refusal_writes_nothing(
-    server, tmp_path: Path, capsys, monkeypatch
-) -> None:
-    """ONE-SESSION-ONE-PR / NO-STACKED-PRS: a refused head never reaches the forge. PLANTED CONTROL: admitted."""
+def test_pr_create_never_refuses_and_records_its_advice_on_the_pr(server, tmp_path: Path, capsys, monkeypatch) -> None:
+    """ONE-SESSION-ONE-PR / NO-STACKED-PRS advise, never block. PLANTED CONTROL: no advice adds nothing."""
     repo = _repo(tmp_path, 'https://f.example/o/r.git')
-    argv = ['pr', 'create', '--title', 't', '--head', 'pr/b', '--base', 'integrate/main']
-    monkeypatch.setattr(pradmit, 'create_refusal', lambda *_a, **_k: 'session s already has open PR #7 (pr/a)')
-    assert issue_and_pr(argv, cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 1
-    assert 'REFUSED' in capsys.readouterr().err
-    assert _Recorder.received == []
-    monkeypatch.setattr(pradmit, 'create_refusal', lambda *_a, **_k: None)
-    _answer('POST', '/api/v1/repos/o/r/pulls', (201, _PR))
-    assert issue_and_pr(argv, cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 0
-    assert _Recorder.received
+    argv = ['pr', 'create', '--title', 't', '--body', 'b', '--head', 'pr/b', '--base', 'integrate/main']
+    line = 'session s also has open PR #7 (pr/a) (ONE-SESSION-ONE-PR)'
+    for said, expected in (((line,), True), ((), False)):
+        monkeypatch.setattr(pradmit, 'create_advice', lambda *_a, said=said, **_k: said)
+        _answer('POST', '/api/v1/repos/o/r/pulls', (201, _PR))
+        assert issue_and_pr(argv, cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 0
+        assert (f'Admission: {line}' in str(_Recorder.received[-1])) is expected
+        assert (line in capsys.readouterr().err) is expected
 
 
 def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_path: Path, capsys, monkeypatch) -> None:
@@ -456,7 +453,7 @@ def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_pa
     argv = ['pr', 'create', '--title', 't', '--head', 'pr/b', '--base', 'integrate/main']
     env = credential_env(tmp_path) | {'LAB_SESSION': 's1'}
     asked: list[tuple[list[str], str]] = []
-    monkeypatch.setattr(pradmit, 'create_refusal', lambda *_a, **_k: None)
+    monkeypatch.setattr(pradmit, 'create_advice', lambda *_a, **_k: ())
     monkeypatch.setattr(
         branchnotices, 'report', lambda _r, heads, session, **_k: asked.append((heads, session)) or 'NOTICE-LINE'
     )
@@ -467,16 +464,3 @@ def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_pa
     monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: '')
     assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
     assert 'NOTICE-LINE' not in capsys.readouterr().err
-
-
-def test_pr_create_records_the_integrator_door_on_the_pr(server, tmp_path: Path, monkeypatch) -> None:
-    """THE INTEGRATOR DOOR records WHO and WHY in the PR body. PLANTED CONTROL: a shut door adds nothing."""
-    repo = _repo(tmp_path, 'https://f.example/o/r.git')
-    argv = ['pr', 'create', '--title', 't', '--body', 'b', '--head', 'pr/b', '--base', 'integrate/main']
-    record = 'Integrator-Door: opened by i <i@lab> -- salvage'
-    monkeypatch.setattr(pradmit, 'create_refusal', lambda *_a, **_k: None)
-    for opened, expected in ((record, True), (None, False)):
-        monkeypatch.setattr(pradmit, 'door_record', lambda *_a, opened=opened, **_k: opened)
-        _answer('POST', '/api/v1/repos/o/r/pulls', (201, _PR))
-        assert issue_and_pr(argv, cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 0
-        assert (record in str(_Recorder.received[-1])) is expected

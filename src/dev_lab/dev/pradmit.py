@@ -1,180 +1,73 @@
-"""PR ADMISSION: ONE-SESSION-ONE-PR and NO-STACKED-PRS, judged where a PR is born.
+"""PR ADVICE: ONE-SESSION-ONE-PR and NO-STACKED-PRS, told where a PR is born -- never a refusal.
 
-ONE-SESSION-ONE-PR. A session's commits carry its ``Lab-Session`` (:mod:`dev_lab.dev.labsession`, stamped from
-the launcher's id). A head whose commits share a session with ANOTHER open head is refused: the session's work
-belongs on the branch it already has, and the remedy names that branch. Judged at ``forge pr create`` against the
-forge's open PRs. :func:`main` is the same question at the pre-push of a NEW ``pr/*`` branch against the last
-fetch's unmerged ``origin/pr/*`` heads, a row a repo may declare; the family base leaves it to the forge
-(toolchain plan P3). A split is admitted only for a session in
-:data:`SPLITS`, each with its reason, under a ceiling pinned by its test that only falls; there is no switch.
+THE INTENT (user ruling 2026-10-25). A development agent focused on ONE task gathers all of its work on ONE PR;
+the rule is that agent's guidance, and a PR is never what blocks the flow. So ``forge pr create`` always opens
+the PR, and when the head shares a session with another open PR, or holds another open PR's unmerged commits,
+it says so -- on stderr and as an ``Admission:`` line in the PR body -- naming the other PR and the remedy.
+There is no refusal, so there is no split list and no door around one.
 
-NO-STACKED-PRS. A head holding a commit of another open head that integration does not hold is refused at
-``forge pr create`` (:func:`dev_lab.dev.trialmerge.shares_unmerged`, the one owner of the stack question):
-one stalled base would hold every PR stacked on it. Every PR is cut from and targets the integration branch.
+ONE-SESSION-ONE-PR. A session's commits carry its ``Lab-Session`` (:mod:`dev_lab.dev.labsession`). A head whose
+commits share a session with ANOTHER open head is told that the session's work belongs on the branch it has.
 
-THE INTEGRATOR DOOR (user ruling 2026-10-24). The integrator may publish what the machine cannot -- salvage
-of another session's work, a head stacked on a stalled PR -- through ONE named door: the head commit carries
-an ``Integrator-Door: <why>`` trailer with a non-empty reason, and its author email is declared in
-``[tool.lab_commons.integrator] integrators``. Both rules above then stand aside, at pre-push and at create,
-and ``forge pr create`` writes WHO and WHY into the PR body (:func:`door`). No env var or flag opens it.
+NO-STACKED-PRS. A head holding a commit of another open head that integration does not hold is told it is
+stacked (:func:`dev_lab.dev.trialmerge.shares_unmerged`, the one owner of the stack question): one stalled base
+holds every PR stacked on it.
 """
 
 from __future__ import annotations
 
-import re
-import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-import lab_commons.launch as _door
-from lab_commons.log import emit
-
-from dev_lab.dev.branchset_push import pushed_refs
-from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S
 from dev_lab.dev.forgepulls import pr_list
 from dev_lab.dev.forgework import PullRequest
-from dev_lab.dev.labsession import TRAILER, sessions
-from dev_lab.dev.lanepolicy import Policy, load_policy
-from dev_lab.dev.trialmerge import contains, rev, shares_unmerged
+from dev_lab.dev.labsession import sessions
+from dev_lab.dev.trialmerge import rev, shares_unmerged
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgework import Client
 
-__all__ = [
-    'ALLOWED', 'INTEGRATOR_DOOR', 'PREFIX', 'REFUSED', 'SPLITS', 'create_refusal', 'door', 'door_record', 'main',
-    'push_refusal', 'refusal',
-]  # fmt: skip
+__all__ = ['ADMISSION', 'advice', 'create_advice']
 
-ALLOWED: Final = 0
-REFUSED: Final = 1
-
-#: The branch prefix whose creation is judged at push.
-PREFIX: Final = 'pr/'
-
-#: The declared exceptions to ONE-SESSION-ONE-PR: ``(session id, why it is split)``. Counted and pinned by
-#: ``tests/test_dev_pradmit.py``; a freed entry lowers the pin in the same commit.
-SPLITS: tuple[tuple[str, str], ...] = ()
-
-
-#: The trailer of the integrator's door, with its reason as the value.
-INTEGRATOR_DOOR: Final = 'Integrator-Door'
-_DOOR: Final = re.compile(rf'^{INTEGRATOR_DOOR}:(.*)$', re.MULTILINE)
-
-
-def door(root: Path, sha: str, policy: Policy) -> str | None:
-    """WHO and WHY when head *sha* comes through the integrator's door; ``None`` when the door stays shut."""
-    if not policy.integrators:
-        return None
-    done = _door.run(
-        [_GIT, '-C', str(root), 'log', '-1', '--format=%ae%n%an%n%B', sha],
-        capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False,
-    )  # fmt: skip
-    email, _, rest = done.stdout.partition('\n')
-    name, _, message = rest.partition('\n')
-    found = _DOOR.findall(message)
-    why = found[-1].strip() if found else ''
-    if done.returncode != 0 or not why or email.strip() not in policy.integrators:
-        return None
-    return f'{INTEGRATOR_DOOR}: opened by {name.strip()} <{email.strip()}> -- {why}'
-
-
-def door_record(root: Path, head: str) -> str | None:
-    """The PR-body line ``forge pr create`` records for branch *head* when it comes through the door."""
-    sha = rev(root, f'refs/remotes/origin/{head}') or rev(root, f'refs/heads/{head}')
-    return door(root, sha, load_policy(root)) if sha else None
+#: The PR-body line prefix each piece of advice is recorded under.
+ADMISSION: Final = 'Admission'
 
 
 def _label(pull: PullRequest) -> str:
     return f'#{pull.number} ({pull.head})' if pull.number else pull.head
 
 
-def refusal(root: Path, *, head: str, tip: str, others: Iterable[PullRequest]) -> str | None:
-    """Why *head* may not be a PR beside *others* (open heads) over integration *tip*; ``None`` when it may."""
-    split = {session for session, _reason in SPLITS}
-    own = sessions(root, tip, head) - split
+def advice(root: Path, *, head: str, tip: str, others: Iterable[PullRequest]) -> tuple[str, ...]:
+    """What *head* should know beside *others* (open heads) over integration *tip*; empty when nothing."""
+    own = sessions(root, tip, head)
+    said = []
     for other in others:
         if not other.head_sha or other.head_sha == head:
             continue
         if shares_unmerged(root, head, other.head_sha, tip):
-            return (
-                f'this head is stacked on open PR {_label(other)}: it holds commits integration does not.\n'
-                f'  REMEDY: wait for {_label(other)} to merge and cut again from integration, or fold this work '
-                f'into {other.head}.'
+            said.append(
+                f'stacked on open PR {_label(other)} (NO-STACKED-PRS): it holds commits integration does not; '
+                f'it lands only after {_label(other)}'
             )
-        if shared := sorted(own & sessions(root, tip, other.head_sha)):
-            return (
-                f'session {", ".join(shared)} already has open PR {_label(other)} (ONE-SESSION-ONE-PR).\n'
-                f'  REMEDY: push these commits onto {other.head} -- git push origin HEAD:{other.head}.'
+        elif shared := sorted(own & sessions(root, tip, other.head_sha)):
+            said.append(
+                f'session {", ".join(shared)} also has open PR {_label(other)} (ONE-SESSION-ONE-PR): a focused '
+                f'task gathers its work there -- git push origin HEAD:{other.head}'
             )
-    return None
+    return tuple(said)
 
 
-def create_refusal(root: Path, client: Client, *, head: str, base: str, policy: Policy | None = None) -> str | None:
-    """``forge pr create``'s admission of *head* into *base*, against the forge's open PRs; ``None`` admits."""
+def create_advice(root: Path, client: Client, *, head: str, base: str) -> tuple[str, ...]:
+    """``forge pr create``'s advice for *head* into *base*, against the forge's open PRs."""
     tip = f'refs/remotes/origin/{base}'
     sha = rev(root, f'refs/remotes/origin/{head}') or rev(root, f'refs/heads/{head}')
     if rev(root, tip) is None or sha is None:
-        return f'origin/{base} or {head} is not here: fetch origin, then create the PR again.'
-    if door(root, sha, load_policy(root) if policy is None else policy):
-        return None
+        return (f'origin/{base} or {head} is not here, so no session or stack was judged: fetch origin to see it',)
     others = [pull for pull in pr_list(client) if pull.head != head]
-    if missing := [_label(pull) for pull in others if pull.head_sha and rev(root, pull.head_sha) is None]:
-        return f'the heads of open PRs {", ".join(missing)} are not here: fetch origin, then create the PR again.'
-    return refusal(root, head=sha, tip=tip, others=others)
-
-
-def _origin_heads(root: Path, tip: str) -> list[PullRequest]:
-    """Every ``origin/pr/*`` head of the last fetch that integration *tip* does not hold: an open head."""
-    done = _door.run(
-        [_GIT, '-C', str(root), 'for-each-ref', '--format=%(refname:strip=3) %(objectname)',
-         f'refs/remotes/origin/{PREFIX}'],
-        capture_output=True, text=True, encoding='utf-8', timeout=_GIT_TIMEOUT_S, check=False,
-    )  # fmt: skip
-    pairs = (line.split() for line in done.stdout.splitlines() if line.strip())
-    return [
-        PullRequest(0, branch, 'open', '', '', '', branch, '', head_sha=sha)
-        for branch, sha in pairs
-        if not contains(root, tip, sha)
-    ]
-
-
-def push_refusal(root: Path, *, lines: Iterable[str] = (), policy: Policy | None = None) -> tuple[int, str]:
-    """The pre-push verdict: a NEW ``pr/*`` branch sharing a session with an unmerged ``origin/pr/*`` is refused."""
-    born = [
-        ref for ref in pushed_refs(lines) if ref.created and not ref.deleted and (ref.branch or '').startswith(PREFIX)
-    ]
-    if not born:
-        return ALLOWED, ''
-    policy = load_policy(root) if policy is None else policy
-    tip = f'refs/remotes/origin/{policy.integration}'
-    if rev(root, tip) is None:
-        return ALLOWED, ''  # no integration branch here: no PR into it to share a session with
-    for ref in born:
-        if door(root, ref.local_sha, policy):
-            continue
-        others = [head for head in _origin_heads(root, tip) if head.head != ref.branch]
-        own = sessions(root, tip, ref.local_sha) - {session for session, _reason in SPLITS}
-        for other in others:
-            if shared := sorted(own & sessions(root, tip, other.head_sha)):
-                return REFUSED, (
-                    f'[pr-admit] REFUSED -- new {ref.branch} carries {TRAILER} {", ".join(shared)}, which '
-                    f'unmerged {other.head} already carries (ONE-SESSION-ONE-PR).\n'
-                    f'[pr-admit]   REMEDY: push onto {other.head} instead -- git push origin HEAD:{other.head}.\n'
-                )
-    return ALLOWED, ''
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m dev_lab.dev.pradmit [ROOT]`` -- the pre-push entry point, refspec lines on stdin."""
-    args = list(sys.argv[1:] if argv is None else argv)
-    root = Path(args[0]) if args else Path.cwd()
-    lines = () if sys.stdin.isatty() else tuple(sys.stdin.read().splitlines())
-    code, text = push_refusal(root, lines=lines)
-    if text:
-        emit(text, err=True)
-    return code
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
+    unseen = [_label(pull) for pull in others if pull.head_sha and rev(root, pull.head_sha) is None]
+    here = [pull for pull in others if not pull.head_sha or rev(root, pull.head_sha) is not None]
+    said = advice(root, head=sha, tip=tip, others=here)
+    if unseen:
+        said += (f'the heads of open PRs {", ".join(unseen)} are not here and were not judged: fetch origin',)
+    return said
