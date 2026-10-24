@@ -8,10 +8,17 @@ TESTS such a resolution drops; this rule makes the resolution of every conflicte
 
 THE RULE. A merge commit whose parents conflict lists every conflicted file ONCE, one line each::
 
-    src/pkg/table.py: upstream-structure+lane-content -- the lane's rows re-expressed in the derived table
+    src/pkg/table.py: newer-structure -- the lane's rows re-expressed in the derived table
     tests/test_pins.py: both-needed -- upstream's split file plus the lane's new pin
 
-with the class one of :data:`CLASSES`; ``both-needed`` requires its why. The conflicted set is RECOMPUTED from
+with the class one of :data:`CLASSES` and EVERY class with its why: a resolution is derived from what the code
+must do now (first principles), and the why is that derivation.
+
+THE CLASSES ARE THE RESOLUTION PRINCIPLES (user rulings 2026-10-25). Take the newer structure only where it is
+also the simpler one; keep the simpler correct side even when it is older; collapse two copies of one fact into
+one; delete obsolete structure, compat layers, aliases and upgrade-on-read paths (no backward compatibility);
+rename to what a thing is. Layered decoupling is not a class: a resolution never adds an upward import, and each
+repo's layering tests refuse one. The conflicted set is RECOMPUTED from
 the parents' trees (``git merge-tree --write-tree --name-only``), never read from the message, so a line naming
 a file the parents do not conflict on is refused too. A clean merge needs no line.
 
@@ -41,13 +48,18 @@ from dev_lab.dev.mergeaudit import MergeAuditError, pending_parents
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-__all__ = ['BOTH_NEEDED', 'CLASSES', 'conflicted', 'main', 'pending', 'undeclared']
+__all__ = ['CLASSES', 'conflicted', 'main', 'pending', 'undeclared']
 
-#: Kept both sides' content; the one class that must say why both were needed.
-BOTH_NEEDED: Final = 'both-needed'
-
-#: How a conflicted file may be resolved (NEWER-STRUCTURE's vocabulary, ``.claude/rules/rem/integration.md``).
-CLASSES: Final = frozenset({'upstream-structure+lane-content', 'lane-supersedes', 'deleted-as-baggage', BOTH_NEEDED})
+#: How a conflicted file may be resolved -- one class per resolution principle:
+#: ``newer-structure`` the newer structure, the other side's content re-expressed inside it;
+#: ``simpler-side`` the simpler correct side kept, older or not (Occam);
+#: ``one-source`` two copies of one fact made one, the rest derived from it;
+#: ``deleted-as-baggage`` obsolete structure, a compat layer, an alias or an upgrade path deleted;
+#: ``renamed-to-reality`` a name changed to what the thing is;
+#: ``both-needed`` both sides' content is live.
+CLASSES: Final = frozenset(
+    {'newer-structure', 'simpler-side', 'one-source', 'deleted-as-baggage', 'renamed-to-reality', 'both-needed'}
+)
 
 _LINE: Final = re.compile(
     r'^(?P<path>[^\s:][^:\n]*?):[ \t]+(?P<cls>\S+)(?:[ \t]+--[ \t]*(?P<why>\S.*?))?[ \t]*$', re.MULTILINE
@@ -91,8 +103,8 @@ def undeclared(conflicts: Sequence[str], message: str) -> tuple[str, ...]:
             problems.append(f'{m["path"]}: declared, but the parents do not conflict on it -- delete the line')
         elif m['cls'] not in CLASSES:
             problems.append(f'{m["path"]}: {m["cls"]!r} is not a resolution class -- use one of {classes}')
-        elif m['cls'] == BOTH_NEEDED and not m['why']:
-            problems.append(f'{m["path"]}: {BOTH_NEEDED} needs its why -- `{m["path"]}: {BOTH_NEEDED} -- <why>`')
+        elif not m['why']:
+            problems.append(f'{m["path"]}: {m["cls"]} needs its why -- `{m["path"]}: {m["cls"]} -- <why>`')
     return tuple(problems)
 
 
