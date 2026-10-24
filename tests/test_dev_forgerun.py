@@ -987,3 +987,9 @@ def test_a_started_task_is_priced_from_the_learned_table_times_the_safety(
         pytest.approx(40.0 * safety, rel=1e-9, abs=0.0),
         pytest.approx(config.cost.seconds * safety, rel=1e-9, abs=0.0),
     ]
+
+
+def test_the_ref_gone_tip_never_rebinds_a_hold_verdict() -> None:
+    """``_hold``'s verdicts and ``_superseding_tip``'s ref-gone sentinel are two names: neither shadows the other."""
+    assert forgerun._GONE == 'gone'
+    assert forgerun._REF_GONE not in {forgerun._ADVANCE, forgerun._WAIT, forgerun._GONE}

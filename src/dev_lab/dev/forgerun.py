@@ -120,7 +120,7 @@ _WAIT: Final = 'wait'
 _GONE: Final = 'gone'
 
 #: :func:`_superseding_tip` for a run whose ref is gone (merged or closed) and no live head carries it.
-_GONE: Final = '(ref gone)'
+_REF_GONE: Final = '(ref gone)'
 
 #: A status description is short on every forge.
 _DESCRIPTION_MAX: Final = 140
@@ -225,10 +225,10 @@ def _superseding_tip(root: Path, run: Run) -> str:
 
     A DOCS-ONLY tip never supersedes (DOCS-ONLY-CARRIES, :func:`dev_lab.dev.forgecarry.docs_only`): no test's
     footprint reaches its diff, so its part IS this run's result, posted on it too when it lands (:func:`publish`).
-    :data:`_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
+    :data:`_REF_GONE` when the ref itself is gone and no live head carries the run (:func:`_ref_gone`).
     """
     if _ref_gone(root, run):
-        return _GONE
+        return _REF_GONE
     tip = tip_of(root, run.ref)
     moved = tip and tip != run.sha and coalesced(root, run.ref)
     return tip if moved and not equivalent(root, run.sha, tip) else ''
@@ -283,7 +283,7 @@ def _supersede(
     task past its deadline is cancelled alone, its tests left for the tip. Once none runs the run is released
     superseded by *tip* and dropped: one alarm.
     """
-    if tip == _GONE:  # no tip to drain for: every job goes, started ones too
+    if tip == _REF_GONE:  # no tip to drain for: every job goes, started ones too
         _cancel_orphan(client, run, cluster=cluster, say=say, alarm=alarm, tag=tag)
         return None
     started, cut = cluster.withdraw(run), []
