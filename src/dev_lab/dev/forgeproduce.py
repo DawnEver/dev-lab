@@ -60,9 +60,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
-from lab_commons.box import GB, Capacity, Demand, ProcessEnd, Refused, command, not_admitted, read_ended, release
+from lab_commons.box import GB, Capacity, ProcessEnd, Refused, command, not_admitted, read_ended, release
 from lab_commons.box import Claim as BoxClaim
 from lab_commons.compute.learned import Run, box_demand, record_run
+from lab_commons.compute.model import Demand
 from lab_commons.compute.presence import demote
 from lab_commons.compute.toolchecks import CHECKS
 from lab_commons.hpc.needsets import needs_of
@@ -147,6 +148,7 @@ def boxed(item: Work, argv: Sequence[str], capacity: Capacity, outcome: Path, *,
     return command(
         argv,
         demand,
+        item.wall_s,
         BOX_QUEUE_S,
         key=item.context,
         what=what,
@@ -163,7 +165,7 @@ def box_claim(item: Work, capacity: Capacity, *, root: Path | None = None) -> De
     asked = item.demand or box_demand(_origin(root), needs, cpu=capacity.cpu, mem_gb=capacity.mem_bytes / GB)
     seats = {name: 1 for name in needs if name in capacity.seats}
     cpu = max(1, min(math.floor(capacity.cpu), int(asked['cpu'])))
-    return Demand(cpu=cpu, mem_gb=asked['mem_gb'], wall_s=item.wall_s, seats=seats)
+    return Demand({**seats, 'cpu': cpu, 'mem_gb': asked['mem_gb']})
 
 
 def _pump(stream: Iterable[str], tag: str, say: Callable[[str], None], heard: list[str]) -> None:
@@ -214,7 +216,7 @@ def produce(
             record = tree.path.with_name(f'{tree.path.name}.outcome.json')  # beside the run's tree, read and removed
             size = (capacity or Capacity.read)()
             held = boxed(item, argv, size, record, root=root)
-            declared = box_claim(item, size, root=root).mem_gb
+            declared = box_claim(item, size, root=root)['mem_gb']
             produced = _run(root, item, (argv, held), (tree.path, record), client=client, spawn=spawn, clock=clock,
                             say=say, lease=lease, renew_s=renew_s, fetch=fetch, heard=heard, declared_gb=declared,
                             beat_s=renew_s if beat_s is None else beat_s, beat=beat, sample=sample, learn=learn,
