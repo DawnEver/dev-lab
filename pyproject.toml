@@ -86,6 +86,7 @@ trunk = "main"
 integration = "integrate/main"
 merges_only_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-IS-MERGES-ONLY from here on: the split base (lab-commons 8c401f0 rewritten)
 pr_merges_since = "abc4e5b3ff450b41870ab33df47329ad1cc34c5c"  # INTEGRATION-TAKES-ONLY-FORGE-MERGES after this sha: the split base
+integrators = ["mingyangbob@gmail.com"]  # INTEGRATOR-DOOR: an author here may open it with a reason (user ruling 2026-10-24)
 
 # The advisory PR review (dev_lab.dev.forgereview). WHAT is declared here; WHERE (the ai-lab runtime
 # interpreter, the sharp-review method) is each reviewing host's [capabilities.*] in its machine file.
