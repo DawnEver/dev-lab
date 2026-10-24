@@ -467,3 +467,16 @@ def test_pr_create_prints_the_heads_open_notices_for_this_session(server, tmp_pa
     monkeypatch.setattr(branchnotices, 'report', lambda *_a, **_k: '')
     assert issue_and_pr(argv, cwd=repo, env=env, transport=_Loopback(server)) == 0
     assert 'NOTICE-LINE' not in capsys.readouterr().err
+
+
+def test_pr_create_records_the_integrator_door_on_the_pr(server, tmp_path: Path, monkeypatch) -> None:
+    """THE INTEGRATOR DOOR records WHO and WHY in the PR body. PLANTED CONTROL: a shut door adds nothing."""
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    argv = ['pr', 'create', '--title', 't', '--body', 'b', '--head', 'pr/b', '--base', 'integrate/main']
+    record = 'Integrator-Door: opened by i <i@lab> -- salvage'
+    monkeypatch.setattr(pradmit, 'create_refusal', lambda *_a, **_k: None)
+    for opened, expected in ((record, True), (None, False)):
+        monkeypatch.setattr(pradmit, 'door_record', lambda *_a, opened=opened, **_k: opened)
+        _answer('POST', '/api/v1/repos/o/r/pulls', (201, _PR))
+        assert issue_and_pr(argv, cwd=repo, env=credential_env(tmp_path), transport=_Loopback(server)) == 0
+        assert (record in str(_Recorder.received[-1])) is expected

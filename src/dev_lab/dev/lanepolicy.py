@@ -51,6 +51,9 @@ class Policy:
     notice_escalate: str = '2 h'
     #: A PR head whose parts are still unsettled this long after its commit is a ``stall`` notice.
     notice_stall: str = '6 h'
+    #: The INTEGRATOR DOOR (:func:`dev_lab.dev.pradmit.door`): author emails whose ``Integrator-Door: <why>``
+    #: commit is exempt from ONE-SESSION-ONE-PR and NO-STACKED-PRS. ``()``: nobody holds the door.
+    integrators: tuple[str, ...] = ()
 
 
 def load_policy(root: Path) -> Policy:
@@ -76,5 +79,5 @@ def policy_from(text: str, origin: str) -> Policy:
     if unknown:
         msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    declared = declared | {key: tuple(declared[key]) for key in ('test_roots',) if key in declared}
+    declared = declared | {key: tuple(declared[key]) for key in ('test_roots', 'integrators') if key in declared}
     return Policy(**declared)

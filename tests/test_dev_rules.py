@@ -80,6 +80,7 @@ _IDS = frozenset(
         'FORMATS-UPGRADE-ON-READ',
         'ONE-SESSION-ONE-PR',
         'NO-STACKED-PRS',
+        'INTEGRATOR-DOOR',
         'DOCS-ONLY-CARRIES',
         'ONE-BRANCH-PER-SESSION',
         'MERGE-OR-DELETE',

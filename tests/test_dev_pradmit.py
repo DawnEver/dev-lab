@@ -188,3 +188,45 @@ def test_create_refusal_asks_for_a_fetch_when_an_open_head_is_not_here(repo: Pat
     why = pradmit.create_refusal(repo, object(), head='pr/second', base='integrate/main')
     assert why is not None
     assert 'fetch' in why
+
+
+def _door_commit(root: Path, why: str, email: str, session: str = 'session-one') -> str:
+    message = f'feat: salvage\n\n{TRAILER}: {session}\n{pradmit.INTEGRATOR_DOOR}: {why}'
+    _git(root, '-c', f'user.email={email}', 'commit', '-q', '--allow-empty', '-m', message)
+    return _git(root, 'rev-parse', 'HEAD')
+
+
+_INTEGRATOR = Policy(integrators=('integrator@lab',))
+
+
+def test_the_integrator_door_admits_a_declared_integrators_salvage_at_push(repo: Path) -> None:
+    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
+    _git(repo, 'checkout', '-q', '-B', 'pr/salvage', first)  # same session AND stacked: exempt from both
+    salvage = _door_commit(repo, 'forge cannot split this session', 'integrator@lab')
+    assert pradmit.push_refusal(repo, lines=[_line('pr/salvage', salvage)], policy=_INTEGRATOR) == (0, '')
+
+
+def test_the_integrator_door_stays_shut_to_an_undeclared_author_or_an_empty_reason(repo: Path) -> None:
+    _head(repo, 'pr/first', ('feat: a', 'session-one'))
+    _git(repo, 'checkout', '-q', '-B', 'pr/salvage', _TIP)
+    stranger = _door_commit(repo, 'I say so', 't@t')  # PLANTED CONTROL: a non-integrator is still refused
+    assert pradmit.push_refusal(repo, lines=[_line('pr/salvage', stranger)], policy=_INTEGRATOR)[0] == 1
+    _git(repo, 'checkout', '-q', '-B', 'pr/salvage', _TIP)
+    empty = _door_commit(repo, '', 'integrator@lab')
+    assert pradmit.push_refusal(repo, lines=[_line('pr/salvage', empty)], policy=_INTEGRATOR)[0] == 1
+    assert pradmit.door(repo, empty, _INTEGRATOR) is None
+
+
+def test_the_integrator_door_admits_at_create_and_names_who_and_why(repo: Path, monkeypatch) -> None:
+    first = _head(repo, 'pr/first', ('feat: a', 'session-one'))
+    _git(repo, 'checkout', '-q', '-B', 'pr/salvage', first)
+    salvage = _door_commit(repo, 'salvage of a dead lane', 'integrator@lab')
+    _git(repo, 'update-ref', 'refs/remotes/origin/pr/salvage', salvage)
+    monkeypatch.setattr(pradmit, 'pr_list', lambda _client: [_open(7, 'pr/first', first)])
+    args = {'head': 'pr/salvage', 'base': 'integrate/main', 'policy': _INTEGRATOR}
+    assert pradmit.create_refusal(repo, object(), **args) is None
+    record = pradmit.door(repo, salvage, _INTEGRATOR)
+    assert record is not None
+    assert 'integrator@lab' in record
+    assert 'salvage of a dead lane' in record
+    assert pradmit.create_refusal(repo, object(), **(args | {'policy': Policy()})) is not None  # PLANTED CONTROL

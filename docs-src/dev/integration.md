@@ -40,6 +40,14 @@ Every change is a SHORT-LIVED branch cut from `integrate/main` and returned by a
    notice records WHO (the commit author) and WHY (the reason). `ONE-SESSION-ONE-PR` and `NO-STACKED-PRS` do
    not stand in its way: they judge only the birth of a PR (`forge pr create`, a NEW `pr/*` at pre-push), and
    this push updates integration (`tests/test_dev_pradmit.py::test_the_integrators_back_door_merge_is_not_judged`).
+
+   To PUBLISH a PR the machine would refuse -- salvage of another session's work, or a head stacked on a
+   stalled PR -- the integrator uses the INTEGRATOR DOOR (`INTEGRATOR-DOOR`, user ruling 2026-10-24): the head
+   commit carries `Integrator-Door: <why>` with a non-empty reason, and its author email is listed in
+   `[tool.lab_commons.integrator] integrators`. `ONE-SESSION-ONE-PR` and `NO-STACKED-PRS` then stand aside at
+   pre-push and at `forge pr create`, which appends `Integrator-Door: opened by <name> <email> -- <why>` to the
+   PR body (`dev_lab.dev.pradmit.door`). No env var or flag opens it. Name the local branch as the remote one
+   (`git branch -m integ/foo pr/foo`, then `git push origin pr/foo`): `PUBLISH-IS-THE-LOCAL-REF` is unchanged.
 4. `main` moves only by `integrate promote <sha>` on a full PASS, as below.
 
 All maintenance happens on gitea (user ruling 2026-10-19): PRs are opened, judged and merged there, and

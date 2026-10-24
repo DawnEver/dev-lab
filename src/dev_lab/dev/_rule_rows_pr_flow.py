@@ -23,6 +23,16 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         ('tests/test_dev_pradmit.py',),
     ),
     (
+        'INTEGRATOR-DOOR',
+        (
+            'The integrator publishes what the machine cannot through one named door: a head commit carrying '
+            '`Integrator-Door: <why>` by an author in `[tool.lab_commons.integrator] integrators` is exempt from '
+            'ONE-SESSION-ONE-PR and NO-STACKED-PRS at pre-push and at `forge pr create`, which writes who and why '
+            'into the PR body.'
+        ),
+        ('tests/test_dev_pradmit.py', 'tests/test_dev_forgework.py'),
+    ),
+    (
         'DOCS-ONLY-CARRIES',
         (
             'A head whose diff from its nearest tested ancestor reaches no test footprint runs nothing: its parts and '

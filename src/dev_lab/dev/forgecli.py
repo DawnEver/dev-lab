@@ -176,6 +176,8 @@ def issue_and_pr(
         ):
             emit(f'[forge] pr create REFUSED -- {why}', err=True)
             return 1
+        if (args.noun, args.verb) == ('pr', 'create') and (record := pradmit.door_record(root, args.head)):
+            args.body = f'{args.body}\n\n{record}' if args.body else record
         result = _dispatch(client, args)
     except ForgeCallFailed as failed:
         emit(f'[forge] {failed}', err=True)
