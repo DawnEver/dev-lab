@@ -102,6 +102,8 @@ class _Slurm:
         self.cancelled: list[str] = []
         self.withdrawn: list[str] = []
         self.started: list[str] = []
+        self.draining = forgerunstate.Draining(0.0, ())
+        self.cut: list[str] = []
 
     def submitted(self, _run: forgerunstate.Run) -> list[str]:
         return list(self.recorded)
@@ -130,6 +132,14 @@ class _Slurm:
 
     def tree(self, _run: forgerunstate.Run) -> Path:
         return self.record.parent / 'tree'
+
+    def started_tasks(self, _run: forgerunstate.Run) -> forgerunstate.Draining:
+        return self.draining
+
+    def cancel_tasks(self, _run: forgerunstate.Run, ids: list[str]) -> list[str]:
+        self.cut += ids
+        self.started = [one for one in self.started if f'{one}_0' not in ids]
+        return list(ids)
 
 
 @pytest.fixture
@@ -696,7 +706,8 @@ def test_a_run_whose_coalesced_ref_moves_on_withdraws_its_pending_tasks_and_drai
     """NEWEST-HEAD-ONLY (user ruling 2026-10-22): two heads pushed in a row -- the older head's pending tasks go.
 
     Ada, 7 days to 2026-10-22: 44.3% of 9,727 forge core-h was cancelled WHILE RUNNING, 34.4 points of it for
-    supersession. A started task is never cancelled for it: the run keeps its claim as ``draining`` -- so the
+    supersession. A started task within its deadline is never cancelled for it (past it: the test below, ruling
+    2026-10-24 "B"): the run keeps its claim as ``draining`` -- so the
     tip waits behind it and carries what it finishes (:func:`lab_commons.hpc.records.held_cells`) -- and is
     released as superseded once nothing runs: one alarm. A class not in ``Schedule.coalesce`` is tested at
     every pushed sha.
@@ -708,7 +719,7 @@ def test_a_run_whose_coalesced_ref_moves_on_withdraws_its_pending_tasks_and_drai
     monkeypatch.setattr(forgerun, 'coalesced', lambda _root, _ref: coalesced)
     slurm.started = ['4242'] if began else []
     after = _tick(store, slurm, alarms=alarms)
-    assert slurm.cancelled == [], 'supersession never kills a job: only a deliberate stop does'
+    assert slurm.cancelled == [], 'a task within its deadline is never killed for supersession'
     if not superseded:
         assert after is not None
         assert (slurm.withdrawn, alarms) == ([], [])
@@ -896,3 +907,83 @@ def test_a_run_whose_ref_moved_on_to_a_docs_only_tip_is_never_cancelled(
     assert (after is not None) is docs_only
     assert slurm.withdrawn == ([] if docs_only else ['4242'])
     assert slurm.cancelled == []
+
+
+@pytest.mark.parametrize('head', ['superseded', 'still the tip'])
+def test_a_superseded_runs_started_task_drains_until_its_learned_deadline_then_is_cancelled(
+    home: Path, monkeypatch: pytest.MonkeyPatch, head: str
+) -> None:
+    """USER RULING 2026-10-24 "B": a superseded run drains WITH A DEADLINE.
+
+    Ada 2026-10-24: five superseded heads of live PRs held ezxmw9 for up to 1 d 16 h. A started task's deadline
+    is its learned limit (the estimate times ``policy.safety``, :meth:`SlurmCluster.started_tasks`) counted
+    from supersession or its own start, whichever is later; past it the task is cancelled, its tests left to
+    the tip, and the run releases once nothing else runs. PLANTED CONTROL: a run that is still its ref's tip,
+    at the same clock, is untouched.
+    """
+    store, alarms, slurm = _Store(), [], _Slurm(home / 'r')
+    superseded = head == 'superseded'
+    _submitted_run(home, store, slurm)
+    monkeypatch.setattr(forgerun, 'tip_of', lambda _root, _ref: 'd' * 40 if superseded else SHA)
+    slurm.started = ['4242']
+    task = forgerunstate.Started('4242_0', started_at=1000.0, limit_s=600.0)
+    slurm.draining = forgerunstate.Draining(1100.0, (task,))  # superseded at 1100: deadline 1700
+    assert _tick(store, slurm, alarms=alarms) is not None
+    assert slurm.cut == [], 'within its deadline a started task drains'
+    if superseded:
+        holder = Claim.parse(store.posts[-1]['description'])
+        assert holder is not None
+        assert holder.progress.startswith(DRAINING)
+    slurm.draining = forgerunstate.Draining(1800.0, (task,))
+    after = _tick(store, slurm, alarms=alarms)
+    if not superseded:
+        assert after is not None
+        assert (slurm.cut, slurm.cancelled, alarms) == ([], [], [])
+        return
+    assert slurm.cut == ['4242_0'], 'past its deadline the task is cancelled, its tests left for the tip'
+    assert slurm.cancelled == [], 'only that task, never the whole run'
+    assert after is None, 'nothing else runs: the run releases its claim'
+    assert forgerunstate.live('https://f/o/r.git') == ()
+    assert 'superseded' in store.posts[-1]['description']
+    [alarm] = alarms
+    assert '4242_0' in alarm.body
+
+
+def test_a_deadline_counts_from_supersession_or_the_tasks_start_whichever_is_later() -> None:
+    """A task started just before supersession is never cut short below its own limit."""
+    early = forgerunstate.Started('1_0', started_at=0.0, limit_s=100.0)
+    late = forgerunstate.Started('1_1', started_at=90.0, limit_s=100.0)
+    assert forgerun.overdue(forgerunstate.Draining(139.0, (early, late)), since=40.0) == []
+    assert forgerun.overdue(forgerunstate.Draining(150.0, (early, late)), since=40.0) == ['1_0']
+    assert forgerun.overdue(forgerunstate.Draining(191.0, (early, late)), since=40.0) == ['1_0', '1_1']
+
+
+def test_a_started_task_is_priced_from_the_learned_table_times_the_safety(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The limit is the packer's own estimate of the task's items (``Measured.estimate``) times ``policy.safety``.
+
+    An unmeasured file is priced at ``cost.seconds``, the prior the packer uses.
+    """
+    manifest = {'shards': [[0, 1], [1, 2]], 'items': [{'ids': ['t/a.py::x', 't/a.py::y']}, {'ids': ['t/new.py::z']}]}
+
+    def runner(command: str, _stdin: object) -> str:
+        if command.startswith('date'):
+            return '5000\n7_0|10:00\n7_1|1-00:00:00\n'
+        assert command == 'cat /runs/r0/manifest.json', command
+        return json.dumps(manifest)
+
+    state = {'rounds': [{'job_ids': ['7'], 'run_dir': '/runs/r0'}]}
+    monkeypatch.setattr(forgeslurm, 'load_state', lambda *_a: (state, runner))
+    monkeypatch.setattr(learned, 'learned', lambda _repo: {'durations': {'t/a.py::x': 30.0, 't/a.py::y': 10.0}})
+    config = Config()
+    cluster = forgeslurm.SlurmCluster(tmp_path, cast('Any', SimpleNamespace(grants=[])), config, lambda _g: runner)
+    run: Any = SimpleNamespace(sha='a' * 40, platform='base', job_aliases=(), repo_url='https://f/o/r.git')
+    drain = cluster.started_tasks(run)
+    safety = config.policy.safety
+    assert drain.now == 5000.0
+    assert [(t.job_id, t.started_at) for t in drain.tasks] == [('7_0', 4400.0), ('7_1', 5000.0 - 86400)]
+    assert [t.limit_s for t in drain.tasks] == [
+        pytest.approx(40.0 * safety, rel=1e-9, abs=0.0),
+        pytest.approx(config.cost.seconds * safety, rel=1e-9, abs=0.0),
+    ]

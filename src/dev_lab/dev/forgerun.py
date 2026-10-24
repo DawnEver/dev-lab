@@ -47,13 +47,15 @@ PROGRESS TRAVELS ON THE CLAIM. Whenever where the run stands changes -- ``buildi
 (:class:`dev_lab.dev.forgeclaim.Claim`), so any machine with a forge credential sees it; the final
 status links the run record.
 
-NEWEST-HEAD-ONLY: A COALESCED REF'S RUN LOSES ITS PENDING TASKS THE TICK ITS REF MOVES ON, AND NO STARTED TASK
-(user ruling 2026-10-22). A run of a ``Schedule.coalesce`` class whose sha is no longer its ref's tip has every
-NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a STARTED task is never cancelled
-for supersession -- the run keeps its claim as ``draining`` until the last one ends, then is released as
-superseded naming the tip and dropped -- one alarm. The tip waits behind it (:mod:`forgecoalesce`), so its run
-carries every outcome the drained tasks finished (:mod:`dev_lab.dev.forgecarry`). Only a deliberate stop
-(:func:`lab_commons.hpc.run.cancel_run`) kills a started task.
+NEWEST-HEAD-ONLY: A COALESCED REF'S RUN LOSES ITS PENDING TASKS THE TICK ITS REF MOVES ON, AND ITS STARTED ONES
+DRAIN TO A DEADLINE (user rulings 2026-10-22, 2026-10-24 "B"). A run of a ``Schedule.coalesce`` class whose sha is
+no longer its ref's tip has every NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a
+STARTED task drains -- the run keeps its claim as ``draining`` -- until its DEADLINE: its learned limit (the
+packer's estimate times ``policy.safety``, the figure its ``--time`` was cut from) counted from supersession or
+its own start, whichever is later (:func:`overdue`). Past it, that task alone is cancelled and its tests are left
+for the tip. Once none runs the run is released as superseded naming the tip and dropped -- one alarm. The tip
+waits behind it (:mod:`forgecoalesce`), so its run carries every outcome the drained tasks finished
+(:mod:`dev_lab.dev.forgecarry`). Ada 2026-10-24: five superseded heads of live PRs held one account up to 1 d 16 h.
 A run whose REF IS GONE (merged or closed) has no tip to drain for: unless the integration tip carries its
 result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`).
 Ada 2026-10-22: 44% of a week's forge core-h was
@@ -97,6 +99,7 @@ from dev_lab.dev.forgerunstate import (
     SUBMITTED,
     SUBMITTING,
     Cluster,
+    Draining,
     Run,
     Unrecorded,
     drop,
@@ -109,7 +112,7 @@ from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import PartRefusal, part_context, run_tag
 from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 
-__all__ = ['advance', 'start']
+__all__ = ['advance', 'overdue', 'start']
 
 #: What a tick may do with a run (:func:`_hold`).
 _ADVANCE: Final = 'advance'
@@ -272,28 +275,48 @@ def _supersede(
     alarm: Callable[[Alarm], None],
     tag: str,
 ) -> Run | None:
-    """Withdraw *run*'s NOT-YET-STARTED tasks; drain its started ones; then release it superseded by *tip*.
+    """Withdraw *run*'s NOT-YET-STARTED tasks; drain its started ones to their deadline; then release it.
 
-    NEWEST-HEAD-ONLY (user ruling 2026-10-22): a started task is never cancelled for supersession. While one
-    runs, the run keeps its claim -- so the tip waits behind it (:mod:`dev_lab.dev.forgecoalesce`) and its
-    run carries what the drained tasks finished (:mod:`dev_lab.dev.forgecarry`) -- and is returned. Once
-    none runs it is released and dropped: one alarm.
+    NEWEST-HEAD-ONLY (user rulings 2026-10-22, 2026-10-24 "B"): while a started task runs within its deadline
+    (:func:`overdue`) the run keeps its claim -- so the tip waits behind it (:mod:`dev_lab.dev.forgecoalesce`)
+    and its run carries what the drained tasks finished (:mod:`dev_lab.dev.forgecarry`) -- and is returned. A
+    task past its deadline is cancelled alone, its tests left for the tip. Once none runs the run is released
+    superseded by *tip* and dropped: one alarm.
     """
     if tip == _GONE:  # no tip to drain for: every job goes, started ones too
         _cancel_orphan(client, run, cluster=cluster, say=say, alarm=alarm, tag=tag)
         return None
-    started = cluster.withdraw(run)
+    started, cut = cluster.withdraw(run), []
     if started:
-        say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')
-        return _report(client, run, f'{DRAINING} {len(started)} started job(s) for {tip[:12]}', lease, say)
+        drain = cluster.started_tasks(run)
+        if not run.superseded_at:
+            run = _step(run, superseded_at=drain.now)
+        if late := overdue(drain, since=run.superseded_at):
+            cut = cluster.cancel_tasks(run, late)
+            say(f'{tag}: superseded by {tip[:12]} -- past their deadline, tasks {" ".join(cut)} cancelled')
+        left = [one.job_id for one in drain.tasks if one.job_id not in cut]
+        if left or not drain.tasks:  # an unread task is never judged late: it drains
+            say(f'{tag}: superseded by {tip[:12]} -- pending tasks withdrawn, draining jobs {" ".join(started)}')
+            count = len(left) if drain.tasks else len(started)
+            return _report(client, run, f'{DRAINING} {count} started job(s) for {tip[:12]}', lease, say)
     reason = f'released: superseded -- {run.ref} moved on to {tip[:12]}; its slot goes to the tip'
     reason = reason[:_DESCRIPTION_MAX]
-    why = 'pending tasks withdrawn, no started task cancelled'
+    why = 'pending tasks withdrawn, ' + (
+        f'tasks {" ".join(cut)} cancelled past their deadline' if cut else 'no started task cancelled'
+    )
     alarm(Alarm(RUN, run.repo_url, f'the cluster run of {run.sha[:12]} was superseded by {tip[:12]}', why))
     say(f'{tag}: {why} -- {reason}')
     _release(client, run, reason, say)
     drop(run)
     return None
+
+
+def overdue(drain: Draining, *, since: float) -> list[str]:
+    """The started tasks of *drain* past their deadline: their limit after *since* or their start, the later.
+
+    A task started just before supersession is never cut short below its own limit.
+    """
+    return [one.job_id for one in drain.tasks if drain.now > max(since, one.started_at) + one.limit_s]
 
 
 def _settle(
