@@ -142,8 +142,9 @@ slice, not whether a head is read at all:
 **It gates nothing but one state**: `tests/review` is never a part, so `integrate promote` and push admission
 never wait on it, and the forge's auto-merge waits only on a head the slices cannot hold -- its reviewable change
 over `max_total_bytes`, one file alone over `max_diff_bytes`, or several slices for a command without `{paths}`.
-That head is HELD (`pending`, `over the cap: ...`) until a session reviews it and posts `success`, so an
-unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
+That head is HELD on its own context, `tests/review-hold` = `pending` (never read from a description), until a
+session reviews it and releases it: `python -m dev_lab.dev.forge status post <sha> --context tests/review-hold
+--state success --description "reviewed by <who>"`. So an unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
 nothing. A failed command posts `error` and is not retried on that head.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them

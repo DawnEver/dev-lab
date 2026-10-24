@@ -37,9 +37,15 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
 __all__ = [
-    'FINDINGS_FIELD', 'LENSES', 'Budget', 'Scope', 'Slice', 'gather', 'lens_of', 'own_base', 'plan', 'reviewable',
-    'reviewed_heads',
+    'FINDINGS_FIELD', 'LENSES', 'ONLY_GENERATED', 'OVER_CAP', 'Budget', 'Scope', 'Slice', 'gather', 'lens_of',
+    'own_base', 'plan', 'reviewable', 'reviewed_heads',
 ]  # fmt: skip
+
+#: The review description of a held head (its :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` says the same).
+OVER_CAP: Final = 'over the cap: review it by hand, then release tests/review-hold'
+
+#: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
+ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
 
 #: In the ``synthesis`` command: replaced by the merged slice findings' path.
 FINDINGS_FIELD: Final = '{findings}'

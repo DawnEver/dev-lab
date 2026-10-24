@@ -20,7 +20,6 @@ from dev_lab.dev.famfiles import GENERATED
 from dev_lab.dev.forgepulls import Marker, comment_upsert
 from dev_lab.dev.forgereview import (
     LENS_FIELD,
-    ONLY_GENERATED,
     PATHS_FIELD,
     RANGE_FIELD,
     REVIEW_CONTEXT,
@@ -28,9 +27,18 @@ from dev_lab.dev.forgereview import (
     review_tick,
 )
 from dev_lab.dev.forgereview_findings import merge_outputs, parse_findings
-from dev_lab.dev.forgereview_scope import FINDINGS_FIELD, Budget, lens_of, own_base, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import (
+    FINDINGS_FIELD,
+    ONLY_GENERATED,
+    OVER_CAP,
+    Budget,
+    lens_of,
+    own_base,
+    plan,
+    reviewed_heads,
+)
 from dev_lab.dev.forgestatus import status_list
-from dev_lab.dev.platformparts import OVER_CAP
+from dev_lab.dev.platformparts import HOLD_CONTEXT
 
 _SLICED = ('reviewer', '--range', RANGE_FIELD, '--lens', LENS_FIELD, '--paths', PATHS_FIELD)
 _WIDE = Budget(slice_bytes=10**6, total_bytes=10**7)
@@ -131,8 +139,8 @@ def test_a_head_of_only_generated_files_is_posted_as_nothing_to_review(tmp_path:
     command = Recorder()
     review_tick(work, forge, Review(command=_SLICED), base='integrate/main', run=command, ready=_can, host='box')
     assert command.ran == []
-    (status,) = status_list(forge, head)
-    assert (status.context, status.state, status.description) == (REVIEW_CONTEXT, 'success', ONLY_GENERATED)
+    found = {(s.context, s.state, s.description) for s in status_list(forge, head)}
+    assert found == {(c, 'success', ONLY_GENERATED) for c in (REVIEW_CONTEXT, HOLD_CONTEXT)}
 
 
 def test_each_path_earns_its_lens() -> None:
@@ -204,9 +212,9 @@ def test_a_head_the_slices_cannot_hold_is_held_for_a_session(tmp_path: Path) -> 
         command = Recorder()
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
         assert command.ran == []
-        (status,) = status_list(forge, head)
-        assert status.state == 'pending'
-        assert status.description.startswith(OVER_CAP)
+        statuses = status_list(forge, head)
+        assert sorted(s.context for s in statuses) == [HOLD_CONTEXT, REVIEW_CONTEXT]
+        assert all(s.state == 'pending' and s.description.startswith(OVER_CAP) for s in statuses)
 
 
 def test_the_slice_outputs_merge_once_per_finding_id() -> None:

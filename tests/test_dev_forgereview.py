@@ -44,9 +44,10 @@ from dev_lab.dev.forgereview import (
     step,
 )
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
+from dev_lab.dev.forgereview_scope import OVER_CAP
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.platformparts import OVER_CAP, standing
+from dev_lab.dev.platformparts import HOLD_CONTEXT, standing
 
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
@@ -421,12 +422,11 @@ def test_a_diff_over_the_cap_is_not_sent_and_says_so_once(tmp_path: Path) -> Non
     command = FakeCommand()
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert command.ran == []
-    (status,) = status_list(forge, head)
-    assert status.context == REVIEW_CONTEXT
-    assert status.state == 'pending'
-    assert status.description.startswith(OVER_CAP)
+    statuses = status_list(forge, head)
+    assert sorted(s.context for s in statuses) == [HOLD_CONTEXT, REVIEW_CONTEXT]
+    assert all(s.state == 'pending' and s.description.startswith(OVER_CAP) for s in statuses)
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
-    assert len(forge.statuses[head]) == 1
+    assert len(forge.statuses[head]) == 2
 
 
 def test_a_pr_into_another_base_is_not_reviewed(tmp_path: Path) -> None:
@@ -475,18 +475,23 @@ def test_the_review_status_is_not_a_part_so_it_never_gates_auto_merge(tmp_path: 
     assert found.ready, found.missing
 
 
-def test_an_over_cap_head_holds_the_merge_until_its_sliced_review_posts_success(tmp_path: Path) -> None:
-    """An unreviewed over-cap head never auto-merges; PLANTED control: a success review releases it."""
+def test_a_review_hold_waits_the_merge_until_it_is_released(tmp_path: Path) -> None:
+    """The hold is its OWN context, never a description prefix.
+
+    PLANTED controls: released, it merges; the review context saying the hold's words holds nothing.
+    """
     passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
     work, head = _work(tmp_path)
     policy = Policy(pr_merges_since='0' * 40)
-    held = (_status(REVIEW_CONTEXT, 'pending', f'{OVER_CAP} (9 bytes > max_diff_bytes=5)'), passed)
+    held = (_status(HOLD_CONTEXT, 'pending', f'{OVER_CAP} (9 reviewable bytes > max_total_bytes=5)'), passed)
     found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
     assert not found.ready
-    assert any(OVER_CAP in line for line in found.missing), found.missing
+    assert any(HOLD_CONTEXT in line for line in found.missing), found.missing
     assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
-    released = (_status(REVIEW_CONTEXT, 'success', 'reviewed in slices'), passed)
+    released = (_status(HOLD_CONTEXT, 'success', 'reviewed by hand'), passed)
     assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
+    worded = (_status(REVIEW_CONTEXT, 'pending', OVER_CAP), passed)
+    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=worded).ready
 
 
 # --- the declaration ---------------------------------------------------------------------------------

@@ -21,10 +21,12 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integ
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
   when the command failed or printed no known findings version. ADVISORY:
   :func:`dev_lab.dev.platformparts.parts_of` skips that context, so promotion and push admission never wait on it;
-* ``pending`` saying :data:`~dev_lab.dev.platformparts.OVER_CAP` when the head cannot be read in slices (its
+* ``pending`` saying :data:`OVER_CAP`, with a ``pending`` :data:`~dev_lab.dev.platformparts.HOLD_CONTEXT` beside
+  it, when the head cannot be read in slices (its
   reviewable change is over ``max_total_bytes``, one file alone is over ``max_diff_bytes``, or it needs several
-  slices and the command takes no ``{paths}``): the ONE review state the auto-merge (:mod:`dev_lab.dev.forgemerge`)
-  waits on, until a session reviews the head and posts ``success`` -- an unreviewable head is never
+  slices and the command takes no ``{paths}``): the hold is the ONE review context the auto-merge
+  (:mod:`dev_lab.dev.forgemerge`) waits on, until a session reviews the head and releases it
+  (``forge status post <sha> --context tests/review-hold --state success``) -- an unreviewable head is never
   advisory-skipped into an unreviewed merge.
 
 WHAT IS READ is :mod:`dev_lab.dev.forgereview_scope`'s: the branch's own change since its last reviewed head,
@@ -88,10 +90,10 @@ from dev_lab.dev.forgereview_findings import (
     parse_findings,
     render,
 )
-from dev_lab.dev.forgereview_scope import Budget, Scope, gather, plan, reviewed_heads
+from dev_lab.dev.forgereview_scope import ONLY_GENERATED, OVER_CAP, Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
-from dev_lab.dev.platformparts import OVER_CAP, REVIEW_CONTEXT
+from dev_lab.dev.platformparts import HOLD_CONTEXT, REVIEW_CONTEXT
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -100,6 +102,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'HOST_FIELD',
+    'OVER_CAP',
     'RANGE_FIELD',
     'REFUSED_EXIT',
     'RETIRED_KEYS',
@@ -116,9 +119,6 @@ __all__ = [
     'run_command',
     'step',
 ]  # fmt: skip
-
-#: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
-ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
 
 #: The placeholder the declared command carries; the reviewed ``<base>..<head>`` range replaces it.
 RANGE_FIELD: Final = '{range}'
@@ -410,11 +410,11 @@ def review_tick(
         if scope.held is not None or not scope.slices:
             state, why = ('pending', f'{OVER_CAP} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
             status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:_DESCRIPTION])
+            status_post(client, head, context=HOLD_CONTEXT, state=state, description=why[:_DESCRIPTION])
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
         try:
-            argvs = [command_for(review, scope.range, capabilities, paths=one.paths, lens=one.lens)
-                     for one in scope.slices]  # fmt: skip
+            argvs = [command_for(review, scope.range, capabilities, paths=s.paths, lens=s.lens) for s in scope.slices]
             cannot = ready(argvs[0], root)
         except ReviewUnsupported as unsupported:
             cannot = str(unsupported)
