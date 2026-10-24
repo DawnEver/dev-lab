@@ -150,6 +150,7 @@ class Marker(StrEnum):
     TIDY = 'tidy'  #: ``forge tidy``'s one summary comment (:mod:`dev_lab.dev.forgetidy`)
     REVIEW = 'review'  #: one advisory review per PR head, keyed by the sha (:mod:`dev_lab.dev.forgereview`)
     LANDED = 'landed'  #: a landed PR's one closing comment, keyed by the head sha (:mod:`dev_lab.dev.prlanded`)
+    POLLER = 'poller'  #: the hosts issue's one poller lease (:mod:`dev_lab.dev.forgepoller`)
 
 
 def marker(kind: Marker, key: str = '') -> str:

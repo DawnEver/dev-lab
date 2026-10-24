@@ -15,13 +15,15 @@ as a producer of its own, and wait one tick period or until a producer ends; the
 cluster run one step
 (:func:`dev_lab.dev.forgerun.advance`: submit, gather, store declared outputs, publish, route,
 release -- whatever is due); on a cluster, clean the artefact stores (:func:`dev_lab.dev.forgeship.tidy`);
-on any host, close open PRs whose head is on their base (:func:`dev_lab.dev.prlanded.serve_close_landed`),
+run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still over quota raises a
+``storage`` alarm); publish this host's card; then, ONLY ON THE REPO'S POLLER -- the host holding the poller
+lease (:func:`polls`, :mod:`dev_lab.dev.forgepoller`; measured 2026-10-24, every host polling every repo
+pegged the forge) -- close open PRs whose head is on their base (:func:`dev_lab.dev.prlanded.serve_close_landed`),
 prune merged idle origin branches (idempotent) (:func:`dev_lab.dev.branchprune.serve_prune`),
 prune the records home -- dead shas' records, unit results over budget -- once per interval
 (:func:`dev_lab.dev.forgerecords.serve_prune`)
-and tidy the repo's issues (``forge tidy``, :func:`dev_lab.dev.forgetidy.tidy`) -- every served repo, every tick;
-run the storage retention pass, every tick (:mod:`dev_lab.dev.retention`; still over quota raises a
-``storage`` alarm); flush the outbox again.
+tidy the repo's issues (``forge tidy``, :func:`dev_lab.dev.forgetidy.tidy`), raise the starved parts, prompt
+the integrator and relock (below); flush the outbox again.
 
 SERVE IS THE ONE DOOR TO A FULL SUITE (``VERDICTS-FROM-THE-FORGE``): the producer it spawns carries the
 claimed part in its environment (:func:`dev_lab.dev.producer.producing`), and a full tier refuses to
@@ -70,18 +72,19 @@ is a FAILURE of this call (exit 2) with the argv shown, never a quiet skip.
 THE QUEUE DECIDES WHAT IS CLAIMED (:mod:`dev_lab.dev.forgeschedule`). Before the tick a cluster host
 reads its standing locally -- its supply, the last day's core-hours, partitions -- and a box probes its own
 (:mod:`lab_commons.compute.probe`); the tick claims the best feasible candidate and names why every
-other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained); on ANY host,
+other waits. After it, a run whose ref moved on is SUPERSEDED (pending withdrawn, started drained); on the poller,
 a part no host admits waiting past its class's bound keeps one ``starved`` forge issue (:func:`raise_once`),
 read across every host card; and this host's CARD is published on the forge
 (:mod:`dev_lab.dev.forgehosts`):
 who it is, what it serves, its supply, what it holds with progress, and the queue as it saw it.
 
-THE FORGE PROMPTS THE INTEGRATOR: every host derives the integration queue
+THE FORGE PROMPTS THE INTEGRATOR: the repo's poller derives the integration queue
 (:func:`dev_lab.dev.integrator.observe`) and keeps ONE ``integration`` forge issue per row that asks
-for action (:func:`raise_once`): N hosts write one issue, and only the host that creates or changes it
-pages. No host owns integration. The same tick runs the behind/conflict report on every child branch
-(:func:`dev_lab.dev.forgeintegration.tick`), and a child conflicting with integration or past the lane
-policy's ``behind_max`` joins those rows as one more ``integration`` issue.
+for action (:func:`raise_once`): two hosts racing for the lease still write one issue, and only the host
+that creates or changes it pages. No host OWNS integration: whoever holds the lease derives it. The same
+tick runs the behind/conflict report on every child branch (:func:`dev_lab.dev.forgeintegration.tick`),
+and a child conflicting with integration or past the lane policy's ``behind_max`` joins those rows as one
+more ``integration`` issue.
 
 NOTHING FAILS SILENTLY ON AN UNATTENDED HOST (:mod:`dev_lab.dev.forgealarm`): the forge refusing
 the credential, a lease that cannot be renewed, a run that cannot advance, and an account IDLE while
@@ -130,10 +133,12 @@ from dev_lab.dev.forgealarm import (
     sound,
 )
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE, Claim, forge_now, this_machine, this_seat
-from dev_lab.dev.forgehosts import card_host, card_owners, read_cards, recording
+from dev_lab.dev.forgehosts import HostsIssueLost, card_host, card_owners, read_cards, recording
 from dev_lab.dev.forgeintent import reattach
 from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
+from dev_lab.dev.forgepoller import elect
 from dev_lab.dev.forgeproduce import Produced, demote_unreachable, produce
+from dev_lab.dev.forgepulls import ListingIncomplete
 from dev_lab.dev.forgerecords import serve_prune as serve_records_prune
 from dev_lab.dev.forgerounds import Rounds, locked_fetch, reserve, supply_now
 from dev_lab.dev.forgeschedule import host_weights
@@ -145,7 +150,7 @@ from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
 from dev_lab.dev.worktreeplace import WORKTREES_REL
 
-__all__ = ['ServeReport', 'main', 'serve', 'work_root']
+__all__ = ['POLL_LEASE_TICKS', 'ServeReport', 'main', 'polls', 'serve', 'work_root']
 
 
 @dataclass(frozen=True)
@@ -246,18 +251,19 @@ def serve(
     )  # fmt: skip
     tidy_runs(root, client, repo, seat=seat, say=say, alarm=alarm)
     retain_storage(root, repo, retain, cluster=seat is not None, who=name, say=say, alarm=alarm)
-    serve_close_landed(root, client(root), say=say, alarm=alarm)
-    serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-    serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
-    hygiene(root, client(root), say=say)
     if ticked.pending and not claimed and not left:
         refused = '; '.join(ticked.refused) or 'nothing was claimed'
         named = ', '.join(f'{item.ref} {item.sha[:12]} {item.platform}' for item in ticked.pending)
         alarm(Alarm(IDLE, repo, f'{name} is idle with work pending', f'{named}: {refused}'))
-    starved(root, repo, client(root), cards, say=say, alarm=alarm)
     card(claimed)
-    prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
-    relock(root, repo, client(root), say=say, alarm=alarm)
+    if polls(client(root), name, timedelta(seconds=POLL_LEASE_TICKS * beat_s), say):
+        serve_close_landed(root, client(root), say=say, alarm=alarm)
+        serve_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+        serve_records_prune(root, client(root), now=clock(), say=say, alarm=alarm)
+        hygiene(root, client(root), say=say)
+        starved(root, repo, client(root), cards, say=say, alarm=alarm)
+        prompt(root, repo, client(root), say=say, alarm=alarm, host=name)
+        relock(root, repo, client(root), say=say, alarm=alarm)
     broken = tuple(
         f'{p.platform} {p.sha[:12]}: the producer refused its argv: {" ".join(p.argv)}'
         for p in produced
@@ -266,6 +272,21 @@ def serve(
     published = tuple(flush(root, client=client))
     lines = tuple(line for one in rounds for line in one.lines)
     return ServeReport(lines, tuple(produced), tuple(left), published, broken)
+
+
+#: How many tick periods a poller lease outlives its last renewal (:mod:`dev_lab.dev.forgepoller`).
+POLL_LEASE_TICKS = 3
+
+
+def polls(built: Client, host: str, ttl: timedelta, say: Callable[[str], None]) -> bool:
+    """Whether *host* runs the repo-wide poll this tick (:func:`dev_lab.dev.forgepoller.elect`); never if unreadable."""
+    try:
+        here, holder = elect(built, host=host, ttl=ttl)
+    except (OSError, ListingIncomplete, HostsIssueLost) as failed:
+        say(f'[serve] no repo-wide poll this tick: the poller lease could not be read: {failed}')
+        return False
+    say(f'[serve] poller: {holder}' + ('' if here else '; this host claims and produces only'))
+    return here
 
 
 def _advance(

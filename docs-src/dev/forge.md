@@ -39,7 +39,37 @@ Each tick it:
 4. runs every claimed local part at once, one thread each (streamed, each claim renewed every third of the
    lease), or advances a cluster run one step ([HPC clusters](hpc.md#runs-on-the-cluster));
 5. posts the part with its record attached, and edits its host card;
-6. on every host, keeps one forge issue per integration row and prompts the session whose row it is when it writes one ([integration alarm](#alarms)).
+6. ON THE ONE POLLER of the repo ([one poller per repo](#one-poller-per-repo)): closes landed PRs, prunes
+   merged branches and old records, tidies the issues, raises starved parts, keeps one forge issue per
+   integration row (prompting the session whose row it is when it writes one, [integration alarm](#alarms)),
+   runs the advisory review and the relock.
+
+### One poller per repo
+
+Measured 2026-10-24 on the gitea host (2 cores): 9425 API requests in ten minutes, 97% from two Ada login
+nodes, gitea at 135% CPU -- five accounts each ran `hpchost tick` for seven repos every five minutes, and every
+tick re-derived the same repo-wide answers. So the repo-wide poll (step 6) runs on ONE host per repo:
+
+- **The lease is a comment on the hosts issue** (`forgepoller`, marker `poller`): `holder: <card host>` and
+  `until: <forge time>`, judged on the FORGE's clock. Accounts on a cluster share no writable file, so the
+  forge is the one place every host can read.
+- A live lease held by another host: this host claims, produces, advances its runs and publishes its card,
+  and polls nothing. Its own live lease: renewed, no read-back. None or expired: written, read back, and the
+  host polls only if the read-back names it; racing creators keep the OLDEST lease comment and each deletes
+  its own younger one. A lease lives three tick periods (`POLL_LEASE_TICKS`), so a dead holder is replaced
+  within fifteen minutes at the default `tick_minutes = 5`.
+- A race both hosts win costs one duplicate poll, never a wrong answer: every polled step was already idempotent.
+- `[serve] poller: <host>` in the serve log names the holder each tick.
+
+What every host still reads, kept small:
+
+- **Issues incrementally**: a `client_for` client keeps every issue in `issues-<owner>-<repo>.json` in the
+  outbox and asks only `since=` the forge's clock at its last read (less two minutes); a cold cache reads in
+  full once, and an issue the tidy deletes is forgotten by it (`forgepulls.issues`).
+- **Statuses of unsettled heads only**: a commit whose every derived part has a settled latest status never
+  changes, so its history is kept in `settled-<owner>-<repo>.json` and never asked again
+  (`forgesettled`); a claim still reads afresh, so the cache can cost a refused claim, never a duplicate.
+- **Every request names its sender**: `User-Agent: dev-lab (<login>@<machine>; <owner>/<repo>)`.
 
 - `forge tick` is the same claim step without producing (`--dry-run` to preview).
 - **`--lock [PATH]`: one serve per host.** A second serve on a held lock exits 0 and says so. A bare
@@ -321,9 +351,9 @@ see [pruning origin](branch-set.md#pruning-origin)). It posts nothing.
   is, its OS, its `supply` (what the tick admitted against), cluster facts (partitions, quota, QOS), its
   last tick, what it holds, what else `running` on it (each box ledger claim), and why each candidate it saw
   waits. A card key this version does not declare is not read. A card older than three of its own ticks is stale. The issue is the OLDEST carrying
-  the hidden `forge-hosts` marker (or the title), read off every page in every state; a failed lookup, or a
+  the hidden `forge-hosts` marker (or the title), read off the issue cache in every state; a failed lookup, or a
   listing showing fewer open issues than the repository counts, refuses with an ALARM line and opens nothing.
-- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge serve` on every host every tick): the rules and
+- **Issue hygiene** (`forge tidy [--dry-run]`, run by `forge serve` on the repo's poller every tick): the rules and
   their defaults are in [issues](issues.md#issues-never-rot). It says so in ONE comment on the hosts issue.
 - `compute.model.rank` is the one pure ordering rule; an optimiser replaces it without touching I/O.
 

@@ -183,6 +183,7 @@ def _serve(
     present=lambda _root: {},
     clock=lambda: NOW,
     reviewed: list | None = None,
+    elected: tuple[bool, str] = (True, 'G'),
 ) -> tuple[forgeserve.ServeReport, list[str], list]:
     """Serve once: the first round's tick answers *ticked*, each later one the next of *later*, then nothing.
 
@@ -237,6 +238,7 @@ def _serve(
     monkeypatch.setattr(forgeservesteps, 'issue_tidy', issue_tidy)
     monkeypatch.setattr(forgeservesteps, 'forge_queue', lambda *_a, **_k: (list(starving), []))
     monkeypatch.setattr(forgeserve, 'read_cards', lambda _client: ())
+    monkeypatch.setattr(forgeserve, 'elect', lambda _client, **_kw: elected)
     report = forgeserve.serve(
         tmp_path,
         client=_client,
@@ -940,8 +942,8 @@ def test_only_a_cluster_host_cleans_the_artefact_stores_and_a_failed_cleanup_ala
     assert [a.kind for a in alarms] == [RUN]
 
 
-def test_every_tick_runs_the_branch_prune_on_any_host(monkeypatch, tmp_path: Path) -> None:
-    """No owner: the prune is idempotent, so every host's tick runs it (a raced delete is a no-op)."""
+def test_the_poller_runs_the_branch_prune(monkeypatch, tmp_path: Path) -> None:
+    """The prune is the repo's: the host holding the poller lease runs it (a raced delete is still a no-op)."""
     offered: list[Path] = []
 
     def prune(root: Path, _client: object, **kwargs: object) -> tuple[()]:
@@ -987,8 +989,8 @@ def test_every_tick_offers_the_records_prune_its_rate_limit_decides(monkeypatch,
     assert offered == [tmp_path]
 
 
-def test_every_tick_tidies_the_repos_issues_on_any_host(monkeypatch, tmp_path: Path) -> None:
-    """Issues never rot: every served repo is tidied each tick, by its defaults when it declares nothing."""
+def test_the_poller_tidies_the_repos_issues(monkeypatch, tmp_path: Path) -> None:
+    """Issues never rot: every served repo is tidied each poll, by its defaults when it declares nothing."""
     given: list[Hygiene] = []
 
     def issue_tidy(_client: object, hygiene: Hygiene) -> list[str]:
@@ -1008,6 +1010,46 @@ def test_a_failed_tidy_is_said_and_the_tick_goes_on(monkeypatch, tmp_path: Path)
     report, said, _alarms = _serve(monkeypatch, tmp_path, TickReport((), (), ()), issue_tidy=issue_tidy)
     assert '[serve] the issue hygiene did not run: bad table' in said
     assert report.published, 'the outbox is still flushed'
+
+
+def test_a_host_not_holding_the_poller_lease_claims_and_publishes_but_never_polls(monkeypatch, tmp_path: Path) -> None:
+    """ONE POLLER PER REPO (2026-10-24): every repo-wide step is the lease holder's; this host only serves."""
+    ran: list[str] = []
+    cards: list = []
+    reviewed: list = []
+    report, said, _alarms = _serve(
+        monkeypatch,
+        tmp_path,
+        TickReport((), (), ()),
+        cards=cards,
+        reviewed=reviewed,
+        elected=(False, 'ada/alice'),
+        prune=lambda *_a, **_k: ran.append('prune') or (),
+        close_landed=lambda *_a, **_k: ran.append('close'),
+        records_prune=lambda *_a, **_k: ran.append('records') or (),
+        issue_tidy=lambda *_a: ran.append('tidy') or [],
+        observe=lambda *_a, **_k: ran.append('observe') or [],
+    )
+    assert ran == []
+    assert reviewed == []
+    assert cards, 'its card is still published'
+    assert report.published, 'its outbox is still flushed'
+    assert '[serve] poller: ada/alice; this host claims and produces only' in said
+
+
+def test_planted_control_the_lease_holder_runs_every_repo_wide_step(monkeypatch, tmp_path: Path) -> None:
+    ran: list[str] = []
+    _serve(
+        monkeypatch,
+        tmp_path,
+        TickReport((), (), ()),
+        prune=lambda *_a, **_k: ran.append('prune') or (),
+        close_landed=lambda *_a, **_k: ran.append('close'),
+        records_prune=lambda *_a, **_k: ran.append('records') or (),
+        issue_tidy=lambda *_a: ran.append('tidy') or [],
+        observe=lambda *_a, **_k: ran.append('observe') or [],
+    )
+    assert ran == ['close', 'prune', 'records', 'tidy', 'observe']
 
 
 def test_only_a_declared_issue_kind_is_kept_as_an_issue() -> None:

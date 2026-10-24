@@ -292,6 +292,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeschedule` -- ONE derived work queue: value per cost, aging, budgets, starvation.
 * :mod:`dev_lab.dev.forgequeue` -- ``forge queue``: queue, runs in flight, hosts and starvation, from the forge.
 * :mod:`dev_lab.dev.forgehosts` -- one host card per serving host, edited in place on the forge.
+* :mod:`dev_lab.dev.forgepoller` -- ONE POLLER PER REPO: a lease on the hosts issue picks the host that polls.
+* :mod:`dev_lab.dev.forgesettled` -- a commit whose every part is settled is read once, its history kept.
 * :mod:`dev_lab.dev.forgeprovides` -- what a host provides (machine-file ``[capabilities]``); no live host
   having a part's need-set is named.
 * :mod:`dev_lab.dev.forgetidy` -- ``forge tidy``: issues never rot: finished, idle and retired-marker leftovers go.
@@ -316,7 +318,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgeroute` -- a run record's reds grouped by ``[tool.lab_commons.areas]``, one issue per area.
 * :mod:`dev_lab.dev.integrator` -- the merge queue DERIVED from origin refs and the tests/<part> parts.
 * :mod:`dev_lab.dev.trialmerge` -- what a merge WOULD do (behind, conflicts) from objects alone, no checkout.
-* :mod:`dev_lab.dev.forgepulls` -- PR list/retarget and ONE marker-found comment per subject, both forges.
+* :mod:`dev_lab.dev.forgepulls` -- PR list/retarget, ONE marker-found comment per subject, the incremental issue
+  read, both forges.
 * :mod:`dev_lab.dev.integrate` -- integration by refs alone: ``merge <branch>`` (merge-tree, the commit-msg
   stage and the merge audit, compare-and-swap) and ``promote <sha>`` (the local trunk FAST-FORWARDS to a
   full-PASS integration commit). Neither checks out nor pushes.
