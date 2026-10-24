@@ -107,6 +107,28 @@ def test_the_asker_and_its_own_in_tree_family_are_not_runs(tree: Path) -> None:
     assert liverun.live_runs(tree, census=lambda: census, me=31) == (stranger,)
 
 
+def _spawn_worker(pid: int, parent: int, tree: Path) -> Process:
+    """A multiprocessing spawn child, as Windows launches it: `spawn_main(parent_pid=...)`, cwd inherited."""
+    cmd = (
+        '"python.exe" "-c" "from multiprocessing.spawn import spawn_main; '
+        f'spawn_main(parent_pid={parent}, pipe_handle=1088)" "--multiprocessing-fork"'
+    )
+    return _proc(pid, _venv_python(tree), ppid=parent, cmd=cmd, cwd=tree, age=86_400.0)
+
+
+def test_a_spawn_worker_whose_parent_is_gone_is_an_orphan_not_a_run(tree: Path) -> None:
+    """MEASURED 2026-10-24 in a motronics worktree: two day-old spawn workers of a dead pid refused every mutation.
+
+    A multiprocessing child serves its parent through a pipe; with the parent gone it can never advance, so it
+    holds the tree's cwd and nothing else. PLANTED CONTROL: the same worker whose parent is alive is a run.
+    """
+    orphan = _spawn_worker(50, 45_560, tree)
+    assert liverun.live_runs(tree, census=lambda: [orphan], me=1) == ()
+    parent = _proc(60, _venv_python(tree))
+    child = _spawn_worker(61, 60, tree)
+    assert liverun.live_runs(tree, census=lambda: [parent, child], me=1) == (parent, child)
+
+
 # ----------------------------------------------------------------------------------------------- what is the tree
 
 
