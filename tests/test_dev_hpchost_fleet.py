@@ -93,3 +93,19 @@ def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp
     )
     assert code == 2
     assert any("['alice'] hold more than one" in line for line in said)
+
+
+def test_a_declared_short_host_names_its_grant_login_host(tmp_path: Path) -> None:
+    """A machine file's ``hpclogin01`` is the grant's ``hpclogin01.example`` by its first DNS label."""
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "hpclogin01"\n'})
+    assert code == 0
+    assert [argv[5] for argv in started] == ['bob@hpclogin01']
+    assert not any('refused' in line for line in said)
+
+
+def test_a_short_host_matching_no_grant_label_is_refused(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a bare label that is no grant host's first label is still refused."""
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "hpclogin"\n'})
+    assert code == 2
+    assert started == []
+    assert any('not a login host' in line for line in said)

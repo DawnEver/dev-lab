@@ -59,14 +59,17 @@ class Target:
 
 
 def declared_target(grant: Grant, shell: Runner) -> Target | str:
-    """*grant*'s declared ``[deploy]`` host and root, read through *shell*; else why it cannot be deployed."""
+    """*grant*'s declared ``[deploy]`` host and root, read through *shell*; else why it cannot be deployed.
+
+    The host may name a grant login host in full or by its first DNS label (``hpclogin01``).
+    """
     lines = shell(_READ_DEPLOY, None).splitlines()
     table = '\n'.join(lines[:1] + [line for line in lines[1:] if not line.startswith('[')])
     deploy = tomllib.loads(table).get('deploy', {}) if table.strip() else {}
     host = deploy.get('host', '')
     if not host:
         return f'{grant.user}: refused -- its machine file declares no [deploy] host; run its first deploy by hand'
-    if host not in grant.hosts:
+    if host not in grant.hosts and host not in {login.split('.', 1)[0] for login in grant.hosts}:
         return f'{grant.user}: refused -- its [deploy] host {host} is not a login host of its grant {list(grant.hosts)}'
     return Target(host, deploy.get('root', DEFAULT_ROOT))
 
