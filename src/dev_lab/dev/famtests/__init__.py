@@ -196,6 +196,8 @@ WHAT IS HERE, one module per shared body:
 * :mod:`dev_lab.dev.famtests.injectedtext` -- INJECTED-TEXT-IS-PROGRESSIVE: every refusal a repo
   ships, its own doors filled in, fits :data:`dev_lab.dev.disclosure.BUDGETS`; a planted control.
 
+* :mod:`dev_lab.dev.famtests.lockpin` -- PIN on the forge: the checked-out commit commits ``uv.lock`` and every
+  hold below the newest names its reason (no pre-push row reads the lock, user ruling 2026-10-24).
 * :mod:`dev_lab.dev.famtests.branchset` -- ONE-BRANCH-PER-SESSION: origin carries only the declared
   branch set, and this box no undeclared branch origin already holds; unpushed work is reported, not
   refused. Generalises the per-consumer origin-branch pins of :mod:`~dev_lab.dev.famtests.visibility`.

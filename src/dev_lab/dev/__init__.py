@@ -156,9 +156,11 @@ are too unqualified to survive being flattened into a namespace this wide.
   selector: a judged key is cited, not re-run. It decides no push.
 * :mod:`dev_lab.dev.test_outcomes` -- the pytest plugin writing a Record of per-test cells
   (:mod:`lab_commons.outcomes`) per process, so a local run posts the same kind of part a cluster run does.
-* :mod:`dev_lab.dev.lockcheck` -- the ``lock`` pre-push row (the PIN half of PIN + FRESHNESS): a pushed
-  commit commits ``uv.lock`` and every hold below the newest declares its reason; freshness is the forge relock's.
+* :mod:`dev_lab.dev.lockcheck` -- the PIN reading (half of PIN + FRESHNESS): a commit commits ``uv.lock`` and
+  every hold below the newest declares its reason; judged on the forge by ``famtests.lockpin``, relocked by ``relock``.
 * :mod:`dev_lab.dev.relock` -- the serve tick relocks a stale integration lock through ONE pull request.
+* :mod:`dev_lab.dev.forgeheadgate` -- ``lock/fresh`` and ``branchset`` statuses on every open PR head,
+  each naming its fix.
 * :mod:`dev_lab.dev.lanepolicy` -- the branch names a repo declares in
   ``[tool.lab_commons.integrator]``, read by the queue, admission, the tick and the record attacher.
 * :mod:`dev_lab.dev.platformparts` -- a result COMPOSED of one part per need-set the suite derives
@@ -345,9 +347,7 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.breakglass` -- the one emergency bypass of INTEGRATION-TAKES-ONLY-FORGE-MERGES: a
   ``Break-Glass: <reason>`` trailer on every new commit, kept visible as an ``integration`` issue.
 * :mod:`dev_lab.dev.branchset` -- ONE-BRANCH-PER-SESSION: the DECLARED branch set, and what to merge or delete.
-* :mod:`dev_lab.dev.branchset_push` -- the same rule AT PUSH TIME: the hook that refuses an undeclared branch.
-* :mod:`dev_lab.dev.behindpush` -- BEHIND-IS-BOUNDED at push time: a branch more than the lane policy's
-  ``behind_max`` commits behind ``origin/<integration>`` is refused, naming ``forge sync``.
+* :mod:`dev_lab.dev.refspec` -- git's pre-push refspec lines, parsed once for every pre-push row that reads them.
 * :mod:`dev_lab.dev.branchnotices` -- FORGE NOTICES where a session acts on its PR (post-commit, pre-push,
   ``pr create``): that PR's open notices for the session, cached, read-only, bounded; never fails the verb.
 * :mod:`dev_lab.dev.sessionbranch` -- the pre-push guard of every declared session branch, local reads

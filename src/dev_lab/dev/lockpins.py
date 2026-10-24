@@ -2,8 +2,9 @@
 
 THE RULE (PIN + FRESHNESS, user ruling 2026-10-17). Every install is ``uv sync --frozen`` from the
 commit's own lock, so a commit's code and its exact dependencies are tested together; freshness of the
-lock itself is judged once, at PUSH, by :mod:`dev_lab.dev.lockcheck`. A run therefore asks one
-question: does this interpreter hold what the checkout's ``uv.lock`` pins? Never where a dependency's
+lock itself is the forge's (:mod:`dev_lab.dev.relock`, :mod:`dev_lab.dev.forgeheadgate`), its PIN
+:mod:`dev_lab.dev.famtests.lockpin`'s. A run asks one question: does this interpreter hold what the
+checkout's ``uv.lock`` pins? Never where a dependency's
 branch tip has moved since -- a commit locked before its dependency moved is still its own exact pair.
 
 THE CHECK, local by construction. Every installed distribution with a git origin carries its commit in

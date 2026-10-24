@@ -35,9 +35,8 @@ class Policy:
     #: INTEGRATION-IS-MERGES-ONLY holds for every first-parent commit of the integration branch after this sha
     #: (:mod:`dev_lab.dev.sessionbranch`); a push that CREATES the branch is refused while it is ``''``.
     merges_only_since: str = ''
-    #: A push of any other branch more than this many commits behind ``origin/<integration>`` is refused
-    #: (:mod:`dev_lab.dev.behindpush`); ``forge serve`` raises an ``integration`` alarm for a child branch
-    #: past it (:mod:`dev_lab.dev.forgeintegration`).
+    #: How many commits behind ``origin/<integration>`` a branch may sit: ``forge serve`` raises an
+    #: ``integration`` alarm for a child branch past it; no local push reads it (:mod:`dev_lab.dev.forgeintegration`).
     behind_max: int = 20
     #: INTEGRATION-TAKES-ONLY-FORGE-MERGES from this sha on: the forge merges a PR into the integration branch
     #: server-side once it is green (:mod:`dev_lab.dev.forgemerge`), and a client push adding any commit to

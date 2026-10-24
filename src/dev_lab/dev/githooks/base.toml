@@ -23,9 +23,10 @@
 # second-scale format check. Everything the forge already judges on the pushed sha is the forge's alone, and
 # a local copy only refused the same push twice: the tracked-tree scans (TRACKED-CITES-NO-EPHEMERAL,
 # SCRATCH-IS-NEVER-COMMITTED: dev_lab.dev.famtests.ephemeralrefs, dev_lab.dev.scratch), the branch set
-# (dev_lab.dev.famtests.branchset), the behind bound (an `integration` alarm, dev_lab.dev.forgeintegration)
-# and PR admission (`forge pr create`, dev_lab.dev.pradmit). A repo may still declare any of those modules
-# as a row of its own. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
+# (dev_lab.dev.famtests.branchset, dev_lab.dev.branchprune), the lock PIN (dev_lab.dev.famtests.lockpin) and its
+# FRESHNESS (dev_lab.dev.relock; user ruling 2026-10-24), the behind bound (an `integration` alarm,
+# dev_lab.dev.forgeintegration) and PR admission (`forge pr create`, dev_lab.dev.pradmit). No local half-gate
+# (a lock or behind bound read at push) remains. A finding the forge cannot see (an untracked stray file) is a post-commit hint.
 
 [[pre-commit]]
 id = "check-added-large-files"
@@ -114,14 +115,6 @@ run = ["python", "-m", "dev_lab.dev.mergeaudit"]
 [[pre-push]]
 id = "session-branch"
 run = ["python", "-m", "dev_lab.dev.sessionbranch"]
-always_run = true
-
-# PIN (user ruling 2026-10-17): a pushed commit commits uv.lock, and every hold below the newest declares its reason.
-# Git objects only, milliseconds. FRESHNESS is the forge's alone (user ruling 2026-10-22): no push resolves; the
-# forge relocks integration (dev_lab.dev.relock).
-[[pre-push]]
-id = "lock"
-run = ["python", "-m", "dev_lab.dev.lockcheck"]
 always_run = true
 
 # FORGE NOTICES WHERE A SESSION ACTS ON ITS PR (user ruling 2026-10-21): a pr/* push, and every commit on a pr/*

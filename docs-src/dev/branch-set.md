@@ -52,25 +52,14 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
   one holding unpushed work is returned and warned, never red, because it is the only copy.
 - `assert_the_planted_branchset_is_policed(tmp_path, trunk=)`: the planted control on a real bare origin.
 
-## The push-time check
+## Judged on the forge, never at push
 
-The branch set is the forge's to judge (toolchain plan P3, 2026-10-23): `assert_origin_branches_declared` reds an
-undeclared origin branch in the repo's own suite, and the pruner below alarms or deletes it. The family base hook
-table carries no push-time row. A repo that still wants the refusal at push declares the row itself
-(`run = ["python", "-m", "dev_lab.dev.branchset_push"]` under `[[tool.lab_commons.hooks.pre-push]]`). It judges every pushed `refs/heads/**` ref (`dev_lab.dev.branchset_push`, reading git's ref
-lines from stdin through the family hook runner). Each ref is judged by the declaration its OWN pushed commit carries
-(`<sha>:pyproject.toml`), never by the pushing checkout's working tree, so the verdict does not depend on
-which checkout pushes. Agent lanes are local: only the declared branches reach origin.
-
-| push | verdict |
-|---|---|
-| a branch the set names | allowed |
-| a branch the set does not name | refused, naming the branch and both remedies |
-| a deletion | allowed: deleting a stray branch is the remedy |
-| a tag, or a machine ref | allowed |
-| a pushed commit with no readable branch set | refused: a guard that cannot judge must not read as one that acquitted |
-
-There is no bypass flag; the way to push a new long-lived branch is to add it to `sessions`.
+The branch set is the forge's alone (toolchain plan P3; user ruling 2026-10-24): `assert_origin_branches_declared`
+reds an undeclared origin branch in the repo's own suite, and the pruner below alarms or deletes it. No pre-push
+row reads the branch set, and none can be declared: the push-time module is retired. Every open PR head into
+integration carries a `branchset` status (`dev_lab.dev.forgeheadgate`): `failure` when its branch is not admitted
+by the set its own commit declares, naming the ephemeral namespaces and `sessions`. Agent lanes are local: only
+the declared branches reach origin.
 
 ## Pruning origin
 

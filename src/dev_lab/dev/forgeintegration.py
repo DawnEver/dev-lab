@@ -45,7 +45,7 @@ from lab_commons.compute.model import Schedule
 from lab_commons.log import emit
 from lab_commons.outcomes import Conclusion
 
-from dev_lab.dev import forgeautosync, forgenotice
+from dev_lab.dev import forgeautosync, forgeheadgate, forgenotice
 from dev_lab.dev.branchprune import listing
 from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.forge import _GIT, _GIT_TIMEOUT_S, fetch_origin
@@ -280,11 +280,13 @@ def tick(
     host: str = '',
     clock: Callable[[Client], datetime] = forge_now,
     sync: Callable[..., str] = forgeautosync.sync,
+    gate: Callable[..., list[str]] = forgeheadgate.judge,
 ) -> Ticked:
     """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes.
 
     Given the serving *host* and ``auto_sync`` declared, a PR the forge did not merge is auto-synced
-    (:mod:`dev_lab.dev.forgeautosync`); ``forge integration`` passes no host and only reports.
+    (:mod:`dev_lab.dev.forgeautosync`), and every open PR head carries its lock and branch-set statuses
+    (:mod:`dev_lab.dev.forgeheadgate`); ``forge integration`` passes no host and only reports.
     """
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
@@ -313,6 +315,8 @@ def tick(
             )  # fmt: skip
             if line is not None:
                 one = dataclasses.replace(one, text=f'{one.text}\n- {line}', summary=f'{one.summary}; {line}')
+        if host and child.pr is not None:
+            lines += [f'{child.branch} #{child.pr}: {line}' for line in gate(root, origin, child.head, child.branch)]
         if child.pr is not None:
             one = dataclasses.replace(one, text=_noticed(root, child, policy, one, number=child.pr, now=now))
         said.append((child, one))
