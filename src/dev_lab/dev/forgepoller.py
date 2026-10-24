@@ -64,9 +64,11 @@ def _leases(comments: Sequence[Comment]) -> list[tuple[Comment, Lease]]:
         fields = _FIELDS.search(comment.body) if line in comment.body else None
         if fields is not None:
             try:
-                found.append((comment, Lease(fields['holder'], datetime.fromisoformat(fields['until']))))
+                until = datetime.fromisoformat(fields['until'])
             except ValueError:
                 continue
+            if until.tzinfo is not None:  # a naive time cannot be judged against the forge's clock: unreadable
+                found.append((comment, Lease(fields['holder'], until)))
     return found
 
 

@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from dev_lab.dev.forgehosts import HOSTS_MARKER, HOSTS_TITLE
 from dev_lab.dev.forgepoller import elect, lease_of
-from dev_lab.dev.forgepulls import comment_list
+from dev_lab.dev.forgepulls import Marker, comment_list, marker
 from tests._forge_state import NOW_HTTP, StateForge
 
 TTL = timedelta(minutes=15)
@@ -88,3 +88,16 @@ def test_the_oldest_lease_wins_a_race_to_create_it_and_the_loser_drops_its_own()
 
 def test_a_repo_with_no_hosts_issue_polls_here() -> None:
     assert elect(StateForge(), host='ada/alice', ttl=TTL) == (True, 'ada/alice')
+
+
+def test_a_lease_with_a_naive_until_is_unreadable_never_a_crash() -> None:
+    """A lease comment whose ``until`` carries no offset is skipped like any unreadable one.
+
+    PLANTED CONTROL: the same comment with ``+00:00`` is a live lease another host defers to.
+    """
+    forge, number = _forge()
+    forge.issue_comment(number, f'{marker(Marker.POLLER)}\nholder: ada/mallory\nuntil: 2099-01-01T00:00:00')
+    assert elect(forge, host='ada/alice', ttl=TTL) == (True, 'ada/alice')
+    forge, number = _forge()
+    forge.issue_comment(number, f'{marker(Marker.POLLER)}\nholder: ada/mallory\nuntil: 2099-01-01T00:00:00+00:00')
+    assert elect(forge, host='ada/alice', ttl=TTL) == (False, 'ada/mallory')
