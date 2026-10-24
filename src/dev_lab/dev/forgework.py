@@ -193,7 +193,8 @@ class Client:
         auth = _forge.authorization(self.username, self.token, backend.auth_scheme)
         conn = self.transport(host or backend.host(self.forge), self.timeout)
         try:
-            sent = {'Authorization': auth, 'Content-Type': content_type} | dict(backend.headers)
+            sent = {'Authorization': auth, 'Content-Type': content_type, 'User-Agent': _forge.user_agent(self.forge)}
+            sent |= dict(backend.headers)
             conn.request(method, path, body=data, headers=sent)
             response = conn.getresponse()
             self.answered = response.getheader('Date') or self.answered
