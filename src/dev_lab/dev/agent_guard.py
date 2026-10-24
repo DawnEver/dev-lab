@@ -114,8 +114,27 @@ STRAY_COMMAND: Final = (
     + '; do [ -x "$p" ] && exec "$p" -m dev_lab.dev.codeplace stray; done; exit 0'
 )
 
-#: The events the stray census is wired on: after every shell call, and when the agent stops.
-STRAY_EVENTS: Final = ('PostToolUse', 'Stop')
+
+@dataclass(frozen=True, slots=True)
+class Wire:
+    """One hook the guard owns: its event, its command, the text marking a hook OURS, and its home.
+
+    ``on_shells`` homes it on the matcher naming every shell tool; otherwise on a matcher-less entry.
+    """
+
+    event: str
+    command: str
+    marker: str
+    on_shells: bool
+
+
+#: THE WIRING, ONE TABLE: what :func:`wire_settings` writes is what :func:`guard_installation` reads.
+#: The engine before every shell call; the STRAY-FILE-REFUSED census after every one, and at stop.
+WIRING: Final = (
+    Wire('PreToolUse', HOOK_COMMAND, Path(ENGINE_REL).name, on_shells=True),
+    Wire('PostToolUse', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=True),
+    Wire('Stop', STRAY_COMMAND, 'dev_lab.dev.codeplace stray', on_shells=False),
+)
 
 #: The parts, in the order a reader should fix them: an engine with no rules refuses nothing, and
 #: rules with no wiring are read by nobody.
@@ -258,6 +277,18 @@ def _hook_entries(settings: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _no_engine_hook(settings: dict[str, Any]) -> tuple[str, str]:
+    """No full-shell hook runs the engine: STALE when one runs it on a partial matcher, else ABSENT."""
+    partial = [
+        str(entry.get('matcher'))
+        for entry in settings.get('hooks', {}).get('PreToolUse', []) or []
+        if _tools(entry) and any(_is_ours(hook) for hook in entry.get('hooks', []) or [])
+    ]
+    if partial:
+        return STALE, f'the engine runs on matcher {partial[0]!r}, which leaves a shell tool unjudged'
+    return ABSENT, f'no PreToolUse {_MATCHER} hook runs {Path(ENGINE_REL).name}'
+
+
 def _inspect_wiring(path: Path) -> tuple[str, str]:
     if not path.exists():
         return ABSENT, f'no {SETTINGS_REL} -- nothing runs the engine, whatever is installed beside it'
@@ -268,17 +299,13 @@ def _inspect_wiring(path: Path) -> tuple[str, str]:
     commands = [str(hook.get('command', '')) for hook in _hook_entries(settings)]
     ours = [command for command in commands if Path(ENGINE_REL).name in command]
     if not ours:
-        partial = [
-            str(entry.get('matcher'))
-            for entry in settings.get('hooks', {}).get('PreToolUse', []) or []
-            if _tools(entry) and any(_is_ours(hook) for hook in entry.get('hooks', []) or [])
-        ]
-        if partial:
-            return STALE, f'the engine runs on matcher {partial[0]!r}, which leaves a shell tool unjudged'
-        return ABSENT, f'no PreToolUse {_MATCHER} hook runs {Path(ENGINE_REL).name}'
-    if HOOK_COMMAND in ours:
-        return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
-    return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
+        return _no_engine_hook(settings)
+    if HOOK_COMMAND not in ours:
+        return STALE, f'runs the engine with other arguments: {ours[0]!r}, not {HOOK_COMMAND!r}'
+    unwired = _unwired(settings)
+    if unwired:
+        return STALE, f'the stray census is not wired on {", ".join(unwired)} -- re-install to upgrade'
+    return INSTALLED, f'PreToolUse {_MATCHER}: {HOOK_COMMAND}'
 
 
 def guard_installation(repo: Path) -> GuardReport:
@@ -303,53 +330,54 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
     full shell matcher are kept, and our own hook there is replaced in place.
     """
     out = json.loads(json.dumps(settings))  # a deep copy through the same encoder that writes it
-    hooks = out.setdefault('hooks', {})
-    pre = hooks.setdefault('PreToolUse', [])
-    ours = {'type': 'command', 'command': HOOK_COMMAND}
-    for entry in pre:
-        if _tools(entry) and _tools(entry) != frozenset(SHELL_TOOLS):
-            entry['hooks'] = [hook for hook in entry.get('hooks', []) or [] if not _is_ours(hook)]
-    pre[:] = [entry for entry in pre if not isinstance(entry, dict) or entry.get('hooks')]
-    for entry in pre:
-        if _tools(entry) != frozenset(SHELL_TOOLS):
-            continue
-        commands = entry.setdefault('hooks', [])
-        for index, hook in enumerate(commands):
-            if _is_ours(hook):
-                commands[index] = ours
-                return out
-        commands.append(ours)
-        return _wire_stray(out)
-    pre.append({'matcher': _MATCHER, 'hooks': [ours]})
-    return _wire_stray(out)
+    for wire in WIRING:
+        _wire(out.setdefault('hooks', {}).setdefault(wire.event, []), wire)
+    return out
 
 
-def _is_stray(hook: object) -> bool:
-    return isinstance(hook, dict) and 'dev_lab.dev.codeplace stray' in str(hook.get('command', ''))
+def _mine(hook: object, wire: Wire) -> bool:
+    return isinstance(hook, dict) and wire.marker in str(hook.get('command', ''))
 
 
-def _wire_stray(settings: dict[str, Any]) -> dict[str, Any]:
-    """*settings* with the stray census on :data:`STRAY_EVENTS`, our copy replaced in place, others kept."""
-    stray = {'type': 'command', 'command': STRAY_COMMAND}
-    for event in STRAY_EVENTS:
-        entries = settings['hooks'].setdefault(event, [])
-        mine = [
-            (entry, index)
-            for entry in entries
-            if isinstance(entry, dict)
-            for index, hook in enumerate(entry.get('hooks', []) or [])
-            if _is_stray(hook)
+def _home(entry: object, wire: Wire) -> bool:
+    """Whether *entry* is where *wire* lives: the full shell matcher, or any entry for a matcher-less wire."""
+    return isinstance(entry, dict) and (_tools(entry) == frozenset(SHELL_TOOLS) if wire.on_shells else True)
+
+
+def _wire(entries: list[Any], wire: Wire) -> None:
+    """*wire* present exactly once in *entries*: moved off a partial shell matcher, else replaced in place."""
+    hook = {'type': 'command', 'command': wire.command}
+    if wire.on_shells:
+        stripped = [
+            e for e in entries if _tools(e) and not _home(e, wire) and any(_mine(h, wire) for h in e.get('hooks') or [])
         ]
-        if mine:
-            entry, index = mine[0]
-            entry['hooks'][index] = stray
-            continue
-        shell = [e for e in entries if event == 'PostToolUse' and _tools(e) == frozenset(SHELL_TOOLS)]
-        if shell:
-            shell[0]['hooks'].append(stray)
-        else:
-            entries.append({'matcher': _MATCHER, 'hooks': [stray]} if event == 'PostToolUse' else {'hooks': [stray]})
-    return settings
+        for entry in stripped:
+            entry['hooks'] = [h for h in entry['hooks'] if not _mine(h, wire)]
+        entries[:] = [e for e in entries if not any(e is s for s in stripped) or e['hooks']]
+    homes = [e for e in entries if _home(e, wire)]
+    for entry in homes:
+        found = [i for i, h in enumerate(entry.get('hooks', []) or []) if _mine(h, wire)]
+        if found:
+            entry['hooks'][found[0]] = hook
+            return
+    if wire.on_shells and homes:
+        homes[0].setdefault('hooks', []).append(hook)
+    else:
+        entries.append({'matcher': _MATCHER, 'hooks': [hook]} if wire.on_shells else {'hooks': [hook]})
+
+
+def _unwired(settings: dict[str, Any]) -> list[str]:
+    """The events of :data:`WIRING` past the engine whose exact command is not at its home."""
+    return [
+        wire.event
+        for wire in WIRING[1:]
+        if not any(
+            isinstance(h, dict) and h.get('command') == wire.command
+            for e in settings.get('hooks', {}).get(wire.event, []) or []
+            if _home(e, wire)
+            for h in e.get('hooks', []) or []
+        )
+    ]
 
 
 def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:

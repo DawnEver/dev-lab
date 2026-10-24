@@ -330,6 +330,30 @@ def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() ->
     assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
 
 
+def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census() -> None:
+    """Every exit of the wiring wires the census: our PreToolUse hook already present is the upgrade path."""
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
+    after = agent_guard.wire_settings(old)
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+
+
+def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
+    """The report reads the SAME wiring table the install writes, so a pre-census settings file is STALE."""
+    settings = repo / agent_guard.SETTINGS_REL
+    settings.parent.mkdir(parents=True)
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
+    settings.write_text(json.dumps(old), encoding='utf-8')
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE, part.detail
+    assert 'PostToolUse' in part.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
 def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
     """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
     bash = shutil.which('bash')
