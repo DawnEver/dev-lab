@@ -109,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit('merge-resolution: pass exactly the commit message file (git hands it to commit-msg)', err=True)
         return 1
     try:
-        root = Path(_door.run([_GIT, 'rev-parse', '--show-toplevel'], capture_output=True, text=True,
+        root = Path(_door.run([_GIT, 'rev-parse', '--show-toplevel'], capture_output=True, text=True, encoding='utf-8',
                               check=True).stdout.strip())  # fmt: skip
         problems = pending(root, Path(args[0]).read_text(encoding='utf-8', errors='replace'))
     except (MergeAuditError, OSError, subprocess.CalledProcessError) as error:

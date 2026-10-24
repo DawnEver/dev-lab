@@ -337,6 +337,12 @@ def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -
         pytest.fail('no bash on this host: the hook command is a bash line')
     env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
     done = subprocess.run(
-        [bash, '-c', agent_guard.STRAY_COMMAND], input='{}', capture_output=True, text=True, env=env, check=False
+        [bash, '-c', agent_guard.STRAY_COMMAND],
+        input='{}',
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        env=env,
+        check=False,
     )
     assert (done.returncode, done.stdout) == (0, ''), done.stderr

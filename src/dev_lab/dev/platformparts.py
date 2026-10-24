@@ -123,7 +123,6 @@ __all__ = [
     'part_of',
     'parts_of',
     'producer_argv',
-    'review_hold',
     'run_tag',
     'select',
     'split',
@@ -135,11 +134,13 @@ __all__ = [
 CONTEXT_PREFIX: Final = 'tests/'
 
 #: The ADVISORY review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the
-#: parts, and never a part -- :func:`parts_of` skips it, so no promotion or push admission waits on it.
+#: parts, and never a part -- :func:`parts_of` skips it, so no promotion or push admission waits on it; the one
+#: review state a merge waits on is :func:`dev_lab.dev.forgemerge.review_hold`'s.
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
 
 #: The ``pending`` review description of a head whose diff is over ``max_diff_bytes``: the ONE review state a
-#: merge waits on (:func:`review_hold`), so an unreviewable head is never advisory-skipped into an auto-merge.
+#: merge waits on (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never
+#: advisory-skipped into an auto-merge.
 OVER_CAP: Final = 'over the cap: review in slices, then post success'
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
@@ -402,14 +403,6 @@ def parts_of(statuses: Sequence[CommitStatus]) -> tuple[dict[str, Part], tuple[s
             else {},
         )
     return parts, tuple(problems)
-
-
-def review_hold(statuses: Sequence[CommitStatus]) -> str | None:
-    """Why a merge of the commit waits on its review, or ``None``: only a latest :data:`OVER_CAP` hold waits."""
-    latest = next((one for one in statuses if one.context == REVIEW_CONTEXT), None)
-    if latest is None or latest.state != 'pending' or not latest.description.startswith(OVER_CAP):
-        return None
-    return f'{REVIEW_CONTEXT} is {latest.description!r}'
 
 
 def derived(statuses: Sequence[CommitStatus]) -> tuple[str, ...]:
