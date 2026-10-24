@@ -395,7 +395,10 @@ function liveRunRefusal(target, sessionRoot) {
   if (done.status === 0) return '';
   const said = String(done.stdout || '').trim();
   if (done.status === 1 && said) return said;
-  // A Python that cannot start or import the module also exits 1, with nothing on stdout: not an answer.
+  // A venv without the kit is the same case as no interpreter: nobody to ask, so no refusal. A checkout
+  // mid-adoption (its lock not yet carrying dev-lab) must stay workable.
+  if (/No module named '?dev_lab/.test(String(done.stderr || ''))) return '';
+  // A Python that cannot start, or that imports the module and crashes, is not an answer.
   const why = done.error ? done.error.message : `exit ${done.status}${said ? '' : ', no answer'}`;
   return `TREE-HAS-A-LIVE-RUN: could not confirm that no run executes from ${target} (${why}); re-run when ` +
     `python -m dev_lab.dev.liverun --tree ${target} answers.`;
