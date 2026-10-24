@@ -56,7 +56,7 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 
 ## Auto-sync: the forge syncs a behind PR head
 
-User ruling 2026-10-21: integration is automatic. Declared, each `forge serve` tick (the integration step,
+User ruling 2026-10-21: integration is automatic. Wherever the forge merges PRs, each `forge serve` tick (the integration step,
 `dev_lab.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
 not contain `origin/<integration>`, and merges integration INTO the head in a worktree under the git directory:
 a merge commit (`Merged-Branch: <integration>`, first parent the head), never a rebase or a force, pushed under
@@ -74,7 +74,7 @@ the dependency door. The new head gets its parts by the normal path, then merges
 
 ```toml
 [tool.lab_commons.integrator]
-auto_sync = true            # undeclared: off
+pr_merges_since = "<sha>"   # auto-merge on; auto-sync rides it, no switch of its own
 auto_sync_quiet = "10 min"  # the default
 ```
 
