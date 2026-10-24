@@ -49,7 +49,17 @@ from typing import Any, Final
 import lab_commons.launch as _door
 
 from dev_lab.dev import forge as _forge
-from dev_lab.dev._forge_journal import LOOKBACK, Durable, Journal, Probe, Write, journal_for, since, write_key
+from dev_lab.dev._forge_journal import (
+    LOOKBACK,
+    Durable,
+    Journal,
+    Probe,
+    Write,
+    journal_for,
+    outbox_dir,
+    since,
+    write_key,
+)
 from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, is_pull, pull_of
 from dev_lab.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
 from dev_lab.dev.forge import (
@@ -176,6 +186,9 @@ class Client:
     #: Given the refused ``(username, token)``, the credential git's store hands out AFTER refreshing it
     #: (:func:`dev_lab.dev.forgecred.refresh_credential`); :func:`stored_client` sets it. Asked once per client.
     refresh: Callable[[str, str], tuple[str, str]] | None = None
+    #: Where this repository's read caches live (:func:`dev_lab.dev.forgepulls.issues`); :func:`client_for`
+    #: sets it -- ``None`` reads everything afresh.
+    cache_dir: Path | None = None
     #: Whether :attr:`refresh` was spent, and whether it left the store empty.
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
     _gone: bool = dataclasses.field(default=False, init=False, repr=False)
@@ -398,7 +411,9 @@ def client_for(
     """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp."""
     forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
-    return stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root))
+    built = stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root))
+    built.cache_dir = outbox_dir(root)
+    return built
 
 
 def stored_client(

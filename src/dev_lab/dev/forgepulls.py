@@ -17,9 +17,13 @@ names was written by a retired writer, and ``forge tidy`` deletes its comment (:
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import urllib.parse
 from collections.abc import Mapping
+from datetime import UTC, timedelta
+from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
 
@@ -27,6 +31,8 @@ from dev_lab.dev._forge_journal import Durable, Probe, since
 from dev_lab.dev.forgework import Comment, ForgeCallFailed, PullRequest, comment_of, is_pull, pull_of
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from dev_lab.dev.forgework import Client
 
 __all__ = [
@@ -34,6 +40,7 @@ __all__ = [
     'Marker',
     'comment_list',
     'comment_upsert',
+    'forget_issue',
     'issues',
     'marker',
     'marker_kinds',
@@ -68,10 +75,70 @@ def pages(client: Client, path: str, query: Mapping[str, str]) -> list[Any]:
 
 
 def issues(client: Client, *, state: str = 'all') -> tuple[Mapping[str, Any], ...]:
-    """Every issue in *state*, raw, off the listing (never the lagging search index), pulls excluded."""
-    return tuple(
-        raw for raw in pages(client, f'{client.repo}/issues', {'state': state, 'type': 'issues'}) if not is_pull(raw)
-    )
+    """Every issue in *state*, raw, off the listing (never the lagging search index), pulls excluded, oldest first.
+
+    A client with a :attr:`~dev_lab.dev.forgework.Client.cache_dir` reads only the issues UPDATED since its
+    last read (``since=``, both forges) and merges them into the cache (:func:`_cached_issues`); without one,
+    every issue in *state* is read afresh.
+    """
+    if client.cache_dir is None:
+        listed = pages(client, f'{client.repo}/issues', {'state': state, 'type': 'issues'})
+        held = {int(raw['number']): raw for raw in listed if not is_pull(raw)}
+    else:
+        held = _cached_issues(client, client.cache_dir)
+    return tuple(held[number] for number in sorted(held) if state in {'all', held[number].get('state')})
+
+
+#: How far before the forge's clock at a read the next read starts, so an issue updated while it ran is read again.
+ISSUE_OVERLAP: Final = timedelta(minutes=2)
+
+
+def _cache_file(client: Client, home: Path) -> Path:
+    return home / f'issues-{client.forge.owner}-{client.forge.repo}.json'
+
+
+def _cached_issues(client: Client, home: Path) -> dict[int, Mapping[str, Any]]:
+    """The cache of every issue, refreshed by one ``since=`` read of what changed after its cursor.
+
+    THE INCIDENT (2026-10-24): every tick of five accounts' hosts re-read every issue ever opened, page by
+    page -- 958 calls and 2775 s of server time in ten minutes on one repository. The cursor is the forge's
+    own clock (the ``Date`` of the read) less :data:`ISSUE_OVERLAP`, so a host's skewed clock cannot skip an
+    update. A cold or unreadable cache reads in full once. The file is replaced whole, so a concurrent reader
+    sees the old cache or the new one; the writer that loses a race leaves the earlier cursor, read again.
+    """
+    path = _cache_file(client, home)
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8'))
+        cursor, held = str(saved['cursor']), {int(key): raw for key, raw in saved['issues'].items()}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        cursor, held = '', {}
+    query = {'state': 'all', 'type': 'issues'} | ({'since': cursor} if cursor else {})
+    listed = pages(client, f'{client.repo}/issues', query)
+    held |= {int(raw['number']): raw for raw in listed if not is_pull(raw)}
+    if client.answered:
+        read_at = parsedate_to_datetime(client.answered).astimezone(UTC) - ISSUE_OVERLAP
+        _save(path, {'cursor': read_at.strftime('%Y-%m-%dT%H:%M:%SZ'), 'issues': held})
+    return held
+
+
+def _save(path: Path, saved: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    spare = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+    spare.write_text(json.dumps(saved), encoding='utf-8')
+    spare.replace(path)
+
+
+def forget_issue(client: Client, number: int) -> None:
+    """Drop DELETED issue *number* from the cache: a ``since=`` read never says an issue is gone."""
+    if client.cache_dir is None:
+        return
+    path = _cache_file(client, client.cache_dir)
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return
+    saved['issues'].pop(str(number), None)
+    _save(path, saved)
 
 
 class Marker(StrEnum):

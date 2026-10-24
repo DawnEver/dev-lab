@@ -11,6 +11,8 @@ caused the 2026-10-12 flood: every plain issue carries ``"pull_request": null``.
 from __future__ import annotations
 
 import urllib.parse
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from dev_lab.dev.forge import Forge
@@ -38,6 +40,10 @@ class StateForge(Client):
         self.private: bool | None = True  # the repository's visibility, as the forge's `private` flag answers it
         self.login = 'a'  # who the token authenticates as: every comment it writes is authored by it
         self._next_comment = 1000
+        #: The forge's clock, the ``Date`` of every answer; an issue written is updated at it.
+        self.now_http = NOW_HTTP
+        #: Every call as ``METHOD path?query``, in order: what a test counts requests by.
+        self.asked: list[str] = []
 
     def _number(self) -> int:
         """Issues and pulls share one number space, as on both forges."""
@@ -71,9 +77,13 @@ class StateForge(Client):
             'pull_request': None,
             'labels': [],
             'created_at': '2026-10-12T12:00:00+00:00',
+            'updated_at': self._updated(),
         } | extra
         self.comments[number] = []
         return number
+
+    def _updated(self) -> str:
+        return parsedate_to_datetime(self.now_http).astimezone(UTC).isoformat()
 
     def titled(self, title: str, state: str = 'open') -> list[int]:
         return [n for n, i in self.issues_by_number.items() if i['title'] == title and i['state'] == state]
@@ -110,8 +120,13 @@ class StateForge(Client):
             failed = Attempt(1, 502, 'bad gateway', Diagnosis.UNCLASSIFIED)
             raise ForgeCallFailed(Report(('GET', 'issues'), (failed,), 1))
         state = query.get('state', 'open')
+        since = datetime.fromisoformat(query['since']) if 'since' in query else None
         newest = sorted(self.issues_by_number.items(), reverse=True)
-        listed = [i | {'comments': len(self.comments[n])} for n, i in newest if state in ('all', i['state'])]
+        listed = [
+            i | {'comments': len(self.comments[n])}
+            for n, i in newest
+            if state in ('all', i['state']) and (since is None or datetime.fromisoformat(i['updated_at']) >= since)
+        ]
         return self._page(listed, query)
 
     def _comment(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
@@ -164,13 +179,14 @@ class StateForge(Client):
         del self.issues_by_number[number]
 
     def _edit_issue(self, number: int, body: dict[str, Any]) -> dict[str, Any]:
-        self.issues_by_number[number] |= body
+        self.issues_by_number[number] |= body | {'updated_at': self._updated()}
         return self.issues_by_number[number]
 
     def call(self, method: str, path: str, body: object = None, durable: object = None) -> object:
         """Answer from the in-memory state, as gitea would; a create needs no read-back here."""
         del durable
-        self.answered = NOW_HTTP
+        self.answered = self.now_http
+        self.asked.append(f'{method} {path}')
         route, _, raw_query = path.partition('?')
         query = dict(urllib.parse.parse_qsl(raw_query))
         sent: dict[str, Any] = body if isinstance(body, dict) else {}
