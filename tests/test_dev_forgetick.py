@@ -894,6 +894,9 @@ def test_the_kit_declaring_a_table_its_server_does_not_know_is_refused_on_its_ow
     only host alarms. No host serving the kit can know a table before it merges.
 
     PLANTED CONTROL: the test two above -- the same unknown table in a CONSUMER's declaration waits, unposted.
+
+    The planted kit is ``dev-lab``: since the lab-commons cut-over (1614022, relocked here at 2235c51) the
+    SERVING kit is dev-lab (``lab_commons.hpc.declared._KIT``), and a lab-commons commit is a consumer's.
     """
     repo, tips = _origin(tmp_path)
     bad = _declare(repo, tips, '[project]\nname = "dev-lab"\n' + PRODUCE + '[tool.lab_commons.tomorrow]\n')

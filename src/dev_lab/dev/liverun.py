@@ -25,7 +25,7 @@ WHAT IS NOT A RUN, each decided by evidence:
 * A process younger than :data:`RUN_FLOOR_S`. Claude Code starts every matching hook of a tool call at
   once, each through the checkout's own interpreter; a hook lives for well under a second, a run for
   minutes. A run started within the floor is caught by the next tool call.
-* A multiprocessing worker whose parent is gone (:data:`_SPAWN_WORKER`). It serves its parent through a pipe,
+* A multiprocessing worker whose parent is gone (:data:`SPAWN_WORKER`). It serves its parent through a pipe,
   so without the parent it can never advance; it only holds the cwd it inherited. Measured 2026-10-24: two
   day-old spawn workers of a dead pid sat in a motronics worktree and refused every mutation there.
 
@@ -59,6 +59,7 @@ __all__ = [
     'NOT_THE_TREE',
     'RULE_ID',
     'RUN_FLOOR_S',
+    'SPAWN_WORKER',
     'checkout_of',
     'env_in_use',
     'executing_from',
@@ -86,7 +87,7 @@ _DRIVE: Final = re.compile(r'^/([a-zA-Z])/')
 RUN_FLOOR_S: Final = 5.0
 
 #: The command line multiprocessing gives a spawned or forkserver child: it advances only through its parent.
-_SPAWN_WORKER: Final = re.compile(r'--multiprocessing-fork|multiprocessing\.(?:spawn|forkserver)\b')
+SPAWN_WORKER: Final = re.compile(r'--multiprocessing-fork|multiprocessing\.(?:spawn|forkserver)\b')
 
 type Census = Callable[[], Iterable[Process]]
 
@@ -150,7 +151,7 @@ def _others(table: Sequence[Process], inside: Callable[[Process], bool], me: int
         and one.executable
         and inside(one)
         and not kin(one)
-        and not (_SPAWN_WORKER.search(one.command_line) and one.ppid not in by_pid)
+        and not (SPAWN_WORKER.search(one.command_line) and one.ppid not in by_pid)
         and (one.age_s is None or one.age_s >= RUN_FLOOR_S)
     )
 

@@ -46,7 +46,7 @@ from dev_lab.dev.forgereview import (
 from dev_lab.dev.forgereview_findings import UnknownSchemaVersion, parse_findings
 from dev_lab.dev.forgestatus import CommitStatus, status_list
 from dev_lab.dev.lanepolicy import Policy
-from dev_lab.dev.platformparts import standing
+from dev_lab.dev.platformparts import OVER_CAP, standing
 
 _DECLARED = Review(command=('reviewer', '--range', RANGE_FIELD, '--model', 'm'))
 _RULES = '# Rules\n\n- NEVER-DO-X: never do x.\n'
@@ -421,7 +421,8 @@ def test_a_diff_over_the_cap_is_not_sent_and_says_so_once(tmp_path: Path) -> Non
     assert command.ran == []
     (status,) = status_list(forge, head)
     assert status.context == REVIEW_CONTEXT
-    assert 'cap' in status.description
+    assert status.state == 'pending'
+    assert status.description.startswith(OVER_CAP)
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert len(forge.statuses[head]) == 1
 
@@ -470,6 +471,20 @@ def test_the_review_status_is_not_a_part_so_it_never_gates_auto_merge(tmp_path: 
     statuses = (passed, _status(REVIEW_CONTEXT, 'failure', 'advisory review'))
     found = decide(work, Policy(pr_merges_since='0' * 40), branch='pr/x', number=1, head=head, statuses=statuses)
     assert found.ready, found.missing
+
+
+def test_an_over_cap_head_holds_the_merge_until_its_sliced_review_posts_success(tmp_path: Path) -> None:
+    """An unreviewed over-cap head never auto-merges; PLANTED control: a success review releases it."""
+    passed = _status('tests/base', 'success', 'scope=full ran=3 hands=-')
+    work, head = _work(tmp_path)
+    policy = Policy(pr_merges_since='0' * 40)
+    held = (_status(REVIEW_CONTEXT, 'pending', f'{OVER_CAP} (9 bytes > max_diff_bytes=5)'), passed)
+    found = decide(work, policy, branch='pr/x', number=1, head=head, statuses=held)
+    assert not found.ready
+    assert any(OVER_CAP in line for line in found.missing), found.missing
+    assert standing(held, head='h').result is Conclusion.PASS, 'the hold is a merge wait, never a part'
+    released = (_status(REVIEW_CONTEXT, 'success', 'reviewed in slices'), passed)
+    assert decide(work, policy, branch='pr/x', number=1, head=head, statuses=released).ready
 
 
 # --- the declaration ---------------------------------------------------------------------------------

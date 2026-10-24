@@ -56,7 +56,7 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 
 ## Auto-sync: the forge syncs a behind PR head
 
-User ruling 2026-10-21: integration is automatic. Declared, each `forge serve` tick (the integration step,
+User ruling 2026-10-21: integration is automatic. Wherever the forge merges PRs, each `forge serve` tick (the integration step,
 `dev_lab.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
 not contain `origin/<integration>`, and merges integration INTO the head in a worktree under the git directory:
 a merge commit (`Merged-Branch: <integration>`, first parent the head), never a rebase or a force, pushed under
@@ -74,7 +74,7 @@ the dependency door. The new head gets its parts by the normal path, then merges
 
 ```toml
 [tool.lab_commons.integrator]
-auto_sync = true            # undeclared: off
+pr_merges_since = "<sha>"   # auto-merge on; auto-sync rides it, no switch of its own
 auto_sync_quiet = "10 min"  # the default
 ```
 
@@ -122,10 +122,12 @@ A steward runs no test, merges no branch by hand, and pushes nothing to `integra
 into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
 `<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 2, read by
 `dev_lab.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
-of the findings and a `tests/review` commit status. **It gates nothing**: `tests/review` is never a part, so
-the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second
-tick on the same head runs nothing and posts nothing; a new head is reviewed afresh. A diff over the cap is
-never reviewed (`tests/review` says so); a failed command posts `error` and is not retried on that head.
+of the findings and a `tests/review` commit status. **It gates nothing but one state**: `tests/review` is
+never a part, so `integrate promote` and push admission never wait on it, and the forge's auto-merge waits
+only on a diff over the cap: that head is not reviewed by the command but HELD (`pending`, `over the cap:
+review in slices, then post success`) until a session reviews it in slices and posts `success`, so an
+unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
+nothing; a new head is reviewed afresh. A failed command posts `error` and is not retried on that head.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
 through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).

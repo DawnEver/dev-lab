@@ -162,6 +162,7 @@ _ENFORCED = {
         guard('tests/test_dev_runcache.py'),
     ),
     'MERGE-DEVIATIONS-NAMED': (guard('tests/test_dev_mergeaudit.py'),),
+    'MERGE-RESOLUTION-DECLARED': (guard('tests/test_dev_mergeresolution.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
     'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
     # Incident 2026-10-17 (Ada): a redeploy from journal schema 1 to 2 under 17 live schema-1 runs, refused

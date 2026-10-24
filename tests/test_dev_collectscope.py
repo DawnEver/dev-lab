@@ -184,8 +184,11 @@ def test_every_alias_row_is_reached_by_the_family_scan() -> None:
 
     RE-TAKEN 2026-10-01: ``_pytest`` -> ``pytest``, reached by consumer-b's tier-partition test importing
     pytest's expression parser, which the residue had been reporting as an undeclared transitive.
+
+    RE-TAKEN 2026-10-23: ``aesim`` -> ``aesim-simba``, reached by motronics' guarded SIMBA imports; the
+    ``simba`` extra declares ``aesim-simba``, and the residue had been reporting ``aesim`` as unresolved.
     """
-    expected = {'OCP', 'PIL', '_pytest', 'cv2', 'pdfminer', 'pywintypes', 'win32com', 'yaml'}
+    expected = {'OCP', 'PIL', '_pytest', 'aesim', 'cv2', 'pdfminer', 'pywintypes', 'win32com', 'yaml'}
     assert set(ALIASES) == expected, sorted(ALIASES)
     for name, suppliers in ALIASES.items():
         assert name not in suppliers, f'{name} needs no alias: it already spells its own distribution'
