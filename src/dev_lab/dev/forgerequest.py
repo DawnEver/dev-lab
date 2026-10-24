@@ -29,7 +29,9 @@ THE ONE PRODUCER THAT TAKES ARGUMENTS IS THE REPOSITORY'S OWN TEST PRODUCER (D5,
 ``paths = ["tests/test_a.py", ...]`` and NOTHING else: each must be a test file (``.py``) that exists at the
 sha under the repository's declared test roots (``[tool.pytest.ini_options] testpaths``) -- no glob, no
 option, nothing argv-looking -- and it runs as the declared ``[tool.lab_commons.tests] produce`` door over
-exactly those files, sized as a selection (:func:`dev_lab.dev.verifybox.selection_mem_gb`). Every
+exactly those files, sized as a selection (:func:`dev_lab.dev.verifybox.selection_mem_gb`), and PLACED by the
+resource markers its files carry (:func:`placement`, user ruling 2026-10-21): on Linux for anything Linux can
+run, on Windows only for a selection holding a ``jmag`` test; any other resource is refused by name. Every
 other rule above (trusted sha and author, lock, reachability) applies unchanged. The one other
 built-in is :data:`UNIT`: one compute unit, its bundle and size carried in ``paths``
 (:func:`dev_lab.dev.forgeunit.unit_request`).
@@ -40,13 +42,19 @@ issue ``request:done``, 1 posts ``failure``, every other code is released as a p
 (:func:`dev_lab.dev.producer.release_reason`). The issue gets a comment naming the outcome, the host,
 where the record is kept there, each file's sha256 and the log's tail -- a failure is on record, never
 silent. Nothing closes it: the REQUESTER closes it to sign off on what was made.
+
+A DEADLINE (``deadline = "<ISO 8601>"``, :func:`parse_deadline`) bounds how long a request may wait to be
+claimed: past it, an unclaimed request is refused on its own context as ``no room`` -- an answer, never a wait
+(``forge try``, :mod:`dev_lab.dev.forgetry`).
 """
 
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
@@ -55,7 +63,7 @@ from lab_commons.box.machine import RESOURCE_NAME
 from lab_commons.compute.model import REQUEST
 from lab_commons.config import section
 from lab_commons.hpc.declared import OutdatedKit, kit_tables, pyproject_at
-from lab_commons.hpc.needsets import part_name
+from lab_commons.hpc.needsets import part_name, read_vocabulary
 
 from dev_lab.dev._forgesource import (
     LOCK_FILE,
@@ -64,6 +72,7 @@ from dev_lab.dev._forgesource import (
     unreproducible,
     unserved,
 )
+from dev_lab.dev._testfacts_readers import mark_names
 from dev_lab.dev.forge import _GIT
 from dev_lab.dev.forgelabels import add_label
 from dev_lab.dev.forgework import ForgeCallFailed
@@ -94,7 +103,9 @@ __all__ = [
     'git_sources',
     'offer_line',
     'parse_body',
+    'parse_deadline',
     'parse_paths',
+    'placement',
     'remind',
     'request_authors',
     'request_body',
@@ -115,6 +126,12 @@ TAIL_LINES: Final = 40
 _LINE: Final = re.compile(r'^\s*(?P<key>producer|sha)\s*=\s*["\'](?P<value>[^"\']*)["\']\s*$', re.MULTILINE)
 _SHA: Final = re.compile(r'^[0-9a-f]{40}$')
 _PATHS: Final = re.compile(r'^\s*paths\s*=\s*(?P<value>\[.*\])\s*$', re.MULTILINE)
+_DEADLINE: Final = re.compile(r'^\s*deadline\s*=\s*["\'](?P<value>[^"\'\n]*)["\']\s*$', re.MULTILINE)
+
+#: The OS every test Linux can run is placed on, and the one tool a Windows host serves a selection for.
+LINUX: Final = 'linux'
+WINDOWS: Final = 'windows'
+JMAG: Final = 'jmag'
 
 #: The reserved producer name of the repository's own test producer over named test files (D5).
 TESTS: Final = 'tests'
@@ -151,10 +168,56 @@ def request_context(number: int) -> str:
     return f'{CONTEXT_PREFIX}{number}'
 
 
-def request_body(producer: str, sha: str, paths: Sequence[str] = ()) -> str:
-    """The issue body that IS a request for *producer* at *sha* (and, for :data:`TESTS`, its *paths*)."""
+def request_body(producer: str, sha: str, paths: Sequence[str] = (), *, deadline: datetime | None = None) -> str:
+    """The issue body that IS a request for *producer* at *sha* (for :data:`TESTS`, its *paths*), until *deadline*."""
     listed = f'paths = [{", ".join(f"{p!r}".replace(chr(39), chr(34)) for p in paths)}]\n' if paths else ''
-    return f'producer = "{producer}"\nsha = "{sha}"\n{listed}'
+    until = f'deadline = "{deadline.isoformat(timespec="seconds")}"\n' if deadline is not None else ''
+    return f'producer = "{producer}"\nsha = "{sha}"\n{listed}{until}'
+
+
+def parse_deadline(body: str) -> datetime | None:
+    """The ``deadline`` a request body names; ``None`` when it names none or none readable as an aware time."""
+    found = _DEADLINE.search(body or '')
+    if found is None:
+        return None
+    try:
+        when = datetime.fromisoformat(found['value'])
+    except ValueError:
+        return None
+    return when if when.tzinfo is not None else None
+
+
+def placement(root: Path, sha: str, paths: Sequence[str], resources: Sequence[str]) -> frozenset[str]:
+    """The need-set a selection of *paths* at *sha* runs under: ``{linux}``, or its markers plus ``windows``.
+
+    Each file's ``pytest.mark.<name>`` spellings among the declared *resources* are read from its source at
+    *sha* (a mark a conftest applies by directory is not seen). A selection holding a ``jmag`` test runs on
+    Windows with every resource its files name; one naming no resource but ``linux`` runs on Linux; any other
+    resource is refused (Linux cannot run it, and Windows serves a selection only for ``jmag``).
+
+    Raises:
+        UndeclaredRequest: a file is unreadable at *sha*, or the selection names a resource no placement serves.
+
+    """
+    marks: set[str] = set()
+    for path in paths:
+        shown = _door.run(
+            [_GIT, '-C', str(root), 'show', f'{sha}:{path}'], capture_output=True, check=False, timeout=60
+        )
+        try:
+            marks |= set(mark_names(ast.parse(shown.stdout))) & set(resources)
+        except (SyntaxError, ValueError) as why:
+            msg = f'{path!r} at {sha[:12]} is unreadable as Python: {why}'
+            raise UndeclaredRequest(msg) from why
+    if JMAG in marks:
+        return frozenset(marks | {WINDOWS})
+    if beyond := sorted(marks - {LINUX}):
+        msg = (
+            f'the selection needs {beyond}: Linux cannot run it and a Windows host serves a selection only for '
+            f'{JMAG!r} tests -- run it where that resource is'
+        )
+        raise UndeclaredRequest(msg)
+    return frozenset({LINUX})
 
 
 def parse_body(body: str) -> tuple[str, str]:
@@ -224,8 +287,14 @@ def _tests_request(root: Path, sha: str, paths: Sequence[str]) -> Declared:
         repo = origin_url(root)
     except OSError:  # no origin: no learned peaks, so the per-task floor prices it
         repo = ''
+    try:
+        resources = read_vocabulary(text).resources
+    except ValueError as why:
+        msg = f'[tool.lab_commons.tests] resources refused at {sha[:12]}: {why}'
+        raise UndeclaredRequest(msg) from why
+    needs = placement(root, sha, paths, resources)
     mem_gb = selection_mem_gb(repo, paths, SELECTION_CPU)
-    return Declared(TESTS, (*door, '--', *paths), frozenset(), float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
+    return Declared(TESTS, (*door, '--', *paths), needs, float(SELECTION_CPU), mem_gb, SELECTION_WALL_S / 3600)
 
 
 def _unit_request(_root: Path, _sha: str, paths: Sequence[str]) -> Declared:

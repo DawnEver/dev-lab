@@ -46,6 +46,7 @@ from dev_lab.dev import (
     forgesync,
     forgetick,
     forgetidy,
+    forgetry,
     forgewatch,
     pradmit,
     prlanded,
@@ -77,6 +78,7 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'hosts': forgehosts.main,
     'request': forgepublish.main,
     'cancel-stuck': forgestuck.main,
+    'try': forgetry.main,
     'watch': forgewatch.main,
 }
 
