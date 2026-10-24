@@ -15,6 +15,10 @@ with the class one of :data:`CLASSES`; ``both-needed`` requires its why. The con
 the parents' trees (``git merge-tree --write-tree --name-only``), never read from the message, so a line naming
 a file the parents do not conflict on is refused too. A clean merge needs no line.
 
+STRATEGY-BLIND ON PURPOSE. ``-s ours`` and ``-X ours|theirs`` stop on no conflict, yet the recomputation still
+finds the parents' one: a strategy that picks a side silently IS the unreviewed resolution this rule names, so
+it is declared like any other. The index cannot answer instead -- every stage is resolved by commit-msg time.
+
 WHEN IT RUNS: the ``commit-msg`` hook beside ``merge-audit`` (the family base's ``merge-resolution`` row), on the
 merge being committed (HEAD plus ``MERGE_HEAD``); any other commit costs one file check.
 """
@@ -22,6 +26,7 @@ merge being committed (HEAD plus ``MERGE_HEAD``); any other commit costs one fil
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -31,7 +36,6 @@ from typing import TYPE_CHECKING, Final
 import lab_commons.launch as _door
 from lab_commons.log import emit
 
-from dev_lab.dev.forge import _GIT
 from dev_lab.dev.mergeaudit import MergeAuditError, pending_parents
 
 if TYPE_CHECKING:
@@ -48,6 +52,7 @@ CLASSES: Final = frozenset({'upstream-structure+lane-content', 'lane-supersedes'
 _LINE: Final = re.compile(
     r'^(?P<path>[^\s:][^:\n]*?):[ \t]+(?P<cls>\S+)(?:[ \t]+--[ \t]*(?P<why>\S.*?))?[ \t]*$', re.MULTILINE
 )
+_GIT: Final = shutil.which('git') or 'git'
 _GIT_TIMEOUT_S: Final = 120
 _CONFLICTS_EXIT: Final = 1
 _PARENTS: Final = 2
@@ -109,11 +114,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         emit('merge-resolution: pass exactly the commit message file (git hands it to commit-msg)', err=True)
         return 1
     try:
-        root = Path(_door.run([_GIT, 'rev-parse', '--show-toplevel'], capture_output=True, text=True, encoding='utf-8',
-                              check=True).stdout.strip())  # fmt: skip
-        problems = pending(root, Path(args[0]).read_text(encoding='utf-8', errors='replace'))
-    except (MergeAuditError, OSError, subprocess.CalledProcessError) as error:
-        problems = (str(error),)
+        problems = pending(_toplevel(), Path(args[0]).read_text(encoding='utf-8', errors='replace'))
+    except (MergeAuditError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        emit(f'merge-resolution: commit REFUSED -- could not compute the conflicted set: {error}', err=True)
+        return 1
     if not problems:
         return 0
     lines = [
@@ -123,6 +127,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ]
     emit('\n'.join(lines), err=True)
     return 1
+
+
+def _toplevel() -> Path:
+    argv = [_GIT, 'rev-parse', '--show-toplevel']
+    done = _door.run(argv, capture_output=True, text=True, encoding='utf-8', check=True, timeout=_GIT_TIMEOUT_S)
+    return Path(done.stdout.strip())
 
 
 if __name__ == '__main__':

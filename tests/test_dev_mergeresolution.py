@@ -100,3 +100,47 @@ def test_a_plain_commit_is_not_judged(tmp_path: Path, monkeypatch: pytest.Monkey
     message = tmp_path / 'MSG'
     message.write_text('feat: x\n', encoding='utf-8')
     assert mergeresolution.main([str(message)]) == 0
+
+
+@pytest.mark.parametrize('strategy', [('-s', 'ours'), ('-X', 'ours'), ('-X', 'theirs')])
+def test_a_strategy_that_picks_a_side_still_declares_the_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strategy: tuple[str, str]
+) -> None:
+    """THE RECOMPUTATION IS STRATEGY-BLIND ON PURPOSE: ``-s ours`` and ``-X ours|theirs`` pick a side silently.
+
+    That silent pick is the unreviewed resolution this rule exists for, so the parents' conflict is still
+    declared even though the merge itself stopped on nothing.
+    """
+    _git(tmp_path, 'init', '-q', '-b', 'main')
+    _git(tmp_path, 'config', 'user.email', 't@t')
+    _git(tmp_path, 'config', 'user.name', 't')
+    _commit(tmp_path, {'src/a.py': 'X = 1\n'}, 'base')
+    _git(tmp_path, 'checkout', '-q', '-b', 'lane')
+    _commit(tmp_path, {'src/a.py': 'X = 2\n'}, 'lane')
+    _git(tmp_path, 'checkout', '-q', 'main')
+    _commit(tmp_path, {'src/a.py': 'X = 3\n'}, 'main')
+    _git(tmp_path, 'merge', '-q', '--no-commit', *strategy, 'lane')
+    monkeypatch.chdir(tmp_path)
+    message = tmp_path / 'MSG'
+    message.write_text('merge lane\n', encoding='utf-8')
+    assert mergeresolution.main([str(message)]) == 1
+    message.write_text('merge lane\n\nsrc/a.py: lane-supersedes -- the strategy kept one side\n', encoding='utf-8')
+    assert mergeresolution.main([str(message)]) == 0
+
+
+def test_a_failure_to_compute_is_refused_under_its_own_header(
+    conflicting: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A timeout is a refusal that says the set could not be computed, never 'not declared'."""
+
+    def hang(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd=_GIT, timeout=1)
+
+    monkeypatch.chdir(conflicting)
+    monkeypatch.setattr(mergeresolution, 'conflicted', hang)
+    message = conflicting / 'MSG'
+    message.write_text('merge lane\n', encoding='utf-8')
+    assert mergeresolution.main([str(message)]) == 1
+    err = capsys.readouterr().err
+    assert 'could not compute' in err
+    assert 'not declared' not in err
