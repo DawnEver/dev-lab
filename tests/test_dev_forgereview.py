@@ -423,7 +423,7 @@ def test_a_diff_over_the_cap_is_not_sent_and_says_so_once(tmp_path: Path) -> Non
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert command.ran == []
     statuses = status_list(forge, head)
-    assert sorted(s.context for s in statuses) == [HOLD_CONTEXT, REVIEW_CONTEXT]
+    assert sorted(s.context for s in statuses) == [REVIEW_CONTEXT, HOLD_CONTEXT]
     assert all(s.state == 'pending' and s.description.startswith(OVER_CAP) for s in statuses)
     _tick(work, forge, command, Review(command=_DECLARED.command, max_diff_bytes=10))
     assert len(forge.statuses[head]) == 2

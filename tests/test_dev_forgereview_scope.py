@@ -162,6 +162,7 @@ def _many(tmp_path: Path) -> tuple[Path, str]:
     for name in ('a', 'b', 'c'):
         (work / name).mkdir(exist_ok=True)
         advance(work, 'pr/x', f'{name}/f.py', 'x = 1\n' * 40)
+    (work / 'tests' / 'architecture').mkdir(parents=True, exist_ok=True)
     head = advance(work, 'pr/x', 'tests/architecture/test_t.py', 'x = 1\n')
     return work, head
 
@@ -213,7 +214,7 @@ def test_a_head_the_slices_cannot_hold_is_held_for_a_session(tmp_path: Path) -> 
         review_tick(work, forge, review, base='integrate/main', run=command, ready=_can, host='box')
         assert command.ran == []
         statuses = status_list(forge, head)
-        assert sorted(s.context for s in statuses) == [HOLD_CONTEXT, REVIEW_CONTEXT]
+        assert sorted(s.context for s in statuses) == [REVIEW_CONTEXT, HOLD_CONTEXT]
         assert all(s.state == 'pending' and s.description.startswith(OVER_CAP) for s in statuses)
 
 
