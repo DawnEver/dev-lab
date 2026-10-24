@@ -56,6 +56,7 @@ from typing import IO, Any, Final
 
 import lab_commons.launch as _door
 from lab_commons.box.machine import provided
+from lab_commons.compute.durable import durable_text
 from lab_commons.config import config_path, section
 from lab_commons.hpc.retired import refusal
 from lab_commons.log import emit
@@ -66,9 +67,10 @@ from dev_lab.dev.forgealarm import RUN, Alarm, sound
 from dev_lab.dev.forgeclaim import DEFAULT_LEASE
 from dev_lab.dev.forgeintent import journaled, reattach
 from dev_lab.dev.forgework import client_for
-from dev_lab.dev.hostrefresh import Moved, follow, read, refresh, sync_venv, venv_python
+from dev_lab.dev.hostrefresh import Moved, follow, network, read, refresh, sync_venv, venv_python
 from dev_lab.dev.hpchost.spec import KIT, host_serve_argv
 from dev_lab.dev.hpchost.steps import Step, Tools
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.servelock import default_lock, held
 
 if sys.platform == 'win32':
@@ -258,7 +260,7 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
     denied = []
     for name, url in urls.items():
         argv = [*programs.git, '-c', 'credential.interactive=never', 'ls-remote', '-q', url, 'HEAD']
-        rc = read(argv, _NO_PROMPT).returncode
+        rc = run_network_verb(argv, env={**os.environ, **_NO_PROMPT}).returncode
         emit(f'  {name}: {"ok" if rc == 0 else f"refused (exit {rc})"}')
         if rc:
             denied.append(name)
@@ -267,8 +269,9 @@ def _credentials(programs: Programs, urls: Mapping[str, str]) -> list[str]:
 
 def _checkout(step: Step, programs: Programs, checkout: Path, *, url: str, ref: str) -> Moved:
     if not (checkout / '.git').exists():
+        what = f'{checkout.name}: git clone -b {ref} {url} {checkout}'
         clone = [*programs.git, 'clone', '-q', '-b', ref, url, str(checkout)]
-        return Moved(step.change(f'{checkout.name}: git clone -b {ref} {url} {checkout}', clone))
+        return Moved(step.change(what, [])) if step.dry else network(step, what, clone)
     return follow(step, programs.git, checkout)
 
 
@@ -300,10 +303,7 @@ def _machine_file(step: Step, tables: Mapping[str, Mapping[str, Any]]) -> int:
     if step.dry:
         emit('  [dry-run] the diff above is not written')
         return 0
-    path.parent.mkdir(parents=True, exist_ok=True)
-    staged = path.with_name(path.name + '.new')
-    staged.write_text(after, encoding='utf-8')
-    staged.replace(path)
+    durable_text(path, after)
     return 0
 
 

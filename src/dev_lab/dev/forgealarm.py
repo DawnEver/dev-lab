@@ -2,7 +2,7 @@
 
 A cron tick on a cluster login node logs into a file nobody reads. Five failures there are SILENT
 unless raised: the forge refusing the stored credential (``auth``: a 401/403 that ``GET /user``
-confirms, an expired token, or none stored), a claim whose lease cannot be
+confirms even after git's refresh of an expired OAuth token, or none stored), a claim whose lease cannot be
 renewed (``lease``: the forge refused the post, another owner
 holds the claim now, or Slurm holds orphaned jobs), a cluster run that cannot advance (``run``), and
 an account IDLE while work it could serve is pending (``idle``: nothing claimed, nothing in flight),
@@ -46,6 +46,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from lab_commons.compute.durable import durable_text, read_table
 from lab_commons.config import config_path, section
 from lab_commons.log import emit
 from lab_commons.supervise.alert import Notice, Notifier
@@ -123,10 +124,7 @@ def _state() -> Path:
 
 
 def _last(path: Path) -> dict[str, str]:
-    try:
-        return json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return {}
+    return read_table(path)
 
 
 def sound(
@@ -156,8 +154,7 @@ def sound(
         results = deliver(notice)
         delivered = tuple(d.channel for d in results if d.ok)
         if delivered or not results:  # taken, or nothing to retry: the line alone is the delivery
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({**last, key: now.isoformat()}), encoding='utf-8')
+            durable_text(path, json.dumps({**last, key: now.isoformat()}))
     line = {'event': EVENT, 'kind': alarm.kind, 'repo': alarm.repo, 'subject': alarm.subject}
     emit(json.dumps({**line, 'body': alarm.body, 'delivered': list(delivered), 'repeat': not due}), err=True)
     return delivered

@@ -53,7 +53,7 @@ ADOPTION = HookAdoption(
     remedies={
         'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
         'PUSH-NO-VERIFY': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
-        'GIT-NETWORK-VERB': Remedy('retry-wrapper', 'sh {root}/scripts/hooks/with-retry.sh push'),
+        'NETWORK-VERB': Remedy('retry-wrapper', 'sh {root}/scripts/hooks/with-retry.sh push'),
         'RAW-PROCESS-KILL': Remedy('process-tree-killer', '.venv/Scripts/python.exe -m dev_lab.dev.stop --pid N'),
     },
 )
@@ -94,7 +94,7 @@ def test_an_ordinary_command_is_allowed(rules: Path) -> None:
 
 def test_a_denied_verb_behind_an_allowed_wrapper_is_still_denied(rules: Path) -> None:
     """THE WRAPPER CASE. A segment has as many command positions as it has wrappers."""
-    for command in ('timeout 900 pytest tests/', 'nohup git push origin HEAD', 'env sudo pytest -q'):
+    for command in ('timeout 900 pytest tests/', 'nohup git push --force origin HEAD', 'env sudo pytest -q'):
         assert agenthooks.decide(command, rules) is not None, f'the wrapper hid the command: {command!r}'
 
 
@@ -133,6 +133,35 @@ def test_a_wrapper_cannot_hide_the_interpreter_that_consumes_a_heredoc(rules: Pa
         assert agenthooks.decide(command, rules) is not None, (
             f'a wrapper hid the interpreter and the heredoc body went unscanned: {command.splitlines()[0]!r}'
         )
+
+
+#: THE 2026-10-20 INCIDENT LINES, verbatim, plus their sibling prefixes. SHELL LINES, so their home is
+#: here rather than the registry row's segment-shaped `refuses`.
+_PREFIXED_BARE_TESTS = (
+    (
+        'cd /d/Documents/MingyangBao/motronics-studio/.claude/worktrees/longrun-js && .venv/Scripts/python.exe'
+        ' -m pytest -q -x tests/unit/hamilton/adapters/jmag/ -k "job_system or system_check or jobs"'
+        ' -p no:cacheprovider 2>&1 | tail -5'
+    ),
+    'timeout 1200 .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/unit/x.py 2>&1 | grep passed',
+    'export LAB_COMMONS_CONFIG=/d/x/machine.toml; .venv/Scripts/python.exe -m pytest -q tests/unit/x.py',
+    'VAR=x python -m pytest',
+    'nohup .venv/Scripts/python.exe -m pytest tests &',
+    '(cd x && pytest)',
+)
+
+
+@pytest.mark.parametrize('command', _PREFIXED_BARE_TESTS)
+def test_a_bare_test_line_behind_a_prefix_is_refused(rules: Path, command: str) -> None:
+    """`cd ... &&`, `timeout N`, `export ...;`, `VAR=x`, `nohup ... &` and a subshell hide nothing."""
+    assert agenthooks.decide(command, rules) is not None, f'a prefix hid the bare test line: {command!r}'
+
+
+def test_the_measure_door_behind_the_same_prefixes_is_admitted(rules: Path) -> None:
+    """THE OTHER SIDE: the verdict door is not caught by the same prefixes."""
+    door = '.venv/Scripts/python.exe -m dev_lab.dev.verify -- tests/unit/x.py'
+    for command in (door, f'cd /d/x && {door} 2>&1 | tail -5', f'timeout 1200 {door}'):
+        assert agenthooks.decide(command, rules) is None, f'the measure door was refused: {command!r}'
 
 
 def test_uv_run_is_a_wrapper_but_uv_itself_is_still_a_command(tmp_path: Path) -> None:
@@ -194,8 +223,20 @@ def test_every_registry_row_behaves_through_the_real_engine(rules: Path) -> None
         agent = 'scan-agent' if rule.scope == 'subagent' else None
         for command in rule.refuses:
             checked += 1
-            if agenthooks.decide(command, rules, agent_id=agent) is None:
-                wrong.append(f'{rule.id}: the engine ALLOWED a command the row says it refuses: {command!r}')
+            if rule.when == 'live-run':
+                # No run is live in a scan tree: the row must stay SILENT (its live half is test_dev_liverun's).
+                decided = agenthooks.decide(command, rules)
+                if decided is not None and decided.startswith(f'{rule.id}:'):
+                    wrong.append(f'{rule.id}: fired with no live run on {command!r}')
+                continue
+            # A hint row is SAID, unless a sibling refusal fires on the same command and wins (`git clone`).
+            hint = rule.severity == 'hint'
+            said_or_refused = agenthooks.decide(command, rules, agent_id=agent, hint=hint) or (
+                hint and agenthooks.decide(command, rules, agent_id=agent)
+            )
+            if not said_or_refused:
+                said = 'never HINTED on' if hint else 'ALLOWED'
+                wrong.append(f'{rule.id}: the engine {said} a command the row says it fires on: {command!r}')
             outside = agenthooks.decide(command, rules) if agent else None
             if outside is not None and outside.startswith(f'{rule.id}:'):
                 wrong.append(f'{rule.id}: the scoped row fired OUTSIDE a subagent on {command!r}')
@@ -277,7 +318,7 @@ def two_repos(tmp_path: Path) -> tuple[Path, Path, Path]:
             'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', SESSION_DOOR),
             'PUSH-NO-VERIFY': Remedy('verdict-entry-point', SESSION_DOOR),
         },
-        declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
+        declared_absent=frozenset({'NETWORK-VERB', 'RAW-PROCESS-KILL'}),
     )
     rules = hooks / 'deny-rules.json'
     rules.write_text(render(adoption), encoding='utf-8')
@@ -364,9 +405,10 @@ def test_a_subagent_push_is_refused_and_the_main_session_keeps_its_own_door(rule
     assert inside is not None
     assert inside.startswith('SUBAGENT-NO-PUSH:'), inside
     assert 'hand the commit SHA back' in inside
-    outside = agenthooks.decide('git push origin HEAD', rules)
+    assert agenthooks.decide('git push origin HEAD', rules) is None, 'the main session may push'
+    outside = agenthooks.decide('git push origin HEAD', rules, hint=True)
     assert outside is not None
-    assert outside.startswith('GIT-NETWORK-VERB:'), 'the main session lost its own (retry) door'
+    assert outside.startswith('NETWORK-VERB:'), 'the main session lost its own (retry) door'
 
 
 def test_a_subagent_is_refused_through_the_powershell_tool_too(rules: Path) -> None:
@@ -391,3 +433,31 @@ def test_a_hook_skip_prefix_is_seen_by_the_engine(rules: Path) -> None:
     assert reason is not None
     assert reason.startswith('SUBAGENT-NO-PUSH:')
     assert agenthooks.decide('SKIP=ruff git commit -m "x"', rules) is None, 'the main session was refused'
+
+
+# --------------------------------------------------------------------------------------------
+# HINTS -- the engine SPEAKS a hint row as context and never denies on it; a refusal still wins
+
+
+def _rows(tmp_path: Path, *rows: dict) -> Path:
+    path = tmp_path / 'deny-rules.json'
+    path.write_text(json.dumps(list(rows)), encoding='utf-8')
+    return path
+
+
+_HINT = {'name': 'PLANTED-HINT', 'pattern': r'grep\s+-r', 'matches': 'command', 'severity': 'hint', 'reason': 'H'}
+_DENY = {'name': 'PLANTED-DENY', 'pattern': r'rm\s+-rf', 'matches': 'command', 'reason': 'D'}
+
+
+def test_a_hint_row_is_context_and_not_a_refusal(tmp_path: Path) -> None:
+    rules = _rows(tmp_path, _HINT, _DENY)
+    assert agenthooks.decide('grep -r x src', rules) is None
+    assert agenthooks.decide('grep -r x src', rules, hint=True) == 'H'
+    assert agenthooks.decide('git status', rules, hint=True) is None
+
+
+def test_a_refusal_wins_over_a_hint_on_the_same_line(tmp_path: Path) -> None:
+    """PLANTED CONTROL: the deny row alone refuses, and a hint beside it cannot open it."""
+    rules = _rows(tmp_path, _HINT, _DENY)
+    assert agenthooks.decide('grep -r x src && rm -rf build', rules) == 'D'
+    assert agenthooks.decide('rm -rf build', rules) == 'D'

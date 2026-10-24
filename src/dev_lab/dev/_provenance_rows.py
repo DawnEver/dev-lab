@@ -508,7 +508,16 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'allocate': ('original',),
     'checks': ('original',),
     'deploy': ('original',),
+    'fleet': ('original',),
     'spec': ('original',),
     'steps': ('original',),
     'tick': ('original',),
+    # ORIGINAL: new mechanisms no consumer held a file for.
+    'automode': ('original',),
+    'forgestuck': ('original',),
+    'forgewatch': ('original',),
+    'liverun': ('original',),
+    'monthsummary': ('original',),
+    'prsuperseded': ('original',),
+    'worktree_archive': ('original',),
 }

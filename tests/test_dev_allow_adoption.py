@@ -54,17 +54,17 @@ SWEEP = Remedy('process-tree-killer', '.venv/Scripts/python.exe scripts/gate/sto
 CONSUMER_C = HookAdoption(
     app_name='consumer_c',
     remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
-    declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
+    declared_absent=frozenset({'NETWORK-VERB', 'RAW-PROCESS-KILL'}),
 )
 CONSUMER_B = HookAdoption(
     app_name='consumer_b',
-    remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY, 'GIT-NETWORK-VERB': NETVERB},
+    remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY, 'NETWORK-VERB': NETVERB},
     declared_absent=frozenset({'RAW-PROCESS-KILL'}),
 )
 CONSUMER_A = HookAdoption(
     app_name='consumer_a',
     remedies={'RAW-PROCESS-KILL': SWEEP},
-    declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'GIT-NETWORK-VERB'}),
+    declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'NETWORK-VERB'}),
 )
 
 
@@ -237,7 +237,7 @@ def test_provenance_says_which_population_each_row_came_from() -> None:
     allow = AllowAdoption('consumer_b', CONSUMER_B, (DeclaredAllow('Bash(*yarn preview*)', 'the docs preview server'),))
     seen = provenance(allow)
     assert seen['Bash(*yarn preview*)'] == 'declared: the docs preview server'
-    assert seen['Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)'] == 'derived from GIT-NETWORK-VERB'
+    assert seen['Bash(./.venv/*/python* -m dev_lab.dev.netverb -- *)'] == 'derived from NETWORK-VERB'
 
 
 #: A remedy spelling the very shape its own rule matches, with NO opening. `RAW-PROCESS-KILL` is
@@ -256,7 +256,7 @@ def _killer(remedy: Remedy) -> HookAdoption:
     return HookAdoption(
         app_name='consumer_a',
         remedies={'RAW-PROCESS-KILL': remedy},
-        declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'GIT-NETWORK-VERB'}),
+        declared_absent=frozenset({'BARE-TEST-INVOCATION', 'PUSH-NO-VERIFY', 'NETWORK-VERB'}),
     )
 
 

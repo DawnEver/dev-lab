@@ -10,7 +10,7 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
         'ONE-SESSION-ONE-PR',
         (
             'One agent session (`LAB_SESSION`, stamped as a `Lab-Session:` trailer) is one open PR per repo; '
-            '`forge pr create` and a new `pr/*` push refuse a second, and a split is a declared `pradmit.SPLITS` entry.'
+            '`forge pr create` refuses a second, and a split is a declared `pradmit.SPLITS` entry.'
         ),
         ('tests/test_dev_labsession.py', 'tests/test_dev_pradmit.py', 'tests/test_dev_forgework.py'),
     ),

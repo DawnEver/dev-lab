@@ -118,8 +118,6 @@ always_run = true
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
-# Short-lived PR heads (user ruling 2026-10-19): pushable with no row, deleted by the forge once their PR is gone.
-ephemeral = ['pr/*']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
 # merged undeclared origin branches idle >= grace_hours (dev_lab.dev.branchprune).
 prune_merged = true
@@ -131,8 +129,7 @@ prune_merged = true
 # on Windows and .venv/bin/python on POSIX -- in a worktree, the main checkout's.
 BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
-GIT-NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- git <push|fetch|pull|clone|ls-remote> ...  (retries 3x, then reports a diagnosis)"
-OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name> 2>&1  (create the day's <kind> directory first; the shape is dev_lab.dev.datedlog's)"
+NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync, which retries inside"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

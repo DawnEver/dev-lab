@@ -97,6 +97,7 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -142,8 +143,9 @@ from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.platformparts import origin_url, run_tag
 from dev_lab.dev.prlanded import serve_close_landed
 from dev_lab.dev.producer import ProducerExit
+from dev_lab.dev.worktreeplace import WORKTREES_REL
 
-__all__ = ['ServeReport', 'main', 'serve']
+__all__ = ['ServeReport', 'main', 'serve', 'work_root']
 
 
 @dataclass(frozen=True)
@@ -321,6 +323,17 @@ def _advance(
     return left
 
 
+def work_root(root: Path) -> Path:
+    """Where a serve WORKS: its checkout's worktree root, beside the trees it produces in -- never the tree itself.
+
+    A ``python -m`` process puts its cwd on ``sys.path``, so a serve whose cwd were the checkout would READ that
+    tree for its whole life and lock it against every edit (TREE-HAS-A-LIVE-RUN, :mod:`dev_lab.dev.liverun`).
+    """
+    work = root / WORKTREES_REL
+    work.mkdir(parents=True, exist_ok=True)
+    return work
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -334,7 +347,9 @@ def main(
     parser.add_argument('--lease-hours', type=float, default=DEFAULT_LEASE.total_seconds() / 3600)
     parser.add_argument('--json', action='store_true', help='print the whole report as JSON')
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
-    root = Path.cwd() if cwd is None else cwd
+    root = Path.cwd().resolve() if cwd is None else cwd
+    if cwd is None:
+        os.chdir(work_root(root))  # the serve reads its venv, never this tree (work_root)
 
     def build(here: Path) -> Client:
         return client_for(here, env=env, transport=transport) if env is not None else unprompted_client(here)

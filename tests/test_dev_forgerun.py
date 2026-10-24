@@ -45,9 +45,9 @@ from dev_lab.dev.producer import RETRYABLE, ProducerExit, release_reason
 SHA = 'c' * 40
 NOW = datetime(2026, 10, 11, 12, tzinfo=UTC)
 HOURS6 = timedelta(hours=6)
-HERE = Claim('hpclogin02', 'alice', NOW + HOURS6, 'ada/alice')
-OTHER_HOST = Claim('hpclogin01', 'alice', NOW + HOURS6, 'ada/alice')
-BOB = Claim('hpclogin02', 'bob', NOW + HOURS6, 'ada/bob')
+HERE = Claim('login2', 'alice', NOW + HOURS6, 'ada/alice')
+OTHER_HOST = Claim('login1', 'alice', NOW + HOURS6, 'ada/alice')
+BOB = Claim('login2', 'bob', NOW + HOURS6, 'ada/bob')
 
 
 class _Store:

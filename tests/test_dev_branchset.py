@@ -44,7 +44,7 @@ def _manifest(root: Path, body: str) -> Path:
 
 def test_the_declaration_is_read_from_the_manifest(tmp_path: Path) -> None:
     root = _manifest(tmp_path, "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['feat/a']\n")
-    assert declared_branchset(root) == BranchSet('main', frozenset({'feat/a'}))
+    assert declared_branchset(root) == BranchSet('main', frozenset({'feat/a'}), ephemeral=('pr/*',))
     assert declared_branchset(root).declared == frozenset({'main', 'feat/a'})
 
 
@@ -148,6 +148,13 @@ def test_two_open_ephemeral_heads_pass_and_an_undeclared_branch_still_reds(tmp_p
     without_stray = BranchSet('main', _DECLARED.sessions, ephemeral=('pr/*',))
     with pytest.raises(BranchSetViolation, match='feat/stray'):
         assert_origin_branches_declared(root=work, branchset=without_stray)
+
+
+def test_an_omitted_ephemeral_is_the_family_pr_namespace_and_an_empty_list_opts_out() -> None:
+    """``pr/*`` is the family's PR-head namespace, ruled once here rather than repeated in every manifest."""
+    head = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\n"
+    assert branchset_from(head, 'p').ephemeral == ('pr/*',)
+    assert branchset_from(head + 'ephemeral = []\n', 'p').ephemeral == ()
 
 
 def test_an_ephemeral_glob_is_declared_and_a_malformed_one_refused(tmp_path: Path) -> None:

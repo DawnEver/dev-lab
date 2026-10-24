@@ -17,7 +17,7 @@ from __future__ import annotations
 import tomllib
 from typing import TYPE_CHECKING
 
-from dev_lab.dev.branchset import BranchSetNotDeclared, declared_branchset
+from dev_lab.dev.branchset import EPHEMERAL_OFF, BranchSetNotDeclared, declared_branchset
 from dev_lab.dev.lanepolicy import load_policy
 
 if TYPE_CHECKING:
@@ -57,7 +57,7 @@ def assert_repo_is_onboarded(*, root: Path) -> tuple[str, ...]:
         missing.append(f'[tool.lab_commons.branchset] trunk/sessions/ephemeral -- absent ({undeclared})')
     if declared is not None:
         missing += [
-            *(["[tool.lab_commons.branchset] ephemeral = ['pr/*']"] if not declared.is_ephemeral('pr/x') else []),
+            *([EPHEMERAL_OFF] if not declared.is_ephemeral('pr/x') else []),
             *(
                 [f'[tool.lab_commons.branchset] sessions names {policy.integration!r}']
                 if policy.integration not in declared.sessions

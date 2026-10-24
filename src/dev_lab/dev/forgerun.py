@@ -57,7 +57,7 @@ carries every outcome the drained tasks finished (:mod:`dev_lab.dev.forgecarry`)
 cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
-2026-10-21: a superseded pr head kept 70 array tasks running on alyyw103, eating the grant's QOS room.
+2026-10-21: a superseded pr head kept 70 array tasks running on carol, eating the grant's QOS room.
 A ref of any OTHER class is tested at every pushed sha: its run finishes and posts on its own sha, and when
 the tip is reach-equivalent its record is posted on the tip too, as a part naming the sha it was judged at.
 

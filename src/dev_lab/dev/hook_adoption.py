@@ -26,7 +26,7 @@ and is deliberately not performed from here::
     ADOPTION = HookAdoption(
         app_name='consumer-b',
         remedies={'BARE-TEST-INVOCATION': VERIFY, 'PUSH-NO-VERIFY': VERIFY},
-        declared_absent=frozenset({'GIT-NETWORK-VERB', 'RAW-PROCESS-KILL'}),
+        declared_absent=frozenset({'NETWORK-VERB', 'RAW-PROCESS-KILL'}),
     )
     Path('.claude/hooks/deny-rules.json').write_text(render(ADOPTION), encoding='utf-8')
 
@@ -53,6 +53,7 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
+from dev_lab.dev._deny_rows import RETIRED_IDS
 from dev_lab.dev.hooks import DENY_RULES, DenyRule, Remedy, UnremediedRule, rules_by_id
 
 __all__ = [
@@ -139,9 +140,11 @@ def deny_rules(adoption: HookAdoption, rules: Sequence[DenyRule] = DENY_RULES) -
     known = rules_by_id(rules)
     strangers = sorted((set(adoption.remedies) | set(adoption.declared_absent)) - set(known))
     if strangers:
+        retired = '; '.join(f'{one} is retired, name {RETIRED_IDS[one]}' for one in strangers if one in RETIRED_IDS)
         msg = (
             f'{adoption.app_name} names {strangers}, which the deny registry does not define. A typo in an ID '
             f'ships nothing and reports nothing, which is how a rule quietly stops being enforced.'
+            + (f' ({retired})' if retired else '')
         )
         raise UnremediedRule(msg)
     unconditional = sorted(adoption.declared_absent - needing(rules))

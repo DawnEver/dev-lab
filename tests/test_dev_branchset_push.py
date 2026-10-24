@@ -30,7 +30,6 @@ from dev_lab.dev.branchset_push import (
     refusal,
     undeclared,
 )
-from dev_lab.dev.githooks.table import base_rows
 
 _GIT = shutil.which('git') or 'git'
 _DECLARED = BranchSet(trunk='main', sessions=frozenset({'feat/session', 'integrate/main'}))
@@ -233,17 +232,15 @@ def test_the_pushed_commit_declares_the_ref_not_the_pushing_checkout(tmp_path: P
 
 
 def _wire_hook(root: Path) -> None:
-    """Install the family RUNNER as git's own pre-push hook -- the base table decides what it runs.
+    """Install THIS MODULE as git's own pre-push hook, the way a repo that opts into the row runs it.
 
-    THE INCIDENT THIS SHAPE ANSWERS (2026-10-13): this control used to write ``branchset_push`` into
-    the hook BY HAND, so it proved the module and never the wiring -- and the wiring was missing. When
-    hooks moved to TOML (2026-10-11) the base table carried no ``branchset-push`` row, every consumer's
-    pre-push ran without it, and an agent pushed ten lane branches to origin. What runs here is what
-    a consumer's installed shim runs: ``githooks run pre-push`` over the merged base + repo table.
+    The family base no longer carries the row (toolchain plan P3: the branch set is the forge's,
+    :func:`dev_lab.dev.famtests.branchset.assert_origin_branches_declared`), so what is proven here is
+    the module a repo may still declare under ``[[tool.lab_commons.hooks.pre-push]]``.
     The interpreter is THIS PROCESS's: a planted checkout has no ``.venv`` of its own.
     """
     hook = root / '.git' / 'hooks' / 'pre-push'
-    runner = f'"{Path(sys.executable).as_posix()}" -m dev_lab.dev.githooks run pre-push "$@"'
+    runner = f'"{Path(sys.executable).as_posix()}" -m dev_lab.dev.branchset_push'
     hook.write_text(f'#!/usr/bin/env bash\n{runner}\n')
     hook.chmod(0o755)
 
@@ -296,20 +293,6 @@ def test_the_planted_control_pushes_both_ways(tmp_path: Path) -> None:
         check=True,
     ).stdout
     assert 'refs/heads/work/foo' not in landed, 'the refused branch reached origin anyway'
-
-
-# ---------------------------------------------------------------------------
-# 5. THE WIRING: the family base table, the one place a pre-push check is declared
-# ---------------------------------------------------------------------------
-
-
-def test_the_base_table_runs_the_check_at_pre_push_for_every_consumer() -> None:
-    """The row IS the wiring: a consumer opting into the base table gets the check without a line of its own."""
-    rows = {row['id']: row for row in base_rows()['pre-push']}
-    assert 'branchset-push' in rows, sorted(rows)
-    row = rows['branchset-push']
-    assert row['run'] == ['python', '-m', 'dev_lab.dev.branchset_push'], row['run']
-    assert row.get('always_run'), 'a push that changes no path still moves a ref; the check must run for it'
 
 
 def test_the_module_refuses_an_undeclared_branch_read_from_stdin(tmp_path: Path) -> None:

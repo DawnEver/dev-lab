@@ -128,7 +128,7 @@ def test_a_claim_released_for_unreachable_infrastructure_is_open_again() -> None
 
 def test_a_lapsed_cluster_claim_is_retaken_by_another_account_and_a_live_one_never() -> None:
     """Only the owner renews, so a lapsed lease means the owner is gone. PLANTED CONTROL: a minute earlier, held."""
-    dead = Claim('hpclogin02', 'bob', NOW - timedelta(minutes=1), 'ada/bob')
+    dead = Claim('login2', 'bob', NOW - timedelta(minutes=1), 'ada/bob')
     assert _assess([_pending(dead, 3, 'linux')], 'linux') == (STALE, dead)
     live = dataclasses.replace(dead, until=NOW + timedelta(minutes=1))
     assert _assess([_pending(live, 3, 'linux')], 'linux') == (CLAIMED, live)
@@ -136,8 +136,8 @@ def test_a_lapsed_cluster_claim_is_retaken_by_another_account_and_a_live_one_nev
 
 def test_two_login_hosts_of_one_account_are_two_owners() -> None:
     """One account cannot win a race against itself: the earlier host holds, the later stands down."""
-    me = Claim('hpclogin02', 'alice', LATER, 'ada/alice')
-    other_host = dataclasses.replace(me, machine='hpclogin01')
+    me = Claim('login2', 'alice', LATER, 'ada/alice')
+    other_host = dataclasses.replace(me, machine='login1')
     history = [_pending(other_host, 1, 'linux'), _pending(me, 2, 'linux')]
     assert assess(history, 'tests/linux', me=me, now=NOW) == (CLAIMED, other_host)
 
@@ -889,8 +889,9 @@ def test_the_kit_declaring_a_table_its_server_does_not_know_is_refused_on_its_ow
 ) -> None:
     """PLANTED (live 2026-10-21, lab-commons #244): the KIT's unknown table is refused once on its own commit.
 
-    The kit's PR declared the table it adds; every host's older kit refused it as the host's defect, so the PR
-    waited UNCLAIMED fleet-wide with only host alarms. No host serving the kit can know a table before it merges.
+    The kit is dev-lab since the split (``lab_commons.hpc.declared``). The kit's PR declared the table it
+    adds; every host's older kit refused it as the host's defect, so the PR waited UNCLAIMED fleet-wide with
+    only host alarms. No host serving the kit can know a table before it merges.
 
     PLANTED CONTROL: the test two above -- the same unknown table in a CONSUMER's declaration waits, unposted.
     """

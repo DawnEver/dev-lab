@@ -151,6 +151,7 @@ def run_engine(
     cwd: Path | None = None,
     tool: str = 'Bash',
     agent_id: str | None = None,
+    hint: bool = False,
 ) -> str | None:
     """THE ONE RUNNER. Drive the engine AT *engine* over one Bash command; the reason, or ``None``.
 
@@ -176,9 +177,12 @@ def run_engine(
         cwd: the tool call's working directory, which the engine expands into ``{root}``.
         tool: the hook payload's ``tool_name`` -- ``Bash`` or ``PowerShell``; any other tool is not judged.
         agent_id: the payload's subagent id; ``None`` sends none, as the main session does.
+        hint: ask for the HINT instead -- the ``additionalContext`` a ``severity: hint`` row hands the agent
+            on a call it lets run.
 
     Returns:
-        The ``permissionDecisionReason`` when the engine denies, else ``None``. The engine fails OPEN
+        The ``permissionDecisionReason`` when the engine denies (with *hint*, the ``additionalContext`` it
+        speaks without denying), else ``None``. The engine fails OPEN
         by construction -- unparseable input or a bad rule prints nothing -- and that shows up here
         as ``None``, which is the truthful answer: nothing was refused.
 
@@ -209,6 +213,8 @@ def run_engine(
     if not done.stdout.strip():
         return None
     decision = json.loads(done.stdout)['hookSpecificOutput']
+    if hint:
+        return decision.get('additionalContext')
     return decision['permissionDecisionReason'] if decision.get('permissionDecision') == 'deny' else None
 
 
@@ -220,6 +226,7 @@ def decide(
     engine: str = 'deny-commands',
     tool: str = 'Bash',
     agent_id: str | None = None,
+    hint: bool = False,
 ) -> str | None:
     """Run THE WHEEL'S OWN copy of a shipped engine over one Bash command; the reason, or ``None``.
 
@@ -235,6 +242,7 @@ def decide(
         cwd: the tool call's working directory, which the engine expands into ``{root}``.
         tool: the hook payload's ``tool_name`` -- ``Bash`` or ``PowerShell``; any other tool is not judged.
         agent_id: the payload's subagent id; ``None`` sends none, as the main session does.
+        hint: ask for the hint a ``severity: hint`` row speaks instead of a refusal.
         engine: which SHIPPED engine to run, by name.
 
     Returns:
@@ -244,7 +252,7 @@ def decide(
         EngineNotShipped: no engine of that name is in this wheel.
 
     """
-    return run_engine(engine_path(engine), command, rules, cwd=cwd, tool=tool, agent_id=agent_id)
+    return run_engine(engine_path(engine), command, rules, cwd=cwd, tool=tool, agent_id=agent_id, hint=hint)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

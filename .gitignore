@@ -52,6 +52,7 @@ output/
 !**/attic/**
 **/.claude/**/__pycache__/
 **/.claude/**/*.py[cod]
+**/.claude/automode.json
 
 # --- lab-commons delta, 1 of 1 allowed ---
 *.py[cod]

@@ -26,9 +26,21 @@ import lab_commons.launch as _door
 from lab_commons.log import emit
 
 from dev_lab.dev.hpchost.steps import Step
+from dev_lab.dev.netverb import run_network_verb
 from dev_lab.dev.venvpath import venv_interpreter
 
-__all__ = ['ENV_INPUTS', 'ENV_STAMP', 'Moved', 'env_key', 'follow', 'read', 'refresh', 'sync_venv', 'venv_python']
+__all__ = [
+    'ENV_INPUTS',
+    'ENV_STAMP',
+    'Moved',
+    'env_key',
+    'follow',
+    'network',
+    'read',
+    'refresh',
+    'sync_venv',
+    'venv_python',
+]
 
 
 def venv_python(checkout: Path) -> Path:
@@ -62,9 +74,17 @@ def follow(step: Step, git: Sequence[str], checkout: Path) -> Moved:
     return _fast_forward(step, here, checkout.name)
 
 
+def network(step: Step, what: str, argv: Sequence[str]) -> Moved:
+    """A CHANGING network *argv* through the retry door (NETWORK-RETRY-THEN-REPORT); its remedy when it fails."""
+    emit(f'  {what}')
+    env = {**os.environ, **({'PATH': step.path} if step.path else {})}
+    report = run_network_verb(argv, env=env)
+    return Moved(0) if report.ok else Moved(report.returncode or 1, why=report.remedy)
+
+
 def _fast_forward(step: Step, git: Sequence[str], name: str) -> Moved:
-    if rc := step.change(f'{name}: git fetch', [*git, 'fetch', '-q']):
-        return Moved(rc, why=f'git fetch exited {rc}')
+    if (fetched := network(step, f'{name}: git fetch', [*git, 'fetch', '-q'])).rc:
+        return fetched
     head, upstream = (read([*git, 'rev-parse', rev]).stdout.strip() for rev in ('HEAD', '@{u}'))
     if not upstream:
         return Moved(2, why=f'{name} tracks no upstream; `git branch -u origin/<ref>` in it, then re-run')
