@@ -53,8 +53,10 @@ NOT-YET-STARTED task withdrawn (:func:`lab_commons.hpc.run.withdraw_pending`); a
 for supersession -- the run keeps its claim as ``draining`` until the last one ends, then is released as
 superseded naming the tip and dropped -- one alarm. The tip waits behind it (:mod:`forgecoalesce`), so its run
 carries every outcome the drained tasks finished (:mod:`dev_lab.dev.forgecarry`). Only a deliberate stop
-(:func:`lab_commons.hpc.run.cancel_run`) kills a started task. A run whose REF IS GONE (merged or closed) has no tip to drain for: unless
-the integration tip carries its result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`). Ada 2026-10-22: 44% of a week's forge core-h was
+(:func:`lab_commons.hpc.run.cancel_run`) kills a started task.
+A run whose REF IS GONE (merged or closed) has no tip to drain for: unless the integration tip carries its
+result (equivalent, P6), every job is cancelled, started ones too (:func:`_ref_gone`).
+Ada 2026-10-22: 44% of a week's forge core-h was
 cancelled while running, 34 points of it for supersession. A DOCS-ONLY tip
 never supersedes it: its part is this run's result, carried on landing (DOCS-ONLY-CARRIES). Asked before a
 submit and at every gather. Ada 2026-10-19: integrate/main's tip waited hours behind an older sha's array;
