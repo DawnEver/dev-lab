@@ -50,9 +50,11 @@ from lab_commons.credentials import _GIT, _GIT_TIMEOUT_S, NoCredential, credenti
 
 from dev_lab.dev.forgecred import (
     AUTH_GONE,
+    AUTH_KEPT,
     AUTH_REFUSED,
     AUTH_REMEDY,
     AUTH_TRANSIENT,
+    REFRESHABLE_USER,
     authorization,
     refresh_credential,
     token_for,
@@ -66,11 +68,13 @@ if TYPE_CHECKING:
 __all__ = [
     'APPLIED',
     'AUTH_GONE',
+    'AUTH_KEPT',
     'AUTH_REFUSED',
     'AUTH_REMEDY',
     'AUTH_TRANSIENT',
     'INERT',
     'NOT_APPLIED',
+    'REFRESHABLE_USER',
     'UNREADABLE',
     'Clause',
     'Forge',

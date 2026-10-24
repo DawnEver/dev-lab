@@ -322,6 +322,7 @@ def _session_whose_interpreter_cannot_answer(root: Path) -> Path:
     return session
 
 
+@pytest.mark.workstation  # the engine runs under node, workstation kit
 @pytest.mark.parametrize(
     'spelling',
     [
@@ -342,6 +343,7 @@ def test_a_live_run_probe_that_cannot_answer_refuses_and_names_the_target(tmp_pa
     assert str(tree) in said or tree.as_posix() in said
 
 
+@pytest.mark.workstation  # the engine runs under node, workstation kit
 def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
     """A checkout mid-adoption has a real interpreter that cannot import dev_lab: nobody to ask, not a crash."""
     session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')
@@ -354,6 +356,7 @@ def test_a_session_venv_without_the_kit_is_no_refusal(tmp_path: Path) -> None:
     assert agenthooks.decide(f'git -C {tree.as_posix()} merge origin/integrate/main', rules, cwd=session) is None
 
 
+@pytest.mark.workstation  # the engine runs under node, workstation kit
 def test_a_command_the_row_does_not_match_never_asks_the_probe(tmp_path: Path) -> None:
     """PLANTED CONTROL for the test above: the same broken probe, a read-only command, nothing refused."""
     session = _session_whose_interpreter_cannot_answer(tmp_path / 'session')

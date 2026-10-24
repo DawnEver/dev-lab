@@ -102,15 +102,16 @@ _DOT: Final = ' · '
 class ForgeCallFailed(OSError):
     """A forge call that did not succeed within the bound; :attr:`report` is netverb's report of it."""
 
-    def __init__(self, report: Report, *, credential_gone: bool = False) -> None:
+    def __init__(self, report: Report, *, credential_gone: bool = False, credential_kept: bool = False) -> None:
         """Carry the report; on a 401/403 the message adds what the credential check and refresh MEASURED.
 
-        *credential_gone*: the refresh left the store holding no credential -- the one case a re-login fixes.
+        *credential_gone*: the refresh left the store holding no credential -- a re-login fixes it.
+        *credential_kept*: the store cannot refresh, so the refused credential was kept -- a re-login may fix it.
         """
         last = report.attempts[-1].returncode if report.attempts else 0
         said = _forge.AUTH_TRANSIENT
         if _credential_refused(report):
-            said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_REMEDY
+            said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
         super().__init__(f'{report.remedy}. {said}' if last in _forge.AUTH_REFUSED else report.remedy)
         self.report = report
 
@@ -178,6 +179,7 @@ class Client:
     #: Whether :attr:`refresh` was spent, and whether it left the store empty.
     _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
     _gone: bool = dataclasses.field(default=False, init=False, repr=False)
+    _kept: bool = dataclasses.field(default=False, init=False, repr=False)
 
     @property
     def backend(self) -> Backend:
@@ -233,6 +235,7 @@ class Client:
             self._gone = True
             return False
         if token == self.token:
+            self._kept = self.username != _forge.REFRESHABLE_USER
             return False
         self.username, self.token = username, token
         return True
@@ -323,7 +326,7 @@ class Client:
                     if found is not None:
                         return found
         report = Report((write.method, write.path), tuple(made), DEFAULT_ATTEMPTS)
-        raise ForgeCallFailed(report, credential_gone=self._gone)
+        raise ForgeCallFailed(report, credential_gone=self._gone, credential_kept=self._kept)
 
     def landed(self, write: Write) -> Any:  # noqa: ANN401 -- JSON
         """The object *write* made under this login, if it landed though its answer was lost; else ``None``."""

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 __all__ = [
     'AUTH_DOC',
     'AUTH_GONE',
+    'AUTH_KEPT',
     'AUTH_REFUSED',
     'AUTH_REMEDY',
     'AUTH_TRANSIENT',
@@ -52,6 +53,12 @@ AUTH_REMEDY: Final = (
 AUTH_GONE: Final = (
     'the forge refused the stored credential and the store holds none after refreshing it as git does -- store '
     f'one: python -m dev_lab.dev.forge auth login ({AUTH_DOC})'
+)
+
+#: The remedy when the refused credential sits in a store that cannot refresh it, so it was KEPT, not rejected.
+AUTH_KEPT: Final = (
+    'the forge refused the stored credential and this store cannot refresh it, so it was kept, not erased -- if '
+    f'it keeps being refused, store a new one: python -m dev_lab.dev.forge auth login ({AUTH_DOC})'
 )
 
 #: What a 401/403 says when ``GET /user`` still authenticated the same credential: re-storing cannot help.
