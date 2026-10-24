@@ -4,7 +4,7 @@ One machine rations CPU, memory and tool seats across every repo, worktree and s
 ledger in an installed package (`lab_commons.box`). Every run declares what it will use and how long it may
 take; it is admitted only when the MEASURED room holds it, and it runs inside a kernel limit sized to that claim.
 
-## The four rules
+## The five rules
 
 1. **A run declares its demand.** Cores, memory, a wall and named tool seats (`box.Demand`); no field has a
    default, because a default is a number nobody chose.
