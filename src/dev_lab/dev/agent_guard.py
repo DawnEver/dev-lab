@@ -40,6 +40,7 @@ from typing import Any, Final
 from lab_commons.log import emit
 
 from dev_lab.dev.agenthooks import STAMP, engine_source
+from dev_lab.dev.venvpath import VENV_LAYOUTS
 
 __all__ = [
     'ABSENT',
@@ -102,6 +103,19 @@ HOOK_COMMAND: Final = (
     f'node "$e" "$CLAUDE_PROJECT_DIR/{RULES_REL}" || '
     '{ echo "agent-guard: the engine exited $? -- refused (fail closed)" >&2; exit 2; }'
 )
+
+#: The STRAY-FILE-REFUSED census (:mod:`dev_lab.dev.codeplace` ``stray``), run by this checkout's own venv
+#: interpreter -- each layout derived from :data:`dev_lab.dev.venvpath.VENV_LAYOUTS`, never typed. A checkout
+#: with no venv is NOT blocked (decision 7, 2026-10-22): the census is a report, and a missing interpreter
+#: is the bootstrap's to fix, not every shell call's.
+STRAY_COMMAND: Final = (
+    'for p in '
+    + ' '.join(f'"$CLAUDE_PROJECT_DIR/{"/".join(layout)}"' for layout in VENV_LAYOUTS.values())
+    + '; do [ -x "$p" ] && exec "$p" -m dev_lab.dev.codeplace stray; done; exit 0'
+)
+
+#: The events the stray census is wired on: after every shell call, and when the agent stops.
+STRAY_EVENTS: Final = ('PostToolUse', 'Stop')
 
 #: The parts, in the order a reader should fix them: an engine with no rules refuses nothing, and
 #: rules with no wiring are read by nobody.
@@ -278,7 +292,7 @@ def guard_installation(repo: Path) -> GuardReport:
 
 
 def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    """*settings* with the guard's ``PreToolUse`` Bash hook present, and NOTHING ELSE MOVED.
+    """*settings* with the guard's ``PreToolUse`` shell hook and the stray census present, and NOTHING ELSE MOVED.
 
     Pure over its argument -- the input is not mutated -- so the suite drives THIS function over a
     planted foreign settings file rather than re-deriving what "did not clobber" means.
@@ -305,9 +319,37 @@ def wire_settings(settings: dict[str, Any]) -> dict[str, Any]:
                 commands[index] = ours
                 return out
         commands.append(ours)
-        return out
+        return _wire_stray(out)
     pre.append({'matcher': _MATCHER, 'hooks': [ours]})
-    return out
+    return _wire_stray(out)
+
+
+def _is_stray(hook: object) -> bool:
+    return isinstance(hook, dict) and 'dev_lab.dev.codeplace stray' in str(hook.get('command', ''))
+
+
+def _wire_stray(settings: dict[str, Any]) -> dict[str, Any]:
+    """*settings* with the stray census on :data:`STRAY_EVENTS`, our copy replaced in place, others kept."""
+    stray = {'type': 'command', 'command': STRAY_COMMAND}
+    for event in STRAY_EVENTS:
+        entries = settings['hooks'].setdefault(event, [])
+        mine = [
+            (entry, index)
+            for entry in entries
+            if isinstance(entry, dict)
+            for index, hook in enumerate(entry.get('hooks', []) or [])
+            if _is_stray(hook)
+        ]
+        if mine:
+            entry, index = mine[0]
+            entry['hooks'][index] = stray
+            continue
+        shell = [e for e in entries if event == 'PostToolUse' and _tools(e) == frozenset(SHELL_TOOLS)]
+        if shell:
+            shell[0]['hooks'].append(stray)
+        else:
+            entries.append({'matcher': _MATCHER, 'hooks': [stray]} if event == 'PostToolUse' else {'hooks': [stray]})
+    return settings
 
 
 def install_guard(repo: Path, *, force: bool = False) -> tuple[str, ...]:

@@ -135,7 +135,7 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     after = json.loads(settings.read_text(encoding='utf-8'))
 
     assert after['permissions'] == planted['permissions'], 'an unrelated settings key was lost'
-    assert after['hooks']['Stop'] == planted['hooks']['Stop'], 'an unrelated event was lost'
+    assert after['hooks']['Stop'][0] == planted['hooks']['Stop'][0], 'an unrelated event was lost'
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'
     assert pre[1] == planted['hooks']['PreToolUse'][1], "another agent's Bash hook was moved or widened"
@@ -301,3 +301,42 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
     pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
     assert pre == [{'matcher': 'Bash', 'hooks': [theirs]}, {'matcher': 'Bash|PowerShell', 'hooks': [ours]}]
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
+def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop() -> None:
+    """STRAY-FILE-REFUSED is live only when wired: PostToolUse on every shell tool, and Stop."""
+    after = agent_guard.wire_settings({})
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+    assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
+
+
+def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() -> None:
+    """Idempotent, and another author's PostToolUse/Stop hooks stay where they were."""
+    planted = {
+        'hooks': {
+            'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}]}],
+            'Stop': [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}],
+        },
+    }
+    once = agent_guard.wire_settings(planted)
+    assert agent_guard.wire_settings(once) == once
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert once['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}, stray]}
+    ]
+    assert once['hooks']['Stop'] == [planted['hooks']['Stop'][0], {'hooks': [stray]}]
+    assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
+
+
+def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
+    """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
+    bash = shutil.which('bash')
+    if bash is None:
+        pytest.fail('no bash on this host: the hook command is a bash line')
+    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
+    done = subprocess.run(
+        [bash, '-c', agent_guard.STRAY_COMMAND], input='{}', capture_output=True, text=True, env=env, check=False
+    )
+    assert (done.returncode, done.stdout) == (0, ''), done.stderr
