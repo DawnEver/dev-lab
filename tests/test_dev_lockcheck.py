@@ -260,7 +260,7 @@ def test_a_stale_lock_head_gets_a_red_forge_status_naming_the_relock(
         posted.setdefault(sha, []).append((context, state, description))
 
     def listed(_client: object, sha: str) -> tuple[object, ...]:
-        return tuple(type('S', (), {'context': one[0]})() for one in posted.get(sha, []))
+        return tuple(type('S', (), {'context': one[0], 'state': one[1]})() for one in posted.get(sha, []))
 
     monkeypatch.setattr(forgeheadgate, 'status_post', post)
     monkeypatch.setattr(forgeheadgate, 'status_list', listed)
