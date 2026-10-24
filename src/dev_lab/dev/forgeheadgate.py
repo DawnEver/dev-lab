@@ -9,9 +9,12 @@ where the author reads it -- a status on the PR head, ``failure`` naming the exa
 * :data:`BRANCHSET_CONTEXT` -- the head's branch is not admitted by the branch set its own commit declares
   (:func:`dev_lab.dev.branchset.branchset_at`); an unreadable declaration is ``error``.
 
-ONCE PER HEAD SHA: a head already carrying a context is not judged again (a resolution is minutes of network),
-so a new push earns a new judgement. Run by the integration step of ``forge serve`` on every open PR into
-integration (:func:`dev_lab.dev.forgeintegration.tick`, given its host).
+ONCE PER HEAD SHA, FOR A VERDICT: a head whose context already reads ``success`` or ``failure`` is not judged
+again (a resolution is minutes of network), so a new push earns a new judgement; an ``error`` or ``pending`` is
+not a verdict and is judged again next tick. A tick judges heads after its merge, sync and notice work, oldest PR
+first, and starts no head once :data:`TICK_BUDGET_S` is spent; the rest wait for the next tick.
+Run by the integration step of ``forge serve`` on every open PR into integration
+(:func:`dev_lab.dev.forgeintegration.tick`, given its host).
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from typing import TYPE_CHECKING, Final
 
 from dev_lab.dev.branchset import BranchSetNotDeclared, branchset_at
 from dev_lab.dev.forgestatus import status_list, status_post
-from dev_lab.dev.lockcheck import DOOR, LOCK, stale
+from dev_lab.dev.lockcheck import DOOR, LOCK, RESOLVE_TIMEOUT_S, stale
 from dev_lab.dev.relock import _worktree
 
 if TYPE_CHECKING:
@@ -29,12 +32,25 @@ if TYPE_CHECKING:
 
     from dev_lab.dev.forgework import Client
 
-__all__ = ['BRANCHSET_CONTEXT', 'LOCK_CONTEXT', 'LOCK_REMEDY', 'branchset_verdict', 'judge', 'lock_verdict']
+__all__ = [
+    'BRANCHSET_CONTEXT',
+    'LOCK_CONTEXT',
+    'LOCK_REMEDY',
+    'TERMINAL',
+    'TICK_BUDGET_S',
+    'branchset_verdict',
+    'judge',
+    'lock_verdict',
+]
 
 LOCK_CONTEXT: Final = 'lock/fresh'
 BRANCHSET_CONTEXT: Final = 'branchset'
 #: The fix a stale lock names, first, so the 140-character status keeps it whole.
 LOCK_REMEDY: Final = f'run `{DOOR}`, then commit {LOCK}'
+#: The states that are a verdict; any other (``error``, ``pending``) is judged again.
+TERMINAL: Final = frozenset({'success', 'failure'})
+#: Seconds of a serve tick the gate may START heads within: one cold resolution's own ceiling.
+TICK_BUDGET_S: Final = RESOLVE_TIMEOUT_S
 
 Verdict = tuple[str, str]
 
@@ -68,7 +84,7 @@ def judge(
     root: Path, client: Client, head: str, branch: str, *, read: Callable[[Path], tuple[str, ...]] = stale
 ) -> list[str]:
     """Post each context *head* does not yet carry; one line per post."""
-    have = {status.context for status in status_list(client, head)}
+    have = {status.context for status in status_list(client, head) if status.state in TERMINAL}
     lines = []
     if BRANCHSET_CONTEXT not in have:
         state, text = branchset_verdict(root, head, branch)
