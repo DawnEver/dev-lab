@@ -283,8 +283,8 @@ def tick(
 ) -> Ticked:
     """One pass over every child branch on *origin*: its open PRs into integration, then the classed lanes.
 
-    Given the serving *host* and ``auto_sync`` declared, a PR the forge did not merge is auto-synced
-    (:mod:`dev_lab.dev.forgeautosync`); ``forge integration`` passes no host and only reports.
+    Given the serving *host* and ``pr_merges_since`` declared (auto-sync rides auto-merge), a PR the forge did not
+    merge is auto-synced (:mod:`dev_lab.dev.forgeautosync`); ``forge integration`` passes no host and only reports.
     """
     lines: list[str] = []
     said: list[tuple[Child, Feedback]] = []
@@ -303,7 +303,7 @@ def tick(
     for child in children:
         one = settle(root, child, policy, feedback(root, child, policy))
         if (
-            now is not None and policy.auto_sync and child.pr is not None
+            now is not None and policy.pr_merges_since and child.pr is not None
             and one.summary != _MERGED and one.state != 'success'
         ):  # fmt: skip
             others = [pull for pull in pulls if pull.number != child.pr]

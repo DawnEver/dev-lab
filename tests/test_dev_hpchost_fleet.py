@@ -93,3 +93,38 @@ def test_an_account_with_two_grants_is_refused_rather_than_one_silently_kept(tmp
     )
     assert code == 2
     assert any("['alice'] hold more than one" in line for line in said)
+
+
+def test_a_declared_short_host_resolves_to_its_grant_login_host(tmp_path: Path) -> None:
+    """A machine file's ``hpclogin01`` IS the grant's ``hpclogin01.example``: the full name is what is dialled."""
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "hpclogin01"\n'})
+    assert code == 0
+    assert [argv[5] for argv in started] == ['bob@hpclogin01.example']
+    assert not any('refused' in line for line in said)
+
+
+def test_a_short_host_matching_no_grant_label_is_refused(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a bare label that is no grant host's first label is still refused."""
+    code, started, said = _run(tmp_path, ('bob',), {'bob': '[deploy]\nhost = "hpclogin"\n'})
+    assert code == 2
+    assert started == []
+    assert any('not a login host' in line for line in said)
+
+
+def test_a_short_host_two_grant_hosts_share_is_refused(tmp_path: Path) -> None:
+    """PLANTED CONTROL: a label naming two login hosts names neither, so it is refused, never the first kept."""
+    twins = (Grant(user='bob', hosts=('hpclogin01.a.example', 'hpclogin01.b.example'), slurm_account='acct'),)
+    started: list[list[str]] = []
+    said: list[str] = []
+    code = deploy_fleet(
+        twins,
+        ('bob',),
+        home=tmp_path,
+        dry_run=False,
+        say=said.append,
+        connect=lambda _grant: lambda _cmd, _stdin=None: '[deploy]\nhost = "hpclogin01"\n',
+        launch=lambda argv, _log: started.append(list(argv)),
+    )
+    assert code == 2
+    assert started == []
+    assert any('ambiguous' in line for line in said)

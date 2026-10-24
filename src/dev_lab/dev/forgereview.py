@@ -19,10 +19,11 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integ
 * a :data:`REVIEW_CONTEXT` status on the head: ``success`` once posted, ``pending`` saying
   :data:`TAKEOVER_PENDING` when every reviewer was ``exhausted`` or ``auth`` (nothing is commented; the integrator
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
-  when the command failed,
-  printed no known findings version, or the diff is over the cap. ADVISORY:
-  :func:`dev_lab.dev.platformparts.parts_of` skips that context, so the auto-merge
-  (:mod:`dev_lab.dev.forgemerge`), promotion and push admission never wait on it.
+  when the command failed or printed no known findings version. ADVISORY:
+  :func:`dev_lab.dev.platformparts.parts_of` skips that context, so promotion and push admission never wait on it;
+* ``pending`` saying :data:`~dev_lab.dev.platformparts.OVER_CAP` when the diff is over ``max_diff_bytes``: the ONE
+  review state the auto-merge (:mod:`dev_lab.dev.forgemerge`) waits on, until a session reviews the head in
+  slices and posts ``success`` -- an unreviewable head is never advisory-skipped into an unreviewed merge.
 
 THE COST IS BOUNDED: one command run per head sha (the status is the record; a second tick on the same head
 runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_bytes`` never reviewed. Declared::
@@ -32,7 +33,7 @@ runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_byte
     # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
     command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--method", "{capabilities.sharp_review.path}",
                "--range", "{range}", "--model", "<id>"]
-    max_diff_bytes = 200000   # a larger diff is not reviewed
+    max_diff_bytes = 200000   # a larger diff is held for a sliced review
     claim_stale = "1 h"       # the default: a claim older than this may be taken over
 
 A host value the command names but this host's ``[capabilities]`` does not declare is ``unsupported`` and posts
@@ -77,7 +78,7 @@ from dev_lab.dev.forgereview_findings import (
 )
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
-from dev_lab.dev.platformparts import REVIEW_CONTEXT
+from dev_lab.dev.platformparts import OVER_CAP, REVIEW_CONTEXT
 
 if TYPE_CHECKING:
     from dev_lab.dev.forgestatus import CommitStatus
@@ -391,8 +392,8 @@ def review_tick(
             continue
         size = len(_git(root, 'diff', f'{target}...{head}').encode())
         if size > review.max_diff_bytes:
-            why = f'not reviewed: the diff is {size} bytes, over the cap max_diff_bytes={review.max_diff_bytes}'
-            status_post(client, head, context=REVIEW_CONTEXT, state='error', description=why)
+            why = f'{OVER_CAP} ({size} bytes > max_diff_bytes={review.max_diff_bytes})'
+            status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
         reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
