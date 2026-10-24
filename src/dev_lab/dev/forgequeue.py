@@ -53,7 +53,8 @@ from dev_lab.dev.forgeschedule import (
     load_schedule,
     repo_name,
 )
-from dev_lab.dev.forgestatus import CommitStatus, status_history
+from dev_lab.dev.forgesettled import SettledHistories
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
 from dev_lab.dev.platformparts import derived, origin_url, part_context
@@ -121,12 +122,7 @@ def forge_queue(
     Fetches nothing: the caller holds origin as fresh as it needs.
     """
     repo = repo_name(client)
-    histories: dict[str, tuple[CommitStatus, ...]] = {}  # one read per sha: it derives the parts and assesses each
-
-    def history(sha: str) -> tuple[CommitStatus, ...]:
-        if sha not in histories:
-            histories[sha] = status_history(client, sha) if sha else ()
-        return histories[sha]
+    history = SettledHistories(client)  # one read per sha, none once settled (dev_lab.dev.forgesettled)
 
     policy = load_policy(root)
     found = candidates(

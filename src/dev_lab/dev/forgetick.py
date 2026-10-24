@@ -98,7 +98,8 @@ from dev_lab.dev.forgeoutbox import PostFailed, flush, unprompted_client
 from dev_lab.dev.forgerequest import declared_request, remind, request_authors
 from dev_lab.dev.forgescarce import unreached
 from dev_lab.dev.forgeschedule import candidates, load_schedule, repo_name
-from dev_lab.dev.forgestatus import CommitStatus, status_history
+from dev_lab.dev.forgesettled import SettledHistories
+from dev_lab.dev.forgestatus import CommitStatus
 from dev_lab.dev.forgetake import ClaimPass
 from dev_lab.dev.forgework import Client, ForgeCallFailed, client_for
 from dev_lab.dev.lanepolicy import load_policy
@@ -176,12 +177,7 @@ def tick(
         lines += str(failed).splitlines()
     fetch(root)
     built = client(root)
-    histories: dict[str, tuple[CommitStatus, ...]] = {}  # one read per sha: it derives the parts and assesses each
-
-    def history(sha: str) -> tuple[CommitStatus, ...]:
-        if sha not in histories:
-            histories[sha] = status_history(built, sha)
-        return histories[sha]
+    history = SettledHistories(built)  # one read per sha a tick, none once settled (dev_lab.dev.forgesettled)
 
     login = built.whoami()
     now = forge_now(built)
