@@ -21,20 +21,31 @@ WHAT IT POSTS, per open, non-draft PR into ``[tool.lab_commons.integrator] integ
   session reviews that head through the same method -- anthropic API, then a ccc, then a ccds session), ``error``
   when the command failed or printed no known findings version. ADVISORY:
   :func:`dev_lab.dev.platformparts.parts_of` skips that context, so promotion and push admission never wait on it;
-* ``pending`` saying :data:`~dev_lab.dev.platformparts.OVER_CAP` when the diff is over ``max_diff_bytes``: the ONE
-  review state the auto-merge (:mod:`dev_lab.dev.forgemerge`) waits on, until a session reviews the head in
-  slices and posts ``success`` -- an unreviewable head is never advisory-skipped into an unreviewed merge.
+* ``pending`` saying :data:`~dev_lab.dev.platformparts.OVER_CAP` when the head cannot be read in slices (its
+  reviewable change is over ``max_total_bytes``, one file alone is over ``max_diff_bytes``, or it needs several
+  slices and the command takes no ``{paths}``): the ONE review state the auto-merge (:mod:`dev_lab.dev.forgemerge`)
+  waits on, until a session reviews the head and posts ``success`` -- an unreviewable head is never
+  advisory-skipped into an unreviewed merge.
 
-THE COST IS BOUNDED: one command run per head sha (the status is the record; a second tick on the same head
-runs nothing and posts nothing), drafts skipped, and a diff over ``max_diff_bytes`` never reviewed. Declared::
+WHAT IS READ is :mod:`dev_lab.dev.forgereview_scope`'s: the branch's own change since its last reviewed head,
+minus generated files, in slices of at most ``max_diff_bytes`` under one lens each. Each slice runs the command
+once; their outputs merge into one document, and a declared ``synthesis`` command then reads that document
+(``{findings}``) over the whole range for what crosses slices.
+
+THE COST IS BOUNDED: one review per head sha (the status is the record; a second tick on the same head runs
+nothing and posts nothing), drafts skipped, generated files never read, ``max_total_bytes`` per head. Declared::
 
     [tool.lab_commons.review]
-    # {range}: <merge base>..<head>; the command names its own method and model (no default model exists)
+    # {range}: <base>..<head>; {paths}: the slice's paths (one argument each); {lens}: strict|standard|light
     # {capabilities.<name>.<key>}: THIS host's machine-file value (the repo says WHAT, the host says WHERE)
     command = ["{capabilities.ai_lab.python}", "-m", "ai_lab.review", "--method", "{capabilities.sharp_review.path}",
-               "--range", "{range}", "--model", "<id>"]
-    max_diff_bytes = 200000   # a larger diff is held for a sliced review
-    claim_stale = "1 h"       # the default: a claim older than this may be taken over
+               "--range", "{range}", "--lens", "{lens}", "--model", "<id>", "--paths", "{paths}"]
+    synthesis = []             # optional: run once over {findings} (the merged slices) and {range}
+    max_diff_bytes = 200000    # one slice: what one reviewer reads
+    max_total_bytes = 4000000  # one head: past it, held for a session
+    derived = []               # globs of generated files beyond the family's (famfiles.GENERATED)
+    strict = [...]             # globs read under the strict lens; light = [...] under the light one
+    claim_stale = "1 h"        # the default: a claim older than this may be taken over
 
 A host value the command names but this host's ``[capabilities]`` does not declare is ``unsupported`` and posts
 nothing, like a command it cannot start. BEFORE it runs the command, the host checks it can start it
@@ -68,14 +79,16 @@ from lab_commons.config import section
 from lab_commons.units import Q_
 
 from dev_lab.dev.forgecarry import RUNNING, docs_only
-from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_upsert, pr_list
+from dev_lab.dev.forgepulls import ListingIncomplete, Marker, comment_list, comment_upsert, pr_list
 from dev_lab.dev.forgereview_findings import (
-    SEVERITIES,
     Findings,
     FindingsInvalid,
     UnknownSchemaVersion,
+    counted,
     parse_findings,
+    render,
 )
+from dev_lab.dev.forgereview_scope import Budget, Scope, gather, plan, reviewed_heads
 from dev_lab.dev.forgestatus import status_list, status_post
 from dev_lab.dev.forgework import ForgeCallFailed
 from dev_lab.dev.platformparts import OVER_CAP, REVIEW_CONTEXT
@@ -104,8 +117,21 @@ __all__ = [
     'step',
 ]  # fmt: skip
 
-#: The placeholder the declared command carries; the reviewed ``<merge base>..<head>`` range replaces it.
+#: What a head whose change is only generated files is posted as (``success``): nothing a reviewer reads.
+ONLY_GENERATED: Final = 'nothing to review: every changed file is generated'
+
+#: The placeholder the declared command carries; the reviewed ``<base>..<head>`` range replaces it.
 RANGE_FIELD: Final = '{range}'
+
+#: An argument exactly this expands into the slice's paths, one argument each.
+PATHS_FIELD: Final = '{paths}'
+
+#: Replaced by the slice's lens (:data:`dev_lab.dev.forgereview_scope.LENSES`).
+LENS_FIELD: Final = '{lens}'
+
+#: The family's default lens globs: what refuses or declares is read strictly, prose lightly.
+STRICT: Final = ('**/hooks/**', '**/rules/**', 'tests/architecture/**', '**/contracts/**')
+LIGHT: Final = ('docs-src/**', '**/.claude/memory/**', '**/*.md')
 
 #: A placeholder for a value THIS host declares: ``{capabilities.<name>.<key>}`` (``~`` expanded).
 HOST_FIELD: Final = re.compile(r'\{capabilities\.(?P<name>[a-z][a-z0-9_]*)\.(?P<key>[a-z][a-z0-9_]*)\}')
@@ -143,15 +169,19 @@ _TABLE: Final = 'review'
 _MISSING_MODULE: Final = 'No module named'  # what `python -m <absent>` says
 _COMMAND_TIMEOUT_S: Final = 1800
 _DESCRIPTION: Final = 240  # a commit-status description is short
-_GIT_TIMEOUT_S: Final = 120
 
 
 @dataclass(frozen=True)
 class Review:
-    """``[tool.lab_commons.review]``: the command that reviews, and the diff-size bound."""
+    """``[tool.lab_commons.review]``: the command that reviews, and what bounds and cuts what it reads."""
 
     command: tuple[str, ...] = ()  # undeclared: nothing is reviewed (the command names its own model)
-    max_diff_bytes: int = 200_000
+    synthesis: tuple[str, ...] = ()  # undeclared: the slice outputs are merged, nothing reads across them
+    max_diff_bytes: int = 200_000  # one slice
+    max_total_bytes: int = 4_000_000  # one head
+    derived: tuple[str, ...] = ()
+    strict: tuple[str, ...] = STRICT
+    light: tuple[str, ...] = LIGHT
     claim_stale: str = DEFAULT_CLAIM_STALE  # a duration: a claim older than this may be taken over
 
     def __post_init__(self) -> None:
@@ -162,6 +192,11 @@ class Review:
     def stale(self) -> timedelta:
         """``claim_stale`` as a :class:`~datetime.timedelta`."""
         return stale_after(self)
+
+    @property
+    def budget(self) -> Budget:
+        """The bounds and globs :func:`~dev_lab.dev.forgereview_scope.plan` cuts a head by."""
+        return Budget(self.max_diff_bytes, self.max_total_bytes, self.derived, self.strict, self.light)
 
 
 def review_from(text: str, origin: str) -> Review:
@@ -174,24 +209,13 @@ def review_from(text: str, origin: str) -> Review:
     if unknown := sorted(set(declared) - known):
         msg = f'[tool.lab_commons.{_TABLE}] in {origin} has unknown key(s) {unknown}; the keys are {sorted(known)}'
         raise ValueError(msg)
-    return Review(**declared | ({'command': tuple(declared['command'])} if 'command' in declared else {}))
+    return Review(**{key: tuple(value) if isinstance(value, list) else value for key, value in declared.items()})
 
 
 def load_review(root: Path) -> Review:
     """*root*'s working-tree ``[tool.lab_commons.review]``; defaults when it has no manifest."""
     manifest = root / 'pyproject.toml'
     return review_from(manifest.read_text(encoding='utf-8'), str(manifest)) if manifest.is_file() else Review()
-
-
-def _git(root: Path, *args: str) -> str:
-    done = _door.run(
-        ['git', *args], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace',
-        timeout=_GIT_TIMEOUT_S, check=False,
-    )  # fmt: skip
-    if done.returncode != 0:
-        msg = f'git {" ".join(args)} failed: {done.stderr.strip()[:300]}'
-        raise OSError(msg)
-    return done.stdout
 
 
 class ReviewRefused(OSError):
@@ -302,8 +326,11 @@ def run_command(argv: Sequence[str], root: Path) -> str:
     return done.stdout
 
 
-def command_for(review: Review, reviewed: str, capabilities: Mapping[str, Mapping[str, Any]]) -> list[str]:
-    """The declared command: :data:`RANGE_FIELD` replaced by *reviewed*, each :data:`HOST_FIELD` by this host's value.
+def command_for(
+    review: Review, reviewed: str, capabilities: Mapping[str, Mapping[str, Any]], *,
+    paths: Sequence[str] = (), lens: str = 'standard', synthesis: bool = False,
+) -> list[str]:  # fmt: skip
+    """The declared command (or *synthesis*), every placeholder replaced: the range, the slice, this host's values.
 
     A host value *capabilities* (this host's ``[capabilities]``) does not declare is :class:`ReviewUnsupported`.
     """
@@ -316,29 +343,18 @@ def command_for(review: Review, reviewed: str, capabilities: Mapping[str, Mappin
             raise ReviewUnsupported(msg)
         return str(Path(value).expanduser()) if value.startswith('~') else value
 
-    return [HOST_FIELD.sub(host_value, arg).replace(RANGE_FIELD, reviewed) for arg in review.command]
+    def filled(arg: str) -> list[str]:
+        if arg == PATHS_FIELD:
+            return list(paths)
+        return [HOST_FIELD.sub(host_value, arg).replace(RANGE_FIELD, reviewed).replace(LENS_FIELD, lens)]
+
+    return [one for arg in (review.synthesis if synthesis else review.command) for one in filled(arg)]
 
 
-def render(head: str, found: Findings) -> str:
-    """The one PR comment: who reviewed with what status, then each finding, most severe first."""
-    who = ', '.join(f'`{one.name}` ({one.provider or "-"}): {one.status}' for one in found.reviewers) or 'none'
-    rows = sorted(found.findings, key=lambda one: SEVERITIES.index(one.severity))
-    lines = [
-        f'- **{one.severity}** `{one.file}` -- {one.summary} ({one.id}, {one.category}, {one.confidence}; '
-        f'by {", ".join(one.reviewers)})'
-        + (f'\n  - principles: {", ".join(one.principles)}' if one.principles else '')
-        + (f'\n  - suggestion: {one.suggestion}' if one.suggestion else '')
-        for one in rows
-    ]
-    body = '\n'.join(lines) or 'No findings.'
-    return (
-        f'**Advisory review** of `{head[:12]}` over `{found.range}` -- it gates nothing.\n\nReviewers: {who}\n\n{body}'
-    )
-
-
-def _counted(found: Findings) -> str:
-    high = sum(one.severity == 'HIGH' for one in found.findings)
-    return f'{len(found.findings)} finding(s), {high} HIGH'
+def _scope(root: Path, client: Client, review: Review, pull: PullRequest, target: str) -> Scope:
+    """What *pull*'s head review reads; held when it needs slices the command cannot take."""
+    done = reviewed_heads(comment.body for comment in comment_list(client, pull.number))
+    return plan(root, target, pull.head_sha, review.budget, done, sliceable=PATHS_FIELD in review.command)
 
 
 def _settle(client: Client, pull: PullRequest, found: Findings) -> str:
@@ -358,9 +374,9 @@ def _settle(client: Client, pull: PullRequest, found: Findings) -> str:
     url = comment.url if comment else ''
     status_post(
         client, head, context=REVIEW_CONTEXT, state='success', target_url=url,
-        description=f'advisory review posted: {_counted(found)}; it does not gate the merge',
+        description=f'advisory review posted: {counted(found)}; it does not gate the merge',
     )  # fmt: skip
-    return f'#{pull.number} {head[:12]}: reviewed, {_counted(found)}'
+    return f'#{pull.number} {head[:12]}: reviewed, {counted(found)}'
 
 
 def review_tick(
@@ -390,16 +406,16 @@ def review_tick(
         if (passed := _passed(root, client, head, clock(), review.stale)) is not None:
             lines.extend([f'#{pull.number} {head[:12]}: {passed}'] if passed else [])
             continue
-        size = len(_git(root, 'diff', f'{target}...{head}').encode())
-        if size > review.max_diff_bytes:
-            why = f'{OVER_CAP} ({size} bytes > max_diff_bytes={review.max_diff_bytes})'
-            status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)
+        scope = _scope(root, client, review, pull, target)
+        if scope.held is not None or not scope.slices:
+            state, why = ('pending', f'{OVER_CAP} ({scope.held})') if scope.held else ('success', ONLY_GENERATED)
+            status_post(client, head, context=REVIEW_CONTEXT, state=state, description=why[:_DESCRIPTION])
             lines.append(f'#{pull.number} {head[:12]}: {why}')
             continue
-        reviewed = f'{_git(root, "merge-base", target, head).strip()}..{head}'
         try:
-            argv = command_for(review, reviewed, capabilities)
-            cannot = ready(argv, root)
+            argvs = [command_for(review, scope.range, capabilities, paths=one.paths, lens=one.lens)
+                     for one in scope.slices]  # fmt: skip
+            cannot = ready(argvs[0], root)
         except ReviewUnsupported as unsupported:
             cannot = str(unsupported)
         if cannot is not None:  # checked first: a host that cannot review posts nothing
@@ -408,7 +424,8 @@ def review_tick(
         claim = f'{CLAIMED} {host} at {clock().isoformat(timespec="seconds")}, reviewing'
         status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=claim)
         try:
-            found = parse_findings(run(argv, root))
+            synth = command_for(review, scope.range, capabilities, synthesis=True)
+            found = parse_findings(gather(scope.range, argvs, synth, run, root))
         except ReviewUnsupported as unsupported:  # it started and then could not: give the claim back
             why = f'{RELEASED} {host}: {unsupported}'[:_DESCRIPTION]
             status_post(client, head, context=REVIEW_CONTEXT, state='pending', description=why)

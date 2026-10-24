@@ -395,7 +395,9 @@ def test_the_forge_holds_no_model_client_prompt_or_key() -> None:
 
     That the retired reviewer's names are gone is the retired-spelling scan's (``lab_commons.hpc.retired``).
     """
-    assert {field.name for field in dataclasses.fields(Review)} == {'command', 'max_diff_bytes', 'claim_stale'}
+    assert {field.name for field in dataclasses.fields(Review)} == {
+        'command', 'synthesis', 'max_diff_bytes', 'max_total_bytes', 'derived', 'strict', 'light', 'claim_stale',
+    }  # fmt: skip
 
 
 def test_a_draft_is_skipped(tmp_path: Path) -> None:
