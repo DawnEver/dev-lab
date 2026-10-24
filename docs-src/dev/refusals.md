@@ -101,8 +101,21 @@ HINT: a bare network verb loses only the retry; force, delete and no-verify push
 
 ## BARE-INTERPRETER
 
-- **Why it is refused.** a bare `python`/`py`, `uv run` or `uvx` runs an interpreter somebody else chose -- the PATH's, or uv's managed one -- not this checkout's venv. `uv run` may also mutate the checkout's environment outside the checked dependency door. Each worktree owns `.venv`; main's environment belongs only to main, never to an unpopulated lane.
+- **Why it is refused.** `uv run` or `uvx` runs an interpreter somebody else chose -- uv's managed one -- not this checkout's venv, and `uv run` may also mutate the checkout's environment outside the checked dependency door. Each worktree owns `.venv`; main's environment belongs only to main, never to an unpopulated lane.
 - **The exit.** Run this checkout's own venv interpreter: `.venv/Scripts/python.exe <args>` on Windows or `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run `-m dev_lab.dev.dep --bootstrap <worktree>` to create the target's own environment. Use the repo-declared dependency-sync door (`scripts/gate/dep_sync.py` where supplied) for dependency changes. Agents may run these specific checked doors; this does not permit arbitrary installers or silent main-environment mutation. A repo-declared CLI stays allowed.
+
+## BARE-PYTHON
+
+HINT: a bare interpreter mutates nothing; the hazard is a wrong interpreter, not harm.
+
+- **Why it is said.** a bare `python`/`py` runs the interpreter the PATH chose, not this checkout's venv, so an import
+  resolves against packages this checkout never declared and a result cannot be reproduced from the lock. It mutates
+  no environment, which is why it hints (toolchain plan P3, 2026-10-23) while BARE-INTERPRETER, whose `uv run` may
+  sync one, refuses.
+- **The exit.** The same as BARE-INTERPRETER's: this checkout's own `.venv/Scripts/python.exe <args>` on Windows or
+  `.venv/bin/python <args>` on POSIX. If it is missing, an existing checkout interpreter may run
+  `-m dev_lab.dev.dep --bootstrap <worktree>` to create the target's own environment; main's environment belongs
+  only to main.
 
 ## RECURSIVE-GREP
 
