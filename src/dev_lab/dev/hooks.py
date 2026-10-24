@@ -49,6 +49,8 @@ __all__ = [
     'MATCH_KINDS',
     'PLACEHOLDER',
     'SCOPES',
+    'SEVERITIES',
+    'WHENS',
     'DenyRule',
     'Remedy',
     'UnremediedRule',
@@ -74,6 +76,16 @@ MATCH_KINDS: Final = frozenset({'command', 'argument'})
 #: payload carries a non-empty ``agent_id`` -- present only inside a subagent call, fork included.
 #: A closed set, because the engine reads an unknown scope as no scope, which widens the rule.
 SCOPES: Final = frozenset({'subagent'})
+
+#: WHAT A FIRING ROW DOES, in the engine's own vocabulary. ``'deny'`` (the default, rendered as no key)
+#: refuses the call; ``'hint'`` lets it run and hands the reason to the agent as context. A row hints when
+#: its hazard is speed or style rather than irreversible harm (toolchain plan P3): judged by its measured
+#: fire and false-positive rate, such a refusal is routed around, and the exit it names is still worth saying.
+SEVERITIES: Final = frozenset({'deny', 'hint'})
+#: WHEN a row binds, beyond its pattern. ``'live-run'``: only while the checkout the command targets has a
+#: live run (:mod:`dev_lab.dev.liverun`), which the engine asks after the pattern matched. A closed set,
+#: because the engine reads an unknown condition as none, which widens the rule.
+WHENS: Final = frozenset({'live-run'})
 
 
 class UnremediedRule(RuntimeError):
@@ -153,6 +165,8 @@ class DenyRule:
     permits: tuple[str, ...] = ()
     details: str | None = None
     scope: str | None = None
+    severity: str = 'deny'
+    when: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an id that is not an UPPER-CASE slug, at construction."""
@@ -167,6 +181,12 @@ class DenyRule:
             raise ValueError(msg)
         if self.scope is not None and self.scope not in SCOPES:
             msg = f'{self.id}: scope={self.scope!r} is not one of {sorted(SCOPES)}; the engine would read it as none.'
+            raise ValueError(msg)
+        if self.severity not in SEVERITIES:
+            msg = f'{self.id}: severity={self.severity!r} is not one of {sorted(SEVERITIES)}; the engine denies on it.'
+            raise ValueError(msg)
+        if self.when is not None and self.when not in WHENS:
+            msg = f'{self.id}: when={self.when!r} is not one of {sorted(WHENS)}; the engine would read it as none.'
             raise ValueError(msg)
         _compiled(self.pattern, f'{self.id} pattern')
         _compiled(self.allow, f'{self.id} allow')
@@ -235,6 +255,10 @@ class DenyRule:
             row['allow'] = openings[0] if len(openings) == 1 else '|'.join(f'(?:{text})' for text in openings)
         if self.scope is not None:
             row['scope'] = self.scope
+        if self.severity != 'deny':
+            row['severity'] = self.severity
+        if self.when is not None:
+            row['when'] = self.when
         return row
 
 
@@ -313,8 +337,12 @@ def denies(
     remedies: Mapping[str, Remedy] | None = None,
     *,
     scope: str | None = None,
+    live: bool = False,
 ) -> str | None:
-    """The ID of the first rule that REFUSES *segment*, or ``None`` -- openings applied.
+    """The ID of the first rule that REFUSES *segment*, or ``None`` -- openings applied; a hint row refuses nothing.
+
+    *live* says whether the checkout the command targets has a live run, as the engine asks
+    :mod:`dev_lab.dev.liverun`; a ``when='live-run'`` row binds only then.
 
     An opening is tested against the whole text, as the engine tests it against the whole command:
     an ``allow`` is a statement about the invocation, not about the token the pattern landed on.
@@ -323,7 +351,9 @@ def denies(
     """
     supplied = remedies or {}
     for rule in rules:
-        if rule.scope is not None and rule.scope != scope:
+        if rule.severity != 'deny' or (rule.scope is not None and rule.scope != scope):
+            continue
+        if rule.when == 'live-run' and not live:
             continue
         if not fires(rule, segment):
             continue

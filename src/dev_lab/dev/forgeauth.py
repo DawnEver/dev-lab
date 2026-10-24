@@ -35,13 +35,12 @@ from dev_lab.dev.forge import (
     Forge,
     NoCredential,
     Transport,
-    credential_for,
     forge_from_remote,
     forge_of_url,
     https_transport,
     store_credential,
 )
-from dev_lab.dev.forgework import Client, ForgeCallFailed
+from dev_lab.dev.forgework import Client, ForgeCallFailed, stored_client
 
 __all__ = ['TICK_SCOPES', 'login', 'main', 'status', 'tick_refusal']
 
@@ -77,8 +76,7 @@ def status(
         ForgeCallFailed: a token was found and the forge did not accept it.
 
     """
-    username, secret = credential_for(forge.host, cwd=cwd, env=env)
-    return Client(forge, secret, transport=transport, username=username).whoami()
+    return stored_client(forge, cwd=cwd, env=env, transport=transport).whoami()
 
 
 def tick_refusal(
@@ -86,10 +84,9 @@ def tick_refusal(
 ) -> str:
     """What the forge API refuses the stored credential that a tick needs on *forge*'s repo; ``''`` when nothing."""
     try:
-        username, secret = credential_for(forge.host, cwd=cwd, env=env)
+        client = stored_client(forge, cwd=cwd, env=env, transport=transport)
     except NoCredential as none:
         return str(none)
-    client = Client(forge, secret, transport=transport, username=username)
     refused = []
     if not _answers(client.whoami):
         refused.append('user (read): GET /user refused')

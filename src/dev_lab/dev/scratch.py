@@ -15,10 +15,10 @@ ONE DECLARATION, read off the repo's ``[tool.lab_commons.placement]`` by
 :func:`dev_lab.dev.codeplace.declared_placement`: ``scratch`` (the directory, the family's
 ``scratch/`` when omitted) and ``max_age_days`` (when the notice starts naming a one-off).
 
-THREE ENFORCEMENT POINTS, cheapest first, and only one of them blocks:
+TWO ENFORCEMENT POINTS, and only the forge blocks (toolchain plan P3: a local copy of a forge check
+refused the same commit twice; ``python -m dev_lab.dev.scratch check <paths>`` remains for a repo that
+declares it as a row of its own, naming both exits through :func:`staged_scratch`):
 
-* the ``scratch-commit`` pre-commit row (``python -m dev_lab.dev.scratch check <paths>``) refuses
-  a staged path under scratch other than its README, naming both exits (:func:`staged_scratch`);
 * the forge body :func:`assert_scratch_never_committed` holds the TRACKED set to exactly the README,
   so a commit made with hooks off still reds on the forge;
 * the ``SessionStart`` notice (``remind``) lists one-offs older than ``max_age_days`` and prints

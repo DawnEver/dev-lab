@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from lab_commons.box import Demand, Refused, box_path, hold, holdings
+from lab_commons.compute.durable import durable_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -90,9 +91,7 @@ def _prune(directory: Path, now: float) -> None:
 
 def _publish(directory: Path, key: RunKey, run: str, answer: str) -> None:
     target = _result_path(directory, key, run)
-    temporary = target.with_suffix('.tmp')
-    temporary.write_text(answer, encoding='utf-8')
-    temporary.replace(target)
+    durable_text(target, answer)
 
 
 def run_once(key: RunKey, work: Callable[[], str], *, directory: Path, poll_s: float) -> tuple[str, bool]:

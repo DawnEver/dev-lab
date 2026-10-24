@@ -502,13 +502,22 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'runner': ('original',),
     'filechecks': ('original',),
     'ciworkflows': ('original',),
-    # -- `dev_lab.dev.hpchost`: ORIGINAL. Moved whole from `lab_commons.hpc` at the dev-lab cut-over
-    # (2026-10-22, 9ac2e68); lab-commons is the upstream kit, not a consumer, so no consumer file was replaced.
+    # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
+    # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
     'account': ('original',),
     'allocate': ('original',),
     'checks': ('original',),
     'deploy': ('original',),
+    'fleet': ('original',),
     'spec': ('original',),
     'steps': ('original',),
     'tick': ('original',),
+    # ORIGINAL: new mechanisms no consumer held a file for.
+    'automode': ('original',),
+    'forgestuck': ('original',),
+    'forgewatch': ('original',),
+    'liverun': ('original',),
+    'monthsummary': ('original',),
+    'prsuperseded': ('original',),
+    'worktree_archive': ('original',),
 }

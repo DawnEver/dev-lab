@@ -89,6 +89,11 @@ are too unqualified to survive being flattened into a namespace this wide.
   and as ``python -m dev_lab.dev.netverb -- git fetch origin`` for a shell caller -- so it is
   not re-exported below, exactly as ``verify`` is not: a package that imports its own entry point
   makes ``runpy`` warn the module was already in ``sys.modules``.
+* :mod:`dev_lab.dev.liverun` - TREE-HAS-A-LIVE-RUN: a checkout a live process READS (a Python interpreter
+  working in it, or an argument naming a path in it, read off :mod:`lab_commons.census`) refuses
+  Edit/Write (its ``hook``) and, through the deny engine's ``when: 'live-run'`` row, merges, checkouts and
+  environment syncs; ``dep`` refuses a venv any live process executes from. ``output/``, ``.claude/`` and
+  ``.venv/`` are not the tree.
 * :mod:`dev_lab.dev.checkout` — SHARED-CHECKOUT, which both siblings declared absent on the
   grounds that the push obligation "is a fact about origin, not about any file in this checkout".
   The premise is true and the conclusion was wrong: git answers "what is here that origin does not
@@ -271,6 +276,8 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
 * :mod:`dev_lab.dev.forgelabels` -- labels by NAME on both forges: resolved to ids, created, put on an issue.
 * :mod:`dev_lab.dev.forgepublish` -- ``forge request``: publish a request only when a host could reproduce it.
 * :mod:`dev_lab.dev.forgestatus` -- a verdict PUBLISHED as a commit status (INCONCLUSIVE: ``error``).
+* :mod:`dev_lab.dev.forgewatch` -- ``forge watch <sha>``: read-only, a commit's verdicts until settled or a deadline.
+* :mod:`dev_lab.dev.forgestuck` -- STUCK-RUN-CANCEL: ``forge cancel-stuck <sha>`` scancels only its stuck forge tasks.
 * :mod:`dev_lab.dev.forgeoutbox` -- a status KEPT until its commit is on origin, then posted with its record.
 * :mod:`dev_lab.dev.forgerecords` -- run records as cleanable forge attachments; ``records prune``.
 * :mod:`dev_lab.dev.forgeunit` -- compute units on the forge: shared results (first wins), a unit offered as a Job.
@@ -349,9 +356,13 @@ docstring rather than being copied here -- and the NEXT module to arrive must sp
   branches when the repo opts in, lists them when it does not, and alarms unmerged stale ones.
 * :mod:`dev_lab.dev.prlanded` -- LANDED-PRS-CLOSE: an open PR whose head is on its base is commented, closed,
   and its branch deleted through LOSSLESS-DELETE; every serve tick, and ``forge pr close-landed``.
+* :mod:`dev_lab.dev.prsuperseded` -- SUPERSEDED-PRS-CLOSE: ``forge pr close-superseded <n>... --by <pr>``
+  closes salvaged PRs and deletes their branches through LOSSLESS-DELETE.
 * :mod:`dev_lab.dev.forgescarce` -- SCARCE-PARTS-BY-REACH: a PR waits on a scarce part only where its diff reaches it.
 * :mod:`dev_lab.dev.autodoors` -- AUTO-MODE-RUNS-THE-DOORS: one door table, rendered for Claude and Codex.
+* :mod:`dev_lab.dev.automode` -- REPO-AUTOMODE: the machine-local, gitignored auto-mode prose, derived per machine.
 * :mod:`dev_lab.dev.worktrees` -- the local worktree door: remove only clean, pushed trees; refuse the rest.
+* :mod:`dev_lab.dev.worktree_archive` -- `--archive NAME`: outputs move home, work is saved, nothing removed.
 * :mod:`dev_lab.dev.stoprun` -- the stop-own-run door: one identifiable gate/verify/serve tree, children first.
 * :mod:`dev_lab.dev.servelock` -- one ``forge serve`` per host: a non-blocking lock, and stopped-producer notes.
 * :mod:`dev_lab.dev.servetask` -- the ONE ``lab-forge-serve`` Scheduled Task: its windowless definition and log.

@@ -45,8 +45,8 @@ ROWS: tuple[tuple[str, str, tuple[str | tuple[str, str], ...]], ...] = (
             'An untracked, non-ignored file outside the declared stray roots (scratch, plus what the repo '
             'declares) is a defect found the moment it appears, not at review: a file somebody meant is staged, '
             'an artefact a program wrote goes to the dated output tree and the program is fixed to write there, '
-            'a one-off goes to scratch, and the census runs after every shell command and at the end of a turn '
-            'and refuses a commit while one exists.'
+            'a one-off goes to scratch, and the census runs after every shell command, at the end of a turn '
+            'and after every commit, naming each one with its remedy.'
         ),
         ('tests/test_arch_code_placement.py', 'tests/test_dev_codeplace.py'),
     ),

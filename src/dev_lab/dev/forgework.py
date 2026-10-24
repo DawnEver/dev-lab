@@ -50,6 +50,7 @@ import lab_commons.launch as _door
 
 from dev_lab.dev import forge as _forge
 from dev_lab.dev._forge_journal import LOOKBACK, Durable, Journal, Probe, Write, journal_for, since, write_key
+from dev_lab.dev._forge_records import Comment, Issue, PullRequest, _issue, comment_of, is_pull, pull_of
 from dev_lab.dev._forgebackends import GITEA, GITHUB, GITHUB_HOST, Backend, backend_for
 from dev_lab.dev.forge import (
     _GIT,
@@ -78,6 +79,7 @@ __all__ = [
     'is_pull',
     'provenance',
     'pull_of',
+    'stored_client',
 ]
 
 #: Statuses below this are answers; at or above it the call failed.
@@ -86,18 +88,11 @@ _HTTP_ERROR_FLOOR: Final = 400
 #: The 5xx floor: a server error, which a later attempt may clear.
 _HTTP_SERVER_FLOOR: Final = 500
 
+#: The one status that says the credential did not authenticate (a 403 authenticated it and refused the act).
+_UNAUTHENTICATED: Final = 401
+
 #: 4xx statuses that are NOT a refusal of the request itself: timeout and rate limit clear by waiting.
 _HTTP_RETRYABLE_4XX: Final = frozenset({408, 429})
-
-
-def is_pull(raw: Mapping[str, Any]) -> bool:
-    """Whether a listed issue is a pull request: its ``pull_request`` is not null -- even `{}` marks a pull.
-
-    Gitea sends ``"pull_request": null`` on every plain issue, so testing the key's presence read
-    every issue as a pull: ``issue list`` printed nothing and the hosts lookup found no issue and
-    opened a new one every tick (128 ``forge hosts`` issues on three repos, 2026-10-12).
-    """
-    return raw.get('pull_request') is not None
 
 
 #: The separator in the provenance line, spelled once.
@@ -107,10 +102,16 @@ _DOT: Final = ' · '
 class ForgeCallFailed(OSError):
     """A forge call that did not succeed within the bound; :attr:`report` is netverb's report of it."""
 
-    def __init__(self, report: Report) -> None:
-        """Carry the report; on a 401/403 the message adds what the credential check MEASURED."""
+    def __init__(self, report: Report, *, credential_gone: bool = False, credential_kept: bool = False) -> None:
+        """Carry the report; on a 401/403 the message adds what the credential check and refresh MEASURED.
+
+        *credential_gone*: the refresh left the store holding no credential -- a re-login fixes it.
+        *credential_kept*: the store cannot refresh, so the refused credential was kept -- a re-login may fix it.
+        """
         last = report.attempts[-1].returncode if report.attempts else 0
-        said = _forge.AUTH_REMEDY if _credential_refused(report) else _forge.AUTH_TRANSIENT
+        said = _forge.AUTH_TRANSIENT
+        if _credential_refused(report):
+            said = _forge.AUTH_GONE if credential_gone else _forge.AUTH_KEPT if credential_kept else _forge.AUTH_REMEDY
         super().__init__(f'{report.remedy}. {said}' if last in _forge.AUTH_REFUSED else report.remedy)
         self.report = report
 
@@ -124,77 +125,6 @@ def _credential_refused(report: Report) -> bool:
     """The last attempt was a 401/403 that :meth:`Client._diagnosis` diagnosed refused after asking ``GET /user``."""
     last = report.attempts[-1] if report.attempts else None
     return last is not None and last.returncode in _forge.AUTH_REFUSED and last.diagnosis is Diagnosis.FORGE_REFUSED
-
-
-@dataclass(frozen=True)
-class Issue:
-    """An issue, identical in shape whichever forge answered."""
-
-    number: int
-    title: str
-    state: str
-    body: str
-    url: str
-    author: str
-
-
-@dataclass(frozen=True)
-class Comment:
-    """A comment on an issue."""
-
-    id: int
-    body: str
-    url: str
-    #: The login the FORGE records as its writer -- never a claim the body makes about itself.
-    author: str = ''
-
-
-@dataclass(frozen=True)
-class PullRequest:
-    """A pull request, identical in shape whichever forge answered."""
-
-    number: int
-    title: str
-    state: str
-    body: str
-    url: str
-    author: str
-    head: str
-    base: str
-    #: The head's commit; a fork's head branch is not in this repository, its commit is (``pull/N/head``).
-    head_sha: str = ''
-    #: The labels on the PR -- where a user's designation (``priority:user``, ``priority:<n>``) is read.
-    labels: tuple[str, ...] = ()
-    #: Whether the forge holds it as a draft (gitea: ``draft``, or a ``WIP:``/``[WIP]`` title prefix).
-    draft: bool = False
-
-
-#: Gitea's default title prefixes marking a PR work in progress (its ``WORK_IN_PROGRESS_PREFIXES``).
-_WIP_PREFIXES: Final = ('WIP:', '[WIP]')
-
-
-def _issue(raw: Mapping[str, Any]) -> Issue:
-    return Issue(
-        raw['number'], raw['title'], raw['state'], raw.get('body') or '', raw['html_url'], raw['user']['login']
-    )
-
-
-def pull_of(raw: Mapping[str, Any]) -> PullRequest:
-    """A forge's pull-request JSON as a :class:`PullRequest`."""
-    issue = _issue(raw)
-    return PullRequest(
-        *dataclasses.astuple(issue),
-        raw['head']['ref'],
-        raw['base']['ref'],
-        raw['head'].get('sha') or '',
-        tuple(str(label['name']) for label in raw.get('labels') or ()),
-        bool(raw.get('draft')) or issue.title.upper().startswith(_WIP_PREFIXES),
-    )
-
-
-def comment_of(raw: Mapping[str, Any]) -> Comment:
-    """A forge's comment JSON as a :class:`Comment`."""
-    return Comment(raw['id'], raw.get('body') or '', raw['html_url'], (raw.get('user') or {}).get('login', ''))
 
 
 def provenance(cwd: Path, env: Mapping[str, str]) -> str | None:
@@ -243,6 +173,13 @@ class Client:
     #: The outbox journal each write is recorded in before it is attempted (:mod:`dev_lab.dev._forge_journal`);
     #: :func:`client_for` always sets it -- ``None`` only where a test drives the bare door.
     journal: Journal | None = None
+    #: Given the refused ``(username, token)``, the credential git's store hands out AFTER refreshing it
+    #: (:func:`dev_lab.dev.forgecred.refresh_credential`); :func:`stored_client` sets it. Asked once per client.
+    refresh: Callable[[str, str], tuple[str, str]] | None = None
+    #: Whether :attr:`refresh` was spent, and whether it left the store empty.
+    _refreshed: bool = dataclasses.field(default=False, init=False, repr=False)
+    _gone: bool = dataclasses.field(default=False, init=False, repr=False)
+    _kept: bool = dataclasses.field(default=False, init=False, repr=False)
 
     @property
     def backend(self) -> Backend:
@@ -279,7 +216,29 @@ class Client:
                 status, _ = self._once('GET', user, None, 'application/json', None)
             except OSError:
                 return Diagnosis.TRANSIENT
-        return Diagnosis.FORGE_REFUSED if status in _forge.AUTH_REFUSED else Diagnosis.TRANSIENT
+        if status not in _forge.AUTH_REFUSED:
+            return Diagnosis.TRANSIENT
+        return Diagnosis.TRANSIENT if status == _UNAUTHENTICATED and self._refresh() else Diagnosis.FORGE_REFUSED
+
+    def _refresh(self) -> bool:
+        """Refresh the refused credential once, as git does after a 401; whether a DIFFERENT one came back.
+
+        An expired OAuth access token is the usual 401 (``docs-src/dev/forge.md#credentials``); the refreshed
+        one is sent on the retry. A store left empty is recorded, so the failure names the one re-login case.
+        """
+        if self.refresh is None or self._refreshed:
+            return False
+        self._refreshed = True
+        try:
+            username, token = self.refresh(self.username, self.token)
+        except _forge.NoCredential:
+            self._gone = True
+            return False
+        if token == self.token:
+            self._kept = self.username != _forge.REFRESHABLE_USER
+            return False
+        self.username, self.token = username, token
+        return True
 
     @property
     def repo(self) -> str:
@@ -366,7 +325,8 @@ class Client:
                         break  # whether it landed is unknowable, and a blind retry may duplicate it
                     if found is not None:
                         return found
-        raise ForgeCallFailed(Report((write.method, write.path), tuple(made), DEFAULT_ATTEMPTS))
+        report = Report((write.method, write.path), tuple(made), DEFAULT_ATTEMPTS)
+        raise ForgeCallFailed(report, credential_gone=self._gone, credential_kept=self._kept)
 
     def landed(self, write: Write) -> Any:  # noqa: ANN401 -- JSON
         """The object *write* made under this login, if it landed though its answer was lost; else ``None``."""
@@ -437,5 +397,27 @@ def client_for(
     """The client for *root*'s *remote* (or another repository's *url*), its token and provenance stamp."""
     forge = forge_of_url(url) if url else forge_from_remote(root, remote=remote)
     stamp = provenance(root, os.environ if env is None else env)
-    username, secret = _forge.credential_for(forge.host, cwd=root, env=env)
-    return Client(forge, secret, transport=transport, username=username, stamp=stamp, journal=journal_for(root))
+    return stored_client(forge, cwd=root, env=env, transport=transport, stamp=stamp, journal=journal_for(root))
+
+
+def stored_client(
+    forge: Forge,
+    *,
+    cwd: Path,
+    env: Mapping[str, str] | None = None,
+    transport: Transport = https_transport,
+    stamp: str | None = None,
+    journal: Journal | None = None,
+) -> Client:
+    """A client presenting the credential git's store holds for *forge*, refreshed as git does on a 401.
+
+    Raises:
+        NoCredential: the store holds no credential for the host.
+
+    """
+    username, secret = _forge.credential_for(forge.host, cwd=cwd, env=env)
+
+    def refresh(refused_user: str, refused: str) -> tuple[str, str]:
+        return _forge.refresh_credential(forge.host, (refused_user, refused), cwd=cwd, env=env)
+
+    return Client(forge, secret, transport=transport, username=username, stamp=stamp, journal=journal, refresh=refresh)

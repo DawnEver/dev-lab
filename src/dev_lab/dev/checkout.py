@@ -58,6 +58,7 @@ __all__ = [
     'authority_for',
     'classify',
     'debris',
+    'git_bytes',
     'git_out',
     'origin_branches',
     'orphan_directories',
@@ -145,6 +146,15 @@ def git_out(root: Path, *args: str) -> str | None:
             check=False,
             timeout=_GIT_TIMEOUT_S,
         )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def git_bytes(root: Path, *args: str) -> bytes | None:
+    """:func:`git_out` without decoding: a binary diff of a file in any encoding survives byte for byte."""
+    try:
+        done = _door.run([_GIT, *args], cwd=root, capture_output=True, check=False, timeout=_GIT_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return done.stdout if done.returncode == 0 else None

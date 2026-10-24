@@ -192,7 +192,8 @@ Upgrading lab-commons brings two changes to every repo that opts into the base h
 1. **The pre-push hook refuses an undeclared branch.** The base table was missing its `branchset-push` row, so
    from the TOML hook migration (2026-10-11) until 2026-10-13 this check never ran. A push of any branch that
    `[tool.lab_commons.branchset]` does not name is now refused. Before you upgrade, declare every session branch
-   that really lives on origin, or its next push is refused. Agent lanes stay local.
+   that really lives on origin, or its next push is refused. Agent lanes stay local. Superseded 2026-10-23
+   (toolchain plan P3): the base table no longer carries the row, and the forge's branch-set test judges origin.
 2. **Merged branches are pruned from origin.** Opt in (every serving host prunes, idempotently):
 
 ```toml

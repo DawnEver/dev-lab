@@ -4,6 +4,9 @@ When a deny hook refuses a command, it prints three lines: what was refused and 
 and a `details:` pointer to a section of this page. Run the command it names. Each section below holds the full
 reasoning for one universal row (`INJECTED-TEXT-IS-PROGRESSIVE`); a repo-local row is on that repo's own page.
 
+A row marked HINT never refuses: the command runs and the same text reaches the agent as context. A row hints when
+its hazard is speed or style rather than irreversible harm (toolchain plan P3, `dev_lab.dev.hooks.SEVERITIES`).
+
 ## The shape of a refusal
 
 The budget is declared data in `dev_lab.dev.disclosure.BUDGETS`:
@@ -39,10 +42,17 @@ When a command targets another repo, the engine adds one header line naming that
 - **Why it is refused.** `--amend` does not act on YOUR last commit, it acts on HEAD -- and on a shared lane HEAD belongs to whoever committed most recently. This family has NO single-agent mode, so "I just committed" is not a safety argument; it is the exact condition under which this fires. MEASURED 2026-09-18 on `feat/consumer-c`: agent A committed, agent B committed 40 seconds later, and A amended to fix two digits in its OWN message -- rewriting B's commit and replacing B's message with A's. It was caught inside a minute through `git reflog` and the tree recovered byte-identical, so only the SHA moved; nothing about the recovery made that outcome likelier than losing the work.
 - **The exit.** Do not rewrite -- land the correction FORWARD. Read what HEAD actually is first: git log -1 --format="%h %an %s". If the CONTENT is wrong, commit the fix on top. If only the message is wrong and nothing a reader acts on changes, record the correction where the work is reported and leave the commit alone; that is the right call once anything sits on top of it.
 
-## GIT-NETWORK-VERB
+## NETWORK-VERB
 
-- **Why it is refused.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between.
+HINT: a bare network verb loses only the retry; force, delete and no-verify pushes are refusals of their own.
+
+- **Why it is said.** the forge is a REMOTE service that nobody in this family restarts, and a single transient auth/DNS/connection failure on any of these verbs reads as "blocked" -- which is the report the retry wrapper exists to prevent. Measured 2026-08-21 on a `git fetch`: it failed auth once and succeeded on the retry, and was reported blocked in between. Widened 2026-10-19 to every verb `dev_lab.dev.netverb.is_network_verb` names -- git's `-C`/`-c` spellings, `submodule update`, and uv's resolving verbs -- after a `uv sync` of a git dependency failed once on forge auth and a re-run passed.
 - **The exit.** Re-issue through the retry wrapper, which retries 3x and then REPORTS with a diagnosis: {remedy}
+
+## TREE-HAS-A-LIVE-RUN
+
+- **Why it is refused.** a run executes its checkout's code and `.venv` for its whole life, so an edit, a merge, a checkout or an environment sync under it makes its result describe a tree that never existed. Measured 2026-10-19 in motronics: during a JMAG `deck run`, an agent edited a test, merged into the checkout and re-synced the venv the run executed from. The run is found WITHOUT its cooperation (`dev_lab.dev.liverun`, read off `lab_commons.census`): a process READS the tree when it is a Python interpreter working in it or an argument names a path in it, and the row binds only while one exists. `output/`, `.claude/` and `.venv/` are not the tree; a process executing from the venv locks the venv (`dep`), not the tree.
+- **The exit.** Work in another worktree (git worktree add --detach .claude/worktrees/<name> <sha>), wait for the run, or stop it: python -m dev_lab.dev.stoprun --pid <pid>.
 
 ## GIT-STASH
 
@@ -96,7 +106,9 @@ When a command targets another repo, the engine adds one header line naming that
 
 ## RECURSIVE-GREP
 
-- **Why it is refused.** `grep -r` walks the filesystem, so it descends into every git-ignored tree a checkout carries: `.venv`, `output/`, `target/`, nested worktrees. MEASURED 2026-10-05 in one consumer repo: `grep -r` over the repo did not finish in 4 min, `git grep -l` took 0.28 s, and about 66k git-ignored files were walked. A grep on a named file, a grep reading a pipe and `git grep` never walk, so they are permitted; the row keys on the recursion flag (`-r`, `-R`, a cluster such as `-rn`, `--recursive`).
+HINT: the hazard is minutes, not harm.
+
+- **Why it is said.** `grep -r` walks the filesystem, so it descends into every git-ignored tree a checkout carries: `.venv`, `output/`, `target/`, nested worktrees. MEASURED 2026-10-05 in one consumer repo: `grep -r` over the repo did not finish in 4 min, `git grep -l` took 0.28 s, and about 66k git-ignored files were walked. A grep on a named file, a grep reading a pipe and `git grep` never walk, so they are permitted; the row keys on the recursion flag (`-r`, `-R`, a cluster such as `-rn`, `--recursive`).
 - **The exit.** Search the tracked files: git grep -n <pattern> [-- <paths>] (add `--untracked` for new files), or the agent's built-in Grep tool, which honours `.gitignore` and the family `.rgignore`.
 
 ## REPORTS-LIVE-IN-MEMORY

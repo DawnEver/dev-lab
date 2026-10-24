@@ -60,7 +60,7 @@ _REMEDIES = {'BARE-TEST-INVOCATION': _VERIFY, 'PUSH-NO-VERIFY': _VERIFY}
 #: Rules this repo may NOT ship, with the reason. A mapping rather than a bare set: an exemption
 #: with no recorded reason is indistinguishable from a hole somebody widened during a red suite.
 _ABSENT_REASONS = {
-    'GIT-NETWORK-VERB': (
+    'NETWORK-VERB': (
         'no retry wrapper in this tree, so the rule would refuse every push and name a script that '
         'does not exist -- the sealed road the remedy field exists to prevent'
     ),
@@ -135,7 +135,8 @@ def test_the_rendered_file_is_the_engine_s_own_schema() -> None:
     assert rows, 'the render read empty -- an unread registry is not a shipped one'
     assert render(_ADOPTION).endswith('\n')
     for row in rows:
-        assert set(row) <= {'name', 'pattern', 'matches', 'allow', 'scope', 'reason'}, f'unknown key in {row["name"]}'
+        engine_keys = {'name', 'pattern', 'matches', 'allow', 'scope', 'severity', 'when', 'reason'}
+        assert set(row) <= engine_keys, f'unknown key in {row["name"]}'
         assert {'name', 'pattern', 'matches', 'reason'} <= set(row)
 
 

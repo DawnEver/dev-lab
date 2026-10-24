@@ -19,7 +19,6 @@ from dev_lab.dev.famtests.onboarding import (
 _COMPLETE = """[tool.lab_commons.branchset]
 trunk = 'main'
 sessions = ['integrate/main']
-ephemeral = ['pr/*']
 
 [tool.lab_commons.integrator]
 integration = 'integrate/main'
@@ -54,7 +53,10 @@ def test_a_bare_repo_names_every_missing_piece_at_once(tmp_path: Path) -> None:
 
 
 def test_one_missing_line_is_named_among_the_rest(tmp_path: Path) -> None:
-    partial = _repo(tmp_path, _COMPLETE.replace("ephemeral = ['pr/*']\n", ''))
+    partial = _repo(
+        tmp_path,
+        _COMPLETE.replace("sessions = ['integrate/main']\n", "sessions = ['integrate/main']\nephemeral = []\n"),
+    )
     with pytest.raises(OnboardingViolation, match='ephemeral'):
         assert_repo_is_onboarded(root=partial)
 

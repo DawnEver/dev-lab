@@ -61,7 +61,7 @@ ADOPTION = HookAdoption(
     remedies={
         'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
         'PUSH-NO-VERIFY': Remedy('verdict-entry-point', '.venv/Scripts/python.exe -m dev_lab.dev.verify'),
-        'GIT-NETWORK-VERB': Remedy('retry-wrapper', 'sh {root}/scripts/hooks/with-retry.sh push'),
+        'NETWORK-VERB': Remedy('retry-wrapper', 'sh {root}/scripts/hooks/with-retry.sh push'),
         'RAW-PROCESS-KILL': Remedy('process-tree-killer', '.venv/Scripts/python.exe -m dev_lab.dev.stop --pid N'),
     },
 )

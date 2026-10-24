@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import lab_commons.launch as _door
 import pytest
 
 from dev_lab.dev.floors import FloorUnmet
@@ -177,3 +178,35 @@ def test_the_prose_ceiling_refuses_growth_and_demands_a_re_measure() -> None:
         assert_prose_is_falling(11, ceiling=10)
     with pytest.raises(ForeignData, match='RE-MEASURE'):
         assert_prose_is_falling(9, ceiling=10)
+
+
+def _git(root: Path, *args: str) -> None:
+    _door.run(['git', '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', check=True)
+
+
+def test_an_ignored_file_on_this_disk_still_does_not_resolve(tmp_path: Path) -> None:
+    """A path is this repo's when it is TRACKED; an ignored file a box rendered does not make it so.
+
+    PLANTED CONTROL: the same kind of file, once tracked, resolves.
+    """
+    _git(tmp_path, 'init', '-q')
+    (tmp_path / 'out').mkdir()
+    (tmp_path / 'src').mkdir()
+    (tmp_path / '.gitignore').write_text('out/' + chr(10), encoding='utf-8')
+    (tmp_path / 'out' / 'rendered.json').write_text('{}', encoding='utf-8')
+    (tmp_path / 'src' / 'kept.json').write_text('{}', encoding='utf-8')
+    _git(tmp_path, 'add', '.gitignore', 'src/kept.json')
+    assert is_unresolved_path('out/rendered.json', tmp_path), 'an ignored file on disk read as this repo`s'
+    assert not is_unresolved_path('src/kept.json', tmp_path), 'PLANTED: a tracked file resolves'
+
+
+def test_a_file_added_after_the_first_read_resolves_in_the_same_process(tmp_path: Path) -> None:
+    """The tracked set follows the index: a long-lived caller sees a later ``git add``."""
+    _git(tmp_path, 'init', '-q')
+    (tmp_path / 'a.json').write_text('{}', encoding='utf-8')
+    _git(tmp_path, 'add', 'a.json')
+    assert is_unresolved_path('b/later.json', tmp_path)
+    (tmp_path / 'b').mkdir()
+    (tmp_path / 'b' / 'later.json').write_text('{}', encoding='utf-8')
+    _git(tmp_path, 'add', 'b/later.json')
+    assert not is_unresolved_path('b/later.json', tmp_path)

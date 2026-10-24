@@ -53,7 +53,9 @@ __all__ = [
     'INSTALLED',
     'INSTALL_COMMAND',
     'NOTHING_DECLARED',
+    'PREDECESSOR_MARKER',
     'PROTECTED',
+    'RETIRED_SHIMS_DIR',
     'SHIM_MARKER',
     'STALE',
     'UNPROTECTED',
@@ -81,6 +83,11 @@ NOTHING_DECLARED: Final = 'nothing-declared'
 
 #: The line every shim carries: present means ours (installed or stale), absent means FOREIGN.
 SHIM_MARKER: Final = '# dev_lab.dev.githooks shim'
+
+#: The PREDECESSOR kit's marker: its shims are this kit's lineage, so an install retires them (moved to
+#: :data:`RETIRED_SHIMS_DIR` in the common git dir, as a record) instead of refusing them as FOREIGN.
+PREDECESSOR_MARKER: Final = '# lab_commons.dev.githooks shim'
+RETIRED_SHIMS_DIR: Final = 'lab-commons-shims-retired'
 
 #: The one remedy, a constant: the stage list is read from the table at install time, never restated.
 INSTALL_COMMAND: Final = 'python -m dev_lab.dev.hook_install --install'
@@ -230,6 +237,8 @@ def _inspect(path: Path, stage: str) -> tuple[str, str]:
         return INSTALLED, f'the lab_commons shim for {stage}'
     if SHIM_MARKER in text:
         return STALE, 'a lab_commons shim, but not the current one for this slot'
+    if PREDECESSOR_MARKER in text:
+        return STALE, f'a predecessor shim ({PREDECESSOR_MARKER}); an install retires it to {RETIRED_SHIMS_DIR}/'
     return FOREIGN, 'a hook file lab_commons did not write; installing would overwrite it'
 
 
@@ -247,7 +256,8 @@ def hook_installation(repo: Path) -> InstallReport:
 def install(repo: Path) -> InstallReport:
     """Write the shim of every declared stage of *repo*, idempotently -- the ONE act every bootstrap calls.
 
-    A FOREIGN file in a declared slot is REFUSED before anything is written, never overwritten. The
+    A FOREIGN file in a declared slot is REFUSED before anything is written, never overwritten; a
+    predecessor shim is retired (moved aside as a record) and replaced. The
     returned report is RE-MEASURED after the act, so a write that did not land raises.
 
     Raises:
@@ -269,14 +279,31 @@ def install(repo: Path) -> InstallReport:
         raise HookInstallError(msg)
     before.hooks_dir.mkdir(parents=True, exist_ok=True)
     for stage in before.failing:
-        stage.path.write_text(shim(stage.stage), encoding='utf-8', newline='\n')
-        stage.path.chmod(0o755)
+        # The new shim is whole on disk BEFORE the predecessor moves, so no crash leaves the slot without a hook.
+        fresh = stage.path.with_name(f'{stage.path.name}.new')
+        fresh.write_text(shim(stage.stage), encoding='utf-8', newline='\n')
+        fresh.chmod(0o755)
+        _retire_predecessor(repo, stage.path)
+        fresh.replace(stage.path)
     after = hook_installation(repo)
     if after.verdict != PROTECTED:
         listing = ', '.join(f'{stage.stage}={stage.status}' for stage in after.failing)
         msg = f'the shims were written and {after.hooks_dir} is still unprotected: {listing}'
         raise HookInstallError(msg)
     return after
+
+
+def _retire_predecessor(repo: Path, path: Path) -> None:
+    """Move a predecessor shim at *path* into the common git dir's :data:`RETIRED_SHIMS_DIR`, never deleting it."""
+    if not path.exists() or PREDECESSOR_MARKER not in path.read_text(encoding='utf-8', errors='ignore'):
+        return
+    common = Path(_git(repo, 'rev-parse', '--git-common-dir'))
+    retired = (common if common.is_absolute() else repo / common) / RETIRED_SHIMS_DIR
+    retired.mkdir(parents=True, exist_ok=True)
+    target, n = retired / path.name, 1
+    while target.exists():
+        target, n = retired / f'{path.name}.{n}', n + 1
+    path.replace(target)
 
 
 def report_installation(argv: list[str] | None = None) -> int:

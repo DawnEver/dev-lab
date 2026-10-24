@@ -56,15 +56,10 @@ class _Recorder:
 def test_the_base_declares_the_family_stages_with_a_floor() -> None:
     table = merge(base_rows(), {})
     assert set(table) == {'pre-commit', 'commit-msg', 'pre-push', 'post-commit'}
-    assert {hook.id for hook in table['post-commit']} == {'pr-notices'}
-    assert {hook.id for hook in table['pre-push']} == {
-        'session-branch',
-        'branchset-push',
-        'behind-push',
-        'lock',
-        'pr-admit',
-        'pr-notices',
-    }
+    assert {hook.id for hook in table['post-commit']} == {'pr-notices', 'stray-files'}
+    # LOCAL KEEPS IRREVERSIBLE HARM AND SECOND-SCALE CHECKS (toolchain plan P3): history that only grows,
+    # the published ref, the lock pin. The branch set, the behind bound and PR admission are the forge's.
+    assert {hook.id for hook in table['pre-push']} == {'session-branch', 'lock', 'pr-notices'}
     assert {hook.id for hook in table['commit-msg']} == {
         'commitizen',
         'forge-host',
@@ -72,7 +67,18 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'lab-session',
         'merge-audit',
     }
-    assert len(table['pre-commit']) >= 8, 'a floor: a base that lost its file checks would read as clean'
+    assert {hook.id for hook in table['pre-commit']} == {
+        'check-added-large-files',
+        'check-ast',
+        'check-case-conflict',
+        'check-json',
+        'check-merge-conflict',
+        'check-toml',
+        'debug-statements',
+        'end-of-file',
+        'mixed-line-ending',
+        'trailing-whitespace',
+    }, 'the tracked-tree scans (ephemeral refs, scratch) are forge bodies, never a commit-time refusal'
 
 
 def test_a_repo_row_merges_over_a_base_row_by_id_and_appends_a_new_one() -> None:
@@ -117,7 +123,7 @@ def test_a_repo_layer_is_read_from_its_pyproject(tmp_path: Path) -> None:
         encoding='utf-8',
     )
     pre_push = [hook.id for hook in hook_table(tmp_path)['pre-push']]
-    assert pre_push == ['session-branch', 'branchset-push', 'behind-push', 'lock', 'pr-admit', 'pr-notices', 'pushgate']
+    assert pre_push == ['session-branch', 'lock', 'pr-notices', 'pushgate']
 
 
 def test_a_repo_that_does_not_opt_in_runs_no_hook(tmp_path: Path) -> None:

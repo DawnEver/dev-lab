@@ -107,12 +107,21 @@ class Ran:
     def __init__(self, returncode: int = 0) -> None:
         """Answer *returncode* to every call, and record what each one was handed."""
         self.returncode = returncode
+        self.stdout = self.stderr = ''  # the streams netverb classifies a resolving command by
         self.calls: list[list[str]] = []
 
     def __call__(self, argv: list[str], **_: object) -> Ran:
         """Record the argv and answer as a completed process would."""
         self.calls.append(argv)
         return self
+
+
+#: The census every planted arm hands the door: no other process runs from the planted environment.
+#: A consumer suite runs these arms beside its own workers, which all execute from the real venv; the
+#: live-process refusal is its own arm in the kit (`test_a_live_process_executing_from_the_environment_refuses`).
+def no_other_process() -> tuple[()]:
+    """No process runs from the planted environment (the census every planted arm hands the door)."""
+    return ()
 
 
 def scripted_keys(*values: str) -> Callable[[], str]:
@@ -141,7 +150,7 @@ def assert_this_repo_declares_its_verdict_anchors(
         AssertionError: a gap was rendered, or the report does not name the repo and the command.
 
     """
-    report = mutate(A_REQUIREMENT, port=port(), dry_run=True)
+    report = mutate(A_REQUIREMENT, port=port(), dry_run=True, census=no_other_process)
     if report.gaps:
         msg = (
             f'the door rendered {list(report.gaps)} for {repo_name}. A gap here is not cosmetic: '
@@ -172,7 +181,9 @@ def assert_a_port_declaring_no_anchors_renders_the_gap() -> None:
         AssertionError: the control port rendered a gap set other than :data:`UNDECLARED_GAPS`.
 
     """
-    report = mutate(A_REQUIREMENT, port=Port(name='a-repo-that-declares-no-anchors'), dry_run=True)
+    report = mutate(
+        A_REQUIREMENT, port=Port(name='a-repo-that-declares-no-anchors'), dry_run=True, census=no_other_process
+    )
     rendered = frozenset(report.gaps)
     if rendered != UNDECLARED_GAPS:
         missing = sorted(gap.split(':')[0] for gap in UNDECLARED_GAPS - rendered)
@@ -210,7 +221,7 @@ def assert_the_door_refuses_while_a_verdict_is_in_flight(
     port = Port(name=repo_name, anchor_paths=verdict_anchors)
     try:
         with EnvironmentSeat(sys.prefix, holder).held():
-            mutate(A_REQUIREMENT, port=port, dry_run=True)
+            mutate(A_REQUIREMENT, port=port, dry_run=True, census=no_other_process)
     except HeldEnvironmentError as refusal:
         text = str(refusal)
     else:
@@ -253,7 +264,12 @@ def assert_a_verdict_in_another_environment_does_not_refuse(
     holder = f'verify:another-repo-than-{repo_name}'
     try:
         with EnvironmentSeat(elsewhere, holder).held():
-            mutate(A_REQUIREMENT, port=Port(name=repo_name, anchor_paths=verdict_anchors), dry_run=True)
+            mutate(
+                A_REQUIREMENT,
+                port=Port(name=repo_name, anchor_paths=verdict_anchors),
+                dry_run=True,
+                census=no_other_process,
+            )
     except HeldEnvironmentError as refusal:
         msg = f'the door refused a change to this environment because {holder} held {elsewhere}: {refusal}'
         raise AssertionError(msg) from None
@@ -288,7 +304,7 @@ def assert_a_moved_key_retires_a_planted_anchor(
         anchor_paths=verdict_anchors,
         key=scripted_keys('before', 'after'),
     )
-    report = mutate(A_REQUIREMENT, port=moved, run=Ran())
+    report = mutate(A_REQUIREMENT, port=moved, run=Ran(), census=no_other_process)
     if not report.moved or report.retired != (str(anchor),):
         msg = (
             f'the env_key moved={report.moved} and {list(report.retired)} was retired, against the '
@@ -329,7 +345,7 @@ def assert_an_unmoved_key_retires_nothing(
         anchor_paths=verdict_anchors,
         key=scripted_keys('same', 'same'),
     )
-    report = mutate(A_REQUIREMENT, port=still, run=Ran())
+    report = mutate(A_REQUIREMENT, port=still, run=Ran(), census=no_other_process)
     if report.moved or report.retired:
         msg = (
             f'an UNCHANGED environment reported moved={report.moved} and retired '

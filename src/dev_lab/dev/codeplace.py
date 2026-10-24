@@ -20,7 +20,8 @@ THREE RULES OVER ONE MAP; the second's mechanism is its own module:
   cwd left seven log files in the root, and a ``uv`` run in a subdirectory left a ``uv.lock`` there; nothing
   said so until a human saw them. :func:`stray_files` is the census; the agent hooks (``PostToolUse`` on
   the shell tools and ``Stop``, ``python -m dev_lab.dev.codeplace stray``) report it the moment a
-  command made one, and the ``stray-files`` pre-commit row refuses a commit while one exists.
+  command made one, and the ``stray-files`` post-commit row names each one after a commit (a hint: the
+  forge cannot see an untracked file, and a style finding blocks nothing -- toolchain plan P3).
 
 THE PLACEMENT MAP IS THE FAMILY'S, THE EXTRA ROOTS ARE THE REPO'S (user ruling 2026-10-02). Every
 file kind has ONE home, :data:`FAMILY_HOMES`; the homes that hold code are :data:`FAMILY_CODE_ROOTS`.
@@ -372,10 +373,10 @@ def _stray_hook(payload: object) -> int:
 
 
 def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
-    """The agent and git hooks. No argument: ``PreToolUse`` on Write/Edit/MultiEdit, deny a misplaced code file.
+    """The agent and git hooks. No argument: ``PreToolUse`` on Write/Edit/MultiEdit, hint a misplaced code file.
 
     ``stray``: the ``PostToolUse``/``Stop`` stray census (:func:`_stray_hook`). ``stray-check``: the
-    pre-commit row, exit 1 naming every stray of the current checkout. A payload naming no path is
+    post-commit hint row, exit 1 naming every stray of the current checkout. A payload naming no path is
     allowed: the write hook judges a PATH, and such a payload names none.
     """
     mode = (argv or [None])[0]
@@ -397,10 +398,14 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None) -> int:
     path = Path(target)
     if not path.is_absolute():
         path = Path(payload.get('cwd') or Path.cwd()) / path
-    reason = refuse_report(path) or refuse_write(path)
-    if reason is not None:
-        decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}
+    # A report under output/ is lost to the next cleanup, so it is refused; a misplaced code file is a style
+    # finding the forge's placement test reds on anyway, so it is a HINT (toolchain plan P3).
+    refused, hint = refuse_report(path), refuse_write(path)
+    if refused is not None:
+        decision = {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': refused}
         emit(json.dumps({'hookSpecificOutput': decision}))
+    elif hint is not None:
+        emit(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'additionalContext': hint}}))
     return 0
 
 

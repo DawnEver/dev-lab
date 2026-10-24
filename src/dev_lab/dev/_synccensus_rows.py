@@ -59,7 +59,7 @@ ROWS: tuple[ScopeRow, ...] = (
 #: a row table alone can say that known selections still measure what they measured and can never
 #: notice a new `uv sync` arriving in a Makefile.
 SITES: dict[tuple[str, str, str], str] = {
-    ('dev-lab', 'pyproject.toml', 'uv sync --python ${{ matrix.python-version }} $extra_flags'): (
+    ('dev-lab', 'pyproject.toml', 'uv sync --frozen --python ${{ matrix.python-version }} $extra_flags'): (
         'THE KIT HAS EXACTLY ONE PRUNING COMMAND IN A DECLARED DOOR, and it is in a file that '
         'runs in every caller checkout. Its extras are `$extra_flags`, built by the shell loop above '
         'it from a workflow input, so the command text cannot say what survives -- the reader '

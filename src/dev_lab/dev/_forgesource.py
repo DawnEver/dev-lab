@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import urllib.parse
 from pathlib import Path
 from typing import Final
@@ -16,6 +15,7 @@ from typing import Final
 import lab_commons.launch as _door
 
 from dev_lab.dev.forge import _GIT
+from dev_lab.dev.netverb import Diagnosis, run_network_verb
 
 __all__ = ['LOCK_FILE', 'REACH_TIMEOUT_S', 'git_sources', 'unreachable_source', 'unreproducible', 'unserved']
 
@@ -78,27 +78,18 @@ def git_sources(root: Path, sha: str) -> tuple[str, ...]:
 def unreachable_source(root: Path, sha: str) -> str:
     """Why THIS host cannot fetch every git source of *sha* (:func:`git_sources`), ``''`` when it can.
 
-    Each is asked once with ``git ls-remote`` and no prompt: a source behind a credential this host lacks
-    fails here, before a claim, rather than mid-bootstrap after one.
+    Each is asked with ``git ls-remote`` and no prompt, through the network door (a transient is retried, a
+    refusal is not): a source behind a credential this host lacks fails here, before a claim, rather than
+    mid-bootstrap after one.
     """
-    quiet = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never'}
+    quiet = {**os.environ, 'GCM_INTERACTIVE': 'never'}
     for url in git_sources(root, sha):
-        try:
-            done = _door.run(
-                [_GIT, 'ls-remote', '-q', url, 'HEAD'],
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=REACH_TIMEOUT_S,
-                env=quiet,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
+        report = run_network_verb([_GIT, 'ls-remote', '-q', url, 'HEAD'], timeout=REACH_TIMEOUT_S, env=quiet)
+        if report.diagnosis is Diagnosis.TIMED_OUT:
             return f'this host cannot fetch {_public(url)}: no answer in {REACH_TIMEOUT_S:g} s'
-        if done.returncode:
-            said = (done.stderr or '').strip().splitlines()
-            return f'this host cannot fetch {_public(url)}: {said[-1] if said else f"exit {done.returncode}"}'
+        if not report.ok:
+            said = report.attempts[-1].output.strip().splitlines()
+            return f'this host cannot fetch {_public(url)}: {said[-1] if said else f"exit {report.returncode}"}'
     return ''
 
 

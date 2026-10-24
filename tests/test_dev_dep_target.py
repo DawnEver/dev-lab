@@ -80,7 +80,7 @@ def test_a_real_verdict_in_A_does_not_refuse_another_interpreters_environment_B(
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     with _live_verdict(tmp_path, monkeypatch) as active:
         assert Path(prefix).resolve() != Path(active['prefix']).resolve()
@@ -103,7 +103,7 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
     def run(argv, **kwargs: object) -> SimpleNamespace:
         calls.append((tuple(argv), kwargs))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(root)], run=run, cwd=tmp_path) == 0
@@ -118,11 +118,12 @@ def test_bootstrap_defaults_to_the_declared_full_extra_set_and_named_worktree(tm
 
 def test_mutation_holds_the_same_environment_seat_until_the_child_finishes(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
+    monkeypatch.setattr(dep, 'executing_from', lambda *_a, **_k: ())  # sibling suite workers share this venv
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
         with pytest.raises(Refused), EnvironmentSeat(sys.prefix, 'gate:starts-during-mutation').held():
             pytest.fail('a verdict entered an environment while its mutation was running')
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     assert dep.mutate(('example',), port=_port(), run=run).returncode == 0
     with EnvironmentSeat(sys.prefix, 'gate:after-mutation').held():
@@ -182,7 +183,7 @@ def test_sync_failure_is_nonzero_and_retires_only_changed_target_anchors(tmp_pat
     venv.EnvBuilder().create(tmp_path / '.venv')
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
-        return SimpleNamespace(returncode=17)
+        return SimpleNamespace(returncode=17, stdout='', stderr='')
 
     assert dep.main(['--bootstrap', str(tmp_path)], run=run, cwd=tmp_path) == 17
     assert not anchor.exists()
@@ -239,7 +240,7 @@ def test_bootstrap_refuses_an_own_venv_alias_to_another_environment(tmp_path) ->
         alias.symlink_to(owner / '.venv', target_is_directory=True)
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     with pytest.raises(ValueError, match='own environment'):
         dep.main(['--bootstrap', str(lane)], cwd=tmp_path, run=run)
@@ -255,7 +256,7 @@ def test_sync_defaults_to_cwd_full_extras_and_upgrades_each_git_requirement(tmp_
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     assert dep.main(['--sync'], cwd=tmp_path, run=run) == 0
     command = calls[0]
@@ -269,7 +270,7 @@ def test_an_upgrade_without_sync_only_resolves_the_named_package(tmp_path) -> No
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     assert dep.main(['--upgrade-package', 'peer'], cwd=tmp_path, run=run) == 0
     assert calls[0][1] == 'lock'
@@ -321,7 +322,7 @@ def test_a_lane_cannot_bootstrap_an_unrelated_repositories_main_environment(tmp_
     (foreign / 'pyproject.toml').write_text('[project]\nname="empty"\nversion="0"\n', encoding='utf-8')
 
     def run(_argv, **_kwargs: object) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     with pytest.raises(ValueError, match='main'):
         dep.main(['--bootstrap', str(foreign)], cwd=lane, run=run)
@@ -340,15 +341,15 @@ def test_a_bootstrap_builds_exactly_the_lock_and_a_sync_re_resolves(tmp_path) ->
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     assert dep.main(['--root', str(tmp_path), '--sync'], cwd=tmp_path, run=run) == 0
-    assert '--upgrade-package' in calls[-1]
-    assert '--frozen' not in calls[-1]
+    assert '--upgrade-package' in calls[-2]
+    assert '--frozen' not in calls[-2]
     assert dep.main(['--bootstrap', str(tmp_path)], cwd=tmp_path, run=run) == 0
-    assert '--frozen' in calls[-1]
-    assert '--upgrade-package' not in calls[-1]
-    assert '--upgrade-package' not in calls[-1]
+    assert '--frozen' in calls[-2]
+    assert calls[-1][1:4] == ('-m', 'dev_lab.dev.automode', 'write'), 'a sync renders the local auto-mode prose last'
+    assert '--upgrade-package' not in calls[-2]
 
 
 def _recording() -> tuple[list[tuple[str, ...]], object]:
@@ -356,7 +357,7 @@ def _recording() -> tuple[list[tuple[str, ...]], object]:
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     return calls, run
 
@@ -370,7 +371,8 @@ def test_lock_upgrade_rewrites_the_lock_at_the_newest_then_builds_exactly_it(tmp
     )
     calls, run = _recording()
     assert dep.main(['--lock-upgrade', str(tmp_path)], cwd=tmp_path, run=run) == 0
-    lock, sync = calls
+    lock, sync, render = calls
+    assert render[1:4] == ('-m', 'dev_lab.dev.automode', 'write')
     assert lock[1:3] == ('lock', '--upgrade')
     assert str(tmp_path) in lock
     assert sync[1] == 'sync'
@@ -401,10 +403,10 @@ def test_a_failed_lock_upgrade_syncs_nothing(tmp_path) -> None:
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         calls.append(tuple(argv))
-        return SimpleNamespace(returncode=2)
+        return SimpleNamespace(returncode=2, stdout='', stderr='')
 
     assert dep.main(['--lock-upgrade'], cwd=tmp_path, run=run) == 2
-    assert [call[1] for call in calls] == ['lock']
+    assert {call[1] for call in calls} == {'lock'}, 'a failed lock (retried by netverb) must sync nothing'
 
 
 def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into(tmp_path, monkeypatch) -> None:
@@ -444,7 +446,7 @@ def test_a_bootstrap_initialises_the_submodules_its_path_dependencies_point_into
 
     def run(argv, **_kwargs: object) -> SimpleNamespace:
         seen.append(('sync' in argv, mounted.exists()))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr='')
 
     monkeypatch.setattr(dep, 'current_env_key', lambda: 'stable')
     assert dep.main(['--bootstrap', str(lane)], run=run, cwd=lane) == 0

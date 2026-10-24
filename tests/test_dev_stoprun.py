@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
+from lab_commons.liveness import creation_stamp
 
 from dev_lab.dev.servelock import was_stopped
 from dev_lab.dev.stoprun import (
     SignaturesNotDeclared,
+    declared_orphans,
     declared_signatures,
     identify,
     orphaned_worker,
@@ -174,10 +178,11 @@ _WORKER = (
 
 def test_a_worker_whose_named_parent_is_gone_is_an_orphan_and_is_stopped() -> None:
     """The proof is structural: the parent it names is not in the table, so it can never be handed work."""
-    table = {41: (40, _WORKER, 100.0), 42: (41, 'python child', 101.0)}
-    assert orphaned_worker(table, 41) == 40
+    table = {41: (40, _WORKER), 42: (41, 'python child')}
+    born = {41: 100, 42: 101}.get
+    assert orphaned_worker(table, 41, born) == 40
     killed: list[int] = []
-    code, lines = stop(41, table, dry_run=False, kill=killed.append)
+    code, lines = stop(41, table, dry_run=False, kill=killed.append, born=born)
     assert code == 0
     assert killed == [42, 41]
     assert 'orphaned worker of 40' in lines[0]
@@ -185,24 +190,161 @@ def test_a_worker_whose_named_parent_is_gone_is_an_orphan_and_is_stopped() -> No
 
 def test_a_worker_whose_parent_pid_was_reused_is_an_orphan() -> None:
     """Windows reuses pids: a process holding the named pid but CREATED AFTER the worker is not its parent."""
-    table = {40: (1, 'notepad.exe', 500.0), 41: (40, _WORKER, 100.0)}
-    assert orphaned_worker(table, 41) == 40
-    assert stop(41, table, dry_run=True)[0] == 0
+    table = {40: (1, 'notepad.exe'), 41: (40, _WORKER)}
+    born = {40: 500, 41: 100}.get
+    assert orphaned_worker(table, 41, born) == 40
+    assert stop(41, table, dry_run=True, born=born)[0] == 0
 
 
 def test_a_worker_of_a_live_parent_is_refused() -> None:
     """PLANTED CONTROL: the same command line under its living parent is somebody's running pool."""
-    table = {40: (1, 'python -m some.service', 50.0), 41: (40, _WORKER, 100.0)}
-    assert orphaned_worker(table, 41) is None
+    table = {40: (1, 'python -m some.service'), 41: (40, _WORKER)}
+    born = {40: 50, 41: 100}.get
+    assert orphaned_worker(table, 41, born) is None
     killed: list[int] = []
-    assert stop(41, table, dry_run=False, kill=killed.append)[0] == 3
+    assert stop(41, table, dry_run=False, kill=killed.append, born=born, claimed=_none_claimed)[0] == 3
     assert killed == []
 
 
-def test_the_real_table_carries_each_process_creation_time() -> None:
-    """The reuse proof needs creation times, so the platform table must supply one for every process."""
-    table = process_table()
-    ppid, cmdline, created = table[os.getpid()]
-    assert ppid > 0
-    assert cmdline
-    assert 0 < created <= time.time()
+def test_a_worker_whose_parent_stamp_is_unreadable_is_refused() -> None:
+    """No creation stamp proves nothing: a present parent of unknown age keeps the worker refused."""
+    table = {40: (1, 'python -m some.service'), 41: (40, _WORKER)}
+    assert orphaned_worker(table, 41, {41: 100}.get) is None
+
+
+def test_the_creation_clock_reads_this_process() -> None:
+    """The reuse proof needs creation stamps, so the default clock must supply one for a live process."""
+    assert creation_stamp(os.getpid()) is not None
+    assert process_table()[os.getpid()][1]
+
+
+# --------------------------------------------------------------------------------------------
+# an ORPHAN -- parent gone, no box claim, a declared vendor tool or a scratch/ script -- is stoppable
+# (measured 2026-10-21: two orphan JMAG Designers, a node-side JobSystem and a scratch watcher were all
+# refused as "no run signature", and RAW-PROCESS-KILL left no supported way to free the box they held)
+
+_ORPHANS = (r'designer(?:\.exe)?\b.*--process-link', r'JobSystem\.exe\b.*\s-s\b')
+_DESIGNER = '"C:/Program Files/JMAG-Designer24.1/designer.exe" --process-link --no-splash'
+
+
+def _none_claimed() -> set[int]:
+    return set()
+
+
+def test_an_orphan_vendor_tool_with_no_claim_is_stopped_children_first() -> None:
+    table = {40: (7, _DESIGNER), 41: (40, 'jmag solver child'), 20: (1, 'node server.js'), 1: (0, 'init')}
+    killed: list[int] = []
+    code, lines = stop(40, table, dry_run=False, kill=killed.append, orphans=_ORPHANS, claimed=_none_claimed)
+    assert code == 0, lines
+    assert killed == [41, 40]
+    assert 'orphan' in lines[0]
+
+
+def test_a_node_side_jobsystem_and_a_scratch_watcher_are_orphans_too() -> None:
+    table = {
+        50: (8, r'C:\JMAG\JobSystem.exe -s --control=node7:9000'),
+        60: (9, 'bash /d/repo/scratch/jmag_watch.sh'),
+        61: (60, 'tail -F /d/repo/output/run.log'),
+    }
+    for pid, expect in ((50, [50]), (60, [61, 60])):
+        killed: list[int] = []
+        assert stop(pid, table, dry_run=False, kill=killed.append, orphans=_ORPHANS, claimed=_none_claimed)[0] == 0
+        assert killed == expect
+
+
+def test_a_planted_posix_orphan_reparented_to_init_is_an_orphan() -> None:
+    """PLANTED (forge, 2026-10-23): on POSIX an orphan's ppid becomes 1, and init is alive and older than it."""
+    table = {60: (1, 'python -c sleep scratch/watch.py'), 1: (0, '/sbin/init')}
+    born = {60: 200, 1: 1}.get
+    code, lines = stop(60, table, dry_run=True, claimed=_none_claimed, born=born)
+    assert code == 0, lines
+
+
+def test_an_orphan_whose_parent_pid_was_reused_by_a_younger_process_is_still_an_orphan() -> None:
+    table = {40: (7, _DESIGNER), 7: (1, 'explorer.exe')}
+    born = {40: 100, 7: 200}.get
+    code, _ = stop(40, table, dry_run=True, orphans=_ORPHANS, claimed=_none_claimed, born=born)
+    assert code == 0
+
+
+def test_an_orphan_is_refused_naming_why_when_any_one_condition_fails() -> None:
+    """PLANTED CONTROLS: each condition alone refuses -- a live parent, a claim, an undeclared tool, no ledger."""
+    parented = {40: (7, _DESIGNER), 7: (1, 'python -m motronics case run')}
+    orphaned = {40: (7, _DESIGNER), 41: (40, 'child'), 70: (5, 'notepad.exe')}
+    born = {40: 200, 7: 100}.get
+    killed: list[int] = []
+
+    def unreadable() -> set[int]:
+        msg = 'ledger locked'
+        raise OSError(msg)
+
+    def refused(table: dict, pid: int, claimed: object) -> str:
+        code, lines = stop(pid, table, dry_run=False, kill=killed.append, orphans=_ORPHANS, born=born, claimed=claimed)
+        assert code == 3
+        return lines[0]
+
+    assert 'parent 7 is alive' in refused(parented, 40, _none_claimed)
+    assert 'holds a box claim' in refused(orphaned, 40, lambda: {41})
+    assert 'no orphan signature' in refused(orphaned, 70, _none_claimed)
+    assert 'ledger' in refused(orphaned, 40, unreadable)
+    assert killed == []
+
+
+def test_declared_orphans_are_read_from_the_same_table_as_the_signatures(tmp_path: Path) -> None:
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.lab_commons.stoprun]\nsignatures = ["jcwrap"]\norphans = ["designer"]\n', encoding='utf-8'
+    )
+    assert declared_signatures(tmp_path) == ('jcwrap',)
+    assert declared_orphans(tmp_path) == ('designer',)
+    (tmp_path / 'pyproject.toml').write_text('[tool.lab_commons.stoprun]\norphans = "designer"\n', encoding='utf-8')
+    with pytest.raises(SignaturesNotDeclared):
+        declared_orphans(tmp_path)
+
+
+def test_a_real_orphaned_scratch_script_is_stopped_and_a_parented_one_is_spared() -> None:
+    sleeper = 'import time; time.sleep(120)'
+    spawn = (
+        'import subprocess, sys; d = subprocess.DEVNULL; '
+        f'print(subprocess.Popen([sys.executable, "-c", "{sleeper}", "scratch/watch.py"], '
+        'stdin=d, stdout=d, stderr=d).pid)'
+    )
+    launcher = subprocess.run(
+        [sys.executable, '-c', spawn], capture_output=True, text=True, encoding='utf-8', timeout=60, check=True
+    )
+    orphan = int(launcher.stdout.strip())
+    parented = subprocess.Popen([sys.executable, '-c', sleeper, 'scratch/watch.py'])
+    try:
+        table = process_table()
+        for _ in range(100):
+            if 'scratch/watch.py' in table.get(parented.pid, (0, ''))[1] and orphan in table:
+                break
+            time.sleep(0.1)
+            table = process_table()
+        assert stop(parented.pid, table, dry_run=False, claimed=_none_claimed)[0] == 3
+        assert stop(orphan, table, dry_run=False, claimed=_none_claimed)[0] == 0
+        for _ in range(100):
+            if orphan not in process_table():
+                break
+            time.sleep(0.1)
+        assert orphan not in process_table()
+        assert parented.poll() is None
+    finally:
+        parented.kill()
+        parented.wait(timeout=30)
+        with contextlib.suppress(OSError):
+            os.kill(orphan, signal.SIGTERM)
+
+
+def test_a_pid_whose_creation_stamp_moved_is_not_killed() -> None:
+    """A pid recycled after the snapshot names another process: it is skipped, its siblings still stop."""
+    killed: list[int] = []
+    seen: dict[int, int] = {}
+
+    def born(pid: int) -> int:
+        seen[pid] = seen.get(pid, 0) + 1
+        return 1000 + pid + (1 if pid == 11 and seen[pid] > 1 else 0)  # 11 is reborn after the snapshot
+
+    code, lines = stop(10, _TABLE, dry_run=False, kill=killed.append, born=born)
+    assert code == 0
+    assert killed == [12, 10]
+    assert any('skipped 11' in line for line in lines)
