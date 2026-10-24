@@ -66,6 +66,7 @@ def test_the_base_declares_the_family_stages_with_a_floor() -> None:
         'issue-ref',
         'lab-session',
         'merge-audit',
+        'merge-resolution',
     }
     assert {hook.id for hook in table['pre-commit']} == {
         'check-added-large-files',

@@ -74,6 +74,7 @@ __all__ = [
     'judge',
     'main',
     'pending',
+    'pending_parents',
     'read_tests',
     'unnamed',
 ]
@@ -248,7 +249,7 @@ def audit(root: Path, merge: str, *, roots: Sequence[str]) -> tuple[Deviation, .
     return _audit(root, merge, parents, merge, roots=roots)
 
 
-def _pending_parents(root: Path) -> list[str] | None:
+def pending_parents(root: Path) -> list[str] | None:
     """HEAD plus every ``MERGE_HEAD`` while a merge is being committed, else ``None``."""
     merge_head = root / _git(root, 'rev-parse', '--git-path', 'MERGE_HEAD').decode().strip()
     if not merge_head.is_file():
@@ -283,7 +284,7 @@ def pending(root: Path, message: str) -> tuple[str, ...]:
     roots are the ones THAT tree declares (:func:`dev_lab.dev.lanepolicy.policy_at`), never the working
     tree's. A non-merge reads no declaration at all: only a merge in progress is judged.
     """
-    parents = _pending_parents(root)
+    parents = pending_parents(root)
     if parents is None:
         return ()
     tree = _git(root, 'write-tree').decode().strip()

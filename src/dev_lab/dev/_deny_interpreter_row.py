@@ -1,4 +1,4 @@
-"""The agent deny registry, BARE-INTERPRETER row -- pure DATA, every spelling derived from the owner.
+"""The agent deny registry, BARE-INTERPRETER and BARE-PYTHON rows -- pure DATA, every spelling derived from the owner.
 
 USER RULING 2026-10-03: `.claude/settings.json` allows only the checkout's venv interpreter
 (:data:`dev_lab.dev.venvpath.VENV_INTERPRETER_GLOB`), yet agents reflexively type `uv run python`
@@ -11,13 +11,17 @@ the interpreter spelling; the settings allow row is derived from the same owner
 A repo's own user-facing CLI behind `uv run` (one consumer reproduces only through `uv run <its cli>`)
 is a per-repo OPENING supplied as that repo's ``Remedy.allow`` for this row -- a delta, not a hole here.
 `python -m pytest` is left to ``BARE-TEST-INVOCATION``: one shape, one row.
+
+ONE HAZARD, ONE SEVERITY (toolchain plan P3, user 2026-10-23): `uv run` and `uvx` may SYNC an environment
+before they run, which is harm, so BARE-INTERPRETER refuses them; a bare `python`/`py` only runs an
+interpreter somebody else chose, so BARE-PYTHON says the same exit and lets the call run.
 """
 
 from __future__ import annotations
 
 from dev_lab.dev.venvpath import INTERPRETER_ALLOW_ENTRY, INTERPRETER_RULE, VENV_LAYOUTS
 
-__all__ = ['BARE_INTERPRETER', 'INTERPRETER_REMEDY']
+__all__ = ['BARE_INTERPRETER', 'BARE_PYTHON', 'INTERPRETER_REMEDY']
 
 _NT = '/'.join(VENV_LAYOUTS['nt'])
 _POSIX = '/'.join(VENV_LAYOUTS['posix'])
@@ -31,13 +35,10 @@ INTERPRETER_REMEDY = (
 
 BARE_INTERPRETER: dict[str, object] = {
     'id': INTERPRETER_RULE,
-    'pattern': (
-        r'(?:uv(?:\.exe)?\s+run\b|uvx(?:\.exe)?\b'
-        r'|(?:python(?:3(?:\.\d+)?)?|py)(?:\.exe)?(?![\w./\\-])(?!\s+-m\s+pytest\b))'
-    ),
+    'pattern': r'(?:uv(?:\.exe)?\s+run\b|uvx(?:\.exe)?\b)',
     'matches': 'command',
-    'hazard': 'a bare python/py, `uv run` or `uvx` runs an interpreter somebody '
-    'else chose, and `uv run` may mutate the checkout environment outside the checked dependency door.',
+    'hazard': '`uv run` or `uvx` runs an interpreter somebody else chose and may sync '
+    'the checkout environment outside the checked dependency door.',
     'remedy': INTERPRETER_REMEDY,
     'needs': None,
     'refuses': (
@@ -45,6 +46,27 @@ BARE_INTERPRETER: dict[str, object] = {
         'uv run -m dev_lab.dev.verify',
         'uv run --no-sync python -c "print(1)"',
         'uvx python',
+        'uv.exe run x.py',
+    ),
+    'permits': (
+        f'{_NT} -m dev_lab.dev.verify',
+        'python x.py',
+        'uv pip list',
+        'git commit -m "uv run here"',
+        'grep -n "uv run" src/a.py',
+    ),
+}
+
+BARE_PYTHON: dict[str, object] = {
+    'id': 'BARE-PYTHON',
+    'pattern': r'(?:python(?:3(?:\.\d+)?)?|py)(?:\.exe)?(?![\w./\\-])(?!\s+-m\s+pytest\b)',
+    'matches': 'command',
+    'hazard': "a bare python/py runs the interpreter PATH chose, not this checkout's venv.",
+    'remedy': INTERPRETER_REMEDY,
+    'needs': None,
+    # A HINT (toolchain plan P3): no environment is mutated, so the hazard is a wrong interpreter, not harm.
+    'severity': 'hint',
+    'refuses': (
         'python x.py',
         'python3 -m pip list',
         'python3.13 -c "print(1)"',
@@ -59,6 +81,5 @@ BARE_INTERPRETER: dict[str, object] = {
         f'C:/work/repo/{_NT} -V',
         'pythonic-tool --help',
         'git commit -m "run python here"',
-        'grep -n "uv run" src/a.py',
     ),
 }

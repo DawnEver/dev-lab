@@ -104,6 +104,7 @@ if TYPE_CHECKING:
 __all__ = [
     'BASE',
     'CONTEXT_PREFIX',
+    'OVER_CAP',
     'PART_FIELD',
     'REVIEW_CONTEXT',
     'UNCLAIMED',
@@ -133,8 +134,14 @@ __all__ = [
 CONTEXT_PREFIX: Final = 'tests/'
 
 #: The ADVISORY review's context (:mod:`dev_lab.dev.forgereview`): under the prefix so it reads beside the
-#: parts, and never a part -- :func:`parts_of` skips it, so no merge, promotion or push admission waits on it.
+#: parts, and never a part -- :func:`parts_of` skips it, so no promotion or push admission waits on it; the one
+#: review state a merge waits on is :func:`dev_lab.dev.forgemerge.review_hold`'s.
 REVIEW_CONTEXT: Final = f'{CONTEXT_PREFIX}review'
+
+#: The ``pending`` review description of a head whose diff is over ``max_diff_bytes``: the ONE review state a
+#: merge waits on (:func:`dev_lab.dev.forgemerge.review_hold`), so an unreviewable head is never
+#: advisory-skipped into an auto-merge.
+OVER_CAP: Final = 'over the cap: review in slices, then post success'
 
 #: The placeholder the declared producer carries; the claimed part's name replaces it.
 PART_FIELD: Final = '{part}'

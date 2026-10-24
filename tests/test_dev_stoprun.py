@@ -298,3 +298,16 @@ def test_a_pid_whose_creation_stamp_moved_is_not_killed() -> None:
     assert code == 0
     assert killed == [12, 10]
     assert any('skipped 11' in line for line in lines)
+
+
+def test_an_orphaned_multiprocessing_worker_is_an_orphan_by_liverun_s_rule() -> None:
+    """A spawn/forkserver worker whose parent is gone is stoppable; a parented one is refused (PLANTED CONTROL)."""
+    spawn = 'python.exe -c "from multiprocessing.spawn import spawn_main; spawn_main()" --multiprocessing-fork'
+    forkserver = 'python -c from multiprocessing.forkserver import main; main(3, 4)'
+    for line in (spawn, forkserver):
+        code, lines = stop(80, {80: (7, line)}, dry_run=True, claimed=_none_claimed)
+        assert code == 0, lines
+    parented = {80: (7, spawn), 7: (1, 'python -m motronics case run')}
+    code, lines = stop(80, parented, dry_run=True, claimed=_none_claimed, born={80: 200, 7: 100}.get)
+    assert code == 3
+    assert 'parent 7 is alive' in lines[0]

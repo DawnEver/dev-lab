@@ -26,7 +26,8 @@ signature, RAW-PROCESS-KILL forbade ``taskkill``, and the memory they held kept 
   process wearing the recycled number;
 * NO BOX CLAIM is held by it or a descendant (:func:`lab_commons.box.ledger.holdings`; a Designer a claim
   was handed over to is that claim's, and is released through its own door). An unreadable ledger refuses;
-* its command line is a DECLARED vendor tool or a ``scratch/`` script (:data:`SCRATCH`, built in)::
+* its command line is a DECLARED vendor tool, a ``scratch/`` script or a multiprocessing spawn/forkserver
+  worker (:data:`BUILTIN_ORPHANS`)::
 
       [tool.lab_commons.stoprun]
       orphans = ["designer.exe.* --process-link", "JobSystem.exe -s "]
@@ -63,9 +64,11 @@ from lab_commons.log import emit
 from lab_commons.proc import pid_alive
 
 from dev_lab.dev.checkout import git_out
+from dev_lab.dev.liverun import SPAWN_WORKER
 from dev_lab.dev.servelock import note_stopped
 
 __all__ = [
+    'BUILTIN_ORPHANS',
     'RUN_SIGNATURES',
     'SCRATCH',
     'SERVE',
@@ -104,6 +107,10 @@ RUN_SIGNATURES: Final = (
 
 #: A one-off under a ``scratch/`` directory (the family's home for probes): an orphan of one is stoppable.
 SCRATCH: Final = re.compile(r'(?:^|[\s"\'=/\\])scratch[/\\]')
+
+#: The orphan signatures every repo has: a ``scratch/`` one-off, and a multiprocessing spawn/forkserver
+#: worker -- liverun's own rule (:data:`dev_lab.dev.liverun.SPAWN_WORKER`), so the two doors never disagree.
+BUILTIN_ORPHANS: Final = (SCRATCH, SPAWN_WORKER)
 
 #: The pid POSIX reparents an orphan to; a ppid at or below it names no live creator.
 _INIT: Final = 1
@@ -212,8 +219,9 @@ def _orphan_refusal(
 ) -> str | None:
     """Why *pid* is NOT a stoppable orphan, or ``None`` when it is (the module docstring's three conditions)."""
     cmdline = table[pid][1]
-    if not any(sig.search(cmdline) for sig in (SCRATCH, *(re.compile(s) for s in orphans))):
-        return f'no orphan signature either (built-in {SCRATCH.pattern!r} or {_TABLE} orphans)'
+    if not any(sig.search(cmdline) for sig in (*BUILTIN_ORPHANS, *(re.compile(s) for s in orphans))):
+        builtin = ', '.join(repr(sig.pattern) for sig in BUILTIN_ORPHANS)
+        return f'no orphan signature either (built-in {builtin} or {_TABLE} orphans)'
     ppid = table[pid][0]
     if ppid > _INIT and ppid in table:  # POSIX reparents an orphan to init: its parent is gone
         parent, child = born(ppid), born(pid)
