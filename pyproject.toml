@@ -45,8 +45,8 @@ template = "__version__ = version = \"{version}\"\n__version_tuple__ = version_t
 packages = ["src/dev_lab"]
 
 [tool.uv.sources]
-# integrate/main until lab-commons main carries the split base (main is v0.3.0-745, behind 8c401f0); then drop `branch`.
-lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git", branch = "integrate/main" }
+# The forge HEAD is the split integration line; one bare URL composes with downstream declarations.
+lab-commons = { git = "https://gitea.mingyangbao.site/Tianjie-Zou-Team/lab-commons.git" }
 
 # THE FAMILY PLACEMENT MAP (`dev_lab.dev.codeplace.FAMILY_HOMES`) plus this repo's delta: none.
 [tool.lab_commons.placement]
@@ -118,8 +118,6 @@ always_run = true
 # ONE-BRANCH-PER-SESSION: the trunk and the integration branch are the long-lived ones; a lane merges and is deleted.
 trunk = 'main'
 sessions = ['integrate/main']
-# Short-lived PR heads (user ruling 2026-10-19): pushable with no row, deleted by the forge once their PR is gone.
-ephemeral = ['pr/*']
 # User ruling 2026-10-13 ("origin should not carry this junk"): every serving host (idempotently) deletes
 # merged undeclared origin branches idle >= grace_hours (dev_lab.dev.branchprune).
 prune_merged = true
@@ -131,8 +129,7 @@ prune_merged = true
 # on Windows and .venv/bin/python on POSIX -- in a worktree, the main checkout's.
 BARE-TEST-INVOCATION = "<venv python> -m dev_lab.dev.verify -- <paths>  (the measure door; a full run is the forge producer's; a hand-written pytest line has none)"
 PUSH-NO-VERIFY = "push without skipping the hook; no hook runs a test, and the forge produces the part"
-GIT-NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- git <push|fetch|pull|clone|ls-remote> ...  (retries 3x, then reports a diagnosis)"
-OUTPUT-REDIRECT-IS-DATED = "<command> > output/logs/<yy>/<mm>/<dd>/<kind>/<name> 2>&1  (create the day's <kind> directory first; the shape is dev_lab.dev.datedlog's)"
+NETWORK-VERB = "<venv python> -m dev_lab.dev.netverb -- <git push|fetch|pull|clone|ls-remote|submodule update ...  or  uv lock|add|remove ...>  (retries 3x, then reports a diagnosis); an environment change is <venv python> -m dev_lab.dev.dep --sync, which retries inside"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -316,7 +313,7 @@ run = '''extra_flags=""
 for extra in ${{ inputs.extras }}; do
   extra_flags="$extra_flags --extra $extra"
 done
-uv sync --python ${{ matrix.python-version }} $extra_flags
+uv sync --frozen --python ${{ matrix.python-version }} $extra_flags
 '''
 
 [[tool.lab_commons.ci."python-verify.yml".jobs.verify.steps]]

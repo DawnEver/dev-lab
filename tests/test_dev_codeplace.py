@@ -160,13 +160,14 @@ def test_a_path_in_no_declaring_repo_is_not_this_hooks_to_judge(tmp_path) -> Non
     assert refuse_write(tmp_path / 'anywhere' / 'x.py') is None
 
 
-def test_the_hook_entry_denies_through_the_harness_json_and_allows_by_silence(tmp_path, capsys) -> None:
+def test_the_hook_entry_hints_a_misplaced_file_and_allows_by_silence(tmp_path, capsys) -> None:
+    """CODE-IN-CODE-ROOTS is a HINT (toolchain plan P3): the write runs, and the home is said as context."""
     _declare(tmp_path, '')
     bad = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': str(tmp_path / 'out' / 'p.py')}})
     assert main(stdin=io.StringIO(bad)) == 0
     decision = json.loads(capsys.readouterr().out)['hookSpecificOutput']
-    assert decision['permissionDecision'] == 'deny'
-    assert 'out/p.py' in decision['permissionDecisionReason']
+    assert 'permissionDecision' not in decision
+    assert 'out/p.py' in decision['additionalContext']
     good = json.dumps({'tool_name': 'Edit', 'tool_input': {'file_path': str(tmp_path / 'src' / 'p.py')}})
     assert main(stdin=io.StringIO(good)) == 0
     assert capsys.readouterr().out == ''

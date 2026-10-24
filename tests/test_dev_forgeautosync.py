@@ -22,7 +22,7 @@ from dev_lab.dev.forgeintegration import tick
 from dev_lab.dev.lanepolicy import Policy, policy_from
 from dev_lab.dev.sessionbranch import MERGED_BRANCH
 
-POLICY = Policy(pr_merges_since='0' * 40, auto_sync=True)
+POLICY = Policy(pr_merges_since='0' * 40)
 _MANIFEST = "[tool.lab_commons.branchset]\ntrunk = 'main'\nsessions = ['integrate/main']\nephemeral = ['pr/*']\n"
 _LATER = datetime.now(UTC) + timedelta(hours=1)
 
@@ -88,11 +88,11 @@ def _status(forge: StateForge, sha: str) -> dict[str, object]:
 
 
 def test_a_behind_pr_head_is_merged_with_integration_and_pushed_under_its_own_name(tmp_path: Path) -> None:
-    """PLANTED control: undeclared (``auto_sync`` off), or with no serving host, the same PR is left alone."""
+    """PLANTED control: no forge merges (``pr_merges_since`` undeclared), or no serving host: the PR is left alone."""
     work, head, tip = _world(tmp_path)
     forge = StateForge()
     number = forge.add_pull('pr/x', 'integrate/main', sha=head)
-    _tick(work, forge, {number: head}, policy=Policy(pr_merges_since='0' * 40))
+    _tick(work, forge, {number: head}, policy=Policy())
     _tick(work, forge, {number: head}, host='')
     assert _origin(work, 'pr/x') == head
     _tick(work, forge, {number: head})
@@ -241,9 +241,11 @@ def test_a_local_branch_of_the_heads_name_is_an_authors_and_is_refused(tmp_path:
     assert git_out(work, 'rev-parse', 'pr/x') == head, 'the local branch is never reset'
 
 
-def test_auto_sync_is_declared_and_its_quiet_period_is_a_duration() -> None:
-    declared = policy_from('[tool.lab_commons.integrator]\nauto_sync = true\nauto_sync_quiet = "5 min"\n', 't')
-    assert (declared.auto_sync, forgeautosync.quiet_after(declared)) == (True, timedelta(minutes=5))
-    assert Policy().auto_sync is False, 'undeclared, nothing is synced'
+def test_auto_sync_has_no_switch_of_its_own_and_its_quiet_period_is_a_duration() -> None:
+    """Auto-sync rides auto-merge's declaration (``pr_merges_since``); an ``auto_sync`` key is refused."""
+    declared = policy_from('[tool.lab_commons.integrator]\nauto_sync_quiet = "5 min"\n', 't')
+    assert forgeautosync.quiet_after(declared) == timedelta(minutes=5)
+    with pytest.raises(ValueError, match='unknown key'):
+        policy_from('[tool.lab_commons.integrator]\nauto_sync = true\n', 't')
     with pytest.raises(ValueError, match='needs a unit'):
         forgeautosync.quiet_after(Policy(auto_sync_quiet='10'))

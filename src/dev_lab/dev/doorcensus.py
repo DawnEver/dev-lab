@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Final
 
 from dev_lab.dev.checkout import git_out
-from dev_lab.dev.installdoor import Delivery, classify, commands, floating_in_manifest
+from dev_lab.dev.installdoor import Delivery, classify, commands, floating_in_manifest, has_locked_resolution
 
 __all__ = [
     'DELIVERY_NAMES',
@@ -227,7 +227,7 @@ class SharedDoor:
             raise CensusRowError(msg)
 
 
-def read(text: str, names: tuple[str, ...]) -> Reading:
+def read(text: str, names: tuple[str, ...], *, locked: bool = False) -> Reading:
     """Measure one door file's TEXT against the floating requirements *names*.
 
     Drives :func:`~dev_lab.dev.installdoor.commands` and
@@ -235,7 +235,7 @@ def read(text: str, names: tuple[str, ...]) -> Reading:
     exercises the same code path a repo's own guard does, rather than a second implementation that
     would agree with this one by construction.
     """
-    found = [classify(argv, names).name for _line, argv in commands(text)]
+    found = [classify(argv, names, locked=locked).name for _line, argv in commands(text)]
     return Reading(len(found), frozenset(found))
 
 
@@ -342,7 +342,7 @@ def drift(root: Path, rows: tuple[DoorRow, ...], names: tuple[str, ...], *, at_h
                 f'door must red here rather than read as a file holding no command.'
             )
             continue
-        live = read(text, names)
+        live = read(text, names, locked=has_locked_resolution(root, at_head=at_head))
         if live != row.reading:
             out.append(f'{row.key} records {row.reading.describe()} and now measures {live.describe()}')
     return tuple(out)

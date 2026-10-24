@@ -56,7 +56,7 @@ pr_merges_since = "<the integrate/main sha the rule starts after>"
 
 ## Auto-sync: the forge syncs a behind PR head
 
-User ruling 2026-10-21: integration is automatic. Declared, each `forge serve` tick (the integration step,
+User ruling 2026-10-21: integration is automatic. Wherever the forge merges PRs, each `forge serve` tick (the integration step,
 `dev_lab.dev.forgeautosync`) takes every open PR into integration that it did not merge and whose head does
 not contain `origin/<integration>`, and merges integration INTO the head in a worktree under the git directory:
 a merge commit (`Merged-Branch: <integration>`, first parent the head), never a rebase or a force, pushed under
@@ -74,7 +74,7 @@ the dependency door. The new head gets its parts by the normal path, then merges
 
 ```toml
 [tool.lab_commons.integrator]
-auto_sync = true            # undeclared: off
+pr_merges_since = "<sha>"   # auto-merge on; auto-sync rides it, no switch of its own
 auto_sync_quiet = "10 min"  # the default
 ```
 
@@ -96,7 +96,7 @@ reads the forge and writes nothing else.
 | rule | mechanism |
 |---|---|
 | INTEGRATION-TAKES-ONLY-FORGE-MERGES | pre-push `session-branch`, from `[tool.lab_commons.integrator] pr_merges_since` |
-| a `pr/*` head pushes with no row | `[tool.lab_commons.branchset] ephemeral = ['pr/*']`, pre-push `branchset-push` |
+| a `pr/*` head pushes with no row | `[tool.lab_commons.branchset] ephemeral = ['pr/*']`, judged by the forge's branch-set test |
 | PRS-TARGET-INTEGRATION | the integration tick retargets a PR opened against the trunk, with a comment |
 | no long-lived child | `branchset.sessions` names only the integration branch; anything else is merged and deleted |
 | every repo declares the flow | `famtests.branchset.assert_the_pr_flow_is_declared` |
@@ -122,10 +122,12 @@ A steward runs no test, merges no branch by hand, and pushes nothing to `integra
 into `integrate/main` on gitea is reviewed ONCE per head sha by the command the repo declares, run on
 `<merge base>..<head>`; its stdout is the sharp-review findings JSON (`schema_version` 2, read by
 `dev_lab.dev.forgereview_findings`; an unknown version is refused by name). The forge posts one PR comment
-of the findings and a `tests/review` commit status. **It gates nothing**: `tests/review` is never a part, so
-the forge's auto-merge, `integrate promote` and push admission never wait on it, whatever it says. A second
-tick on the same head runs nothing and posts nothing; a new head is reviewed afresh. A diff over the cap is
-never reviewed (`tests/review` says so); a failed command posts `error` and is not retried on that head.
+of the findings and a `tests/review` commit status. **It gates nothing but one state**: `tests/review` is
+never a part, so `integrate promote` and push admission never wait on it, and the forge's auto-merge waits
+only on a diff over the cap: that head is not reviewed by the command but HELD (`pending`, `over the cap:
+review in slices, then post success`) until a session reviews it in slices and posts `success`, so an
+unreviewable head never auto-merges unreviewed. A second tick on the same head runs nothing and posts
+nothing; a new head is reviewed afresh. A failed command posts `error` and is not retried on that head.
 When EVERY reviewer reports `exhausted` or `auth`, nothing is commented and `tests/review` is `pending` with
 `takeover pending`: not a failure, never blocking; the integrator session lists those heads and reviews them
 through the same method (takeover chain: anthropic API, then a ccc session, then a ccds session).
@@ -199,9 +201,9 @@ python -m dev_lab.dev.forge sync --watch origin/<ref>  # opt in to one more upst
   conflict, and merges (never rebases) only when every merge is clean: integration first, then each watched ref.
 - On a conflict it merges nothing and names the files; resolve with a plain `git merge`.
 - It never pushes. The owner measures what they touched and pushes.
-- A push of a child more than `[tool.lab_commons.integrator] behind_max` commits behind integration is refused
-  at pre-push (`behind-push`, naming this command); `forge serve` runs the behind/conflict report every tick and
-  raises an `integration` alarm for each child past the bound or conflicting.
+- A child more than `[tool.lab_commons.integrator] behind_max` commits behind integration is the forge's to say:
+  `forge serve` runs the behind/conflict report every tick and raises an `integration` alarm, naming this command,
+  for each child past the bound or conflicting. No push is refused for it (toolchain plan P3).
 - The watched set is the checkout's git config `branch.<child>.labSyncFrom`, never a committed file.
 
 ## Pull requests target integration
@@ -214,8 +216,7 @@ with a comment saying why. Each child carries one PR at most.
 `Lab-Session:` trailer (`dev_lab.dev.labsession`). A commit without `LAB_SESSION` is never refused, agent or
 human (user ruling 2026-10-21): it carries no trailer and the rule does not judge it, so a path no launcher
 starts (the VS Code Claude extension, the codex desktop app, `codc` attached to a shared app-server) keeps
-committing. Only a session that has an id is judged. `Claude-Session:` is prose nothing reads. `forge pr create`, and the `pr-admit` pre-push row for a
-NEW `pr/*` branch, refuse a head that shares a session with another open head and name that head's branch
+committing. Only a session that has an id is judged. `Claude-Session:` is prose nothing reads. `forge pr create` refuses a head that shares a session with another open head and name that head's branch
 (`dev_lab.dev.pradmit`). A split is an entry of `pradmit.SPLITS` with its reason, under a pinned ceiling.
 
 `NO-STACKED-PRS`: `forge pr create` refuses a head holding a commit of another open PR's head that integration

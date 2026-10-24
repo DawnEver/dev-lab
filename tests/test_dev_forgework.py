@@ -11,6 +11,7 @@ and the normalized results are identical across backends; only the request shape
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
@@ -24,7 +25,7 @@ from _forge_fake import Loopback as _Loopback
 from _forge_fake import Recorder as _Recorder
 from _forge_fake import answer as _answer
 from _forge_fake import client as _client
-from _forge_fake import credential_env, serve
+from _forge_fake import credential_env, oauth_env, serve
 from _forge_fake import make_repo as _repo
 from _forge_fake import run_git as _run
 
@@ -35,6 +36,7 @@ from dev_lab.dev.forgecli import issue_and_pr
 from dev_lab.dev.forgework import (
     GITEA,
     GITHUB,
+    Client,
     Comment,
     ForgeCallFailed,
     Issue,
@@ -209,16 +211,48 @@ def test_a_refusal_whose_credential_still_authenticates_is_retried_and_names_no_
     assert 'retrying cannot change' not in str(caught.value)
 
 
+def _oauth_basic(secret: str) -> str:
+    return 'Basic ' + base64.b64encode(f'OAUTH_USER:{secret}'.encode()).decode()
+
+
+def _stored_client(server, tmp_path: Path, fresh: str = 'fresh') -> Client:
+    repo = _repo(tmp_path, 'https://f.example/o/r.git')
+    client = client_for(repo, env=oauth_env(tmp_path, fresh=fresh), transport=_Loopback(server))
+    client.sleep = lambda _s: None
+    return client
+
+
+def test_an_expired_oauth_token_is_refreshed_as_git_does_and_the_call_answers(server, tmp_path) -> None:
+    """THE 2026-10-21 ROOT CAUSE: an expired OAuth access token is refreshed, not reported as a bad credential.
+
+    GCM's OAuth access token expires; git rejects it on the 401 and its next fill refreshes it -- why every git
+    verb "fails once, then succeeds" (``docs-src/dev/forge.md#credentials``).
+    """
+    _Recorder.accept = lambda header: header == _oauth_basic('fresh')
+    _answer('GET', _STATUSES, (200, []))
+    assert _stored_client(server, tmp_path).call('GET', _STATUSES) == []
+    assert _Recorder.received[0]['headers']['Authorization'] == _oauth_basic('stale')
+    assert _Recorder.received[-1]['headers']['Authorization'] == _oauth_basic('fresh')
+
+
 @pytest.mark.parametrize('code', [401, 403])
-def test_a_refusal_whose_credential_check_also_refuses_names_the_re_store_remedy(server, code) -> None:
+def test_a_refusal_that_survives_the_refresh_is_refused_and_never_names_a_re_login(server, tmp_path, code) -> None:
     _answer('GET', _STATUSES, (code, _INVALID))
     _answer('GET', '/api/v1/user', (401, _INVALID))
     with pytest.raises(ForgeCallFailed) as caught:
-        _client(Forge('f.example', 'o', 'r'), _Loopback(server)).call('GET', _STATUSES)
+        _stored_client(server, tmp_path).call('GET', _STATUSES)
     assert caught.value.credential_refused
     assert caught.value.report.disposition is Disposition.REFUSED
+    assert 'auth login' not in str(caught.value)
+    assert 'refresh' in str(caught.value)
+
+
+def test_a_refresh_that_leaves_no_credential_names_the_one_command_that_stores_one(server, tmp_path) -> None:
+    _Recorder.accept = lambda _header: False
+    with pytest.raises(ForgeCallFailed) as caught:
+        _stored_client(server, tmp_path, fresh='').call('GET', _STATUSES)
+    assert caught.value.credential_refused
     assert 'auth login' in str(caught.value)
-    assert [r['path'] for r in _Recorder.received] == [_STATUSES, '/api/v1/user']
 
 
 # --------------------------------------------------------------------------------------------

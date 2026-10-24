@@ -162,6 +162,7 @@ _ENFORCED = {
         guard('tests/test_dev_runcache.py'),
     ),
     'MERGE-DEVIATIONS-NAMED': (guard('tests/test_dev_mergeaudit.py'),),
+    'MERGE-RESOLUTION-DECLARED': (guard('tests/test_dev_mergeresolution.py'),),
     'AUTO-MODE-RUNS-THE-DOORS': (guard('tests/test_dev_autodoors.py'),),
     'MAIN-SESSION-PUBLISHES': (guard('tests/test_dev_autodoors.py'), guard('tests/test_dev_hooks.py')),
     # Incident 2026-10-17 (Ada): a redeploy from journal schema 1 to 2 under 17 live schema-1 runs, refused
@@ -182,6 +183,7 @@ _ENFORCED = {
     'SUBAGENT-NO-PUSH': (guard('tests/test_dev_hooks.py'), guard('tests/test_dev_agenthooks.py')),
     'TOLERANCE-CARRIES-A-UNIT': (guard('tests/test_arch_every_approx_states_its_floor.py'),),
     'TRACKED-CITES-NO-EPHEMERAL': (guard('tests/test_famtests_ephemeralrefs.py'),),
+    'MONTHLY-PLANS-CARRIED': (guard('tests/test_famtests_monthsummary.py'),),
     'RATCHET-TWO-SIDES': (
         guard('tests/test_arch_module_size_alarm.py'),
         guard('tests/test_arch_dependencies.py'),

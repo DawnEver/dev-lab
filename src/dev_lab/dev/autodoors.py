@@ -30,7 +30,7 @@ interpreter is this checkout's ``.venv/...`` (the plain heads below) or a worktr
 USER RULING 2026-10-08 (MAIN-SESSION-PUBLISHES), superseding the push half of 2026-10-04: a MAIN
 session pushes and fast-forwards its trunks without waiting for a user decision. So the publishing
 verbs are doors too (:data:`PUBLISH_DOORS`): ``git merge --ff-only`` (also as ``git -C <repo>``), and
-the push, ALWAYS RETRY-WRAPPED and never raw (GIT-NETWORK-VERB refuses a raw one): the repo's own
+the push, ALWAYS RETRY-WRAPPED and never raw (NETWORK-VERB refuses a raw one): the repo's own
 wrapper (``sh <rel> *``), a sibling checkout's wrapper (``sh */<rel> push *``), or the family verb
 :mod:`dev_lab.dev.netverb` in a repo without one. A subagent is still refused every push by the
 scoped deny row SUBAGENT-NO-PUSH, and a force push by PUSH-FORCE: a deny hook fires before
@@ -69,6 +69,7 @@ __all__ = [
     'DOOR_MODULES',
     'NEVER_ALLOWED',
     'PUBLISH_DOORS',
+    'VERB_DOORS',
     'claude_rows',
     'codex_rules',
     'doors',
@@ -85,8 +86,8 @@ DOOR_MODULES: Final[dict[str, str]] = {
     'dev_lab.dev.verify': 'the family verdict',
     'dev_lab.dev.branchset': 'branch census; --apply deletes merged LOCAL branches only',
     'dev_lab.dev.worktrees': (
-        'worktree census; --prune removes a worktree only if it is clean and pushed;'
-        ' nothing is archived aside, and anything blocking is listed and refused'
+        'worktree census; --prune removes a worktree only if it is clean and pushed, anything blocking is'
+        ' listed and refused; --archive NAME moves its outputs home and saves its work, removing nothing'
     ),
     'dev_lab.dev.stoprun': 'stops ONE identifiable gate/verify run and its subtree',
     'dev_lab.dev.netverb': 'the bounded-retry network verb',
@@ -95,11 +96,30 @@ DOOR_MODULES: Final[dict[str, str]] = {
 }
 
 #: MAIN-SESSION-PUBLISHES: the local trunk verbs a main session runs unattended. The push is not here:
-#: it is retry-wrapped (the repo's wrapper door, or ``netverb``), because GIT-NETWORK-VERB refuses a raw one.
+#: it is retry-wrapped (the repo's wrapper door, or ``netverb``), because NETWORK-VERB refuses a raw one.
 PUBLISH_DOORS: Final[dict[tuple[str, ...], str]] = {
     ('git', 'merge', '--ff-only'): 'a fast-forward of a trunk; never creates a merge commit (MAIN-SESSION-PUBLISHES)',
 }
 _RETRY_WRAPPER: Final = 'with-retry.sh'
+
+#: THE BOUNDED VERBS: one door module's single verb, each re-checking its own safety bound when it acts.
+#: Its row names the verb, so the module's other verbs stay prompted.
+VERB_DOORS: Final[dict[tuple[str, ...], str]] = {
+    ('python', '-m', 'dev_lab.dev.hpchost', 'deploy-fleet'): (
+        "starts each DECLARED fleet account's own deploy over ssh, detached; an undeclared account is refused"
+    ),
+    ('python', '-m', 'dev_lab.dev.forge', 'cancel-stuck'): (
+        "scancels only this sha's run-<sha12>-<part> tasks busy at full CPU with no result past their bound"
+    ),
+    ('python', '-m', 'dev_lab.dev.forge', 'watch'): 'read-only: prints a commit verdict until settled or a deadline',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-landed'): 'closes PRs whose head is already on their base',
+    ('python', '-m', 'dev_lab.dev.forge', 'pr', 'close-superseded'): (
+        'closes open PRs salvaged into another OPEN, unmerged PR, then LOSSLESS-DELETEs their branches'
+    ),
+    ('python', '-m', 'dev_lab.dev.branchprune', 'delete'): (
+        'LOSSLESS-DELETE: a remote branch only when every commit on it is held elsewhere'
+    ),
+}
 
 #: Bootstrap is a checked dependency door, not permission to invoke arbitrary installers.
 _DEPENDENCY_BOOTSTRAP: Final = ('python', '-m', 'dev_lab.dev.dep', '--bootstrap')
@@ -155,6 +175,7 @@ def doors(scripts: tuple[str, ...] = ()) -> dict[tuple[str, ...], str]:
     out[_DEPENDENCY_BOOTSTRAP] = "creates the named checkout's own environment through the checked dependency door"
     for rel in scripts:
         out[('sh', rel) if rel.endswith('.sh') else ('python', rel)] = f'repo door {rel}'
+    out.update(VERB_DOORS)
     out.update(PUBLISH_DOORS)
     return out
 
@@ -233,7 +254,10 @@ def promises_raw(text: str) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print the Claude rows and check (or ``--write``) the Codex rules for a repo. Exit 1 when stale."""
+    """Print the Claude rows and check (or ``--write``) the Codex rules for a repo. Exit 1 when stale.
+
+    The auto-mode prose is NOT here: it is machine-local and never committed (:mod:`dev_lab.dev.automode`).
+    """
     parser = argparse.ArgumentParser(prog='python -m dev_lab.dev.autodoors', description=main.__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     parser.add_argument('--write', action='store_true', help=f'write {CODEX_RULES_REL}')

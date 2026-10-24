@@ -23,6 +23,7 @@ is checked here is the anchoring a rule declares, which is the half a pattern ca
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -211,7 +212,6 @@ def test_a_scoped_row_binds_only_its_own_scope() -> None:
     [
         'sh scripts/hooks/with-retry.sh push origin main',
         'sh C:/w/sib/scripts/hooks/with-retry.sh push origin integrate/main',
-        'git -C ../sib push origin main',
         'git -C ../sib merge --ff-only lane/x',
     ],
 )
@@ -252,3 +252,38 @@ def test_the_shared_checkout_rewrites_are_each_refused_by_a_row(command: str, ru
     """SHARED-CHECKOUT's `never reset/amend/stash/-a/-A/-u` is a mechanism, not prose; staging a PATH is the control."""
     assert denies(DENY_RULES, command, _REMEDIES) == rule
     assert denies(DENY_RULES, 'git add src/a.py tests/test_a.py', _REMEDIES) is None
+
+
+# --------------------------------------------------------------------------------------------
+# HINTS -- a row that SPEAKS and never refuses (toolchain plan P3)
+#
+# A guard is judged by its measured fire and false-positive rate: a style or speed finding with no
+# irreversible harm behind it refused hundreds of calls and was routed around, so it is said instead.
+
+#: The rows that hint rather than refuse, as a NAMED SET: a count would not say which row changed severity.
+HINT_ROWS = frozenset({'BARE-PYTHON', 'NETWORK-VERB', 'RECURSIVE-GREP'})
+
+
+def test_the_hint_rows_are_a_named_set() -> None:
+    assert {rule.id for rule in DENY_RULES if rule.severity == 'hint'} == HINT_ROWS
+
+
+def test_a_hint_row_fires_and_never_refuses() -> None:
+    """PLANTED CONTROL: the same row at ``deny`` refuses the same segment."""
+    rule = rules_by_id(DENY_RULES)['RECURSIVE-GREP']
+    segment = rule.refuses[0]
+    assert fires(rule, segment)
+    assert denies((rule,), segment) is None
+    assert denies((replace(rule, severity='deny'),), segment) == rule.id
+
+
+def test_a_hint_renders_its_severity_and_a_refusal_carries_none() -> None:
+    by_id = rules_by_id(DENY_RULES)
+    assert by_id['RECURSIVE-GREP'].rendered()['severity'] == 'hint'
+    assert 'severity' not in by_id['PUSH-FORCE'].rendered(), 'a refusal is the engine default and renders none'
+
+
+def test_an_unknown_severity_raises() -> None:
+    rule = rules_by_id(DENY_RULES)['PUSH-FORCE']
+    with pytest.raises(ValueError, match='severity'):
+        replace(rule, severity='warn')

@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_lab.dev import dep as dep_module
 from dev_lab.dev.dep import HeldEnvironmentError, Port
 from dev_lab.dev.envseat import EnvironmentSeat
 from dev_lab.dev.selfbuild import (
@@ -45,8 +46,13 @@ _WHEEL_RENAMED = 'consumera-native-0.4.1-cp312-cp312-win_amd64.whl'
 
 @pytest.fixture(autouse=True)
 def isolated_environment_seats(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fake installers do not share the real verifier's environment broker."""
+    """Fake installers do not share the real verifier's environment broker.
+
+    The suite's sibling workers execute from this same venv, so the live-process census is stubbed; the refusal
+    keeps its planted control in ``test_a_live_process_executing_from_the_environment_refuses``.
+    """
     monkeypatch.setenv('LAB_COMMONS_RESOURCE_DIR', str(tmp_path / 'resources'))
+    monkeypatch.setattr(dep_module, 'executing_from', lambda *_a, **_k: ())
 
 
 def _manifest(directory: Path, name: str) -> Path:

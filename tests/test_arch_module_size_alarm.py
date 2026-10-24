@@ -74,7 +74,7 @@ def code_lines(path: Path) -> int:
 #: measures. `resources.py` is the standing one -- it holds the broker, the registry and the record
 #: in one file, and splitting it is its own change.
 DEBT: dict[str, int] = {
-    'src/dev_lab/dev/_rule_rows.py': 422,  # 461 raw; every line it gained was ISC004 parenthesisation
+    'src/dev_lab/dev/_rule_rows.py': 401,  # 2026-10-23: the memory rows moved to _rule_rows_memory.py (was 422)
     'src/dev_lab/dev/_unit_tokens.py': 310,  # 408 raw; a token registry, 10 lines over
     # Over the band AT the split base (lab-commons 8c401f0) and unpinned there: pinned at the split with
     # their measurement, each a refactor that has not happened.
@@ -87,7 +87,8 @@ DEBT: dict[str, int] = {
 #: declared was the only one allowed. THE DROP IS A UNIT CHANGE AND NOT A REPAYMENT, and saying so is
 #: the difference between a ceiling and a number edited to fit: 2464 of those lines were never code.
 #: From here it may only go DOWN.
-DEBT_CEILING = 1473
+#: 2026-10-23: down to the sum, 1473 -> 1349, paid back by the _rule_rows memory split.
+DEBT_CEILING = 1349
 
 
 def oversized(paths: tuple[Path, ...], band: int) -> dict[str, int]:

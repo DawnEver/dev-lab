@@ -54,9 +54,10 @@ Every read is of local refs, so `git fetch --prune` first: the remote is the aut
 
 ## The push-time check
 
-The family base hook table carries the pre-push row `branchset-push`
-(`src/dev_lab/dev/githooks/base.toml`), so every repo that opts into `[tool.lab_commons.hooks]` runs it with no
-line of its own. It judges every pushed `refs/heads/**` ref (`dev_lab.dev.branchset_push`, reading git's ref
+The branch set is the forge's to judge (toolchain plan P3, 2026-10-23): `assert_origin_branches_declared` reds an
+undeclared origin branch in the repo's own suite, and the pruner below alarms or deletes it. The family base hook
+table carries no push-time row. A repo that still wants the refusal at push declares the row itself
+(`run = ["python", "-m", "dev_lab.dev.branchset_push"]` under `[[tool.lab_commons.hooks.pre-push]]`). It judges every pushed `refs/heads/**` ref (`dev_lab.dev.branchset_push`, reading git's ref
 lines from stdin through the family hook runner). Each ref is judged by the declaration its OWN pushed commit carries
 (`<sha>:pyproject.toml`), never by the pushing checkout's working tree, so the verdict does not depend on
 which checkout pushes. Agent lanes are local: only the declared branches reach origin.

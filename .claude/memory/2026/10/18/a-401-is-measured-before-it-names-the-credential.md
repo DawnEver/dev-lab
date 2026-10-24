@@ -17,3 +17,6 @@ created: 2026-10-18
   session built on an older tip (6d69a96, 96a90c8). User ruling: this lane goes only through PR #3
   (https://github.com/DawnEver/lab-commons/pull/3); b354f48 declares the branch in `sessions` so the
   branch-set hook admits it -- the integrator drops that row on merge.
+- SUPERSEDED IN PART 2026-10-21: the `GET /user` check used the same stale token, so an EXPIRED OAuth
+  access token was still reported as "re-store it". The cause and the refresh fix:
+  `2026/10/21/a-gitea-auth-refusal-is-an-expired-oauth-token-and-the-client-refreshes-it.md`.

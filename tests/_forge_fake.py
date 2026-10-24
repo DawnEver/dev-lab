@@ -47,6 +47,23 @@ def credential_env(tmp_path: Path, token: str = _HELPER_ANSWER) -> dict[str, str
     return {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
 
 
+def oauth_env(tmp_path: Path, stale: str = 'stale', fresh: str = 'fresh') -> dict[str, str]:
+    """A helper shaped like Git Credential Manager's OAuth store (``docs-src/dev/forge.md#credentials``).
+
+    ``get`` hands out the cached access token; ``erase`` -- git's ``reject`` after a 401 -- drops it, so the
+    next ``get`` answers a REFRESHED one: *fresh*, or nothing at all when *fresh* is empty.
+    """
+    state = (tmp_path / 'oauth-access-token').as_posix()
+    (tmp_path / 'oauth-access-token').write_text(stale, encoding='utf-8')
+    helper = (
+        f'!f() {{ case "$1" in get) echo username=OAUTH_USER; echo password=$(cat {state});; '
+        f'erase) cat >/dev/null; printf %s "{fresh}" > {state};; esac; }}; f'
+    )
+    config = tmp_path / 'gitconfig-oauth'
+    config.write_text(f'[credential]\n\thelper = "{helper}"\n', encoding='utf-8')
+    return {'GIT_CONFIG_GLOBAL': str(config), 'GIT_CONFIG_SYSTEM': str(tmp_path / 'absent')}
+
+
 def make_repo(tmp_path: Path, remote: str, *, branch: str = 'feature') -> Path:
     repo = tmp_path / 'repo'
     repo.mkdir()

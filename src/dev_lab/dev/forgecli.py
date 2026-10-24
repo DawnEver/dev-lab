@@ -6,7 +6,9 @@ run records, ``tick`` for requests and claims, ``queue`` for the read-only statu
 for failure routing and ``serve`` for the whole harness sequence, ``sync`` / ``integration``
 for the branch flow, ``tidy`` for declared issue hygiene, ``hosts retire HOST`` to drop a host card,
 ``request <producer> --sha <sha>`` to publish a request,
-``pr close-landed [N...]`` to close landed PRs, ``notices`` for a session's PR notices; anything
+``pr close-landed [N...]`` to close landed PRs, ``pr close-superseded N... --by M`` to close salvaged ones,
+``cancel-stuck <sha>`` for the forge's own stuck tasks, ``watch <sha>`` to follow a verdict read-only,
+``notices`` for a session's PR notices; anything
 else is the issue/PR door. The verbs
 live in the sibling modules, which import :mod:`forge`, so :mod:`forge` reaches this module only from its
 entry point.
@@ -40,11 +42,14 @@ from dev_lab.dev import (
     forgeroute,
     forgeserve,
     forgestatus,
+    forgestuck,
     forgesync,
     forgetick,
     forgetidy,
+    forgewatch,
     pradmit,
     prlanded,
+    prsuperseded,
     servelock,
 )
 from dev_lab.dev.forge import Transport, https_transport
@@ -54,7 +59,7 @@ from dev_lab.dev.labsession import ENV
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-__all__ = ['ISSUE_VERBS', 'NOUNS', 'issue_and_pr', 'main']
+__all__ = ['ISSUE_VERBS', 'NOUNS', 'PR_VERBS', 'issue_and_pr', 'main']
 
 NOUNS: dict[str, Callable[[list[str]], int]] = {
     'auth': forgeauth.main,
@@ -71,7 +76,12 @@ NOUNS: dict[str, Callable[[list[str]], int]] = {
     'tidy': forgetidy.main,
     'hosts': forgehosts.main,
     'request': forgepublish.main,
+    'cancel-stuck': forgestuck.main,
+    'watch': forgewatch.main,
 }
+
+#: The ``pr`` verbs owned by a door module of their own; every other ``pr`` verb is the issue/PR door's.
+PR_VERBS: dict[str, Callable[[list[str]], int]] = {'close-landed': prlanded.main, 'close-superseded': prsuperseded.main}
 
 #: The ``issue`` verbs :mod:`forgeissue` owns; every other ``issue`` verb is the issue/PR door's.
 ISSUE_VERBS = frozenset({'claim', 'status', 'comments', 'comments-since'})
@@ -88,8 +98,8 @@ def main(argv: Sequence[str]) -> int:
             emit(refused, err=True)
             return 2
         return NOUNS[args[0]](args[1:])
-    if args[:2] == ['pr', 'close-landed']:
-        return prlanded.main(args[2:])
+    if args[:1] == ['pr'] and args[1:2] and args[1] in PR_VERBS:
+        return PR_VERBS[args[1]](args[2:])
     if args[:1] == ['issue'] and args[1:2] and args[1] in ISSUE_VERBS:
         return forgeissue.main(args[1:])
     return issue_and_pr(args)

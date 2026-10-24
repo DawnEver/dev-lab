@@ -1,4 +1,7 @@
-"""BARE-INTERPRETER: the reflex spellings are refused through the REAL engine, with the owner's exit.
+"""BARE-INTERPRETER refuses `uv run`/`uvx` and BARE-PYTHON hints a bare `python`/`py`, through the REAL engine.
+
+The split (toolchain plan P3, user 2026-10-23): `uv run` may SYNC the checkout's environment, which is harm,
+so it is refused; a bare `python` only runs somebody else's interpreter, so it is said and runs.
 
 One owner (:mod:`dev_lab.dev.venvpath`) spells the interpreter; the deny row's remedy, the settings
 allow row and these tests all read it. A repo CLI behind `uv run` is opened per repo, never in the base.
@@ -40,13 +43,8 @@ def _rules(tmp_path: Path, remedies: dict[str, Remedy]) -> Path:
         'uv run python x.py',
         'uv run -m dev_lab.dev.verify',
         'uvx python',
-        'python x.py',
-        'python3 -c "print(1)"',
-        'py -3 x.py',
         'timeout 60 uv run python x.py',
-        'cd sub && python x.py',
         'foo && uv run python x',
-        'timeout 5 python x',
         'bash -c "cd sub && uv run python x"',
         'uv run python - <<EOF\nprint(1)\nEOF',
         'uv run mycli run cases/x',
@@ -60,6 +58,19 @@ def test_a_reflex_spelling_is_refused_with_the_owner_spelled_exit(tmp_path: Path
     for layout in VENV_LAYOUTS.values():
         assert '/'.join(layout) in reason, reason
     assert INTERPRETER_ALLOW_ENTRY in reason
+
+
+@pytest.mark.parametrize('command', ['python x.py', 'python3 -c "print(1)"', 'py -3 x.py', 'cd sub && python x.py'])
+@pytest.mark.workstation
+def test_a_bare_python_is_hinted_with_the_owner_spelled_exit_and_still_runs(tmp_path: Path, command: str) -> None:
+    """A hint refuses nothing, and it names the same exit the refusal does."""
+    rules = _rules(tmp_path, {})
+    assert agenthooks.decide(command, rules) is None, f'refused: {command!r}'
+    reason = agenthooks.decide(command, rules, hint=True)
+    assert reason is not None, f'not hinted: {command!r}'
+    assert 'BARE-PYTHON' in reason
+    for layout in VENV_LAYOUTS.values():
+        assert '/'.join(layout) in reason, reason
 
 
 @pytest.mark.parametrize(

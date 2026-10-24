@@ -8,8 +8,9 @@
  * is a rule in the JSON file passed as argv[2] (`.claude/hooks/deny-rules.json`), so adding or
  * retiring a rule is a data change, never an engine change.
  *
- * A rule is {name, pattern, matches?, allow?, scope?, reason}. `scope: 'subagent'` judges the rule only
- * when the payload carries a non-empty `agent_id`. `pattern` (JS regex source) denies a
+ * A rule is {name, pattern, matches?, allow?, scope?, severity?, reason}. `scope: 'subagent'` judges the rule only
+ * when the payload carries a non-empty `agent_id`. `severity: 'hint'` never denies: the call runs and the
+ * reason reaches the agent as `additionalContext` -- unless a refusing rule also fires, which wins. `pattern` (JS regex source) denies a
  * command it matches, unless `allow` (regex source) also matches -- the sanctioned spelling.
  * `reason` is the rewrite hint shown to the agent; `{root}` in it expands to the tool call's cwd.
  *
@@ -68,6 +69,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 /** The tools whose `tool_input.command` the shell executes. */
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -283,7 +285,27 @@ function hostPath(word) {
   return drive ? `${drive[1]}:${bare.slice(2)}` : bare;
 }
 
-/** The directory the command acts in: the call's cwd, moved by `cd X` segments, or `git -C X`. */
+/** The directory one `git ...` / `uv ...` segment names for itself, or `null`: git's `-C X` among its global
+ * options (`-c k=v` and the rest are skipped), uv's `--directory X` / `--project X` (or `=X`) anywhere. */
+function namedDir(words) {
+  const program = (words[0] || '').replace(/\.exe$/i, '');
+  if (program === 'git') {
+    for (let i = 1; i < words.length; i += 1) {
+      if (words[i] === '-C') return words[i + 1] || null;
+      if (words[i] === '-c') i += 1;
+      else if (!words[i].startsWith('-')) return null; // the verb: global options end here
+    }
+  } else if (program === 'uv') {
+    for (let i = 1; i < words.length; i += 1) {
+      const eq = /^--(?:directory|project)=(.+)$/.exec(words[i]);
+      if (eq) return eq[1];
+      if (words[i] === '--directory' || words[i] === '--project') return words[i + 1] || null;
+    }
+  }
+  return null;
+}
+
+/** The directory the command acts in: the call's cwd, moved by `cd X` segments, or the dir a git/uv call names. */
 function targetDir(cmd, cwd) {
   let dir = cwd;
   const word = String.raw`("[^"\n]*"|'[^'\n]*'|[^\s;&|()]+)`;
@@ -294,8 +316,8 @@ function targetDir(cmd, cwd) {
       dir = path.resolve(dir, hostPath(cd[1]));
       continue;
     }
-    const gitC = new RegExp(String.raw`^git(?:\.exe)?\s+-C\s+${word}`).exec(text);
-    if (gitC) return path.resolve(dir, hostPath(gitC[1]));
+    const named = namedDir(text.match(new RegExp(word, 'g')) || []);
+    if (named) return path.resolve(dir, hostPath(named));
   }
   return dir;
 }
@@ -350,6 +372,38 @@ function reasonFor(rule, reason, cmd, cwd, sessionRoot) {
   return `[targets ${shown}, which declares no door; repo files named below are ${session}'s]\n${reason}`;
 }
 
+/* ================================ A ROW THAT BINDS ONLY WHILE A RUN IS LIVE ================================
+ *
+ * `when: 'live-run'` (TREE-HAS-A-LIVE-RUN): the pattern names a command that mutates a checkout or its venv,
+ * and it is refused only while a run executes from the checkout the command targets. Whether one does is
+ * the process table's answer, which this engine cannot read: it asks `python -m dev_lab.dev.liverun
+ * --tree <target>` through the session checkout's own interpreter, only AFTER the pattern matched, so an
+ * unmatched command pays nothing. Exit 0 is no live run and exit 1 prints the refusal. No interpreter is no
+ * refusal: a checkout without the kit has nobody to ask. A crash or a timeout REFUSES, unlike the rest of
+ * this engine, because the harm this row guards (a run's tree changed under it) cannot be undone.
+ */
+function liveRunRefusal(target, sessionRoot) {
+  if (!target || !sessionRoot) return '';
+  const tail = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'];
+  const python = path.join(sessionRoot, '.venv', ...tail);
+  if (!fs.existsSync(python)) return '';
+  const done = spawnSync(python, ['-m', 'dev_lab.dev.liverun', '--tree', target], {
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true,
+  });
+  if (done.status === 0) return '';
+  const said = String(done.stdout || '').trim();
+  if (done.status === 1 && said) return said;
+  // A venv without the kit is the same case as no interpreter: nobody to ask, so no refusal. A checkout
+  // mid-adoption (its lock not yet carrying dev-lab) must stay workable.
+  if (/No module named '?dev_lab/.test(String(done.stderr || ''))) return '';
+  // A Python that cannot start, or that imports the module and crashes, is not an answer.
+  const why = done.error ? done.error.message : `exit ${done.status}${said ? '' : ', no answer'}`;
+  return `TREE-HAS-A-LIVE-RUN: could not confirm that no run executes from ${target} (${why}); re-run when ` +
+    `python -m dev_lab.dev.liverun --tree ${target} answers.`;
+}
+
 /** Does `rule` fire on any executed text? */
 function fires(rule, texts) {
   const argument = rule.matches === 'argument';
@@ -379,6 +433,7 @@ const cmd = (input.tool_input && input.tool_input.command) || '';
 const root = (input.cwd || '').replace(/\\/g, '/');
 const sessionRoot = repoRoot(path.resolve(path.dirname(process.argv[2]), '..', '..'));
 const texts = executedTexts(cmd);
+const hints = [];
 
 for (const rule of rules) {
   if (rule.scope === 'subagent' && !subagent) continue;
@@ -388,23 +443,31 @@ for (const rule of rules) {
   } catch {
     continue; // one malformed rule never blocks the session
   }
-  if (hit) {
+  let liveReason = '';
+  if (hit && rule.when === 'live-run') {
+    liveReason = liveRunRefusal(input.cwd ? repoRoot(targetDir(cmd, input.cwd)) : null, sessionRoot);
+    hit = liveReason !== '';
+  }
+  if (hit && rule.severity === 'hint') {
+    hints.push(String(rule.reason || rule.name).replaceAll('{root}', root));
+  } else if (hit) {
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: reasonFor(
-            rule,
-            String(rule.reason || rule.name).replaceAll('{root}', root),
-            cmd,
-            input.cwd || '',
-            sessionRoot
-          ),
+          permissionDecisionReason:
+            liveReason ||
+            reasonFor(rule, String(rule.reason || rule.name).replaceAll('{root}', root), cmd, input.cwd || '', sessionRoot),
         },
       })
     );
     process.exit(0);
   }
+}
+if (hints.length) {
+  process.stdout.write(
+    JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: hints.join('\n') } })
+  );
 }
 process.exit(0);

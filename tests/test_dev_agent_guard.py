@@ -14,12 +14,14 @@ one are different things, and only one of them refuses anything.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from dev_lab.dev import agent_guard, agenthooks
+from dev_lab.dev.githooks import bash_executable
 from dev_lab.dev.hook_adoption import HookAdoption, render
 from dev_lab.dev.hooks import Remedy
 
@@ -31,7 +33,7 @@ pytestmark = pytest.mark.workstation
 ADOPTION = HookAdoption(
     app_name='planted',
     remedies={'BARE-TEST-INVOCATION': Remedy('verdict-entry-point', 'python -m dev_lab.dev.verify')},
-    declared_absent=frozenset({'GIT-NETWORK-VERB', 'PUSH-NO-VERIFY', 'RAW-PROCESS-KILL'}),
+    declared_absent=frozenset({'NETWORK-VERB', 'PUSH-NO-VERIFY', 'RAW-PROCESS-KILL'}),
 )
 
 
@@ -133,7 +135,7 @@ def test_unrelated_settings_survive_the_install(repo: Path) -> None:
     after = json.loads(settings.read_text(encoding='utf-8'))
 
     assert after['permissions'] == planted['permissions'], 'an unrelated settings key was lost'
-    assert after['hooks']['Stop'] == planted['hooks']['Stop'], 'an unrelated event was lost'
+    assert after['hooks']['Stop'][0] == planted['hooks']['Stop'][0], 'an unrelated event was lost'
     pre = after['hooks']['PreToolUse']
     assert pre[0] == planted['hooks']['PreToolUse'][0], 'an unrelated matcher was rewritten'
     assert pre[1] == planted['hooks']['PreToolUse'][1], "another agent's Bash hook was moved or widened"
@@ -165,12 +167,25 @@ def test_unreadable_rules_are_stale_rather_than_present(repo: Path) -> None:
     assert agent_guard.guard_installation(repo).by_part['rules'].status == agent_guard.STALE
 
 
-def _ask(repo: Path, wired: list[str], command: str) -> str | None:
-    """Run the hook EXACTLY as the tool would: the wired argv, from the repo, payload on stdin."""
-    payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(repo)}
-    done = subprocess.run(
-        [agenthooks.node_executable(), *wired[1:]],
-        cwd=repo,
+# The shell the tool runs a hook line in, found as the hooks find it: a serve host's scheduled task has
+# ``git`` on PATH but no bash (G, 2026-10-24), so a bare lookup would test the PATH rather than the guard.
+_SHELL = bash_executable()
+
+
+def _wired_line(repo: Path) -> str:
+    """The installed hook command line, verbatim: the tool's shell runs it with ``$CLAUDE_PROJECT_DIR`` set."""
+    settings = json.loads((repo / agent_guard.SETTINGS_REL).read_text(encoding='utf-8'))
+    return settings['hooks']['PreToolUse'][0]['hooks'][0]['command']
+
+
+def _run_hook(repo: Path, line: str, command: str, *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    """Run the hook EXACTLY as the tool would: the wired line in a POSIX shell, from the session cwd."""
+    where = cwd or repo
+    payload = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(where)}
+    node = Path(agenthooks.node_executable()).parent.as_posix()
+    return subprocess.run(
+        [_SHELL, '-c', line],
+        cwd=where,
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -178,7 +193,14 @@ def _ask(repo: Path, wired: list[str], command: str) -> str | None:
         errors='replace',
         check=False,
         timeout=60,
+        env={**os.environ, 'CLAUDE_PROJECT_DIR': repo.as_posix(), 'PATH': f'{node}{os.pathsep}{os.environ["PATH"]}'},
     )
+
+
+def _ask(repo: Path, line: str, command: str, *, cwd: Path | None = None) -> str | None:
+    """The hook's deny reason for *command*, or ``None`` when it allowed it; a blocking exit fails the test."""
+    done = _run_hook(repo, line, command, cwd=cwd)
+    assert done.returncode == 0, done.stderr
     if not done.stdout.strip():
         return None
     return json.loads(done.stdout)['hookSpecificOutput']['permissionDecisionReason']
@@ -194,15 +216,52 @@ def test_the_installed_guard_actually_refuses_a_command(repo: Path) -> None:
     """
     _declare(repo)
     agent_guard.install_guard(repo)
-    settings = json.loads((repo / agent_guard.SETTINGS_REL).read_text(encoding='utf-8'))
-    wired = settings['hooks']['PreToolUse'][0]['hooks'][0]['command'].split()
-    assert (repo / wired[1]).is_file(), 'the wiring names a path that is not there'
-    assert (repo / wired[2]).is_file(), 'the wiring names a path that is not there'
+    wired = _wired_line(repo)
+    assert (repo / agent_guard.ENGINE_REL).is_file(), 'the wiring names a path that is not there'
+    assert (repo / agent_guard.RULES_REL).is_file(), 'the wiring names a path that is not there'
 
     denied = _ask(repo, wired, 'pytest tests/')
     assert denied is not None, 'the installed guard allowed a bare test line'
     assert 'dev_lab.dev.verify' in denied, denied
     assert _ask(repo, wired, 'git status') is None, 'the installed guard refused an ordinary command'
+
+
+def test_the_installed_guard_refuses_from_a_session_cwd_without_hooks(repo: Path) -> None:
+    """THE 2026-10-20 INCIDENT: the hook runs in the SESSION's cwd, not the repo root.
+
+    The wiring used to read `node .claude/hooks/deny-commands.js ...`, cwd-relative. From any session
+    cwd that holds no `.claude/hooks/` (a subdirectory, a sibling repo) node exited 1 on
+    MODULE_NOT_FOUND, which the tool treats as a NON-BLOCKING hook error -- so every command ran
+    unjudged, and bare `python -m pytest` lines spawned eight xdist workers each and filled 55 GB.
+    The wiring is anchored on `$CLAUDE_PROJECT_DIR`, so the cwd no longer decides whether it runs.
+    """
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    elsewhere = repo / 'tests' / 'unit'
+    elsewhere.mkdir(parents=True)
+    denied = _ask(repo, _wired_line(repo), '.venv/Scripts/python.exe -m pytest -q tests/unit/x.py', cwd=elsewhere)
+    assert denied is not None, 'from a cwd without .claude/hooks the guard failed open'
+
+
+def test_a_missing_engine_fails_closed_with_a_blocking_exit(repo: Path) -> None:
+    """2026-10-21: an engine that is not there made node exit 1 -- NON-blocking, so every command ran unjudged."""
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / agent_guard.ENGINE_REL).unlink()
+    done = _run_hook(repo, _wired_line(repo), 'git status')
+    assert done.returncode == 2, (done.returncode, done.stderr)
+    assert 'fail closed' in done.stderr
+    assert 'hook_install' in done.stderr
+
+
+def test_an_engine_that_crashes_fails_closed_with_a_blocking_exit(repo: Path) -> None:
+    """PLANTED CONTROL: the file is there but the engine dies -- still a blocking exit, never an allowed command."""
+    _declare(repo)
+    agent_guard.install_guard(repo)
+    (repo / agent_guard.ENGINE_REL).write_text('process.exit(1);\n', encoding='utf-8')
+    done = _run_hook(repo, _wired_line(repo), 'git status')
+    assert done.returncode == 2, (done.returncode, done.stderr)
+    assert 'engine exited 1' in done.stderr
 
 
 def test_the_wiring_matches_every_shell_tool(repo: Path) -> None:
@@ -226,3 +285,69 @@ def test_a_bash_only_wiring_is_stale_and_the_install_moves_only_our_hook(repo: P
     pre = json.loads(settings.read_text(encoding='utf-8'))['hooks']['PreToolUse']
     assert pre == [{'matcher': 'Bash', 'hooks': [theirs]}, {'matcher': 'Bash|PowerShell', 'hooks': [ours]}]
     assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
+def test_the_install_wires_the_stray_census_after_every_shell_call_and_at_stop() -> None:
+    """STRAY-FILE-REFUSED is live only when wired: PostToolUse on every shell tool, and Stop."""
+    after = agent_guard.wire_settings({})
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+    assert 'dev_lab.dev.codeplace stray' in agent_guard.STRAY_COMMAND
+
+
+def test_wiring_the_stray_census_twice_adds_nothing_and_keeps_foreign_hooks() -> None:
+    """Idempotent, and another author's PostToolUse/Stop hooks stay where they were."""
+    planted = {
+        'hooks': {
+            'PostToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}]}],
+            'Stop': [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}],
+        },
+    }
+    once = agent_guard.wire_settings(planted)
+    assert agent_guard.wire_settings(once) == once
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert once['hooks']['PostToolUse'] == [
+        {'matcher': 'Bash|PowerShell', 'hooks': [{'type': 'command', 'command': 'node log.js'}, stray]}
+    ]
+    assert once['hooks']['Stop'] == [planted['hooks']['Stop'][0], {'hooks': [stray]}]
+    assert planted['hooks']['Stop'] == [{'matcher': '*', 'hooks': [{'type': 'command', 'command': 'node stop.js'}]}]
+
+
+def test_a_settings_file_already_running_the_guard_still_gets_the_stray_census() -> None:
+    """Every exit of the wiring wires the census: our PreToolUse hook already present is the upgrade path."""
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
+    after = agent_guard.wire_settings(old)
+    stray = {'type': 'command', 'command': agent_guard.STRAY_COMMAND}
+    assert after['hooks']['PostToolUse'] == [{'matcher': 'Bash|PowerShell', 'hooks': [stray]}]
+    assert after['hooks']['Stop'] == [{'hooks': [stray]}]
+
+
+def test_a_wiring_missing_the_stray_census_is_stale_and_the_install_upgrades_it(repo: Path) -> None:
+    """The report reads the SAME wiring table the install writes, so a pre-census settings file is STALE."""
+    settings = repo / agent_guard.SETTINGS_REL
+    settings.parent.mkdir(parents=True)
+    ours = {'type': 'command', 'command': agent_guard.HOOK_COMMAND}
+    old = {'hooks': {'PreToolUse': [{'matcher': 'Bash|PowerShell', 'hooks': [ours]}]}}
+    settings.write_text(json.dumps(old), encoding='utf-8')
+    part = agent_guard.guard_installation(repo).by_part['wiring']
+    assert part.status == agent_guard.STALE, part.detail
+    assert 'PostToolUse' in part.detail
+    agent_guard.install_guard(repo)
+    assert agent_guard.guard_installation(repo).by_part['wiring'].status == agent_guard.INSTALLED
+
+
+def test_the_stray_hook_never_blocks_a_checkout_without_a_venv(tmp_path: Path) -> None:
+    """A hook never blocks on a missing venv (decision 7, 2026-10-22): no interpreter, exit 0 and silent."""
+    env = {**os.environ, 'CLAUDE_PROJECT_DIR': str(tmp_path)}
+    done = subprocess.run(
+        [_SHELL, '-c', agent_guard.STRAY_COMMAND],
+        input='{}',
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        env=env,
+        check=False,
+    )
+    assert (done.returncode, done.stdout) == (0, ''), done.stderr

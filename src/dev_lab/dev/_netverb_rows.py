@@ -28,6 +28,16 @@ from typing import Final
 #: refs", and reading that first would turn a refusal into three refusals.
 ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
     (
+        # GIT'S OWN PROTOCOL POLICY REFUSED A LOCAL TRANSPORT. Measured 2026-10-19 in motronics: `dep
+        # --bootstrap <worktree>` ran `git submodule update --init --recursive`, whose submodule URL is a
+        # LOCAL path (the main checkout's `.git/modules/...`), and git refused it as `transport 'file' not
+        # allowed` (protocol.file.allow defaults to `user` since 2.38.1). Retried three times as
+        # unclassified; the answer is a config value, so no attempt can change it.
+        'transport-refused',
+        False,
+        ("transport 'file' not allowed",),
+    ),
+    (
         # A PRE-PUSH HOOK'S REFUSAL. Measured 2026-09-17 in this session: a repo's pre-push hook
         # refused a push and printed the identical refusal on all three attempts -- the same tree
         # re-judged by the same hook returns the same answer, and each re-judgement paid the hook's
@@ -84,12 +94,16 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         # `git fetch` failed AUTH and succeeded on the retry, and was reported "blocked". 2026-09-17,
         # this session: a push to a gitea forge failed auth and succeeded on a later attempt while a
         # `fetch` cleared an identical HTTP 401 on its second attempt. A 401 is NOT a 403 -- the
-        # credential helper, the token cache and the proxy in front of it are all mid-flight state,
-        # and mid-flight state is exactly what an attempt later clears.
+        # attempt-1 auth failure is an EXPIRED OAuth access token (Git Credential Manager, username
+        # OAUTH_USER): git rejects it on the 401 and the retry's fill refreshes it (measured 2026-10-21;
+        # see the credentials section of the forge dev doc). An attempt later clears it: git refreshes in between.
         'transient',
         True,
         (
             'authentication failed',
+            # uv's spelling, measured 2026-10-19 (motronics `dep --sync`): one `uv sync` of a git
+            # dependency failed with it, and the next run passed on its first attempt.
+            'failed to authenticate',
             'error: 401',
             '401 unauthorized',
             'could not read username',
@@ -114,3 +128,13 @@ ROWS: Final[tuple[tuple[str, bool, tuple[str, ...]], ...]] = (
         ),
     ),
 )
+
+
+#: What to DO about a permanent diagnosis whose answer is not in the command's own output.
+REMEDIES: Final[dict[str, str]] = {
+    'transport-refused': (
+        'a LOCAL-path remote (a submodule cloned from a checkout .git/modules directory) needs '
+        '`git -c protocol.file.allow=always ...` on that one command -- '
+        'dev_lab.dev._dep_network.init_submodules passes it'
+    ),
+}

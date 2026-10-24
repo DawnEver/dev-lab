@@ -197,6 +197,8 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'sessionbranch': ('original',),
     # ORIGINAL: no consumer audited a merge's tests; the resolution rule was prose (NEWER-STRUCTURE).
     'mergeaudit': ('original',),
+    # ORIGINAL: how a conflict was resolved was never recorded; the rule was prose (NEWER-STRUCTURE).
+    'mergeresolution': ('original',),
     'gatebase': ('supersedes', 'scripts/gate/base.py'),
     'hook_adoption': ('supersedes', 'scripts/repo/write_deny_rules.py'),
     'hook_install': ('supersedes', 'scripts/repo/_hooks.py'),
@@ -502,4 +504,22 @@ PROVENANCE: Final[dict[str, tuple[str, ...]]] = {
     'runner': ('original',),
     'filechecks': ('original',),
     'ciworkflows': ('original',),
+    # No consumer guard is superseded: these forge-launching verbs moved from the lab-commons
+    # owner into dev-lab in 9ac2e681. "original" denotes no consumer fork, not newly written code.
+    'account': ('original',),
+    'allocate': ('original',),
+    'checks': ('original',),
+    'deploy': ('original',),
+    'fleet': ('original',),
+    'spec': ('original',),
+    'steps': ('original',),
+    'tick': ('original',),
+    # ORIGINAL: new mechanisms no consumer held a file for.
+    'automode': ('original',),
+    'forgestuck': ('original',),
+    'forgewatch': ('original',),
+    'liverun': ('original',),
+    'monthsummary': ('original',),
+    'prsuperseded': ('original',),
+    'worktree_archive': ('original',),
 }

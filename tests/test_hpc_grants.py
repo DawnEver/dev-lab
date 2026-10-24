@@ -355,10 +355,14 @@ def test_a_bad_session_name_is_refused_by_name(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_a_leftover_session_table_is_refused_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    """User ruling 2026-10-17: an allocation between sessions is temporary and never lives in a machine file."""
+    """User ruling 2026-10-17: an allocation between sessions is temporary and never lives in a machine file.
+
+    The remedy names ``dev_lab.dev.hpchost allocate``: the verb moved there from ``lab_commons.hpc`` at the
+    dev-lab cut-over (9ac2e68), and the lab-commons refusal names its new home since 1614022.
+    """
     monkeypatch.setenv('LC_HPC_SESSION', 'G')
     leftover = _grant() + '[session.G]\ntasks = 1\ncpus = 1\nmem_gb = 1\n'
-    with pytest.raises(ValueError, match=r'\[hpc\] session is retired.*lab_commons\.hpc allocate'):
+    with pytest.raises(ValueError, match=r'\[hpc\] session is retired.*dev_lab\.dev\.hpchost allocate'):
         load_grants(tomllib.loads(leftover))
     # Planted control: the same file without the table loads.
     load_grants(tomllib.loads(_grant()))

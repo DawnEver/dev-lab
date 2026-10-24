@@ -70,12 +70,13 @@ SHARED: tuple[SharedDoor, ...] = (
         repo='dev-lab',
         path='pyproject.toml',
         caller_floats=('dev-lab',),
-        deliveries=frozenset({'INERT', 'UNLOCKED'}),
+        deliveries=frozenset({'INERT', 'UNMEASURED'}),
         why=(
-            'THE FINDING. This reusable workflow holds `uv sync --python X $extra_flags` and three '
+            'THE FINDING. This reusable workflow holds `uv sync --frozen --python X $extra_flags` and three '
             '`uv run ...` steps, and all four are lock-consuming. Scanned at home against '
             'lab-commons` empty floating set they classify INERT; scanned against a caller`s '
-            '(`lab-commons`, which every caller floats by calling it) they are UNLOCKED, and no caller '
+            '(`lab-commons`, which every caller floats by calling it) the frozen sync is UNMEASURED '
+            'without a caller lock receipt; the caller own-repo guard must prove its tracked lock. No caller '
             'could see the file because it is not in its tree. The three `uv run` steps take '
             '`--no-sync`, which is also the correct fix on its own terms: `uv run` with no `--extra` '
             're-syncs WITHOUT the extras the preceding step just installed, and that is the prune '

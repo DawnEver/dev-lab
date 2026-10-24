@@ -1801,7 +1801,7 @@ def test_withdrawing_a_superseded_run_scancels_only_its_pending_tasks_and_names_
 def test_a_first_round_refused_on_the_qos_submit_limit_is_no_room_and_its_queued_band_is_cancelled() -> None:
     """A per-user QOS submit refusal is CAPACITY: :class:`NoRoom` (released open), never a stuck ``bash exited 1``.
 
-    Ada 2026-10-21: alyyw103's run hit the QOS submit limit and alarmed "cannot advance" every tick, holding
+    Ada 2026-10-21: carol's run hit the QOS submit limit and alarmed "cannot advance" every tick, holding
     its claim while four other grants had headroom. The band already queued is cancelled, so the refused
     round holds no submit slot. PLANTED CONTROL: :func:`test_each_memory_class_is_its_own_array_at_its_own_files_peak`
     -- the same two bands with room submit both.
